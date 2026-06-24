@@ -145,7 +145,7 @@ defineEmits<{
 }
 
 .chapter-enter-btn {
-  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
   color: var(--color-text-inverse);
   font-weight: 500;
 }
@@ -158,7 +158,7 @@ defineEmits<{
 }
 
 .chapter-read-btn {
-  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--color-surface-success-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%);
   color: var(--color-text-inverse);
   font-weight: 500;
 }

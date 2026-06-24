@@ -6,7 +6,7 @@
 
 @media (prefers-color-scheme: dark) {
   .web-import-disclaimer-modal.ui-modal__container {
-    background: var(--color-gray-900);
+    background: var(--color-overlay-backdrop-solid);
     border-color: var(--color-status-warning);
   }
 }

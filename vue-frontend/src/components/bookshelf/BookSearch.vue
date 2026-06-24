@@ -172,7 +172,7 @@ onUnmounted(clearPendingSearch)
 }
 
 .search-btn {
-    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+    background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
     color: white;
 }
 
@@ -231,12 +231,12 @@ onUnmounted(clearPendingSearch)
 }
 
 .tag-chip:hover {
-    background: var(--tag-color, var(--color-surface-brand-gradient-start));
+    background: var(--tag-color, var(--color-action-brand));
     color: white;
 }
 
 .tag-chip.active {
-    background: var(--tag-color, var(--color-surface-brand-gradient-start));
+    background: var(--tag-color, var(--color-action-brand));
     color: white;
     border-color: var(--tag-color, var(--color-border-brand-gradient));
     box-shadow: 0 2px 8px var(--book-search-active-chip-shadow);

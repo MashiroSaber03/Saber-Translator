@@ -178,7 +178,7 @@ function requestClose(): void {
 .exit-save-dialog-btn--secondary:hover,
 .exit-save-dialog-btn--ghost:hover {
   border-color: var(--edit-exit-save-modal-border-muted);
-  background: var(--color-surface-overlay-light-prominent);
+  background: var(--color-overlay-inverse-prominent);
 }
 
 .exit-save-dialog-progress {
@@ -190,7 +190,7 @@ function requestClose(): void {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--color-surface-overlay-light-strong);
+  background: var(--color-overlay-inverse-strong);
 }
 
 .exit-save-dialog-progress-fill {

@@ -475,9 +475,6 @@ async function handleImportFile(event: Event): Promise<void> {
 <style scoped>/* 结果区域卡片 */
 .image-result-display.result-section {
   /* owner tokens: image-result-display */
-  --image-result-display-border-default: #e0e6ed;
-  --image-result-display-border-strong: #2980b9;
-  --image-result-display-border-muted: #e74c3c;
   --image-result-display-shadow-default: rgba(0, 0, 0, .08);
   --image-result-display-shadow-raised: rgba(0, 0, 0, .12);
   --image-result-display-shadow-floating: rgba(52, 152, 219, .2);

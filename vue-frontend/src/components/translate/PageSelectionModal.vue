@@ -287,7 +287,6 @@ function handleBreadcrumbClick(path: string): void {
 <style scoped>
 .page-selection-shell {
   --page-selection-modal-border-default: #dbe4ef;
-  --page-selection-modal-border-strong: #e2e9f2;
   --page-selection-modal-border-muted: #d3deed;
   --page-selection-modal-border-subtle: #d8e3f1;
   --page-selection-modal-border-hover: #cfdcec;
@@ -495,7 +494,7 @@ function handleBreadcrumbClick(path: string): void {
   min-height: 88px;
   padding: 12px;
   border: 1px solid var(--page-selection-modal-border-focus);
-  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
+  background: linear-gradient(135deg, var(--color-status-warning-surface-soft) 0%, var(--color-status-warning-surface-raised) 100%);
   border-radius: 10px;
   cursor: pointer;
   font: inherit;
@@ -504,7 +503,7 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-folder-item:hover {
-  background: linear-gradient(135deg, var(--color-surface-warning-warm) 0%, var(--page-selection-modal-surface-inverse) 100%);
+  background: linear-gradient(135deg, var(--color-status-warning-surface-raised) 0%, var(--page-selection-modal-surface-inverse) 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px var(--page-selection-modal-shadow-strong);
 }
@@ -554,7 +553,7 @@ function handleBreadcrumbClick(path: string): void {
 }
 
 .page-selection-thumbnail.active {
-  background: linear-gradient(180deg, var(--color-surface-plain) 0%, var(--page-selection-modal-surface-contrast) 100%);
+  background: linear-gradient(180deg, var(--color-surface-base) 0%, var(--page-selection-modal-surface-contrast) 100%);
 }
 
 .page-selection-thumbnail .thumbnail-image {

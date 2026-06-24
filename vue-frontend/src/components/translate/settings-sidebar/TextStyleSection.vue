@@ -241,6 +241,8 @@ defineEmits<{
 
 <style scoped>
 .settings-panel.collapsible-panel {
+  --settings-sidebar-text-style-form-hint: #6f8099;
+
   margin: 0 0 12px;
   padding: 12px;
   border: 1px solid var(--settings-sidebar-shell-border-muted);
@@ -432,7 +434,7 @@ defineEmits<{
 }
 
 .ui-form-hint {
-  color: var(--settings-sidebar-apply-actions-text-primary);
+  color: var(--settings-sidebar-text-style-form-hint);
   font-size: 11px;
   line-height: 1.3;
 }

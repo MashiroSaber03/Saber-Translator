@@ -402,12 +402,31 @@ const brushCursorStyle = computed(() => {
 
 <style scoped>
 .edit-toolbar-wrapper {
-  --edit-toolbar-border-default: #e5e7eb;
-  --edit-toolbar-border-strong: rgba(255, 255, 255, .2);
-  --edit-toolbar-border-muted: rgba(255, 255, 255, .3);
-  --edit-toolbar-border-subtle: rgba(102, 126, 234, .5);
-  --edit-toolbar-border-hover: rgba(0, 255, 136, .4);
-  --edit-toolbar-border-active: rgba(255, 193, 7, .4);
+  --edit-toolbar-shell-start: #16213e;
+  --edit-toolbar-shell-end: #1a1a2e;
+  --edit-toolbar-shell-divider: rgba(255, 255, 255, .1);
+  --edit-toolbar-shell-divider-soft: rgba(255, 255, 255, .05);
+  --edit-toolbar-row-overlay: rgba(0, 0, 0, .15);
+  --edit-toolbar-chip-background: rgba(102, 126, 234, .2);
+  --edit-toolbar-chip-hover-background: rgba(102, 126, 234, .4);
+  --edit-toolbar-chip-active-background: rgba(102, 126, 234, .5);
+  --edit-toolbar-control-background: rgba(102, 126, 234, .3);
+  --edit-toolbar-progress-background: rgba(0, 0, 0, .3);
+  --edit-toolbar-accent: #0f8;
+  --edit-toolbar-primary-action-start: #0f8;
+  --edit-toolbar-primary-action-end: #00cc6a;
+  --edit-toolbar-primary-action-text: #1a1a2e;
+  --edit-toolbar-primary-action-shadow: rgba(0, 255, 136, .3);
+  --edit-toolbar-secondary-action-border: rgba(255, 255, 255, .3);
+  --edit-toolbar-secondary-action-border-hover: rgba(255, 255, 255, .5);
+  --edit-toolbar-help-border: #cfd6e4;
+  --edit-toolbar-help-border-focus: #5b73f2;
+  --edit-toolbar-button-border-default: #e5e7eb;
+  --edit-toolbar-button-border-strong: rgba(255, 255, 255, .2);
+  --edit-toolbar-button-border-muted: rgba(255, 255, 255, .3);
+  --edit-toolbar-button-border-subtle: rgba(102, 126, 234, .5);
+  --edit-toolbar-button-border-hover: rgba(0, 255, 136, .4);
+  --edit-toolbar-button-border-active: rgba(255, 193, 7, .4);
   --edit-toolbar-shadow-default: rgba(0, 255, 136, .5);
   --edit-toolbar-shadow-raised: rgba(0, 0, 0, .15);
   --edit-toolbar-surface-base: #00d4ff;
@@ -428,8 +447,8 @@ const brushCursorStyle = computed(() => {
   --edit-toolbar-brush-restore-border: #2196f3;
 
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--edit-shell-start) 0%, var(--edit-shell-end) 100%);
-  border-bottom: 1px solid var(--edit-shell-divider);
+  background: linear-gradient(135deg, var(--edit-toolbar-shell-start) 0%, var(--edit-toolbar-shell-end) 100%);
+  border-bottom: 1px solid var(--edit-toolbar-shell-divider);
 }
 
 .edit-toolbar {
@@ -440,11 +459,11 @@ const brushCursorStyle = computed(() => {
 }
 
 .toolbar-row-1 {
-  border-bottom: 1px solid var(--edit-shell-divider-soft);
+  border-bottom: 1px solid var(--edit-toolbar-shell-divider-soft);
 }
 
 .toolbar-row-2 {
-  background: var(--edit-shell-overlay);
+  background: var(--edit-toolbar-row-overlay);
 }
 
 .toolbar-spacer {
@@ -454,7 +473,7 @@ const brushCursorStyle = computed(() => {
 .toolbar-divider {
   width: 1px;
   height: 24px;
-  background: var(--color-surface-overlay-medium-muted);
+  background: var(--color-overlay-inverse-muted);
   margin: 0 5px;
 }
 
@@ -468,14 +487,14 @@ const brushCursorStyle = computed(() => {
   color: var(--color-text-inverse);
   font-size: 14px;
   padding: 6px 12px;
-  background: var(--edit-shell-chip);
+  background: var(--edit-toolbar-chip-background);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .image-indicator:hover {
-  background: var(--edit-shell-chip-hover);
+  background: var(--edit-toolbar-chip-hover-background);
 }
 
 .image-indicator span {
@@ -488,7 +507,7 @@ const brushCursorStyle = computed(() => {
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: var(--color-surface-overlay-light-muted);
+  background: var(--color-overlay-inverse-subtle);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 16px;
@@ -496,11 +515,11 @@ const brushCursorStyle = computed(() => {
 }
 
 .thumb-toggle-btn:hover {
-  background: var(--color-surface-overlay-medium-muted);
+  background: var(--color-overlay-inverse-muted);
 }
 
 .thumb-toggle-btn.active {
-  background: var(--edit-shell-chip-active);
+  background: var(--edit-toolbar-chip-active-background);
 }
 
 .bubble-navigator {
@@ -513,13 +532,13 @@ const brushCursorStyle = computed(() => {
   color: var(--color-text-inverse);
   font-size: 13px;
   padding: 4px 10px;
-  background: var(--edit-shell-progress-muted);
+  background: var(--edit-toolbar-progress-background);
   border-radius: 6px;
 }
 
 .bubble-indicator span {
   font-weight: bold;
-  color: var(--edit-accent);
+  color: var(--edit-toolbar-accent);
 }
 
 .view-controls {
@@ -533,7 +552,7 @@ const brushCursorStyle = computed(() => {
   height: 36px;
   border: none;
   border-radius: 6px;
-  background: var(--color-surface-overlay-light-muted);
+  background: var(--color-overlay-inverse-subtle);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 16px;
@@ -541,7 +560,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .view-control-btn:hover {
-  background: var(--color-surface-overlay-medium-muted);
+  background: var(--color-overlay-inverse-muted);
 }
 
 .view-controls .zoom-level {
@@ -569,8 +588,8 @@ const brushCursorStyle = computed(() => {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
-  background: linear-gradient(135deg, var(--edit-action-start) 0%, var(--edit-action-end) 100%);
-  color: var(--edit-action-text);
+  background: linear-gradient(135deg, var(--edit-toolbar-primary-action-start) 0%, var(--edit-toolbar-primary-action-end) 100%);
+  color: var(--edit-toolbar-primary-action-text);
   font-weight: 600;
   cursor: pointer;
   font-size: 13px;
@@ -579,12 +598,12 @@ const brushCursorStyle = computed(() => {
 
 .action-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--edit-shadow-action);
+  box-shadow: 0 4px 12px var(--edit-toolbar-primary-action-shadow);
 }
 
 .action-secondary {
   padding: 8px 16px;
-  border: 1px solid var(--edit-action-border);
+  border: 1px solid var(--edit-toolbar-secondary-action-border);
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-inverse);
@@ -594,8 +613,8 @@ const brushCursorStyle = computed(() => {
 }
 
 .action-secondary:hover {
-  background: var(--color-surface-overlay-light-muted);
-  border-color: var(--edit-action-border-hover);
+  background: var(--color-overlay-inverse-subtle);
+  border-color: var(--edit-toolbar-secondary-action-border-hover);
 }
 
 .image-navigator .nav-btn,
@@ -604,7 +623,7 @@ const brushCursorStyle = computed(() => {
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: var(--edit-shell-control);
+  background: var(--edit-toolbar-control-background);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 10px;
@@ -624,7 +643,7 @@ const brushCursorStyle = computed(() => {
 
 .image-navigator .nav-btn:not(:disabled):hover,
 .bubble-navigator .nav-btn:not(:disabled):hover {
-  background: var(--edit-shell-chip-active);
+  background: var(--edit-toolbar-chip-active-background);
 }
 
 .edit-progress-container {
@@ -633,7 +652,7 @@ const brushCursorStyle = computed(() => {
   gap: 12px;
   padding: 6px 16px;
   margin-left: 12px;
-  background: var(--edit-shell-progress);
+  background: var(--edit-toolbar-progress-background);
   border-radius: 20px;
   min-width: 200px;
   max-width: 350px;
@@ -667,7 +686,7 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-count {
   font-size: 12px;
-  color: var(--edit-accent);
+  color: var(--edit-toolbar-accent);
   font-weight: 600;
   font-family: var(--font-mono);
 }
@@ -675,7 +694,7 @@ const brushCursorStyle = computed(() => {
 .edit-progress-bar {
   flex: 1;
   height: 6px;
-  background: var(--color-surface-overlay-light-soft);
+  background: var(--color-overlay-inverse-soft);
   border-radius: 3px;
   overflow: hidden;
   min-width: 80px;
@@ -683,14 +702,14 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--edit-action-start), var(--edit-toolbar-surface-base));
+  background: linear-gradient(90deg, var(--edit-toolbar-primary-action-start), var(--edit-toolbar-surface-base));
   border-radius: 3px;
   transition: width 0.3s ease;
   box-shadow: 0 0 8px var(--edit-toolbar-shadow-default);
 }
 
 .edit-progress-fill.animating {
-  background: linear-gradient(90deg, var(--edit-action-start), var(--edit-toolbar-surface-base), var(--edit-action-start));
+  background: linear-gradient(90deg, var(--edit-toolbar-primary-action-start), var(--edit-toolbar-surface-base), var(--edit-toolbar-primary-action-start));
   background-size: 200% 100%;
   animation: progressShine 1.5s ease-in-out infinite;
 }
@@ -701,12 +720,12 @@ const brushCursorStyle = computed(() => {
 }
 
 .edit-progress-container.completed .edit-progress-fill {
-  background: var(--edit-action-start);
+  background: var(--edit-toolbar-primary-action-start);
   animation: none;
 }
 
 .edit-progress-container.completed .edit-progress-text {
-  color: var(--edit-accent);
+  color: var(--edit-toolbar-accent);
 }
 
 .annotation-btn.is-loading {
@@ -723,14 +742,14 @@ const brushCursorStyle = computed(() => {
   color: var(--color-text-inverse);
   font-size: 12px;
   padding: 4px 8px;
-  background: var(--color-surface-overlay-light);
+  background: var(--color-overlay-inverse-subtle);
   border-radius: 4px;
   margin-left: 8px;
 }
 
 .annotation-btn.active,
 .brush-btn.active {
-  background: var(--edit-shell-chip-active);
+  background: var(--edit-toolbar-chip-active-background);
   border-color: var(--color-border-brand-gradient);
 }
 
@@ -767,7 +786,7 @@ const brushCursorStyle = computed(() => {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--edit-input-border);
+  border: 1px solid var(--edit-toolbar-help-border);
   border-radius: 14px;
   background: var(--edit-toolbar-surface-muted);
   color: var(--color-text-secondary);
@@ -783,7 +802,7 @@ const brushCursorStyle = computed(() => {
 
 .help-tooltip-btn:hover {
   background: var(--color-surface-base);
-  border-color: var(--edit-input-border-focus);
+  border-color: var(--edit-toolbar-help-border-focus);
   color: var(--edit-toolbar-text-muted);
 }
 
@@ -825,7 +844,7 @@ const brushCursorStyle = computed(() => {
   color: var(--edit-toolbar-text-subtle);
   margin-bottom: 6px;
   padding-bottom: 4px;
-  border-bottom: 1px solid var(--edit-toolbar-border-default);
+  border-bottom: 1px solid var(--edit-toolbar-button-border-default);
 }
 
 .help-item {
@@ -860,9 +879,9 @@ const brushCursorStyle = computed(() => {
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  border: 1px solid var(--edit-toolbar-border-strong);
+  border: 1px solid var(--edit-toolbar-button-border-strong);
   border-radius: 6px;
-  background: var(--color-surface-overlay-light);
+  background: var(--color-overlay-inverse-subtle);
   color: var(--color-text-inverse);
   cursor: pointer;
   font-size: 12px;
@@ -870,8 +889,8 @@ const brushCursorStyle = computed(() => {
 }
 
 .annotation-btn:hover {
-  background: var(--color-surface-overlay-medium);
-  border-color: var(--edit-toolbar-border-muted);
+  background: var(--color-overlay-inverse-muted);
+  border-color: var(--edit-toolbar-button-border-muted);
 }
 
 .annotation-btn:disabled {
@@ -888,18 +907,18 @@ const brushCursorStyle = computed(() => {
 }
 
 .detect-btn {
-  background: var(--edit-shell-control);
-  border-color: var(--edit-toolbar-border-subtle);
+  background: var(--edit-toolbar-control-background);
+  border-color: var(--edit-toolbar-button-border-subtle);
 }
 
 .detect-btn:hover {
-  background: var(--edit-shell-chip-active);
+  background: var(--edit-toolbar-chip-active-background);
 }
 
 .primary-action-btn {
   background: var(--edit-toolbar-surface-subtle);
-  border-color: var(--edit-toolbar-border-hover);
-  color: var(--edit-accent);
+  border-color: var(--edit-toolbar-button-border-hover);
+  color: var(--edit-toolbar-accent);
 }
 
 .primary-action-btn:hover {
@@ -908,7 +927,7 @@ const brushCursorStyle = computed(() => {
 
 .brush-btn {
   background: var(--edit-toolbar-surface-active);
-  border-color: var(--edit-toolbar-border-active);
+  border-color: var(--edit-toolbar-button-border-active);
 }
 
 .brush-btn:hover {
@@ -916,6 +935,6 @@ const brushCursorStyle = computed(() => {
 }
 
 .view-control-btn.active {
-  background: var(--edit-shell-chip-active);
+  background: var(--edit-toolbar-chip-active-background);
 }
 </style>

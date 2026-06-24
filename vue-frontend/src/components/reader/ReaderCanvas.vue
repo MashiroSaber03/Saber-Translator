@@ -232,6 +232,6 @@ watch(
 
 .reader-empty-action:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow-brand-soft);
+  box-shadow: 0 4px 12px var(--shadow-action-brand);
 }
 </style>

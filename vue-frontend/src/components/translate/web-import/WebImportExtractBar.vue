@@ -154,7 +154,7 @@ defineEmits<{
   padding: 10px 14px;
   border: 1px solid var(--web-import-modal-extract-border-default);
   border-radius: 6px;
-  background: var(--color-surface-warning-subtle);
+  background: var(--color-status-warning-surface-soft);
   color: var(--web-import-modal-extract-text-secondary);
   font-size: 13px;
 }

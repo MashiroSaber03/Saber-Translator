@@ -161,6 +161,7 @@ const DOMAIN_SPECIFIC_GLOBAL_TOKEN_RE = /^--(?:color-edit-|color-(?:surface|text
 const LEGACY_INSIGHT_DOMAIN_ALIAS_RE = /^--insight-(?:bg-[a-z0-9-]+|color-(?:primary|warning|error|danger)|primary(?:-[a-z0-9-]+)?|(?:success|warning|error|danger)(?:-color)?)$/
 const VAGUE_COMPONENT_TOKEN_RE = /^--(?:app-header|base-modal|custom-select|toast-notification|ui-button|ui-icon-button|ui-input|ui-panel|ui-select|ui-textarea)-(?:(?:surface|text|border|shadow)-(?:base|primary|secondary|default|raised|muted|subtle|hover|floating|strong|inverse|selected|overlay)|(?:border|shadow)-(?:muted|subtle|strong))$/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
+const IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE = /^--(?:color-gray-\d+|color-accent-purple(?:-hover)?|color-surface-[a-z0-9-]+-gradient-(?:start|end)|color-surface-editor-[a-z0-9-]+|color-surface-overlay-(?:light|medium)(?:-[a-z0-9-]+)?|color-surface-(?:plain|slate-soft|warning-tint|warning-warm)|shadow-(?:brand|success)-soft)$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
 const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
@@ -354,9 +355,11 @@ const tokenArchitectureStats = {
 }
 const visualCoverageEntries = []
 const heavyOwnerReviewSignals = []
+const ownerTokenDensitySignals = []
 const architectureDebtUsage = Object.fromEntries(
   Object.keys(ARCHITECTURE_DEBT_BUDGETS).map(key => [key, 0])
 )
+let sourceCustomPropertyReferencesCache = null
 
 function scanPath(path) {
   if (!existsSync(path)) {
@@ -406,6 +409,10 @@ function isDomainTokenFile(normalizedPath) {
 
 function isComponentTokenFile(normalizedPath) {
   return normalizedPath === 'src/styles/tokens/component.css'
+}
+
+function isSemanticTokenFile(normalizedPath) {
+  return normalizedPath === 'src/styles/tokens/semantic.css'
 }
 
 function addHeavyOwnerReviewSignal(path, kind, lines, limit, reason) {
@@ -495,6 +502,55 @@ function referencedOrMutatedCustomProperties(content, tokens) {
       refs.add(token)
     }
   }
+  return refs
+}
+
+function collectSourceCustomPropertyReferencesFromContent(content) {
+  const refs = new Set()
+  for (const match of stripCssComments(content).matchAll(VAR_REFERENCE_RE)) {
+    refs.add(match[1])
+  }
+  for (const match of stripCssComments(content).matchAll(CUSTOM_PROPERTY_MUTATION_RE)) {
+    refs.add(match[1])
+  }
+  return refs
+}
+
+function collectSourceCustomPropertyReferencesFromPath(path, refs) {
+  if (!existsSync(path)) {
+    return
+  }
+  const stat = statSync(path)
+  if (stat.isDirectory()) {
+    for (const entry of readdirSync(path)) {
+      collectSourceCustomPropertyReferencesFromPath(join(path, entry), refs)
+    }
+    return
+  }
+  if (!/\.(?:vue|css|js|jsx|ts|tsx)$/.test(path)) {
+    return
+  }
+  const normalizedPath = normalizePath(path)
+  if (isTokenFile(normalizedPath)) {
+    return
+  }
+  for (const token of collectSourceCustomPropertyReferencesFromContent(readFileSync(path, 'utf8'))) {
+    refs.add(token)
+  }
+}
+
+function sourceCustomPropertyReferences(fixtureContent) {
+  if (SOURCE_FIXTURE) {
+    return collectSourceCustomPropertyReferencesFromContent(fixtureContent)
+  }
+  if (sourceCustomPropertyReferencesCache) {
+    return sourceCustomPropertyReferencesCache
+  }
+  const refs = new Set()
+  for (const root of ROOTS) {
+    collectSourceCustomPropertyReferencesFromPath(root, refs)
+  }
+  sourceCustomPropertyReferencesCache = refs
   return refs
 }
 
@@ -716,9 +772,25 @@ function checkCustomPropertyOwnership(path, normalizedPath, content) {
     return
   }
 
-  const definitions = customPropertyDefinitions(content, path)
+  const definitions = [...new Set(customPropertyDefinitions(content, path))]
   if (definitions.length === 0) {
     return
+  }
+  const ownerDefinitions = definitions.filter(token => !PUBLIC_PRIMITIVE_CUSTOM_PROPERTY_RE.test(token))
+  if (ownerDefinitions.length > 0) {
+    ownerTokenDensitySignals.push({
+      path: normalizedPath,
+      count: ownerDefinitions.length,
+    })
+  }
+
+  const references = sourceCustomPropertyReferences(content)
+  const unusedOwnerTokens = ownerDefinitions.filter(token => !references.has(token))
+  if (unusedOwnerTokens.length > 0) {
+    addFailure(
+      path,
+      `unused owner CSS variable definition(s) ${unusedOwnerTokens.join(', ')} are not allowed; define owner tokens only when a real rule references them`
+    )
   }
 
   for (const token of definitions) {
@@ -804,6 +876,15 @@ function checkTokenDependencyArchitecture(paths) {
         path,
         `domain-specific semantic token definition(s) ${domainSpecificGlobalTokens.join(', ')} are not allowed in global token files; move them into domain tokens or scoped owner variables`
       )
+    }
+    if (isSemanticTokenFile(normalizedPath)) {
+      const implementationShapedTokens = rootTokenDefinitions.filter(token => IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE.test(token))
+      if (implementationShapedTokens.length > 0) {
+        addFailure(
+          path,
+          `implementation-shaped semantic token definition(s) ${implementationShapedTokens.join(', ')} are not allowed in semantic.css; use stable surface/text/border/action/status/overlay/focus/shadow roles or scoped owner variables`
+        )
+      }
     }
     if (isDomainTokenFile(normalizedPath)) {
       const domainTokens = rootTokenDefinitions
@@ -1523,6 +1604,9 @@ if (IS_AUDIT && valueNamedTokenCandidates.size > 0) {
 }
 
 if (IS_AUDIT) {
+  const topOwnerTokenDensitySignals = [...ownerTokenDensitySignals]
+    .sort((a, b) => b.count - a.count || a.path.localeCompare(b.path))
+    .slice(0, 12)
   console.warn('UI architecture audit summary:')
   console.warn(`- token files: ${TOKEN_FILES.length}`)
   console.warn(`- :root tokens: ${tokenArchitectureStats.rootTokens}`)
@@ -1531,6 +1615,10 @@ if (IS_AUDIT) {
   console.warn(`- heavy owner review signals: ${heavyOwnerReviewSignals.length}`)
   for (const signal of heavyOwnerReviewSignals.slice(0, 12)) {
     console.warn(`  - ${signal}`)
+  }
+  console.warn(`- owner token density signals: ${ownerTokenDensitySignals.length}`)
+  for (const signal of topOwnerTokenDensitySignals) {
+    console.warn(`  - ${signal.path}: ${signal.count} owner tokens`)
   }
 }
 

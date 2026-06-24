@@ -364,10 +364,6 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 <style scoped>
 .overview-grid {
-  --overview-panel-text-secondary: #ef4444;
-}
-
-.overview-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 20px;

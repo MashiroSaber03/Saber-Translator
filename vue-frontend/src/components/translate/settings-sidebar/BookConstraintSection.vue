@@ -45,22 +45,32 @@ defineEmits<{
 
 <style scoped>
 .book-constraints-panel {
+  --settings-sidebar-book-constraint-panel-border: #d8e3f1;
+  --settings-sidebar-book-constraint-panel-background: #f8fbff;
+  --settings-sidebar-book-constraint-title-text: #273959;
+  --settings-sidebar-book-constraint-hint-text: #62748f;
+  --settings-sidebar-book-constraint-button-border: #bfd0e5;
+  --settings-sidebar-book-constraint-button-text: #2f4b71;
+  --settings-sidebar-book-constraint-button-disabled-background: #eef2f6;
+  --settings-sidebar-book-constraint-button-disabled-text: #8b97a7;
+  --settings-sidebar-book-constraint-button-hover-background: #eef4fb;
+
   margin-top: 14px;
   padding: 12px;
-  border: 1px solid var(--settings-sidebar-workflow-border-default);
+  border: 1px solid var(--settings-sidebar-book-constraint-panel-border);
   border-radius: 12px;
-  background: var(--settings-sidebar-workflow-surface-subtle);
+  background: var(--settings-sidebar-book-constraint-panel-background);
 }
 
 .book-constraints-title {
-  color: var(--settings-sidebar-workflow-text-secondary);
+  color: var(--settings-sidebar-book-constraint-title-text);
   font-weight: 700;
   font-size: 15px;
 }
 
 .book-constraints-hint {
   margin-top: 6px;
-  color: var(--settings-sidebar-workflow-text-muted);
+  color: var(--settings-sidebar-book-constraint-hint-text);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -81,27 +91,27 @@ defineEmits<{
   justify-content: center;
   min-height: 38px;
   padding: 0 14px;
-  border: 1px solid var(--settings-sidebar-workflow-border-strong);
+  border: 1px solid var(--settings-sidebar-book-constraint-button-border);
   border-radius: 8px;
-  background: var(--color-surface-plain);
-  color: var(--settings-sidebar-workflow-text-subtle);
+  background: var(--color-surface-base);
+  color: var(--settings-sidebar-book-constraint-button-text);
   font-weight: 600;
   font-size: 13px;
 }
 
 .secondary-button:disabled {
-  background: var(--settings-sidebar-workflow-surface-hover);
-  color: var(--settings-sidebar-workflow-text-supporting);
+  background: var(--settings-sidebar-book-constraint-button-disabled-background);
+  color: var(--settings-sidebar-book-constraint-button-disabled-text);
   cursor: not-allowed;
 }
 
 .secondary-button:hover:not(:disabled) {
-  background: var(--settings-sidebar-workflow-surface-active);
+  background: var(--settings-sidebar-book-constraint-button-hover-background);
 }
 
 .book-constraints-disabled-note {
   margin-top: 8px;
-  color: var(--settings-sidebar-workflow-text-supporting);
+  color: var(--settings-sidebar-book-constraint-button-disabled-text);
   font-size: 12px;
 }
 </style>

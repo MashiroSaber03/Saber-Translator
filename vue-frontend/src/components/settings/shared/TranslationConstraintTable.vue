@@ -292,7 +292,7 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   padding: 0 12px;
   border: 1px solid var(--translation-constraint-table-border-default);
   border-radius: 8px;
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
   color: var(--translation-constraint-table-text-primary);
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -333,7 +333,7 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   padding: 0 12px;
   border: 1px solid var(--translation-constraint-table-border-default);
   border-radius: 8px;
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
   color: var(--translation-constraint-table-text-primary);
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;

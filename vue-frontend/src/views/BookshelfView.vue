@@ -287,7 +287,7 @@ function showFeatureNotice() {
     gap: 6px;
     color: var(--bookshelf-header-access-text);
     font-size: 0.85rem;
-    background: var(--color-surface-overlay-light-raised);
+    background: var(--color-overlay-inverse-raised);
     padding: 6px 12px;
     border-radius: 20px;
     backdrop-filter: blur(4px);
@@ -299,12 +299,12 @@ function showFeatureNotice() {
     text-decoration: none;
     padding: 6px 12px;
     border-radius: 20px;
-    background: var(--color-surface-overlay-light-soft);
+    background: var(--color-overlay-inverse-soft);
     transition: all 0.2s ease;
 }
 
 .bookshelf-header__tutorial-link:hover {
-    background: var(--color-surface-overlay-medium-strong);
+    background: var(--color-overlay-inverse-emphasis);
 }
 
 .bookshelf-header__github-link {
@@ -312,12 +312,12 @@ function showFeatureNotice() {
     align-items: center;
     padding: 6px;
     border-radius: 50%;
-    background: var(--color-surface-overlay-light-soft);
+    background: var(--color-overlay-inverse-soft);
     transition: all 0.2s ease;
 }
 
 .bookshelf-header__github-link:hover {
-    background: var(--color-surface-overlay-medium-strong);
+    background: var(--color-overlay-inverse-emphasis);
 }
 
 .bookshelf-header__github-icon {
@@ -327,7 +327,7 @@ function showFeatureNotice() {
 }
 
 .bookshelf-header__theme-toggle {
-    background: var(--color-surface-overlay-medium);
+    background: var(--color-overlay-inverse-muted);
     border: none;
     border-radius: 50%;
     width: 38px;

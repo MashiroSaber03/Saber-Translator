@@ -6,9 +6,9 @@
 }
 
 .edit-exit-save-modal.ui-modal__container {
-  border: 1px solid var(--color-surface-overlay-light-soft);
+  border: 1px solid var(--color-overlay-inverse-soft);
   border-radius: 12px;
-  background: var(--color-gray-900);
+  background: var(--color-overlay-backdrop-solid);
   color: var(--color-text-inverse);
   box-shadow: 0 18px 48px var(--shadow-medium);
   backdrop-filter: blur(10px);

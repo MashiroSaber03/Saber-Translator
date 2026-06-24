@@ -67,10 +67,17 @@ const insightLegacyPrimaryToken = '--insight-primary-dark'
 const insightActionPrimaryToken = '--insight-action-primary'
 const editDomainSemanticToken = '--color-edit-shell-start'
 const studioDomainSemanticToken = '--color-text-studio-strong'
+const semanticGrayScaleToken = '--color-gray-100'
+const semanticEditorSurfaceToken = '--color-surface-editor-original'
+const semanticAccentPurpleToken = '--color-accent-purple'
+const semanticGradientStartToken = '--color-surface-brand-gradient-start'
+const semanticSurfacePlainToken = '--color-surface-plain'
+const semanticWarningTintToken = '--color-surface-warning-tint'
 const vagueComponentToken = '--app-header-surface-base'
 const roleComponentToken = '--app-header-background'
 const domainTokenLimit = 50
 const studioOwnerToken = '--studio-border-default'
+const unusedOwnerToken = '--settings-sidebar-panel-background'
 
 function runUiArchitectureTokenFixture(tokensCss: string, tokenPath = 'src/styles/tokens/domain.css') {
   const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-tokens-'))
@@ -273,6 +280,28 @@ describe('UI architecture token dependency lint', () => {
     expect(result.stderr).toContain(studioDomainSemanticToken)
   })
 
+  it('rejects implementation-shaped token names in the global semantic layer', () => {
+    const result = runUiArchitectureTokenFixture(`
+      :root {
+        ${semanticGrayScaleToken}: #f8fafc;
+        ${semanticEditorSurfaceToken}: #f8f8f8;
+        ${semanticAccentPurpleToken}: #9b59b6;
+        ${semanticGradientStartToken}: #667eea;
+        ${semanticSurfacePlainToken}: #fff;
+        ${semanticWarningTintToken}: #fff3cd;
+      }
+    `, 'src/styles/tokens/semantic.css')
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('implementation-shaped semantic token definition(s)')
+    expect(result.stderr).toContain(semanticGrayScaleToken)
+    expect(result.stderr).toContain(semanticEditorSurfaceToken)
+    expect(result.stderr).toContain(semanticAccentPurpleToken)
+    expect(result.stderr).toContain(semanticGradientStartToken)
+    expect(result.stderr).toContain(semanticSurfacePlainToken)
+    expect(result.stderr).toContain(semanticWarningTintToken)
+  })
+
   it('rejects vague private component token names in global component tokens', () => {
     const result = runUiArchitectureTokenFixture(`
       :root {
@@ -372,6 +401,43 @@ describe('UI architecture CSS variable ownership lint', () => {
       .insight-page h2 {
         color: var(--insight-text-primary);
       }
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('rejects owner-scoped CSS variables that are never referenced', () => {
+    const result = runUiArchitectureSourceFixture('src/components/translate/SettingsSidebar.vue', `
+      <template><aside class="settings-sidebar"></aside></template>
+      <style scoped>
+      .settings-sidebar {
+        ${unusedOwnerToken}: #fff;
+      }
+
+      .settings-sidebar {
+        color: var(--color-text-default);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('unused owner CSS variable definition(s)')
+    expect(result.stderr).toContain(unusedOwnerToken)
+  })
+
+  it('allows owner-scoped CSS variables when the owner uses them', () => {
+    const result = runUiArchitectureSourceFixture('src/components/translate/SettingsSidebar.vue', `
+      <template><aside class="settings-sidebar"></aside></template>
+      <style scoped>
+      .settings-sidebar {
+        ${unusedOwnerToken}: #fff;
+      }
+
+      .settings-sidebar {
+        background: var(${unusedOwnerToken});
+      }
+      </style>
     `)
 
     expect(result.status).toBe(0)
@@ -858,6 +924,7 @@ describe('UI architecture old implementation mindset lint', () => {
     expect(result.stderr).not.toContain('permanent shell/layout owners')
     expect(result.stderr).not.toContain('pending layout')
     expect(result.stderr).toContain('heavy owner review signals')
+    expect(result.stderr).toContain('owner token density signals')
   })
 })
 

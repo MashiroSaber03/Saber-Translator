@@ -16,7 +16,7 @@
     close-color="var(--color-text-inverse)"
     close-font-size="20px"
     close-hover-color="var(--color-text-inverse)"
-    close-hover-background="var(--color-surface-overlay-light-soft)"
+    close-hover-background="var(--color-overlay-inverse-soft)"
     body-padding="none"
     body-display="flex"
     body-direction="column"
@@ -225,7 +225,7 @@ async function handleSave() {
 
 .settings-tabs > .settings-tab:hover {
   opacity: 1;
-  background-color: var(--color-surface-overlay-light);
+  background-color: var(--color-overlay-inverse-subtle);
 }
 
 .settings-tabs > .settings-tab.active {

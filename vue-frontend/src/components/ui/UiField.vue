@@ -66,16 +66,16 @@ withDefaults(defineProps<{
 
 .ui-field.ui-settings-field {
   --ui-input-padding: 10px 12px;
-  --ui-input-background: var(--color-surface-card, var(--color-surface-plain));
+  --ui-input-background: var(--color-surface-card, var(--color-surface-base));
   --ui-input-color: var(--color-text-strong);
   --ui-input-font-size: 0.95em;
   --ui-input-control-margin: 0;
   --ui-select-padding: 10px 12px;
-  --ui-select-background: var(--color-surface-card, var(--color-surface-plain));
+  --ui-select-background: var(--color-surface-card, var(--color-surface-base));
   --ui-select-color: var(--color-text-strong);
   --ui-select-font-size: 0.95em;
   --ui-textarea-padding: 10px 12px;
-  --ui-textarea-background: var(--color-surface-card, var(--color-surface-plain));
+  --ui-textarea-background: var(--color-surface-card, var(--color-surface-base));
   --ui-textarea-color: var(--color-text-strong);
   --ui-textarea-font-size: 0.95em;
 

@@ -310,7 +310,7 @@ async function deleteTag(tagName: string) {
 
 .tag-edit-btn {
   padding: 4px 12px;
-  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
   color: white;
   border: none;
   border-radius: 4px;
@@ -321,7 +321,7 @@ async function deleteTag(tagName: string) {
 
 .tag-edit-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--shadow-brand-soft);
+  box-shadow: 0 2px 8px var(--shadow-action-brand);
 }
 
 .tag-delete-btn {
@@ -367,7 +367,7 @@ async function deleteTag(tagName: string) {
 
 .tag-save-btn {
   padding: 4px 12px;
-  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--tag-manage-modal-save-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--tag-manage-modal-save-end) 100%);
   color: white;
   border: none;
   border-radius: 4px;
@@ -378,7 +378,7 @@ async function deleteTag(tagName: string) {
 
 .tag-save-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--shadow-success-soft);
+  box-shadow: 0 2px 8px var(--shadow-action-success);
 }
 
 .tag-cancel-btn {

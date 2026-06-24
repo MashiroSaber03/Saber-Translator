@@ -325,7 +325,7 @@ onUnmounted(() => {
   padding: 0 12px;
   border: 1px solid var(--custom-select-trigger-border);
   border-radius: 8px;
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
   color: var(--custom-select-trigger-text);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -383,7 +383,7 @@ onUnmounted(() => {
   /* Teleport 下拉层使用视口坐标定位，top/left/width 由 JS 计算。 */
   position: fixed;
   margin-top: 0;
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
   border: 1px solid var(--color-border-default);
   border-radius: 10px;
   box-shadow: 0 12px 26px var(--custom-select-dropdown-shadow);
@@ -396,13 +396,13 @@ onUnmounted(() => {
 
 .custom-select-options {
   padding: 6px 0;
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
   color: var(--custom-select-trigger-text);
 }
 
 .custom-select-group {
   margin-bottom: 4px;
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
 }
 
 .custom-select-group:last-child {
@@ -423,7 +423,7 @@ onUnmounted(() => {
   padding: 9px 12px;
   cursor: pointer;
   color: var(--custom-select-trigger-text);
-  background: var(--color-surface-plain);
+  background: var(--color-surface-base);
   font-size: 14px;
   line-height: 1.4;
   transition: background 0.15s;

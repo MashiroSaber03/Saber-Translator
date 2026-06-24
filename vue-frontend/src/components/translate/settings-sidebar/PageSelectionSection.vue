@@ -70,6 +70,19 @@ defineEmits<{
 
 <style scoped>
 .settings-panel.collapsible-panel {
+  --settings-sidebar-page-selection-toggle-border: #d4deed;
+  --settings-sidebar-page-selection-toggle-border-active: #94b5e5;
+  --settings-sidebar-page-selection-toggle-background: #f4f8fd;
+  --settings-sidebar-page-selection-toggle-background-active: #e9f2ff;
+  --settings-sidebar-page-selection-toggle-text: #5d7090;
+  --settings-sidebar-page-selection-toggle-text-active: #21579c;
+  --settings-sidebar-page-selection-muted-text: #6f809a;
+  --settings-sidebar-page-selection-summary-text: #304464;
+  --settings-sidebar-page-selection-error-border: #f3cccc;
+  --settings-sidebar-page-selection-error-text: #b73535;
+  --settings-sidebar-page-selection-button-border: #bfd0e5;
+  --settings-sidebar-page-selection-button-text: #2f4b71;
+
   margin: 0 0 12px;
   padding: 12px;
   border: 1px solid var(--settings-sidebar-shell-border-muted);
@@ -98,24 +111,24 @@ defineEmits<{
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid var(--settings-sidebar-apply-actions-border-subtle);
+  border: 1px solid var(--settings-sidebar-page-selection-toggle-border);
   border-radius: 999px;
-  background: var(--settings-sidebar-apply-actions-surface-inverse);
-  color: var(--settings-sidebar-apply-actions-text-subtle);
+  background: var(--settings-sidebar-page-selection-toggle-background);
+  color: var(--settings-sidebar-page-selection-toggle-text);
   font-weight: 600;
   font-size: 12px;
   cursor: pointer;
 }
 
 .page-selection-toggle-compact:has(.page-selection-toggle-input:checked) {
-  border-color: var(--settings-sidebar-apply-actions-border-hover);
-  background: var(--settings-sidebar-apply-actions-surface-contrast);
-  color: var(--settings-sidebar-apply-actions-text-supporting);
+  border-color: var(--settings-sidebar-page-selection-toggle-border-active);
+  background: var(--settings-sidebar-page-selection-toggle-background-active);
+  color: var(--settings-sidebar-page-selection-toggle-text-active);
 }
 
 .total-count,
 .page-selection-note {
-  color: var(--settings-sidebar-apply-actions-text-disabled);
+  color: var(--settings-sidebar-page-selection-muted-text);
   font-size: 12px;
   font-weight: 500;
 }
@@ -128,7 +141,7 @@ defineEmits<{
 }
 
 .page-selection-summary-value {
-  color: var(--settings-sidebar-apply-actions-text-inverse);
+  color: var(--settings-sidebar-page-selection-summary-text);
   font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
@@ -146,10 +159,10 @@ defineEmits<{
 .page-selection-error {
   margin-top: 2px;
   padding: 6px 10px;
-  border: 1px solid var(--settings-sidebar-apply-actions-border-active);
+  border: 1px solid var(--settings-sidebar-page-selection-error-border);
   border-radius: 8px;
-  background: var(--color-surface-slate-soft);
-  color: var(--settings-sidebar-apply-actions-text-brand);
+  background: var(--color-surface-neutral-muted);
+  color: var(--settings-sidebar-page-selection-error-text);
   font-weight: 600;
   font-size: 12px;
   text-align: center;
@@ -157,10 +170,10 @@ defineEmits<{
 
 .secondary-button {
   min-height: 38px;
-  border: 1px solid var(--settings-sidebar-workflow-border-strong);
+  border: 1px solid var(--settings-sidebar-page-selection-button-border);
   border-radius: 8px;
-  background: var(--color-surface-plain);
-  color: var(--settings-sidebar-workflow-text-subtle);
+  background: var(--color-surface-base);
+  color: var(--settings-sidebar-page-selection-button-text);
   font-weight: 600;
   font-size: 13px;
 }

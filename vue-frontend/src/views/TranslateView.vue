@@ -549,7 +549,7 @@ function showFeatureNotice() {
   align-items: center;
   gap: 5px;
   padding: 8px 14px;
-  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
   border-radius: 20px;
   color: white;
   text-decoration: none;
@@ -560,7 +560,7 @@ function showFeatureNotice() {
 
 .translate-header__back-link:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-brand-soft);
+  box-shadow: 0 4px 12px var(--shadow-action-brand);
 }
 
 /* 保存按钮样式（顶部） */
@@ -569,7 +569,7 @@ function showFeatureNotice() {
   align-items: center;
   justify-content: center;
   padding: 8px 14px;
-  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--color-surface-success-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%);
   border: none;
   border-radius: 20px;
   color: white;
@@ -581,7 +581,7 @@ function showFeatureNotice() {
 
 .translate-header__save-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-success-soft);
+  box-shadow: 0 4px 12px var(--shadow-action-success);
 }
 
 /* 设置按钮样式 */

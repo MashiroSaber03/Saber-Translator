@@ -78,13 +78,13 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--primary {
-  background: var(--ui-button-primary-background, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%));
+  background: var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%));
   color: var(--ui-button-primary-color, white);
   box-shadow: var(--ui-button-primary-shadow, 0 2px 8px var(--ui-button-primary-shadow-color));
 }
 
 .ui-button--primary:hover:not(:disabled) {
-  background: var(--ui-button-primary-hover-background, var(--ui-button-primary-background, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%)));
+  background: var(--ui-button-primary-hover-background, var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%)));
   transform: var(--ui-button-primary-hover-transform, translateY(-2px));
   box-shadow: var(--ui-button-primary-hover-shadow, 0 6px 20px var(--ui-button-primary-hover-shadow-color));
 }

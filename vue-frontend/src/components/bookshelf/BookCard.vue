@@ -136,7 +136,7 @@ function handleImageError() {
 /* 书籍封面 */
 .book-cover {
     aspect-ratio: 3 / 4;
-    background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+    background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
     display: block;
     overflow: hidden;
     position: relative;
@@ -225,6 +225,6 @@ function handleImageError() {
     border-radius: 10px;
     font-size: 0.7rem;
     color: white;
-    background: var(--color-surface-brand-gradient-start);
+    background: var(--color-action-brand);
 }
 </style>

@@ -245,7 +245,7 @@ function showFeatureNotice(): void {
   align-items: center;
   gap: 5px;
   padding: 8px 14px;
-  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
   border-radius: 20px;
   color: white;
   text-decoration: none;
@@ -256,7 +256,7 @@ function showFeatureNotice(): void {
 
 .app-header__back-link:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-brand-soft);
+  box-shadow: 0 4px 12px var(--shadow-action-brand);
 }
 
 /* 保存按钮样式（顶部） */
@@ -265,7 +265,7 @@ function showFeatureNotice(): void {
   align-items: center;
   justify-content: center;
   padding: 8px 14px;
-  background: linear-gradient(135deg, var(--color-surface-success-gradient-start) 0%, var(--color-surface-success-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%);
   border: none;
   border-radius: 20px;
   color: white;
@@ -277,7 +277,7 @@ function showFeatureNotice(): void {
 
 .app-header__save-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-success-soft);
+  box-shadow: 0 4px 12px var(--shadow-action-success);
 }
 
 .app-header__save-button:active {
@@ -389,7 +389,7 @@ function showFeatureNotice(): void {
 /* ============ Bookshelf 变体样式 ============ */
 
 .app-header--bookshelf {
-  background: linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
   padding: 0 24px;
   height: 64px;
   box-shadow: 0 2px 20px var(--app-header-bookshelf-shadow);

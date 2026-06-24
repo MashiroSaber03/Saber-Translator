@@ -156,6 +156,20 @@ defineEmits<{
 
 <style scoped>
 .settings-sidebar__apply-group {
+  --settings-sidebar-apply-button-start: #4b89d0;
+  --settings-sidebar-apply-button-end: #316fb6;
+  --settings-sidebar-apply-button-disabled: #c2c9d4;
+  --settings-sidebar-apply-button-hover-start: #3f7bc4;
+  --settings-sidebar-apply-button-hover-end: #2b64a9;
+  --settings-sidebar-apply-options-end: #285d99;
+  --settings-sidebar-apply-button-divider: rgba(255, 255, 255, .24);
+  --settings-sidebar-apply-menu-border: #d7e2f2;
+  --settings-sidebar-apply-menu-divider: #e3ebf6;
+  --settings-sidebar-apply-menu-shadow: rgba(22, 37, 58, .16);
+  --settings-sidebar-apply-option-text: #405473;
+  --settings-sidebar-apply-option-hover-text: #2b5f9d;
+  --settings-sidebar-apply-checkbox-accent: #4b89d0;
+
   display: flex;
   align-items: stretch;
   position: relative;
@@ -170,7 +184,7 @@ defineEmits<{
   margin: 0;
   border: none;
   border-radius: 8px 0 0 8px;
-  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-base) 0%, var(--settings-sidebar-apply-actions-surface-raised) 100%);
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-button-start) 0%, var(--settings-sidebar-apply-button-end) 100%);
   color: var(--color-text-inverse);
   font-weight: 600;
   font-size: 13px;
@@ -179,20 +193,20 @@ defineEmits<{
 }
 
 .settings-sidebar__apply-button:disabled {
-  background: var(--settings-sidebar-apply-actions-surface-muted);
+  background: var(--settings-sidebar-apply-button-disabled);
   cursor: not-allowed;
 }
 
 .settings-sidebar__apply-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-subtle) 0%, var(--settings-sidebar-apply-actions-surface-hover) 100%);
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-button-hover-start) 0%, var(--settings-sidebar-apply-button-hover-end) 100%);
 }
 
 .settings-sidebar__apply-options-button {
   width: 38px;
   border: none;
-  border-left: 1px solid var(--settings-sidebar-apply-actions-border-default);
+  border-left: 1px solid var(--settings-sidebar-apply-button-divider);
   border-radius: 0 8px 8px 0;
-  background: linear-gradient(135deg, var(--settings-sidebar-apply-actions-surface-raised) 0%, var(--settings-sidebar-apply-actions-surface-active) 100%);
+  background: linear-gradient(135deg, var(--settings-sidebar-apply-button-end) 0%, var(--settings-sidebar-apply-options-end) 100%);
   color: var(--color-text-inverse);
   font-size: 14px;
   cursor: pointer;
@@ -206,10 +220,10 @@ defineEmits<{
   max-height: 260px;
   padding: 10px;
   overflow-y: auto;
-  border: 1px solid var(--settings-sidebar-apply-actions-border-strong);
+  border: 1px solid var(--settings-sidebar-apply-menu-border);
   border-radius: 10px;
   background: var(--color-surface-base);
-  box-shadow: 0 12px 24px var(--settings-sidebar-apply-actions-shadow-default);
+  box-shadow: 0 12px 24px var(--settings-sidebar-apply-menu-shadow);
 }
 
 .apply-option {
@@ -217,7 +231,7 @@ defineEmits<{
   align-items: center;
   gap: 8px;
   min-height: 26px;
-  color: var(--settings-sidebar-apply-actions-text-secondary);
+  color: var(--settings-sidebar-apply-option-text);
   font-size: 13px;
   cursor: pointer;
 }
@@ -226,16 +240,16 @@ defineEmits<{
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: var(--settings-sidebar-apply-actions-surface-base);
+  accent-color: var(--settings-sidebar-apply-checkbox-accent);
 }
 
 .apply-option:hover {
-  color: var(--settings-sidebar-apply-actions-text-muted);
+  color: var(--settings-sidebar-apply-option-hover-text);
 }
 
 .apply-options-dropdown hr {
   margin: 6px 0;
   border: none;
-  border-top: 1px solid var(--settings-sidebar-apply-actions-border-muted);
+  border-top: 1px solid var(--settings-sidebar-apply-menu-divider);
 }
 </style>

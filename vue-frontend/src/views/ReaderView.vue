@@ -259,7 +259,7 @@ watch(
 
 .reader-header {
     height: 56px;
-    background: var(--header-bg, linear-gradient(135deg, var(--color-surface-brand-gradient-start) 0%, var(--color-surface-brand-gradient-end) 100%));
+    background: var(--header-bg, linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%));
     display: flex;
     align-items: center;
     justify-content: space-between;

@@ -37,6 +37,10 @@ defineEmits<{
 
 <style scoped>
 .navigation-buttons {
+  --settings-sidebar-navigation-button-background: #6c7784;
+  --settings-sidebar-navigation-button-disabled-background: #c2c9d4;
+  --settings-sidebar-navigation-button-hover-background: #5a6572;
+
   display: flex;
   gap: 10px;
   margin-top: 16px;
@@ -47,7 +51,7 @@ defineEmits<{
   min-height: 38px;
   border: none;
   border-radius: 8px;
-  background: var(--settings-sidebar-workflow-surface-selected);
+  background: var(--settings-sidebar-navigation-button-background);
   color: var(--color-text-inverse);
   font-weight: 600;
   font-size: 13px;
@@ -56,11 +60,11 @@ defineEmits<{
 }
 
 .navigation-button:disabled {
-  background: var(--settings-sidebar-workflow-surface-overlay);
+  background: var(--settings-sidebar-navigation-button-disabled-background);
   cursor: not-allowed;
 }
 
 .navigation-button:hover:not(:disabled) {
-  background: var(--settings-sidebar-workflow-surface-inverse);
+  background: var(--settings-sidebar-navigation-button-hover-background);
 }
 </style>

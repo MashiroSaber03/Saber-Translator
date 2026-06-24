@@ -177,8 +177,6 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
 
 <style scoped>
 .notes-modal-body {
-  --notes-panel-surface-base: rgba(239, 68, 68, .1);
-
   color: var(--insight-text-primary);
 }
 

@@ -321,7 +321,7 @@ defineExpose({
   height: 24px;
   border: none;
   border-radius: 4px;
-  background: var(--color-surface-overlay-light);
+  background: var(--color-overlay-inverse-subtle);
   color: var(--color-text-inverse);
   font-size: 14px;
   cursor: pointer;
@@ -329,7 +329,7 @@ defineExpose({
 }
 
 .panel-toggle:hover {
-  background: var(--color-surface-overlay-medium);
+  background: var(--color-overlay-inverse-muted);
 }
 
 .image-viewport {

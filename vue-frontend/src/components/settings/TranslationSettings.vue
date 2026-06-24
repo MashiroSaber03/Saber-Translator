@@ -767,7 +767,7 @@ function resetTranslatePromptToDefault() {
 .sakura-suggestion {
   margin-top: 6px;
   padding: 8px 12px;
-  background: var(--color-surface-warning-tint);
+  background: var(--color-status-warning-surface);
   border-radius: 6px;
   font-size: 12px;
   color: var(--color-status-warning);

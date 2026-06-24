@@ -363,13 +363,13 @@ defineExpose({
 .reader-controls__scroll-top-button {
   width: 48px;
   height: 48px;
-  background: var(--color-action-primary, var(--color-surface-brand-gradient-start));
+  background: var(--color-action-primary, var(--color-action-brand));
   border: none;
   border-radius: 50%;
   color: var(--color-text-inverse);
   font-size: 20px;
   cursor: pointer;
-  box-shadow: 0 4px 12px var(--shadow-brand-soft);
+  box-shadow: 0 4px 12px var(--shadow-action-brand);
   transition: all 0.3s;
   z-index: var(--z-dropdown);
 }
@@ -471,7 +471,7 @@ defineExpose({
   appearance: none;
   width: 16px;
   height: 16px;
-  background: var(--color-surface-brand-gradient-start);
+  background: var(--color-action-brand);
   border-radius: 50%;
   cursor: pointer;
 }

@@ -1,18 +1,12 @@
 :root {
-
-  --color-gray-100: #f8fafc;
-  --color-gray-200: #f4f7f9;
-  --color-gray-300: #e2e8f0;
-  --color-gray-400: #cbd5e0;
-  --color-gray-500: #a0aec0;
-  --color-gray-600: #718096;
-  --color-gray-700: #4a5568;
-  --color-gray-800: #2d3748;
-  --color-gray-900: #1a202c;
-
   --color-action-primary: #3498db;
   --color-action-primary-hover: #2980b9;
   --color-action-primary-soft: #5dade2;
+  --color-action-brand: #667eea;
+  --color-action-brand-strong: #764ba2;
+  --color-action-success: #28a745;
+  --color-action-success-strong: #20c997;
+
   --color-status-success: #5cb85c;
   --color-status-success-hover: #4cae4c;
   --color-status-success-active: #449d44;
@@ -23,50 +17,42 @@
   --color-status-warning-hover: #eb9316;
   --color-status-info: #17a2b8;
   --color-status-info-hover: #149ddd;
-  --color-accent-purple: #9b59b6;
-  --color-accent-purple-hover: #8e44ad;
+  --color-status-warning-surface: #fff3cd;
+  --color-status-warning-surface-soft: #fff8e6;
+  --color-status-warning-surface-raised: #fff3d4;
 
   --color-surface-page: #f4f7f9;
-  --color-surface-app: var(--color-gray-100);
+  --color-surface-app: #f8fafc;
   --color-surface-base: #fff;
   --color-surface-card: var(--color-surface-base);
   --color-surface-input: #f9fafc;
-  --color-surface-editor-original: #f8f8f8;
   --color-surface-panel: #fff;
   --color-surface-muted: #f3f4f6;
+  --color-surface-neutral-muted: #f1f5f9;
+  --color-surface-neutral-soft: #f5f5f5;
   --color-surface-subtle: #f5f5f5;
   --color-surface-hover: #e5e7eb;
   --color-surface-interactive-hover: #f0f4f8;
   --color-surface-quiet: #f8fafc;
   --color-surface-raised: rgba(255, 255, 255, 0.72);
-  --color-surface-overlay-light: rgba(255, 255, 255, .1);
-  --color-surface-overlay-light-muted: rgba(255, 255, 255, .1);
-  --color-surface-overlay-light-strong: rgba(255, 255, 255, .2);
-  --color-surface-overlay-light-prominent: rgba(255, 255, 255, 0.4);
-  --color-surface-overlay-light-soft: rgba(255, 255, 255, .15);
-  --color-surface-overlay-light-raised: rgba(255, 255, 255, .18);
-  --color-surface-overlay-medium: rgba(255, 255, 255, .2);
-  --color-surface-overlay-medium-muted: rgba(255, 255, 255, .2);
-  --color-surface-overlay-medium-strong: rgba(255, 255, 255, .25);
-  --color-overlay-backdrop-strong: rgba(0, 0, 0, .7);
-  --color-surface-plain: #fff;
-  --color-surface-slate-soft: #f1f5f9;
-  --color-surface-warning-tint: #fff3cd;
-  --color-surface-warning-warm: #fff3d4;
-  --color-surface-neutral-soft: #f5f5f5;
-  --color-surface-warning-subtle: #fff8e6;
   --color-surface-brand: #6366f1;
   --color-surface-brand-strong: #4f46e5;
-  --color-surface-brand-gradient-start: #667eea;
-  --color-surface-brand-gradient-end: #764ba2;
   --color-surface-accent: var(--color-action-primary);
   --color-surface-success: #27ae60;
-  --color-surface-success-gradient-start: #28a745;
-  --color-surface-success-gradient-end: #20c997;
   --color-surface-danger-soft: rgba(217, 55, 55, .12);
 
+  --color-overlay-inverse-subtle: rgba(255, 255, 255, .1);
+  --color-overlay-inverse-soft: rgba(255, 255, 255, .15);
+  --color-overlay-inverse-raised: rgba(255, 255, 255, .18);
+  --color-overlay-inverse-muted: rgba(255, 255, 255, .2);
+  --color-overlay-inverse-strong: rgba(255, 255, 255, .2);
+  --color-overlay-inverse-emphasis: rgba(255, 255, 255, .25);
+  --color-overlay-inverse-prominent: rgba(255, 255, 255, 0.4);
+  --color-overlay-backdrop-solid: #1a202c;
+  --color-overlay-backdrop-strong: rgba(0, 0, 0, .7);
+
   --color-text-default: #333;
-  --color-text-strong: var(--color-gray-900);
+  --color-text-strong: var(--color-overlay-backdrop-solid);
   --color-text-secondary: #666;
   --color-text-supporting: #777;
   --color-text-muted: #999;
@@ -79,6 +65,7 @@
   --color-text-link: #3498db;
   --color-text-danger: #dc3545;
   --color-text-danger-strong: #e74c3c;
+
   --color-border-default: #e0e0e0;
   --color-border-subtle: #ddd;
   --color-border-muted: #e2e8f0;
@@ -88,10 +75,12 @@
   --color-border-brand-gradient: #667eea;
   --color-border-accent: #3498db;
   --color-border-info: #4a90d9;
+
   --color-focus-brand-soft: rgba(99, 102, 241, .1);
   --color-focus-brand-subtle: rgba(102, 126, 234, 0.16);
+
   --shadow-soft: rgba(0, 0, 0, .08);
   --shadow-medium: rgba(0, 0, 0, .12);
-  --shadow-brand-soft: rgba(102, 126, 234, .4);
-  --shadow-success-soft: rgba(40, 167, 69, .4);
+  --shadow-action-brand: rgba(102, 126, 234, .4);
+  --shadow-action-success: rgba(40, 167, 69, .4);
 }

@@ -1,6 +1,6 @@
 # 前端 UI 架构规范
 
-> 最后更新：2026-06-24
+> 最后更新：2026-06-25
 > 目标：新增和重构 UI 默认走统一 token、layout shell、overlay layer 和 primitives。
 
 ## 样式分层
@@ -28,6 +28,8 @@
 颜色、圆角、阴影、断点、z-index 必须来自 `src/styles/tokens/*`。业务组件禁止新增硬编码颜色、`--ui-color-*`、`--border-radius-*`、裸 `z-index` 数字和裸 `@media (...px)` 断点。
 
 业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 scoped owner token、`--radius-*`、`--z-*`。`--palette-*` 中间层不再使用；跨 owner 的颜色值归属到 semantic/component/domain token，单组件私有视觉值只归属到该组件 scoped owner 根变量。历史值命名颜色 token 已废弃，全仓库不得出现。
+
+Owner token 不是状态矩阵仓库。组件 scoped 根变量必须同时满足三个条件：命名包含明确 owner 和 UI 角色，至少有一个真实 `var(...)` / `setProperty` / `removeProperty` 引用，且定义位置属于消费它的组件 owner。不要在父组件集中定义子 section、toolbar、modal body、canvas、card 等私有视觉变量；这些变量应下沉到对应子组件根选择器。`npm run lint:ui` 会拒绝未被引用的 owner token 定义，`npm run lint:ui:audit` 会列出 owner token density 作为维护审查信号。
 
 `domain.css` 只保留跨页面、跨业务域共享主题 token；当前只允许 `--insight-*` 这类被页面和多个子组件共同消费的 domain theme。单个组件或页面私有 token 必须定义在自己的 `<style scoped>` owner 根选择器中；`domain.css` 超过 50 个 token、出现 `*-panel-*`、`*-modal-*`、`*-card-*`、`*-tab-*`、`*-canvas-*` 等组件私有 token，或出现 `variant-012` 这类生成式命名，都会让 `npm run lint:ui` 失败。
 
@@ -67,9 +69,9 @@
 
 ## 自动化门禁
 
-`npm run lint:ui` 对 UI 架构债使用零预算：旧兼容变量定义/引用、旧短别名变量、业务视觉兼容 token、历史值命名颜色 token、编号式 owner token、raw form controls、`variant="tool"`、`variant="unstyled"`、普通 script CSS import、`style src`、CSS `@import`、`*.generated-*.css`、`:global()`、`:deep()`、旧 settings shared 类、未归属的全局选择器、旧实现心智注释和业务 CSS 直接选择 primitive 内部类都会失败。默认输出必须保持安静，通过时只输出 `UI architecture check passed`。
+`npm run lint:ui` 对 UI 架构债使用零预算：旧兼容变量定义/引用、旧短别名变量、业务视觉兼容 token、实现型 semantic token、未引用 owner token、历史值命名颜色 token、编号式 owner token、raw form controls、`variant="tool"`、`variant="unstyled"`、普通 script CSS import、`style src`、CSS `@import`、`*.generated-*.css`、`:global()`、`:deep()`、旧 settings shared 类、未归属的全局选择器、旧实现心智注释和业务 CSS 直接选择 primitive 内部类都会失败。默认输出必须保持安静，通过时只输出 `UI architecture check passed`。
 
-`npm run lint:ui:audit` 用于主动维护审查：它只输出 token 文件数量、`:root` token 数量、token 依赖数量和关键视觉覆盖数量。它不输出 review candidates、已登记大文件或待处理 layout bypass；如果某个文件从“保留更清晰”变成“多 owner 混杂”，应按真实 UI 边界拆分或抽 composable，并同步更新维护策略。
+`npm run lint:ui:audit` 用于主动维护审查：它输出 token 文件数量、`:root` token 数量、token 依赖数量、关键视觉覆盖数量、heavy owner review signals 和 owner token density signals。它不输出 accepted debt 或待处理 layout bypass；如果某个文件从“保留更清晰”变成“多 owner 混杂”，应按真实 UI 边界拆分或抽 composable，并同步更新维护策略。
 
 关键页面状态必须有视觉覆盖登记。默认 `lint:ui` 会检查 `tests/visual/ui-regression.spec.ts` 中是否仍覆盖 Translate 普通/已加载/编辑态、EditWorkspace 选中气泡编辑面板、Insight 侧栏、Reader、Character Studio 等高风险 UI shell。新增或重构关键状态时，应补视觉测试，而不是只依赖普通页面截图。
 

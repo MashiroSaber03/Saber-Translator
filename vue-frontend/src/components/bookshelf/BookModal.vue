@@ -397,7 +397,7 @@ async function saveBook() {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: var(--color-action-primary, var(--color-surface-brand-gradient-start));
+  background: var(--color-action-primary, var(--color-action-brand));
   color: var(--color-text-inverse);
   font-size: 12px;
   border-radius: 4px;

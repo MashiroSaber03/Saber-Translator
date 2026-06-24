@@ -216,10 +216,6 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
   --character-studio-preview-details-shadow-default: rgba(37, 99, 199, .16);
   --character-studio-preview-details-shadow-raised: rgba(37, 99, 199, .18);
   --character-studio-preview-details-surface-base: rgba(20, 56, 106, .06);
-  --character-studio-preview-details-surface-raised: rgba(244, 248, 255, .84);
-  --character-studio-preview-details-surface-muted: rgba(237, 244, 255, .96);
-  --character-studio-preview-details-surface-subtle: rgba(244, 248, 255, .92);
-  --character-studio-preview-details-surface-hover: rgba(244, 248, 255, .9);
   --character-studio-preview-details-surface-active: #2563c7;
   --character-studio-preview-details-surface-selected: #4d86ee;
   --character-studio-preview-details-text-primary: #16365b;
@@ -238,20 +234,15 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
   --character-studio-preview-shell-text-subtle: #14304c;
   --character-studio-preview-shell-text-supporting: #5f7591;
   --character-studio-preview-workspace-border-default: rgba(25, 55, 94, .08);
-  --character-studio-preview-workspace-surface-active: rgba(225, 235, 250, .72);
   --character-studio-preview-workspace-surface-base: rgba(244, 248, 255, .95);
-  --character-studio-preview-workspace-surface-contrast: rgba(37, 99, 199, .08);
   --character-studio-preview-workspace-surface-hover: rgba(255, 255, 255, .88);
-  --character-studio-preview-workspace-surface-inverse: rgba(255, 255, 255, .94);
   --character-studio-preview-workspace-surface-muted: rgba(247, 250, 254, .96);
   --character-studio-preview-workspace-surface-overlay: rgba(244, 248, 255, .94);
   --character-studio-preview-workspace-surface-raised: rgba(238, 244, 252, .9);
-  --character-studio-preview-workspace-surface-selected: rgba(241, 246, 255, .96);
   --character-studio-preview-workspace-surface-soft: rgba(244, 248, 255, .88);
   --character-studio-preview-workspace-surface-subtle: rgba(20, 56, 106, .08);
   --character-studio-preview-workspace-surface-tint: rgba(255, 255, 255, .86);
   --character-studio-preview-workspace-text-primary: #5f7591;
-  --character-studio-preview-workspace-text-secondary: #14304c;
 
   display: flex;
   flex-direction: column;

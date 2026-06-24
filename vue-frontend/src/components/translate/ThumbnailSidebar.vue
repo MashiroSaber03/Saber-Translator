@@ -510,7 +510,7 @@ onMounted(() => {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--thumbnail-sidebar-border-muted);
-  background: linear-gradient(135deg, var(--color-surface-warning-subtle) 0%, var(--color-surface-warning-warm) 100%);
+  background: linear-gradient(135deg, var(--color-status-warning-surface-soft) 0%, var(--color-status-warning-surface-raised) 100%);
   border-radius: 8px;
   cursor: pointer;
   font: inherit;
@@ -520,7 +520,7 @@ onMounted(() => {
 }
 
 .folder-item:hover {
-  background: linear-gradient(135deg, var(--color-surface-warning-warm) 0%, var(--thumbnail-sidebar-surface-hover) 100%);
+  background: linear-gradient(135deg, var(--color-status-warning-surface-raised) 0%, var(--thumbnail-sidebar-surface-hover) 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px var(--thumbnail-sidebar-shadow-default);
 }
