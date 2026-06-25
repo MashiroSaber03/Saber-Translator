@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 /**
  * 首次使用引导组件
@@ -20,7 +20,7 @@ import BaseModal from './BaseModal.vue'
 // ============================================================
 
 /** 设置提醒关闭状态的 localStorage 存储键 */
-const GUIDE_SHOWN_KEY = 'saber_translator_dismiss_setup_reminder'
+const DISMISS_SETUP_REMINDER_KEY = 'saber_translator_dismiss_setup_reminder'
 
 // ============================================================
 // Props 和 Emits
@@ -47,7 +47,7 @@ const dontShowAgain = ref(false)
 
 onMounted(() => {
   // 检查用户是否已关闭设置提醒
-  const dismissed = localStorage.getItem(GUIDE_SHOWN_KEY)
+  const dismissed = localStorage.getItem(DISMISS_SETUP_REMINDER_KEY)
   if (dismissed !== 'true') {
     // 首次使用或未勾选"不再显示"，显示引导弹窗
     showGuide.value = true
@@ -64,7 +64,7 @@ onMounted(() => {
 function closeGuide() {
   if (dontShowAgain.value) {
     // 保存"不再显示"状态
-    localStorage.setItem(GUIDE_SHOWN_KEY, 'true')
+    localStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
   }
   showGuide.value = false
 }
@@ -73,8 +73,8 @@ function closeGuide() {
  * 打开设置并关闭引导
  */
 function openSettingsAndClose() {
-  // 保存已显示状态（用户主动点击了设置按钮）
-  localStorage.setItem(GUIDE_SHOWN_KEY, 'true')
+  // 用户主动打开设置时关闭后续设置提醒。
+  localStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
   showGuide.value = false
   emit('openSettings')
 }
@@ -83,7 +83,7 @@ function openSettingsAndClose() {
  * 重置引导状态（用于测试）
  */
 function resetGuideState() {
-  localStorage.removeItem(GUIDE_SHOWN_KEY)
+  localStorage.removeItem(DISMISS_SETUP_REMINDER_KEY)
 }
 
 // 暴露方法供外部调用
@@ -136,14 +136,10 @@ defineExpose({
       </div>
       
       <div class="guide-footer">
-        <label class="dont-show-option">
-          <UiInput 
-            type="checkbox" 
-            class="guide-checkbox"
-            v-model="dontShowAgain"
-          />
-          <span>不再显示此提醒</span>
-        </label>
+        <UiCheckbox
+          v-model="dontShowAgain"
+          label="不再显示此提醒"
+        />
       </div>
     </div>
   </BaseModal>
@@ -230,16 +226,4 @@ defineExpose({
   border-top: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.dont-show-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text-supporting);
-  cursor: pointer;
-}
-
-.guide-checkbox {
-  cursor: pointer;
-}
 </style>

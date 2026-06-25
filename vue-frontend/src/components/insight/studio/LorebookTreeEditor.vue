@@ -122,21 +122,21 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 
 <style scoped>
 .workshop-card {
-  --lorebook-tree-editor-border-default: rgba(34, 72, 125, .12);
-  --lorebook-tree-editor-shadow-default: rgba(21, 44, 77, .08);
-  --lorebook-tree-editor-surface-base: rgba(255, 255, 255, .84);
-  --lorebook-tree-editor-surface-raised: rgba(41, 96, 193, .1);
-  --lorebook-tree-editor-surface-muted: rgba(18, 47, 86, .08);
-  --lorebook-tree-editor-text-primary: #5d738c;
-  --lorebook-tree-editor-text-secondary: #275ebe;
-  --lorebook-tree-editor-text-muted: #244979;
-  --lorebook-tree-editor-text-subtle: #72869c;
+  --lorebook-tree-editor-card-border: rgba(34, 72, 125, .12);
+  --lorebook-tree-editor-card-shadow: rgba(21, 44, 77, .08);
+  --lorebook-tree-editor-card-background: rgba(255, 255, 255, .84);
+  --lorebook-tree-editor-add-action-background: rgba(41, 96, 193, .1);
+  --lorebook-tree-editor-import-action-background: rgba(18, 47, 86, .08);
+  --lorebook-tree-editor-description-text: #5d738c;
+  --lorebook-tree-editor-add-action-text: #275ebe;
+  --lorebook-tree-editor-import-action-text: #244979;
+  --lorebook-tree-editor-empty-text: #72869c;
 
   border-radius: 22px;
   padding: 18px;
-  background: var(--lorebook-tree-editor-surface-base);
-  border: 1px solid var(--lorebook-tree-editor-border-default);
-  box-shadow: 0 18px 38px var(--lorebook-tree-editor-shadow-default);
+  background: var(--lorebook-tree-editor-card-background);
+  border: 1px solid var(--lorebook-tree-editor-card-border);
+  box-shadow: 0 18px 38px var(--lorebook-tree-editor-card-shadow);
 }
 
 .section-head {
@@ -152,7 +152,7 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 
 .section-head p {
   margin: 6px 0 0;
-  color: var(--lorebook-tree-editor-text-primary);
+  color: var(--lorebook-tree-editor-description-text);
   font-size: 13px;
 }
 
@@ -171,13 +171,13 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 }
 
 .action-secondary {
-  background: var(--lorebook-tree-editor-surface-raised);
-  color: var(--lorebook-tree-editor-text-secondary);
+  background: var(--lorebook-tree-editor-add-action-background);
+  color: var(--lorebook-tree-editor-add-action-text);
 }
 
 .action-ghost {
-  background: var(--lorebook-tree-editor-surface-muted);
-  color: var(--lorebook-tree-editor-text-muted);
+  background: var(--lorebook-tree-editor-import-action-background);
+  color: var(--lorebook-tree-editor-import-action-text);
 }
 
 .action-secondary:disabled,
@@ -187,7 +187,7 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 }
 
 .placeholder {
-  color: var(--lorebook-tree-editor-text-subtle);
+  color: var(--lorebook-tree-editor-empty-text);
   font-size: 13px;
 }
 

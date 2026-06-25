@@ -92,11 +92,16 @@ withDefaults(defineProps<{
   display: block;
 }
 
-.ui-field.ui-settings-field :slotted(label:not(.ui-checkbox-label)) {
+.ui-field.ui-settings-field :slotted(label:not(.ui-checkbox-label, .ui-checkbox)) {
   display: block;
   margin-bottom: 6px;
   font-size: 0.95em;
   font-weight: 500;
+}
+
+.ui-field.ui-settings-field :slotted(.ui-checkbox--with-content) {
+  display: flex;
+  align-items: center;
 }
 
 .ui-field :slotted(.ui-checkbox-label) {

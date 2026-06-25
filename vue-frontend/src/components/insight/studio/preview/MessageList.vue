@@ -147,7 +147,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   overflow: auto;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--character-studio-preview-workspace-surface-base), var(--character-studio-preview-workspace-surface-raised));
+  background: linear-gradient(180deg, var(--character-studio-preview-message-list-background-start), var(--character-studio-preview-message-list-background-end));
 }
 
 .message-card {
@@ -155,12 +155,12 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 18px;
-  background: var(--character-studio-preview-workspace-surface-muted);
+  background: var(--character-studio-preview-assistant-message-background);
 }
 
 .message-card.user {
   margin-left: auto;
-  background: var(--character-studio-preview-workspace-surface-subtle);
+  background: var(--character-studio-preview-user-message-background);
 }
 
 .message-card.assistant {
@@ -169,7 +169,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 }
 
 .message-role {
-  color: var(--character-studio-preview-workspace-text-primary);
+  color: var(--character-studio-preview-message-role-text);
   font-size: 11px;
 }
 
@@ -202,7 +202,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   padding: 8px;
   border: 1px solid var(--studio-border-default);
   border-radius: 14px;
-  background: var(--character-studio-preview-workspace-surface-tint);
+  background: var(--character-studio-preview-attachment-card-background);
   text-align: left;
 }
 
@@ -255,8 +255,8 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 
 .action-primary {
   padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-preview-details-surface-active), var(--character-studio-preview-details-surface-selected));
-  box-shadow: 0 12px 24px var(--character-studio-preview-details-shadow-raised);
+  background: linear-gradient(135deg, var(--character-studio-preview-primary-action-background-start), var(--character-studio-preview-primary-action-background-end));
+  box-shadow: 0 12px 24px var(--character-studio-preview-primary-action-shadow);
   color: var(--color-text-inverse);
 }
 

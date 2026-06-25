@@ -1,5 +1,7 @@
 # Frontend Full Reaudit 2026-06-24
 
+> Historical record: this checklist is retained as scan-assisted and partial manual reaudit evidence. It is not the current final progress source, and any `via source scan` evidence here does not replace the 2026-06-25 manual line-by-line checklist.
+
 本清单是本轮独立复审记录。上一轮 `frontend-full-audit-checklist.md` 作为历史证据保留，本轮从当前工作树重新检查源码、测试、配置和文档。
 
 ## Status Legend

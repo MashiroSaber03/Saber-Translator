@@ -401,8 +401,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
    * 更新自动字号
    * 切换后触发 autoFontSizeChanged 事件，由父组件决定是否重绘。
    */
-  function updateAutoFontSize(event: Event) {
-    const checked = (event.target as HTMLInputElement).checked
+  function updateAutoFontSize(checked: boolean) {
     settingsStore.updateTextStyle({ autoFontSize: checked })
     emit('autoFontSizeChanged', checked)
   }
@@ -505,8 +504,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   /**
    * 更新是否使用自动文字颜色
    */
-  function updateUseAutoTextColor(event: Event) {
-    const checked = (event.target as HTMLInputElement).checked
+  function updateUseAutoTextColor(checked: boolean) {
     settingsStore.updateTextStyle({ useAutoTextColor: checked })
     emit('autoTextColorChanged', checked)
   }
@@ -514,8 +512,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   /**
    * 更新描边启用状态
    */
-  function updateStrokeEnabled(event: Event) {
-    const checked = (event.target as HTMLInputElement).checked
+  function updateStrokeEnabled(checked: boolean) {
     settingsStore.updateTextStyle({ strokeEnabled: checked })
     emit('textStyleChanged', 'strokeEnabled', checked)
   }
@@ -615,8 +612,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     void persistWorkflowPreferences(rememberWorkflowModeEnabled.value, workflowMode)
   }
 
-  function handleRememberWorkflowModeChange(event: Event) {
-    const checked = (event.target as HTMLInputElement).checked
+  function handleRememberWorkflowModeChange(checked: boolean) {
     hasUserChangedRememberWorkflowMode.value = true
     rememberWorkflowModeEnabled.value = checked
     void persistWorkflowPreferences(checked, selectedWorkflowMode.value)

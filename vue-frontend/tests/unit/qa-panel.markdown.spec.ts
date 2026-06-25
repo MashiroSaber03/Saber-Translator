@@ -16,6 +16,14 @@ vi.mock('@/api/insight', () => ({
 
 import QAPanel from '@/components/insight/QAPanel.vue'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('QAPanel Markdown rendering', () => {
   beforeEach(() => {
     const pinia = createPinia()
@@ -53,5 +61,47 @@ describe('QAPanel Markdown rendering', () => {
     expect(answerHtml).not.toContain('onerror')
     expect(answerHtml).not.toContain('javascript:')
     expect(answerHtml).not.toContain('<script')
+  })
+
+  it('ignores stale chat responses after switching books', async () => {
+    const staleResponse = deferred<{
+      success: true
+      answer: string
+      citations: never[]
+      mode: 'precise'
+    }>()
+    sendChatMock.mockReturnValueOnce(staleResponse.promise)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(QAPanel, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    await wrapper.find('textarea').setValue('这页发生了什么？')
+    await wrapper.find('.send-btn').trigger('click')
+    expect(sendChatMock).toHaveBeenCalledWith(
+      'book-1',
+      '这页发生了什么？',
+      expect.any(Object)
+    )
+
+    store.currentBookId = 'book-2'
+    staleResponse.resolve({
+      success: true,
+      answer: 'book-1 stale answer',
+      citations: [],
+      mode: 'precise',
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('book-1 stale answer')
+    expect(store.qaHistory.some(message => message.isLoading)).toBe(false)
+    expect(store.isStreaming).toBe(false)
   })
 })

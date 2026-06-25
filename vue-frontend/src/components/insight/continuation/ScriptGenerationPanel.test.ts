@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import ScriptGenerationPanel from './ScriptGenerationPanel.vue'
+import { getAvailableImages } from '@/api/continuation'
 
 vi.mock('@/api/continuation', () => ({
   getAvailableImages: vi.fn().mockResolvedValue({
@@ -17,6 +18,14 @@ function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
   const button = wrapper.findAll('button').find(node => node.text().includes(text))
   expect(button).toBeTruthy()
   return button!
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(resolver => {
+    resolve = resolver
+  })
+  return { promise, resolve }
 }
 
 describe('ScriptGenerationPanel', () => {
@@ -117,5 +126,59 @@ describe('ScriptGenerationPanel', () => {
         referenceImageCount: 5,
       },
     ])
+  })
+
+  it('ignores stale reference-image responses after the book changes', async () => {
+    const bookOneImages = createDeferred<{
+      success: boolean
+      original_images: Array<{ page_number: number; path: string; has_image: boolean; token: string }>
+    }>()
+    const bookTwoImages = createDeferred<{
+      success: boolean
+      original_images: Array<{ page_number: number; path: string; has_image: boolean; token: string }>
+    }>()
+    vi.mocked(getAvailableImages)
+      .mockReturnValueOnce(bookOneImages.promise)
+      .mockReturnValueOnce(bookTwoImages.promise)
+
+    const wrapper = mount(ScriptGenerationPanel, {
+      props: {
+        script: null,
+        isGenerating: false,
+        bookId: 'book-1',
+      },
+      global: {
+        stubs: {
+          ReferenceImageSelector: {
+            props: ['originalImages'],
+            template: '<div class="selector-state">{{ originalImages.map(image => image.token).join(",") }}</div>',
+          },
+        },
+      },
+    })
+
+    await wrapper.setProps({ bookId: 'book-2' })
+
+    bookTwoImages.resolve({
+      success: true,
+      original_images: [
+        { page_number: 2, path: '/tmp/book-2.png', has_image: true, token: 'book-2-token' },
+      ],
+    })
+    await nextTick()
+    await Promise.resolve()
+
+    expect(wrapper.find('.selector-state').text()).toBe('book-2-token')
+
+    bookOneImages.resolve({
+      success: true,
+      original_images: [
+        { page_number: 1, path: '/tmp/book-1.png', has_image: true, token: 'book-1-token' },
+      ],
+    })
+    await nextTick()
+    await Promise.resolve()
+
+    expect(wrapper.find('.selector-state').text()).toBe('book-2-token')
   })
 })

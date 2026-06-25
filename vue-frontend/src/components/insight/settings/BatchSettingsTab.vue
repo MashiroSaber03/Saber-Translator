@@ -1,6 +1,7 @@
 <script setup lang="ts">
 
 import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import { ref, computed } from 'vue'
@@ -170,10 +171,14 @@ defineExpose({ getConfig, syncFromStore })
             class="layer-units-input"
             @change="updateCustomLayer(idx, 'units', parseInt(($event.target as HTMLInputElement).value) || 0)"
           />
-          <label class="layer-align-label">
-            <UiInput type="checkbox" :checked="layer.align" class="layer-align-checkbox" @change="updateCustomLayer(idx, 'align', ($event.target as HTMLInputElement).checked)" />
-            <span class="layer-align-text">章节<br>对齐</span>
-          </label>
+          <div class="layer-align-label">
+            <UiCheckbox
+              :model-value="layer.align"
+              class="layer-align-checkbox"
+              label="章节对齐"
+              @update:model-value="updateCustomLayer(idx, 'align', $event)"
+            />
+          </div>
           <UiButton variant="toolbar" v-if="canDeleteLayer(idx)" type="button" class="layer-delete-btn" @click="removeCustomLayer(idx)">删除</UiButton>
         </div>
       </div>
@@ -200,10 +205,10 @@ defineExpose({ getConfig, syncFromStore })
 
 <style scoped>
 .insight-settings-content {
-  --batch-settings-tab-border-default: rgba(99, 102, 241, .2);
-  --batch-settings-tab-surface-base: rgba(99, 102, 241, .05);
-  --batch-settings-tab-surface-raised: #ef4444;
-  --batch-settings-tab-surface-muted: #dc2626;
+  --batch-settings-tab-estimate-border: rgba(99, 102, 241, .2);
+  --batch-settings-tab-estimate-background-end: rgba(99, 102, 241, .05);
+  --batch-settings-tab-delete-background: #ef4444;
+  --batch-settings-tab-delete-hover-background: #dc2626;
   --ui-input-padding: 10px 12px;
   --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
   --ui-input-radius: 6px;
@@ -256,12 +261,6 @@ defineExpose({ getConfig, syncFromStore })
   color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
-.layer-align-checkbox {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
 .insight-settings-content .batch-info-box {
   margin-top: 16px;
   padding: 12px;
@@ -296,9 +295,9 @@ defineExpose({ getConfig, syncFromStore })
 .insight-settings-content .batch-estimate-box {
   margin-top: 12px;
   padding: 10px 12px;
-  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--batch-settings-tab-surface-base));
+  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--batch-settings-tab-estimate-background-end));
   border-radius: 6px;
-  border: 1px solid var(--batch-settings-tab-border-default);
+  border: 1px solid var(--batch-settings-tab-estimate-border);
 }
 
 .insight-settings-content .batch-estimate-box p {
@@ -372,17 +371,12 @@ defineExpose({ getConfig, syncFromStore })
 }
 
 .insight-settings-content .layer-align-checkbox {
-  width: 16px;
-  height: 16px;
-}
-
-.insight-settings-content .layer-align-text {
-  line-height: 1.2;
+  align-items: center;
 }
 
 .insight-settings-content .layer-delete-btn {
   padding: 6px 12px;
-  background: var(--batch-settings-tab-surface-raised);
+  background: var(--batch-settings-tab-delete-background);
   color: var(--color-text-inverse);
   border: none;
   border-radius: 6px;
@@ -392,7 +386,7 @@ defineExpose({ getConfig, syncFromStore })
 }
 
 .insight-settings-content .layer-delete-btn:hover {
-  background: var(--batch-settings-tab-surface-muted);
+  background: var(--batch-settings-tab-delete-hover-background);
 }
 
 .insight-settings-content .layer-add-btn {

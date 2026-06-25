@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppHeader from '@/components/common/AppHeader.vue'
@@ -10,6 +10,8 @@ import { toastService } from '@/utils/toast'
 vi.mock('vue-router', () => ({
   useRoute: () => ({ path: '/translate' }),
 }))
+
+enableAutoUnmount(afterEach)
 
 const routerLinkStub = {
   props: ['to'],

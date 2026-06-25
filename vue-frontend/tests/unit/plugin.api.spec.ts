@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   getMock,
@@ -27,6 +27,11 @@ describe('plugin api import/export helpers', () => {
     postMock.mockReset()
     deleteMock.mockReset()
     uploadMock.mockReset()
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 

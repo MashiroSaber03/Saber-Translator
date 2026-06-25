@@ -4,6 +4,7 @@ import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { ref, computed } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
@@ -257,18 +258,18 @@ defineExpose({ getConfig, syncFromStore })
     </div>
 
     <div class="insight-settings-field">
-      <label class="ui-checkbox-label">
-        <UiInput v-model="forceJsonOutput" type="checkbox" class="llm-settings-tab__checkbox-input" />
-        <span>强制 JSON 输出</span>
-      </label>
+      <UiCheckbox
+        v-model="forceJsonOutput"
+        label="强制 JSON 输出"
+      />
       <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object</p>
     </div>
 
     <div class="insight-settings-field">
-      <label class="ui-checkbox-label">
-        <UiInput v-model="useStream" type="checkbox" class="llm-settings-tab__checkbox-input" />
-        <span>使用流式请求</span>
-      </label>
+      <UiCheckbox
+        v-model="useStream"
+        label="使用流式请求"
+      />
     </div>
 
     <div class="insight-settings-field">
@@ -341,21 +342,6 @@ defineExpose({ getConfig, syncFromStore })
   font-size: 12px;
   color: var(--color-text-supporting, var(--color-text-secondary));
 }
-
-.insight-settings-content .ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-weight: normal;
-}
-
-.llm-settings-tab__checkbox-input {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
 
 .insight-settings-content .form-row {
   display: flex;

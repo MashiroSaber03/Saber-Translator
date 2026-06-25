@@ -38,6 +38,8 @@ const showMobileSidebar = ref(false)
 const showMobileWorkspace = ref(false)
 let statusPollingTimer: ReturnType<typeof setInterval> | null = null
 let refreshDataTimer: ReturnType<typeof setTimeout> | null = null
+let bookLoadSequence = 0
+let isInsightViewMounted = false
 
 const loadedBookDetail = ref<{
   id: string
@@ -100,14 +102,20 @@ function setLoadedBookDetail(book: BookData): void {
   }
 }
 
+function isCurrentBookLoad(loadId: number, bookId: string): boolean {
+  return isInsightViewMounted && loadId === bookLoadSequence && insightStore.currentBookId === bookId
+}
+
 async function loadBook(bookId: string): Promise<void> {
   if (!bookId) return
 
+  const loadId = ++bookLoadSequence
   insightStore.setCurrentBook(bookId)
   insightStore.setLoading(true)
 
   try {
     const bookData = await getBookDetail(bookId)
+    if (!isCurrentBookLoad(loadId, bookId)) return
 
     if (!bookData.success) {
       throw new Error(bookData.error || '获取书籍信息失败')
@@ -117,11 +125,13 @@ async function loadBook(bookId: string): Promise<void> {
       setLoadedBookDetail(bookData.book)
     }
 
-    await loadAnalysisStatus()
+    await loadAnalysisStatus(bookId)
+    if (!isCurrentBookLoad(loadId, bookId)) return
 
     if (insightStore.chapters.length === 0) {
       try {
         const chaptersResponse = await insightApi.getInsightChapters(bookId)
+        if (!isCurrentBookLoad(loadId, bookId)) return
         if (chaptersResponse.success && chaptersResponse.chapters && chaptersResponse.chapters.length > 0) {
           insightStore.setChapters(chaptersResponse.chapters.map(ch => ({
             id: ch.id,
@@ -137,6 +147,7 @@ async function loadBook(bookId: string): Promise<void> {
     }
 
     await insightStore.loadNotesFromAPI()
+    if (!isCurrentBookLoad(loadId, bookId)) return
 
     router.replace({ query: { book: bookId } })
 
@@ -145,17 +156,22 @@ async function loadBook(bookId: string): Promise<void> {
     }
 
   } catch (error) {
-    insightStore.setError(error instanceof Error ? error.message : '加载书籍失败')
+    if (isCurrentBookLoad(loadId, bookId)) {
+      insightStore.setError(error instanceof Error ? error.message : '加载书籍失败')
+    }
   } finally {
-    insightStore.setLoading(false)
+    if (isCurrentBookLoad(loadId, bookId)) {
+      insightStore.setLoading(false)
+    }
   }
 }
 
-async function loadAnalysisStatus(): Promise<void> {
-  if (!insightStore.currentBookId) return
+async function loadAnalysisStatus(bookId = insightStore.currentBookId): Promise<void> {
+  if (!bookId) return
 
   try {
-    const response = await insightApi.getAnalysisStatus(insightStore.currentBookId)
+    const response = await insightApi.getAnalysisStatus(bookId)
+    if (!isInsightViewMounted || insightStore.currentBookId !== bookId) return
     if (response.success) {
       if (response.analyzed_pages_count !== undefined) {
         insightStore.setAnalyzedPagesCount(response.analyzed_pages_count)
@@ -280,7 +296,9 @@ function closeChapterSelectModal(): void {
 }
 
 onMounted(async () => {
-  await bookshelfStore.fetchBooks()
+  isInsightViewMounted = true
+  await bookshelfStore.loadBooks()
+  if (!isInsightViewMounted) return
 
   const bookId = route.query.book as string
   if (bookId) {
@@ -289,6 +307,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  isInsightViewMounted = false
+  bookLoadSequence += 1
   stopStatusPolling()
 })
 

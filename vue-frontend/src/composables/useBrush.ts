@@ -94,16 +94,21 @@ export function useBrush(callbacks?: BrushCallbacks) {
   /** 笔刷临时画布 */
   let brushCanvas: HTMLCanvasElement | null = null
   let brushCtx: CanvasRenderingContext2D | null = null
+  let isOwnerDisposed = false
 
   function isSameCurrentImage(expectedImageId: string): boolean {
     return imageStore.currentImage?.id === expectedImageId
+  }
+
+  function isOwnerActiveForImage(expectedImageId: string): boolean {
+    return !isOwnerDisposed && isSameCurrentImage(expectedImageId)
   }
 
   function updateCurrentImageIfStillCurrent(
     expectedImageId: string,
     updates: Parameters<typeof imageStore.updateCurrentImage>[0]
   ): boolean {
-    if (!isSameCurrentImage(expectedImageId)) {
+    if (!isOwnerActiveForImage(expectedImageId)) {
       return false
     }
     imageStore.updateCurrentImage(updates)
@@ -277,7 +282,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       }
 
       // 触发重新渲染回调
-      if (isSameCurrentImage(expectedImageId)) {
+      if (isOwnerActiveForImage(expectedImageId)) {
         callbacks?.onBrushComplete?.()
       }
     }
@@ -555,6 +560,11 @@ export function useBrush(callbacks?: BrushCallbacks) {
     return new Promise((resolve) => {
       const img = new Image()
       img.onload = async () => {
+        if (!isOwnerActiveForImage(expectedImageId)) {
+          resolve()
+          return
+        }
+
         const imgWidth = img.naturalWidth
         const imgHeight = img.naturalHeight
 
@@ -601,7 +611,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
             maskData: maskBase64
           })
 
-          if (!isSameCurrentImage(expectedImageId)) {
+          if (!isOwnerActiveForImage(expectedImageId)) {
             resolve()
             return
           }
@@ -629,7 +639,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
             throw new Error(response.error || 'LAMA 修复返回无效数据')
           }
         } catch (error) {
-          if (!isSameCurrentImage(expectedImageId)) {
+          if (!isOwnerActiveForImage(expectedImageId)) {
             resolve()
             return
           }
@@ -641,7 +651,9 @@ export function useBrush(callbacks?: BrushCallbacks) {
         resolve()
       }
       img.onerror = () => {
-        showToast('加载图像失败，无法进行 LAMA 修复', 'error')
+        if (isOwnerActiveForImage(expectedImageId)) {
+          showToast('加载图像失败，无法进行 LAMA 修复', 'error')
+        }
         resolve()
       }
       img.src = baseImageSrc
@@ -722,6 +734,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
   // ============================================================
 
   onUnmounted(() => {
+    isOwnerDisposed = true
     exitBrushMode()
   })
 

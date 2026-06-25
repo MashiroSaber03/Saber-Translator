@@ -475,40 +475,40 @@ async function handleImportFile(event: Event): Promise<void> {
 <style scoped>/* 结果区域卡片 */
 .image-result-display.result-section {
   /* owner tokens: image-result-display */
-  --image-result-display-shadow-default: rgba(0, 0, 0, .08);
-  --image-result-display-shadow-raised: rgba(0, 0, 0, .12);
-  --image-result-display-shadow-floating: rgba(52, 152, 219, .2);
-  --image-result-display-shadow-strong: rgba(52, 152, 219, .3);
-  --image-result-display-shadow-soft: rgba(39, 174, 96, .2);
-  --image-result-display-shadow-focus: rgba(243, 156, 18, .2);
-  --image-result-display-shadow-glow: rgba(243, 156, 18, .3);
-  --image-result-display-shadow-inset: rgba(0, 0, 0, .05);
-  --image-result-display-shadow-overlay: rgba(0, 0, 0, .1);
-  --image-result-display-shadow-brand: rgba(39, 174, 96, .3);
-  --image-result-display-surface-base: #2980b9;
-  --image-result-display-surface-raised: #1f6aa6;
-  --image-result-display-surface-muted: #2ecc71;
-  --image-result-display-surface-subtle: #e67e22;
-  --image-result-display-surface-hover: #f39c12;
-  --image-result-display-surface-active: #d35400;
-  --image-result-display-surface-selected: #f9f9f9;
-  --image-result-display-surface-overlay: #1e8449;
-  --image-result-display-text-primary: #555;
-  --image-result-display-text-secondary: #4a90d9;
+  --image-result-display-card-shadow: rgba(0, 0, 0, .08);
+  --image-result-display-card-hover-shadow: rgba(0, 0, 0, .12);
+  --image-result-display-control-shadow: rgba(52, 152, 219, .2);
+  --image-result-display-control-hover-shadow: rgba(52, 152, 219, .3);
+  --image-result-display-edit-active-shadow: rgba(39, 174, 96, .2);
+  --image-result-display-retry-shadow: rgba(243, 156, 18, .2);
+  --image-result-display-retry-hover-shadow: rgba(243, 156, 18, .3);
+  --image-result-display-image-frame-shadow: rgba(0, 0, 0, .05);
+  --image-result-display-action-shadow: rgba(0, 0, 0, .1);
+  --image-result-display-export-hover-shadow: rgba(39, 174, 96, .3);
+  --image-result-display-control-background-start: #2980b9;
+  --image-result-display-control-hover-background-start: #1f6aa6;
+  --image-result-display-success-background-end: #2ecc71;
+  --image-result-display-retry-background-start: #e67e22;
+  --image-result-display-retry-background-end: #f39c12;
+  --image-result-display-retry-hover-background-start: #d35400;
+  --image-result-display-panel-background: #f9f9f9;
+  --image-result-display-export-hover-background-start: #1e8449;
+  --image-result-display-control-label-text: #555;
+  --image-result-display-translated-text: #4a90d9;
 
   display: flex;
   flex-direction: column;
   align-items: center;
-  background-color: white;
+  background-color: var(--color-surface-card);
   border-radius: 12px;
-  box-shadow: 0 4px 12px var(--image-result-display-shadow-default);
+  box-shadow: 0 4px 12px var(--image-result-display-card-shadow);
   padding: 25px;
   text-align: center;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .image-result-display.result-section:hover {
-  box-shadow: 0 8px 16px var(--image-result-display-shadow-raised);
+  box-shadow: 0 8px 16px var(--image-result-display-card-hover-shadow);
 }
 
 /* 图片控制栏 */
@@ -525,26 +525,26 @@ async function handleImportFile(event: Event): Promise<void> {
 /* 控制按钮 */
 .image-result-display .control-btn {
   padding: 10px 18px;
-  background: linear-gradient(135deg, var(--image-result-display-surface-base) 0%, var(--color-surface-accent) 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--image-result-display-control-background-start) 0%, var(--color-surface-accent) 100%);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.95em;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 6px var(--image-result-display-shadow-floating);
+  box-shadow: 0 2px 6px var(--image-result-display-control-shadow);
 }
 
 .image-result-display .control-btn:hover {
-  background: linear-gradient(135deg, var(--image-result-display-surface-raised) 0%, var(--color-surface-accent) 100%);
-  box-shadow: 0 4px 10px var(--image-result-display-shadow-strong);
+  background: linear-gradient(135deg, var(--image-result-display-control-hover-background-start) 0%, var(--color-surface-accent) 100%);
+  box-shadow: 0 4px 10px var(--image-result-display-control-hover-shadow);
   transform: translateY(-2px);
 }
 
 .image-result-display .control-btn.active {
-  background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-surface-muted) 100%);
-  box-shadow: 0 2px 6px var(--image-result-display-shadow-soft);
+  background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-success-background-end) 100%);
+  box-shadow: 0 2px 6px var(--image-result-display-edit-active-shadow);
 }
 
 /* 图片大小控制 */
@@ -556,7 +556,7 @@ async function handleImportFile(event: Event): Promise<void> {
 
 .image-result-display .image-size-control label {
   font-size: 14px;
-  color: var(--image-result-display-text-primary);
+  color: var(--image-result-display-control-label-text);
 }
 
 .image-result-display .image-size-control .slider {
@@ -568,13 +568,13 @@ async function handleImportFile(event: Event): Promise<void> {
   min-width: 45px;
   text-align: right;
   font-size: 14px;
-  color: var(--image-result-display-text-primary);
+  color: var(--image-result-display-control-label-text);
 }
 
 /* 重试按钮 */
 .image-result-display .retry-failed-btn {
-  background: linear-gradient(135deg, var(--image-result-display-surface-subtle) 0%, var(--image-result-display-surface-hover) 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--image-result-display-retry-background-start) 0%, var(--image-result-display-retry-background-end) 100%);
+  color: var(--color-text-inverse);
   border: none;
   padding: 10px 18px;
   border-radius: 8px;
@@ -582,12 +582,12 @@ async function handleImportFile(event: Event): Promise<void> {
   font-size: 0.95em;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 6px var(--image-result-display-shadow-focus);
+  box-shadow: 0 2px 6px var(--image-result-display-retry-shadow);
 }
 
 .image-result-display .retry-failed-btn:hover {
-  background: linear-gradient(135deg, var(--image-result-display-surface-active) 0%, var(--image-result-display-surface-hover) 100%);
-  box-shadow: 0 4px 10px var(--image-result-display-shadow-glow);
+  background: linear-gradient(135deg, var(--image-result-display-retry-hover-background-start) 0%, var(--image-result-display-retry-background-end) 100%);
+  box-shadow: 0 4px 10px var(--image-result-display-retry-hover-shadow);
   transform: translateY(-2px);
 }
 
@@ -603,7 +603,7 @@ async function handleImportFile(event: Event): Promise<void> {
   border: 1px solid var(--color-border-muted, var(--color-border-muted));
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 2px 8px var(--image-result-display-shadow-inset);
+  box-shadow: 0 2px 8px var(--image-result-display-image-frame-shadow);
   text-align: center;
 }
 
@@ -631,7 +631,7 @@ async function handleImportFile(event: Event): Promise<void> {
   width: 100%;
   margin-top: 20px;
   padding: 15px;
-  background-color: var(--image-result-display-surface-selected);
+  background-color: var(--image-result-display-panel-background);
   border: 1px solid var(--color-border-muted);
   border-radius: 4px;
   white-space: pre-wrap;
@@ -666,7 +666,7 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 .image-result-display .translated-text {
-  color: var(--color-action-primary, var(--image-result-display-text-secondary));
+  color: var(--color-action-primary, var(--image-result-display-translated-text));
 }
 
 .image-result-display .translated-text.translation-error {
@@ -682,7 +682,7 @@ async function handleImportFile(event: Event): Promise<void> {
   width: 100%;
   margin-top: 20px;
   padding: 15px;
-  background-color: var(--image-result-display-surface-selected);
+  background-color: var(--image-result-display-panel-background);
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
 }
@@ -704,7 +704,7 @@ async function handleImportFile(event: Event): Promise<void> {
   font-weight: 500;
   white-space: normal;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 6px var(--image-result-display-shadow-overlay);
+  box-shadow: 0 2px 6px var(--image-result-display-action-shadow);
 }
 
 .image-result-display .download-btn:disabled {
@@ -713,14 +713,14 @@ async function handleImportFile(event: Event): Promise<void> {
 }
 
 .image-result-display .download-btn.success {
-  background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-surface-muted) 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--image-result-display-success-background-end) 100%);
+  color: var(--color-text-inverse);
 }
 
 .image-result-display .download-btn.success:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--image-result-display-surface-overlay) 0%, var(--image-result-display-surface-muted) 100%);
+  background: linear-gradient(135deg, var(--image-result-display-export-hover-background-start) 0%, var(--image-result-display-success-background-end) 100%);
   transform: translateY(-2px);
-  box-shadow: 0 4px 10px var(--image-result-display-shadow-brand);
+  box-shadow: 0 4px 10px var(--image-result-display-export-hover-shadow);
 }
 
 .image-result-display .download-all-container {

@@ -56,6 +56,9 @@ const oldIsJsonModeField = 'is' + 'JsonMode'
 const oldForceJsonField = 'force' + 'Json'
 const oldMaxRetriesField = 'max' + 'Retries'
 const webImportSchemaVersionField = 'webImportSettings' + 'SchemaVersion'
+const partialWebImportSettings = 'Partial<' + 'WebImportSettings>'
+const partialWebImportProviderConfigs = 'Partial<' + 'WebImportProviderConfigs>'
+const partialWebImportSettingsPayload = 'Partial<' + 'WebImportSettingsPayload>'
 const primitiveButtonInternalSelector = '.ui-button' + '--primary'
 const primitiveModalBodySelector = '.ui-modal' + '__body'
 const componentPrivateDomainToken = '--character-studio-preview-shell-surface-base'
@@ -683,6 +686,28 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain("input[type='checkbox']")
   })
 
+  it('rejects generic UiInput usage for boolean controls in business Vue components', () => {
+    const result = runUiArchitectureSourceFixture('SettingsPanel.vue', `
+      <script setup lang="ts">
+      import UiInput from '@/components/ui/UiInput.vue'
+      </script>
+
+      <template>
+        <section class="settings-panel">
+          <UiInput type="checkbox" />
+          <UiInput
+            type="radio"
+          />
+        </section>
+      </template>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('generic UiInput boolean control(s)')
+    expect(result.stderr).toContain('type="checkbox"')
+    expect(result.stderr).toContain('type="radio"')
+  })
+
   it('rejects domain owner token references from UI primitives', () => {
     const result = runUiArchitectureSourceFixture('src/components/ui/UiButton.vue', `
       <template><button class="ui-button">Button</button></template>
@@ -1081,5 +1106,24 @@ describe('UI architecture frontend schema compatibility lint', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('current schema version fields must be required')
     expect(result.stderr).toContain(`${webImportSchemaVersionField}?:`)
+  })
+
+  it('rejects partial WebImport settings/provider payload types in frontend source', () => {
+    const result = runUiArchitectureSourceFixture('src/api/webImport.ts', `
+      import type { WebImportProviderConfigs, WebImportSettings, WebImportSettingsPayload } from '@/types/webImport'
+      export interface WebImportSettingsResponse {
+        settings?: ${partialWebImportSettings}
+        providerConfigs?: ${partialWebImportProviderConfigs}
+      }
+      export function save(payload: ${partialWebImportSettingsPayload}) {
+        return payload
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('WebImport settings/provider payloads must enter the frontend as unknown')
+    expect(result.stderr).toContain(partialWebImportSettings)
+    expect(result.stderr).toContain(partialWebImportProviderConfigs)
+    expect(result.stderr).toContain(partialWebImportSettingsPayload)
   })
 })

@@ -124,9 +124,7 @@ const {
 
 .timeline-container {
   position: relative;
-  max-height: calc(100dvh - 200px);
   padding: 20px;
-  overflow-y: auto;
 }
 
 .error-message {

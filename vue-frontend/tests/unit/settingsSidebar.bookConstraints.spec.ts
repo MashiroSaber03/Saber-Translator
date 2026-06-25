@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { defineComponent, h, type PropType } from 'vue'
 
 type SelectOption = {
@@ -58,6 +58,8 @@ import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 
 describe('SettingsSidebar book constraints entrypoints', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     setActivePinia(createPinia())
   })

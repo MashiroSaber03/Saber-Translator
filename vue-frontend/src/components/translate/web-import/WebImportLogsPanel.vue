@@ -42,6 +42,15 @@ defineEmits<{
 
 <style scoped>
 .logs-section {
+  --web-import-logs-header-background: #f9f9f9;
+  --web-import-logs-content-background: #1e1e1e;
+  --web-import-logs-message-text: #ccc;
+  --web-import-logs-info-text: #ce9178;
+  --web-import-logs-tool-call-text: #ec4899;
+  --web-import-logs-tool-result-text: #818cf8;
+  --web-import-logs-thinking-text: #dcdcaa;
+  --web-import-logs-error-text: #f1f5f9;
+
   margin-bottom: 16px;
   overflow: hidden;
   border: 1px solid var(--color-border-muted);
@@ -55,7 +64,7 @@ defineEmits<{
   width: 100%;
   padding: 10px 14px;
   border: 0;
-  background: var(--web-import-modal-settings-surface-base);
+  background: var(--web-import-logs-header-background);
   color: inherit;
   font: inherit;
   font-weight: 500;
@@ -80,14 +89,14 @@ defineEmits<{
   max-height: 200px;
   padding: 12px;
   overflow-y: auto;
-  background: var(--web-import-modal-settings-surface-raised);
-  font-family: Consolas, Monaco, monospace;
+  background: var(--web-import-logs-content-background);
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .log-item {
   padding: 2px 0;
-  color: var(--web-import-modal-settings-text-secondary);
+  color: var(--web-import-logs-message-text);
 }
 
 .log-time {
@@ -95,9 +104,9 @@ defineEmits<{
   color: var(--color-text-subtle);
 }
 
-.log-info .log-message { color: var(--web-import-modal-settings-text-muted); }
-.log-tool-call .log-message { color: var(--web-import-modal-settings-text-subtle); }
-.log-tool-result .log-message { color: var(--web-import-modal-settings-text-supporting); }
-.log-thinking .log-message { color: var(--web-import-modal-settings-text-disabled); }
-.log-error .log-message { color: var(--web-import-modal-settings-text-inverse); }
+.log-info .log-message { color: var(--web-import-logs-info-text); }
+.log-tool-call .log-message { color: var(--web-import-logs-tool-call-text); }
+.log-tool-result .log-message { color: var(--web-import-logs-tool-result-text); }
+.log-thinking .log-message { color: var(--web-import-logs-thinking-text); }
+.log-error .log-message { color: var(--web-import-logs-error-text); }
 </style>

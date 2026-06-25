@@ -34,8 +34,15 @@ describe('文本导出导入属性测试', () => {
   /**
    * 生成有效的气泡状态
    */
+  const bubbleCoordsArb = fc.record({
+    x1: fc.nat(1000),
+    y1: fc.nat(1000),
+    width: fc.integer({ min: 1, max: 1000 }),
+    height: fc.integer({ min: 1, max: 1000 })
+  }).map(({ x1, y1, width, height }) => [x1, y1, x1 + width, y1 + height] as [number, number, number, number])
+
   const bubbleStateArb: fc.Arbitrary<BubbleState> = fc.record({
-    coords: fc.tuple(fc.nat(1000), fc.nat(1000), fc.nat(1000), fc.nat(1000)) as fc.Arbitrary<[number, number, number, number]>,
+    coords: bubbleCoordsArb,
     polygon: fc.constant([]) as fc.Arbitrary<number[][]>,
     originalText: validTextArb,
     translatedText: validTextArb,
@@ -53,7 +60,8 @@ describe('文本导出导入属性测试', () => {
     strokeWidth: fc.integer({ min: 1, max: 10 }),
     lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
     textAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<'start' | 'center' | 'end'>,
-    inpaintMethod: fc.constantFrom('solid', 'lama_mpe', 'litelama') as fc.Arbitrary<'solid' | 'lama_mpe' | 'litelama'>
+    inpaintMethod: fc.constantFrom('solid', 'lama_mpe', 'litelama') as fc.Arbitrary<'solid' | 'lama_mpe' | 'litelama'>,
+    textlines: fc.constant([])
   })
 
   /**
@@ -330,7 +338,8 @@ describe('文本导出导入属性测试', () => {
             strokeWidth: 3,
             lineSpacing: 1.0,
             textAlign: 'center' as 'start' | 'center' | 'end',
-            inpaintMethod: 'solid'
+            inpaintMethod: 'solid',
+            textlines: []
           }
           
           // 添加图片并设置气泡状态

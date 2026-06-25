@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick } from 'vue'
@@ -32,6 +32,8 @@ vi.mock('@/utils/toast', () => ({
 }))
 
 describe('useWebImportModal', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     vi.useFakeTimers()
     setActivePinia(createPinia())

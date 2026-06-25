@@ -215,10 +215,10 @@ onUnmounted(() => {
   justify-content: space-between;
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid var(--character-studio-preview-shell-border-default);
+  border: 1px solid var(--character-studio-preview-trigger-border);
   border-radius: 16px;
-  background: linear-gradient(180deg, var(--character-studio-preview-shell-surface-muted), var(--studio-surface-soft));
-  box-shadow: inset 0 1px 0 var(--character-studio-preview-shell-shadow-floating);
+  background: linear-gradient(180deg, var(--character-studio-preview-trigger-background), var(--studio-surface-soft));
+  box-shadow: inset 0 1px 0 var(--character-studio-preview-trigger-highlight);
   color: var(--studio-text-strong);
   cursor: pointer;
 }
@@ -249,7 +249,7 @@ onUnmounted(() => {
 
 .trigger-copy strong {
   overflow: hidden;
-  color: var(--character-studio-preview-shell-text-subtle);
+  color: var(--character-studio-preview-session-title-text);
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -257,7 +257,7 @@ onUnmounted(() => {
 
 .trigger-tag,
 .trigger-meta {
-  color: var(--character-studio-preview-shell-text-supporting);
+  color: var(--character-studio-preview-supporting-text);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -268,7 +268,7 @@ onUnmounted(() => {
   justify-content: center;
   padding: 4px 8px;
   border-radius: 999px;
-  background: var(--character-studio-preview-shell-surface-subtle);
+  background: var(--character-studio-preview-active-tab-background);
 }
 
 .trigger-meta {
@@ -277,7 +277,7 @@ onUnmounted(() => {
 }
 
 .trigger-arrow {
-  color: var(--character-studio-preview-shell-text-supporting);
+  color: var(--character-studio-preview-supporting-text);
   flex-shrink: 0;
 }
 
@@ -292,8 +292,8 @@ onUnmounted(() => {
   padding: 10px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: var(--character-studio-preview-shell-surface-hover);
-  box-shadow: 0 18px 38px var(--character-studio-preview-shell-shadow-strong);
+  background: var(--character-studio-preview-pending-attachment-background);
+  box-shadow: 0 18px 38px var(--character-studio-preview-popover-shadow);
 }
 
 .session-list-item {
@@ -311,7 +311,7 @@ onUnmounted(() => {
 
 .session-list-item:hover,
 .session-list-item.active {
-  background: var(--character-studio-preview-shell-surface-active);
+  background: var(--character-studio-preview-runtime-log-background);
 }
 
 .session-list-item.current {
@@ -332,7 +332,7 @@ onUnmounted(() => {
 
 .item-main strong {
   display: block;
-  color: var(--character-studio-preview-shell-text-subtle);
+  color: var(--character-studio-preview-session-title-text);
   font-size: 14px;
 }
 
@@ -348,7 +348,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 6px;
   align-items: flex-end;
-  color: var(--character-studio-preview-shell-text-disabled);
+  color: var(--character-studio-preview-disabled-text);
   font-size: 11px;
 }
 

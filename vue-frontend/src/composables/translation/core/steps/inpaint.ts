@@ -39,7 +39,7 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
         translation_scope: 'image',
         bubble_polygons: bubblePolygons,
         raw_mask: textMask || undefined,      // 文字检测掩膜
-        user_mask: userMask || undefined,     // 用户笔刷掩膜（新增）
+        user_mask: userMask || undefined,     // 用户笔刷掩膜
         method: textStyle.inpaintMethod === 'solid' ? 'solid' : 'lama',
         lama_model: textStyle.inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe',
         fill_color: textStyle.fillColor,

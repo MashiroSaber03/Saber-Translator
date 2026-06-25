@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 
 const {
@@ -91,6 +91,8 @@ vi.mock('@/components/settings/PluginAgentModal.vue', () => ({
 import PluginManager from '@/components/settings/PluginManager.vue'
 
 describe('PluginManager', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     getPluginsMock.mockReset()
     getPluginDefaultStatesMock.mockReset()
@@ -139,6 +141,10 @@ describe('PluginManager', () => {
         display_name: 'Imported Plugin',
       },
     })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('refreshes plugins from the refresh button and warns on partial success', async () => {

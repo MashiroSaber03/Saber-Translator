@@ -10,7 +10,6 @@ import type {
   ExtractResult,
   GalleryDLSupportResult,
   WebImportEngine,
-  WebImportProviderConfigs,
   WebImportSettings,
   WebImportSettingsPayload,
 } from '@/types/webImport'
@@ -20,8 +19,8 @@ const API_BASE = '/api/web-import'
 export interface WebImportSettingsResponse {
   success: boolean
   hasStoredSettings?: boolean
-  settings?: Partial<WebImportSettings>
-  providerConfigs?: Partial<WebImportProviderConfigs>
+  settings?: unknown
+  providerConfigs?: unknown
   error?: string
 }
 

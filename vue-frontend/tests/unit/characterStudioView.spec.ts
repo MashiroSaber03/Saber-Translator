@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import CharacterStudioView from '@/views/CharacterStudioView.vue'
@@ -7,6 +7,14 @@ import { useBookshelfStore } from '@/stores/bookshelfStore'
 
 const pushMock = vi.fn()
 const replaceMock = vi.fn()
+
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
@@ -27,7 +35,7 @@ describe('CharacterStudioView workspace shell', () => {
     const bookshelfStore = useBookshelfStore()
 
     bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
-    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
     studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
     studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
     studioStore.currentDocument = {
@@ -78,7 +86,7 @@ describe('CharacterStudioView workspace shell', () => {
     const bookshelfStore = useBookshelfStore()
 
     bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
-    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
     studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
     studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
 
@@ -113,7 +121,7 @@ describe('CharacterStudioView workspace shell', () => {
     const bookshelfStore = useBookshelfStore()
 
     bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
-    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
     studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
     studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
     studioStore.errorMessage = '导出失败：测试错误'
@@ -140,7 +148,7 @@ describe('CharacterStudioView workspace shell', () => {
     const bookshelfStore = useBookshelfStore()
 
     bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
-    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
     studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
     studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
     studioStore.resourcePanelOpen = true
@@ -168,7 +176,7 @@ describe('CharacterStudioView workspace shell', () => {
     const bookshelfStore = useBookshelfStore()
 
     bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
-    bookshelfStore.fetchBooks = vi.fn().mockResolvedValue(undefined)
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
     studioStore.loadWorkspace = vi.fn().mockImplementation(async () => {
       studioStore.documents = [
         {
@@ -212,5 +220,68 @@ describe('CharacterStudioView workspace shell', () => {
       name: 'character-studio',
       query: { book: 'book-demo', doc: 'doc_alpha' },
     })
+  })
+
+  it('ignores stale workspace hydration after the route book changes', async () => {
+    const studioStore = useCharacterStudioStore()
+    const bookshelfStore = useBookshelfStore()
+
+    const alphaLoad = createDeferred()
+    const betaLoad = createDeferred()
+
+    bookshelfStore.books = [
+      { id: 'book-alpha', title: '阿尔法书籍' },
+      { id: 'book-beta', title: '贝塔书籍' },
+    ] as typeof bookshelfStore.books
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
+    studioStore.loadWorkspace = vi.fn().mockImplementation(async (bookId: string) => {
+      await (bookId === 'book-alpha' ? alphaLoad.promise : betaLoad.promise)
+      studioStore.documents = [
+        {
+          id: `${bookId}-doc`,
+          title: `${bookId} 文档`,
+          origin: 'manual',
+          source_character: null,
+          updated_at: '2026-05-15T00:00:00',
+          tags: [],
+          is_favorite: false,
+          has_avatar: false,
+          sample_pages: [],
+        },
+      ]
+    })
+    studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
+
+    const wrapper = mount(CharacterStudioView, {
+      props: {
+        bookId: 'book-alpha',
+      },
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
+          CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
+          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
+          StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
+        },
+      },
+    })
+
+    await wrapper.setProps({ bookId: 'book-beta' })
+    betaLoad.resolve()
+    await flushPromises()
+
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'character-studio',
+      query: { book: 'book-beta', doc: 'book-beta-doc' },
+    })
+
+    replaceMock.mockClear()
+    ;(studioStore.openDocument as ReturnType<typeof vi.fn>).mockClear()
+
+    alphaLoad.resolve()
+    await flushPromises()
+
+    expect(studioStore.openDocument).not.toHaveBeenCalled()
+    expect(replaceMock).not.toHaveBeenCalled()
   })
 })

@@ -5,14 +5,7 @@
     <UiPanel variant="settings">
       <template #title>自动保存设置</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
-        <label class="ui-checkbox-label">
-          <UiInput 
-            type="checkbox" 
-            class="more-settings__checkbox-input"
-            v-model="localSettings.autoSaveInBookshelfMode"
-          />
-          <span class="checkbox-text">书架模式自动保存</span>
-        </label>
+        <UiCheckbox v-model="localSettings.autoSaveInBookshelfMode" label="书架模式自动保存" />
         <div class="ui-form-hint">
           开启后，在书架模式下翻译时会自动保存进度（翻译一张保存一张），防止意外关闭导致数据丢失。
           <br />
@@ -24,14 +17,7 @@
     <UiPanel variant="settings">
       <template #title>消除文字模式</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
-        <label class="ui-checkbox-label">
-          <UiInput 
-            type="checkbox" 
-            class="more-settings__checkbox-input"
-            v-model="localSettings.removeTextWithOcr"
-          />
-          <span class="checkbox-text">同时执行OCR识别</span>
-        </label>
+        <UiCheckbox v-model="localSettings.removeTextWithOcr" label="同时执行OCR识别" />
         <div class="ui-form-hint">
           开启后，消除文字模式会同时执行OCR识别，获取带有原文的干净背景图。
           <br />
@@ -43,14 +29,7 @@
     <UiPanel variant="settings">
       <template #title>LAMA 修复设置</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
-        <label class="ui-checkbox-label">
-          <UiInput 
-            type="checkbox" 
-            class="more-settings__checkbox-input"
-            v-model="localSettings.lamaDisableResize"
-          />
-          <span class="checkbox-text">禁用自动缩放</span>
-        </label>
+        <UiCheckbox v-model="localSettings.lamaDisableResize" label="禁用自动缩放" />
         <div class="ui-form-hint">
           开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。
           <br />
@@ -64,14 +43,7 @@
     <UiPanel variant="settings">
       <template #title>调试选项</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
-        <label class="ui-checkbox-label">
-          <UiInput 
-            type="checkbox" 
-            class="more-settings__checkbox-input"
-            v-model="localSettings.enableVerboseLogs"
-          />
-          <span class="checkbox-text">详细日志</span>
-        </label>
+        <UiCheckbox v-model="localSettings.enableVerboseLogs" label="详细日志" />
         <div class="ui-form-hint">
           开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。
           <br />
@@ -166,8 +138,8 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
@@ -361,25 +333,6 @@ async function cleanTempFiles() {
 .about-info .disclaimer {
   color: var(--color-status-warning);
   font-weight: 500;
-}
-
-.ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.more-settings__checkbox-input {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-  accent-color: var(--color-action-primary);
-}
-
-.checkbox-text {
-  color: var(--color-text-default);
 }
 
 .hint-note {

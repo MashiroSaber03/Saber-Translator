@@ -3,10 +3,7 @@
     <UiPanel variant="settings">
       <template #title>AI校对设置</template>
       <UiField class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" class="proofreading-settings__checkbox-input" v-model="isProofreadingEnabled" />
-          启用AI校对
-        </label>
+        <UiCheckbox v-model="isProofreadingEnabled" label="启用AI校对" />
         <div class="ui-form-hint">翻译完成后自动进行AI校对</div>
       </UiField>
       <UiField class="ui-settings-field">
@@ -143,17 +140,11 @@
           </UiFormGrid>
           <UiFormGrid>
             <UiField class="ui-settings-field">
-              <label class="ui-checkbox-label">
-                <UiInput type="checkbox" class="proofreading-settings__checkbox-input" v-model="round.openaiOptions.request.forceJsonOutput" />
-                强制JSON输出
-              </label>
+              <UiCheckbox v-model="round.openaiOptions.request.forceJsonOutput" label="强制JSON输出" />
               <div class="ui-form-hint">使用 response_format: json_object</div>
             </UiField>
             <UiField class="ui-settings-field">
-              <label class="ui-checkbox-label">
-                <UiInput type="checkbox" class="proofreading-settings__checkbox-input" v-model="round.openaiOptions.execution.useStream" />
-                流式调用
-              </label>
+              <UiCheckbox v-model="round.openaiOptions.execution.useStream" label="流式调用" />
               <div class="ui-form-hint">使用流式API调用，避免超时</div>
             </UiField>
           </UiFormGrid>
@@ -184,6 +175,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderOptionsForCapability,
@@ -393,17 +385,6 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 
 .round-content {
   padding: 15px;
-}
-
-.ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.proofreading-settings__checkbox-input {
-  width: auto;
 }
 
 .model-input-with-fetch {

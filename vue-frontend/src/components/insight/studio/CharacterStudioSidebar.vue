@@ -94,19 +94,19 @@ function handleFileSelect(event: Event) {
 
 <style scoped>
 .sidebar-shell {
-  --character-studio-sidebar-accent-primary: rgba(79, 136, 240, .12);
-  --character-studio-sidebar-accent-secondary: rgba(246, 249, 254, .88);
-  --character-studio-sidebar-shadow-default: rgba(37, 99, 199, .2);
-  --character-studio-sidebar-surface-base: rgba(252, 253, 255, .88);
-  --character-studio-sidebar-surface-raised: rgba(255, 255, 255, .92);
-  --character-studio-sidebar-surface-muted: #2563c7;
-  --character-studio-sidebar-surface-subtle: #4d86ee;
-  --character-studio-sidebar-text-primary: #6f84a2;
-  --character-studio-sidebar-text-secondary: #102741;
+  --character-studio-sidebar-toolbar-background-start: rgba(79, 136, 240, .12);
+  --character-studio-sidebar-toolbar-background-end: rgba(246, 249, 254, .88);
+  --character-studio-sidebar-primary-action-shadow: rgba(37, 99, 199, .2);
+  --character-studio-sidebar-shell-background: rgba(252, 253, 255, .88);
+  --character-studio-sidebar-search-background: rgba(255, 255, 255, .92);
+  --character-studio-sidebar-primary-action-background-start: #2563c7;
+  --character-studio-sidebar-primary-action-background-end: #4d86ee;
+  --character-studio-sidebar-kicker-text: #6f84a2;
+  --character-studio-sidebar-title-text: #102741;
   --ui-input-padding: 12px 14px;
   --ui-input-border: 1px solid var(--studio-border-strong);
   --ui-input-radius: 14px;
-  --ui-input-background: var(--character-studio-sidebar-surface-raised);
+  --ui-input-background: var(--character-studio-sidebar-search-background);
   --ui-input-color: var(--studio-text-strong);
   --ui-input-font-size: 13px;
   --ui-input-focus-border: var(--color-border-brand);
@@ -119,7 +119,7 @@ function handleFileSelect(event: Event) {
   width: 100%;
   border-radius: 26px;
   overflow: hidden;
-  background: var(--character-studio-sidebar-surface-base);
+  background: var(--character-studio-sidebar-shell-background);
   border: 1px solid var(--studio-border-default);
   box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
@@ -129,21 +129,21 @@ function handleFileSelect(event: Event) {
   padding: 18px 18px 16px;
   border-bottom: 1px solid var(--studio-border-default);
   background:
-    linear-gradient(180deg, var(--character-studio-sidebar-accent-primary), var(--character-studio-sidebar-accent-secondary));
+    linear-gradient(180deg, var(--character-studio-sidebar-toolbar-background-start), var(--character-studio-sidebar-toolbar-background-end));
 }
 
 .kicker {
   font-size: 11px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: var(--character-studio-sidebar-text-primary);
+  color: var(--character-studio-sidebar-kicker-text);
 }
 
 .toolbar-copy h2 {
   margin: 8px 0 0;
   font-size: 22px;
   line-height: 1.24;
-  color: var(--character-studio-sidebar-text-secondary);
+  color: var(--character-studio-sidebar-title-text);
 }
 
 .toolbar-copy p {
@@ -177,9 +177,9 @@ function handleFileSelect(event: Event) {
 .action-primary {
   flex: 1;
   padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-sidebar-surface-muted), var(--character-studio-sidebar-surface-subtle));
+  background: linear-gradient(135deg, var(--character-studio-sidebar-primary-action-background-start), var(--character-studio-sidebar-primary-action-background-end));
   color: var(--color-text-inverse);
-  box-shadow: 0 12px 24px var(--character-studio-sidebar-shadow-default);
+  box-shadow: 0 12px 24px var(--character-studio-sidebar-primary-action-shadow);
 }
 
 .action-ghost {

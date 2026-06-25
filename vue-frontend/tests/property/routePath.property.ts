@@ -30,8 +30,12 @@ function classifyRoute(path: string): RouteClassification {
   // API 路由：以 /api/ 开头
   const isApiRoute = normalizedPath.startsWith('/api/')
 
-  // 静态资源路由：以 /static/ 开头
-  const isStaticRoute = normalizedPath.startsWith('/static/')
+  // 静态资源路由：后端静态目录和 Vue 构建产物目录
+  const isStaticRoute = (
+    normalizedPath.startsWith('/static/') ||
+    normalizedPath.startsWith('/js/') ||
+    normalizedPath.startsWith('/assets/')
+  )
 
   // 前端路由：非 API 且非静态资源
   const isFrontendRoute = !isApiRoute && !isStaticRoute
@@ -202,8 +206,8 @@ describe('路由路径解析属性测试', () => {
       '/insight/character-studio',
       '/api/bookshelf/books',
       '/static/css/layout.css',
-      '/js/bundle.abc123.js',     // Vue JS 资源
-      '/assets/index.abc123.css', // Vue CSS 资源
+      '/js/bundle.abc123.js',
+      '/assets/index.abc123.css',
       '/unknown/path',
     ]
 
@@ -250,8 +254,14 @@ describe('路由路径解析属性测试', () => {
         fc.constantFrom(...jsFiles),
         (filename) => {
           const path = buildVueStaticPath(filename)
+          const classification = classifyRoute(path)
           // 验证 JS 文件路径格式正确
-          return path.startsWith('/js/') && path.endsWith(filename)
+          return (
+            path.startsWith('/js/') &&
+            path.endsWith(filename) &&
+            classification.isStaticRoute &&
+            !classification.isFrontendRoute
+          )
         }
       ),
       { numRuns: 100 }
@@ -262,8 +272,14 @@ describe('路由路径解析属性测试', () => {
         fc.constantFrom(...assetFiles),
         (filename) => {
           const path = buildVueStaticPath(filename)
+          const classification = classifyRoute(path)
           // 验证资源文件路径格式正确
-          return path.startsWith('/assets/') && path.endsWith(filename)
+          return (
+            path.startsWith('/assets/') &&
+            path.endsWith(filename) &&
+            classification.isStaticRoute &&
+            !classification.isFrontendRoute
+          )
         }
       ),
       { numRuns: 100 }

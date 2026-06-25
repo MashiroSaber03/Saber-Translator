@@ -53,7 +53,7 @@ export type PluginAgentProvider = HqTranslationProvider
 export type PdfProcessingMethod = 'frontend' | 'backend'
 
 /**
- * OpenAI-compatible 请求选项（前端持久化镜像）
+ * OpenAI-compatible 请求选项（当前前端持久化结构）
  */
 export interface OpenAICompatibleRequestOptions {
   forceJsonOutput: boolean
@@ -62,7 +62,7 @@ export interface OpenAICompatibleRequestOptions {
 }
 
 /**
- * OpenAI-compatible 执行选项（前端持久化镜像）
+ * OpenAI-compatible 执行选项（当前前端持久化结构）
  */
 export interface OpenAICompatibleExecutionOptions {
   useStream: boolean

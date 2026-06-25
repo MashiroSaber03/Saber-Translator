@@ -294,18 +294,18 @@ defineExpose({
 .reader-controls__chapter-nav-layer,
 .reader-controls__scroll-top-layer,
 .reader-controls__settings-panel {
-  --reader-controls-border-default: rgba(255, 255, 255, .2);
-  --reader-controls-border-strong: rgba(255, 255, 255, .1);
-  --reader-controls-shadow-default: rgba(102, 126, 234, .5);
-  --reader-controls-shadow-raised: rgba(0, 0, 0, .3);
-  --reader-controls-shadow-floating: rgba(102, 126, 234, .3);
-  --reader-controls-surface-base: rgba(26, 26, 46, .95);
-  --reader-controls-surface-raised: rgba(26, 26, 46, .8);
-  --reader-controls-surface-muted: rgba(255, 255, 255, .1);
-  --reader-controls-surface-subtle: rgba(255, 255, 255, .2);
-  --reader-controls-surface-hover: rgba(0, 0, 0, .5);
-  --reader-controls-surface-active: #2d2d44;
-  --reader-controls-text-primary: rgba(255, 255, 255, .7);
+  --reader-controls-chapter-nav-start: rgba(26, 26, 46, .95);
+  --reader-controls-chapter-nav-end: rgba(26, 26, 46, .8);
+  --reader-controls-button-background: rgba(255, 255, 255, .1);
+  --reader-controls-button-hover-background: rgba(255, 255, 255, .2);
+  --reader-controls-button-border: rgba(255, 255, 255, .2);
+  --reader-controls-scroll-top-hover-shadow: rgba(102, 126, 234, .5);
+  --reader-controls-settings-overlay-background: rgba(0, 0, 0, .5);
+  --reader-controls-settings-panel-background: #2d2d44;
+  --reader-controls-settings-panel-shadow: rgba(0, 0, 0, .3);
+  --reader-controls-settings-divider: rgba(255, 255, 255, .1);
+  --reader-controls-setting-label-text: rgba(255, 255, 255, .7);
+  --reader-controls-swatch-active-ring: rgba(102, 126, 234, .3);
 }
 
 .reader-controls__chapter-nav-layer {
@@ -317,7 +317,7 @@ defineExpose({
 .reader-controls__chapter-nav {
   height: 60px;
   width: 100%;
-  background: linear-gradient(to top, var(--reader-controls-surface-base), var(--reader-controls-surface-raised));
+  background: linear-gradient(to top, var(--reader-controls-chapter-nav-start), var(--reader-controls-chapter-nav-end));
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
@@ -331,8 +331,8 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 12px 24px;
-  background: var(--reader-controls-surface-muted);
-  border: 1px solid var(--reader-controls-border-default);
+  background: var(--reader-controls-button-background);
+  border: 1px solid var(--reader-controls-button-border);
   border-radius: 8px;
   color: var(--color-text-inverse);
   font-size: 14px;
@@ -346,7 +346,7 @@ defineExpose({
 }
 
 .reader-controls__nav-button:hover:not(:disabled) {
-  background: var(--reader-controls-surface-subtle);
+  background: var(--reader-controls-button-hover-background);
 }
 
 .reader-controls__nav-icon {
@@ -376,7 +376,7 @@ defineExpose({
 
 .reader-controls__scroll-top-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px var(--reader-controls-shadow-default);
+  box-shadow: 0 6px 16px var(--reader-controls-scroll-top-hover-shadow);
 }
 
 .reader-controls__settings-panel {
@@ -386,7 +386,7 @@ defineExpose({
 .reader-controls__settings-overlay {
   position: absolute;
   inset: 0;
-  background: var(--reader-controls-surface-hover);
+  background: var(--reader-controls-settings-overlay-background);
 }
 
 .reader-controls__settings-content {
@@ -394,9 +394,9 @@ defineExpose({
   top: 56px;
   right: 16px;
   width: 300px;
-  background: var(--reader-controls-surface-active);
+  background: var(--reader-controls-settings-panel-background);
   border-radius: 12px;
-  box-shadow: 0 8px 32px var(--reader-controls-shadow-raised);
+  box-shadow: 0 8px 32px var(--reader-controls-settings-panel-shadow);
   overflow: hidden;
 }
 
@@ -405,8 +405,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  border-bottom: 1px solid var(--reader-controls-border-strong);
-  background: var(--reader-controls-surface-active);
+  border-bottom: 1px solid var(--reader-controls-settings-divider);
+  background: var(--reader-controls-settings-panel-background);
 }
 
 .reader-controls__settings-header h3 {
@@ -419,7 +419,7 @@ defineExpose({
 .reader-controls__close-button {
   width: 28px;
   height: 28px;
-  background: var(--reader-controls-surface-muted);
+  background: var(--reader-controls-button-background);
   border: none;
   border-radius: 50%;
   color: var(--color-text-inverse);
@@ -429,12 +429,12 @@ defineExpose({
 }
 
 .reader-controls__close-button:hover {
-  background: var(--reader-controls-surface-subtle);
+  background: var(--reader-controls-button-hover-background);
 }
 
 .reader-controls__settings-body {
   padding: 16px;
-  background: var(--reader-controls-surface-active);
+  background: var(--reader-controls-settings-panel-background);
 }
 
 .reader-controls__setting-item {
@@ -447,7 +447,7 @@ defineExpose({
 
 .reader-controls__setting-item label {
   display: block;
-  color: var(--reader-controls-text-primary);
+  color: var(--reader-controls-setting-label-text);
   font-size: 13px;
   margin-bottom: 8px;
 }
@@ -462,7 +462,7 @@ defineExpose({
   flex: 1;
   height: 4px;
   appearance: none;
-  background: var(--reader-controls-surface-subtle);
+  background: var(--reader-controls-button-hover-background);
   border-radius: 2px;
   outline: none;
 }
@@ -503,7 +503,7 @@ defineExpose({
 
 .reader-controls__bg-option.active {
   border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 0 2px var(--reader-controls-shadow-floating);
+  box-shadow: 0 0 0 2px var(--reader-controls-swatch-active-ring);
 }
 
 @media (--breakpoint-md-down) {

@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { defineComponent, h, type PropType } from 'vue'
 
 vi.mock('@/api/config', () => ({
@@ -90,6 +90,8 @@ import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 import { useImageStore } from '@/stores/imageStore'
 
 describe('SettingsSidebar page selection workflow', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     setActivePinia(createPinia())
     const imageStore = useImageStore()
@@ -115,8 +117,9 @@ describe('SettingsSidebar page selection workflow', () => {
     await workflowModeSelect!.setValue('translate-batch')
     await workflowModeSelect!.trigger('change')
 
-    const enableCheckbox = wrapper.find('.page-selection-toggle-compact input[type="checkbox"]')
-    await enableCheckbox.setValue(true)
+    const enableButton = wrapper.get('.page-selection-toggle-compact')
+    expect(enableButton.attributes('aria-pressed')).toBe('false')
+    await enableButton.trigger('click')
 
     await wrapper.find('.page-selection-open-btn').trigger('click')
     expect(wrapper.find('.page-selection-modal-stub').exists()).toBe(true)

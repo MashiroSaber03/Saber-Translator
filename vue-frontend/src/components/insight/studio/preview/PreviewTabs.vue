@@ -42,7 +42,7 @@ defineEmits<{
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
   background: var(--color-surface-raised);
-  box-shadow: 0 18px 32px var(--character-studio-preview-shell-shadow-default);
+  box-shadow: 0 18px 32px var(--character-studio-preview-tabs-shadow);
 }
 
 .tab-btn {
@@ -55,14 +55,14 @@ defineEmits<{
   border: none;
   border-radius: 14px;
   background: transparent;
-  color: var(--character-studio-preview-shell-text-secondary);
+  color: var(--character-studio-preview-tab-text);
   cursor: pointer;
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, var(--studio-surface-tint-strong), var(--character-studio-preview-shell-surface-base));
-  box-shadow: inset 0 0 0 1px var(--character-studio-preview-shell-shadow-raised);
-  color: var(--character-studio-preview-shell-text-muted);
+  background: linear-gradient(135deg, var(--studio-surface-tint-strong), var(--character-studio-preview-active-tab-background));
+  box-shadow: inset 0 0 0 1px var(--character-studio-preview-active-tab-ring);
+  color: var(--character-studio-preview-active-tab-text);
 }
 
 @media (--breakpoint-preview-down) {

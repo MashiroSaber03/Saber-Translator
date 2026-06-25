@@ -143,7 +143,7 @@ function formatJson(): void {
 }
 
 .extra-body-textarea {
-  font-family: Consolas, 'Courier New', monospace;
+  font-family: var(--font-mono);
   line-height: 1.5;
   resize: vertical;
 }

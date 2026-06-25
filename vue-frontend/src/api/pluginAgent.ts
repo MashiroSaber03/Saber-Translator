@@ -257,16 +257,24 @@ export async function subscribePluginAgentEvents(
     onError: (error: string) => void
   },
 ): Promise<void> {
-  const response = await fetch(
-    `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/events?after_id=${options.afterId || 0}`,
-    {
-      method: 'GET',
-      signal: options.signal,
-      headers: {
-        Accept: 'text/event-stream',
+  let response: Response
+  try {
+    response = await fetch(
+      `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/events?after_id=${options.afterId || 0}`,
+      {
+        method: 'GET',
+        signal: options.signal,
+        headers: {
+          Accept: 'text/event-stream',
+        },
       },
-    },
-  )
+    )
+  } catch (error) {
+    if (!options.signal?.aborted) {
+      options.onError(error instanceof Error ? error.message : '事件流订阅失败')
+    }
+    return
+  }
 
   if (!response.ok) {
     const text = await response.text()

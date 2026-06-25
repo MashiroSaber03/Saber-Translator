@@ -146,13 +146,13 @@ const imageModel = computed({
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 16px;
-  background: var(--character-studio-preview-workspace-surface-tint);
+  background: var(--character-studio-preview-attachment-card-background);
   text-align: left;
 }
 
 .greeting-card.active {
-  border-color: var(--character-studio-preview-details-border-default);
-  box-shadow: 0 0 0 2px var(--character-studio-preview-details-shadow-default);
+  border-color: var(--character-studio-preview-selection-border);
+  box-shadow: 0 0 0 2px var(--character-studio-preview-selection-ring);
 }
 
 .greeting-card-head {
@@ -163,7 +163,7 @@ const imageModel = computed({
 }
 
 .greeting-badge {
-  color: var(--character-studio-preview-details-text-primary);
+  color: var(--character-studio-preview-detail-label-text);
   font-weight: 700;
 }
 
@@ -171,7 +171,7 @@ const imageModel = computed({
   width: 22px;
   height: 22px;
   border-radius: 999px;
-  background: var(--character-studio-preview-details-surface-active);
+  background: var(--character-studio-preview-primary-action-background-start);
   color: var(--color-text-inverse);
   line-height: 22px;
   text-align: center;
@@ -232,8 +232,8 @@ const imageModel = computed({
 
 .action-primary {
   padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-preview-details-surface-active), var(--character-studio-preview-details-surface-selected));
-  box-shadow: 0 12px 24px var(--character-studio-preview-details-shadow-raised);
+  background: linear-gradient(135deg, var(--character-studio-preview-primary-action-background-start), var(--character-studio-preview-primary-action-background-end));
+  box-shadow: 0 12px 24px var(--character-studio-preview-primary-action-shadow);
   color: var(--color-text-inverse);
 }
 

@@ -40,7 +40,7 @@ function handleCancel() {
     max-height="85vh"
     border-radius="16px"
     border="2px solid var(--color-status-warning)"
-    box-shadow="0 25px 80px rgba(0, 0, 0, .4)"
+    box-shadow="0 25px 80px var(--color-overlay-backdrop-strong)"
     body-padding="none"
     scroll-mode="contained"
     body-display="flex"
@@ -153,42 +153,44 @@ function handleCancel() {
 
 <style scoped>
 .web-import-disclaimer-shell {
-  --web-import-disclaimer-border-default: #f0ad4e;
-  --web-import-disclaimer-border-strong: #6c757d;
-  --web-import-disclaimer-border-muted: #e74c3c;
-  --web-import-disclaimer-border-subtle: #2980b9;
-  --web-import-disclaimer-border-hover: #404060;
-  --web-import-disclaimer-border-active: #555;
-  --web-import-disclaimer-shadow-raised: rgba(52, 152, 219, .2);
-  --web-import-disclaimer-shadow-floating: rgba(39, 174, 96, .3);
-  --web-import-disclaimer-surface-muted: #ffeeba;
-  --web-import-disclaimer-surface-subtle: #f8f9fa;
-  --web-import-disclaimer-surface-hover: #fdf2f2;
-  --web-import-disclaimer-surface-active: #e8f4fd;
-  --web-import-disclaimer-surface-selected: #d4eafc;
-  --web-import-disclaimer-surface-overlay: #6c757d;
-  --web-import-disclaimer-surface-inverse: #2ecc71;
-  --web-import-disclaimer-surface-contrast: #bdc3c7;
-  --web-import-disclaimer-surface-tint: #219a52;
-  --web-import-disclaimer-surface-soft: #f1f1f1;
-  --web-import-disclaimer-surface-strong: #c0c0c0;
-  --web-import-disclaimer-surface-stronger: #a0a0a0;
-  --web-import-disclaimer-surface-highlight: #3d3a1d;
-  --web-import-disclaimer-surface-highlight-strong: #4a4520;
-  --web-import-disclaimer-surface-danger: #252540;
-  --web-import-disclaimer-surface-warning: #3d2525;
-  --web-import-disclaimer-surface-success: #1a2a3a;
-  --web-import-disclaimer-surface-info: #1d3040;
-  --web-import-disclaimer-surface-accent: #16162a;
-  --web-import-disclaimer-surface-accent-strong: #555;
-  --web-import-disclaimer-text-primary: #856404;
-  --web-import-disclaimer-text-secondary: #c0392b;
-  --web-import-disclaimer-text-muted: #2980b9;
-  --web-import-disclaimer-text-subtle: #6c757d;
-  --web-import-disclaimer-text-supporting: #ffc107;
-  --web-import-disclaimer-text-disabled: #e0e0e0;
-  --web-import-disclaimer-text-inverse: #5dade2;
-  --web-import-disclaimer-text-brand: #aaa;
+  --web-import-disclaimer-header-background-end: #ffeeba;
+  --web-import-disclaimer-header-divider: #f0ad4e;
+  --web-import-disclaimer-title-text: #856404;
+  --web-import-disclaimer-section-background: #f8f9fa;
+  --web-import-disclaimer-section-accent: #6c757d;
+  --web-import-disclaimer-strong-text: #c0392b;
+  --web-import-disclaimer-warning-section-background: #fdf2f2;
+  --web-import-disclaimer-warning-section-accent: #e74c3c;
+  --web-import-disclaimer-confirmation-background-start: #e8f4fd;
+  --web-import-disclaimer-confirmation-background-end: #d4eafc;
+  --web-import-disclaimer-required-code-text: #2980b9;
+  --web-import-disclaimer-input-focus-ring: rgba(52, 152, 219, .2);
+  --web-import-disclaimer-footer-background: #f8f9fa;
+  --web-import-disclaimer-cancel-border: #6c757d;
+  --web-import-disclaimer-cancel-text: #6c757d;
+  --web-import-disclaimer-cancel-hover-background: #6c757d;
+  --web-import-disclaimer-confirm-background-end: #2ecc71;
+  --web-import-disclaimer-confirm-disabled-background: #bdc3c7;
+  --web-import-disclaimer-confirm-hover-background-start: #219a52;
+  --web-import-disclaimer-confirm-hover-shadow: rgba(39, 174, 96, .3);
+  --web-import-disclaimer-scrollbar-track: #f1f1f1;
+  --web-import-disclaimer-scrollbar-thumb: #c0c0c0;
+  --web-import-disclaimer-scrollbar-thumb-hover: #a0a0a0;
+  --web-import-disclaimer-dark-header-background-start: #3d3a1d;
+  --web-import-disclaimer-dark-header-background-end: #4a4520;
+  --web-import-disclaimer-dark-title-text: #ffc107;
+  --web-import-disclaimer-dark-body-text: #e0e0e0;
+  --web-import-disclaimer-dark-section-background: #252540;
+  --web-import-disclaimer-dark-warning-section-background: #3d2525;
+  --web-import-disclaimer-dark-confirmation-background-start: #1a2a3a;
+  --web-import-disclaimer-dark-confirmation-background-end: #1d3040;
+  --web-import-disclaimer-dark-confirmation-border: #2980b9;
+  --web-import-disclaimer-dark-code-text: #5dade2;
+  --web-import-disclaimer-dark-input-border: #404060;
+  --web-import-disclaimer-dark-footer-background: #16162a;
+  --web-import-disclaimer-dark-cancel-text: #aaa;
+  --web-import-disclaimer-dark-cancel-border: #555;
+  --web-import-disclaimer-dark-cancel-hover-background: #555;
 
   display: flex;
   flex: 1;
@@ -201,8 +203,8 @@ function handleCancel() {
   align-items: center;
   gap: 12px;
   padding: 20px 24px;
-  background: linear-gradient(135deg, var(--color-status-warning-surface), var(--web-import-disclaimer-surface-muted));
-  border-bottom: 2px solid var(--web-import-disclaimer-border-default);
+  background: linear-gradient(135deg, var(--color-status-warning-surface), var(--web-import-disclaimer-header-background-end));
+  border-bottom: 2px solid var(--web-import-disclaimer-header-divider);
   border-radius: 14px 14px 0 0;
 }
 
@@ -214,7 +216,7 @@ function handleCancel() {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: var(--web-import-disclaimer-text-primary);
+  color: var(--web-import-disclaimer-title-text);
 }
 
 .disclaimer-content {
@@ -239,9 +241,9 @@ function handleCancel() {
 .section {
   margin-bottom: 20px;
   padding: 16px;
-  background: var(--web-import-disclaimer-surface-subtle);
+  background: var(--web-import-disclaimer-section-background);
   border-radius: 8px;
-  border-left: 4px solid var(--web-import-disclaimer-border-strong);
+  border-left: 4px solid var(--web-import-disclaimer-section-accent);
 }
 
 .section h4 {
@@ -266,18 +268,18 @@ function handleCancel() {
 }
 
 .section strong {
-  color: var(--web-import-disclaimer-text-secondary);
+  color: var(--web-import-disclaimer-strong-text);
 }
 
 .warning-section {
-  border-left-color: var(--web-import-disclaimer-border-muted);
-  background: var(--web-import-disclaimer-surface-hover);
+  border-left-color: var(--web-import-disclaimer-warning-section-accent);
+  background: var(--web-import-disclaimer-warning-section-background);
 }
 
 .confirmation-area {
   margin-top: 24px;
   padding: 20px;
-  background: linear-gradient(135deg, var(--web-import-disclaimer-surface-active), var(--web-import-disclaimer-surface-selected));
+  background: linear-gradient(135deg, var(--web-import-disclaimer-confirmation-background-start), var(--web-import-disclaimer-confirmation-background-end));
   border-radius: 12px;
   border: 2px solid var(--color-border-accent);
 }
@@ -298,7 +300,7 @@ function handleCancel() {
   display: inline-block;
   padding: 10px 24px;
   background: var(--color-surface-base);
-  color: var(--web-import-disclaimer-text-muted);
+  color: var(--web-import-disclaimer-required-code-text);
   font-size: 18px;
   font-weight: 700;
   border-radius: 8px;
@@ -320,7 +322,7 @@ function handleCancel() {
 
 .confirmation-input:focus {
   border-color: var(--color-border-accent);
-  box-shadow: 0 0 0 3px var(--web-import-disclaimer-shadow-raised);
+  box-shadow: 0 0 0 3px var(--web-import-disclaimer-input-focus-ring);
 }
 
 .input-error {
@@ -335,7 +337,7 @@ function handleCancel() {
   gap: 12px;
   padding: 20px 24px;
   border-top: 1px solid var(--color-border-muted);
-  background: var(--web-import-disclaimer-surface-subtle);
+  background: var(--web-import-disclaimer-footer-background);
   border-radius: 0 0 14px 14px;
 }
 
@@ -344,16 +346,16 @@ function handleCancel() {
   padding: 14px 20px;
   font-size: 15px;
   font-weight: 500;
-  border: 2px solid var(--web-import-disclaimer-border-strong);
+  border: 2px solid var(--web-import-disclaimer-cancel-border);
   background: var(--color-surface-base);
-  color: var(--web-import-disclaimer-text-subtle);
+  color: var(--web-import-disclaimer-cancel-text);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-cancel:hover {
-  background: var(--web-import-disclaimer-surface-overlay);
+  background: var(--web-import-disclaimer-cancel-hover-background);
   color: var(--color-text-inverse);
 }
 
@@ -363,7 +365,7 @@ function handleCancel() {
   font-size: 15px;
   font-weight: 600;
   border: none;
-  background: linear-gradient(135deg, var(--color-surface-success), var(--web-import-disclaimer-surface-inverse));
+  background: linear-gradient(135deg, var(--color-surface-success), var(--web-import-disclaimer-confirm-background-end));
   color: var(--color-text-inverse);
   border-radius: 8px;
   cursor: pointer;
@@ -371,15 +373,15 @@ function handleCancel() {
 }
 
 .btn-confirm:disabled {
-  background: var(--web-import-disclaimer-surface-contrast);
+  background: var(--web-import-disclaimer-confirm-disabled-background);
   cursor: not-allowed;
   opacity: 0.7;
 }
 
 .btn-confirm:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--web-import-disclaimer-surface-tint), var(--color-surface-success));
+  background: linear-gradient(135deg, var(--web-import-disclaimer-confirm-hover-background-start), var(--color-surface-success));
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--web-import-disclaimer-shadow-floating);
+  box-shadow: 0 4px 12px var(--web-import-disclaimer-confirm-hover-shadow);
 }
 
 .disclaimer-content::-webkit-scrollbar {
@@ -387,71 +389,71 @@ function handleCancel() {
 }
 
 .disclaimer-content::-webkit-scrollbar-track {
-  background: var(--web-import-disclaimer-surface-soft);
+  background: var(--web-import-disclaimer-scrollbar-track);
   border-radius: 4px;
 }
 
 .disclaimer-content::-webkit-scrollbar-thumb {
-  background: var(--web-import-disclaimer-surface-strong);
+  background: var(--web-import-disclaimer-scrollbar-thumb);
   border-radius: 4px;
 }
 
 .disclaimer-content::-webkit-scrollbar-thumb:hover {
-  background: var(--web-import-disclaimer-surface-stronger);
+  background: var(--web-import-disclaimer-scrollbar-thumb-hover);
 }
 
 @media (prefers-color-scheme: dark) {
   .disclaimer-header {
-    background: linear-gradient(135deg, var(--web-import-disclaimer-surface-highlight), var(--web-import-disclaimer-surface-highlight-strong));
+    background: linear-gradient(135deg, var(--web-import-disclaimer-dark-header-background-start), var(--web-import-disclaimer-dark-header-background-end));
   }
 
   .disclaimer-title {
-    color: var(--web-import-disclaimer-text-supporting);
+    color: var(--web-import-disclaimer-dark-title-text);
   }
 
   .disclaimer-text,
   .disclaimer-text h3,
   .section h4,
   .confirmation-prompt {
-    color: var(--web-import-disclaimer-text-disabled);
+    color: var(--web-import-disclaimer-dark-body-text);
   }
 
   .section {
-    background: var(--web-import-disclaimer-surface-danger);
+    background: var(--web-import-disclaimer-dark-section-background);
   }
 
   .warning-section {
-    background: var(--web-import-disclaimer-surface-warning);
+    background: var(--web-import-disclaimer-dark-warning-section-background);
   }
 
   .confirmation-area {
-    background: linear-gradient(135deg, var(--web-import-disclaimer-surface-success), var(--web-import-disclaimer-surface-info));
-    border-color: var(--web-import-disclaimer-border-subtle);
+    background: linear-gradient(135deg, var(--web-import-disclaimer-dark-confirmation-background-start), var(--web-import-disclaimer-dark-confirmation-background-end));
+    border-color: var(--web-import-disclaimer-dark-confirmation-border);
   }
 
   .required-text code {
-    background: var(--web-import-disclaimer-surface-danger);
-    color: var(--web-import-disclaimer-text-inverse);
+    background: var(--web-import-disclaimer-dark-section-background);
+    color: var(--web-import-disclaimer-dark-code-text);
   }
 
   .confirmation-input {
-    background: var(--web-import-disclaimer-surface-danger);
-    color: var(--web-import-disclaimer-text-disabled);
-    border-color: var(--web-import-disclaimer-border-hover);
+    background: var(--web-import-disclaimer-dark-section-background);
+    color: var(--web-import-disclaimer-dark-body-text);
+    border-color: var(--web-import-disclaimer-dark-input-border);
   }
 
   .disclaimer-footer {
-    background: var(--web-import-disclaimer-surface-accent);
+    background: var(--web-import-disclaimer-dark-footer-background);
   }
 
   .btn-cancel {
     background: transparent;
-    color: var(--web-import-disclaimer-text-brand);
-    border-color: var(--web-import-disclaimer-border-active);
+    color: var(--web-import-disclaimer-dark-cancel-text);
+    border-color: var(--web-import-disclaimer-dark-cancel-border);
   }
 
   .btn-cancel:hover {
-    background: var(--web-import-disclaimer-surface-accent-strong);
+    background: var(--web-import-disclaimer-dark-cancel-hover-background);
     color: var(--color-text-inverse);
   }
 }

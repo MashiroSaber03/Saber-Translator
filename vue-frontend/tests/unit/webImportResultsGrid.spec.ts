@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import WebImportResultsGrid from '@/components/translate/web-import/WebImportResultsGrid.vue'
 import type { ExtractResult } from '@/types/webImport'
 
@@ -39,8 +40,11 @@ describe('WebImportResultsGrid', () => {
     const firstCard = wrapper.get('.image-item')
     expect(firstCard.element.tagName).toBe('LABEL')
 
-    const firstCheckbox = wrapper.get('input[aria-label="选择第 1 页"]')
-    await firstCheckbox.setValue(true)
+    const firstCheckbox = wrapper
+      .findAllComponents(UiCheckbox)
+      .find(checkbox => checkbox.props('ariaLabel') === '选择第 1 页')
+    expect(firstCheckbox).toBeDefined()
+    firstCheckbox?.vm.$emit('change', true)
 
     expect(wrapper.emitted('togglePage')?.[0]).toEqual([1])
   })

@@ -12,7 +12,7 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-import { getAnalysisConfig, saveAnalysisConfig } from '@/api/insight'
+import { getGlobalConfig, saveGlobalConfig, type AnalysisConfig } from '@/api/insight'
 
 describe('insight api config routes', () => {
   beforeEach(() => {
@@ -20,19 +20,19 @@ describe('insight api config routes', () => {
     postMock.mockReset()
   })
 
-  it('getAnalysisConfig should call global config route', async () => {
+  it('getGlobalConfig calls the global config route', async () => {
     getMock.mockResolvedValue({ success: true, config: {} })
 
-    await getAnalysisConfig('book-1')
+    await getGlobalConfig()
 
     expect(getMock).toHaveBeenCalledWith('/api/manga-insight/config')
   })
 
-  it('saveAnalysisConfig should call global config route', async () => {
-    const config = { vlm: { provider: 'gemini', api_key: '', model: 'x' } }
+  it('saveGlobalConfig calls the global config route', async () => {
+    const config: AnalysisConfig = { vlm: { provider: 'gemini', api_key: '', model: 'x' } }
     postMock.mockResolvedValue({ success: true })
 
-    await saveAnalysisConfig('book-1', config as any)
+    await saveGlobalConfig(config)
 
     expect(postMock).toHaveBeenCalledWith('/api/manga-insight/config', config)
   })

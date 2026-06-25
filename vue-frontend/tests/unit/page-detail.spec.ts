@@ -18,6 +18,14 @@ vi.mock('@/api/insight', () => ({
 
 import PageDetail from '@/components/insight/PageDetail.vue'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('PageDetail', () => {
   beforeEach(() => {
     const pinia = createPinia()
@@ -111,5 +119,64 @@ describe('PageDetail', () => {
     await previewTrigger.trigger('click')
 
     expect(wrapper.find('.image-preview-modal').exists()).toBe(true)
+  })
+
+  it('ignores stale page detail responses after selecting another page', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.selectPage(3)
+    store.setBookTotalPages(20)
+
+    const page3 = deferred<{
+      success: true
+      analysis: { page_num: number; page_summary: string; panels: never[] }
+    }>()
+    const page4 = deferred<{
+      success: true
+      analysis: { page_num: number; page_summary: string; panels: never[] }
+    }>()
+    getPageDataMock.mockReset()
+    getPageDataMock
+      .mockReturnValueOnce(page3.promise)
+      .mockReturnValueOnce(page4.promise)
+
+    const wrapper = mount(PageDetail, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await nextTick()
+    expect(getPageDataMock).toHaveBeenCalledWith('book-1', 3)
+
+    store.selectPage(4)
+    await nextTick()
+    expect(getPageDataMock).toHaveBeenCalledWith('book-1', 4)
+
+    page4.resolve({
+      success: true,
+      analysis: {
+        page_num: 4,
+        page_summary: '第 4 页摘要',
+        panels: [],
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('第 4 页摘要')
+
+    page3.resolve({
+      success: true,
+      analysis: {
+        page_num: 3,
+        page_summary: '第 3 页迟到摘要',
+        panels: [],
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('第 4 页摘要')
+    expect(wrapper.text()).not.toContain('第 3 页迟到摘要')
   })
 })

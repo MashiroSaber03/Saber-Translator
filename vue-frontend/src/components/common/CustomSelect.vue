@@ -416,7 +416,7 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   background: var(--color-surface-subtle);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
 }
 
 .custom-select-option {

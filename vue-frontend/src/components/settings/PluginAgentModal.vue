@@ -101,14 +101,8 @@
               <UiInput v-model.number="localAgentSettings.transportRetries" :disabled="unref(isRunning)" type="number" min="0" max="10" step="1" />
             </div>
             <div class="plugin-agent-checkboxes">
-              <label class="plugin-agent-checkbox-label">
-                <UiInput v-model="localAgentSettings.forceJsonOutput" :disabled="unref(isRunning)" type="checkbox" />
-                强制 JSON 输出
-              </label>
-              <label class="plugin-agent-checkbox-label">
-                <UiInput v-model="localAgentSettings.useStream" :disabled="unref(isRunning)" type="checkbox" />
-                流式调用
-              </label>
+              <UiCheckbox v-model="localAgentSettings.forceJsonOutput" :disabled="unref(isRunning)" label="强制 JSON 输出" />
+              <UiCheckbox v-model="localAgentSettings.useStream" :disabled="unref(isRunning)" label="流式调用" />
             </div>
           </div>
           <div class="plugin-agent-field">
@@ -335,6 +329,7 @@
 <script setup lang="ts">
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -578,13 +573,6 @@ const {
   flex-direction: column;
   justify-content: center;
   gap: 8px;
-}
-
-.plugin-agent-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
 }
 
 .plugin-agent-list {

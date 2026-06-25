@@ -118,10 +118,11 @@ watch(
 
 <style scoped>
 .reader-main {
-  --reader-canvas-border-default: rgba(255, 255, 255, .1);
-  --reader-canvas-surface-base: rgba(255, 255, 255, .05);
-  --reader-canvas-surface-raised: rgba(0, 0, 0, .6);
-  --reader-canvas-text-primary: rgba(255, 255, 255, .7);
+  --reader-canvas-page-background: #1a1a2e;
+  --reader-canvas-muted-text: rgba(255, 255, 255, .7);
+  --reader-canvas-spinner-track: rgba(255, 255, 255, .1);
+  --reader-canvas-image-loading-background: rgba(255, 255, 255, .05);
+  --reader-canvas-page-index-background: rgba(0, 0, 0, .6);
 }
 
 .reader-main {
@@ -129,7 +130,7 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--reader-page-background, var(--reader-view-surface-base));
+  background: var(--reader-page-background, var(--reader-canvas-page-background));
 }
 
 .loading-state {
@@ -138,13 +139,13 @@ watch(
   align-items: center;
   justify-content: center;
   height: calc(100dvh - 56px);
-  color: var(--reader-canvas-text-primary);
+  color: var(--reader-canvas-muted-text);
 }
 
 .loading-spinner {
   width: 48px;
   height: 48px;
-  border: 3px solid var(--reader-canvas-border-default);
+  border: 3px solid var(--reader-canvas-spinner-track);
   border-top-color: var(--color-border-brand-gradient);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -156,7 +157,7 @@ watch(
   align-items: center;
   justify-content: center;
   height: calc(100dvh - 56px);
-  color: var(--reader-canvas-text-primary);
+  color: var(--reader-canvas-muted-text);
   text-align: center;
   padding: 20px;
 }
@@ -203,7 +204,7 @@ watch(
 
 .reader-image.loading {
   min-height: 300px;
-  background: var(--reader-canvas-surface-base);
+  background: var(--reader-canvas-image-loading-background);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -213,7 +214,7 @@ watch(
   position: absolute;
   top: 8px;
   left: 8px;
-  background: var(--reader-canvas-surface-raised);
+  background: var(--reader-canvas-page-index-background);
   color: var(--color-text-inverse);
   padding: 4px 8px;
   border-radius: 4px;

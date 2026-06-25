@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -24,6 +25,14 @@ vi.mock('marked', () => ({
 }))
 
 import OverviewPanel from '@/components/insight/OverviewPanel.vue'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 describe('OverviewPanel', () => {
   beforeEach(() => {
@@ -179,5 +188,58 @@ describe('OverviewPanel', () => {
     await recentItem.trigger('click')
 
     expect(store.selectedPageNum).toBe(2)
+  })
+
+  it('ignores stale cached overview responses after switching books', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setAnalyzedPagesCount(0)
+
+    const book1Overview = deferred<{ success: true; content: string }>()
+    const book2Overview = deferred<{ success: true; content: string }>()
+    getGeneratedTemplatesMock.mockReset().mockResolvedValue({
+      success: true,
+      generated: ['no_spoiler'],
+    })
+    getOverviewMock.mockReset()
+      .mockReturnValueOnce(book1Overview.promise)
+      .mockReturnValueOnce(book2Overview.promise)
+
+    const wrapper = mount(OverviewPanel, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            template: '<button class="custom-select-stub">no_spoiler</button>',
+            props: ['modelValue', 'options'],
+          },
+        },
+      },
+    })
+    await flushPromises()
+    expect(getOverviewMock).toHaveBeenCalledWith('book-1', 'no_spoiler')
+
+    store.currentBookId = 'book-2'
+    await nextTick()
+    await flushPromises()
+    expect(getOverviewMock).toHaveBeenCalledWith('book-2', 'no_spoiler')
+
+    book2Overview.resolve({
+      success: true,
+      content: 'book-2 overview',
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('book-2 overview')
+
+    book1Overview.resolve({
+      success: true,
+      content: 'book-1 stale overview',
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('book-2 overview')
+    expect(wrapper.text()).not.toContain('book-1 stale overview')
   })
 })

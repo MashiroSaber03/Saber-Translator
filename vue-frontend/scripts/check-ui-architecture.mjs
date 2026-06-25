@@ -78,6 +78,9 @@ const TOOL_BUTTON_VARIANT_RE = /variant\s*=\s*["']tool["']/
 const RAW_INPUT_RE = /<input\b/
 const RAW_TEXTAREA_RE = /<textarea\b/
 const RAW_SELECT_RE = /<select\b/
+const UI_INPUT_TAG_RE = /<UiInput\b[\s\S]*?>/g
+const UI_INPUT_BOOLEAN_TYPE_RE = /\btype\s*=\s*["'](?:checkbox|radio)["']/
+const UI_INPUT_BOOLEAN_TYPE_VALUE_RE = /\btype\s*=\s*["'](checkbox|radio)["']/
 const STYLE_SRC_RE = /<style[^>]+src=/
 const SCRIPT_STYLE_IMPORT_RE = /import\s+['"]\.\/([^'"]+\.styles\.css)['"]/g
 const HORIZONTAL_STYLE_SLICE_RE = /\.(?:base|layout|panels|responsive)\.styles\.css$/
@@ -166,6 +169,7 @@ const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
 const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
 const OPTIONAL_CURRENT_SCHEMA_VERSION_RE = /\b(?:settingsSchemaVersion|webImportSettingsSchemaVersion)\s*\?:/g
+const WEB_IMPORT_PARTIAL_SCHEMA_RE = /\bPartial\s*<\s*WebImport(?:Settings|ProviderConfigs|SettingsPayload)\s*>/g
 const OPENAI_MIRROR_FIELD_PATH_RE = /(?:^|\/)openaiOptions\.ts$|src\/stores\/insightStore\.ts$|src\/stores\/insight\/useInsightConfigManager\.ts$/
 const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|对应原\s+[^*\n\r]+\.js|旧版[^*\n\r]*|原版[^*\n\r]*|【(?:简化设计|增强版|优化)[^】]*】|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
 const COMPOSABLE_IMPLEMENTATION_HISTORY_RE = /从\s+[^*\n\r]+提取|【(?:简化设计|增强版|优化)[^】]*】/g
@@ -765,6 +769,14 @@ function checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutCo
       `current schema version fields must be required, not optional: ${[...optionalSchemaVersions].join(', ')}`
     )
   }
+
+  const webImportPartialSchemas = new Set([...contentWithoutComments.matchAll(WEB_IMPORT_PARTIAL_SCHEMA_RE)].map(match => match[0]))
+  if (webImportPartialSchemas.size > 0) {
+    addFailure(
+      path,
+      `WebImport settings/provider payloads must enter the frontend as unknown and be parsed by the store, not as partial schemas: ${[...webImportPartialSchemas].join(', ')}`
+    )
+  }
 }
 
 function checkCustomPropertyOwnership(path, normalizedPath, content) {
@@ -1070,6 +1082,30 @@ function checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithou
   }
 }
 
+function checkUiInputBooleanControls(path, normalizedPath, contentWithoutComments) {
+  if (!path.endsWith('.vue') || normalizedPath.startsWith(UI_PRIMITIVE_STYLE_ALLOWED_PREFIX)) {
+    return
+  }
+
+  const genericBooleanControls = new Set()
+  for (const match of contentWithoutComments.matchAll(UI_INPUT_TAG_RE)) {
+    if (!UI_INPUT_BOOLEAN_TYPE_RE.test(match[0])) {
+      continue
+    }
+    const typeMatch = match[0].match(UI_INPUT_BOOLEAN_TYPE_VALUE_RE)
+    if (typeMatch) {
+      genericBooleanControls.add(`type="${typeMatch[1]}"`)
+    }
+  }
+
+  if (genericBooleanControls.size > 0) {
+    addFailure(
+      path,
+      `generic UiInput boolean control(s) ${[...genericBooleanControls].join(', ')} are not allowed in business Vue components; use UiCheckbox or a business-owned segmented control`
+    )
+  }
+}
+
 function checkGlobalFormSkinSelectors(path, content) {
   if (!normalizePath(path).endsWith('form-primitives.css')) {
     return
@@ -1173,6 +1209,7 @@ function checkFile(path) {
   checkRawCustomStyleValues(path, content)
   checkBaseModalCustomStyleUsage(path, normalizedPath, content)
   checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithoutComments)
+  checkUiInputBooleanControls(path, normalizedPath, contentWithoutComments)
 
   if (GENERATED_CSS_RE.test(normalizedPath)) {
     addFailure(path, 'generated CSS files are not allowed; use co-located named .styles.css or component scoped styles')

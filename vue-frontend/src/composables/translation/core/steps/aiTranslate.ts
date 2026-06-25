@@ -141,7 +141,7 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         custom_base_url: isProofread ? roundConfig?.customBaseUrl : hqConfig.customBaseUrl,
         translation_mode: isProofread ? 'proofread' : 'hq',
         translation_scope: 'batch',
-        // 新接口：传数据，后端构建消息
+        // 结构化数据交给后端构建模型消息。
         jsonData,
         imageBase64Array,
         target_language: settings.targetLanguage,

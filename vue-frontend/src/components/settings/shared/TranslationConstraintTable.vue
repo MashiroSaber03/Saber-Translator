@@ -271,10 +271,10 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 
 <style scoped>
 .constraint-table {
-  --translation-constraint-table-border-default: #cfd6e4;
-  --translation-constraint-table-border-strong: #5b73f2;
-  --translation-constraint-table-shadow-default: rgba(88, 125, 255, .18);
-  --translation-constraint-table-text-primary: #1f2430;
+  --translation-constraint-table-field-border: #cfd6e4;
+  --translation-constraint-table-field-focus-border: #5b73f2;
+  --translation-constraint-table-field-focus-ring: rgba(88, 125, 255, .18);
+  --translation-constraint-table-field-text: #1f2430;
 }
 
 .constraint-toolbar {
@@ -290,10 +290,10 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   min-width: 220px;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--translation-constraint-table-border-default);
+  border: 1px solid var(--translation-constraint-table-field-border);
   border-radius: 8px;
   background: var(--color-surface-base);
-  color: var(--translation-constraint-table-text-primary);
+  color: var(--translation-constraint-table-field-text);
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
@@ -301,8 +301,8 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 
 .constraint-search:focus {
   outline: none;
-  border-color: var(--translation-constraint-table-border-strong);
-  box-shadow: 0 0 0 2px var(--translation-constraint-table-shadow-default);
+  border-color: var(--translation-constraint-table-field-focus-border);
+  box-shadow: 0 0 0 2px var(--translation-constraint-table-field-focus-ring);
 }
 
 .constraint-actions {
@@ -331,10 +331,10 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   width: 100%;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--translation-constraint-table-border-default);
+  border: 1px solid var(--translation-constraint-table-field-border);
   border-radius: 8px;
   background: var(--color-surface-base);
-  color: var(--translation-constraint-table-text-primary);
+  color: var(--translation-constraint-table-field-text);
   font-size: 14px;
   transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
@@ -348,8 +348,8 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 
 .constraint-cell-field:focus {
   outline: none;
-  border-color: var(--translation-constraint-table-border-strong);
-  box-shadow: 0 0 0 2px var(--translation-constraint-table-shadow-default);
+  border-color: var(--translation-constraint-table-field-focus-border);
+  box-shadow: 0 0 0 2px var(--translation-constraint-table-field-focus-ring);
 }
 
 .select-cell {

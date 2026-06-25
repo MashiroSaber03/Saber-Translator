@@ -1,1 +1,0 @@
-import{a as r}from"./index.DeWF91AA.js";import"./vue-vendor.c_vyTbzs.js";import"./utils-vendor.B9ygI19o.js";async function i(o){const s=await r.post("/api/sessions/load_by_path",{path:o});return{success:s.success,session:s.session_data,error:s.error}}export{i as loadSessionByPath};

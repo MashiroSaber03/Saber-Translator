@@ -130,6 +130,48 @@ describe('useExportImport', () => {
     expect(toastMock.success).toHaveBeenCalledWith('导入成功！更新了 1 张图片中的 1 个气泡文本，重渲染了 1 张图片')
   })
 
+  it('rejects import text files that do not match the current export schema', async () => {
+    const imageStore = useImageStore()
+    imageStore.addImage('page-1.png', 'data:image/png;base64,original-image', {
+      bubbleStates: [
+        createBubbleState({
+          coords: [0, 0, 120, 80],
+          polygon: [],
+          originalText: '原文',
+          translatedText: '旧译文',
+          textboxText: '旧译文',
+          textDirection: 'vertical',
+        }),
+      ],
+    })
+
+    const file = new File([
+      JSON.stringify([
+        {
+          imageIndex: 0,
+          bubbles: [
+            {
+              bubbleIndex: 0,
+              original: '原文',
+              translated: '新译文',
+              textDirection: 'auto',
+            },
+          ],
+        },
+      ]),
+    ], 'translations.json', { type: 'application/json' })
+
+    const { useExportImport } = await import('@/composables/useExportImport')
+    const { importText } = useExportImport()
+
+    await importText(file)
+
+    expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('旧译文')
+    expect(executeRenderMock).not.toHaveBeenCalled()
+    expect(toastMock.error).toHaveBeenCalledWith(expect.stringContaining('导入失败'))
+    expect(toastMock.success).not.toHaveBeenCalled()
+  })
+
   it('downloads all images and runs scheduled temp cleanup without routine console output', async () => {
     vi.useFakeTimers()
     downloadStartSessionMock.mockResolvedValue({ success: true, session_id: 'session-1' })

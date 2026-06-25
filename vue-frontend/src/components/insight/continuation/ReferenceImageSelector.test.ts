@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +7,8 @@ import ReferenceImageSelector from './ReferenceImageSelector.vue'
 vi.mock('@/api/insight', () => ({
   getThumbnailUrl: vi.fn().mockReturnValue('/thumb/page-1.png'),
 }))
+
+enableAutoUnmount(afterEach)
 
 afterEach(() => {
   document.body.innerHTML = ''

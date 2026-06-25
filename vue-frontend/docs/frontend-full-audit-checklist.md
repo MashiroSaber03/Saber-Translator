@@ -1,5 +1,7 @@
 # Frontend Full Audit Checklist
 
+> Historical record: this checklist is retained as audit evidence from an earlier pass. It may contain older validation logs, token counts, or scan-assisted notes; the current final progress source is `frontend-final-line-by-line-audit-2026-06-25.md`.
+
 本清单用于前端全量逐行审计。审计顺序固定为：页面 -> 组件 -> 代码文件 -> 行级阅读。每完成一个小步就更新状态，避免长周期审计中丢失上下文。
 
 ## Status Legend

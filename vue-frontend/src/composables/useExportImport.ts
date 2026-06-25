@@ -32,6 +32,62 @@ export interface ExportTextData {
   }>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isTextDirection(value: unknown): value is 'vertical' | 'horizontal' {
+  return value === 'vertical' || value === 'horizontal'
+}
+
+function parseImportTextData(value: unknown): ExportTextData[] {
+  if (!Array.isArray(value)) {
+    throw new Error('导入的 JSON 格式不正确，应为数组')
+  }
+
+  return value.map((imageData, imagePosition): ExportTextData => {
+    if (!isRecord(imageData)) {
+      throw new Error(`第 ${imagePosition + 1} 个图片条目格式不正确`)
+    }
+
+    const imageIndex = imageData.imageIndex
+    const bubbles = imageData.bubbles
+    if (!Number.isInteger(imageIndex) || imageIndex < 0) {
+      throw new Error(`第 ${imagePosition + 1} 个图片条目缺少有效 imageIndex`)
+    }
+    if (!Array.isArray(bubbles)) {
+      throw new Error(`第 ${imagePosition + 1} 个图片条目缺少 bubbles 数组`)
+    }
+
+    return {
+      imageIndex,
+      bubbles: bubbles.map((bubbleData, bubblePosition) => {
+        if (!isRecord(bubbleData)) {
+          throw new Error(`第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡格式不正确`)
+        }
+
+        const bubbleIndex = bubbleData.bubbleIndex
+        const original = bubbleData.original
+        const translated = bubbleData.translated
+        const textDirection = bubbleData.textDirection
+        if (!Number.isInteger(bubbleIndex) || bubbleIndex < 0) {
+          throw new Error(`第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡缺少有效 bubbleIndex`)
+        }
+        if (typeof original !== 'string' || typeof translated !== 'string' || !isTextDirection(textDirection)) {
+          throw new Error(`第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡不符合当前文本导入 schema`)
+        }
+
+        return {
+          bubbleIndex,
+          original,
+          translated,
+          textDirection,
+        }
+      }),
+    }
+  })
+}
+
 /**
  * 下载格式类型
  */
@@ -276,12 +332,7 @@ export function useExportImport() {
       importProgress.value = 10
       importProgressText.value = '解析 JSON 数据...'
 
-      const importedData: ExportTextData[] = JSON.parse(fileContent)
-
-      // 验证数据格式
-      if (!Array.isArray(importedData)) {
-        throw new Error('导入的 JSON 格式不正确，应为数组')
-      }
+      const importedData = parseImportTextData(JSON.parse(fileContent) as unknown)
 
       // 统计信息
       let updatedImages = 0

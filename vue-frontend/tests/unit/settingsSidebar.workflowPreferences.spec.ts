@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, type PropType } from 'vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 const { getFontListMock, getPreferencesMock, savePreferencesMock } = vi.hoisted(() => ({
   getFontListMock: vi.fn(),
@@ -68,6 +69,8 @@ vi.mock('@/components/translate/PageSelectionModal.vue', () => ({
 import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 
 describe('SettingsSidebar workflow preferences', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     setActivePinia(createPinia())
     getFontListMock.mockReset()
@@ -84,12 +87,16 @@ describe('SettingsSidebar workflow preferences', () => {
     savePreferencesMock.mockResolvedValue({ success: true })
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('keeps the default workflow mode when remembering is disabled', async () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
-    expect((wrapper.find('#rememberWorkflowModeCheckbox').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(false)
   })
 
   it('restores a remembered dangerous workflow mode', async () => {
@@ -105,7 +112,7 @@ describe('SettingsSidebar workflow preferences', () => {
     await flushPromises()
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('clear-all')
-    expect((wrapper.find('#rememberWorkflowModeCheckbox').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(true)
   })
 
   it('saves the last workflow mode immediately when the dropdown changes', async () => {
@@ -124,7 +131,8 @@ describe('SettingsSidebar workflow preferences', () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
-    await wrapper.find('#rememberWorkflowModeCheckbox').setValue(true)
+    wrapper.findComponent(UiCheckbox).vm.$emit('change', true)
+    await flushPromises()
 
     expect(savePreferencesMock).toHaveBeenCalledWith({
       rememberWorkflowModeEnabled: true,
@@ -207,7 +215,7 @@ describe('SettingsSidebar workflow preferences', () => {
 
     const wrapper = mount(SettingsSidebar)
 
-    await wrapper.find('#rememberWorkflowModeCheckbox').setValue(true)
+    wrapper.findComponent(UiCheckbox).vm.$emit('change', true)
     resolvePreferences({
       success: true,
       preferences: {
@@ -218,7 +226,7 @@ describe('SettingsSidebar workflow preferences', () => {
     await flushPromises()
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
-    expect((wrapper.find('#rememberWorkflowModeCheckbox').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(true)
   })
 
   it('registers outside-click handling before async font loading settles', () => {
@@ -242,7 +250,7 @@ describe('SettingsSidebar workflow preferences', () => {
     try {
       const wrapper = mount(SettingsSidebar)
 
-      await wrapper.find('#autoFontSize').setValue(true)
+      await wrapper.find('.auto-fontsize-toggle').trigger('click')
 
       expect(logSpy).not.toHaveBeenCalled()
     } finally {

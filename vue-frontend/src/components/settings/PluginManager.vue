@@ -35,10 +35,15 @@
             <p class="plugin-meta">模式: {{ (plugin.supported_modes || []).join(', ') || '无' }}</p>
           </div>
           <div class="plugin-controls">
-            <label class="switch">
-              <UiInput class="plugin-manager__toggle-input" type="checkbox" :checked="plugin.enabled" @change="togglePlugin(plugin)" />
+            <UiButton
+              variant="toolbar"
+              class="switch"
+              :aria-label="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
+              :aria-pressed="plugin.enabled"
+              @click="togglePlugin(plugin)"
+            >
               <span class="slider"></span>
-            </label>
+            </UiButton>
             <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
             <UiButton variant="secondary" @click="openPluginConfig(plugin)" v-if="plugin.has_config" title="配置" size="sm">⚙️</UiButton>
             <UiButton variant="danger" @click="deletePlugin(plugin)" title="删除" size="sm">🗑️</UiButton>
@@ -52,10 +57,15 @@
       <p class="settings-hint">设置插件在新会话中的默认启用状态</p>
       <div v-for="plugin in plugins" :key="'default-' + plugin.id" class="default-state-item">
         <span class="plugin-name">{{ plugin.display_name }}</span>
-        <label class="switch">
-          <UiInput class="plugin-manager__toggle-input" type="checkbox" :checked="defaultStates[plugin.id]" @change="updateDefaultState(plugin.id, $event)" />
+        <UiButton
+          variant="toolbar"
+          class="switch"
+          :aria-label="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
+          :aria-pressed="Boolean(defaultStates[plugin.id])"
+          @click="updateDefaultState(plugin.id, !defaultStates[plugin.id])"
+        >
           <span class="slider"></span>
-        </label>
+        </UiButton>
       </div>
     </UiPanel>
 
@@ -86,11 +96,16 @@
             </div>
             <div class="config-field-control">
               <template v-if="field.type === 'boolean'">
-                <label class="config-switch">
-                  <UiInput class="plugin-manager__config-toggle-input" type="checkbox" :id="'config-' + key" v-model="configValues[key]" />
+                <UiButton
+                  :id="'config-' + key"
+                  variant="toolbar"
+                  class="config-switch"
+                  :aria-pressed="Boolean(configValues[key])"
+                  @click="configValues[key] = !Boolean(configValues[key])"
+                >
                   <span class="config-switch-track"></span>
                   <span class="config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>
-                </label>
+                </UiButton>
               </template>
               <template v-else-if="field.type === 'select'">
                 <div class="config-select-wrap">
@@ -251,9 +266,7 @@ async function togglePlugin(plugin: Plugin) {
   }
 }
 
-async function updateDefaultState(pluginName: string, event: Event) {
-  const target = event.target as HTMLInputElement
-  const enabled = target.checked
+async function updateDefaultState(pluginName: string, enabled: boolean) {
   try {
     await pluginApi.setPluginDefaultState(pluginName, enabled)
     defaultStates.value[pluginName] = enabled
@@ -261,7 +274,7 @@ async function updateDefaultState(pluginName: string, event: Event) {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '设置失败'
     toast.error(errorMessage)
-    target.checked = !enabled
+    defaultStates.value[pluginName] = !enabled
   }
 }
 
@@ -484,15 +497,13 @@ onMounted(() => {
 
 .plugin-manager .switch {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
   width: 40px;
   height: 22px;
-}
-
-.plugin-manager .plugin-manager__toggle-input {
-  opacity: 0;
-  width: 0;
-  height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
 }
 
 .plugin-manager .slider {
@@ -516,11 +527,11 @@ onMounted(() => {
   border-radius: 50%;
 }
 
-.plugin-manager .plugin-manager__toggle-input:checked + .slider {
+.plugin-manager .switch[aria-pressed='true'] .slider {
   background-color: var(--color-action-primary);
 }
 
-.plugin-manager .plugin-manager__toggle-input:checked + .slider::before {
+.plugin-manager .switch[aria-pressed='true'] .slider::before {
   transform: translateX(18px);
 }
 
@@ -677,14 +688,11 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   user-select: none;
-}
-
-.plugin-manager .plugin-manager__config-toggle-input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .plugin-manager .config-switch-track {
@@ -709,11 +717,11 @@ onMounted(() => {
   transition: transform var(--transition-fast);
 }
 
-.plugin-manager .plugin-manager__config-toggle-input:checked + .config-switch-track {
+.plugin-manager .config-switch[aria-pressed='true'] .config-switch-track {
   background: linear-gradient(135deg, var(--plugin-manager-surface-overlay) 0%, var(--plugin-manager-surface-inverse) 100%);
 }
 
-.plugin-manager .plugin-manager__config-toggle-input:checked + .config-switch-track::after {
+.plugin-manager .config-switch[aria-pressed='true'] .config-switch-track::after {
   transform: translateX(20px);
 }
 

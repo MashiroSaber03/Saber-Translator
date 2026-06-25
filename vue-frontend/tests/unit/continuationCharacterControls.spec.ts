@@ -26,7 +26,8 @@ describe('continuation character controls', () => {
       },
     })
 
-    expect(wrapper.find('input[type="checkbox"]').attributes('aria-label')).toBe('启用角色 Saber')
+    const toggle = wrapper.get('button[aria-label="启用角色 Saber"]')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('button[aria-label="编辑角色 Saber"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label="删除角色 Saber"]').exists()).toBe(true)
   })
@@ -47,7 +48,8 @@ describe('continuation character controls', () => {
     })
 
     expect(wrapper.find('input[type="file"]').attributes('aria-label')).toBe('上传 Saber 常服 参考图')
-    expect(wrapper.find('input[type="checkbox"]').attributes('aria-label')).toBe('启用 Saber 常服')
+    const toggle = wrapper.get('button[aria-label="启用 Saber 常服"]')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('button[aria-label="生成 Saber 常服 三视图"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label="删除 Saber 常服 参考图"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label="编辑 Saber 常服"]').exists()).toBe(true)

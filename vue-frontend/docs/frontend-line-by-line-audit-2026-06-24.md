@@ -1,5 +1,7 @@
 # Frontend Line-by-Line Audit 2026-06-24
 
+> Historical record: this strict line-by-line checklist is retained as prior audit evidence and is superseded for current status by `frontend-final-line-by-line-audit-2026-06-25.md`.
+
 本清单是严格逐行复审记录。`frontend-full-reaudit-2026-06-24.md` 保留为上一轮强扫描与局部人工复审证据；本文件只记录本轮从外到内的人工逐行阅读结果。`via source scan` 只能作为辅助证据，不能作为最终逐行结论。
 
 ## Status Legend

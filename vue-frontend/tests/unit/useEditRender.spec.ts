@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -111,6 +113,56 @@ describe('useEditRender', () => {
         color: 'preserve',
       },
     }))
+  })
+
+  it('does not write render results after the owning component unmounts', async () => {
+    let resolveRender!: (value: { finalImage: string; bubbleStates: any[] }) => void
+    const pendingRender = new Promise<{ finalImage: string; bubbleStates: any[] }>((resolve) => {
+      resolveRender = resolve
+    })
+    executeRenderMock.mockReturnValueOnce(pendingRender)
+
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    const onRenderSuccess = vi.fn()
+    const onRenderEnd = vi.fn()
+
+    imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
+    imageStore.updateCurrentImage({ cleanImageData: 'clean-image' })
+    bubbleStore.setBubbles([
+      createBubbleState({
+        coords: [0, 0, 120, 80],
+        polygon: [],
+        translatedText: '第一页译文',
+      }),
+    ])
+
+    const { useEditRender } = await import('@/composables/useEditRender')
+    const Harness = defineComponent({
+      setup() {
+        const { reRenderFullImage } = useEditRender({ onRenderSuccess, onRenderEnd })
+        return {
+          start: () => reRenderFullImage(),
+        }
+      },
+      render() {
+        return h('div')
+      },
+    })
+
+    const wrapper = mount(Harness)
+    const renderPromise = (wrapper.vm as unknown as { start: () => Promise<boolean> }).start()
+    wrapper.unmount()
+
+    resolveRender({
+      finalImage: 'rendered-after-unmount',
+      bubbleStates: bubbleStore.bubbles,
+    })
+
+    await expect(renderPromise).resolves.toBe(false)
+    expect(imageStore.currentImage?.translatedDataURL).toBeNull()
+    expect(onRenderSuccess).not.toHaveBeenCalled()
+    expect(onRenderEnd).not.toHaveBeenCalled()
   })
 
   it('does not write routine console logs during successful edit rerenders', async () => {

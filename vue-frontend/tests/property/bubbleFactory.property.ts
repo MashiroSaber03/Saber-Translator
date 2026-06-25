@@ -93,7 +93,8 @@ const bubbleStateArb: fc.Arbitrary<BubbleState> = fc.record({
   strokeWidth: fc.integer({ min: 1, max: 10 }),
   lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
   textAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<'start' | 'center' | 'end'>,
-  inpaintMethod: inpaintMethodArb
+  inpaintMethod: inpaintMethodArb,
+  textlines: fc.constant([])
 })
 
 /**
@@ -330,6 +331,35 @@ describe('气泡工厂函数属性测试', () => {
 
       // 缺少必要字段
       expect(isValidBubbleState({})).toBe(false)
+
+      const requiredFields = [
+        'originalText',
+        'translatedText',
+        'textboxText',
+        'coords',
+        'polygon',
+        'fontSize',
+        'fontFamily',
+        'textDirection',
+        'autoTextDirection',
+        'textColor',
+        'fillColor',
+        'rotationAngle',
+        'position',
+        'strokeEnabled',
+        'strokeColor',
+        'strokeWidth',
+        'lineSpacing',
+        'textAlign',
+        'inpaintMethod',
+        'textlines',
+      ]
+
+      for (const field of requiredFields) {
+        const state = { ...createBubbleState() } as Record<string, unknown>
+        delete state[field]
+        expect(isValidBubbleState(state)).toBe(false)
+      }
 
       // coords 格式错误
       expect(

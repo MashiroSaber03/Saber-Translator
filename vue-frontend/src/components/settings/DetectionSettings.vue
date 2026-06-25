@@ -22,10 +22,7 @@
         <div class="ui-form-hint">检测完成后自动删除面积低于原图该百分比的极小文本框，0 表示不过滤</div>
       </UiField>
       <UiField class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" class="detection-settings__checkbox-input" v-model="settings.enableAuxYoloDetection" />
-          启用辅助 YSGYolo 检测
-        </label>
+        <UiCheckbox v-model="settings.enableAuxYoloDetection" label="启用辅助 YSGYolo 检测" />
         <div class="ui-form-hint">使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量</div>
       </UiField>
       <UiFormGrid>
@@ -53,10 +50,7 @@
         </UiField>
       </UiFormGrid>
       <UiField class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" class="detection-settings__checkbox-input" v-model="settings.enableSaberYoloRefine" />
-          启用 SaberYOLO 二阶段纠错
-        </label>
+        <UiCheckbox v-model="settings.enableSaberYoloRefine" label="启用 SaberYOLO 二阶段纠错" />
         <div class="ui-form-hint">使用 SaberYOLO 对误合并的大文本块进行二次拆分修正</div>
       </UiField>
       <UiField class="ui-settings-field">
@@ -129,10 +123,7 @@
     <UiPanel variant="settings">
       <template #title>调试选项</template>
       <UiField class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" class="detection-settings__checkbox-input" v-model="settings.showDetectionDebug" />
-          显示检测框调试信息
-        </label>
+        <UiCheckbox v-model="settings.showDetectionDebug" label="显示检测框调试信息" />
         <div class="ui-form-hint">在翻译结果中显示气泡检测框，用于调试</div>
       </UiField>
     </UiPanel>
@@ -144,6 +135,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { reactive, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -234,16 +226,3 @@ watch(() => settings.showDetectionDebug, (value) => {
   settingsStore.setShowDetectionDebug(value)
 })
 </script>
-
-<style scoped>
-.ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.detection-settings__checkbox-input {
-  width: auto;
-}
-</style>

@@ -93,14 +93,8 @@
                 <UiInput :value="localDocument.meta.tags.join(', ')" type="text" @input="updateTags($event)" />
               </label>
               <div class="full option-row">
-                <label class="toggle-chip">
-                  <UiInput v-model="localDocument.status.is_favorite" type="checkbox" />
-                  <span>收藏当前角色</span>
-                </label>
-                <label class="toggle-chip">
-                  <UiInput :checked="isFrozen('identity')" type="checkbox" @change="toggleFrozen('identity', $event)" />
-                  <span>钉住角色设定</span>
-                </label>
+                <UiCheckbox v-model="localDocument.status.is_favorite" class="toggle-chip" label="收藏当前角色" />
+                <UiCheckbox :model-value="isFrozen('identity')" class="toggle-chip" label="钉住角色设定" @change="toggleFrozen('identity', $event)" />
               </div>
             </div>
           </section>
@@ -149,10 +143,7 @@
                 <UiInput v-model="localDocument.coreMessages.character_version" type="text" />
               </label>
               <div class="option-row">
-                <label class="toggle-chip">
-                  <UiInput :checked="isFrozen('greetings')" type="checkbox" @change="toggleFrozen('greetings', $event)" />
-                  <span>钉住问候语区</span>
-                </label>
+                <UiCheckbox :model-value="isFrozen('greetings')" class="toggle-chip" label="钉住问候语区" @change="toggleFrozen('greetings', $event)" />
               </div>
             </div>
           </section>
@@ -165,10 +156,7 @@
                 <h3>世界书</h3>
                 <p>把角色设定、关系、场景、专有名词沉淀成可命中的知识树。条目设计越清晰，预览聊天越稳定。</p>
               </div>
-              <label class="toggle-chip">
-                <UiInput :checked="isFrozen('lorebook')" type="checkbox" @change="toggleFrozen('lorebook', $event)" />
-                <span>钉住世界书区</span>
-              </label>
+              <UiCheckbox :model-value="isFrozen('lorebook')" class="toggle-chip" label="钉住世界书区" @change="toggleFrozen('lorebook', $event)" />
             </div>
             <LorebookTreeEditor
               :entries="localDocument.lorebook.entries"
@@ -186,10 +174,7 @@
                 <h3>脚本与任务</h3>
                 <p>把运行时逻辑拆成两个子区：正则脚本负责输入输出变换，状态任务负责变量初始化与节奏控制。</p>
               </div>
-              <label class="toggle-chip">
-                <UiInput :checked="isFrozen('regex') || isFrozen('state-tasks')" type="checkbox" @change="toggleScriptFreeze($event)" />
-                <span>统一钉住脚本区</span>
-              </label>
+              <UiCheckbox :model-value="isFrozen('regex') || isFrozen('state-tasks')" class="toggle-chip" label="统一钉住脚本区" @change="toggleScriptFreeze" />
             </div>
 
             <StudioSectionTabs
@@ -278,6 +263,7 @@
 
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import { computed, nextTick, ref, watch } from 'vue'
@@ -502,21 +488,17 @@ function isFrozen(section: string) {
   return !!localDocument.value?.status.frozen_sections.includes(section)
 }
 
-function toggleFrozen(section: string, event: Event) {
+function toggleFrozen(section: string, checked: boolean) {
   if (!localDocument.value) return
-  const target = event.target as HTMLInputElement
   const next = new Set(localDocument.value.status.frozen_sections || [])
-  if (target.checked) next.add(section)
+  if (checked) next.add(section)
   else next.delete(section)
   localDocument.value.status.frozen_sections = [...next]
 }
 
-function toggleScriptFreeze(event: Event) {
-  const target = event.target as HTMLInputElement
-  const nextValue = target.checked
-  const synthetic = { target: { checked: nextValue } } as unknown as Event
-  toggleFrozen('regex', synthetic)
-  toggleFrozen('state-tasks', synthetic)
+function toggleScriptFreeze(checked: boolean) {
+  toggleFrozen('regex', checked)
+  toggleFrozen('state-tasks', checked)
 }
 </script>
 

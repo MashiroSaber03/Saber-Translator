@@ -76,7 +76,7 @@
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import type { ChapterScript, MangaImageInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
@@ -100,6 +100,8 @@ const refCount = ref(5)
 const selectorVisible = ref(false)
 const selectedReferenceTokens = ref<string[]>([])
 const availableOriginalImages = ref<MangaImageInfo[]>([])
+let imageRequestSeq = 0
+let isMounted = true
 
 watch(() => props.script?.script_text, (newScriptText) => {
   scriptText.value = newScriptText || ''
@@ -112,15 +114,23 @@ watch(() => props.script, (newScript) => {
   }
 })
 
-async function loadAvailableImages() {
-  if (!props.bookId) return
+function invalidateAvailableImages(): void {
+  imageRequestSeq += 1
+}
+
+async function loadAvailableImages(bookId = props.bookId) {
+  if (!bookId) return
+
+  const requestId = ++imageRequestSeq
 
   try {
-    const response = await getAvailableImages(props.bookId, 'script')
+    const response = await getAvailableImages(bookId, 'script')
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     if (response.success && response.original_images) {
       availableOriginalImages.value = response.original_images
     }
   } catch {
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []
   }
 }
@@ -161,16 +171,22 @@ function handleSave() {
 
 watch(() => props.bookId, (newBookId) => {
   if (newBookId) {
-    loadAvailableImages()
+    loadAvailableImages(newBookId)
     selectedReferenceTokens.value = []
     refCount.value = 5
   } else {
+    invalidateAvailableImages()
     refCount.value = 5
     availableOriginalImages.value = []
     selectedReferenceTokens.value = []
     selectorVisible.value = false
   }
 }, { immediate: true })
+
+onBeforeUnmount(() => {
+  isMounted = false
+  invalidateAvailableImages()
+})
 </script>
 
 <style scoped>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 import type { TranslationSettings } from '@/types/settings'
 import type { SavedTextStyles } from '@/composables/translation/core/types'
@@ -53,6 +53,11 @@ describe('persistenceService', () => {
         this.onloadend?.()
       }
     })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   function createSettings(): TranslationSettings {

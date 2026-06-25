@@ -39,7 +39,7 @@ defineEmits<{
       :aria-label="`添加标签 ${tag.name}`"
       @click="$emit('add', tag.name)"
     >
-      <span class="tag-color-dot" :style="{ background: tag.color || '#667eea' }"></span>
+      <span class="tag-color-dot" :style="{ background: tag.color || 'var(--color-action-brand)' }"></span>
       <span class="quick-tag-name">{{ tag.name }}</span>
       <span class="tag-add-icon">+</span>
     </UiButton>

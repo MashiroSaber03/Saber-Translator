@@ -189,7 +189,7 @@ function showFeatureNotice(): void {
 .app-header__name {
   font-size: 1.5em;
   font-weight: bold;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
 }
 
 .app-header__links {
@@ -436,7 +436,7 @@ function showFeatureNotice(): void {
   font-size: 1.3rem;
   font-weight: 700;
   color: white;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
 }
 
 .app-header--bookshelf .app-header__links {

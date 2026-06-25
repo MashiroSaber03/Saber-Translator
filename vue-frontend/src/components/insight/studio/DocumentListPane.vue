@@ -60,12 +60,12 @@ function formatTime(value: string) {
 
 <style scoped>
 .pane {
-  --document-list-pane-border-default: rgba(37, 99, 199, .24);
-  --document-list-pane-shadow-default: rgba(31, 70, 120, .08);
-  --document-list-pane-surface-base: rgba(255, 255, 255, .95);
-  --document-list-pane-surface-raised: rgba(255, 178, 46, .16);
-  --document-list-pane-text-primary: #122b47;
-  --document-list-pane-text-secondary: #9a6708;
+  --document-list-pane-active-border: rgba(37, 99, 199, .24);
+  --document-list-pane-active-shadow: rgba(31, 70, 120, .08);
+  --document-list-pane-active-background: rgba(255, 255, 255, .95);
+  --document-list-pane-favorite-background: rgba(255, 178, 46, .16);
+  --document-list-pane-title-text: #122b47;
+  --document-list-pane-favorite-text: #9a6708;
 
   display: flex;
   flex-direction: column;
@@ -121,9 +121,9 @@ function formatTime(value: string) {
 }
 
 .item.active {
-  border-color: var(--document-list-pane-border-default);
-  background: var(--document-list-pane-surface-base);
-  box-shadow: 0 12px 24px var(--document-list-pane-shadow-default);
+  border-color: var(--document-list-pane-active-border);
+  background: var(--document-list-pane-active-background);
+  box-shadow: 0 12px 24px var(--document-list-pane-active-shadow);
 }
 
 .item.opening {
@@ -132,7 +132,7 @@ function formatTime(value: string) {
 
 .item-main strong {
   display: block;
-  color: var(--document-list-pane-text-primary);
+  color: var(--document-list-pane-title-text);
   font-size: 13px;
 }
 
@@ -166,8 +166,8 @@ function formatTime(value: string) {
 }
 
 .favorite-pill {
-  background: var(--document-list-pane-surface-raised);
-  color: var(--document-list-pane-text-secondary);
+  background: var(--document-list-pane-favorite-background);
+  color: var(--document-list-pane-favorite-text);
 }
 
 .source-pill {

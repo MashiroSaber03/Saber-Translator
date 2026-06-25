@@ -424,6 +424,7 @@ export const useSettingsStore = defineStore('settings', () => {
    * textStyle 由编辑侧栏默认样式统一决定，不在数值归一化里处理。
    */
   function ensureNumericTypes(): void {
+    const defaults = createDefaultSettings()
     const parseNumberOrFallback = (value: unknown, fallback: number): number => {
       if (value === undefined || value === null || value === '') return fallback
       const parsed = Number(value)
@@ -431,29 +432,29 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     const be = settings.value.boxExpand
-    be.ratio = Number(be.ratio) || 1.0
-    be.top = Number(be.top) || 0
-    be.bottom = Number(be.bottom) || 0
-    be.left = Number(be.left) || 0
-    be.right = Number(be.right) || 0
+    be.ratio = parseNumberOrFallback(be.ratio, defaults.boxExpand.ratio)
+    be.top = parseNumberOrFallback(be.top, defaults.boxExpand.top)
+    be.bottom = parseNumberOrFallback(be.bottom, defaults.boxExpand.bottom)
+    be.left = parseNumberOrFallback(be.left, defaults.boxExpand.left)
+    be.right = parseNumberOrFallback(be.right, defaults.boxExpand.right)
 
     const pm = settings.value.preciseMask
-    pm.dilateSize = Number(pm.dilateSize) || 5
-    pm.boxExpandRatio = Number(pm.boxExpandRatio) || 1.0
+    pm.dilateSize = parseNumberOrFallback(pm.dilateSize, defaults.preciseMask.dilateSize)
+    pm.boxExpandRatio = parseNumberOrFallback(pm.boxExpandRatio, defaults.preciseMask.boxExpandRatio)
 
     if (
       settings.value.saberYoloRefineOverlapThreshold === undefined ||
       settings.value.saberYoloRefineOverlapThreshold === null ||
       isNaN(Number(settings.value.saberYoloRefineOverlapThreshold))
     ) {
-      settings.value.saberYoloRefineOverlapThreshold = 50
+      settings.value.saberYoloRefineOverlapThreshold = defaults.saberYoloRefineOverlapThreshold
     } else {
       settings.value.saberYoloRefineOverlapThreshold = Number(settings.value.saberYoloRefineOverlapThreshold)
     }
 
     settings.value.minTextBlockAreaPercent = Math.max(
       0,
-      parseNumberOrFallback(settings.value.minTextBlockAreaPercent, 0.05)
+      parseNumberOrFallback(settings.value.minTextBlockAreaPercent, defaults.minTextBlockAreaPercent)
     )
 
     settings.value.enableAuxYoloDetection = Boolean(settings.value.enableAuxYoloDetection)
@@ -462,7 +463,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.auxYoloConfThreshold === null ||
       isNaN(Number(settings.value.auxYoloConfThreshold))
     ) {
-      settings.value.auxYoloConfThreshold = 0.4
+      settings.value.auxYoloConfThreshold = defaults.auxYoloConfThreshold
     } else {
       settings.value.auxYoloConfThreshold = Number(settings.value.auxYoloConfThreshold)
     }
@@ -471,7 +472,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.auxYoloOverlapThreshold === null ||
       isNaN(Number(settings.value.auxYoloOverlapThreshold))
     ) {
-      settings.value.auxYoloOverlapThreshold = 0.1
+      settings.value.auxYoloOverlapThreshold = defaults.auxYoloOverlapThreshold
     } else {
       settings.value.auxYoloOverlapThreshold = Number(settings.value.auxYoloOverlapThreshold)
     }
@@ -490,7 +491,7 @@ export const useSettingsStore = defineStore('settings', () => {
     )
 
     const hq = settings.value.hqTranslation as typeof settings.value.hqTranslation & Record<string, unknown>
-    hq.batchSize = Number(hq.batchSize) || 10
+    hq.batchSize = parseNumberOrFallback(hq.batchSize, defaults.hqTranslation.batchSize)
     hq.openaiOptions = normalizeOpenAiOptions(
       hq.openaiOptions,
       {

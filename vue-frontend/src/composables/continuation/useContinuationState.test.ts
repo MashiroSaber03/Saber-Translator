@@ -16,6 +16,16 @@ vi.mock('@/api/continuation', () => ({
   syncContinuationAnalysis: syncContinuationAnalysisMock,
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('useContinuationState', () => {
   it('keeps continuation blocked when preparation reports missing prerequisites', async () => {
     prepareContinuationMock.mockResolvedValue({
@@ -118,6 +128,69 @@ describe('useContinuationState', () => {
     expect(state.chapterScript.value).toBeNull()
     expect(state.pages.value).toEqual([])
     expect(state.characters.value.map(character => character.name)).toEqual(['主角'])
+  })
+
+  it('ignores stale initialization responses after the selected book changes', async () => {
+    const bookId = ref('book-1')
+    const firstPrepare = deferred<{
+      success: boolean
+      ready: boolean
+      saved_data: { script: null; pages: []; config: null; has_data: boolean }
+    }>()
+    const secondPrepare = deferred<{
+      success: boolean
+      ready: boolean
+      saved_data: { script: null; pages: []; config: null; has_data: boolean }
+    }>()
+    prepareContinuationMock.mockImplementation((id: string) => (
+      id === 'book-1' ? firstPrepare.promise : secondPrepare.promise
+    ))
+    getCharactersMock.mockImplementation((id: string) => Promise.resolve({
+      success: true,
+      characters: [
+        {
+          name: id === 'book-1' ? '旧书角色' : '新书角色',
+          aliases: [],
+          description: 'desc',
+          forms: [],
+          reference_image: '',
+          enabled: true,
+        },
+      ],
+    }))
+
+    const state = useContinuationState(bookId)
+    const firstLoad = state.initializeData()
+    bookId.value = 'book-2'
+    const secondLoad = state.initializeData()
+
+    secondPrepare.resolve({
+      success: true,
+      ready: true,
+      saved_data: {
+        script: null,
+        pages: [],
+        config: null,
+        has_data: false,
+      },
+    })
+    await secondLoad
+
+    expect(state.characters.value.map(character => character.name)).toEqual(['新书角色'])
+
+    firstPrepare.resolve({
+      success: true,
+      ready: true,
+      saved_data: {
+        script: null,
+        pages: [],
+        config: null,
+        has_data: false,
+      },
+    })
+    await firstLoad
+
+    expect(state.characters.value.map(character => character.name)).toEqual(['新书角色'])
   })
 
   it('syncs analysis data without clearing existing continuation payloads', async () => {

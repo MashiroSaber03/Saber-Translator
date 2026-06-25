@@ -283,6 +283,46 @@ export function cloneBubbleState(state: BubbleState): BubbleState {
   }
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isValidPolygon(value: unknown): value is number[][] {
+  return (
+    Array.isArray(value) &&
+    value.every((point) =>
+      Array.isArray(point) &&
+      point.length >= 2 &&
+      point.every((coordinate) => isFiniteNumber(coordinate))
+    )
+  )
+}
+
+function isValidPosition(value: unknown): value is { x: number; y: number } {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const position = value as Record<string, unknown>
+  return isFiniteNumber(position.x) && isFiniteNumber(position.y)
+}
+
+function isValidBubbleTextline(value: unknown): value is BubbleTextline {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const line = value as Record<string, unknown>
+  return (
+    isValidPolygon(line.polygon) &&
+    line.polygon.length === 4 &&
+    (line.direction === 'h' || line.direction === 'v') &&
+    isFiniteNumber(line.confidence)
+  )
+}
+
 /**
  * 验证气泡状态是否有效
  * @param state - 要验证的状态
@@ -294,6 +334,32 @@ export function isValidBubbleState(state: unknown): state is BubbleState {
   }
 
   const s = state as Record<string, unknown>
+  const requiredFields = [
+    'originalText',
+    'translatedText',
+    'textboxText',
+    'coords',
+    'polygon',
+    'fontSize',
+    'fontFamily',
+    'textDirection',
+    'autoTextDirection',
+    'textColor',
+    'fillColor',
+    'rotationAngle',
+    'position',
+    'strokeEnabled',
+    'strokeColor',
+    'strokeWidth',
+    'lineSpacing',
+    'textAlign',
+    'inpaintMethod',
+    'textlines'
+  ]
+
+  if (!requiredFields.every((field) => Object.prototype.hasOwnProperty.call(s, field))) {
+    return false
+  }
 
   // 检查必需的坐标字段
   if (!Array.isArray(s.coords) || s.coords.length !== 4) {
@@ -301,12 +367,48 @@ export function isValidBubbleState(state: unknown): state is BubbleState {
   }
 
   // 检查坐标值是否为数字
-  if (!s.coords.every((v) => typeof v === 'number' && !isNaN(v))) {
+  if (!s.coords.every((v) => isFiniteNumber(v))) {
     return false
   }
 
-  // 检查字号是否为正数
-  if (typeof s.fontSize !== 'number' || s.fontSize <= 0) {
+  if (
+    !isString(s.originalText) ||
+    !isString(s.translatedText) ||
+    !isString(s.textboxText)
+  ) {
+    return false
+  }
+
+  if (!isValidPolygon(s.polygon)) {
+    return false
+  }
+
+  if (!isString(s.fontFamily)) {
+    return false
+  }
+
+  if (!isString(s.textColor) || !isString(s.fillColor) || !isString(s.strokeColor)) {
+    return false
+  }
+
+  // 检查字号和数值型渲染参数
+  if (
+    !isFiniteNumber(s.fontSize) ||
+    s.fontSize <= 0 ||
+    !isFiniteNumber(s.rotationAngle) ||
+    !isFiniteNumber(s.strokeWidth) ||
+    s.strokeWidth < 0 ||
+    !isFiniteNumber(s.lineSpacing) ||
+    s.lineSpacing <= 0
+  ) {
+    return false
+  }
+
+  if (typeof s.strokeEnabled !== 'boolean') {
+    return false
+  }
+
+  if (!isValidPosition(s.position)) {
     return false
   }
 
@@ -316,6 +418,18 @@ export function isValidBubbleState(state: unknown): state is BubbleState {
     typeof s.textDirection !== 'string' ||
     !validDirections.includes(s.textDirection as TextDirection)
   ) {
+    return false
+  }
+
+  if (
+    typeof s.autoTextDirection !== 'string' ||
+    !validDirections.includes(s.autoTextDirection as TextDirection)
+  ) {
+    return false
+  }
+
+  const validTextAlignments = ['start', 'center', 'end']
+  if (typeof s.textAlign !== 'string' || !validTextAlignments.includes(s.textAlign)) {
     return false
   }
 
@@ -335,25 +449,8 @@ export function isValidBubbleState(state: unknown): state is BubbleState {
     }
   }
 
-  if (s.textlines !== undefined) {
-    if (!Array.isArray(s.textlines)) {
-      return false
-    }
-    for (const item of s.textlines) {
-      if (!item || typeof item !== 'object') {
-        return false
-      }
-      const line = item as Record<string, unknown>
-      if (!Array.isArray(line.polygon) || line.polygon.length !== 4) {
-        return false
-      }
-      if (line.direction !== 'h' && line.direction !== 'v') {
-        return false
-      }
-      if (typeof line.confidence !== 'number' || Number.isNaN(line.confidence)) {
-        return false
-      }
-    }
+  if (!Array.isArray(s.textlines) || !s.textlines.every((line) => isValidBubbleTextline(line))) {
+    return false
   }
 
   return true

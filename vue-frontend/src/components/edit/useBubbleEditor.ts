@@ -1,4 +1,4 @@
-import { ref, watch, computed, onMounted, nextTick } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import {
   FONT_SIZE_PRESETS,
@@ -26,6 +26,12 @@ export type BubbleEditorEmit = {
   (e: 'resetCurrent', index: number): void
 }
 
+type TextareaFieldRef = {
+  focus: () => void
+  selectionStart: number | null
+  selectionEnd: number | null
+}
+
 export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
   const bubbleStore = useBubbleStore()
 
@@ -51,8 +57,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const localLineSpacing = ref(TEXT_STYLE_DEFAULTS.lineSpacing)
   const localTextAlign = ref<TextAlign>(TEXT_STYLE_DEFAULTS.textAlign)
 
-  const originalTextInput = ref<HTMLTextAreaElement | null>(null)
-  const translatedTextInput = ref<HTMLTextAreaElement | null>(null)
+  const originalTextInput = ref<TextareaFieldRef | null>(null)
+  const translatedTextInput = ref<TextareaFieldRef | null>(null)
 
   const textColorInput = ref<HTMLInputElement | null>(null)
   const fillColorInput = ref<HTMLInputElement | null>(null)
@@ -60,6 +66,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
 
   const showJpKeyboard = ref(false)
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
+  let isOwnerMounted = true
 
   const systemFonts = ref<{ name: string; path: string }[]>([
     { name: '思源黑体', path: TEXT_STYLE_DEFAULTS.fontFamily },
@@ -313,8 +320,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     if (target === 'original') {
       const input = originalTextInput.value
       if (input) {
-        const start = input.selectionStart || localOriginalText.value.length
-        const end = input.selectionEnd || localOriginalText.value.length
+        const start = input.selectionStart ?? localOriginalText.value.length
+        const end = input.selectionEnd ?? localOriginalText.value.length
         const text = localOriginalText.value
         localOriginalText.value = text.slice(0, start) + char + text.slice(end)
         nextTick(() => {
@@ -326,8 +333,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     } else {
       const input = translatedTextInput.value
       if (input) {
-        const start = input.selectionStart || localTranslatedText.value.length
-        const end = input.selectionEnd || localTranslatedText.value.length
+        const start = input.selectionStart ?? localTranslatedText.value.length
+        const end = input.selectionEnd ?? localTranslatedText.value.length
         const text = localTranslatedText.value
         localTranslatedText.value = text.slice(0, start) + char + text.slice(end)
         nextTick(() => {
@@ -343,44 +350,54 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     if (target === 'original') {
       const input = originalTextInput.value
       if (input && localOriginalText.value.length > 0) {
-        const start = input.selectionStart || localOriginalText.value.length
-        const end = input.selectionEnd || localOriginalText.value.length
+        const start = input.selectionStart ?? localOriginalText.value.length
+        const end = input.selectionEnd ?? localOriginalText.value.length
         const text = localOriginalText.value
+        let didChange = false
         if (start === end && start > 0) {
           localOriginalText.value = text.slice(0, start - 1) + text.slice(end)
+          didChange = true
           nextTick(() => {
             input.selectionStart = input.selectionEnd = start - 1
             input.focus()
           })
         } else if (start !== end) {
           localOriginalText.value = text.slice(0, start) + text.slice(end)
+          didChange = true
           nextTick(() => {
             input.selectionStart = input.selectionEnd = start
             input.focus()
           })
         }
-        emit('update', { originalText: localOriginalText.value })
+        if (didChange) {
+          emit('update', { originalText: localOriginalText.value })
+        }
       }
     } else {
       const input = translatedTextInput.value
       if (input && localTranslatedText.value.length > 0) {
-        const start = input.selectionStart || localTranslatedText.value.length
-        const end = input.selectionEnd || localTranslatedText.value.length
+        const start = input.selectionStart ?? localTranslatedText.value.length
+        const end = input.selectionEnd ?? localTranslatedText.value.length
         const text = localTranslatedText.value
+        let didChange = false
         if (start === end && start > 0) {
           localTranslatedText.value = text.slice(0, start - 1) + text.slice(end)
+          didChange = true
           nextTick(() => {
             input.selectionStart = input.selectionEnd = start - 1
             input.focus()
           })
         } else if (start !== end) {
           localTranslatedText.value = text.slice(0, start) + text.slice(end)
+          didChange = true
           nextTick(() => {
             input.selectionStart = input.selectionEnd = start
             input.focus()
           })
         }
-        emit('update', { translatedText: localTranslatedText.value })
+        if (didChange) {
+          emit('update', { translatedText: localTranslatedText.value })
+        }
       }
     }
   }
@@ -388,6 +405,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   async function loadFontList(): Promise<void> {
     try {
       const response = await getFontList()
+      if (!isOwnerMounted) return
       if (response.fonts) {
         const system: { name: string; path: string }[] = []
         const custom: { name: string; path: string }[] = []
@@ -410,12 +428,18 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
         customFonts.value = custom
       }
     } catch {
-      customFonts.value = []
+      if (isOwnerMounted) {
+        customFonts.value = []
+      }
     }
   }
 
   onMounted(() => {
     loadFontList()
+  })
+
+  onUnmounted(() => {
+    isOwnerMounted = false
   })
 
   return {

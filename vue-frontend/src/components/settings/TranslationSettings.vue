@@ -133,10 +133,7 @@
         </UiField>
       </UiFormGrid>
       <UiField v-show="showRpmLimit" class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" class="translation-settings__checkbox-input" v-model="localSettings.useStream" />
-          流式调用
-        </label>
+        <UiCheckbox v-model="localSettings.useStream" label="流式调用" />
         <div class="ui-form-hint">同时作用于整页批量和逐气泡翻译</div>
       </UiField>
       <UiField v-show="showRpmLimit" class="ui-settings-field">
@@ -194,10 +191,7 @@
         </UiButton>
       </UiField>
       <UiField class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" class="translation-settings__checkbox-input" v-model="localSettings.enableTextboxPrompt" />
-          启用文本框提示词
-        </label>
+        <UiCheckbox v-model="localSettings.enableTextboxPrompt" label="启用文本框提示词" />
       </UiField>
       <UiField v-show="localSettings.enableTextboxPrompt" class="ui-settings-field">
         <label for="settingsTextboxPromptContent">文本框提示词:</label>
@@ -223,6 +217,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
@@ -625,17 +620,6 @@ function resetTranslatePromptToDefault() {
   color: var(--color-text-supporting);
   font-size: 12px;
   margin-top: 5px;
-}
-
-.ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.translation-settings__checkbox-input {
-  width: auto;
 }
 
 .translation-settings .model-input-with-fetch {

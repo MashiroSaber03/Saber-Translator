@@ -55,11 +55,11 @@
         </div>
 
         <div class="toggles">
-          <label><UiInput v-model="localEntry.enabled" type="checkbox" /> 启用</label>
-          <label><UiInput v-model="localEntry.constant" type="checkbox" /> 常驻</label>
-          <label><UiInput v-model="localEntry.selective" type="checkbox" /> 选择触发</label>
-          <label><UiInput v-model="localEntry.prevent_recursion" type="checkbox" /> 防递归</label>
-          <label><UiInput v-model="localEntry.use_regex" type="checkbox" /> 用正则匹配</label>
+          <UiCheckbox v-model="localEntry.enabled" label="启用" />
+          <UiCheckbox v-model="localEntry.constant" label="常驻" />
+          <UiCheckbox v-model="localEntry.selective" label="选择触发" />
+          <UiCheckbox v-model="localEntry.prevent_recursion" label="防递归" />
+          <UiCheckbox v-model="localEntry.use_regex" label="用正则匹配" />
         </div>
 
         <div v-if="localEntry.children.length > 0" class="children">
@@ -83,6 +83,7 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
 

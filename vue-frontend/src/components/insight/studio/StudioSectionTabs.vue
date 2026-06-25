@@ -29,18 +29,18 @@ defineEmits<{
 
 <style scoped>
 .studio-tabs {
-  --studio-section-tabs-shadow-default: rgba(37, 99, 199, .16);
-  --studio-section-tabs-surface-base: rgba(16, 39, 65, .04);
-  --studio-section-tabs-surface-raised: rgba(37, 99, 199, .08);
-  --studio-section-tabs-surface-muted: rgba(77, 134, 238, .1);
-  --studio-section-tabs-text-primary: #55708f;
-  --studio-section-tabs-text-secondary: #16365b;
+  --studio-section-tabs-active-ring: rgba(37, 99, 199, .16);
+  --studio-section-tabs-bar-background: rgba(16, 39, 65, .04);
+  --studio-section-tabs-hover-background: rgba(37, 99, 199, .08);
+  --studio-section-tabs-active-background: rgba(77, 134, 238, .1);
+  --studio-section-tabs-button-text: #55708f;
+  --studio-section-tabs-active-text: #16365b;
 
   display: flex;
   gap: 8px;
   padding: 8px;
   border-radius: 18px;
-  background: var(--studio-section-tabs-surface-base);
+  background: var(--studio-section-tabs-bar-background);
   border: 1px solid var(--studio-border-default);
   overflow-x: auto;
 }
@@ -53,7 +53,7 @@ defineEmits<{
   border-radius: 14px;
   padding: 10px 14px;
   background: transparent;
-  color: var(--studio-section-tabs-text-primary);
+  color: var(--studio-section-tabs-button-text);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
@@ -61,14 +61,14 @@ defineEmits<{
 
 .tab-btn:hover {
   transform: translateY(-1px);
-  background: var(--studio-section-tabs-surface-raised);
+  background: var(--studio-section-tabs-hover-background);
   color: var(--studio-text-default);
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, var(--studio-surface-tint-strong), var(--studio-section-tabs-surface-muted));
-  color: var(--studio-section-tabs-text-secondary);
-  box-shadow: inset 0 0 0 1px var(--studio-section-tabs-shadow-default);
+  background: linear-gradient(135deg, var(--studio-surface-tint-strong), var(--studio-section-tabs-active-background));
+  color: var(--studio-section-tabs-active-text);
+  box-shadow: inset 0 0 0 1px var(--studio-section-tabs-active-ring);
 }
 
 .tab-icon {

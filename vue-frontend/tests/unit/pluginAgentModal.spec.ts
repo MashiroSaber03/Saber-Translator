@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
@@ -105,6 +105,8 @@ vi.mock('@/api/config', () => ({
 import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
 
 describe('PluginAgentModal', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     setActivePinia(createPinia())
     getPluginAgentSettingsMock.mockReset()
@@ -349,6 +351,10 @@ describe('PluginAgentModal', () => {
       ],
     })
     testAiTranslateConnectionMock.mockResolvedValue({ success: true, message: '连接成功' })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('requires selecting an existing plugin before starting a modify session', async () => {

@@ -146,4 +146,30 @@ describe('openai options schema boundaries', () => {
     expect(apiOptions.execution.transportRetries).toBe(5)
     expect(apiOptions.execution.businessRetries).toBe(6)
   })
+
+  it('falls back when boolean option fields are not real booleans', () => {
+    const frontendOptions = normalizeOpenAiOptions({
+      request: {
+        forceJsonOutput: 'false',
+      },
+      execution: {
+        useStream: 'false',
+      },
+    })
+
+    expect(frontendOptions.request.forceJsonOutput).toBe(false)
+    expect(frontendOptions.execution.useStream).toBe(false)
+
+    const apiOptions = deserializeOpenAICompatibleOptionsFromApi({
+      request: {
+        force_json_output: 'false',
+      },
+      execution: {
+        use_stream: 'false',
+      },
+    })
+
+    expect(apiOptions.request.forceJsonOutput).toBe(false)
+    expect(apiOptions.execution.useStream).toBe(false)
+  })
 })

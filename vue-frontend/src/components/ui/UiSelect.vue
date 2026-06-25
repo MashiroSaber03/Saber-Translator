@@ -5,7 +5,7 @@ defineOptions({ inheritAttrs: false })
 
 type OptionValue = string | number
 
-defineProps<{
+const props = defineProps<{
   modelValue?: OptionValue
   options?: Array<{ label: string; value: OptionValue; disabled?: boolean }>
   disabled?: boolean
@@ -14,14 +14,15 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string]
-  change: [value: string]
+  'update:modelValue': [value: OptionValue]
+  change: [value: OptionValue]
 }>()
 
 const attrs = useAttrs()
 
 function handleChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
+  const rawValue = (event.target as HTMLSelectElement).value
+  const value = props.options?.find(option => String(option.value) === rawValue)?.value ?? rawValue
   emit('update:modelValue', value)
   emit('change', value)
 }

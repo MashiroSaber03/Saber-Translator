@@ -12,7 +12,7 @@
         命中当前文本的禁翻内容会被保护为占位符，翻译完成后再还原。
       </div>
       <label class="ui-checkbox-label">
-        <UiInput :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
+        <UiCheckbox :model-value="draft.enabled" @change="toggleEnabled" />
         启用禁翻表
       </label>
       <TranslationConstraintTable
@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { computed, ref, watch } from 'vue'
 
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -99,8 +99,8 @@ function syncDraft(): void {
   draft.value = JSON.parse(JSON.stringify(constraintStore.nonTranslate))
 }
 
-function toggleEnabled(event: Event): void {
-  draft.value.enabled = (event.target as HTMLInputElement).checked
+function toggleEnabled(checked: boolean): void {
+  draft.value.enabled = checked
 }
 
 function updateEntries(entries: Record<string, string>[]): void {

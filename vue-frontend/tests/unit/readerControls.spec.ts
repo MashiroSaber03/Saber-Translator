@@ -1,7 +1,9 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ReaderControls from '@/components/reader/ReaderControls.vue'
+
+enableAutoUnmount(afterEach)
 
 function mountControls() {
   return mount(ReaderControls, {

@@ -2,7 +2,7 @@
 
 /**
  * 右侧缩略图侧边栏组件
- * 显示图片概览列表，固定在页面右侧
+ * 显示图片概览列表，所在区域由页面 shell 编排
  *
  * 支持两种模式：
  * - 扁平模式：普通的图片列表
@@ -352,28 +352,26 @@ onMounted(() => {
 
 .thumbnail-sidebar {
   /* owner tokens: thumbnail-sidebar */
-  --thumbnail-sidebar-border-default: #f8fafc;
-  --thumbnail-sidebar-border-strong: #f0f0f0;
-  --thumbnail-sidebar-border-muted: #f0d78c;
-  --thumbnail-sidebar-shadow-default: rgba(240, 215, 140, .4);
-  --thumbnail-sidebar-shadow-raised: rgba(0, 0, 0, .1);
-  --thumbnail-sidebar-shadow-floating: rgba(52, 152, 219, .5);
-  --thumbnail-sidebar-shadow-strong: rgba(0, 0, 0, .3);
-  --thumbnail-sidebar-surface-base: #cbd5e0;
-  --thumbnail-sidebar-surface-raised: #e8f4fd;
-  --thumbnail-sidebar-surface-muted: #d4e8f8;
-  --thumbnail-sidebar-surface-subtle: #c0dcf0;
-  --thumbnail-sidebar-surface-hover: #ffe8b8;
-  --thumbnail-sidebar-surface-active: rgba(53, 152, 219, .8);
-  --thumbnail-sidebar-surface-selected: rgba(255, 0, 0, .8);
-  --thumbnail-sidebar-surface-overlay: rgba(0, 123, 255, .8);
-  --thumbnail-sidebar-surface-inverse: rgba(0, 0, 0, .6);
-  --thumbnail-sidebar-surface-contrast: rgba(34, 197, 94, .9);
-  --thumbnail-sidebar-text-primary: #cbd5e0;
-  --thumbnail-sidebar-text-secondary: #f8fafc;
-  --thumbnail-sidebar-text-muted: #94a3b8;
-  --thumbnail-sidebar-text-subtle: #5a4a00;
-  --thumbnail-sidebar-text-supporting: #8a7a30;
+  --thumbnail-sidebar-scrollbar-thumb: #cbd5e0;
+  --thumbnail-sidebar-scrollbar-track: #f8fafc;
+  --thumbnail-sidebar-title-divider: #f0f0f0;
+  --thumbnail-sidebar-folder-border: #f0d78c;
+  --thumbnail-sidebar-folder-hover-shadow: rgba(240, 215, 140, .4);
+  --thumbnail-sidebar-folder-icon-shadow: rgba(0, 0, 0, .1);
+  --thumbnail-sidebar-thumbnail-active-shadow: rgba(52, 152, 219, .5);
+  --thumbnail-sidebar-badge-shadow: rgba(0, 0, 0, .3);
+  --thumbnail-sidebar-folder-back-background-start: #e8f4fd;
+  --thumbnail-sidebar-folder-back-background-end: #d4e8f8;
+  --thumbnail-sidebar-folder-back-hover-background-end: #c0dcf0;
+  --thumbnail-sidebar-folder-hover-background-end: #ffe8b8;
+  --thumbnail-sidebar-processing-badge-background: rgba(53, 152, 219, .8);
+  --thumbnail-sidebar-failed-badge-background: rgba(255, 0, 0, .8);
+  --thumbnail-sidebar-labeled-badge-background: rgba(0, 123, 255, .8);
+  --thumbnail-sidebar-page-number-badge-background: rgba(0, 0, 0, .6);
+  --thumbnail-sidebar-translated-badge-background: rgba(34, 197, 94, .9);
+  --thumbnail-sidebar-muted-text: #94a3b8;
+  --thumbnail-sidebar-folder-name-text: #5a4a00;
+  --thumbnail-sidebar-folder-count-text: #8a7a30;
 
   width: 100%;
   height: 100%;
@@ -382,7 +380,7 @@ onMounted(() => {
   margin-left: 0;
   order: 1;
   scrollbar-width: thin;
-  scrollbar-color: var(--thumbnail-sidebar-text-primary) var(--thumbnail-sidebar-text-secondary);
+  scrollbar-color: var(--thumbnail-sidebar-scrollbar-thumb) var(--thumbnail-sidebar-scrollbar-track);
 }
 
 .thumbnail-sidebar::-webkit-scrollbar {
@@ -395,13 +393,17 @@ onMounted(() => {
 }
 
 .thumbnail-sidebar::-webkit-scrollbar-thumb {
-  background-color: var(--thumbnail-sidebar-surface-base);
+  background-color: var(--thumbnail-sidebar-scrollbar-thumb);
   border-radius: 8px;
-  border: 2px solid var(--thumbnail-sidebar-border-default);
+  border: 2px solid var(--thumbnail-sidebar-scrollbar-track);
 }
 
 .thumbnail-sidebar .thumbnail-card {
-  background-color: white;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background-color: var(--color-surface-card);
   border-radius: 12px;
   box-shadow: 0 4px 12px var(--shadow-soft);
   padding: 25px;
@@ -413,7 +415,7 @@ onMounted(() => {
 }
 
 .thumbnail-sidebar .thumbnail-card h2 {
-  border-bottom: 2px solid var(--thumbnail-sidebar-border-strong);
+  border-bottom: 2px solid var(--thumbnail-sidebar-title-divider);
   padding-bottom: 12px;
   margin-bottom: 15px;
   color: var(--color-text-heading);
@@ -456,7 +458,7 @@ onMounted(() => {
 }
 
 .breadcrumb-sep {
-  color: var(--thumbnail-sidebar-text-muted);
+  color: var(--thumbnail-sidebar-muted-text);
   margin: 0 2px;
 }
 
@@ -471,7 +473,7 @@ onMounted(() => {
   width: 100%;
   padding: 8px 12px;
   border: 0;
-  background: linear-gradient(135deg, var(--thumbnail-sidebar-surface-raised) 0%, var(--thumbnail-sidebar-surface-muted) 100%);
+  background: linear-gradient(135deg, var(--thumbnail-sidebar-folder-back-background-start) 0%, var(--thumbnail-sidebar-folder-back-background-end) 100%);
   border-radius: 8px;
   cursor: pointer;
   font: inherit;
@@ -483,7 +485,7 @@ onMounted(() => {
 }
 
 .folder-back-btn:hover {
-  background: linear-gradient(135deg, var(--thumbnail-sidebar-surface-muted) 0%, var(--thumbnail-sidebar-surface-subtle) 100%);
+  background: linear-gradient(135deg, var(--thumbnail-sidebar-folder-back-background-end) 0%, var(--thumbnail-sidebar-folder-back-hover-background-end) 100%);
   transform: translateX(-2px);
 }
 
@@ -499,7 +501,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100dvh - 280px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -509,7 +512,7 @@ onMounted(() => {
   display: block;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--thumbnail-sidebar-border-muted);
+  border: 1px solid var(--thumbnail-sidebar-folder-border);
   background: linear-gradient(135deg, var(--color-status-warning-surface-soft) 0%, var(--color-status-warning-surface-raised) 100%);
   border-radius: 8px;
   cursor: pointer;
@@ -520,9 +523,9 @@ onMounted(() => {
 }
 
 .folder-item:hover {
-  background: linear-gradient(135deg, var(--color-status-warning-surface-raised) 0%, var(--thumbnail-sidebar-surface-hover) 100%);
+  background: linear-gradient(135deg, var(--color-status-warning-surface-raised) 0%, var(--thumbnail-sidebar-folder-hover-background-end) 100%);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--thumbnail-sidebar-shadow-default);
+  box-shadow: 0 2px 8px var(--thumbnail-sidebar-folder-hover-shadow);
 }
 
 /* 文件夹图标作为右上角角标 */
@@ -534,7 +537,7 @@ onMounted(() => {
   background: var(--color-surface-base);
   border-radius: 4px;
   padding: 1px 2px;
-  box-shadow: 0 1px 3px var(--thumbnail-sidebar-shadow-raised);
+  box-shadow: 0 1px 3px var(--thumbnail-sidebar-folder-icon-shadow);
   z-index: var(--z-local);
 }
 
@@ -545,14 +548,14 @@ onMounted(() => {
 .folder-item .folder-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--thumbnail-sidebar-text-subtle);
+  color: var(--thumbnail-sidebar-folder-name-text);
   word-break: break-word;
   line-height: 1.4;
 }
 
 .folder-item .folder-count {
   font-size: 11px;
-  color: var(--thumbnail-sidebar-text-supporting);
+  color: var(--thumbnail-sidebar-folder-count-text);
   margin-left: 4px;
 }
 
@@ -560,7 +563,7 @@ onMounted(() => {
 .empty-folder {
   text-align: center;
   padding: 20px;
-  color: var(--thumbnail-sidebar-text-muted);
+  color: var(--thumbnail-sidebar-muted-text);
   font-size: 13px;
 }
 
@@ -607,7 +610,7 @@ onMounted(() => {
 .folder-content-list .thumbnail-sidebar__item.active,
 .folder-content-list .thumbnail-sidebar__item:hover {
   border-color: var(--color-border-accent);
-  box-shadow: 0 0 8px var(--thumbnail-sidebar-shadow-floating);
+  box-shadow: 0 0 8px var(--thumbnail-sidebar-thumbnail-active-shadow);
   transform: translateY(-2px);
 }
 
@@ -625,8 +628,8 @@ onMounted(() => {
   position: absolute;
   top: 5px;
   right: 5px;
-  background-color: var(--thumbnail-sidebar-surface-active);
-  color: white;
+  background-color: var(--thumbnail-sidebar-processing-badge-background);
+  color: var(--color-text-inverse);
   width: 15px;
   height: 15px;
   border-radius: 50%;
@@ -643,8 +646,8 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   right: 3px;
-  background-color: var(--thumbnail-sidebar-surface-selected);
-  color: white;
+  background-color: var(--thumbnail-sidebar-failed-badge-background);
+  color: var(--color-text-inverse);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -654,7 +657,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: bold;
   z-index: var(--z-local-toolbar-raised);
-  box-shadow: 0 0 3px black;
+  box-shadow: 0 0 3px var(--thumbnail-sidebar-badge-shadow);
 }
 
 /* 手动标注指示器（右下角蓝色铅笔） */
@@ -662,8 +665,8 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   right: 3px;
-  background-color: var(--thumbnail-sidebar-surface-overlay);
-  color: white;
+  background-color: var(--thumbnail-sidebar-labeled-badge-background);
+  color: var(--color-text-inverse);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -672,7 +675,7 @@ onMounted(() => {
   justify-content: center;
   font-size: 12px;
   z-index: var(--z-local-toolbar);
-  box-shadow: 0 0 3px black;
+  box-shadow: 0 0 3px var(--thumbnail-sidebar-badge-shadow);
 }
 
 /* 页码角标（左下角灰色小角标） */
@@ -680,8 +683,8 @@ onMounted(() => {
   position: absolute;
   bottom: 3px;
   left: 3px;
-  background-color: var(--thumbnail-sidebar-surface-inverse);
-  color: white;
+  background-color: var(--thumbnail-sidebar-page-number-badge-background);
+  color: var(--color-text-inverse);
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
@@ -692,7 +695,7 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 500;
   z-index: var(--z-local-raised);
-  box-shadow: 0 1px 3px var(--thumbnail-sidebar-shadow-strong);
+  box-shadow: 0 1px 3px var(--thumbnail-sidebar-badge-shadow);
   font-family: var(--font-sans);
 }
 
@@ -701,8 +704,8 @@ onMounted(() => {
   position: absolute;
   top: 3px;
   left: 3px;
-  background-color: var(--thumbnail-sidebar-surface-contrast);  /* 绿色 */
-  color: white;
+  background-color: var(--thumbnail-sidebar-translated-badge-background);
+  color: var(--color-text-inverse);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -712,14 +715,14 @@ onMounted(() => {
   font-size: 12px;
   font-weight: bold;
   z-index: var(--z-local-control);
-  box-shadow: 0 1px 3px var(--thumbnail-sidebar-shadow-strong);
+  box-shadow: 0 1px 3px var(--thumbnail-sidebar-badge-shadow);
 }
 
 /* 空状态 */
 .empty-state {
   text-align: center;
   padding: 20px;
-  color: var(--thumbnail-sidebar-text-muted);
+  color: var(--thumbnail-sidebar-muted-text);
 }
 
 @media (--breakpoint-md-down) {

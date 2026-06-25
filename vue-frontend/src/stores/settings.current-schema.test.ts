@@ -98,6 +98,7 @@ describe('useSettingsStore backend schema loading', () => {
     expect(loaded).toBe(true)
     expect(store.settings.translation.provider).toBe('custom')
     expect(store.settings.translation.openaiOptions.execution.businessRetries).toBe(4)
+    expect(store.settings.boxExpand.ratio).toBe(0)
     expect(store.providerConfigs.translation.custom?.modelName).toBe('cached-model')
   })
 })

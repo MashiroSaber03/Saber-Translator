@@ -345,8 +345,12 @@ export const useInsightStore = defineStore('insight', () => {
   // ============================================================
 
   function setCurrentBook(bookId: string | null): void {
+    const previousBookId = currentBookId.value
     currentBookId.value = bookId
     if (bookId) {
+      if (previousBookId !== bookId) {
+        notesComposable.clearNotes()
+      }
       notesComposable.loadNotes()
     } else {
       notesComposable.clearNotes()

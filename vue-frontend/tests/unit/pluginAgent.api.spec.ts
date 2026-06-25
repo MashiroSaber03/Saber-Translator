@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getMock, postMock, deleteMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
@@ -18,6 +18,7 @@ import {
   createPluginAgentSession,
   getPluginAgentSettings,
   lockPluginAgentTarget,
+  subscribePluginAgentEvents,
 } from '@/api/pluginAgent'
 
 describe('plugin agent api', () => {
@@ -25,6 +26,10 @@ describe('plugin agent api', () => {
     getMock.mockReset()
     postMock.mockReset()
     deleteMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('loads plugin agent settings from the system route', async () => {
@@ -61,5 +66,21 @@ describe('plugin agent api', () => {
         supported_modes: ['standard'],
       },
     })
+  })
+
+  it('does not report an error when the event stream fetch is aborted', async () => {
+    const controller = new AbortController()
+    const onError = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('Aborted', 'AbortError')))
+
+    controller.abort()
+
+    await expect(subscribePluginAgentEvents('session-1', {
+      signal: controller.signal,
+      onEvent: vi.fn(),
+      onError,
+    })).resolves.toBeUndefined()
+
+    expect(onError).not.toHaveBeenCalled()
   })
 })

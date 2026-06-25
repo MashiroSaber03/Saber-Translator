@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 
 const {
@@ -83,6 +83,8 @@ import { useImageStore } from '@/stores/imageStore'
 import { useWebImportStore } from '@/stores/webImportStore'
 
 describe('WebImportModal', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
@@ -131,6 +133,10 @@ describe('WebImportModal', () => {
         })
       }
     )
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('auto-imports extracted pages when autoImport is enabled', async () => {

@@ -53,14 +53,14 @@ defineProps<{
 
 <style scoped>
 .diagnostics-shell {
-  --diagnostics-panel-border-default: rgba(25, 55, 94, .08);
-  --diagnostics-panel-surface-base: rgba(255, 255, 255, .86);
-  --diagnostics-panel-surface-raised: rgba(255, 244, 244, .86);
-  --diagnostics-panel-surface-muted: rgba(255, 249, 240, .86);
-  --diagnostics-panel-surface-subtle: rgba(32, 170, 103, .14);
-  --diagnostics-panel-text-primary: #153250;
-  --diagnostics-panel-text-secondary: #516882;
-  --diagnostics-panel-text-muted: #17784b;
+  --diagnostics-panel-card-border: rgba(25, 55, 94, .08);
+  --diagnostics-panel-card-background: rgba(255, 255, 255, .86);
+  --diagnostics-panel-error-background: rgba(255, 244, 244, .86);
+  --diagnostics-panel-warning-background: rgba(255, 249, 240, .86);
+  --diagnostics-panel-success-pill-background: rgba(32, 170, 103, .14);
+  --diagnostics-panel-summary-value-text: #153250;
+  --diagnostics-panel-issue-text: #516882;
+  --diagnostics-panel-success-pill-text: #17784b;
 
   display: flex;
   flex-direction: column;
@@ -78,8 +78,8 @@ defineProps<{
 .checks-block {
   border-radius: 18px;
   padding: 16px;
-  background: var(--diagnostics-panel-surface-base);
-  border: 1px solid var(--diagnostics-panel-border-default);
+  background: var(--diagnostics-panel-card-background);
+  border: 1px solid var(--diagnostics-panel-card-border);
 }
 
 .summary-card .label {
@@ -91,7 +91,7 @@ defineProps<{
 .summary-card strong {
   display: block;
   margin-top: 8px;
-  color: var(--diagnostics-panel-text-primary);
+  color: var(--diagnostics-panel-summary-value-text);
   font-size: 20px;
 }
 
@@ -103,17 +103,17 @@ defineProps<{
 .block ul {
   margin: 12px 0 0;
   padding-left: 18px;
-  color: var(--diagnostics-panel-text-secondary);
+  color: var(--diagnostics-panel-issue-text);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .danger {
-  background: var(--diagnostics-panel-surface-raised);
+  background: var(--diagnostics-panel-error-background);
 }
 
 .warning {
-  background: var(--diagnostics-panel-surface-muted);
+  background: var(--diagnostics-panel-warning-background);
 }
 
 .check-list {
@@ -130,8 +130,8 @@ defineProps<{
 }
 
 .check-pill.ok {
-  background: var(--diagnostics-panel-surface-subtle);
-  color: var(--diagnostics-panel-text-muted);
+  background: var(--diagnostics-panel-success-pill-background);
+  color: var(--diagnostics-panel-success-pill-text);
 }
 
 .check-pill.bad {

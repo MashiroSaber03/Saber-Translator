@@ -20,16 +20,16 @@
           </div>
         </div>
         <div class="detail-actions">
-          <label class="toggle-switch" title="启用/禁用角色">
-            <UiInput 
-              type="checkbox" 
-              class="toggle-switch-input"
-              :aria-label="`启用角色 ${character.name}`"
-              :checked="character.enabled !== false"
-              @change="$emit('toggle-character', ($event.target as HTMLInputElement).checked)"
-            />
+          <UiButton
+            variant="toolbar"
+            class="toggle-switch"
+            :aria-label="`启用角色 ${character.name}`"
+            :aria-pressed="character.enabled !== false"
+            title="启用/禁用角色"
+            @click="$emit('toggle-character', character.enabled === false)"
+          >
             <span class="toggle-slider"></span>
-          </label>
+          </UiButton>
           <UiButton variant="toolbar" class="icon-btn-lg" :aria-label="`编辑角色 ${character.name}`" @click="$emit('edit-character')" title="编辑角色">✏️</UiButton>
           <UiButton variant="danger" class="icon-btn-lg" :aria-label="`删除角色 ${character.name}`" @click="$emit('delete-character')" title="删除角色">🗑️</UiButton>
         </div>
@@ -68,7 +68,6 @@
 </template>
 
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
 import FormTile from './FormTile.vue'
@@ -95,23 +94,23 @@ defineEmits<{
 
 <style scoped>
 .character-detail-panel {
-  --character-detail-panel-border-default: #e0e4ff;
-  --character-detail-panel-border-strong: #e5e7eb;
-  --character-detail-panel-shadow-default: rgba(0, 0, 0, .2);
-  --character-detail-panel-shadow-raised: rgba(0, 0, 0, .08);
-  --character-detail-panel-shadow-floating: rgba(0, 0, 0, .12);
-  --character-detail-panel-surface-base: #fafbff;
-  --character-detail-panel-surface-raised: #f5f7ff;
-  --character-detail-panel-surface-muted: #f0f0f0;
-  --character-detail-panel-surface-subtle: #cbd5e1;
-  --character-detail-panel-surface-hover: #10b981;
-  --character-detail-panel-surface-active: #059669;
-  --character-detail-panel-surface-selected: #f0f2ff;
-  --character-detail-panel-surface-overlay: #fef2f2;
-  --character-detail-panel-text-primary: #9ca3af;
-  --character-detail-panel-text-secondary: #1a1a2e;
-  --character-detail-panel-text-muted: #6b7280;
-  --character-detail-panel-text-subtle: #374151;
+  --character-detail-panel-card-border: #e0e4ff;
+  --character-detail-panel-section-divider: #e5e7eb;
+  --character-detail-panel-toggle-knob-shadow: rgba(0, 0, 0, .2);
+  --character-detail-panel-action-shadow: rgba(0, 0, 0, .08);
+  --character-detail-panel-action-hover-shadow: rgba(0, 0, 0, .12);
+  --character-detail-panel-card-background-start: #fafbff;
+  --character-detail-panel-card-background-end: #f5f7ff;
+  --character-detail-panel-avatar-placeholder-background: #f0f0f0;
+  --character-detail-panel-toggle-track-off: #cbd5e1;
+  --character-detail-panel-toggle-track-on-start: #10b981;
+  --character-detail-panel-toggle-track-on-end: #059669;
+  --character-detail-panel-action-hover-background: #f0f2ff;
+  --character-detail-panel-danger-hover-background: #fef2f2;
+  --character-detail-panel-empty-text: #9ca3af;
+  --character-detail-panel-title-text: #1a1a2e;
+  --character-detail-panel-alias-text: #6b7280;
+  --character-detail-panel-section-heading-text: #374151;
   --ui-button-padding: 6px 12px;
   --ui-button-radius: 6px;
   --ui-button-font-size: 13px;
@@ -120,9 +119,9 @@ defineEmits<{
   --ui-button-sm-padding: 6px 12px;
   --ui-button-sm-font-size: 13px;
 
-  background: linear-gradient(135deg, var(--character-detail-panel-surface-base) 0%, var(--character-detail-panel-surface-raised) 100%);
+  background: linear-gradient(135deg, var(--character-detail-panel-card-background-start) 0%, var(--character-detail-panel-card-background-end) 100%);
   border-radius: 16px;
-  border: 1px solid var(--character-detail-panel-border-default);
+  border: 1px solid var(--character-detail-panel-card-border);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -135,7 +134,7 @@ defineEmits<{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--character-detail-panel-text-primary);
+  color: var(--character-detail-panel-empty-text);
 }
 
 .empty-detail span {
@@ -154,7 +153,7 @@ defineEmits<{
   justify-content: space-between;
   align-items: flex-start;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--character-detail-panel-border-strong);
+  border-bottom: 1px solid var(--character-detail-panel-section-divider);
   margin-bottom: 16px;
 }
 
@@ -169,7 +168,7 @@ defineEmits<{
   height: 64px;
   border-radius: 12px;
   overflow: hidden;
-  background: var(--character-detail-panel-surface-muted);
+  background: var(--character-detail-panel-avatar-placeholder-background);
   flex-shrink: 0;
 }
 
@@ -195,13 +194,13 @@ defineEmits<{
   margin: 0 0 4px;
   font-size: 18px;
   font-weight: 600;
-  color: var(--character-detail-panel-text-secondary);
+  color: var(--character-detail-panel-title-text);
 }
 
 .detail-aliases {
   margin: 0;
   font-size: 13px;
-  color: var(--character-detail-panel-text-muted);
+  color: var(--character-detail-panel-alias-text);
 }
 
 .detail-actions {
@@ -211,28 +210,26 @@ defineEmits<{
 
 .toggle-switch {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
   width: 40px;
   height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
   cursor: pointer;
 }
 
-.toggle-switch-input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-switch .toggle-slider {
+.toggle-slider {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background-color: var(--character-detail-panel-surface-subtle);
+  background-color: var(--character-detail-panel-toggle-track-off);
   transition: 0.3s;
   border-radius: 22px;
 }
 
-.toggle-switch .toggle-slider::before {
+.toggle-slider::before {
   position: absolute;
   content: "";
   height: 16px;
@@ -242,14 +239,14 @@ defineEmits<{
   background-color: var(--color-surface-base);
   transition: 0.3s;
   border-radius: 50%;
-  box-shadow: 0 1px 3px var(--character-detail-panel-shadow-default);
+  box-shadow: 0 1px 3px var(--character-detail-panel-toggle-knob-shadow);
 }
 
-.toggle-switch-input:checked + .toggle-slider {
-  background: linear-gradient(135deg, var(--character-detail-panel-surface-hover), var(--character-detail-panel-surface-active));
+.toggle-switch[aria-pressed='true'] .toggle-slider {
+  background: linear-gradient(135deg, var(--character-detail-panel-toggle-track-on-start), var(--character-detail-panel-toggle-track-on-end));
 }
 
-.toggle-switch-input:checked + .toggle-slider::before {
+.toggle-switch[aria-pressed='true'] .toggle-slider::before {
   transform: translateX(18px);
 }
 
@@ -265,17 +262,17 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 2px 6px var(--character-detail-panel-shadow-raised);
+  box-shadow: 0 2px 6px var(--character-detail-panel-action-shadow);
 }
 
 .icon-btn-lg:hover {
-  background: var(--character-detail-panel-surface-selected);
+  background: var(--character-detail-panel-action-hover-background);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--character-detail-panel-shadow-floating);
+  box-shadow: 0 4px 12px var(--character-detail-panel-action-hover-shadow);
 }
 
 .icon-btn-lg.danger:hover {
-  background: var(--character-detail-panel-surface-overlay);
+  background: var(--character-detail-panel-danger-hover-background);
 }
 
 .forms-section {
@@ -286,7 +283,7 @@ defineEmits<{
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--character-detail-panel-text-subtle);
+  color: var(--character-detail-panel-section-heading-text);
 }
 
 .section-header {

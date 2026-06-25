@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import { useWebImportStore } from '@/stores/webImportStore'
 import type { WebImportSettings } from '@/types/webImport'
@@ -21,38 +22,29 @@ const targetFormatOptions = [
 <template>
   <UiPanel variant="settings">
     <div class="web-import-modal__form-row">
-      <label class="ui-checkbox-label">
-        <UiInput
-          type="checkbox"
-          :checked="draftSettings.imagePreprocess.enabled"
-          @change="webImportStore.setImagePreprocessEnabled(($event.target as HTMLInputElement).checked)"
-        />
-        启用图片预处理
-      </label>
+      <UiCheckbox
+        :model-value="draftSettings.imagePreprocess.enabled"
+        label="启用图片预处理"
+        @change="webImportStore.setImagePreprocessEnabled"
+      />
     </div>
 
     <template v-if="draftSettings.imagePreprocess.enabled">
       <div class="web-import-modal__form-row">
-        <label class="ui-checkbox-label">
-          <UiInput
-            type="checkbox"
-            :checked="draftSettings.imagePreprocess.autoRotate"
-            @change="webImportStore.setImageAutoRotate(($event.target as HTMLInputElement).checked)"
-          />
-          根据 EXIF 自动旋转
-        </label>
+        <UiCheckbox
+          :model-value="draftSettings.imagePreprocess.autoRotate"
+          label="根据 EXIF 自动旋转"
+          @change="webImportStore.setImageAutoRotate"
+        />
       </div>
 
       <h5 class="web-import-modal__subsection-title">压缩设置</h5>
       <div class="web-import-modal__form-row">
-        <label class="ui-checkbox-label">
-          <UiInput
-            type="checkbox"
-            :checked="draftSettings.imagePreprocess.compression.enabled"
-            @change="webImportStore.setImageCompressionEnabled(($event.target as HTMLInputElement).checked)"
-          />
-          启用压缩
-        </label>
+        <UiCheckbox
+          :model-value="draftSettings.imagePreprocess.compression.enabled"
+          label="启用压缩"
+          @change="webImportStore.setImageCompressionEnabled"
+        />
       </div>
 
       <template v-if="draftSettings.imagePreprocess.compression.enabled">
@@ -93,14 +85,11 @@ const targetFormatOptions = [
 
       <h5 class="web-import-modal__subsection-title">格式转换</h5>
       <div class="web-import-modal__form-row">
-        <label class="ui-checkbox-label">
-          <UiInput
-            type="checkbox"
-            :checked="draftSettings.imagePreprocess.formatConvert.enabled"
-            @change="webImportStore.setImageFormatConvertEnabled(($event.target as HTMLInputElement).checked)"
-          />
-          启用格式转换
-        </label>
+        <UiCheckbox
+          :model-value="draftSettings.imagePreprocess.formatConvert.enabled"
+          label="启用格式转换"
+          @change="webImportStore.setImageFormatConvertEnabled"
+        />
       </div>
 
       <div v-if="draftSettings.imagePreprocess.formatConvert.enabled" class="web-import-modal__form-row">

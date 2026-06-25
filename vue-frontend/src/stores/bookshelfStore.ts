@@ -878,7 +878,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
     // API 调用方法
     loadBooks,
-    fetchBooks: loadBooks,
     loadBookDetail,
     loadTags,
     createBook,

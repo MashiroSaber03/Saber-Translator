@@ -103,6 +103,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   let chatAbortController: AbortController | null = null
   let chatStreamRollbackSession: CharacterStudioChatSession | null = null
   let chatStreamRunId = 0
+  let workspaceLoadRequestId = 0
+  let documentLoadRequestId = 0
+  let chatStateLoadRequestId = 0
+  let chatPromptPreviewRequestId = 0
 
   const canUndoPatch = computed(() => patchSnapshot.value !== null)
   const editorPendingState = computed<CharacterStudioEditorPendingState>(() => ({
@@ -203,6 +207,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   })
 
   function resetChatState() {
+    chatStateLoadRequestId += 1
+    chatPromptPreviewRequestId += 1
     activeChatSession.value = null
     archivedChatSessions.value = []
     chatPromptPreview.value = ''
@@ -220,6 +226,36 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         chatStreamRollbackSession = null
       }
     }
+  }
+
+  function isActiveWorkspaceRequest(requestId: number, requestedBookId: string) {
+    return requestId === workspaceLoadRequestId && bookId.value === requestedBookId
+  }
+
+  function isActiveDocumentRequest(requestId: number, requestedBookId: string) {
+    return requestId === documentLoadRequestId && bookId.value === requestedBookId
+  }
+
+  function isActiveChatStateRequest(requestId: number, requestedBookId: string, requestedDocId: string) {
+    return (
+      requestId === chatStateLoadRequestId &&
+      bookId.value === requestedBookId &&
+      currentDocument.value?.id === requestedDocId
+    )
+  }
+
+  function isActiveChatPromptPreviewRequest(
+    requestId: number,
+    requestedBookId: string,
+    requestedDocId: string,
+    requestedSessionId: string,
+  ) {
+    return (
+      requestId === chatPromptPreviewRequestId &&
+      bookId.value === requestedBookId &&
+      currentDocument.value?.id === requestedDocId &&
+      activeChatSession.value?.session_id === requestedSessionId
+    )
   }
 
   function resetWorkspaceState() {
@@ -280,6 +316,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function loadWorkspace(nextBookId: string) {
     if (!nextBookId) return
+    const requestId = ++workspaceLoadRequestId
     const isBookChanged = !!bookId.value && bookId.value !== nextBookId
     isWorkspaceLoading.value = true
     errorMessage.value = ''
@@ -289,6 +326,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     bookId.value = nextBookId
     try {
       const response = await getCharacterStudioIndex(nextBookId)
+      if (!isActiveWorkspaceRequest(requestId, nextBookId)) return
       if (!response.success) {
         throw new Error(response.error || '加载角色工坊失败')
       }
@@ -302,14 +340,18 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         resetWorkspaceState()
       }
     } catch (error) {
+      if (!isActiveWorkspaceRequest(requestId, nextBookId)) return
       errorMessage.value = error instanceof Error ? error.message : '加载角色工坊失败'
     } finally {
-      isWorkspaceLoading.value = false
+      if (requestId === workspaceLoadRequestId) {
+        isWorkspaceLoading.value = false
+      }
     }
   }
 
   async function openDocument(docId: string) {
     if (!bookId.value || !docId) return
+    const requestId = ++documentLoadRequestId
     const requestedBookId = bookId.value
     isDocumentLoading.value = true
     openingDocumentId.value = docId
@@ -320,7 +362,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         throw new Error(response.error || '加载角色文档失败')
       }
       const document = response.document
-      if (bookId.value !== requestedBookId) return
+      if (!isActiveDocumentRequest(requestId, requestedBookId)) return
       await runWithoutAutosave(async () => {
         abortActiveChatStream()
         currentDocument.value = document
@@ -340,10 +382,13 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         errorMessage.value = chatError instanceof Error ? chatError.message : '加载聊天状态失败'
       }
     } catch (error) {
+      if (!isActiveDocumentRequest(requestId, requestedBookId)) return
       throw createActionError(error, '加载角色文档失败')
     } finally {
-      isDocumentLoading.value = false
-      openingDocumentId.value = ''
+      if (requestId === documentLoadRequestId) {
+        isDocumentLoading.value = false
+        openingDocumentId.value = ''
+      }
     }
   }
 
@@ -629,18 +674,24 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function loadChatState(docId: string) {
     if (!bookId.value || !docId) return
+    const requestId = ++chatStateLoadRequestId
+    const requestedBookId = bookId.value
     isChatLoading.value = true
     clearErrorMessage()
     try {
-      const response = await getCharacterStudioChatState(bookId.value, docId)
+      const response = await getCharacterStudioChatState(requestedBookId, docId)
+      if (!isActiveChatStateRequest(requestId, requestedBookId, docId)) return
       if (!response.success) {
         throw new Error(response.error || '加载聊天状态失败')
       }
       applyChatStatePayload(response)
     } catch (error) {
+      if (!isActiveChatStateRequest(requestId, requestedBookId, docId)) return
       throw createActionError(error, '加载聊天状态失败')
     } finally {
-      isChatLoading.value = false
+      if (requestId === chatStateLoadRequestId) {
+        isChatLoading.value = false
+      }
     }
   }
 
@@ -983,25 +1034,33 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   async function loadChatPromptPreview() {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
+    const requestId = ++chatPromptPreviewRequestId
+    const requestedBookId = bookId.value
+    const requestedDocId = currentDocument.value.id
+    const requestedSessionId = activeChatSession.value.session_id
     isChatPromptLoading.value = true
     clearErrorMessage()
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
     try {
       const response = await getCharacterStudioChatPromptPreview(
-        bookId.value,
-        currentDocument.value.id,
-        activeChatSession.value.session_id,
+        requestedBookId,
+        requestedDocId,
+        requestedSessionId,
       )
+      if (!isActiveChatPromptPreviewRequest(requestId, requestedBookId, requestedDocId, requestedSessionId)) return
       if (!response.success) {
         throw new Error(response.error || '加载提示词预览失败')
       }
       applyChatStatePayload(response)
     } catch (error) {
+      if (!isActiveChatPromptPreviewRequest(requestId, requestedBookId, requestedDocId, requestedSessionId)) return
       chatPromptPreviewError.value = error instanceof Error ? error.message : '加载提示词预览失败'
       throw createActionError(error, '加载提示词预览失败')
     } finally {
-      isChatPromptLoading.value = false
+      if (requestId === chatPromptPreviewRequestId) {
+        isChatPromptLoading.value = false
+      }
     }
   }
 

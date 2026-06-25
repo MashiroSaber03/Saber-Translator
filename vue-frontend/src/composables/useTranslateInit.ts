@@ -9,8 +9,6 @@
  * - 初始化主题状态
  * - 初始化插件状态
  * - URL参数解析（书架模式自动加载章节会话）
- * 
- * Requirements: 7.3, 10.2
  */
 
 import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
@@ -112,6 +110,8 @@ export function useTranslateInit() {
   /** 是否为书架模式 */
   const isBookshelfMode = ref(false)
   let switchImageFlagTimer: ReturnType<typeof setTimeout> | null = null
+  let isOwnerAlive = true
+  let bookContextRequestId = 0
 
   function clearSwitchImageFlagTimer(): void {
     if (switchImageFlagTimer) {
@@ -125,8 +125,27 @@ export function useTranslateInit() {
     window._isChangingFromSwitchImage = false
   }
 
+  function markOwnerUnmounted(): void {
+    isOwnerAlive = false
+    bookContextRequestId += 1
+    resetSwitchImageFlag()
+  }
+
+  function isActiveBookContextRequest(
+    requestId: number,
+    bookId: string,
+    chapterId: string
+  ): boolean {
+    return (
+      isOwnerAlive &&
+      requestId === bookContextRequestId &&
+      route.query.book === bookId &&
+      route.query.chapter === chapterId
+    )
+  }
+
   if (getCurrentInstance()) {
-    onUnmounted(resetSwitchImageFlag)
+    onUnmounted(markOwnerUnmounted)
   }
 
   // ============================================================
@@ -280,6 +299,7 @@ export function useTranslateInit() {
    * 从 URL 参数中读取 book 和 chapter，加载对应的会话数据
    */
   async function initializeBookChapterContext(): Promise<void> {
+    const requestId = ++bookContextRequestId
     const bookId = route.query.book as string | undefined
     const chapterId = route.query.chapter as string | undefined
 
@@ -302,6 +322,9 @@ export function useTranslateInit() {
     try {
       // 获取书籍和章节信息
       const bookResponse = await getBookDetail(bookId)
+      if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
+        return
+      }
 
       if (!bookResponse.success || !bookResponse.book) {
         bookTranslationConstraintsStore.resetBookConstraints()
@@ -335,7 +358,13 @@ export function useTranslateInit() {
       const hasData = chapter.page_count && chapter.page_count > 0
       if (chapter.session_path && hasData) {
         try {
+          if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
+            return
+          }
           await sessionStore.loadSessionByPath(chapter.session_path)
+          if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
+            return
+          }
           showToast(`已加载章节: ${chapter.title}`, 'success')
         } catch {
           // 会话不可用时保持当前章节上下文，等待用户重新保存。
@@ -343,6 +372,9 @@ export function useTranslateInit() {
       }
 
     } catch {
+      if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
+        return
+      }
       bookTranslationConstraintsStore.resetBookConstraints()
       showToast('加载书籍信息失败', 'error')
     }

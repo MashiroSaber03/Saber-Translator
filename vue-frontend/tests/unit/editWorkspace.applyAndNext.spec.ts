@@ -1,6 +1,6 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -107,6 +107,8 @@ vi.mock('@/composables/translation/core/saveStep', () => ({
 
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
 
+enableAutoUnmount(afterEach)
+
 let pinia: ReturnType<typeof createPinia>
 
 const EditToolbarStub = defineComponent({
@@ -141,6 +143,11 @@ describe('EditWorkspace applyAndNext', () => {
     saveBookshelfPageProgressMock.mockReset()
 
     vi.stubGlobal('confirm', vi.fn(() => true))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('does not navigate to the next image when re-rendering fails', async () => {

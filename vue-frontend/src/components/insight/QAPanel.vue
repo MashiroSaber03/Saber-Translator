@@ -25,6 +25,8 @@ const rebuildProgressLabel = ref('')
 const rebuildPollingFailures = ref(0)
 const messageList = ref<InstanceType<typeof QAMessageList> | null>(null)
 let rebuildPollingTimer: ReturnType<typeof setInterval> | null = null
+let chatRequestSequence = 0
+let isQAPanelMounted = true
 
 const qaHistory = computed(() => insightStore.qaHistory)
 const isStreaming = computed(() => insightStore.isStreaming)
@@ -46,7 +48,10 @@ const {
 
 async function sendQuestion(): Promise<void> {
   const question = questionInput.value.trim()
-  if (!question || !insightStore.currentBookId || isStreaming.value) return
+  const bookId = insightStore.currentBookId
+  if (!question || !bookId || isStreaming.value) return
+
+  const requestId = ++chatRequestSequence
 
   questionInput.value = ''
   insightStore.clearQAHistory()
@@ -72,7 +77,7 @@ async function sendQuestion(): Promise<void> {
   insightStore.setStreaming(true)
 
   try {
-    const response = await insightApi.sendChat(insightStore.currentBookId, question, {
+    const response = await insightApi.sendChat(bookId, question, {
       use_parent_child: useParentChild.value,
       use_reasoning: useReasoning.value,
       use_reranker: useReranker.value,
@@ -80,6 +85,8 @@ async function sendQuestion(): Promise<void> {
       threshold: threshold.value,
       use_global_context: qaMode.value === 'global',
     })
+
+    if (!isCurrentChatRequest(requestId, bookId)) return
 
     insightStore.removeLoadingMessages()
 
@@ -102,6 +109,7 @@ async function sendQuestion(): Promise<void> {
       })
     }
   } catch {
+    if (!isCurrentChatRequest(requestId, bookId)) return
     insightStore.removeLoadingMessages()
     insightStore.addQAMessage({
       id: (Date.now() + 2).toString(),
@@ -110,10 +118,23 @@ async function sendQuestion(): Promise<void> {
       timestamp: new Date().toISOString(),
     })
   } finally {
-    insightStore.setStreaming(false)
-    await nextTick()
-    scrollToBottom()
+    if (isCurrentChatRequest(requestId, bookId)) {
+      insightStore.setStreaming(false)
+      await nextTick()
+      scrollToBottom()
+    } else if (requestId === chatRequestSequence) {
+      insightStore.removeLoadingMessages()
+      insightStore.setStreaming(false)
+    }
   }
+}
+
+function isCurrentChatRequest(requestId: number, bookId: string): boolean {
+  return (
+    isQAPanelMounted &&
+    requestId === chatRequestSequence &&
+    insightStore.currentBookId === bookId
+  )
 }
 
 function scrollToBottom(): void {
@@ -240,6 +261,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  isQAPanelMounted = false
+  chatRequestSequence += 1
+  insightStore.removeLoadingMessages()
+  insightStore.setStreaming(false)
   stopRebuildStatusPolling()
 })
 </script>

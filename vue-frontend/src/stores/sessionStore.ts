@@ -143,6 +143,7 @@ export const useSessionStore = defineStore('session', () => {
   })
 
   let progressClearTimer: ReturnType<typeof setTimeout> | null = null
+  let sessionLoadRequestId = 0
 
   // ============================================================
   // 计算属性
@@ -372,6 +373,10 @@ export const useSessionStore = defineStore('session', () => {
     }, delayMs)
   }
 
+  function isActiveSessionLoad(requestId: number): boolean {
+    return requestId === sessionLoadRequestId
+  }
+
   function createSessionData(
     name: string,
     images: ImageData[],
@@ -404,6 +409,7 @@ export const useSessionStore = defineStore('session', () => {
    * 重置所有状态
    */
   function reset(): void {
+    sessionLoadRequestId += 1
     clearProgressClearTimer()
     currentSessionName.value = null
     context.value = {
@@ -488,6 +494,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function loadSessionByPath(sessionPath: string): Promise<boolean> {
+    const requestId = ++sessionLoadRequestId
     clearProgressClearTimer()
     setLoading(true)
     setError(null)
@@ -501,6 +508,7 @@ export const useSessionStore = defineStore('session', () => {
 
       const { loadSessionByPath } = await import('@/api/session')
       const response = await loadSessionByPath(sessionPath)
+      if (!isActiveSessionLoad(requestId)) return false
 
       if (!response.success || !response.session) {
         throw new Error(response.error || '加载会话失败')
@@ -576,17 +584,22 @@ export const useSessionStore = defineStore('session', () => {
 
         // 将图片 URL 转换为 Base64，用于 Canvas 操作和翻译功能。
         if (images.length > 0) {
+          if (!isActiveSessionLoad(requestId)) return false
           loadingProgress.value = { current: 0, total: images.length, message: '正在加载图片...' }
 
           await convertImagesToBase64(images, (current, total) => {
-            loadingProgress.value = { current, total, message: `加载图片 ${current}/${total}...` }
+            if (isActiveSessionLoad(requestId)) {
+              loadingProgress.value = { current, total, message: `加载图片 ${current}/${total}...` }
+            }
           })
 
+          if (!isActiveSessionLoad(requestId)) return false
           loadingProgress.value = { current: images.length, total: images.length, message: '加载完成' }
 
           scheduleLoadingProgressClear(500)
         }
 
+        if (!isActiveSessionLoad(requestId)) return false
         // 设置图片到 imageStore
         imageStore.setImages(images)
 
@@ -614,6 +627,7 @@ export const useSessionStore = defineStore('session', () => {
       // 恢复 UI 设置到 settingsStore
       const uiSettings = sessionData.ui_settings
       if (uiSettings) {
+        if (!isActiveSessionLoad(requestId)) return false
         // 恢复语言设置
         if (uiSettings.targetLanguage || uiSettings.sourceLanguage) {
           settingsStore.updateSettings({
@@ -649,16 +663,20 @@ export const useSessionStore = defineStore('session', () => {
       }
 
       // 设置当前会话名称
+      if (!isActiveSessionLoad(requestId)) return false
       setSessionName(sessionPath)
 
       return true
     } catch (e) {
+      if (!isActiveSessionLoad(requestId)) return false
       const errorMsg = e instanceof Error ? e.message : '加载会话失败'
       setError(errorMsg)
       clearProgressClearTimer()
       throw e
     } finally {
-      setLoading(false)
+      if (isActiveSessionLoad(requestId)) {
+        setLoading(false)
+      }
     }
   }
 

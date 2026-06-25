@@ -35,12 +35,14 @@ not a backlog or migration ledger. Daily development should use
 
 ## Audit Output
 
-`lint:ui:audit` intentionally reports only:
+`lint:ui:audit` reports current health signals:
 
 - token file count,
 - `:root` token count,
 - token dependency count,
-- critical visual state coverage count.
+- critical visual state coverage count,
+- heavy owner review signal count,
+- owner token density signals.
 
 It must not print large-owner candidates, pending split decisions, or
 layout bypass todo lists. If a real violation appears, default `lint:ui` should

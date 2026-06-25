@@ -202,6 +202,25 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   /** 修复气泡背景中 */
   const isRepairLoading = ref(false)
 
+  let layoutFitTimeout: ReturnType<typeof setTimeout> | null = null
+  let activationFitTimeout: ReturnType<typeof setTimeout> | null = null
+  let imageLoadFitTimeout: ReturnType<typeof setTimeout> | null = null
+
+  function clearDelayedFitTimers(): void {
+    if (layoutFitTimeout) {
+      clearTimeout(layoutFitTimeout)
+      layoutFitTimeout = null
+    }
+    if (activationFitTimeout) {
+      clearTimeout(activationFitTimeout)
+      activationFitTimeout = null
+    }
+    if (imageLoadFitTimeout) {
+      clearTimeout(imageLoadFitTimeout)
+      imageLoadFitTimeout = null
+    }
+  }
+
   // ============================================================
   // 图片查看器状态
   // 【业务契约 DualImageViewer】支持两套独立变换状态，syncEnabled 开启时联动
@@ -449,8 +468,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     } catch {
       // 布局偏好不可写时继续使用当前会话内状态。
     }
-    // 切换布局后延迟 300ms 自动适应屏幕
-    setTimeout(() => {
+    // 切换布局后等待过渡完成再适应屏幕。
+    if (layoutFitTimeout) {
+      clearTimeout(layoutFitTimeout)
+    }
+    layoutFitTimeout = setTimeout(() => {
+      layoutFitTimeout = null
       fitToScreen()
     }, 300)
   }
@@ -712,7 +735,11 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     
     if (viewport === 'original' && (isInitialState || isLargeImage)) {
       nextTick(() => {
-        setTimeout(() => {
+        if (imageLoadFitTimeout) {
+          clearTimeout(imageLoadFitTimeout)
+        }
+        imageLoadFitTimeout = setTimeout(() => {
+          imageLoadFitTimeout = null
           fitToScreen()
         }, 50)
       })
@@ -916,7 +943,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     // 添加全局鼠标抬起监听（用于结束笔刷涂抹）
     document.addEventListener('mouseup', handleGlobalMouseUp)
 
-    // 加载当前图片的气泡状态（loadBubbleStatesFromImage 内部已调用 fitToScreen）
+    // 加载当前图片的气泡状态，保留当前缩放状态。
     if (props.isEditModeActive) {
       loadBubbleStatesFromImage()
       nextTick(() => {
@@ -937,6 +964,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     document.removeEventListener('mouseup', stopDividerDrag)
     document.removeEventListener('mousemove', handlePanelResize)
     document.removeEventListener('mouseup', stopPanelResize)
+    clearDelayedFitTimers()
   })
 
   // 监听编辑模式激活状态
@@ -948,7 +976,11 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
         updateImageDimensions()
         // 进入编辑模式时等待图片和容器完成布局，再计算初始缩放。
         // 8K 等超大图片依赖这个时序获得正确视口尺寸。
-        setTimeout(() => {
+        if (activationFitTimeout) {
+          clearTimeout(activationFitTimeout)
+        }
+        activationFitTimeout = setTimeout(() => {
+          activationFitTimeout = null
           fitToScreen()
         }, 100)
       })
@@ -957,7 +989,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   })
 
-  // 监听当前图片变化（loadBubbleStatesFromImage 内部已调用 fitToScreen）
+  // 监听当前图片变化，切图时保持当前缩放状态。
   watch(currentImageIndex, () => {
     if (props.isEditModeActive) {
       if (exitDialogState.value !== 'saving') {

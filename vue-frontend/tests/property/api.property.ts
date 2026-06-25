@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
-import type { BubbleState, BubbleCoords } from '@/types'
+import type { BubbleState, BubbleCoords, TextDirection } from '@/types'
 import type { TranslateImageParams, ReRenderParams } from '@/api/translate'
 
 // ==================== 辅助函数 ====================
@@ -16,35 +16,45 @@ import type { TranslateImageParams, ReRenderParams } from '@/api/translate'
  */
 function generateBubbleCoords(): fc.Arbitrary<BubbleCoords> {
   return fc.record({
-    x: fc.integer({ min: 0, max: 1000 }),
-    y: fc.integer({ min: 0, max: 1000 }),
+    x1: fc.integer({ min: 0, max: 1000 }),
+    y1: fc.integer({ min: 0, max: 1000 }),
     width: fc.integer({ min: 10, max: 500 }),
     height: fc.integer({ min: 10, max: 500 }),
-  })
+  }).map(({ x1, y1, width, height }) => [x1, y1, x1 + width, y1 + height])
 }
 
 /**
  * 生成有效的气泡状态
  */
 function generateBubbleState(): fc.Arbitrary<BubbleState> {
+  const textDirection = fc.constantFrom('auto', 'vertical', 'horizontal') as fc.Arbitrary<TextDirection>
+
   return fc.record({
     coords: generateBubbleCoords(),
+    polygon: fc.array(fc.tuple(fc.integer(), fc.integer()).map(([x, y]) => [x, y]), {
+      maxLength: 10,
+    }),
     originalText: fc.string({ minLength: 0, maxLength: 200 }),
     translatedText: fc.string({ minLength: 0, maxLength: 200 }),
     textboxText: fc.string({ minLength: 0, maxLength: 200 }),
     fontSize: fc.integer({ min: 8, max: 72 }),
     fontFamily: fc.constantFrom('Arial', 'SimHei', 'Microsoft YaHei'),
-    textDirection: fc.constantFrom('auto', 'vertical', 'horizontal'),
-    autoTextDirection: fc.constantFrom('v', 'h', undefined),
+    textDirection,
+    autoTextDirection: textDirection,
     textColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
     fillColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
     rotationAngle: fc.integer({ min: 0, max: 360 }),
+    position: fc.record({
+      x: fc.integer({ min: -100, max: 100 }),
+      y: fc.integer({ min: -100, max: 100 }),
+    }),
     strokeEnabled: fc.boolean(),
     strokeColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
     strokeWidth: fc.integer({ min: 1, max: 10 }),
     lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
     textAlign: fc.constantFrom('start', 'center', 'end'),
     inpaintMethod: fc.constantFrom('solid', 'lama_mpe', 'litelama'),
+    textlines: fc.constant([]),
   })
 }
 
@@ -123,19 +133,21 @@ describe('API 请求参数构建属性测试', () => {
     it('气泡坐标应为有效的矩形区域', () => {
       fc.assert(
         fc.property(generateBubbleCoords(), coords => {
+          const [x1, y1, x2, y2] = coords
+
           // 坐标应为非负整数
-          expect(coords.x).toBeGreaterThanOrEqual(0)
-          expect(coords.y).toBeGreaterThanOrEqual(0)
+          expect(x1).toBeGreaterThanOrEqual(0)
+          expect(y1).toBeGreaterThanOrEqual(0)
 
           // 尺寸应为正整数
-          expect(coords.width).toBeGreaterThan(0)
-          expect(coords.height).toBeGreaterThan(0)
+          expect(x2).toBeGreaterThan(x1)
+          expect(y2).toBeGreaterThan(y1)
 
           // 坐标应为整数
-          expect(Number.isInteger(coords.x)).toBe(true)
-          expect(Number.isInteger(coords.y)).toBe(true)
-          expect(Number.isInteger(coords.width)).toBe(true)
-          expect(Number.isInteger(coords.height)).toBe(true)
+          expect(Number.isInteger(x1)).toBe(true)
+          expect(Number.isInteger(y1)).toBe(true)
+          expect(Number.isInteger(x2)).toBe(true)
+          expect(Number.isInteger(y2)).toBe(true)
         }),
         { numRuns: 100 }
       )
@@ -147,19 +159,37 @@ describe('API 请求参数构建属性测试', () => {
           fc.array(generateBubbleState(), { minLength: 1, maxLength: 10 }),
           bubbleStates => {
             const params: ReRenderParams = {
-              original_image: 'base64_original',
               clean_image: 'base64_clean',
-              bubble_states: bubbleStates,
+              bubble_texts: bubbleStates.map(state => state.translatedText),
+              bubble_coords: bubbleStates.map(state => state.coords),
+              bubble_states: bubbleStates.map(state => ({
+                translatedText: state.translatedText,
+                coords: state.coords,
+                fontSize: state.fontSize,
+                fontFamily: state.fontFamily,
+                textDirection: state.textDirection,
+                textColor: state.textColor,
+                rotationAngle: state.rotationAngle,
+                position: state.position,
+                strokeEnabled: state.strokeEnabled,
+                strokeColor: state.strokeColor,
+                strokeWidth: state.strokeWidth,
+                lineSpacing: state.lineSpacing,
+                textAlign: state.textAlign,
+              })),
             }
 
             // 验证参数结构
-            expect(params.original_image).toBeDefined()
             expect(params.clean_image).toBeDefined()
+            expect(params.bubble_texts).toHaveLength(bubbleStates.length)
+            expect(params.bubble_coords).toHaveLength(bubbleStates.length)
             expect(Array.isArray(params.bubble_states)).toBe(true)
-            expect(params.bubble_states.length).toBe(bubbleStates.length)
+            expect(params.bubble_states).toHaveLength(bubbleStates.length)
 
             // 验证每个气泡状态
-            params.bubble_states.forEach((state, index) => {
+            params.bubble_states?.forEach((state, index) => {
+              expect(params.bubble_texts[index]).toBe(bubbleStates[index].translatedText)
+              expect(params.bubble_coords[index]).toEqual(bubbleStates[index].coords)
               expect(state.coords).toEqual(bubbleStates[index].coords)
               expect(state.fontSize).toBe(bubbleStates[index].fontSize)
             })

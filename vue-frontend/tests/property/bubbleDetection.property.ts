@@ -203,7 +203,8 @@ function createBubbleStatesFromDetection(
       ...defaults,
       autoTextDirection,
       rotationAngle: bubbleAngles[index] || 0,
-      position: { x: 0, y: 0 }
+      position: { x: 0, y: 0 },
+      textlines: []
     }
   })
 }

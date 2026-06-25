@@ -155,7 +155,7 @@ async function deleteTag(tagName: string) {
         <div v-if="editingTagName !== tag.name" class="tag-view-mode">
           <span
             class="tag-color-dot"
-            :style="{ backgroundColor: tag.color || '#667eea' }"
+            :style="{ backgroundColor: tag.color || 'var(--color-action-brand)' }"
           ></span>
           <span class="tag-name">{{ tag.name }}</span>
           <span class="tag-book-count">{{ tag.book_count || 0 }} 本</span>
@@ -311,7 +311,7 @@ async function deleteTag(tagName: string) {
 .tag-edit-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
-  color: white;
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 4px;
   font-size: 12px;
@@ -327,7 +327,7 @@ async function deleteTag(tagName: string) {
 .tag-delete-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--tag-manage-modal-delete-start) 0%, var(--tag-manage-modal-delete-end) 100%);
-  color: white;
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 4px;
   font-size: 12px;
@@ -368,7 +368,7 @@ async function deleteTag(tagName: string) {
 .tag-save-btn {
   padding: 4px 12px;
   background: linear-gradient(135deg, var(--color-action-success) 0%, var(--tag-manage-modal-save-end) 100%);
-  color: white;
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 4px;
   font-size: 12px;

@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as insightApi from '@/api/insight'
 import { useInsightStore } from '@/stores/insightStore'
 import type { TimelineData } from './timelineTypes'
@@ -44,6 +44,7 @@ export function useTimelinePanel() {
   let dataRequestId = 0
   let loadRequestId = 0
   let regenerateRequestId = 0
+  let isMounted = true
 
   const hasTimelineData = computed(() => {
     if (!timelineData.value) return false
@@ -78,7 +79,7 @@ export function useTimelinePanel() {
 
     try {
       const response = await insightApi.getTimeline(bookId) as TimelineApiResponse
-      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
+      if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
 
       if (response.success) {
         timelineData.value = normalizeTimelineResponse(response)
@@ -86,10 +87,10 @@ export function useTimelinePanel() {
         errorMessage.value = response.error || '加载时间线失败'
       }
     } catch (error) {
-      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
+      if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
       errorMessage.value = error instanceof Error ? error.message : '加载失败'
     } finally {
-      if (loadRequestId === loadingId) {
+      if (isMounted && loadRequestId === loadingId) {
         isLoading.value = false
       }
     }
@@ -107,7 +108,7 @@ export function useTimelinePanel() {
 
     try {
       const response = await insightApi.regenerateTimeline(bookId) as TimelineApiResponse
-      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
+      if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
 
       if (response.success) {
         timelineData.value = normalizeTimelineResponse(response)
@@ -116,10 +117,10 @@ export function useTimelinePanel() {
         errorMessage.value = '重新生成失败'
       }
     } catch (error) {
-      if (dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
+      if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
       errorMessage.value = error instanceof Error ? error.message : '重新生成失败'
     } finally {
-      if (regenerateRequestId === regeneratingId) {
+      if (isMounted && regenerateRequestId === regeneratingId) {
         isRegenerating.value = false
       }
     }
@@ -168,6 +169,13 @@ export function useTimelinePanel() {
     if (newKey > 0 && insightStore.currentBookId) {
       loadTimeline()
     }
+  })
+
+  onUnmounted(() => {
+    isMounted = false
+    dataRequestId += 1
+    loadRequestId += 1
+    regenerateRequestId += 1
   })
 
   return {

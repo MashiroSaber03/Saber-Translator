@@ -135,7 +135,7 @@ onUnmounted(() => {
   padding: 10px 12px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: var(--character-studio-preview-workspace-surface-overlay);
+  background: var(--character-studio-preview-composer-background);
 }
 
 .composer-main {
@@ -192,7 +192,7 @@ onUnmounted(() => {
   padding: 8px 28px 8px 8px;
   border: 1px solid var(--studio-border-default);
   border-radius: 14px;
-  background: var(--character-studio-preview-workspace-surface-hover);
+  background: var(--character-studio-preview-pending-attachment-background);
   text-align: left;
 }
 
@@ -253,8 +253,8 @@ onUnmounted(() => {
 
 .action-primary {
   padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-preview-details-surface-active), var(--character-studio-preview-details-surface-selected));
-  box-shadow: 0 12px 24px var(--character-studio-preview-details-shadow-raised);
+  background: linear-gradient(135deg, var(--character-studio-preview-primary-action-background-start), var(--character-studio-preview-primary-action-background-end));
+  box-shadow: 0 12px 24px var(--character-studio-preview-primary-action-shadow);
   color: var(--color-text-inverse);
 }
 

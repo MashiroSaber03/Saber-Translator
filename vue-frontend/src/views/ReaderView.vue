@@ -32,6 +32,8 @@ const currentViewMode = ref<'original' | 'translated'>('translated')
 const currentPage = ref(1)
 
 let failureRedirectTimer: ReturnType<typeof setTimeout> | null = null
+let readerLoadSequence = 0
+let isReaderViewMounted = false
 
 const currentChapterIndex = computed(() => 
   chaptersData.value.findIndex(c => c.id === props.chapterId)
@@ -68,14 +70,19 @@ function scheduleFailureRedirect() {
 }
 
 async function loadReaderData() {
+  const loadId = ++readerLoadSequence
+  const bookId = props.bookId
+  const chapterId = props.chapterId
   clearFailureRedirectTimer()
   isLoading.value = true
   
   try {
     const [bookResult, imagesResult] = await Promise.all([
-      getBookDetail(props.bookId),
-      getChapterImages(props.bookId, props.chapterId)
+      getBookDetail(bookId),
+      getChapterImages(bookId, chapterId)
     ])
+
+    if (!isReaderViewMounted || loadId !== readerLoadSequence) return
     
     if (bookResult.success && bookResult.book) {
       bookInfo.value = bookResult.book
@@ -93,10 +100,13 @@ async function loadReaderData() {
     document.title = pageTitle.value
     
   } catch (error) {
+    if (!isReaderViewMounted || loadId !== readerLoadSequence) return
     toast.error('加载失败: ' + (error instanceof Error ? error.message : '未知错误'))
     scheduleFailureRedirect()
   } finally {
-    isLoading.value = false
+    if (isReaderViewMounted && loadId === readerLoadSequence) {
+      isLoading.value = false
+    }
   }
 }
 
@@ -138,10 +148,13 @@ function handleSettingsChange(_settings: ReaderSettings) {
 }
 
 onMounted(() => {
+  isReaderViewMounted = true
   void loadReaderData()
 })
 
 onUnmounted(() => {
+  isReaderViewMounted = false
+  readerLoadSequence += 1
   clearFailureRedirectTimer()
 })
 
@@ -238,13 +251,12 @@ watch(
 
 <style scoped>
 .reader-page {
-  --reader-view-shadow-default: rgba(0, 0, 0, .2);
-  --reader-view-surface-base: #1a1a2e;
-  --reader-view-surface-raised: rgba(255, 255, 255, .15);
-  --reader-view-surface-muted: rgba(255, 255, 255, .25);
-  --reader-view-surface-subtle: rgba(255, 255, 255, .9);
-  --reader-view-text-primary: #667eea;
-  --reader-view-text-secondary: rgba(255, 255, 255, .7);
+  --reader-view-header-shadow: rgba(0, 0, 0, .2);
+  --reader-view-header-button-background: rgba(255, 255, 255, .15);
+  --reader-view-header-button-hover-background: rgba(255, 255, 255, .25);
+  --reader-view-header-primary-button-background: rgba(255, 255, 255, .9);
+  --reader-view-header-primary-button-text: #667eea;
+  --reader-view-header-mode-button-text: rgba(255, 255, 255, .7);
 
     width: 100%;
     margin: 0;
@@ -265,7 +277,7 @@ watch(
     justify-content: space-between;
     padding: 0 16px;
     z-index: var(--z-overlay);
-    box-shadow: 0 2px 10px var(--reader-view-shadow-default);
+    box-shadow: 0 2px 10px var(--reader-view-header-shadow);
 }
 
 .reader-header__left,
@@ -286,7 +298,7 @@ watch(
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: var(--reader-view-surface-raised);
+    background: var(--reader-view-header-button-background);
     border: none;
     border-radius: 8px;
     color: var(--color-text-inverse);
@@ -296,12 +308,12 @@ watch(
 }
 
 .reader-header__button:hover {
-    background: var(--reader-view-surface-muted);
+    background: var(--reader-view-header-button-hover-background);
 }
 
 .reader-header__button--primary {
-    background: var(--reader-view-surface-subtle);
-    color: var(--reader-view-text-primary);
+    background: var(--reader-view-header-primary-button-background);
+    color: var(--reader-view-header-primary-button-text);
 }
 
 .reader-header__button--primary:hover {
@@ -348,7 +360,7 @@ watch(
 
 .view-mode-toggle {
     display: flex;
-    background: var(--reader-view-surface-raised);
+    background: var(--reader-view-header-button-background);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -357,7 +369,7 @@ watch(
     padding: 8px 16px;
     background: transparent;
     border: none;
-    color: var(--reader-view-text-secondary);
+    color: var(--reader-view-header-mode-button-text);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
@@ -368,8 +380,8 @@ watch(
 }
 
 .reader-header__mode-button.active {
-    background: var(--reader-view-surface-subtle);
-    color: var(--reader-view-text-primary);
+    background: var(--reader-view-header-primary-button-background);
+    color: var(--reader-view-header-primary-button-text);
     font-weight: 500;
 }
 

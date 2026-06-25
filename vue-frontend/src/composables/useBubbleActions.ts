@@ -170,12 +170,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       left: `${Math.min(x1, x2)}px`,
       top: `${Math.min(y1, y2)}px`,
       width: `${Math.abs(x2 - x1)}px`,
-      height: `${Math.abs(y2 - y1)}px`,
-      border: '2px dashed #00d4ff',
-      background: 'rgba(0, 212, 255, 0.1)',
-      pointerEvents: 'none',
-      zIndex: '25',
-      boxSizing: 'border-box'
+      height: `${Math.abs(y2 - y1)}px`
     }
   }
 

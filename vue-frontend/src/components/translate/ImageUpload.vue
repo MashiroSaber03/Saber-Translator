@@ -421,27 +421,27 @@ defineExpose({
 /* 图片上传组件样式 */
 .image-upload {
   /* owner tokens: image-upload */
-  --image-upload-border-default: #b0bec5;
-  --image-upload-border-strong: #fc8181;
-  --image-upload-shadow-default: rgba(52, 152, 219, .3);
-  --image-upload-surface-base: #f7fafc;
-  --image-upload-surface-raised: #ecf5fe;
-  --image-upload-text-primary: #546e7a;
-  --image-upload-text-secondary: #2572a4;
-  --image-upload-text-muted: #b0bec5;
-  --image-upload-text-subtle: #c53030;
+  --image-upload-drop-border: #b0bec5;
+  --image-upload-drop-background: #f7fafc;
+  --image-upload-drop-hover-background: #ecf5fe;
+  --image-upload-drop-active-shadow: rgba(52, 152, 219, .3);
+  --image-upload-drop-text: #546e7a;
+  --image-upload-link-hover-text: #2572a4;
+  --image-upload-separator-text: #b0bec5;
+  --image-upload-error-border: #fc8181;
+  --image-upload-error-text: #c53030;
 
   position: relative;
   width: 100%;
 }
 /* 拖拽上传区域 */
 .drop-area {
-  border: 2px dashed var(--image-upload-border-default);
+  border: 2px dashed var(--image-upload-drop-border);
   border-radius: 12px;
   padding: 40px;
   text-align: center;
   cursor: pointer;
-  color: var(--image-upload-text-primary);
+  color: var(--image-upload-drop-text);
   margin-bottom: 15px;
   width: 85%;
   margin-left: auto;
@@ -452,19 +452,19 @@ defineExpose({
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
-  background-color: var(--image-upload-surface-base);
+  background-color: var(--image-upload-drop-background);
 }
 
 .drop-area:hover {
   border-color: var(--color-border-accent);
-  background-color: var(--image-upload-surface-raised);
+  background-color: var(--image-upload-drop-hover-background);
   transform: translateY(-3px);
 }
 
 .drop-area.drag-over {
   border-color: var(--color-border-accent);
-  background-color: var(--image-upload-surface-raised);
-  box-shadow: 0 0 15px var(--image-upload-shadow-default);
+  background-color: var(--image-upload-drop-hover-background);
+  box-shadow: 0 0 15px var(--image-upload-drop-active-shadow);
 }
 
 .drop-area.loading {
@@ -481,7 +481,7 @@ defineExpose({
 
 .drop-text {
   font-size: 1.1em;
-  color: var(--image-upload-text-primary);
+  color: var(--image-upload-drop-text);
   margin: 10px 0;
 }
 
@@ -499,12 +499,12 @@ defineExpose({
 }
 
 .select-link:hover {
-  color: var(--image-upload-text-secondary);
+  color: var(--image-upload-link-hover-text);
 }
 
 .separator {
   margin: 0 4px;
-  color: var(--image-upload-text-muted);
+  color: var(--image-upload-separator-text);
 }
 
 .web-import-link {
@@ -532,9 +532,9 @@ defineExpose({
   padding: 10px 15px;
   border: 0;
   background-color: var(--color-surface-neutral-soft);
-  border-left: 4px solid var(--image-upload-border-strong);
+  border-left: 4px solid var(--image-upload-error-border);
   border-radius: 8px;
-  color: var(--image-upload-text-subtle);
+  color: var(--image-upload-error-text);
   font-size: 1em;
   font-weight: bold;
   text-align: left;

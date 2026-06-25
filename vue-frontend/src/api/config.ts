@@ -138,14 +138,6 @@ export async function resetTextboxPromptToDefault(name: string): Promise<PromptC
 
 // ==================== 模型信息 API ====================
 
-
-
-
-/**
- * 获取模型列表响应类型（/api/fetch_models）
- */
-
-
 /**
  * 从云服务商获取可用模型列表。
  * @param provider 服务商 (siliconflow, deepseek, volcano, gemini, custom 等)

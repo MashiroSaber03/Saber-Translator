@@ -128,21 +128,22 @@ function requestClose(): void {
 .exit-save-dialog-progress-bar,
 .exit-save-dialog-progress-fill,
 .exit-save-dialog-progress-meta {
-  --edit-exit-save-modal-border-strong: rgba(255, 255, 255, .16);
-  --edit-exit-save-modal-border-muted: rgba(255, 255, 255, .24);
-  --edit-exit-save-modal-shadow-raised: rgba(0, 255, 136, .18);
-  --edit-exit-save-modal-surface-muted: #0f8;
-  --edit-exit-save-modal-surface-subtle: #00cc6a;
-  --edit-exit-save-modal-surface-hover: rgba(255, 255, 255, .08);
-  --edit-exit-save-modal-surface-active: #00d4ff;
-  --edit-exit-save-modal-text-primary: rgba(255, 255, 255, .82);
-  --edit-exit-save-modal-text-secondary: #11212f;
-  --edit-exit-save-modal-text-muted: #0f8;
+  --edit-exit-save-modal-dialog-text: rgba(255, 255, 255, .82);
+  --edit-exit-save-modal-primary-background-start: #0f8;
+  --edit-exit-save-modal-primary-background-end: #00cc6a;
+  --edit-exit-save-modal-primary-text: #11212f;
+  --edit-exit-save-modal-primary-hover-shadow: rgba(0, 255, 136, .18);
+  --edit-exit-save-modal-secondary-border: rgba(255, 255, 255, .16);
+  --edit-exit-save-modal-secondary-hover-border: rgba(255, 255, 255, .24);
+  --edit-exit-save-modal-secondary-background: rgba(255, 255, 255, .08);
+  --edit-exit-save-modal-progress-fill-start: #0f8;
+  --edit-exit-save-modal-progress-fill-end: #00d4ff;
+  --edit-exit-save-modal-progress-meta-text: #0f8;
 }
 
 .exit-save-dialog-text {
   margin: 0;
-  color: var(--edit-exit-save-modal-text-primary);
+  color: var(--edit-exit-save-modal-dialog-text);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -158,26 +159,26 @@ function requestClose(): void {
 }
 
 .exit-save-dialog-btn--primary {
-  background: linear-gradient(135deg, var(--edit-exit-save-modal-surface-muted) 0%, var(--edit-exit-save-modal-surface-subtle) 100%);
-  color: var(--edit-exit-save-modal-text-secondary);
+  background: linear-gradient(135deg, var(--edit-exit-save-modal-primary-background-start) 0%, var(--edit-exit-save-modal-primary-background-end) 100%);
+  color: var(--edit-exit-save-modal-primary-text);
   font-weight: 600;
 }
 
 .exit-save-dialog-btn--primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px var(--edit-exit-save-modal-shadow-raised);
+  box-shadow: 0 10px 24px var(--edit-exit-save-modal-primary-hover-shadow);
 }
 
 .exit-save-dialog-btn--secondary,
 .exit-save-dialog-btn--ghost {
-  border-color: var(--edit-exit-save-modal-border-strong);
-  background: var(--edit-exit-save-modal-surface-hover);
+  border-color: var(--edit-exit-save-modal-secondary-border);
+  background: var(--edit-exit-save-modal-secondary-background);
   color: var(--color-text-inverse);
 }
 
 .exit-save-dialog-btn--secondary:hover,
 .exit-save-dialog-btn--ghost:hover {
-  border-color: var(--edit-exit-save-modal-border-muted);
+  border-color: var(--edit-exit-save-modal-secondary-hover-border);
   background: var(--color-overlay-inverse-prominent);
 }
 
@@ -196,13 +197,13 @@ function requestClose(): void {
 .exit-save-dialog-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--edit-exit-save-modal-surface-muted) 0%, var(--edit-exit-save-modal-surface-active) 100%);
+  background: linear-gradient(90deg, var(--edit-exit-save-modal-progress-fill-start) 0%, var(--edit-exit-save-modal-progress-fill-end) 100%);
   transition: width 0.25s ease;
 }
 
 .exit-save-dialog-progress-meta {
   margin-top: 8px;
-  color: var(--edit-exit-save-modal-text-muted);
+  color: var(--edit-exit-save-modal-progress-meta-text);
   font-size: 12px;
   font-weight: 600;
   text-align: right;

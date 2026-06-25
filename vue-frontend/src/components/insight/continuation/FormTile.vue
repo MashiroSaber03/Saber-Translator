@@ -27,16 +27,16 @@
     
     <div class="form-actions">
       <div class="action-row">
-        <label class="toggle-control" :title="form.enabled !== false ? '点击禁用' : '点击启用'">
-          <UiInput 
-            type="checkbox" 
-            class="toggle-control-input"
-            :aria-label="`启用 ${characterName} ${form.form_name}`"
-            :checked="form.enabled !== false"
-            @change="$emit('toggle-enabled', ($event.target as HTMLInputElement).checked)"
-          />
+        <UiButton
+          variant="toolbar"
+          class="toggle-control"
+          :title="form.enabled !== false ? '点击禁用' : '点击启用'"
+          :aria-label="`启用 ${characterName} ${form.form_name}`"
+          :aria-pressed="form.enabled !== false"
+          @click="$emit('toggle-enabled', form.enabled === false)"
+        >
           <span class="toggle-track"></span>
-        </label>
+        </UiButton>
         <UiButton variant="toolbar" class="action-btn generate-btn" :aria-label="`生成 ${characterName} ${form.form_name} 三视图`" @click="$emit('generate-orthographic')" title="生成三视图">
           <span>🎨</span>
         </UiButton>
@@ -54,7 +54,6 @@
 
 <script setup lang="ts">
 import UiFileInput from '@/components/ui/UiFileInput.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import type { CharacterForm } from '@/api/continuation'
 
@@ -87,45 +86,45 @@ function handleUpload(event: Event) {
 
 <style scoped>
 .form-tile {
-  --form-tile-border-default: #e8eaf6;
-  --form-tile-border-strong: #c7d2fe;
-  --form-tile-border-muted: #cbd5e1;
-  --form-tile-border-subtle: #a5b4fc;
-  --form-tile-border-hover: #818cf8;
-  --form-tile-border-active: #fecaca;
-  --form-tile-shadow-default: rgba(99, 102, 241, .08);
-  --form-tile-shadow-raised: rgba(0, 0, 0, .1);
-  --form-tile-shadow-floating: rgba(0, 0, 0, .2);
-  --form-tile-surface-base: #f8f9ff;
-  --form-tile-surface-raised: #f5f7ff;
-  --form-tile-surface-muted: #eef2ff;
-  --form-tile-surface-subtle: rgba(99, 102, 241, .92);
-  --form-tile-surface-hover: rgba(124, 58, 237, .92);
-  --form-tile-surface-active: #fee2e2;
-  --form-tile-surface-selected: #fecaca;
-  --form-tile-surface-overlay: #fafbff;
-  --form-tile-surface-inverse: #cbd5e1;
-  --form-tile-surface-contrast: #94a3b8;
-  --form-tile-surface-tint: #10b981;
-  --form-tile-surface-soft: #059669;
-  --form-tile-surface-strong: #fef2f2;
-  --form-tile-text-primary: #9ca3af;
-  --form-tile-text-secondary: #1e293b;
-  --form-tile-text-muted: #dc2626;
-  --form-tile-text-subtle: #64748b;
+  --form-tile-card-border: #e8eaf6;
+  --form-tile-card-hover-border: #c7d2fe;
+  --form-tile-action-hover-border: #cbd5e1;
+  --form-tile-generate-border: #a5b4fc;
+  --form-tile-generate-hover-border: #818cf8;
+  --form-tile-danger-border: #fecaca;
+  --form-tile-card-shadow: rgba(99, 102, 241, .08);
+  --form-tile-upload-text-shadow: rgba(0, 0, 0, .1);
+  --form-tile-toggle-knob-shadow: rgba(0, 0, 0, .2);
+  --form-tile-card-background-end: #f8f9ff;
+  --form-tile-image-background-start: #f5f7ff;
+  --form-tile-image-background-end: #eef2ff;
+  --form-tile-upload-overlay-start: rgba(99, 102, 241, .92);
+  --form-tile-upload-overlay-end: rgba(124, 58, 237, .92);
+  --form-tile-disabled-badge-background-start: #fee2e2;
+  --form-tile-disabled-badge-background-end: #fecaca;
+  --form-tile-actions-background-start: #fafbff;
+  --form-tile-toggle-track-off-start: #cbd5e1;
+  --form-tile-toggle-track-off-end: #94a3b8;
+  --form-tile-toggle-track-on-start: #10b981;
+  --form-tile-toggle-track-on-end: #059669;
+  --form-tile-danger-background: #fef2f2;
+  --form-tile-placeholder-text: #9ca3af;
+  --form-tile-title-text: #1e293b;
+  --form-tile-disabled-badge-text: #dc2626;
+  --form-tile-description-text: #64748b;
 
-  background: linear-gradient(135deg, var(--color-surface-base) 0%, var(--form-tile-surface-base) 100%);
+  background: linear-gradient(135deg, var(--color-surface-base) 0%, var(--form-tile-card-background-end) 100%);
   border-radius: 16px;
   overflow: hidden;
-  border: 1.5px solid var(--form-tile-border-default);
-  box-shadow: 0 2px 8px var(--form-tile-shadow-default);
+  border: 1.5px solid var(--form-tile-card-border);
+  box-shadow: 0 2px 8px var(--form-tile-card-shadow);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
 }
 
 .form-tile:hover {
-  border-color: var(--form-tile-border-strong);
+  border-color: var(--form-tile-card-hover-border);
   box-shadow: 0 8px 24px var(--color-focus-brand-subtle);
   transform: translateY(-2px);
 }
@@ -142,7 +141,7 @@ function handleUpload(event: Event) {
 .form-image-section {
   aspect-ratio: 1;
   position: relative;
-  background: linear-gradient(135deg, var(--form-tile-surface-raised) 0%, var(--form-tile-surface-muted) 100%);
+  background: linear-gradient(135deg, var(--form-tile-image-background-start) 0%, var(--form-tile-image-background-end) 100%);
   overflow: hidden;
 }
 
@@ -159,7 +158,7 @@ function handleUpload(event: Event) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--form-tile-text-primary);
+  color: var(--form-tile-placeholder-text);
 }
 
 .placeholder-icon {
@@ -172,13 +171,13 @@ function handleUpload(event: Event) {
   margin: 0;
   font-size: 12px;
   font-weight: 500;
-  color: var(--form-tile-text-primary);
+  color: var(--form-tile-placeholder-text);
 }
 
 .upload-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, var(--form-tile-surface-subtle), var(--form-tile-surface-hover));
+  background: linear-gradient(135deg, var(--form-tile-upload-overlay-start), var(--form-tile-upload-overlay-end));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,8 +190,8 @@ function handleUpload(event: Event) {
   color: var(--color-text-inverse);
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px var(--form-tile-shadow-raised);
+  letter-spacing: 0;
+  text-shadow: 0 1px 2px var(--form-tile-upload-text-shadow);
 }
 
 .form-image-section:hover .upload-overlay {
@@ -218,7 +217,7 @@ function handleUpload(event: Event) {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--form-tile-text-secondary);
+  color: var(--form-tile-title-text);
   flex: 1;
   line-height: 1.3;
 }
@@ -230,18 +229,18 @@ function handleUpload(event: Event) {
   border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.3px;
+  letter-spacing: 0;
 }
 
 .status-badge.disabled {
-  background: linear-gradient(135deg, var(--form-tile-surface-active), var(--form-tile-surface-selected));
-  color: var(--form-tile-text-muted);
+  background: linear-gradient(135deg, var(--form-tile-disabled-badge-background-start), var(--form-tile-disabled-badge-background-end));
+  color: var(--form-tile-disabled-badge-text);
 }
 
 .form-description {
   margin: 0;
   font-size: 11px;
-  color: var(--form-tile-text-subtle);
+  color: var(--form-tile-description-text);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -252,8 +251,8 @@ function handleUpload(event: Event) {
 
 .form-actions {
   padding: 10px 12px;
-  background: linear-gradient(to bottom, var(--form-tile-surface-overlay), var(--form-tile-surface-base));
-  border-top: 1px solid var(--form-tile-border-default);
+  background: linear-gradient(to bottom, var(--form-tile-actions-background-start), var(--form-tile-card-background-end));
+  border-top: 1px solid var(--form-tile-card-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -271,24 +270,22 @@ function handleUpload(event: Event) {
 
 .toggle-control {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
   width: 32px;
   height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
   cursor: pointer;
   flex-shrink: 0;
-}
-
-.toggle-control-input {
-  opacity: 0;
-  width: 0;
-  height: 0;
 }
 
 .toggle-track {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background: linear-gradient(135deg, var(--form-tile-surface-inverse), var(--form-tile-surface-contrast));
+  background: linear-gradient(135deg, var(--form-tile-toggle-track-off-start), var(--form-tile-toggle-track-off-end));
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 18px;
 }
@@ -303,14 +300,14 @@ function handleUpload(event: Event) {
   background: var(--color-surface-base);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
-  box-shadow: 0 2px 4px var(--form-tile-shadow-floating);
+  box-shadow: 0 2px 4px var(--form-tile-toggle-knob-shadow);
 }
 
-.toggle-control-input:checked + .toggle-track {
-  background: linear-gradient(135deg, var(--form-tile-surface-tint), var(--form-tile-surface-soft));
+.toggle-control[aria-pressed='true'] .toggle-track {
+  background: linear-gradient(135deg, var(--form-tile-toggle-track-on-start), var(--form-tile-toggle-track-on-end));
 }
 
-.toggle-control-input:checked + .toggle-track::before {
+.toggle-control[aria-pressed='true'] .toggle-track::before {
   transform: translateX(14px);
 }
 
@@ -331,22 +328,22 @@ function handleUpload(event: Event) {
 
 .action-btn:hover {
   background: var(--color-surface-quiet);
-  border-color: var(--form-tile-border-muted);
+  border-color: var(--form-tile-action-hover-border);
 }
 
 .action-btn.generate-btn {
-  border-color: var(--form-tile-border-subtle);
+  border-color: var(--form-tile-generate-border);
   color: var(--color-text-brand);
 }
 
 .action-btn.generate-btn:hover {
-  background: var(--form-tile-surface-muted);
-  border-color: var(--form-tile-border-hover);
+  background: var(--form-tile-image-background-end);
+  border-color: var(--form-tile-generate-hover-border);
 }
 
 .action-btn.delete-btn:hover {
-  background: var(--form-tile-surface-strong);
-  border-color: var(--form-tile-border-active);
+  background: var(--form-tile-danger-background);
+  border-color: var(--form-tile-danger-border);
 }
 
 .icon-btn {
@@ -366,16 +363,16 @@ function handleUpload(event: Event) {
 
 .icon-btn:hover {
   background: var(--color-surface-quiet);
-  border-color: var(--form-tile-border-muted);
+  border-color: var(--form-tile-action-hover-border);
 }
 
 .icon-btn.edit-btn:hover {
-  background: var(--form-tile-surface-muted);
-  border-color: var(--form-tile-border-subtle);
+  background: var(--form-tile-image-background-end);
+  border-color: var(--form-tile-generate-border);
 }
 
 .icon-btn.delete-btn:hover {
-  background: var(--form-tile-surface-strong);
-  border-color: var(--form-tile-border-active);
+  background: var(--form-tile-danger-background);
+  border-color: var(--form-tile-danger-border);
 }
 </style>

@@ -40,10 +40,15 @@ const lockSize = computed({
       
       <UiField class="ui-settings-field">
         <label>启用并行模式:</label>
-        <label class="toggle-switch">
-          <UiInput type="checkbox" class="parallel-settings__toggle-input" v-model="parallelEnabled" />
+        <UiButton
+          variant="toolbar"
+          class="toggle-switch"
+          :aria-pressed="parallelEnabled"
+          aria-label="启用并行模式"
+          @click="parallelEnabled = !parallelEnabled"
+        >
           <span class="toggle-slider"></span>
-        </label>
+        </UiButton>
         <div class="ui-form-hint">使用流水线并行处理，可能提升批量翻译速度</div>
       </UiField>
 
@@ -101,16 +106,14 @@ const lockSize = computed({
 
 .toggle-switch {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
   width: 44px;
   height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
   margin-left: 8px;
-}
-
-.parallel-settings__toggle-input {
-  opacity: 0;
-  width: 0;
-  height: 0;
 }
 
 .toggle-slider {
@@ -134,11 +137,11 @@ const lockSize = computed({
   border-radius: 50%;
 }
 
-.parallel-settings__toggle-input:checked + .toggle-slider {
+.toggle-switch[aria-pressed='true'] .toggle-slider {
   background-color: var(--color-action-primary);
 }
 
-.parallel-settings__toggle-input:checked + .toggle-slider::before {
+.toggle-switch[aria-pressed='true'] .toggle-slider::before {
   transform: translateX(20px);
 }
 

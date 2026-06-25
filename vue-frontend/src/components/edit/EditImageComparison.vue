@@ -245,19 +245,19 @@ defineExpose({
 /* ============ 双图对照区域 ============ */
 .edit-main-layout {
   /* owner tokens: edit-image-comparison */
-  --edit-image-comparison-border-default: rgba(255, 255, 255, .1);
-  --edit-image-comparison-border-strong: #00d4ff;
-  --edit-image-comparison-surface-base: #16213e;
-  --edit-image-comparison-surface-raised: rgba(0, 0, 0, .3);
-  --edit-image-comparison-surface-muted: #0d1b2a;
-  --edit-image-comparison-surface-subtle: #0f0f23;
-  --edit-image-comparison-surface-hover: #f0f0f0;
-  --edit-image-comparison-surface-active: rgba(0, 212, 255, .1);
-  --edit-image-comparison-surface-selected: rgba(76, 175, 80, .05);
-  --edit-image-comparison-surface-overlay: rgba(33, 150, 243, .05);
-  --edit-image-comparison-text-primary: #ff6b6b;
-  --edit-image-comparison-text-secondary: #0f8;
-  --edit-image-comparison-text-muted: #444;
+  --edit-image-comparison-panel-background: #16213e;
+  --edit-image-comparison-panel-header-background: rgba(0, 0, 0, .3);
+  --edit-image-comparison-panel-divider-border: rgba(255, 255, 255, .1);
+  --edit-image-comparison-original-title-text: #ff6b6b;
+  --edit-image-comparison-translated-title-text: #0f8;
+  --edit-image-comparison-viewport-background: #0d1b2a;
+  --edit-image-comparison-divider-background: #0f0f23;
+  --edit-image-comparison-divider-handle-text: #444;
+  --edit-image-comparison-resize-handle-background: #f0f0f0;
+  --edit-image-comparison-drawing-rect-border: #00d4ff;
+  --edit-image-comparison-drawing-rect-background: rgba(0, 212, 255, .1);
+  --edit-image-comparison-repair-mode-background: rgba(76, 175, 80, .05);
+  --edit-image-comparison-restore-mode-background: rgba(33, 150, 243, .05);
 
   display: flex;
   flex: 1;
@@ -284,7 +284,7 @@ defineExpose({
   min-width: 150px;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--edit-image-comparison-surface-base);
+  background: var(--edit-image-comparison-panel-background);
   transition: flex 0.3s ease;
 }
 
@@ -298,8 +298,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--edit-image-comparison-border-default);
-  background: var(--edit-image-comparison-surface-raised);
+  border-bottom: 1px solid var(--edit-image-comparison-panel-divider-border);
+  background: var(--edit-image-comparison-panel-header-background);
 }
 
 .panel-title {
@@ -309,11 +309,11 @@ defineExpose({
 }
 
 .original-panel .panel-title {
-  color: var(--edit-image-comparison-text-primary);
+  color: var(--edit-image-comparison-original-title-text);
 }
 
 .translated-panel .panel-title {
-  color: var(--edit-image-comparison-text-secondary);
+  color: var(--edit-image-comparison-translated-title-text);
 }
 
 .panel-toggle {
@@ -336,7 +336,7 @@ defineExpose({
   position: relative;
   flex: 1;
   overflow: hidden;
-  background-color: var(--edit-image-comparison-surface-muted);
+  background-color: var(--edit-image-comparison-viewport-background);
   backface-visibility: hidden;
   cursor: grab;
   transform: translateZ(0);
@@ -378,7 +378,7 @@ defineExpose({
   justify-content: center;
   flex-shrink: 0;
   width: 8px;
-  background: var(--edit-image-comparison-surface-subtle);
+  background: var(--edit-image-comparison-divider-background);
   cursor: col-resize;
   transition: background 0.2s;
 }
@@ -388,7 +388,7 @@ defineExpose({
 }
 
 .divider-handle {
-  color: var(--edit-image-comparison-text-muted);
+  color: var(--edit-image-comparison-divider-handle-text);
   font-size: 12px;
   writing-mode: vertical-lr;
   user-select: none;
@@ -416,10 +416,10 @@ defineExpose({
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: var(--color-surface-app, var(--edit-image-comparison-surface-hover));
+  background: var(--color-surface-app, var(--edit-image-comparison-resize-handle-background));
   color: var(--color-text-muted);
   font-size: 10px;
-  letter-spacing: 3px;
+  letter-spacing: 0;
   transition: background 0.2s;
 }
 
@@ -442,8 +442,8 @@ defineExpose({
 .drawing-rect-edit {
   position: absolute;
   z-index: var(--z-local-popover);
-  border: 2px dashed var(--edit-image-comparison-border-strong);
-  background: var(--edit-image-comparison-surface-active);
+  border: 2px dashed var(--edit-image-comparison-drawing-rect-border);
+  background: var(--edit-image-comparison-drawing-rect-background);
   pointer-events: none;
 }
 
@@ -452,11 +452,11 @@ defineExpose({
 }
 
 .brush-mode-active[data-brush-mode="repair"] .image-viewport {
-  background: var(--edit-image-comparison-surface-selected);
+  background: var(--edit-image-comparison-repair-mode-background);
 }
 
 .brush-mode-active[data-brush-mode="restore"] .image-viewport {
-  background: var(--edit-image-comparison-surface-overlay);
+  background: var(--edit-image-comparison-restore-mode-background);
 }
 
 .brush-mode-active .image-canvas-wrapper {

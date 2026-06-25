@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -6,16 +7,19 @@ import { useInsightStore } from '@/stores/insightStore'
 const {
   reanalyzeChapterMock,
   getThumbnailUrlMock,
+  getAnalyzedPagesMock,
   showToastMock,
 } = vi.hoisted(() => ({
   reanalyzeChapterMock: vi.fn(),
   getThumbnailUrlMock: vi.fn((bookId: string, pageNum: number) => `/thumb/${bookId}/${pageNum}`),
+  getAnalyzedPagesMock: vi.fn(),
   showToastMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   reanalyzeChapter: reanalyzeChapterMock,
   getThumbnailUrl: getThumbnailUrlMock,
+  getAnalyzedPages: getAnalyzedPagesMock,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -23,6 +27,14 @@ vi.mock('@/utils/toast', () => ({
 }))
 
 import PagesTree from '@/components/insight/PagesTree.vue'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 describe('PagesTree', () => {
   let confirmSpy: ReturnType<typeof vi.spyOn>
@@ -46,11 +58,11 @@ describe('PagesTree', () => {
       task_id: 'task-chapter-1',
     })
     getThumbnailUrlMock.mockClear()
-    showToastMock.mockReset()
-
-    ;(globalThis as any).fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ success: true, pages: [] }),
+    getAnalyzedPagesMock.mockReset().mockResolvedValue({
+      success: true,
+      pages: [],
     })
+    showToastMock.mockReset()
 
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
@@ -153,5 +165,46 @@ describe('PagesTree', () => {
 
     expect(store.selectedPageNum).toBe(1)
     expect(pageItem.attributes('aria-pressed')).toBe('true')
+  })
+
+  it('ignores stale analyzed page marker responses after switching books', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setBookTotalPages(2)
+    store.setChapters([])
+
+    const book1Markers = deferred<{ success: true; pages: number[] }>()
+    const book2Markers = deferred<{ success: true; pages: number[] }>()
+    getAnalyzedPagesMock.mockReset()
+      .mockReturnValueOnce(book1Markers.promise)
+      .mockReturnValueOnce(book2Markers.promise)
+
+    const wrapper = mount(PagesTree, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await nextTick()
+    expect(getAnalyzedPagesMock).toHaveBeenCalledWith('book-1')
+
+    store.currentBookId = 'book-2'
+    await nextTick()
+    expect(getAnalyzedPagesMock).toHaveBeenCalledWith('book-2')
+
+    book2Markers.resolve({ success: true, pages: [2] })
+    await flushPromises()
+
+    const pageItems = wrapper.findAll('.tree-page-item')
+    expect(pageItems[0]!.classes()).not.toContain('analyzed')
+    expect(pageItems[1]!.classes()).toContain('analyzed')
+
+    book1Markers.resolve({ success: true, pages: [1] })
+    await flushPromises()
+
+    expect(pageItems[0]!.classes()).not.toContain('analyzed')
+    expect(pageItems[1]!.classes()).toContain('analyzed')
   })
 })

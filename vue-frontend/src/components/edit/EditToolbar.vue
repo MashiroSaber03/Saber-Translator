@@ -412,35 +412,36 @@ const brushCursorStyle = computed(() => {
   --edit-toolbar-chip-active-background: rgba(102, 126, 234, .5);
   --edit-toolbar-control-background: rgba(102, 126, 234, .3);
   --edit-toolbar-progress-background: rgba(0, 0, 0, .3);
-  --edit-toolbar-accent: #0f8;
-  --edit-toolbar-primary-action-start: #0f8;
-  --edit-toolbar-primary-action-end: #00cc6a;
-  --edit-toolbar-primary-action-text: #1a1a2e;
-  --edit-toolbar-primary-action-shadow: rgba(0, 255, 136, .3);
-  --edit-toolbar-secondary-action-border: rgba(255, 255, 255, .3);
-  --edit-toolbar-secondary-action-border-hover: rgba(255, 255, 255, .5);
-  --edit-toolbar-help-border: #cfd6e4;
-  --edit-toolbar-help-border-focus: #5b73f2;
-  --edit-toolbar-button-border-default: #e5e7eb;
-  --edit-toolbar-button-border-strong: rgba(255, 255, 255, .2);
-  --edit-toolbar-button-border-muted: rgba(255, 255, 255, .3);
-  --edit-toolbar-button-border-subtle: rgba(102, 126, 234, .5);
-  --edit-toolbar-button-border-hover: rgba(0, 255, 136, .4);
-  --edit-toolbar-button-border-active: rgba(255, 193, 7, .4);
-  --edit-toolbar-shadow-default: rgba(0, 255, 136, .5);
-  --edit-toolbar-shadow-raised: rgba(0, 0, 0, .15);
-  --edit-toolbar-surface-base: #00d4ff;
-  --edit-toolbar-surface-raised: rgba(0, 0, 0, .8);
-  --edit-toolbar-surface-muted: rgba(255, 255, 255, .9);
-  --edit-toolbar-surface-subtle: rgba(0, 255, 136, .2);
-  --edit-toolbar-surface-hover: rgba(0, 255, 136, .3);
-  --edit-toolbar-surface-active: rgba(255, 193, 7, .2);
-  --edit-toolbar-surface-selected: rgba(255, 193, 7, .3);
-  --edit-toolbar-text-primary: #667eea;
-  --edit-toolbar-text-secondary: rgba(255, 255, 255, .9);
-  --edit-toolbar-text-muted: #5b73f2;
-  --edit-toolbar-text-subtle: #374151;
-  --edit-toolbar-text-supporting: #6b7280;
+  --edit-toolbar-status-accent: #0f8;
+  --edit-toolbar-apply-button-background-start: #0f8;
+  --edit-toolbar-apply-button-background-end: #00cc6a;
+  --edit-toolbar-apply-button-text: #1a1a2e;
+  --edit-toolbar-apply-button-shadow: rgba(0, 255, 136, .3);
+  --edit-toolbar-exit-button-border: rgba(255, 255, 255, .3);
+  --edit-toolbar-exit-button-hover-border: rgba(255, 255, 255, .5);
+  --edit-toolbar-help-trigger-border: #cfd6e4;
+  --edit-toolbar-help-trigger-focus-border: #5b73f2;
+  --edit-toolbar-help-trigger-background: rgba(255, 255, 255, .9);
+  --edit-toolbar-help-trigger-hover-text: #5b73f2;
+  --edit-toolbar-help-section-divider: #e5e7eb;
+  --edit-toolbar-help-popover-shadow: rgba(0, 0, 0, .15);
+  --edit-toolbar-help-title-text: #374151;
+  --edit-toolbar-help-key-text: #6b7280;
+  --edit-toolbar-help-description-text: #374151;
+  --edit-toolbar-annotation-button-border: rgba(255, 255, 255, .2);
+  --edit-toolbar-annotation-button-hover-border: rgba(255, 255, 255, .3);
+  --edit-toolbar-detect-button-border: rgba(102, 126, 234, .5);
+  --edit-toolbar-translate-button-background: rgba(0, 255, 136, .2);
+  --edit-toolbar-translate-button-hover-background: rgba(0, 255, 136, .3);
+  --edit-toolbar-translate-button-border: rgba(0, 255, 136, .4);
+  --edit-toolbar-brush-button-background: rgba(255, 193, 7, .2);
+  --edit-toolbar-brush-button-hover-background: rgba(255, 193, 7, .3);
+  --edit-toolbar-brush-button-border: rgba(255, 193, 7, .4);
+  --edit-toolbar-image-index-text: #667eea;
+  --edit-toolbar-progress-text: rgba(255, 255, 255, .9);
+  --edit-toolbar-progress-highlight: #00d4ff;
+  --edit-toolbar-progress-glow: rgba(0, 255, 136, .5);
+  --edit-toolbar-brush-hint-background: rgba(0, 0, 0, .8);
   --edit-toolbar-brush-repair-fill: rgba(76, 175, 80, .4);
   --edit-toolbar-brush-repair-border: #4caf50;
   --edit-toolbar-brush-restore-fill: rgba(33, 150, 243, .4);
@@ -499,7 +500,7 @@ const brushCursorStyle = computed(() => {
 
 .image-indicator span {
   font-weight: bold;
-  color: var(--edit-toolbar-text-primary);
+  color: var(--edit-toolbar-image-index-text);
 }
 
 .thumb-toggle-btn {
@@ -538,7 +539,7 @@ const brushCursorStyle = computed(() => {
 
 .bubble-indicator span {
   font-weight: bold;
-  color: var(--edit-toolbar-accent);
+  color: var(--edit-toolbar-status-accent);
 }
 
 .view-controls {
@@ -588,8 +589,8 @@ const brushCursorStyle = computed(() => {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
-  background: linear-gradient(135deg, var(--edit-toolbar-primary-action-start) 0%, var(--edit-toolbar-primary-action-end) 100%);
-  color: var(--edit-toolbar-primary-action-text);
+  background: linear-gradient(135deg, var(--edit-toolbar-apply-button-background-start) 0%, var(--edit-toolbar-apply-button-background-end) 100%);
+  color: var(--edit-toolbar-apply-button-text);
   font-weight: 600;
   cursor: pointer;
   font-size: 13px;
@@ -598,12 +599,12 @@ const brushCursorStyle = computed(() => {
 
 .action-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--edit-toolbar-primary-action-shadow);
+  box-shadow: 0 4px 12px var(--edit-toolbar-apply-button-shadow);
 }
 
 .action-secondary {
   padding: 8px 16px;
-  border: 1px solid var(--edit-toolbar-secondary-action-border);
+  border: 1px solid var(--edit-toolbar-exit-button-border);
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-inverse);
@@ -614,7 +615,7 @@ const brushCursorStyle = computed(() => {
 
 .action-secondary:hover {
   background: var(--color-overlay-inverse-subtle);
-  border-color: var(--edit-toolbar-secondary-action-border-hover);
+  border-color: var(--edit-toolbar-exit-button-hover-border);
 }
 
 .image-navigator .nav-btn,
@@ -680,13 +681,13 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-text {
   font-size: 12px;
-  color: var(--edit-toolbar-text-secondary);
+  color: var(--edit-toolbar-progress-text);
   font-weight: 500;
 }
 
 .edit-progress-count {
   font-size: 12px;
-  color: var(--edit-toolbar-accent);
+  color: var(--edit-toolbar-status-accent);
   font-weight: 600;
   font-family: var(--font-mono);
 }
@@ -702,14 +703,14 @@ const brushCursorStyle = computed(() => {
 
 .edit-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--edit-toolbar-primary-action-start), var(--edit-toolbar-surface-base));
+  background: linear-gradient(90deg, var(--edit-toolbar-apply-button-background-start), var(--edit-toolbar-progress-highlight));
   border-radius: 3px;
   transition: width 0.3s ease;
-  box-shadow: 0 0 8px var(--edit-toolbar-shadow-default);
+  box-shadow: 0 0 8px var(--edit-toolbar-progress-glow);
 }
 
 .edit-progress-fill.animating {
-  background: linear-gradient(90deg, var(--edit-toolbar-primary-action-start), var(--edit-toolbar-surface-base), var(--edit-toolbar-primary-action-start));
+  background: linear-gradient(90deg, var(--edit-toolbar-apply-button-background-start), var(--edit-toolbar-progress-highlight), var(--edit-toolbar-apply-button-background-start));
   background-size: 200% 100%;
   animation: progressShine 1.5s ease-in-out infinite;
 }
@@ -720,12 +721,12 @@ const brushCursorStyle = computed(() => {
 }
 
 .edit-progress-container.completed .edit-progress-fill {
-  background: var(--edit-toolbar-primary-action-start);
+  background: var(--edit-toolbar-apply-button-background-start);
   animation: none;
 }
 
 .edit-progress-container.completed .edit-progress-text {
-  color: var(--edit-toolbar-accent);
+  color: var(--edit-toolbar-status-accent);
 }
 
 .annotation-btn.is-loading {
@@ -767,7 +768,7 @@ const brushCursorStyle = computed(() => {
 
 .brush-mode-hint {
   padding: 8px 16px;
-  background: var(--edit-toolbar-surface-raised);
+  background: var(--edit-toolbar-brush-hint-background);
   color: var(--color-text-inverse);
   border-radius: 6px;
   font-size: 13px;
@@ -786,9 +787,9 @@ const brushCursorStyle = computed(() => {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--edit-toolbar-help-border);
+  border: 1px solid var(--edit-toolbar-help-trigger-border);
   border-radius: 14px;
-  background: var(--edit-toolbar-surface-muted);
+  background: var(--edit-toolbar-help-trigger-background);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.2s;
@@ -802,8 +803,8 @@ const brushCursorStyle = computed(() => {
 
 .help-tooltip-btn:hover {
   background: var(--color-surface-base);
-  border-color: var(--edit-toolbar-help-border-focus);
-  color: var(--edit-toolbar-text-muted);
+  border-color: var(--edit-toolbar-help-trigger-focus-border);
+  color: var(--edit-toolbar-help-trigger-hover-text);
 }
 
 .help-tooltip-popup {
@@ -816,7 +817,7 @@ const brushCursorStyle = computed(() => {
   background: var(--color-surface-base);
   border: 1px solid var(--color-border-muted);
   border-radius: 10px;
-  box-shadow: 0 4px 20px var(--edit-toolbar-shadow-raised);
+  box-shadow: 0 4px 20px var(--edit-toolbar-help-popover-shadow);
   z-index: var(--z-overlay);
   opacity: 0;
   visibility: hidden;
@@ -824,7 +825,8 @@ const brushCursorStyle = computed(() => {
   transition: all 0.2s ease;
 }
 
-.help-tooltip-container:hover .help-tooltip-popup {
+.help-tooltip-container:hover .help-tooltip-popup,
+.help-tooltip-container:focus-within .help-tooltip-popup {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -841,10 +843,10 @@ const brushCursorStyle = computed(() => {
 .help-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--edit-toolbar-text-subtle);
+  color: var(--edit-toolbar-help-title-text);
   margin-bottom: 6px;
   padding-bottom: 4px;
-  border-bottom: 1px solid var(--edit-toolbar-button-border-default);
+  border-bottom: 1px solid var(--edit-toolbar-help-section-divider);
 }
 
 .help-item {
@@ -856,7 +858,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .help-key {
-  color: var(--edit-toolbar-text-supporting);
+  color: var(--edit-toolbar-help-key-text);
   font-family: var(--font-mono);
   background: var(--color-surface-muted);
   padding: 2px 6px;
@@ -865,7 +867,7 @@ const brushCursorStyle = computed(() => {
 }
 
 .help-desc {
-  color: var(--edit-toolbar-text-subtle);
+  color: var(--edit-toolbar-help-description-text);
 }
 
 .annotation-tools {
@@ -879,7 +881,7 @@ const brushCursorStyle = computed(() => {
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  border: 1px solid var(--edit-toolbar-button-border-strong);
+  border: 1px solid var(--edit-toolbar-annotation-button-border);
   border-radius: 6px;
   background: var(--color-overlay-inverse-subtle);
   color: var(--color-text-inverse);
@@ -890,7 +892,7 @@ const brushCursorStyle = computed(() => {
 
 .annotation-btn:hover {
   background: var(--color-overlay-inverse-muted);
-  border-color: var(--edit-toolbar-button-border-muted);
+  border-color: var(--edit-toolbar-annotation-button-hover-border);
 }
 
 .annotation-btn:disabled {
@@ -908,7 +910,7 @@ const brushCursorStyle = computed(() => {
 
 .detect-btn {
   background: var(--edit-toolbar-control-background);
-  border-color: var(--edit-toolbar-button-border-subtle);
+  border-color: var(--edit-toolbar-detect-button-border);
 }
 
 .detect-btn:hover {
@@ -916,22 +918,22 @@ const brushCursorStyle = computed(() => {
 }
 
 .primary-action-btn {
-  background: var(--edit-toolbar-surface-subtle);
-  border-color: var(--edit-toolbar-button-border-hover);
-  color: var(--edit-toolbar-accent);
+  background: var(--edit-toolbar-translate-button-background);
+  border-color: var(--edit-toolbar-translate-button-border);
+  color: var(--edit-toolbar-status-accent);
 }
 
 .primary-action-btn:hover {
-  background: var(--edit-toolbar-surface-hover);
+  background: var(--edit-toolbar-translate-button-hover-background);
 }
 
 .brush-btn {
-  background: var(--edit-toolbar-surface-active);
-  border-color: var(--edit-toolbar-button-border-active);
+  background: var(--edit-toolbar-brush-button-background);
+  border-color: var(--edit-toolbar-brush-button-border);
 }
 
 .brush-btn:hover {
-  background: var(--edit-toolbar-surface-selected);
+  background: var(--edit-toolbar-brush-button-hover-background);
 }
 
 .view-control-btn.active {

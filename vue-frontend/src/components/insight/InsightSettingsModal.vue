@@ -307,6 +307,13 @@ onBeforeUnmount(() => {
 }
 
 .test-message {
+  --insight-settings-modal-success-background: #f0fdf4;
+  --insight-settings-modal-success-text: #16a34a;
+  --insight-settings-modal-success-border: #bbf7d0;
+  --insight-settings-modal-error-background: #fef2f2;
+  --insight-settings-modal-error-text: #dc2626;
+  --insight-settings-modal-error-border: #fecaca;
+
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 12px;
@@ -314,14 +321,14 @@ onBeforeUnmount(() => {
 }
 
 .test-message.success {
-  background: var(--insight-settings-modal-surface-base);
-  color: var(--insight-settings-modal-text-primary);
-  border: 1px solid var(--insight-settings-modal-border-default);
+  background: var(--insight-settings-modal-success-background);
+  color: var(--insight-settings-modal-success-text);
+  border: 1px solid var(--insight-settings-modal-success-border);
 }
 
 .test-message.error {
-  background: var(--insight-settings-modal-surface-raised);
-  color: var(--insight-settings-modal-text-secondary);
-  border: 1px solid var(--insight-settings-modal-border-strong);
+  background: var(--insight-settings-modal-error-background);
+  color: var(--insight-settings-modal-error-text);
+  border: 1px solid var(--insight-settings-modal-error-border);
 }
 </style>

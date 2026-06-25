@@ -3,7 +3,7 @@
 import UiButton from '@/components/ui/UiButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { PageAnalysisData } from '@/api/insight'
@@ -16,6 +16,8 @@ const isReanalyzing = ref(false)
 const pendingReanalyzePage = ref<number | null>(null)
 const showImagePreview = ref(false)
 const errorMessage = ref('')
+let pageDetailRequestSequence = 0
+let isPageDetailMounted = true
 
 const selectedPageNum = computed(() => insightStore.selectedPageNum)
 const totalPages = computed(() => insightStore.totalPageCount)
@@ -69,8 +71,14 @@ const isReanalyzeTaskRunning = computed(() => {
 })
 
 async function loadPageDetail(): Promise<void> {
-  if (!insightStore.currentBookId || !selectedPageNum.value) {
+  const bookId = insightStore.currentBookId
+  const pageNum = selectedPageNum.value
+  const requestId = ++pageDetailRequestSequence
+
+  if (!bookId || !pageNum) {
     pageAnalysis.value = null
+    errorMessage.value = ''
+    isLoading.value = false
     return
   }
 
@@ -78,10 +86,9 @@ async function loadPageDetail(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.getPageData(
-      insightStore.currentBookId,
-      selectedPageNum.value
-    )
+    const response = await insightApi.getPageData(bookId, pageNum)
+
+    if (!isCurrentPageDetailRequest(requestId, bookId, pageNum)) return
 
     if (response.success) {
       pageAnalysis.value = response.analysis ?? response.page ?? null
@@ -92,11 +99,23 @@ async function loadPageDetail(): Promise<void> {
       }
     }
   } catch (error) {
+    if (!isCurrentPageDetailRequest(requestId, bookId, pageNum)) return
     pageAnalysis.value = null
     errorMessage.value = error instanceof Error ? error.message : '加载失败'
   } finally {
-    isLoading.value = false
+    if (isCurrentPageDetailRequest(requestId, bookId, pageNum)) {
+      isLoading.value = false
+    }
   }
+}
+
+function isCurrentPageDetailRequest(requestId: number, bookId: string, pageNum: number): boolean {
+  return (
+    isPageDetailMounted &&
+    requestId === pageDetailRequestSequence &&
+    insightStore.currentBookId === bookId &&
+    selectedPageNum.value === pageNum
+  )
 }
 
 function navigatePrev(): void {
@@ -230,6 +249,11 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
     pendingReanalyzePage.value = null
   }
   await loadPageDetail()
+})
+
+onUnmounted(() => {
+  isPageDetailMounted = false
+  pageDetailRequestSequence += 1
 })
 </script>
 
@@ -402,15 +426,15 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 <style scoped>
 .workspace-section.page-detail-section {
-  --page-detail-surface-base: rgba(239, 68, 68, .1);
-  --page-detail-surface-raised: rgba(0, 0, 0, 0);
-  --page-detail-surface-muted: rgba(0, 0, 0, .3);
-  --page-detail-surface-subtle: rgba(34, 197, 94, .1);
-  --page-detail-surface-hover: rgba(0, 0, 0, .95);
-  --page-detail-surface-active: rgba(255, 255, 255, .2);
-  --page-detail-surface-selected: rgba(255, 255, 255, .3);
-  --page-detail-text-primary: #ef4444;
-  --page-detail-text-secondary: #22c55e;
+  --page-detail-error-background: rgba(239, 68, 68, .1);
+  --page-detail-image-overlay-background: rgba(0, 0, 0, 0);
+  --page-detail-image-overlay-hover-background: rgba(0, 0, 0, .3);
+  --page-detail-analyzed-background: rgba(34, 197, 94, .1);
+  --page-detail-preview-backdrop: rgba(0, 0, 0, .95);
+  --page-detail-preview-control-background: rgba(255, 255, 255, .2);
+  --page-detail-preview-control-hover-background: rgba(255, 255, 255, .3);
+  --page-detail-error-text: #ef4444;
+  --page-detail-success-text: #22c55e;
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 14px;
   --ui-button-primary-background: var(--insight-action-primary);
@@ -498,8 +522,8 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 
 .page-detail-section .error-message {
   font-size: 12px;
-  color: var(--page-detail-text-primary);
-  background: var(--page-detail-surface-base);
+  color: var(--page-detail-error-text);
+  background: var(--page-detail-error-background);
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 12px;
@@ -528,7 +552,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 .page-detail-section .image-overlay {
   position: absolute;
   inset: 0;
-  background: var(--page-detail-surface-raised);
+  background: var(--page-detail-image-overlay-background);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -536,7 +560,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .page-detail-section .page-detail-image:hover .image-overlay {
-  background: var(--page-detail-surface-muted);
+  background: var(--page-detail-image-overlay-hover-background);
 }
 
 .page-detail-section .zoom-hint {
@@ -561,8 +585,8 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .page-detail-section .analysis-status-tag.analyzed {
-  background: var(--page-detail-surface-subtle);
-  color: var(--page-detail-text-secondary);
+  background: var(--page-detail-analyzed-background);
+  color: var(--page-detail-success-text);
 }
 
 .page-detail-section .page-summary {
@@ -682,7 +706,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .page-detail-section .image-preview-modal {
-  background: var(--page-detail-surface-hover);
+  background: var(--page-detail-preview-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -733,7 +757,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: var(--page-detail-surface-active);
+  background: var(--page-detail-preview-control-background);
   color: var(--color-text-inverse);
   font-size: 18px;
   cursor: pointer;
@@ -746,7 +770,7 @@ watch(() => insightStore.dataRefreshKey, async (newKey) => {
 }
 
 .page-detail-section .preview-nav-btn:hover:not(:disabled) {
-  background: var(--page-detail-surface-selected);
+  background: var(--page-detail-preview-control-hover-background);
 }
 
 .page-detail-section .preview-page-info {

@@ -16,7 +16,6 @@ import * as fc from 'fast-check'
 // ============================================================
 
 /** localStorage 存储键 */
-const GUIDE_SHOWN_KEY = 'first_time_guide_shown'
 const DISMISS_SETUP_REMINDER_KEY = 'saber_translator_dismiss_setup_reminder'
 
 // ============================================================
@@ -58,22 +57,21 @@ class FirstTimeGuideManager {
    * @returns 是否应该显示引导弹窗
    */
   shouldShowGuide(): boolean {
-    const hasShown = this.storage.getItem(GUIDE_SHOWN_KEY)
-    return !hasShown
+    return this.storage.getItem(DISMISS_SETUP_REMINDER_KEY) !== 'true'
   }
   
   /**
    * 标记引导已显示
    */
   markGuideShown(): void {
-    this.storage.setItem(GUIDE_SHOWN_KEY, 'true')
+    this.storage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
   }
   
   /**
    * 重置引导状态
    */
   resetGuideState(): void {
-    this.storage.removeItem(GUIDE_SHOWN_KEY)
+    this.storage.removeItem(DISMISS_SETUP_REMINDER_KEY)
   }
   
   /**
@@ -233,7 +231,7 @@ describe('Property 46: 首次使用引导状态一致性', () => {
             
             // 状态应该一致
             expect(manager.shouldShowGuide()).toBe(false)
-            expect(mockStorage.getItem(GUIDE_SHOWN_KEY)).toBe('true')
+            expect(mockStorage.getItem(DISMISS_SETUP_REMINDER_KEY)).toBe('true')
           }
         ),
         { numRuns: 50 }
@@ -264,12 +262,12 @@ describe('Property 46: 首次使用引导状态一致性', () => {
   })
   
   describe('边界情况', () => {
-    it('localStorage 中存在无效值时应该正确处理', () => {
+    it('localStorage 中存在无效值时应该继续显示引导', () => {
       // 设置无效值
-      mockStorage.setItem(GUIDE_SHOWN_KEY, 'invalid')
+      mockStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'invalid')
       
-      // 任何非空值都应该被视为已显示
-      expect(manager.shouldShowGuide()).toBe(false)
+      // 只有 'true' 才应该被视为已关闭
+      expect(manager.shouldShowGuide()).toBe(true)
     })
     
     it('设置提醒状态只有 "true" 才被视为已关闭', () => {
@@ -298,7 +296,7 @@ describe('引导弹窗显示逻辑', () => {
           const manager = new FirstTimeGuideManager(mockStorage)
           
           if (hasShownBefore) {
-            mockStorage.setItem(GUIDE_SHOWN_KEY, 'true')
+            mockStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
           }
           
           // 验证显示条件

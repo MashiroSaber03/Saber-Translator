@@ -3,6 +3,7 @@
 import UiInput from '@/components/ui/UiInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore, type AnalysisMode } from '@/stores/insightStore'
@@ -432,15 +433,13 @@ watch(analysisMode, () => {
     </div>
 
     <div class="analysis-options-row">
-      <label class="checkbox-compact" title="仅分析未分析的页面，跳过已分析的页面">
-        <UiInput
-          type="checkbox"
-          class="analysis-progress__incremental-checkbox"
-          :checked="insightStore.incrementalAnalysis"
-          @change="insightStore.setIncrementalAnalysis(($event.target as HTMLInputElement).checked)"
-        />
-        <span>增量模式</span>
-      </label>
+      <UiCheckbox
+        class="analysis-progress__incremental-checkbox"
+        :model-value="insightStore.incrementalAnalysis"
+        label="增量模式"
+        title="仅分析未分析的页面，跳过已分析的页面"
+        @change="insightStore.setIncrementalAnalysis"
+      />
       <UiButton
         variant="toolbar"
         class="button-icon-sm"
@@ -460,11 +459,11 @@ watch(analysisMode, () => {
 
 <style scoped>
 .analysis-control-compact {
-  --analysis-progress-shadow-default: rgba(99, 102, 241, .3);
-  --analysis-progress-surface-base: rgba(239, 68, 68, .1);
-  --analysis-progress-surface-raised: #f59e0b;
-  --analysis-progress-surface-muted: #16a34a;
-  --analysis-progress-text-primary: #ef4444;
+  --analysis-progress-start-hover-shadow: rgba(99, 102, 241, .3);
+  --analysis-progress-error-background: rgba(239, 68, 68, .1);
+  --analysis-progress-paused-fill: #f59e0b;
+  --analysis-progress-resume-hover-background: #16a34a;
+  --analysis-progress-error-text: #ef4444;
 }
 
 .analysis-control-compact .progress-message {
@@ -478,8 +477,8 @@ watch(analysisMode, () => {
   display: block;
   width: 100%;
   font-size: 12px;
-  color: var(--analysis-progress-text-primary);
-  background: var(--analysis-progress-surface-base);
+  color: var(--analysis-progress-error-text);
+  background: var(--analysis-progress-error-background);
   border: 0;
   padding: 6px 10px;
   border-radius: 4px;
@@ -604,7 +603,7 @@ watch(analysisMode, () => {
 }
 
 .analysis-control-compact .progress-bar-slim.paused .progress-fill-slim {
-    background: var(--analysis-progress-surface-raised);
+    background: var(--analysis-progress-paused-fill);
     animation: none;
 }
 
@@ -637,7 +636,7 @@ watch(analysisMode, () => {
 
 .analysis-control-compact .btn-analysis-start:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px var(--analysis-progress-shadow-default);
+    box-shadow: 0 4px 12px var(--analysis-progress-start-hover-shadow);
 }
 
 .analysis-control-compact .btn-analysis-start:active {
@@ -682,7 +681,7 @@ watch(analysisMode, () => {
 }
 
 .analysis-control-compact .btn-resume:hover {
-    background: var(--analysis-progress-surface-muted);
+    background: var(--analysis-progress-resume-hover-background);
 }
 
 .analysis-control-compact .btn-cancel {
@@ -719,20 +718,9 @@ watch(analysisMode, () => {
     border-top: 1px solid var(--color-border-muted);
 }
 
-.analysis-control-compact .checkbox-compact {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+.analysis-progress__incremental-checkbox {
     font-size: 12px;
     color: var(--insight-text-secondary);
-    cursor: pointer;
-}
-
-.analysis-progress__incremental-checkbox {
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    accent-color: var(--insight-action-primary);
 }
 
 .analysis-control-compact .button-icon-sm {

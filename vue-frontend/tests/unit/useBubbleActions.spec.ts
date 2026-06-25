@@ -162,6 +162,31 @@ describe('useBubbleActions', () => {
     )
   })
 
+  it('keeps drawing rectangle style limited to geometry so owner CSS controls visuals', () => {
+    const Harness = defineComponent({
+      setup() {
+        const actions = useBubbleActions()
+        actions.currentDrawingRect.value = [10, 20, 40, 70]
+        return { ...actions }
+      },
+      render() {
+        return h('div')
+      },
+    })
+
+    const wrapper = mount(Harness)
+    const actions = wrapper.vm as unknown as ReturnType<typeof useBubbleActions>
+    const style = actions.getDrawingRectStyle()
+
+    expect(style).toEqual({
+      position: 'absolute',
+      left: '10px',
+      top: '20px',
+      width: '30px',
+      height: '50px',
+    })
+  })
+
   it('does not write routine console logs during common bubble interactions', async () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
     const imageStore = useImageStore()

@@ -1,7 +1,7 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TranslateView from '@/views/TranslateView.vue'
 
 const {
@@ -125,6 +125,8 @@ function mountTranslateView() {
 }
 
 describe('TranslateView', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     routeState.query = {}
     initializeAppMock.mockReset()
@@ -134,6 +136,10 @@ describe('TranslateView', () => {
     saveCurrentSessionMock.mockReset()
     initializeAppMock.mockResolvedValue(undefined)
     initializeBookChapterContextMock.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('registers global keyboard handling before async initialization settles', () => {

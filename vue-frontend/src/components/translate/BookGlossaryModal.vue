@@ -12,11 +12,11 @@
         命中当前文本的术语会追加到翻译提示词中，并在翻译完成后做术语检查。
       </div>
       <label class="ui-checkbox-label">
-        <UiInput :checked="draft.enabled" type="checkbox" @change="toggleEnabled" />
+        <UiCheckbox :model-value="draft.enabled" @change="toggleEnabled" />
         启用术语表
       </label>
       <label class="ui-checkbox-label">
-        <UiInput :checked="draft.autoExtractEnabled" type="checkbox" @change="toggleAutoExtractEnabled" />
+        <UiCheckbox :model-value="draft.autoExtractEnabled" @change="toggleAutoExtractEnabled" />
         自动添加术语
       </label>
       <div class="constraint-description">
@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { computed, ref, watch } from 'vue'
 
@@ -129,12 +129,12 @@ function syncDraft(): void {
   draft.value = JSON.parse(JSON.stringify(constraintStore.glossary))
 }
 
-function toggleEnabled(event: Event): void {
-  draft.value.enabled = (event.target as HTMLInputElement).checked
+function toggleEnabled(checked: boolean): void {
+  draft.value.enabled = checked
 }
 
-function toggleAutoExtractEnabled(event: Event): void {
-  draft.value.autoExtractEnabled = (event.target as HTMLInputElement).checked
+function toggleAutoExtractEnabled(checked: boolean): void {
+  draft.value.autoExtractEnabled = checked
 }
 
 function updateAutoExtractPrompt(value: string): void {

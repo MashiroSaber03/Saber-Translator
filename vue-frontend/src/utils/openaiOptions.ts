@@ -19,6 +19,10 @@ function parseOptionalNumberOrFallback(value: unknown, fallback?: number): numbe
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function parseBooleanOrFallback(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
 function recordOrEmpty(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -56,8 +60,9 @@ export function normalizeOpenAiOptions(
   const request = recordOrEmpty(candidate.request)
   const execution = recordOrEmpty(candidate.execution)
 
-  normalized.request.forceJsonOutput = Boolean(
-    request.forceJsonOutput ?? normalized.request.forceJsonOutput
+  normalized.request.forceJsonOutput = parseBooleanOrFallback(
+    request.forceJsonOutput,
+    normalized.request.forceJsonOutput
   )
 
   const temperature = request.temperature
@@ -67,8 +72,9 @@ export function normalizeOpenAiOptions(
 
   normalized.request.extraBody = cloneRecordOrUndefined(request.extraBody)
 
-  normalized.execution.useStream = Boolean(
-    execution.useStream ?? normalized.execution.useStream
+  normalized.execution.useStream = parseBooleanOrFallback(
+    execution.useStream,
+    normalized.execution.useStream
   )
 
   normalized.execution.rpmLimit = parseNumberOrFallback(
@@ -98,8 +104,9 @@ export function deserializeOpenAICompatibleOptionsFromApi(
   const request = recordOrEmpty(candidate.request)
   const execution = recordOrEmpty(candidate.execution)
 
-  normalized.request.forceJsonOutput = Boolean(
-    request.force_json_output ?? normalized.request.forceJsonOutput
+  normalized.request.forceJsonOutput = parseBooleanOrFallback(
+    request.force_json_output,
+    normalized.request.forceJsonOutput
   )
 
   const temperature = request.temperature
@@ -109,8 +116,9 @@ export function deserializeOpenAICompatibleOptionsFromApi(
 
   normalized.request.extraBody = cloneRecordOrUndefined(request.extra_body)
 
-  normalized.execution.useStream = Boolean(
-    execution.use_stream ?? normalized.execution.useStream
+  normalized.execution.useStream = parseBooleanOrFallback(
+    execution.use_stream,
+    normalized.execution.useStream
   )
   normalized.execution.rpmLimit = parseNumberOrFallback(
     execution.rpm_limit ?? normalized.execution.rpmLimit,

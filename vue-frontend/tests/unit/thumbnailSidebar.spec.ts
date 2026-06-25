@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ThumbnailSidebar from '@/components/translate/ThumbnailSidebar.vue'
 import { useImageStore } from '@/stores/imageStore'
 import type { ImageData } from '@/types/image'
@@ -51,6 +51,10 @@ function mountSidebar(images: ImageData[]) {
 describe('ThumbnailSidebar', () => {
   beforeEach(() => {
     HTMLElement.prototype.scrollTo = vi.fn()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('uses button semantics for flat thumbnail selection', async () => {

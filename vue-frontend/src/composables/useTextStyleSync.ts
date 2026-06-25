@@ -130,6 +130,10 @@ export function useTextStyleSync() {
         return extractBase64Payload(image.cleanImageData) || extractBase64Payload(image.originalDataURL)
     }
 
+    function isCurrentImageId(expectedImageId: string): boolean {
+        return imageStore.currentImage?.id === expectedImageId
+    }
+
     async function renderWithCurrentBubbleStates(
         bubbleStates: BubbleState[],
         cleanImageBase64: string,
@@ -225,8 +229,9 @@ export function useTextStyleSync() {
             // 没有已翻译的图片或气泡，不需要重新渲染
             return
         }
+        const expectedImageId = image.id
 
-        // 切换图片时不会触发设置变更事件，因此这里不需要额外的切图锁。
+        // 渲染返回时仍需确认当前页，避免慢响应写入切换后的图片。
 
         // 需要重新渲染的文字样式设置项。
         const renderSettings = ['fontSize', 'fontFamily', 'layoutDirection', 'textColor',
@@ -310,6 +315,10 @@ export function useTextStyleSync() {
 
             const result = await renderWithCurrentBubbleStates(bubbleStates, cleanImageBase64)
 
+            if (!isCurrentImageId(expectedImageId)) {
+                return
+            }
+
             if (result.finalImage) {
                 imageStore.updateCurrentImage({
                     translatedDataURL: `data:image/png;base64,${result.finalImage}`,
@@ -339,6 +348,7 @@ export function useTextStyleSync() {
             // 没有已翻译的图片，仅影响下次翻译。
             return
         }
+        const expectedImageId = image.id
 
         const bubbleStates = image.bubbleStates
         if (!bubbleStates || !Array.isArray(bubbleStates) || bubbleStates.length === 0) {
@@ -363,6 +373,10 @@ export function useTextStyleSync() {
                         color: 'preserve'
                     }
                 )
+
+                if (!isCurrentImageId(expectedImageId)) {
+                    return
+                }
 
                 if (result.finalImage) {
                     if (result.bubbleStates && Array.isArray(result.bubbleStates)) {
@@ -410,6 +424,7 @@ export function useTextStyleSync() {
         if (!image || !image.translatedDataURL) {
             return
         }
+        const expectedImageId = image.id
 
         const bubbleStates = image.bubbleStates
         if (!bubbleStates || !Array.isArray(bubbleStates) || bubbleStates.length === 0) {
@@ -447,6 +462,10 @@ export function useTextStyleSync() {
                     color: 'preserve'
                 }
             )
+
+            if (!isCurrentImageId(expectedImageId)) {
+                return
+            }
 
             if (result.finalImage) {
                 imageStore.updateCurrentImage({

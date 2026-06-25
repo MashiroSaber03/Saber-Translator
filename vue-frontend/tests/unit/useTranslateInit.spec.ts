@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
 import { cleanupGpu } from '@/api/system'
 import { reloadTextStyleDefaultsFromBackend } from '@/defaults/textStyleDefaults'
+import { getBookDetail } from '@/api/bookshelf'
 
 const routeState = vi.hoisted(() => ({
   query: {} as Record<string, string | undefined>,
@@ -26,6 +27,10 @@ vi.mock('@/api/config', () => ({
 
 vi.mock('@/api/system', () => ({
   cleanupGpu: vi.fn(),
+}))
+
+vi.mock('@/api/bookshelf', () => ({
+  getBookDetail: vi.fn(),
 }))
 
 vi.mock('@/defaults/textStyleDefaults', async (importOriginal) => {
@@ -70,6 +75,10 @@ describe('useTranslateInit', () => {
       unloaded_models: ['ocr'],
       memory_allocated_mb: 0,
       memory_reserved_mb: 0,
+    })
+    vi.mocked(getBookDetail).mockResolvedValue({
+      success: false,
+      error: 'not configured',
     })
   })
 
@@ -120,5 +129,46 @@ describe('useTranslateInit', () => {
 
     wrapper.unmount()
     expect(window._isChangingFromSwitchImage).toBe(false)
+  })
+
+  it('ignores stale bookshelf context responses after the route leaves bookshelf mode', async () => {
+    let resolveBookDetail!: (value: Awaited<ReturnType<typeof getBookDetail>>) => void
+    vi.mocked(getBookDetail).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveBookDetail = resolve
+    }))
+
+    routeState.query = { book: 'book-1', chapter: 'chapter-1' }
+    const translateInit = useTranslateInit()
+    const sessionStore = useSessionStore()
+    const setContext = vi.spyOn(sessionStore, 'setBookChapterContext')
+
+    const pendingContext = translateInit.initializeBookChapterContext()
+    routeState.query = {}
+    await translateInit.initializeBookChapterContext()
+
+    resolveBookDetail({
+      success: true,
+      book: {
+        id: 'book-1',
+        title: 'Stale Book',
+        chapters: [{
+          id: 'chapter-1',
+          title: 'Stale Chapter',
+          order: 1,
+          imageCount: 0,
+          hasSession: false,
+        }],
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
+      },
+    })
+    await pendingContext
+
+    expect(translateInit.isBookshelfMode.value).toBe(false)
+    expect(translateInit.currentBookId.value).toBeNull()
+    expect(translateInit.currentChapterId.value).toBeNull()
+    expect(translateInit.currentBookTitle.value).toBeNull()
+    expect(translateInit.currentChapterTitle.value).toBeNull()
+    expect(setContext).not.toHaveBeenCalled()
   })
 })

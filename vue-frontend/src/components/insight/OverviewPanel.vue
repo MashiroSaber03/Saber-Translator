@@ -2,7 +2,7 @@
 
 import UiButton from '@/components/ui/UiButton.vue'
 
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore, type OverviewTemplateType } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -16,6 +16,11 @@ const currentTemplate = ref<OverviewTemplateType>('no_spoiler')
 const overviewContent = ref('')
 const isLoading = ref(false)
 const generatedTemplates = ref<OverviewTemplateType[]>([])
+let overviewContentRequestSequence = 0
+let generatedTemplatesRequestSequence = 0
+let recentPagesRequestSequence = 0
+let overviewRefreshSequence = 0
+let isOverviewPanelMounted = true
 
 const recentAnalyzedPages = ref<Array<{
   page_num: number
@@ -64,53 +69,86 @@ async function onTemplateChange(): Promise<void> {
   await loadCachedOverview()
 }
 
-async function loadCachedOverview(): Promise<void> {
-  if (!insightStore.currentBookId) return
+function isCurrentBookRequest(requestId: number, currentRequestId: number, bookId: string): boolean {
+  return (
+    isOverviewPanelMounted &&
+    requestId === currentRequestId &&
+    insightStore.currentBookId === bookId
+  )
+}
+
+function isCurrentOverviewRequest(
+  requestId: number,
+  bookId: string,
+  template: OverviewTemplateType
+): boolean {
+  return (
+    isCurrentBookRequest(requestId, overviewContentRequestSequence, bookId) &&
+    currentTemplate.value === template
+  )
+}
+
+async function loadCachedOverview(
+  bookId = insightStore.currentBookId,
+  template = currentTemplate.value
+): Promise<void> {
+  const requestId = ++overviewContentRequestSequence
+  if (!bookId) return
 
   isLoading.value = true
   overviewContent.value = ''
 
   try {
     const response = await insightApi.getOverview(
-      insightStore.currentBookId,
-      currentTemplate.value
+      bookId,
+      template
     )
+
+    if (!isCurrentOverviewRequest(requestId, bookId, template)) return
 
     if (response.success && response.content) {
       overviewContent.value = response.content
-      if (!generatedTemplates.value.includes(currentTemplate.value)) {
-        generatedTemplates.value.push(currentTemplate.value)
+      if (!generatedTemplates.value.includes(template)) {
+        generatedTemplates.value.push(template)
       }
     } else {
       overviewContent.value = ''
     }
   } catch {
+    if (!isCurrentOverviewRequest(requestId, bookId, template)) return
     overviewContent.value = '加载失败，请重试'
   } finally {
-    isLoading.value = false
+    if (isCurrentOverviewRequest(requestId, bookId, template)) {
+      isLoading.value = false
+    }
   }
 }
 
 async function generateOverview(regenerate: boolean): Promise<void> {
-  if (!insightStore.currentBookId) return
+  const bookId = insightStore.currentBookId
+  const template = currentTemplate.value
+  const requestId = ++overviewContentRequestSequence
+  if (!bookId) return
 
   isLoading.value = true
   overviewContent.value = ''
 
   try {
     const response = await insightApi.regenerateOverview(
-      insightStore.currentBookId,
-      currentTemplate.value,
+      bookId,
+      template,
       regenerate
     )
+
+    if (!isCurrentOverviewRequest(requestId, bookId, template)) return
 
     if (response.success) {
       if (response.content) {
         overviewContent.value = response.content
-        if (!generatedTemplates.value.includes(currentTemplate.value)) {
-          generatedTemplates.value.push(currentTemplate.value)
+        if (!generatedTemplates.value.includes(template)) {
+          generatedTemplates.value.push(template)
         }
-        if (currentTemplate.value === 'story_summary' && response.cached !== true) {
+        if (template === 'story_summary' && response.cached !== true) {
           insightStore.triggerDataRefresh()
         }
       }
@@ -118,17 +156,23 @@ async function generateOverview(regenerate: boolean): Promise<void> {
       overviewContent.value = `生成失败: ${response.error || '未知错误'}`
     }
   } catch {
+    if (!isCurrentOverviewRequest(requestId, bookId, template)) return
     overviewContent.value = '生成失败，请重试'
   } finally {
-    isLoading.value = false
+    if (isCurrentOverviewRequest(requestId, bookId, template)) {
+      isLoading.value = false
+    }
   }
 }
 
-async function loadGeneratedTemplates(): Promise<void> {
-  if (!insightStore.currentBookId) return
+async function loadGeneratedTemplates(bookId = insightStore.currentBookId): Promise<OverviewTemplateType[]> {
+  const requestId = ++generatedTemplatesRequestSequence
+  if (!bookId) return []
 
   try {
-    const response = await insightApi.getGeneratedTemplates(insightStore.currentBookId)
+    const response = await insightApi.getGeneratedTemplates(bookId)
+    if (!isCurrentBookRequest(requestId, generatedTemplatesRequestSequence, bookId)) return []
+
     if (response.success) {
       let templates: OverviewTemplateType[] = []
       if (response.generated) {
@@ -137,10 +181,13 @@ async function loadGeneratedTemplates(): Promise<void> {
         templates = response.templates as OverviewTemplateType[]
       }
       generatedTemplates.value = templates
+      return templates
     }
   } catch {
+    if (!isCurrentBookRequest(requestId, generatedTemplatesRequestSequence, bookId)) return []
     generatedTemplates.value = []
   }
+  return []
 }
 
 const isExporting = ref(false)
@@ -203,11 +250,14 @@ function exportCurrentOverview(): void {
   showToast('导出成功', 'success')
 }
 
-async function loadRecentAnalyzedPages(): Promise<void> {
-  if (!insightStore.currentBookId) return
+async function loadRecentAnalyzedPages(bookId = insightStore.currentBookId): Promise<void> {
+  const requestId = ++recentPagesRequestSequence
+  if (!bookId) return
 
   try {
-    const stats = await insightApi.getAnalysisStatus(insightStore.currentBookId)
+    const stats = await insightApi.getAnalysisStatus(bookId)
+    if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
+
     if (stats.success && insightStore.analyzedPageCount > 0) {
       const totalPages = insightStore.totalPageCount
       const analyzedCount = insightStore.analyzedPageCount
@@ -227,6 +277,7 @@ async function loadRecentAnalyzedPages(): Promise<void> {
       recentAnalyzedPages.value = recentPages.reverse()
     }
   } catch {
+    if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
     recentAnalyzedPages.value = []
   }
 }
@@ -235,35 +286,48 @@ function goToPage(pageNum: number): void {
   insightStore.selectPage(pageNum)
 }
 
-onMounted(async () => {
-  await loadGeneratedTemplates()
-  await loadRecentAnalyzedPages()
-  if (generatedTemplates.value.includes(currentTemplate.value)) {
-    await loadCachedOverview()
+async function refreshOverviewForCurrentBook(): Promise<void> {
+  const bookId = insightStore.currentBookId
+  const refreshId = ++overviewRefreshSequence
+  if (!bookId) return
+
+  overviewContent.value = ''
+  generatedTemplates.value = []
+  recentAnalyzedPages.value = []
+
+  const templates = await loadGeneratedTemplates(bookId)
+  if (!isCurrentBookRequest(refreshId, overviewRefreshSequence, bookId)) return
+
+  await loadRecentAnalyzedPages(bookId)
+  if (!isCurrentBookRequest(refreshId, overviewRefreshSequence, bookId)) return
+
+  if (templates.includes(currentTemplate.value)) {
+    await loadCachedOverview(bookId, currentTemplate.value)
   }
+}
+
+onMounted(async () => {
+  await refreshOverviewForCurrentBook()
 })
 
 watch(() => insightStore.currentBookId, async (newBookId) => {
   if (newBookId) {
-    overviewContent.value = ''
-    generatedTemplates.value = []
-    recentAnalyzedPages.value = []
-    await loadGeneratedTemplates()
-    await loadRecentAnalyzedPages()
-    if (generatedTemplates.value.includes(currentTemplate.value)) {
-      await loadCachedOverview()
-    }
+    await refreshOverviewForCurrentBook()
   }
 })
 
 watch(() => insightStore.dataRefreshKey, async (newKey) => {
   if (newKey > 0 && insightStore.currentBookId) {
-    await loadGeneratedTemplates()
-    await loadRecentAnalyzedPages()
-    if (generatedTemplates.value.includes(currentTemplate.value)) {
-      await loadCachedOverview()
-    }
+    await refreshOverviewForCurrentBook()
   }
+})
+
+onUnmounted(() => {
+  isOverviewPanelMounted = false
+  overviewContentRequestSequence += 1
+  generatedTemplatesRequestSequence += 1
+  recentPagesRequestSequence += 1
+  overviewRefreshSequence += 1
 })
 </script>
 

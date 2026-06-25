@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 应用根组件
- * 提供路由视图容器和全局布局
+ * 挂载路由视图和单例全局通知
  */
 import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'

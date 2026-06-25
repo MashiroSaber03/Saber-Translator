@@ -51,7 +51,7 @@ Owner token 不是状态矩阵仓库。组件 scoped 根变量必须同时满足
 
 ## 命名与边界
 
-组件样式默认 `<style scoped>`。类名使用组件命名空间或 BEM 风格，例如 `.qa-panel__header`、`.ui-modal__body`。禁止 CSS ID 选择器和 `!important`。
+组件样式默认 `<style scoped>`。类名使用组件命名空间或 BEM 风格，例如 `.qa-panel__header`、`.book-card__cover`。禁止 CSS ID 选择器和 `!important`。
 
 禁止 `<style src>`、CSS `@import`、`*.generated-*.css`、`part1/part2` 以及 `*.base/layout/panels/responsive.styles.css` 这类横切拆分。业务组件不得通过 `<script setup>` 导入普通 `*.styles.css`，因为它会绕过 Vue scoped 边界并形成隐藏全局样式入口。组件样式默认写在同一 SFC 的 `<style scoped>` 中；确实需要 Teleport 或 slot reach-through 时，使用同目录命名空间 `*.global.styles.css`，并让选择器从明确的 modal/body/owner class 开始。共享样式应沉淀为 UI primitive 或明确业务命名空间，不要用 scoped 共享 CSS 模拟全局组件库。
 

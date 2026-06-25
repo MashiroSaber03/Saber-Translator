@@ -19,26 +19,25 @@
 
     <div class="kana-keyboard-options">
       <div class="kana-mode-select">
-        <label>
-          <UiInput
-            type="radio"
-            name="kanaMode"
-            value="hiragana"
-            v-model="kanaMode"
-            class="kana-mode-radio"
-          />
+        <span class="kana-mode-label">字符：</span>
+        <UiButton
+          variant="toolbar"
+          class="kana-mode-button"
+          :data-active="kanaMode === 'hiragana'"
+          :aria-pressed="kanaMode === 'hiragana'"
+          @click="kanaMode = 'hiragana'"
+        >
           平假名
-        </label>
-        <label>
-          <UiInput
-            type="radio"
-            name="kanaMode"
-            value="katakana"
-            v-model="kanaMode"
-            class="kana-mode-radio"
-          />
+        </UiButton>
+        <UiButton
+          variant="toolbar"
+          class="kana-mode-button"
+          :data-active="kanaMode === 'katakana'"
+          :aria-pressed="kanaMode === 'katakana'"
+          @click="kanaMode = 'katakana'"
+        >
           片假名
-        </label>
+        </UiButton>
       </div>
       <div class="kana-target-select">
         <label>输入到：</label>
@@ -167,7 +166,6 @@
 
 <script setup lang="ts">
 
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { onUnmounted, ref } from 'vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -333,27 +331,27 @@ onUnmounted(() => {
 
 <style scoped>
 .kana-keyboard {
-  --japanese-keyboard-border-default: #2196f3;
-  --japanese-keyboard-border-strong: rgba(231, 76, 60, .3);
-  --japanese-keyboard-border-muted: rgba(231, 76, 60, .5);
-  --japanese-keyboard-shadow-default: rgba(0, 0, 0, .15);
-  --japanese-keyboard-shadow-raised: rgba(33, 150, 243, .3);
-  --japanese-keyboard-surface-base: #ff6b6b;
-  --japanese-keyboard-surface-raised: #ee5a5a;
-  --japanese-keyboard-surface-muted: rgba(255, 255, 255, .2);
-  --japanese-keyboard-surface-subtle: rgba(255, 255, 255, .3);
-  --japanese-keyboard-surface-hover: rgba(255, 255, 255, .4);
-  --japanese-keyboard-surface-active: #e74c3c;
-  --japanese-keyboard-surface-selected: #f8f9fa;
-  --japanese-keyboard-surface-overlay: #e3f2fd;
-  --japanese-keyboard-surface-inverse: #bbdefb;
-  --japanese-keyboard-surface-contrast: rgba(231, 76, 60, .1);
-  --japanese-keyboard-surface-tint: rgba(231, 76, 60, .2);
+  --japanese-keyboard-panel-shadow: rgba(0, 0, 0, .15);
+  --japanese-keyboard-header-start: #ff6b6b;
+  --japanese-keyboard-header-end: #ee5a5a;
+  --japanese-keyboard-header-button-background: rgba(255, 255, 255, .2);
+  --japanese-keyboard-header-button-hover-background: rgba(255, 255, 255, .4);
+  --japanese-keyboard-tab-hover-background: rgba(255, 255, 255, .3);
+  --japanese-keyboard-mode-button-active-background: #e74c3c;
+  --japanese-keyboard-kana-key-background: #f8f9fa;
+  --japanese-keyboard-kana-key-hover-background: #e3f2fd;
+  --japanese-keyboard-kana-key-active-background: #bbdefb;
+  --japanese-keyboard-kana-key-hover-border: #2196f3;
+  --japanese-keyboard-kana-key-hover-shadow: rgba(33, 150, 243, .3);
+  --japanese-keyboard-backspace-background: rgba(231, 76, 60, .1);
+  --japanese-keyboard-backspace-hover-background: rgba(231, 76, 60, .2);
+  --japanese-keyboard-backspace-border: rgba(231, 76, 60, .3);
+  --japanese-keyboard-backspace-hover-border: rgba(231, 76, 60, .5);
 
   background: var(--color-surface-base);
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  box-shadow: 0 4px 12px var(--japanese-keyboard-shadow-default);
+  box-shadow: 0 4px 12px var(--japanese-keyboard-panel-shadow);
   margin-top: 10px;
   overflow: hidden;
   color: var(--color-text-default);
@@ -364,7 +362,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: linear-gradient(135deg, var(--japanese-keyboard-surface-base) 0%, var(--japanese-keyboard-surface-raised) 100%);
+  background: linear-gradient(135deg, var(--japanese-keyboard-header-start) 0%, var(--japanese-keyboard-header-end) 100%);
   color: var(--color-text-inverse);
 }
 
@@ -383,7 +381,7 @@ onUnmounted(() => {
   padding: 4px 10px;
   border: none;
   border-radius: 4px;
-  background: var(--japanese-keyboard-surface-muted);
+  background: var(--japanese-keyboard-header-button-background);
   color: var(--color-text-inverse);
   font-size: 11px;
   cursor: pointer;
@@ -391,7 +389,7 @@ onUnmounted(() => {
 }
 
 .kana-tab:hover {
-  background: var(--japanese-keyboard-surface-subtle);
+  background: var(--japanese-keyboard-tab-hover-background);
 }
 
 .kana-tab.active {
@@ -405,7 +403,7 @@ onUnmounted(() => {
   height: 24px;
   border: none;
   border-radius: 50%;
-  background: var(--japanese-keyboard-surface-muted);
+  background: var(--japanese-keyboard-header-button-background);
   color: var(--color-text-inverse);
   font-size: 14px;
   cursor: pointer;
@@ -416,7 +414,7 @@ onUnmounted(() => {
 }
 
 .kana-keyboard-close:hover {
-  background: var(--japanese-keyboard-surface-hover);
+  background: var(--japanese-keyboard-header-button-hover-background);
 }
 
 .kana-keyboard-options {
@@ -437,16 +435,29 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.kana-mode-select label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: var(--color-text-default);
+.kana-mode-label {
+  font-weight: 500;
 }
 
-.kana-mode-radio {
-  accent-color: var(--japanese-keyboard-surface-active);
+.kana-mode-button {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  background: var(--color-surface-base);
+  color: var(--color-text-default);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.kana-mode-button:hover {
+  border-color: var(--color-border-accent);
+}
+
+.kana-mode-button[data-active='true'] {
+  background: var(--japanese-keyboard-mode-button-active-background);
+  border-color: var(--japanese-keyboard-mode-button-active-background);
+  color: var(--color-text-inverse);
 }
 
 .kana-tab-content {
@@ -492,7 +503,7 @@ onUnmounted(() => {
   height: 42px;
   border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
-  background: var(--japanese-keyboard-surface-selected);
+  background: var(--japanese-keyboard-kana-key-background);
   color: var(--color-text-default);
   font-size: 13px;
   line-height: 1.2;
@@ -518,16 +529,16 @@ onUnmounted(() => {
 }
 
 .kana-key:hover {
-  background: var(--japanese-keyboard-surface-overlay);
-  border-color: var(--japanese-keyboard-border-default);
+  background: var(--japanese-keyboard-kana-key-hover-background);
+  border-color: var(--japanese-keyboard-kana-key-hover-border);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px var(--japanese-keyboard-shadow-raised);
+  box-shadow: 0 2px 6px var(--japanese-keyboard-kana-key-hover-shadow);
 }
 
 .kana-key:active,
 .kana-key.pressed {
   transform: translateY(0);
-  background: var(--japanese-keyboard-surface-inverse);
+  background: var(--japanese-keyboard-kana-key-active-background);
 }
 
 .special-chars-grid {
@@ -567,8 +578,8 @@ onUnmounted(() => {
 
 .kana-backspace {
   padding: 6px 16px;
-  background: var(--japanese-keyboard-surface-contrast);
-  border: 1px solid var(--japanese-keyboard-border-strong);
+  background: var(--japanese-keyboard-backspace-background);
+  border: 1px solid var(--japanese-keyboard-backspace-border);
   border-radius: 4px;
   color: var(--color-text-danger-strong);
   cursor: pointer;
@@ -577,7 +588,7 @@ onUnmounted(() => {
 }
 
 .kana-backspace:hover {
-  background: var(--japanese-keyboard-surface-tint);
-  border-color: var(--japanese-keyboard-border-muted);
+  background: var(--japanese-keyboard-backspace-hover-background);
+  border-color: var(--japanese-keyboard-backspace-hover-border);
 }
 </style>

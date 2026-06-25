@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import type { ApplySettingsOptions } from '../useSettingsSidebar'
 
 defineProps<{
@@ -40,115 +40,42 @@ defineEmits<{
 
     <div v-if="showApplyOptions" class="apply-options-dropdown">
       <div class="apply-option">
-        <UiInput
-          id="apply_selectAll"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :checked="Object.values(applyOptions).every(Boolean)"
+        <UiCheckbox
+          :model-value="Object.values(applyOptions).every(Boolean)"
+          label="全选"
           @change="$emit('toggleSelectAll')"
         />
-        <label for="apply_selectAll">全选</label>
       </div>
       <hr>
       <div class="apply-option">
-        <UiInput
-          id="apply_fontSize"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.fontSize"
-          @update:model-value="$emit('updateOption', 'fontSize', Boolean($event))"
-        />
-        <label for="apply_fontSize">字号</label>
+        <UiCheckbox :model-value="applyOptions.fontSize" label="字号" @change="$emit('updateOption', 'fontSize', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_fontFamily"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.fontFamily"
-          @update:model-value="$emit('updateOption', 'fontFamily', Boolean($event))"
-        />
-        <label for="apply_fontFamily">字体</label>
+        <UiCheckbox :model-value="applyOptions.fontFamily" label="字体" @change="$emit('updateOption', 'fontFamily', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_layoutDirection"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.layoutDirection"
-          @update:model-value="$emit('updateOption', 'layoutDirection', Boolean($event))"
-        />
-        <label for="apply_layoutDirection">排版方向</label>
+        <UiCheckbox :model-value="applyOptions.layoutDirection" label="排版方向" @change="$emit('updateOption', 'layoutDirection', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_lineSpacing"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.lineSpacing"
-          @update:model-value="$emit('updateOption', 'lineSpacing', Boolean($event))"
-        />
-        <label for="apply_lineSpacing">行间距</label>
+        <UiCheckbox :model-value="applyOptions.lineSpacing" label="行间距" @change="$emit('updateOption', 'lineSpacing', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_textAlign"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.textAlign"
-          @update:model-value="$emit('updateOption', 'textAlign', Boolean($event))"
-        />
-        <label for="apply_textAlign">对齐方式</label>
+        <UiCheckbox :model-value="applyOptions.textAlign" label="对齐方式" @change="$emit('updateOption', 'textAlign', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_textColor"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.textColor"
-          @update:model-value="$emit('updateOption', 'textColor', Boolean($event))"
-        />
-        <label for="apply_textColor">文字颜色</label>
+        <UiCheckbox :model-value="applyOptions.textColor" label="文字颜色" @change="$emit('updateOption', 'textColor', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_fillColor"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.fillColor"
-          @update:model-value="$emit('updateOption', 'fillColor', Boolean($event))"
-        />
-        <label for="apply_fillColor">填充颜色</label>
+        <UiCheckbox :model-value="applyOptions.fillColor" label="填充颜色" @change="$emit('updateOption', 'fillColor', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_strokeEnabled"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.strokeEnabled"
-          @update:model-value="$emit('updateOption', 'strokeEnabled', Boolean($event))"
-        />
-        <label for="apply_strokeEnabled">描边开关</label>
+        <UiCheckbox :model-value="applyOptions.strokeEnabled" label="描边开关" @change="$emit('updateOption', 'strokeEnabled', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_strokeColor"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.strokeColor"
-          @update:model-value="$emit('updateOption', 'strokeColor', Boolean($event))"
-        />
-        <label for="apply_strokeColor">描边颜色</label>
+        <UiCheckbox :model-value="applyOptions.strokeColor" label="描边颜色" @change="$emit('updateOption', 'strokeColor', $event)" />
       </div>
       <div class="apply-option">
-        <UiInput
-          id="apply_strokeWidth"
-          class="apply-option-checkbox"
-          type="checkbox"
-          :model-value="applyOptions.strokeWidth"
-          @update:model-value="$emit('updateOption', 'strokeWidth', Boolean($event))"
-        />
-        <label for="apply_strokeWidth">描边宽度</label>
+        <UiCheckbox :model-value="applyOptions.strokeWidth" label="描边宽度" @change="$emit('updateOption', 'strokeWidth', $event)" />
       </div>
     </div>
   </div>
@@ -168,7 +95,6 @@ defineEmits<{
   --settings-sidebar-apply-menu-shadow: rgba(22, 37, 58, .16);
   --settings-sidebar-apply-option-text: #405473;
   --settings-sidebar-apply-option-hover-text: #2b5f9d;
-  --settings-sidebar-apply-checkbox-accent: #4b89d0;
 
   display: flex;
   align-items: stretch;
@@ -234,13 +160,6 @@ defineEmits<{
   color: var(--settings-sidebar-apply-option-text);
   font-size: 13px;
   cursor: pointer;
-}
-
-.apply-option-checkbox {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--settings-sidebar-apply-checkbox-accent);
 }
 
 .apply-option:hover {

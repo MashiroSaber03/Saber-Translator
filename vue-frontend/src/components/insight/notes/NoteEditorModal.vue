@@ -243,7 +243,7 @@ const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.n
   color: var(--insight-text-secondary);
   font-weight: 600;
   font-size: 12px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 

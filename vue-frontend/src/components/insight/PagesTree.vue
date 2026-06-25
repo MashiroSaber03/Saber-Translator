@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
@@ -11,6 +11,8 @@ const insightStore = useInsightStore()
 const expandedChapters = ref<Set<string>>(new Set())
 const pageAnalyzedMap = ref<Map<number, boolean>>(new Map())
 const displayedPageCount = ref(100)
+let analyzedPagesRequestSequence = 0
+let isPagesTreeMounted = true
 
 const chapters = computed(() => insightStore.chapters)
 const totalPages = computed(() => insightStore.totalPageCount)
@@ -96,11 +98,17 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
   }
 }
 
-async function loadAnalyzedPages(): Promise<void> {
-  if (!insightStore.currentBookId) return
+async function loadAnalyzedPages(bookId = insightStore.currentBookId): Promise<void> {
+  const requestId = ++analyzedPagesRequestSequence
+  if (!bookId) {
+    pageAnalyzedMap.value = new Map()
+    return
+  }
   
   try {
-    const response = await insightApi.getAnalyzedPages(insightStore.currentBookId)
+    const response = await insightApi.getAnalyzedPages(bookId)
+    if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
+
     if (response.success && response.pages) {
       const nextMap = new Map<number, boolean>()
       const analyzedPages = response.pages
@@ -110,8 +118,17 @@ async function loadAnalyzedPages(): Promise<void> {
       pageAnalyzedMap.value = nextMap
     }
   } catch {
+    if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
     showToast('加载页面分析状态失败', 'error')
   }
+}
+
+function isCurrentAnalyzedPagesRequest(requestId: number, bookId: string): boolean {
+  return (
+    isPagesTreeMounted &&
+    requestId === analyzedPagesRequestSequence &&
+    insightStore.currentBookId === bookId
+  )
 }
 
 onMounted(async () => {
@@ -131,6 +148,19 @@ watch(
     }
   }
 )
+
+watch(
+  () => insightStore.currentBookId,
+  async (bookId) => {
+    pageAnalyzedMap.value = new Map()
+    await loadAnalyzedPages(bookId || '')
+  }
+)
+
+onUnmounted(() => {
+  isPagesTreeMounted = false
+  analyzedPagesRequestSequence += 1
+})
 </script>
 
 <template>
@@ -247,8 +277,8 @@ watch(
 
 <style scoped>
 .pages-tree-section {
-  --pages-tree-shadow-default: rgba(99, 102, 241, .2);
-  --pages-tree-surface-base: rgba(0, 0, 0, .7);
+  --pages-tree-selected-ring: rgba(99, 102, 241, .2);
+  --pages-tree-page-number-gradient-end: rgba(0, 0, 0, .7);
 }
 
 .pages-tree-section {
@@ -425,7 +455,7 @@ watch(
 
 .tree-page-item.selected {
     border-color: var(--insight-action-primary);
-    box-shadow: 0 0 0 2px var(--pages-tree-shadow-default);
+    box-shadow: 0 0 0 2px var(--pages-tree-selected-ring);
 }
 
 .tree-page-item.analyzed::after {
@@ -457,7 +487,7 @@ watch(
     left: 0;
     right: 0;
     padding: 2px 4px;
-    background: linear-gradient(transparent, var(--pages-tree-surface-base));
+    background: linear-gradient(transparent, var(--pages-tree-page-number-gradient-end));
     color: var(--color-text-inverse);
     font-size: 10px;
     text-align: center;

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { nextTick } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
+import { useTimelinePanel } from '@/components/insight/timeline/useTimelinePanel'
 
 const { getTimelineMock, regenerateTimelineMock, getThumbnailUrlMock } = vi.hoisted(() => ({
   getTimelineMock: vi.fn(),
@@ -27,6 +28,8 @@ function deferred<T>() {
 }
 
 describe('TimelinePanel', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -142,5 +145,41 @@ describe('TimelinePanel', () => {
 
     expect(wrapper.text()).toContain('当前书时间线')
     expect(wrapper.text()).not.toContain('旧书时间线')
+  })
+
+  it('ignores timeline responses after the owner unmounts', async () => {
+    const pendingTimeline = deferred<Record<string, unknown>>()
+    getTimelineMock.mockReturnValueOnce(pendingTimeline.promise)
+
+    const Harness = defineComponent({
+      setup() {
+        const timeline = useTimelinePanel()
+        return { timelineData: timeline.timelineData }
+      },
+      template: '<div />',
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(Harness, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    expect(getTimelineMock).toHaveBeenCalledWith('book-1')
+
+    wrapper.unmount()
+    pendingTimeline.resolve({
+      success: true,
+      mode: 'enhanced',
+      story_arcs: [{ id: 'late-arc', name: '卸载后的时间线', page_range: { start: 1, end: 2 } }],
+      stats: { total_events: 1, total_pages: 2 },
+    })
+    await flushPromises()
+
+    expect(wrapper.vm.timelineData).toBeNull()
   })
 })

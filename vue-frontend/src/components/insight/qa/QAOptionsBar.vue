@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import EmbeddingRebuildControl from './EmbeddingRebuildControl.vue'
 
@@ -78,18 +79,24 @@ const thresholdModel = computed({
     <span class="chat-option-divider">|</span>
 
     <div v-if="showPreciseModeOptions" class="precise-mode-options">
-      <label class="ui-checkbox-label compact" title="启用父子块模式">
-        <UiInput v-model="parentChildModel" type="checkbox" />
-        <span>父子块模式</span>
-      </label>
-      <label class="ui-checkbox-label compact" title="启用推理检索">
-        <UiInput v-model="reasoningModel" type="checkbox" />
-        <span>推理检索</span>
-      </label>
-      <label class="ui-checkbox-label compact" title="启用重排序">
-        <UiInput v-model="rerankerModel" type="checkbox" />
-        <span>重排序</span>
-      </label>
+      <UiCheckbox
+        v-model="parentChildModel"
+        class="qa-option-checkbox"
+        label="父子块模式"
+        title="启用父子块模式"
+      />
+      <UiCheckbox
+        v-model="reasoningModel"
+        class="qa-option-checkbox"
+        label="推理检索"
+        title="启用推理检索"
+      />
+      <UiCheckbox
+        v-model="rerankerModel"
+        class="qa-option-checkbox"
+        label="重排序"
+        title="启用重排序"
+      />
 
       <span class="chat-option-divider">|</span>
 
@@ -183,7 +190,7 @@ const thresholdModel = computed({
   gap: 16px;
 }
 
-.ui-checkbox-label.compact,
+.qa-option-checkbox,
 .input-label.compact {
   display: flex;
   align-items: center;
@@ -191,10 +198,6 @@ const thresholdModel = computed({
   color: var(--insight-text-secondary);
   font-size: 13px;
   cursor: pointer;
-}
-
-.ui-checkbox-label.compact:hover {
-  color: var(--insight-text-primary);
 }
 
 .input-small {

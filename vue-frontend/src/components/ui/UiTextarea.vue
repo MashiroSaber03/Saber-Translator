@@ -30,6 +30,7 @@ const emit = defineEmits<{
 
 const attrs = useAttrs()
 const isComposing = ref(false)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const textareaValue = computed(() => props.modelValue ?? props.value ?? '')
 
 function handleCompositionStart(event: CompositionEvent) {
@@ -51,10 +52,33 @@ function handleInput(event: Event) {
   emit('update:modelValue', target.value)
   emit('input', event)
 }
+
+defineExpose({
+  focus() {
+    textareaRef.value?.focus()
+  },
+  get selectionStart() {
+    return textareaRef.value?.selectionStart ?? null
+  },
+  set selectionStart(value: number | null) {
+    if (textareaRef.value && value !== null) {
+      textareaRef.value.selectionStart = value
+    }
+  },
+  get selectionEnd() {
+    return textareaRef.value?.selectionEnd ?? null
+  },
+  set selectionEnd(value: number | null) {
+    if (textareaRef.value && value !== null) {
+      textareaRef.value.selectionEnd = value
+    }
+  },
+})
 </script>
 
 <template>
   <textarea
+    ref="textareaRef"
     v-bind="attrs"
     class="ui-textarea"
     :class="[`ui-textarea--${size}`, { 'ui-textarea--error': Boolean(error) }]"

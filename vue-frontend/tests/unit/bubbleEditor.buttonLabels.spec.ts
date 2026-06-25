@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import BubbleEditor from '@/components/edit/BubbleEditor.vue'
 import type { BubbleState } from '@/types/bubble'
@@ -191,5 +192,94 @@ describe('BubbleEditor button labels', () => {
     } finally {
       logSpy.mockRestore()
     }
+  })
+
+  it('inserts kana at the start of the original text when the caret is at zero', async () => {
+    const wrapper = mount(BubbleEditor, {
+      props: {
+        bubble: makeBubble(),
+        bubbleIndex: 0,
+        isOcrLoading: false,
+        isTranslateLoading: false,
+      },
+      global: {
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub">{{ modelValue }}</div>',
+            props: {
+              modelValue: {
+                type: String,
+                default: '',
+              },
+            },
+          },
+          JapaneseKeyboard: {
+            name: 'JapaneseKeyboard',
+            template: '<div class="jp-keyboard-stub"></div>',
+            props: {
+              visible: Boolean,
+              defaultTarget: String,
+            },
+            emits: ['insert', 'delete', 'close'],
+          },
+        },
+      },
+    })
+
+    const originalTextarea = wrapper.findAll('textarea')[0].element as HTMLTextAreaElement
+    originalTextarea.setSelectionRange(0, 0)
+
+    wrapper.findComponent({ name: 'JapaneseKeyboard' }).vm.$emit('insert', 'あ', 'original')
+    await nextTick()
+    await nextTick()
+
+    const updates = wrapper.emitted('update')
+    expect(updates?.at(-1)).toEqual([{ originalText: 'あ原文' }])
+    expect(originalTextarea.selectionStart).toBe(1)
+  })
+
+  it('does not delete from the end of the original text when the caret is at zero', async () => {
+    const wrapper = mount(BubbleEditor, {
+      props: {
+        bubble: makeBubble(),
+        bubbleIndex: 0,
+        isOcrLoading: false,
+        isTranslateLoading: false,
+      },
+      global: {
+        stubs: {
+          CustomSelect: {
+            template: '<div class="custom-select-stub">{{ modelValue }}</div>',
+            props: {
+              modelValue: {
+                type: String,
+                default: '',
+              },
+            },
+          },
+          JapaneseKeyboard: {
+            name: 'JapaneseKeyboard',
+            template: '<div class="jp-keyboard-stub"></div>',
+            props: {
+              visible: Boolean,
+              defaultTarget: String,
+            },
+            emits: ['insert', 'delete', 'close'],
+          },
+        },
+      },
+    })
+
+    const originalTextarea = wrapper.findAll('textarea')[0].element as HTMLTextAreaElement
+    originalTextarea.setSelectionRange(0, 0)
+
+    wrapper.findComponent({ name: 'JapaneseKeyboard' }).vm.$emit('delete', 'original')
+    await nextTick()
+    await nextTick()
+
+    const updates = wrapper.emitted('update')
+    expect(updates).toBeUndefined()
+    expect(originalTextarea.value).toBe('原文')
+    expect(originalTextarea.selectionStart).toBe(0)
   })
 })

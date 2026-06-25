@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import DiagnosticsPanel from '../DiagnosticsPanel.vue'
 import type { CharacterStudioDocument, CharacterStudioEditorPendingState, ExportDiagnostic } from '@/types/characterStudio'
 
@@ -28,7 +28,7 @@ defineProps<{
 
 defineEmits<{
   (event: 'tab', value: 'character' | 'greetings' | 'lorebook' | 'scripts'): void
-  (event: 'toggleFrozen', section: string, value: Event): void
+  (event: 'toggleFrozen', section: string, value: boolean): void
   (event: 'validate'): void
 }>()
 </script>
@@ -102,7 +102,11 @@ defineEmits<{
           <label v-for="item in freezeItems" :key="item.key" class="freeze-item">
             <span class="freeze-item-label">{{ item.label }}</span>
             <span class="freeze-item-control">
-              <UiInput class="freeze-checkbox" :checked="isFrozen(item.key)" type="checkbox" @change="$emit('toggleFrozen', item.key, $event)" />
+              <UiCheckbox
+                :model-value="isFrozen(item.key)"
+                :aria-label="`钉住${item.label}`"
+                @change="$emit('toggleFrozen', item.key, $event)"
+              />
             </span>
           </label>
         </div>
@@ -303,12 +307,6 @@ defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-.freeze-checkbox {
-  width: 18px;
-  height: 18px;
-  margin: 0;
 }
 
 .action-ghost {

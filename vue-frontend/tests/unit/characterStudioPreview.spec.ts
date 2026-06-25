@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
 import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
+
+enableAutoUnmount(afterEach)
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  document.body.style.overflow = ''
+})
 
 const documentStub: CharacterStudioDocument = {
   id: 'doc-alpha',

@@ -12,7 +12,7 @@ import {
 } from '@/config/aiProviders'
 
 describe('translation page AI provider manifest', () => {
-  it('normalizes current provider ids without translating retired ids', () => {
+  it('normalizes current provider ids without remapping unknown ids', () => {
     expect(normalizeProviderId(' CUSTOM ')).toBe('custom')
     expect(normalizeProviderId('custom')).toBe('custom')
     expect(normalizeProviderId('unknown-provider')).toBe('unknown-provider')

@@ -67,9 +67,9 @@ defineEmits<{
 
 <style scoped>
 .workbench {
-  --greeting-workbench-border-default: rgba(25, 55, 94, .08);
-  --greeting-workbench-surface-base: rgba(255, 255, 255, .82);
-  --greeting-workbench-surface-raised: rgba(247, 250, 254, .96);
+  --greeting-workbench-block-border: rgba(25, 55, 94, .08);
+  --greeting-workbench-block-background: rgba(255, 255, 255, .82);
+  --greeting-workbench-alternate-card-background: rgba(247, 250, 254, .96);
   --ui-textarea-border: 1px solid var(--studio-border-strong);
   --ui-textarea-background: var(--studio-surface-soft);
   --ui-textarea-radius: 16px;
@@ -87,8 +87,8 @@ defineEmits<{
 .list-block {
   border-radius: 20px;
   padding: 18px;
-  background: var(--greeting-workbench-surface-base);
-  border: 1px solid var(--greeting-workbench-border-default);
+  background: var(--greeting-workbench-block-background);
+  border: 1px solid var(--greeting-workbench-block-border);
 }
 
 .hero-head,
@@ -128,7 +128,7 @@ defineEmits<{
   border: 1px solid var(--studio-border-default);
   border-radius: 18px;
   padding: 14px;
-  background: var(--greeting-workbench-surface-raised);
+  background: var(--greeting-workbench-alternate-card-background);
 }
 
 .title {

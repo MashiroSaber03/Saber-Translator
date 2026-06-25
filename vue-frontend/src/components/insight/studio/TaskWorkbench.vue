@@ -38,7 +38,7 @@
             <UiTextarea :value="task.commands" rows="6" @input="$emit('update:field', index, 'commands', ($event.target as HTMLTextAreaElement).value)" />
           </label>
           <div class="toggles full">
-            <label><UiInput :checked="task.disabled" type="checkbox" @change="$emit('toggle:field', index, 'disabled', ($event.target as HTMLInputElement).checked)" /> 禁用任务</label>
+            <UiCheckbox :model-value="task.disabled" label="禁用任务" @change="$emit('toggle:field', index, 'disabled', $event)" />
           </div>
         </div>
       </article>
@@ -51,6 +51,7 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import type { StateTask } from '@/types/characterStudio'
 
 defineProps<{

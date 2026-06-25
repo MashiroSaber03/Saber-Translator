@@ -7,6 +7,7 @@ import VlmSettingsTab from '@/components/insight/settings/VlmSettingsTab.vue'
 import LlmSettingsTab from '@/components/insight/settings/LlmSettingsTab.vue'
 import EmbeddingSettingsTab from '@/components/insight/settings/EmbeddingSettingsTab.vue'
 import RerankerSettingsTab from '@/components/insight/settings/RerankerSettingsTab.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { useInsightStore } from '@/stores/insightStore'
 
 const { fetchModelsMock } = vi.hoisted(() => ({
@@ -143,5 +144,43 @@ describe('Insight settings model fetch ownership', () => {
     const emittedMessages = wrapper.emitted('showMessage') ?? []
     expect(emittedMessages).not.toContainEqual(['获取到 1 个模型', 'success'])
     expect(wrapper.text()).not.toContain('Previous Provider Model')
+  })
+
+  it('uses the current checkbox primitive for LLM boolean options', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const wrapper = mount(LlmSettingsTab, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            props: ['modelValue', 'options'],
+            template: '<div class="provider-stub" />',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.findAllComponents(UiCheckbox)).toHaveLength(2)
+  })
+
+  it('uses the current checkbox primitive for VLM boolean options', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const wrapper = mount(VlmSettingsTab, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          CustomSelect: {
+            props: ['modelValue', 'options'],
+            template: '<div class="provider-stub" />',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.findAllComponents(UiCheckbox)).toHaveLength(2)
   })
 })

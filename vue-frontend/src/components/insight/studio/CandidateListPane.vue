@@ -39,7 +39,7 @@ defineEmits<{
 
 <style scoped>
 .pane {
-  --candidate-list-pane-text-primary: #122b47;
+  --candidate-list-pane-name-text: #122b47;
 
   display: flex;
   flex-direction: column;
@@ -87,7 +87,7 @@ defineEmits<{
 
 .candidate-main strong {
   display: block;
-  color: var(--candidate-list-pane-text-primary);
+  color: var(--candidate-list-pane-name-text);
   font-size: 13px;
 }
 

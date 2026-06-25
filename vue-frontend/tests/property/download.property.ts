@@ -6,8 +6,8 @@
  * 
  * 测试内容：
  * - 单张下载文件名格式正确
- * - 批量下载ZIP包含所有图片
- * - PDF生成页面顺序正确
+ * - 批量下载信息包含所有有效图片
+ * - 下载格式枚举和图片索引顺序正确
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'

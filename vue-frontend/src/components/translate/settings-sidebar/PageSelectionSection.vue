@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 
 defineProps<{
   enabled: boolean
@@ -28,16 +27,15 @@ defineEmits<{
   >
     <div class="settings-form page-selection-form">
       <div class="range-header-row">
-        <label class="page-selection-toggle-compact">
-          <UiInput
-            class="page-selection-toggle-input"
-            type="checkbox"
-            :model-value="enabled"
-            :disabled="totalImages === 0 || !supportsPageSelection"
-            @update:model-value="$emit('update:enabled', Boolean($event))"
-          />
+        <UiButton
+          variant="toolbar"
+          class="page-selection-toggle-compact"
+          :aria-pressed="enabled"
+          :disabled="totalImages === 0 || !supportsPageSelection"
+          @click="$emit('update:enabled', !enabled)"
+        >
           <span>启用</span>
-        </label>
+        </UiButton>
         <span class="total-count">共 {{ totalImages }} 张</span>
       </div>
 
@@ -70,6 +68,8 @@ defineEmits<{
 
 <style scoped>
 .settings-panel.collapsible-panel {
+  --settings-sidebar-page-selection-panel-border: #d8e3f1;
+  --settings-sidebar-page-selection-panel-background: #f5f8fd;
   --settings-sidebar-page-selection-toggle-border: #d4deed;
   --settings-sidebar-page-selection-toggle-border-active: #94b5e5;
   --settings-sidebar-page-selection-toggle-background: #f4f8fd;
@@ -85,9 +85,9 @@ defineEmits<{
 
   margin: 0 0 12px;
   padding: 12px;
-  border: 1px solid var(--settings-sidebar-shell-border-muted);
+  border: 1px solid var(--settings-sidebar-page-selection-panel-border);
   border-radius: 12px;
-  background: var(--settings-sidebar-shell-surface-muted);
+  background: var(--settings-sidebar-page-selection-panel-background);
 }
 
 .settings-form {
@@ -120,7 +120,7 @@ defineEmits<{
   cursor: pointer;
 }
 
-.page-selection-toggle-compact:has(.page-selection-toggle-input:checked) {
+.page-selection-toggle-compact[aria-pressed='true'] {
   border-color: var(--settings-sidebar-page-selection-toggle-border-active);
   background: var(--settings-sidebar-page-selection-toggle-background-active);
   color: var(--settings-sidebar-page-selection-toggle-text-active);

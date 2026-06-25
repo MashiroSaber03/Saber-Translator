@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
+import { defineComponent } from 'vue'
+import { mount } from '@vue/test-utils'
 
 const {
   executeAtomicStepMock,
@@ -145,5 +147,38 @@ describe('useSequentialPipeline completion projection', () => {
     await secondRun
     await vi.runOnlyPendingTimersAsync()
     vi.useRealTimers()
+  })
+
+  it('clears the delayed finish timer when the owner unmounts', async () => {
+    vi.useFakeTimers()
+    try {
+      const imageStore = useImageStore()
+      imageStore.addImage('page-1.png', 'data:image/png;base64,orig')
+
+      const { useSequentialPipeline } = await import('@/composables/translation/core/SequentialPipeline')
+      let pipeline: ReturnType<typeof useSequentialPipeline> | undefined
+      const Host = defineComponent({
+        setup() {
+          pipeline = useSequentialPipeline()
+          return () => null
+        },
+      })
+
+      const wrapper = mount(Host)
+      const result = await pipeline?.execute({
+        mode: 'standard',
+        scope: 'current',
+      })
+
+      expect(result?.success).toBe(true)
+      expect(pipeline?.progress.value.isInProgress).toBe(true)
+
+      wrapper.unmount()
+      vi.advanceTimersByTime(1000)
+
+      expect(pipeline?.progress.value.isInProgress).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

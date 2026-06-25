@@ -495,27 +495,27 @@ onUnmounted(() => {
  * 解决高分辨率图片缩小显示时手柄过小难以操作的问题
  */
 .bubble-overlay {
-  --bubble-overlay-border-default: rgba(255, 200, 0, .8);
-  --bubble-overlay-border-strong: #ff6b6b;
-  --bubble-overlay-border-muted: #0f8;
-  --bubble-overlay-border-subtle: #ff1744;
-  --bubble-overlay-border-hover: #fff;
-  --bubble-overlay-shadow-default: rgba(0, 255, 136, .5);
-  --bubble-overlay-shadow-raised: rgba(255, 23, 68, .6);
-  --bubble-overlay-shadow-floating: rgba(0, 0, 0, .3);
-  --bubble-overlay-shadow-strong: rgba(0, 255, 136, .8);
-  --bubble-overlay-shadow-soft: #0f8;
-  --bubble-overlay-surface-base: rgba(255, 200, 0, .1);
-  --bubble-overlay-surface-raised: rgba(255, 107, 107, .2);
-  --bubble-overlay-surface-muted: rgba(0, 255, 136, .15);
-  --bubble-overlay-surface-subtle: rgba(255, 23, 68, .25);
-  --bubble-overlay-surface-hover: rgba(0, 0, 0, .7);
-  --bubble-overlay-surface-active: rgba(0, 255, 136, .9);
-  --bubble-overlay-surface-selected: #0f8;
-  --bubble-overlay-surface-overlay: #00cc6a;
-  --bubble-overlay-surface-inverse: rgba(0, 255, 136, .6);
-  --bubble-overlay-surface-contrast: rgba(0, 255, 136, .1);
-  --bubble-overlay-text-primary: #1a1a2e;
+  --bubble-overlay-box-border: rgba(255, 200, 0, .8);
+  --bubble-overlay-box-background: rgba(255, 200, 0, .1);
+  --bubble-overlay-box-hover-border: #ff6b6b;
+  --bubble-overlay-box-hover-background: rgba(255, 107, 107, .2);
+  --bubble-overlay-selection-border: #0f8;
+  --bubble-overlay-selection-background: rgba(0, 255, 136, .15);
+  --bubble-overlay-selection-glow: rgba(0, 255, 136, .5);
+  --bubble-overlay-multi-selection-border: #ff1744;
+  --bubble-overlay-multi-selection-background: rgba(255, 23, 68, .25);
+  --bubble-overlay-multi-selection-glow: rgba(255, 23, 68, .6);
+  --bubble-overlay-index-background: rgba(0, 0, 0, .7);
+  --bubble-overlay-selected-index-background: rgba(0, 255, 136, .9);
+  --bubble-overlay-selected-index-text: #1a1a2e;
+  --bubble-overlay-handle-background: #0f8;
+  --bubble-overlay-handle-active-background: #00cc6a;
+  --bubble-overlay-handle-border: #fff;
+  --bubble-overlay-handle-shadow: rgba(0, 0, 0, .3);
+  --bubble-overlay-rotate-line-background: rgba(0, 255, 136, .6);
+  --bubble-overlay-rotate-handle-glow: rgba(0, 255, 136, .8);
+  --bubble-overlay-rotate-handle-hover-glow: #0f8;
+  --bubble-overlay-drawing-fill: rgba(0, 255, 136, .1);
 
   position: absolute;
   top: 0;
@@ -533,8 +533,8 @@ onUnmounted(() => {
 .bubble-highlight-box {
   position: absolute;
   /* 边框宽度反向缩放：屏幕上始终显示为 2px */
-  border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-border-default);
-  background: var(--bubble-overlay-surface-base);
+  border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-box-border);
+  background: var(--bubble-overlay-box-background);
   cursor: pointer;
   pointer-events: auto;
   overflow: visible;
@@ -544,15 +544,15 @@ onUnmounted(() => {
 }
 
 .bubble-highlight-box:hover {
-  border-color: var(--bubble-overlay-border-strong);
-  background: var(--bubble-overlay-surface-raised);
+  border-color: var(--bubble-overlay-box-hover-border);
+  background: var(--bubble-overlay-box-hover-background);
 }
 
 .bubble-highlight-box.selected {
   /* 选中时边框稍粗：屏幕上始终显示为 3px */
-  border: calc(3px / var(--scale, 1)) solid var(--bubble-overlay-border-muted);
-  background: var(--bubble-overlay-surface-muted);
-  box-shadow: 0 0 calc(15px / var(--scale, 1)) var(--bubble-overlay-shadow-default);
+  border: calc(3px / var(--scale, 1)) solid var(--bubble-overlay-selection-border);
+  background: var(--bubble-overlay-selection-background);
+  box-shadow: 0 0 calc(15px / var(--scale, 1)) var(--bubble-overlay-selection-glow);
   z-index: var(--z-local-toolbar);
   cursor: grab;
 }
@@ -562,9 +562,9 @@ onUnmounted(() => {
 }
 
 .bubble-highlight-box.multi-selected {
-  border: calc(3px / var(--scale, 1)) solid var(--bubble-overlay-border-subtle);
-  background: var(--bubble-overlay-surface-subtle);
-  box-shadow: 0 0 calc(12px / var(--scale, 1)) var(--bubble-overlay-shadow-raised);
+  border: calc(3px / var(--scale, 1)) solid var(--bubble-overlay-multi-selection-border);
+  background: var(--bubble-overlay-multi-selection-background);
+  box-shadow: 0 0 calc(12px / var(--scale, 1)) var(--bubble-overlay-multi-selection-glow);
 }
 /* 气泡索引标签 - 反向缩放保持屏幕上固定大小 */
 .bubble-index {
@@ -572,7 +572,7 @@ onUnmounted(() => {
   /* 位置也需要反向缩放 */
   top: calc(-20px / var(--scale, 1));
   left: 0;
-  background: var(--bubble-overlay-surface-hover);
+  background: var(--bubble-overlay-index-background);
   color: var(--color-text-inverse);
   font-size: calc(11px / var(--scale, 1));
   padding: calc(2px / var(--scale, 1)) calc(6px / var(--scale, 1));
@@ -583,8 +583,8 @@ onUnmounted(() => {
 }
 
 .bubble-highlight-box.selected .bubble-index {
-  background: var(--bubble-overlay-surface-active);
-  color: var(--bubble-overlay-text-primary);
+  background: var(--bubble-overlay-selected-index-background);
+  color: var(--bubble-overlay-selected-index-text);
 }
 /* 调整手柄 - 反向缩放保持屏幕上 10x10px */
 .resize-handle {
@@ -593,16 +593,16 @@ onUnmounted(() => {
   /* 尺寸反向缩放 */
   width: calc(10px / var(--scale, 1));
   height: calc(10px / var(--scale, 1));
-  background: var(--bubble-overlay-surface-selected);
-  border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-border-hover);
+  background: var(--bubble-overlay-handle-background);
+  border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-handle-border);
   border-radius: calc(3px / var(--scale, 1));
   pointer-events: auto;
   z-index: var(--z-local-panel);
-  box-shadow: 0 0 calc(3px / var(--scale, 1)) var(--bubble-overlay-shadow-floating);
+  box-shadow: 0 0 calc(3px / var(--scale, 1)) var(--bubble-overlay-handle-shadow);
 }
 
 .resize-handle:hover {
-  background: var(--bubble-overlay-surface-overlay);
+  background: var(--bubble-overlay-handle-active-background);
   /* 悬停时放大效果仍然有效 */
   transform: scale(1.2);
 }
@@ -624,7 +624,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: calc(2px / var(--scale, 1));
   height: calc(20px / var(--scale, 1));
-  background: var(--bubble-overlay-surface-inverse);
+  background: var(--bubble-overlay-rotate-line-background);
   pointer-events: none;
 }
 /* 旋转手柄 - 反向缩放保持屏幕上 12x12px */
@@ -636,24 +636,24 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: calc(12px / var(--scale, 1));
   height: calc(12px / var(--scale, 1));
-  background: var(--bubble-overlay-surface-selected);
-  border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-border-hover);
+  background: var(--bubble-overlay-handle-background);
+  border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-handle-border);
   border-radius: 50%;
   cursor: grab;
   pointer-events: auto;
   z-index: var(--z-local-overlay);
-  box-shadow: 0 0 calc(6px / var(--scale, 1)) var(--bubble-overlay-shadow-strong);
+  box-shadow: 0 0 calc(6px / var(--scale, 1)) var(--bubble-overlay-rotate-handle-glow);
   transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .rotate-handle:hover {
   transform: translateX(-50%) scale(1.2);
-  box-shadow: 0 0 calc(10px / var(--scale, 1)) var(--bubble-overlay-shadow-soft);
+  box-shadow: 0 0 calc(10px / var(--scale, 1)) var(--bubble-overlay-rotate-handle-hover-glow);
 }
 
 .rotate-handle:active {
   cursor: grabbing;
-  background: var(--bubble-overlay-surface-overlay);
+  background: var(--bubble-overlay-handle-active-background);
 }
 /* 笔刷模式下让事件穿透到下层 viewport。 */
 .bubble-overlay.brush-mode .bubble-highlight-box,
@@ -664,8 +664,8 @@ onUnmounted(() => {
 /* 绘制中的矩形 - 边框也反向缩放 */
 .drawing-rect {
   position: absolute;
-  border: calc(2px / var(--scale, 1)) dashed var(--bubble-overlay-border-muted);
-  background: var(--bubble-overlay-surface-contrast);
+  border: calc(2px / var(--scale, 1)) dashed var(--bubble-overlay-selection-border);
+  background: var(--bubble-overlay-drawing-fill);
   pointer-events: none;
 }
 </style>

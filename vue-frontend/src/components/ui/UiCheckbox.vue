@@ -1,10 +1,14 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
+  ariaLabel?: string
+  inputId?: string
   modelValue?: boolean
   label?: string
   description?: string
   disabled?: boolean
 }>(), {
+  ariaLabel: '',
+  inputId: '',
   modelValue: false,
   label: '',
   description: '',
@@ -24,12 +28,20 @@ function handleChange(event: Event) {
 </script>
 
 <template>
-  <label class="ui-checkbox" :class="{ 'ui-checkbox--disabled': disabled }">
+  <label
+    class="ui-checkbox"
+    :class="{
+      'ui-checkbox--disabled': disabled,
+      'ui-checkbox--with-content': label || description,
+    }"
+  >
     <input
+      :id="inputId || undefined"
       class="ui-checkbox__input"
       type="checkbox"
       :checked="modelValue"
       :disabled="disabled"
+      :aria-label="ariaLabel || undefined"
       @change="handleChange"
     >
     <span class="ui-checkbox__content">

@@ -52,9 +52,11 @@ function close(): void {
     <div class="chapter-select-body">
       <p class="hint-text">请选择要翻译的章节：</p>
       <div class="chapters-list">
-        <div
+        <UiButton
           v-for="chapter in chapters"
           :key="chapter.id"
+          variant="toolbar"
+          type="button"
           class="chapter-item"
           :class="{ selected: selectedChapterId === chapter.id }"
           @click="selectChapter(chapter.id)"
@@ -66,7 +68,7 @@ function close(): void {
             </span>
           </div>
           <span v-if="selectedChapterId === chapter.id" class="check-icon">✓</span>
-        </div>
+        </UiButton>
       </div>
     </div>
 
@@ -85,10 +87,10 @@ function close(): void {
 
 <style scoped>
 .chapter-select-body {
-  --chapter-select-modal-border-default: #818cf8;
-  --chapter-select-modal-surface-base: #f1f5f9;
-  --chapter-select-modal-text-primary: #1a202c;
-  --chapter-select-modal-text-secondary: #64748b;
+  --chapter-select-modal-row-background: #f1f5f9;
+  --chapter-select-modal-row-hover-border: #818cf8;
+  --chapter-select-modal-title-text: #1a202c;
+  --chapter-select-modal-page-text: #64748b;
 }
 
 .chapter-select-body .hint-text {
@@ -108,7 +110,8 @@ function close(): void {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: var(--chapter-select-modal-surface-base);
+  width: 100%;
+  background: var(--chapter-select-modal-row-background);
   border: 2px solid transparent;
   border-radius: 8px;
   cursor: pointer;
@@ -117,7 +120,7 @@ function close(): void {
 
 .chapter-select-body .chapter-item:hover {
   background: var(--color-surface-quiet);
-  border-color: var(--chapter-select-modal-border-default);
+  border-color: var(--chapter-select-modal-row-hover-border);
 }
 
 .chapter-select-body .chapter-item.selected {
@@ -135,12 +138,12 @@ function close(): void {
 .chapter-select-body .chapter-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--chapter-select-modal-text-primary);
+  color: var(--chapter-select-modal-title-text);
 }
 
 .chapter-select-body .chapter-pages {
   font-size: 12px;
-  color: var(--chapter-select-modal-text-secondary);
+  color: var(--chapter-select-modal-page-text);
 }
 
 .chapter-select-body .check-icon {

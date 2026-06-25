@@ -503,37 +503,19 @@ const {
 
 <style scoped>
 .edit-panel-content {
-  --bubble-editor-border-default: #d0d7ea;
-  --bubble-editor-border-strong: #9aaefc;
-  --bubble-editor-border-muted: rgba(119, 130, 161, .35);
-  --bubble-editor-border-subtle: #7d96ff;
-  --bubble-editor-border-hover: #5670ff;
-  --bubble-editor-border-active: rgba(0, 0, 0, .2);
-  --bubble-editor-shadow-default: rgba(88, 125, 255, .15);
-  --bubble-editor-shadow-raised: rgba(0, 0, 0, .03);
-  --bubble-editor-shadow-floating: rgba(107, 125, 255, .25);
-  --bubble-editor-shadow-strong: rgba(255, 255, 255, .7);
-  --bubble-editor-shadow-soft: rgba(88, 125, 255, .2);
-  --bubble-editor-shadow-focus: rgba(52, 152, 219, .3);
-  --bubble-editor-surface-base: #f2f4ff;
-  --bubble-editor-surface-raised: #dfe4ff;
-  --bubble-editor-surface-muted: #e8edff;
-  --bubble-editor-surface-subtle: #d9e2ff;
-  --bubble-editor-surface-hover: #eef1ff;
-  --bubble-editor-surface-active: #5dade2;
-  --bubble-editor-original-background: #f8f8f8;
-  --bubble-editor-translated-background: #f8fff8;
-  --bubble-editor-style-background: #f5f6fb;
-  --bubble-editor-style-border: rgba(82, 92, 105, .12);
-  --bubble-editor-control-background: #f8f9fa;
-  --bubble-editor-panel-divider: #e9ecef;
-  --bubble-editor-panel-text: #495057;
-  --bubble-editor-success-text: #27ae60;
+  --bubble-editor-text-column-divider: #e9ecef;
+  --bubble-editor-column-title-text: #495057;
+  --bubble-editor-translated-title-text: #27ae60;
+  --bubble-editor-text-action-background: #f8f9fa;
+  --bubble-editor-text-action-hover-border: #adb5bd;
+  --bubble-editor-original-text-background: #f8f8f8;
+  --bubble-editor-translated-text-background: #f8fff8;
+  --bubble-editor-style-panel-background: #f5f6fb;
+  --bubble-editor-style-panel-border: rgba(82, 92, 105, .12);
   --bubble-editor-input-border: #cfd6e4;
   --bubble-editor-input-border-focus: #5b73f2;
   --bubble-editor-input-text: #1f2430;
-  --bubble-editor-muted-border-hover: #adb5bd;
-  --bubble-editor-focus-ring: rgba(52, 152, 219, .15);
+  --bubble-editor-textarea-focus-ring: rgba(52, 152, 219, .15);
   --bubble-editor-toolbar-border: rgba(96, 110, 140, .22);
   --bubble-editor-toolbar-row-border: rgba(226, 232, 240, .9);
   --bubble-editor-toolbar-row-start: #fbfcff;
@@ -541,13 +523,31 @@ const {
   --bubble-editor-toolbar-label: #57607c;
   --bubble-editor-toolbar-divider: rgba(15, 23, 42, .08);
   --bubble-editor-toolbar-shadow: rgba(15, 23, 42, .12);
-  --bubble-editor-text-primary: #2f46c8;
-  --bubble-editor-text-secondary: #1d34a8;
-  --bubble-editor-text-muted: #3b3f4f;
-  --bubble-editor-text-subtle: #2b4bff;
-  --bubble-editor-text-supporting: #3040c2;
-  --bubble-editor-text-disabled: #596071;
-  --bubble-editor-text-inverse: #4a4f63;
+  --bubble-editor-font-button-background: #f2f4ff;
+  --bubble-editor-font-button-hover-background: #dfe4ff;
+  --bubble-editor-font-button-border: #d0d7ea;
+  --bubble-editor-font-button-hover-border: #9aaefc;
+  --bubble-editor-font-button-text: #2f46c8;
+  --bubble-editor-font-button-hover-text: #1d34a8;
+  --bubble-editor-tool-button-border: rgba(119, 130, 161, .35);
+  --bubble-editor-tool-button-hover-border: #7d96ff;
+  --bubble-editor-tool-button-active-border: #5670ff;
+  --bubble-editor-tool-button-text: #3b3f4f;
+  --bubble-editor-tool-button-hover-text: #2b4bff;
+  --bubble-editor-tool-button-active-text: #3040c2;
+  --bubble-editor-tool-button-inner-shadow: rgba(0, 0, 0, .03);
+  --bubble-editor-tool-button-hover-shadow: rgba(107, 125, 255, .25);
+  --bubble-editor-tool-button-active-highlight: rgba(255, 255, 255, .7);
+  --bubble-editor-tool-button-active-background-start: #e8edff;
+  --bubble-editor-tool-button-active-background-end: #d9e2ff;
+  --bubble-editor-color-swatch-border: rgba(0, 0, 0, .2);
+  --bubble-editor-size-input-focus-ring: rgba(88, 125, 255, .15);
+  --bubble-editor-mini-input-focus-ring: rgba(88, 125, 255, .2);
+  --bubble-editor-toolbar-unit-text: #596071;
+  --bubble-editor-position-chip-text: #4a4f63;
+  --bubble-editor-position-chip-background: #eef1ff;
+  --bubble-editor-apply-all-button-background-end: #5dade2;
+  --bubble-editor-apply-all-button-shadow: rgba(52, 152, 219, .3);
 
   flex: 1;
   display: flex;
@@ -574,13 +574,13 @@ const {
   align-items: center;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--color-border-muted, var(--bubble-editor-panel-divider));
+  border-bottom: 2px solid var(--color-border-muted, var(--bubble-editor-text-column-divider));
 }
 
 .column-title {
   font-weight: 600;
   font-size: 14px;
-  color: var(--color-text-strong, var(--bubble-editor-panel-text));
+  color: var(--color-text-strong, var(--bubble-editor-column-title-text));
 }
 
 .original-text-column .column-title {
@@ -588,7 +588,7 @@ const {
 }
 
 .translated-text-column .column-title {
-  color: var(--bubble-editor-success-text);
+  color: var(--bubble-editor-translated-title-text);
 }
 
 .re-ocr-btn,
@@ -597,7 +597,7 @@ const {
   height: 28px;
   border: none;
   border-radius: 4px;
-  background: var(--color-surface-app, var(--bubble-editor-control-background));
+  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
@@ -628,7 +628,7 @@ const {
   width: 100%;
   min-height: 60px;
   padding: 12px;
-  border: 2px solid var(--color-border-muted, var(--bubble-editor-panel-divider));
+  border: 2px solid var(--color-border-muted, var(--bubble-editor-text-column-divider));
   border-radius: 8px;
   font-size: 15px;
   line-height: 1.6;
@@ -642,16 +642,16 @@ const {
 .text-editor:focus {
   outline: none;
   border-color: var(--color-border-accent);
-  box-shadow: 0 0 0 3px var(--bubble-editor-focus-ring);
+  box-shadow: 0 0 0 3px var(--bubble-editor-textarea-focus-ring);
 }
 
 .original-editor {
-  background: var(--bubble-editor-original-background);
+  background: var(--bubble-editor-original-text-background);
   font-family: var(--font-jp);
 }
 
 .translated-editor {
-  background: var(--bubble-editor-translated-background);
+  background: var(--bubble-editor-translated-text-background);
 }
 
 .text-actions {
@@ -672,20 +672,20 @@ const {
 }
 
 .text-action-btn:hover {
-  background: var(--color-surface-app, var(--bubble-editor-control-background));
-  border-color: var(--bubble-editor-muted-border-hover);
+  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
+  border-color: var(--bubble-editor-text-action-hover-border);
 }
 
 .keyboard-toggle-btn {
-  background: var(--color-surface-app, var(--bubble-editor-control-background));
+  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
 }
 
 .style-settings-section {
   width: 100%;
   padding: 16px;
-  background: var(--bubble-editor-style-background);
+  background: var(--bubble-editor-style-panel-background);
   border-radius: 10px;
-  border: 1px solid var(--bubble-editor-style-border);
+  border: 1px solid var(--bubble-editor-style-panel-border);
   overflow-y: auto;
 }
 
@@ -736,7 +736,7 @@ const {
 
 .combo-control label {
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
 }
 
 .size-input-wrap {
@@ -779,7 +779,7 @@ const {
 .toolbar-fontsize-input:focus {
   outline: none;
   border-color: var(--bubble-editor-input-border-focus);
-  box-shadow: 0 0 0 2px var(--bubble-editor-shadow-default);
+  box-shadow: 0 0 0 2px var(--bubble-editor-size-input-focus-ring);
 }
 
 .toolbar-fontsize-btns {
@@ -790,10 +790,10 @@ const {
 .toolbar-fontsize-btn {
   min-width: 50px;
   height: 34px;
-  border: 1px solid var(--bubble-editor-border-default);
+  border: 1px solid var(--bubble-editor-font-button-border);
   border-radius: 8px;
-  background: var(--bubble-editor-surface-base);
-  color: var(--bubble-editor-text-primary);
+  background: var(--bubble-editor-font-button-background);
+  color: var(--bubble-editor-font-button-text);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -801,39 +801,39 @@ const {
 }
 
 .toolbar-fontsize-btn:hover {
-  background: var(--bubble-editor-surface-raised);
-  border-color: var(--bubble-editor-border-strong);
-  color: var(--bubble-editor-text-secondary);
+  background: var(--bubble-editor-font-button-hover-background);
+  border-color: var(--bubble-editor-font-button-hover-border);
+  color: var(--bubble-editor-font-button-hover-text);
 }
 
 .toolbar-btn {
   width: 34px;
   height: 34px;
-  border: 1px solid var(--bubble-editor-border-muted);
+  border: 1px solid var(--bubble-editor-tool-button-border);
   border-radius: 8px;
   background: var(--color-surface-base);
-  color: var(--bubble-editor-text-muted);
+  color: var(--bubble-editor-tool-button-text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.12s;
   padding: 0;
-  box-shadow: inset 0 -1px 0 var(--bubble-editor-shadow-raised);
+  box-shadow: inset 0 -1px 0 var(--bubble-editor-tool-button-inner-shadow);
 }
 
 .toolbar-btn:hover {
-  border-color: var(--bubble-editor-border-subtle);
-  color: var(--bubble-editor-text-subtle);
-  box-shadow: 0 2px 8px var(--bubble-editor-shadow-floating);
+  border-color: var(--bubble-editor-tool-button-hover-border);
+  color: var(--bubble-editor-tool-button-hover-text);
+  box-shadow: 0 2px 8px var(--bubble-editor-tool-button-hover-shadow);
 }
 
 .toolbar-btn[data-active='true'],
 .toolbar-btn.active {
-  background: linear-gradient(135deg, var(--bubble-editor-surface-muted), var(--bubble-editor-surface-subtle));
-  border-color: var(--bubble-editor-border-hover);
-  color: var(--bubble-editor-text-supporting);
-  box-shadow: inset 0 1px 0 var(--bubble-editor-shadow-strong);
+  background: linear-gradient(135deg, var(--bubble-editor-tool-button-active-background-start), var(--bubble-editor-tool-button-active-background-end));
+  border-color: var(--bubble-editor-tool-button-active-border);
+  color: var(--bubble-editor-tool-button-active-text);
+  box-shadow: inset 0 1px 0 var(--bubble-editor-tool-button-active-highlight);
 }
 
 .toolbar-btn:active {
@@ -867,7 +867,7 @@ const {
   width: 26px;
   height: 6px;
   border-radius: 999px;
-  border: 1px solid var(--bubble-editor-border-active);
+  border: 1px solid var(--bubble-editor-color-swatch-border);
 }
 
 .hidden-color-input {
@@ -929,12 +929,12 @@ const {
 .toolbar-mini-input:focus {
   outline: none;
   border-color: var(--bubble-editor-input-border-focus);
-  box-shadow: 0 0 0 2px var(--bubble-editor-shadow-soft);
+  box-shadow: 0 0 0 2px var(--bubble-editor-mini-input-focus-ring);
 }
 
 .toolbar-unit {
   font-size: 11px;
-  color: var(--bubble-editor-text-disabled);
+  color: var(--bubble-editor-toolbar-unit-text);
 }
 
 .toolbar-rotation-group {
@@ -956,12 +956,12 @@ const {
 
 .toolbar-position-value {
   font-size: 12px;
-  color: var(--bubble-editor-text-inverse);
+  color: var(--bubble-editor-position-chip-text);
   min-width: 48px;
   text-align: center;
   padding: 0 6px;
   border-radius: 6px;
-  background: var(--bubble-editor-surface-hover);
+  background: var(--bubble-editor-position-chip-background);
 }
 
 .fontsize-presets-panel {
@@ -973,7 +973,7 @@ const {
 .fontsize-presets-panel summary {
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text-strong, var(--bubble-editor-panel-text));
+  color: var(--color-text-strong, var(--bubble-editor-column-title-text));
   font-weight: 500;
   padding: 4px 0;
 }
@@ -987,24 +987,24 @@ const {
 
 .preset-btn {
   padding: 6px 12px;
-  background: var(--bubble-editor-surface-base);
-  border: 1px solid var(--bubble-editor-border-default);
+  background: var(--bubble-editor-font-button-background);
+  border: 1px solid var(--bubble-editor-font-button-border);
   border-radius: 6px;
-  color: var(--bubble-editor-text-primary);
+  color: var(--bubble-editor-font-button-text);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .preset-btn:hover {
-  background: var(--bubble-editor-surface-raised);
-  border-color: var(--bubble-editor-border-strong);
+  background: var(--bubble-editor-font-button-hover-background);
+  border-color: var(--bubble-editor-font-button-hover-border);
 }
 
 .preset-btn.active {
-  background: linear-gradient(135deg, var(--bubble-editor-surface-muted), var(--bubble-editor-surface-subtle));
-  border-color: var(--bubble-editor-border-hover);
-  color: var(--bubble-editor-text-supporting);
+  background: linear-gradient(135deg, var(--bubble-editor-tool-button-active-background-start), var(--bubble-editor-tool-button-active-background-end));
+  border-color: var(--bubble-editor-tool-button-active-border);
+  color: var(--bubble-editor-tool-button-active-text);
 }
 
 .edit-action-buttons {
@@ -1027,24 +1027,24 @@ const {
 }
 
 .btn-apply-all {
-  background: linear-gradient(135deg, var(--color-surface-accent) 0%, var(--bubble-editor-surface-active) 100%);
+  background: linear-gradient(135deg, var(--color-surface-accent) 0%, var(--bubble-editor-apply-all-button-background-end) 100%);
   border: none;
   color: var(--color-text-inverse);
 }
 
 .btn-apply-all:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--bubble-editor-shadow-focus);
+  box-shadow: 0 4px 12px var(--bubble-editor-apply-all-button-shadow);
 }
 
 .btn-reset {
   background: var(--color-surface-card, var(--color-surface-base));
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  color: var(--color-text-strong, var(--bubble-editor-panel-text));
+  color: var(--color-text-strong, var(--bubble-editor-column-title-text));
 }
 
 .btn-reset:hover {
-  background: var(--color-surface-app, var(--bubble-editor-control-background));
-  border-color: var(--bubble-editor-muted-border-hover);
+  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
+  border-color: var(--bubble-editor-text-action-hover-border);
 }
 </style>

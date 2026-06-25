@@ -72,9 +72,9 @@ export interface BubbleState {
   fontSize: number
   /** 字体路径 */
   fontFamily: string
-  /** 渲染使用的排版方向，只有 'vertical' | 'horizontal'，渲染时直接使用 */
+  /** 用户选择的排版方向；渲染前会将 'auto' 折算为具体方向 */
   textDirection: TextDirection
-  /** 后端自动检测的排版方向（备份），用于切换回"自动"时恢复 */
+  /** 自动检测的排版方向备份，用于从 'auto' 恢复到具体渲染方向 */
   autoTextDirection: TextDirection
   /** 文字颜色 */
   textColor: string

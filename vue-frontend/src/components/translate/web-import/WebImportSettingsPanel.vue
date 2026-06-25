@@ -3,6 +3,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import WebImportPreprocessSettings from '../WebImportPreprocessSettings.vue'
 import type { useWebImportStore } from '@/stores/webImportStore'
@@ -213,24 +214,16 @@ defineEmits<{
           </div>
 
           <div class="web-import-modal__form-row web-import-modal__form-row--inline">
-            <label class="ui-checkbox-label">
-              <UiInput
-                type="checkbox"
-                class="web-import-modal__checkbox-input"
-                :checked="draftSettings.agent.forceJsonOutput"
-                @change="webImportStore.setAgentForceJsonOutput(($event.target as HTMLInputElement).checked)"
-              />
-              强制 JSON 格式
-            </label>
-            <label class="ui-checkbox-label">
-              <UiInput
-                type="checkbox"
-                class="web-import-modal__checkbox-input"
-                :checked="draftSettings.agent.useStream"
-                @change="webImportStore.setAgentUseStream(($event.target as HTMLInputElement).checked)"
-              />
-              流式调用
-            </label>
+            <UiCheckbox
+              :model-value="draftSettings.agent.forceJsonOutput"
+              label="强制 JSON 格式"
+              @change="webImportStore.setAgentForceJsonOutput"
+            />
+            <UiCheckbox
+              :model-value="draftSettings.agent.useStream"
+              label="流式调用"
+              @change="webImportStore.setAgentUseStream"
+            />
           </div>
 
           <div class="web-import-modal__form-row">
@@ -330,39 +323,27 @@ defineEmits<{
           </div>
 
           <div class="web-import-modal__form-row">
-            <label class="ui-checkbox-label">
-              <UiInput
-                type="checkbox"
-                class="web-import-modal__checkbox-input"
-                :checked="draftSettings.download.useReferer"
-                @change="webImportStore.setDownloadUseReferer(($event.target as HTMLInputElement).checked)"
-              />
-              自动添加 Referer
-            </label>
+            <UiCheckbox
+              :model-value="draftSettings.download.useReferer"
+              label="自动添加 Referer"
+              @change="webImportStore.setDownloadUseReferer"
+            />
           </div>
         </UiPanel>
 
         <UiPanel variant="settings">
           <h4 class="web-import-modal__group-title">界面设置</h4>
           <div class="web-import-modal__form-row web-import-modal__form-row--inline">
-            <label class="ui-checkbox-label">
-              <UiInput
-                type="checkbox"
-                class="web-import-modal__checkbox-input"
-                :checked="draftSettings.ui.showAgentLogs"
-                @change="webImportStore.setShowAgentLogs(($event.target as HTMLInputElement).checked)"
-              />
-              显示 AI 工作日志
-            </label>
-            <label class="ui-checkbox-label">
-              <UiInput
-                type="checkbox"
-                class="web-import-modal__checkbox-input"
-                :checked="draftSettings.ui.autoImport"
-                @change="webImportStore.setAutoImport(($event.target as HTMLInputElement).checked)"
-              />
-              提取后自动导入
-            </label>
+            <UiCheckbox
+              :model-value="draftSettings.ui.showAgentLogs"
+              label="显示 AI 工作日志"
+              @change="webImportStore.setShowAgentLogs"
+            />
+            <UiCheckbox
+              :model-value="draftSettings.ui.autoImport"
+              label="提取后自动导入"
+              @change="webImportStore.setAutoImport"
+            />
           </div>
         </UiPanel>
       </div>
@@ -398,15 +379,11 @@ defineEmits<{
           </div>
 
           <div class="web-import-modal__form-row">
-            <label class="ui-checkbox-label">
-              <UiInput
-                type="checkbox"
-                class="web-import-modal__checkbox-input"
-                :checked="draftSettings.advanced.bypassProxy"
-                @change="webImportStore.setBypassProxy(($event.target as HTMLInputElement).checked)"
-              />
-              绕过系统代理 (连接本地服务时使用)
-            </label>
+            <UiCheckbox
+              :model-value="draftSettings.advanced.bypassProxy"
+              label="绕过系统代理 (连接本地服务时使用)"
+              @change="webImportStore.setBypassProxy"
+            />
           </div>
         </UiPanel>
       </div>
@@ -416,6 +393,16 @@ defineEmits<{
 
 <style scoped>
 .web-import-modal__settings-section {
+  --web-import-settings-header-background: #f9f9f9;
+  --web-import-settings-header-hover-background: #efefef;
+  --web-import-settings-actions-border: #e6e6e6;
+  --web-import-settings-actions-background: #fafafa;
+  --web-import-settings-dirty-text: #b26a00;
+  --web-import-settings-clean-text: #2f7d32;
+  --web-import-settings-action-primary-background: #4a90d9;
+  --web-import-settings-action-primary-hover-background: #3a7fc8;
+  --web-import-settings-action-secondary-hover-background: #efefef;
+
   margin-bottom: 16px;
   overflow: hidden;
   border: 1px solid var(--color-border-muted, var(--color-border-soft));
@@ -429,7 +416,7 @@ defineEmits<{
   width: 100%;
   padding: 12px 14px;
   border: 0;
-  background: var(--web-import-modal-extract-surface-muted);
+  background: var(--web-import-settings-header-background);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -438,7 +425,7 @@ defineEmits<{
 }
 
 .web-import-modal__settings-header:hover {
-  background: var(--web-import-modal-extract-surface-subtle);
+  background: var(--web-import-settings-header-hover-background);
 }
 
 .web-import-modal__settings-toggle {
@@ -470,9 +457,9 @@ defineEmits<{
   gap: 12px;
   margin-bottom: 16px;
   padding: 12px 14px;
-  border: 1px solid var(--color-border-muted, var(--web-import-modal-extract-border-strong));
+  border: 1px solid var(--color-border-muted, var(--web-import-settings-actions-border));
   border-radius: 10px;
-  background: var(--web-import-modal-extract-surface-hover);
+  background: var(--web-import-settings-actions-background);
 }
 
 .web-import-modal__settings-dirty,
@@ -482,11 +469,11 @@ defineEmits<{
 }
 
 .web-import-modal__settings-dirty {
-  color: var(--web-import-modal-extract-text-muted);
+  color: var(--web-import-settings-dirty-text);
 }
 
 .web-import-modal__settings-clean {
-  color: var(--web-import-modal-extract-text-subtle);
+  color: var(--web-import-settings-clean-text);
 }
 
 .web-import-modal__settings-action-buttons {
@@ -505,12 +492,12 @@ defineEmits<{
 
 .web-import-modal__settings-action-primary {
   border: none;
-  background: var(--web-import-modal-extract-surface-base);
+  background: var(--web-import-settings-action-primary-background);
   color: var(--color-text-inverse);
 }
 
 .web-import-modal__settings-action-primary:hover:not(:disabled) {
-  background: var(--web-import-modal-extract-surface-raised);
+  background: var(--web-import-settings-action-primary-hover-background);
 }
 
 .web-import-modal__settings-action-secondary {
@@ -520,7 +507,7 @@ defineEmits<{
 }
 
 .web-import-modal__settings-action-secondary:hover:not(:disabled) {
-  background: var(--web-import-modal-extract-surface-subtle);
+  background: var(--web-import-settings-action-secondary-hover-background);
 }
 
 .web-import-modal__settings-action-primary:disabled,
@@ -646,18 +633,4 @@ defineEmits<{
   background: var(--color-surface-subtle);
 }
 
-.ui-checkbox-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text-default);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.web-import-modal__checkbox-input {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
 </style>

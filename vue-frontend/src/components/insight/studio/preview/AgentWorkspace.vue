@@ -135,7 +135,7 @@ defineEmits<{
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 24px;
-  background: var(--character-studio-preview-shell-surface-raised);
+  background: var(--character-studio-preview-card-background);
   box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
 
@@ -164,7 +164,7 @@ defineEmits<{
 .prompt-preview-card h4,
 .html-preview-card h4 {
   margin: 8px 0 0;
-  color: var(--character-studio-preview-shell-text-primary);
+  color: var(--character-studio-preview-heading-text);
 }
 
 .assistant-head p {
@@ -192,7 +192,7 @@ defineEmits<{
   overflow: auto;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--character-studio-preview-workspace-surface-base), var(--character-studio-preview-workspace-surface-raised));
+  background: linear-gradient(180deg, var(--character-studio-preview-message-list-background-start), var(--character-studio-preview-message-list-background-end));
 }
 
 .assistant-messages {
@@ -205,12 +205,12 @@ defineEmits<{
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 18px;
-  background: var(--character-studio-preview-workspace-surface-muted);
+  background: var(--character-studio-preview-assistant-message-background);
 }
 
 .message-card.user {
   margin-left: auto;
-  background: var(--character-studio-preview-workspace-surface-subtle);
+  background: var(--character-studio-preview-user-message-background);
 }
 
 .message-card.assistant {
@@ -219,7 +219,7 @@ defineEmits<{
 }
 
 .message-role {
-  color: var(--character-studio-preview-workspace-text-primary);
+  color: var(--character-studio-preview-message-role-text);
   font-size: 11px;
 }
 
@@ -247,7 +247,7 @@ defineEmits<{
   padding: 10px 12px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: var(--character-studio-preview-workspace-surface-overlay);
+  background: var(--character-studio-preview-composer-background);
 }
 
 .assistant-composer {
@@ -297,7 +297,7 @@ defineEmits<{
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 16px;
-  background: var(--character-studio-preview-workspace-surface-soft);
+  background: var(--character-studio-preview-patch-section-background);
 }
 
 .patch-summary-head {
@@ -308,7 +308,7 @@ defineEmits<{
 }
 
 .patch-summary-head strong {
-  color: var(--character-studio-preview-details-text-primary);
+  color: var(--character-studio-preview-detail-label-text);
 }
 
 .patch-summary-head span {

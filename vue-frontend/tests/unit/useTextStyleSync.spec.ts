@@ -241,4 +241,51 @@ describe('useTextStyleSync', () => {
     expect(imageStore.images[0]?.bubbleStates?.[0]?.fontSize).toBe(24)
     expect(imageStore.images[1]?.bubbleStates?.[0]?.fontSize).toBe(24)
   })
+
+  it('does not write a style-change render result to a different current image', async () => {
+    let resolveRender!: (value: { finalImage: string; bubbleStates: any[] }) => void
+    const pendingRender = new Promise<{ finalImage: string; bubbleStates: any[] }>((resolve) => {
+      resolveRender = resolve
+    })
+    executeRenderMock.mockReturnValueOnce(pendingRender)
+
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    const firstBubble = createBubbleState({
+      coords: [0, 0, 120, 80],
+      polygon: [],
+      translatedText: '第一页译文',
+      fontSize: 22,
+    })
+
+    imageStore.addImage('page-1.png', 'data:image/png;base64,page1', {
+      translatedDataURL: 'data:image/png;base64,existing-render-1',
+      cleanImageData: 'clean-image-1',
+      bubbleStates: [firstBubble],
+    })
+    imageStore.addImage('page-2.png', 'data:image/png;base64,page2')
+    bubbleStore.setBubbles([firstBubble])
+
+    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
+    const { handleTextStyleChanged } = useTextStyleSync()
+
+    const renderPromise = handleTextStyleChanged('fontSize', 24)
+    imageStore.setCurrentImageIndex(1)
+    resolveRender({
+      finalImage: 'rendered-page-1-after-switch',
+      bubbleStates: [
+        createBubbleState({
+          coords: [0, 0, 120, 80],
+          polygon: [],
+          translatedText: '第一页译文',
+          fontSize: 24,
+        }),
+      ],
+    })
+
+    await renderPromise
+
+    expect(imageStore.images[1]?.translatedDataURL).toBeNull()
+    expect(showToastMock).not.toHaveBeenCalledWith('设置变更后重新渲染失败', 'error')
+  })
 })

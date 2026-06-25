@@ -60,6 +60,7 @@ function isNoteData(value: unknown): value is NoteData {
 
 export function useInsightNotes(options: UseInsightNotesOptions) {
   const { currentBookId } = options
+  let notesLoadRequestId = 0
 
   /** 笔记列表 */
   const notes = ref<NoteData[]>([])
@@ -83,6 +84,10 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
   function getStorageKey(): string | null {
     return currentBookId.value ? `manga_notes_${currentBookId.value}` : null
+  }
+
+  function isActiveNotesLoad(requestId: number, requestedBookId: string): boolean {
+    return requestId === notesLoadRequestId && currentBookId.value === requestedBookId
   }
 
   function saveNotesToStorage(): void {
@@ -114,7 +119,9 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
    * 从 API 加载笔记
    */
   async function loadNotes(): Promise<void> {
-    if (!currentBookId.value) {
+    const requestedBookId = currentBookId.value
+    const requestId = ++notesLoadRequestId
+    if (!requestedBookId) {
       notes.value = []
       return
     }
@@ -123,7 +130,8 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     error.value = null
 
     try {
-      const response = await insightApi.getNotes(currentBookId.value)
+      const response = await insightApi.getNotes(requestedBookId)
+      if (!isActiveNotesLoad(requestId, requestedBookId)) return
       if (response.success && response.notes) {
         // 使用转换器自动将 snake_case 转为 camelCase
         notes.value = response.notes.map(note =>
@@ -132,10 +140,13 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         saveNotesToStorage()
       }
     } catch (e) {
+      if (!isActiveNotesLoad(requestId, requestedBookId)) return
       error.value = e instanceof Error ? e.message : '加载笔记失败'
       loadNotesFromStorage()
     } finally {
-      isLoading.value = false
+      if (requestId === notesLoadRequestId) {
+        isLoading.value = false
+      }
     }
   }
 
@@ -270,6 +281,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
    * 清空笔记（切换书籍时调用）
    */
   function clearNotes(): void {
+    notesLoadRequestId += 1
     notes.value = []
   }
 

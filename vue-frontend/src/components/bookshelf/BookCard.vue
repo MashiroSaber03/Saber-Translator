@@ -39,7 +39,7 @@ function handleClick() {
 // 获取标签颜色
 function getTagColor(tagName: string): string {
   const tagInfo = props.tags.find(tag => tag.name === tagName)
-  return tagInfo?.color || '#667eea'
+  return tagInfo?.color || 'var(--color-action-brand)'
 }
 
 // 处理图片加载错误
@@ -165,7 +165,7 @@ function handleImageError() {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: var(--color-text-inverse);
     font-size: 0.9rem;
     font-weight: 500;
     opacity: 0;
@@ -224,7 +224,7 @@ function handleImageError() {
     padding: 2px 8px;
     border-radius: 10px;
     font-size: 0.7rem;
-    color: white;
+    color: var(--color-text-inverse);
     background: var(--color-action-brand);
 }
 </style>

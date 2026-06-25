@@ -2,7 +2,7 @@
 
 > 最后更新：2026-06-24
 
-这是 Saber-Translator 的 Vue 3 + TypeScript + Vite 前端工程说明，不再使用 Vite 默认模板 README。
+这是 Saber-Translator 的 Vue 3 + TypeScript + Vite 前端工程说明。
 
 ---
 
@@ -92,14 +92,14 @@ useTranslationPipeline
 
 如果你要改翻译流程，优先阅读：
 
-- [docs/parallel-mode-development-guide.md](/C:/Users/33252/Desktop/Saber-Translator/docs/parallel-mode-development-guide.md)
-- [docs/save-load-development-guide.md](/C:/Users/33252/Desktop/Saber-Translator/docs/save-load-development-guide.md)
+- [docs/parallel-mode-development-guide.md](../docs/parallel-mode-development-guide.md)
+- [docs/save-load-development-guide.md](../docs/save-load-development-guide.md)
 
 ### 4.2 文字样式同步
 
 图片与侧边栏样式同步逻辑已经集中在：
 
-- [src/composables/useTextStyleSync.ts](/C:/Users/33252/Desktop/Saber-Translator/vue-frontend/src/composables/useTextStyleSync.ts:41)
+- [src/composables/useTextStyleSync.ts](src/composables/useTextStyleSync.ts)
 
 不要再把这部分逻辑直接塞回 `TranslateView.vue`。
 
@@ -111,7 +111,7 @@ useTranslationPipeline
 - `persistenceService.ts`
 - `sessionStore.ts`
 
-不要继续引入旧的整批前端保存 helper。
+不要在统一主链之外新增整批前端保存 helper。
 
 ---
 
@@ -119,10 +119,10 @@ useTranslationPipeline
 
 推荐先看：
 
-- [docs/README.md](/C:/Users/33252/Desktop/Saber-Translator/docs/README.md)
-- [docs/text-settings-development-guide.md](/C:/Users/33252/Desktop/Saber-Translator/docs/text-settings-development-guide.md)
-- [docs/parallel-mode-development-guide.md](/C:/Users/33252/Desktop/Saber-Translator/docs/parallel-mode-development-guide.md)
-- [docs/OpenAI-Compatible主链开发手册.md](/C:/Users/33252/Desktop/Saber-Translator/docs/OpenAI-Compatible主链开发手册.md)
+- [docs/README.md](../docs/README.md)
+- [docs/text-settings-development-guide.md](../docs/text-settings-development-guide.md)
+- [docs/parallel-mode-development-guide.md](../docs/parallel-mode-development-guide.md)
+- [docs/OpenAI-Compatible主链开发手册.md](../docs/OpenAI-Compatible主链开发手册.md)
 
 ---
 
@@ -130,8 +130,8 @@ useTranslationPipeline
 
 前端样式规范见：
 
-- [CODING_STYLE.md](/C:/Users/33252/Desktop/Saber-Translator/vue-frontend/CODING_STYLE.md)
+- [CODING_STYLE.md](CODING_STYLE.md)
 
 架构维护策略见：
 
-- [docs/ui-maintenance-decisions.md](/C:/Users/33252/Desktop/Saber-Translator/vue-frontend/docs/ui-maintenance-decisions.md)
+- [docs/ui-maintenance-decisions.md](docs/ui-maintenance-decisions.md)

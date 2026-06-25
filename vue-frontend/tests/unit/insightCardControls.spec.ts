@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 const {
@@ -66,6 +66,10 @@ describe('Insight card-like controls', () => {
         },
       ],
     })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('uses separate controls for loading and deleting saved prompts', async () => {

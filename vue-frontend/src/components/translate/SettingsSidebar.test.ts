@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import SettingsSidebar from './SettingsSidebar.vue'
 
 const apiMocks = vi.hoisted(() => ({
@@ -53,7 +54,6 @@ describe('SettingsSidebar defaults', () => {
       },
     })
 
-    const checkbox = wrapper.get('#rememberWorkflowModeCheckbox')
-    expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(false)
   })
 })

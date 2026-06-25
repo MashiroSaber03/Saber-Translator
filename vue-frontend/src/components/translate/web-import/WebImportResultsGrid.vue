@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import type { ExtractResult, WebImportState } from '@/types/webImport'
 
 defineProps<{
@@ -22,85 +22,86 @@ defineEmits<{
 </script>
 
 <template>
-  <div v-if="error" class="error-section">
-    <span class="error-icon">❌</span>
-    <span class="error-message">{{ error }}</span>
-  </div>
-
-  <div v-if="extractResult?.success" class="result-section">
-    <div class="result-header">
-      <span class="result-title">
-        📖 《{{ extractResult.comicTitle }}》- {{ extractResult.chapterTitle }}
-      </span>
-      <span class="result-meta">
-        <span class="result-count">共 {{ extractResult.totalPages }} 张</span>
-        <span v-if="engineDisplayName" class="result-engine">| 引擎: {{ engineDisplayName }}</span>
-      </span>
+  <div class="web-import-results-grid">
+    <div v-if="error" class="error-section">
+      <span class="error-icon">❌</span>
+      <span class="error-message">{{ error }}</span>
     </div>
 
-    <div class="select-control">
-      <label class="select-all">
-        <UiInput
-          type="checkbox"
-          :checked="isAllSelected"
-          @change="$emit('toggleAll')"
-        />
-        全选
-      </label>
-      <span class="selected-count">已选: {{ selectedCount }} 张</span>
+    <div v-if="extractResult?.success" class="result-section">
+      <div class="result-header">
+        <span class="result-title">
+          📖 《{{ extractResult.comicTitle }}》- {{ extractResult.chapterTitle }}
+        </span>
+        <span class="result-meta">
+          <span class="result-count">共 {{ extractResult.totalPages }} 张</span>
+          <span v-if="engineDisplayName" class="result-engine">| 引擎: {{ engineDisplayName }}</span>
+        </span>
+      </div>
+
+      <div class="select-control">
+        <UiCheckbox :model-value="isAllSelected" label="全选" @change="$emit('toggleAll')" />
+        <span class="selected-count">已选: {{ selectedCount }} 张</span>
+      </div>
+
+      <div class="image-grid">
+        <label
+          v-for="page in extractResult.pages"
+          :key="page.pageNumber"
+          class="image-item"
+          :class="{ selected: selectedPages.has(page.pageNumber) }"
+        >
+          <div class="image-checkbox">
+            <UiCheckbox
+              :aria-label="`选择第 ${page.pageNumber} 页`"
+              :model-value="selectedPages.has(page.pageNumber)"
+              @change="$emit('togglePage', page.pageNumber)"
+            />
+          </div>
+          <div class="image-preview">
+            <img :src="previewUrlFor(page.imageUrl)" :alt="`第${page.pageNumber}页`" loading="lazy">
+          </div>
+          <div class="image-label">第 {{ page.pageNumber }} 页</div>
+        </label>
+      </div>
     </div>
 
-    <div class="image-grid">
-      <label
-        v-for="page in extractResult.pages"
-        :key="page.pageNumber"
-        class="image-item"
-        :class="{ selected: selectedPages.has(page.pageNumber) }"
+    <div v-if="status === 'downloading'" class="progress-section">
+      <div class="progress-label">
+        下载进度: {{ downloadProgress.current }}/{{ downloadProgress.total }}
+      </div>
+      <div
+        class="progress-bar"
+        role="progressbar"
+        aria-label="网页导入下载进度"
+        aria-valuemin="0"
+        :aria-valuemax="downloadProgress.total"
+        :aria-valuenow="downloadProgress.current"
       >
-        <div class="image-checkbox">
-          <UiInput
-            type="checkbox"
-            :aria-label="`选择第 ${page.pageNumber} 页`"
-            :checked="selectedPages.has(page.pageNumber)"
-            @change="$emit('togglePage', page.pageNumber)"
-          />
-        </div>
-        <div class="image-preview">
-          <img :src="previewUrlFor(page.imageUrl)" :alt="`第${page.pageNumber}页`" loading="lazy">
-        </div>
-        <div class="image-label">第 {{ page.pageNumber }} 页</div>
-      </label>
-    </div>
-  </div>
-
-  <div v-if="status === 'downloading'" class="progress-section">
-    <div class="progress-label">
-      下载进度: {{ downloadProgress.current }}/{{ downloadProgress.total }}
-    </div>
-    <div
-      class="progress-bar"
-      role="progressbar"
-      aria-label="网页导入下载进度"
-      aria-valuemin="0"
-      :aria-valuemax="downloadProgress.total"
-      :aria-valuenow="downloadProgress.current"
-    >
-      <div class="progress-fill" :style="{ width: `${downloadProgressPercent}%` }"></div>
+        <div class="progress-fill" :style="{ width: `${downloadProgressPercent}%` }"></div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.web-import-results-grid {
+  --web-import-results-error-border: #ffc0c0;
+  --web-import-results-error-text: #c00;
+  --web-import-results-selected-shadow: rgba(74, 144, 217, .2);
+  --web-import-results-progress-track: #eee;
+}
+
 .error-section {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
   padding: 12px 14px;
-  border: 1px solid var(--web-import-modal-settings-border-default);
+  border: 1px solid var(--web-import-results-error-border);
   border-radius: 6px;
   background: var(--color-surface-neutral-soft);
-  color: var(--web-import-modal-settings-text-brand);
+  color: var(--web-import-results-error-text);
 }
 
 .result-section {
@@ -143,14 +144,6 @@ defineEmits<{
   margin-bottom: 12px;
 }
 
-.select-all {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
 .selected-count {
   color: var(--color-text-supporting);
   font-size: 13px;
@@ -180,7 +173,7 @@ defineEmits<{
 }
 
 .image-item.selected {
-  box-shadow: 0 0 0 2px var(--web-import-modal-settings-shadow-default);
+  box-shadow: 0 0 0 2px var(--web-import-results-selected-shadow);
 }
 
 .image-checkbox {
@@ -228,7 +221,7 @@ defineEmits<{
   height: 8px;
   overflow: hidden;
   border-radius: 4px;
-  background: var(--web-import-modal-settings-surface-muted);
+  background: var(--web-import-results-progress-track);
 }
 
 .progress-fill {

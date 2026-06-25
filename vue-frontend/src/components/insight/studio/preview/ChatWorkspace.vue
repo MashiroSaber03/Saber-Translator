@@ -141,7 +141,7 @@ function switchSession(sessionId: string) {
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 24px;
-  background: var(--character-studio-preview-shell-surface-raised);
+  background: var(--character-studio-preview-card-background);
   box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
 

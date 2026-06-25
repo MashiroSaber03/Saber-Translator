@@ -454,7 +454,7 @@ function showFeatureNotice() {
 
 /* 上传区域卡片 */
 .translate-upload-card {
-  background-color: white;
+  background-color: var(--color-surface-card);
   border-radius: 12px;
   box-shadow: 0 4px 12px var(--shadow-soft);
   padding: 25px;
@@ -551,7 +551,7 @@ function showFeatureNotice() {
   padding: 8px 14px;
   background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
   border-radius: 20px;
-  color: white;
+  color: var(--color-text-inverse);
   text-decoration: none;
   font-size: 0.9em;
   font-weight: 500;
@@ -572,7 +572,7 @@ function showFeatureNotice() {
   background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%);
   border: none;
   border-radius: 20px;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 1em;
   font-weight: 500;
   cursor: pointer;
@@ -646,7 +646,7 @@ function showFeatureNotice() {
   display: none;
 }
 
-/* 编辑模式下 body 禁止滚动 */
+/* 编辑模式下页面容器禁止滚动 */
 .translate-page.edit-mode-active {
   overflow: hidden;
 }

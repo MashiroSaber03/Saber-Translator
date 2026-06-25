@@ -291,34 +291,34 @@ const progressLabel = computed(() => {
 
 .translation-progress-bar {
   /* owner tokens: translation-progress */
-  --translation-progress-accent-primary: rgba(255, 255, 255, .92);
-  --translation-progress-border-default: #90caf9;
-  --translation-progress-shadow-default: rgba(0, 0, 0, .06);
-  --translation-progress-shadow-raised: rgba(0, 0, 0, .1);
-  --translation-progress-surface-base: #e2e8f0;
-  --translation-progress-surface-raised: #48bb78;
-  --translation-progress-surface-muted: #38a169;
-  --translation-progress-surface-subtle: #4299e1;
-  --translation-progress-surface-hover: #3182ce;
-  --translation-progress-surface-active: #ffc107;
-  --translation-progress-surface-selected: #e3f2fd;
-  --translation-progress-surface-overlay: #bbdefb;
-  --translation-progress-surface-inverse: #42a5f5;
-  --translation-progress-surface-contrast: #1976d2;
-  --translation-progress-surface-tint: #8b5cf6;
-  --translation-progress-surface-soft: #7c3aed;
-  --translation-progress-surface-strong: #68d391;
-  --translation-progress-surface-stronger: #edf2f7;
-  --translation-progress-surface-highlight: #4cae4c;
-  --translation-progress-surface-highlight-strong: #5cb85c;
-  --translation-progress-text-primary: #4a5568;
-  --translation-progress-text-secondary: #2d3748;
-  --translation-progress-text-muted: #a0aec0;
-  --translation-progress-text-subtle: #3182ce;
-  --translation-progress-text-supporting: #d69e2e;
-  --translation-progress-text-disabled: #1565c0;
-  --translation-progress-text-inverse: #7c3aed;
-  --translation-progress-text-brand: #e53e3e;
+  --translation-progress-stripe-highlight: rgba(255, 255, 255, .92);
+  --translation-progress-panel-shadow: rgba(0, 0, 0, .06);
+  --translation-progress-track-background: #e2e8f0;
+  --translation-progress-completed-fill-start: #48bb78;
+  --translation-progress-completed-fill-end: #38a169;
+  --translation-progress-processing-fill-start: #4299e1;
+  --translation-progress-processing-fill-end: #3182ce;
+  --translation-progress-waiting-badge-background: #ffc107;
+  --translation-progress-presave-panel-start: #e3f2fd;
+  --translation-progress-presave-panel-end: #bbdefb;
+  --translation-progress-presave-border: #90caf9;
+  --translation-progress-presave-label-text: #1565c0;
+  --translation-progress-presave-fill-start: #42a5f5;
+  --translation-progress-presave-fill-end: #1976d2;
+  --translation-progress-save-name-text: #7c3aed;
+  --translation-progress-save-fill-start: #8b5cf6;
+  --translation-progress-save-fill-end: #7c3aed;
+  --translation-progress-overall-fill-end: #68d391;
+  --translation-progress-standard-track-background: #edf2f7;
+  --translation-progress-standard-track-shadow: rgba(0, 0, 0, .1);
+  --translation-progress-standard-fill-start: #4cae4c;
+  --translation-progress-standard-fill-end: #5cb85c;
+  --translation-progress-label-text: #4a5568;
+  --translation-progress-completed-count-text: #2d3748;
+  --translation-progress-total-count-text: #a0aec0;
+  --translation-progress-processing-name-text: #3182ce;
+  --translation-progress-waiting-name-text: #d69e2e;
+  --translation-progress-failed-text: #e53e3e;
 
   margin: 20px auto;
   padding: 20px 24px;
@@ -326,7 +326,7 @@ const progressLabel = computed(() => {
   border-radius: 12px;
   background-color: var(--color-surface-quiet);
   width: 85%;
-  box-shadow: 0 2px 12px var(--translation-progress-shadow-default);
+  box-shadow: 0 2px 12px var(--translation-progress-panel-shadow);
 }
 
 /* ===================================
@@ -373,14 +373,14 @@ const progressLabel = computed(() => {
 .pool-name {
   font-size: 14px;
   font-weight: 500;
-  color: var(--translation-progress-text-primary);
+  color: var(--translation-progress-label-text);
 }
 
 /* 池子进度条 */
 .pool-progress-bar {
   position: relative;
   height: 12px;
-  background: var(--translation-progress-surface-base);
+  background: var(--translation-progress-track-background);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -390,7 +390,7 @@ const progressLabel = computed(() => {
   top: 0;
   left: 0;
   height: 100%;
-  background: linear-gradient(90deg, var(--translation-progress-surface-raised), var(--translation-progress-surface-muted));
+  background: linear-gradient(90deg, var(--translation-progress-completed-fill-start), var(--translation-progress-completed-fill-end));
   border-radius: 6px;
   transition: width 0.3s ease;
 }
@@ -399,7 +399,7 @@ const progressLabel = computed(() => {
   position: absolute;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, var(--translation-progress-surface-subtle), var(--translation-progress-surface-hover));
+  background: linear-gradient(90deg, var(--translation-progress-processing-fill-start), var(--translation-progress-processing-fill-end));
   border-radius: 6px;
   transition: left 0.3s ease, width 0.3s ease;
   animation: pulse 1.5s ease-in-out infinite;
@@ -419,20 +419,20 @@ const progressLabel = computed(() => {
 
 .completed-count {
   font-weight: 600;
-  color: var(--translation-progress-text-secondary);
+  color: var(--translation-progress-completed-count-text);
   text-align: right;
   min-width: 28px; /* 为最多两位数预留空间 */
 }
 
 .total-count {
-  color: var(--translation-progress-text-muted);
+  color: var(--translation-progress-total-count-text);
   min-width: 38px; /* 为"/ XX"格式预留空间 */
 }
 
 .waiting-badge {
   margin-left: 4px;
   padding: 1px 6px;
-  background: var(--translation-progress-surface-active);
+  background: var(--translation-progress-waiting-badge-background);
   color: var(--color-text-inverse);
   border-radius: 8px;
   font-size: 11px;
@@ -455,40 +455,40 @@ const progressLabel = computed(() => {
 
 /* 处理中状态 */
 .pool-processing .pool-name {
-  color: var(--translation-progress-text-subtle);
+  color: var(--translation-progress-processing-name-text);
 }
 
 /* 等待锁状态 */
 .pool-waiting-lock .pool-name {
-  color: var(--translation-progress-text-supporting);
+  color: var(--translation-progress-waiting-name-text);
 }
 
 /* 预保存进度 */
 .presave-section {
   margin-bottom: 16px;
   padding: 12px;
-  background: linear-gradient(135deg, var(--translation-progress-surface-selected) 0%, var(--translation-progress-surface-overlay) 100%);
+  background: linear-gradient(135deg, var(--translation-progress-presave-panel-start) 0%, var(--translation-progress-presave-panel-end) 100%);
   border-radius: 8px;
-  border: 1px solid var(--translation-progress-border-default);
+  border: 1px solid var(--translation-progress-presave-border);
 }
 
 .presave-label {
   font-size: 14px;
   font-weight: 500;
-  color: var(--translation-progress-text-disabled);
+  color: var(--translation-progress-presave-label-text);
   margin-bottom: 8px;
 }
 
 .presave-progress-bar {
   height: 10px;
-  background: var(--translation-progress-surface-selected);
+  background: var(--translation-progress-presave-panel-start);
   border-radius: 5px;
   overflow: hidden;
 }
 
 .presave-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--translation-progress-surface-inverse), var(--translation-progress-surface-contrast));
+  background: linear-gradient(90deg, var(--translation-progress-presave-fill-start), var(--translation-progress-presave-fill-end));
   border-radius: 5px;
   transition: width 0.3s ease;
   animation: presavePulse 1.5s ease-in-out infinite;
@@ -501,17 +501,17 @@ const progressLabel = computed(() => {
 
 /* 保存进度行 */
 .save-row .pool-name {
-  color: var(--translation-progress-text-inverse);
+  color: var(--translation-progress-save-name-text);
 }
 
 .save-progress {
-  background: linear-gradient(90deg, var(--translation-progress-surface-tint), var(--translation-progress-surface-soft));
+  background: linear-gradient(90deg, var(--translation-progress-save-fill-start), var(--translation-progress-save-fill-end));
 }
 
 /* 分隔线 */
 .divider {
   height: 1px;
-  background: var(--translation-progress-surface-base);
+  background: var(--translation-progress-track-background);
   margin: 20px 0;
 }
 
@@ -522,25 +522,25 @@ const progressLabel = computed(() => {
 
 .overall-label {
   font-size: 14px;
-  color: var(--translation-progress-text-primary);
+  color: var(--translation-progress-label-text);
   margin-bottom: 8px;
 }
 
 .failed-text {
-  color: var(--translation-progress-text-brand);
+  color: var(--translation-progress-failed-text);
   font-weight: 500;
 }
 
 .overall-progress-bar {
   height: 20px;
-  background: var(--translation-progress-surface-base);
+  background: var(--translation-progress-track-background);
   border-radius: 10px;
   overflow: hidden;
 }
 
 .overall-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--translation-progress-surface-raised) 0%, var(--translation-progress-surface-strong) 100%);
+  background: linear-gradient(90deg, var(--translation-progress-completed-fill-start) 0%, var(--translation-progress-overall-fill-end) 100%);
   border-radius: 10px;
   transition: width 0.3s ease;
   position: relative;
@@ -553,11 +553,11 @@ const progressLabel = computed(() => {
   inset: 0;
   background-image: linear-gradient(
     -45deg,
-    var(--translation-progress-accent-primary) 25%,
+    var(--translation-progress-stripe-highlight) 25%,
     transparent 25%,
     transparent 50%,
-    var(--translation-progress-accent-primary) 50%,
-    var(--translation-progress-accent-primary) 75%,
+    var(--translation-progress-stripe-highlight) 50%,
+    var(--translation-progress-stripe-highlight) 75%,
     transparent 75%,
     transparent
   );
@@ -587,16 +587,16 @@ const progressLabel = computed(() => {
 .progress-bar {
   width: 100%;
   height: 25px;
-  background-color: var(--translation-progress-surface-stronger);
+  background-color: var(--translation-progress-standard-track-background);
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px var(--translation-progress-shadow-raised);
+  box-shadow: inset 0 1px 3px var(--translation-progress-standard-track-shadow);
 }
 
 .progress-bar .progress {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, var(--translation-progress-surface-highlight) 0%, var(--translation-progress-surface-highlight-strong) 100%);
+  background: linear-gradient(90deg, var(--translation-progress-standard-fill-start) 0%, var(--translation-progress-standard-fill-end) 100%);
   transition: width 0.3s ease;
   border-radius: 20px;
   position: relative;

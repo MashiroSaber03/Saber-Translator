@@ -3,6 +3,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import BatchSettingsTab from '@/components/insight/settings/BatchSettingsTab.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { useInsightStore } from '@/stores/insightStore'
 import type { CustomLayer } from '@/components/insight/settings/types'
 
@@ -38,5 +39,18 @@ describe('BatchSettingsTab', () => {
         align: false,
       },
     ])
+  })
+
+  it('uses the current checkbox primitive for custom layer chapter alignment', () => {
+    const store = useInsightStore()
+    store.config.batch.architecturePreset = 'custom'
+
+    const wrapper = mount(BatchSettingsTab, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    expect(wrapper.findAllComponents(UiCheckbox).length).toBeGreaterThan(0)
   })
 })

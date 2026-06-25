@@ -54,7 +54,7 @@ defineProps<{
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 24px;
-  background: var(--character-studio-preview-shell-surface-raised);
+  background: var(--character-studio-preview-card-background);
   box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
 
@@ -73,7 +73,7 @@ defineProps<{
 .assistant-head h4,
 .runtime-card h5 {
   margin: 8px 0 0;
-  color: var(--character-studio-preview-shell-text-primary);
+  color: var(--character-studio-preview-heading-text);
 }
 
 .assistant-head p {
@@ -104,9 +104,9 @@ defineProps<{
   flex-direction: column;
   min-height: 0;
   padding: 16px;
-  border: 1px solid var(--character-studio-preview-workspace-border-default);
+  border: 1px solid var(--character-studio-preview-panel-border);
   border-radius: 18px;
-  background: var(--character-studio-preview-workspace-surface-tint);
+  background: var(--character-studio-preview-attachment-card-background);
 }
 
 .runtime-card pre {
@@ -131,7 +131,7 @@ defineProps<{
   overflow: auto;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--character-studio-preview-workspace-surface-base), var(--character-studio-preview-workspace-surface-raised));
+  background: linear-gradient(180deg, var(--character-studio-preview-message-list-background-start), var(--character-studio-preview-message-list-background-end));
 }
 
 .runtime-empty-panel {
@@ -152,7 +152,7 @@ defineProps<{
 .log-item {
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--character-studio-preview-details-surface-base);
+  background: var(--character-studio-preview-runtime-log-background);
   color: var(--studio-text-default);
   font-size: 12px;
   line-height: 1.6;

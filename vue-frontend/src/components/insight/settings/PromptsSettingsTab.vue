@@ -354,7 +354,7 @@ defineExpose({ getCustomPrompts, syncFromStore, initialize })
 
 .insight-settings-content .prompt-editor {
   width: 100%;
-  font-family: Consolas, Monaco, monospace;
+  font-family: var(--font-mono);
 }
 
 .insight-settings-content .prompt-actions-bar {

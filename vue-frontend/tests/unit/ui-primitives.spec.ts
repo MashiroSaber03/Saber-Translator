@@ -304,7 +304,7 @@ describe('UI primitives architecture contracts', () => {
     expect(overlay.emitted('backdrop')).toHaveLength(1)
   })
 
-  it('provides select checkbox and file input primitives for form migration', async () => {
+  it('provides select checkbox and file input primitives for current forms', async () => {
     const select = mount(UiSelect, {
       props: {
         modelValue: 'b',
@@ -321,6 +321,19 @@ describe('UI primitives architecture contracts', () => {
     await select.get('select').setValue('a')
     expect(select.emitted('update:modelValue')?.at(-1)).toEqual(['a'])
 
+    const numericSelect = mount(UiSelect, {
+      props: {
+        modelValue: 2,
+        options: [
+          { label: 'One', value: 1 },
+          { label: 'Two', value: 2 },
+        ],
+      },
+    })
+    await numericSelect.get('select').setValue('1')
+    expect(numericSelect.emitted('update:modelValue')?.at(-1)).toEqual([1])
+    expect(numericSelect.emitted('change')?.at(-1)).toEqual([1])
+
     const checkbox = mount(UiCheckbox, {
       props: { modelValue: true, label: 'Enabled', description: 'Turn it on' },
     })
@@ -330,6 +343,12 @@ describe('UI primitives architecture contracts', () => {
     expect(checkbox.text()).toContain('Turn it on')
     await checkbox.get('input').setValue(false)
     expect(checkbox.emitted('update:modelValue')?.at(-1)).toEqual([false])
+
+    const externallyLabelledCheckbox = mount(UiCheckbox, {
+      props: { inputId: 'external-checkbox', ariaLabel: 'External checkbox' },
+    })
+    expect(externallyLabelledCheckbox.get('input').attributes('id')).toBe('external-checkbox')
+    expect(externallyLabelledCheckbox.get('input').attributes('aria-label')).toBe('External checkbox')
 
     const fileInput = mount(UiFileInput, {
       props: { accept: '.json', multiple: true, hidden: true },

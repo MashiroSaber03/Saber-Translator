@@ -352,6 +352,95 @@ describe('characterStudioStore', () => {
     expect(store.currentDocument?.identity.name).toBe('阿尔法')
   })
 
+  it('ignores stale workspace responses after a newer book load starts', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    let resolveFirst!: (value: Awaited<ReturnType<typeof getCharacterStudioIndexMock>>) => void
+
+    getCharacterStudioIndexMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockResolvedValueOnce({
+        success: true,
+        book_id: 'book-beta',
+        documents: [{
+          id: 'doc_beta',
+          title: '贝塔',
+          origin: 'manual',
+          source_character: null,
+          updated_at: '2026-05-16T00:00:00',
+          tags: [],
+          is_favorite: false,
+          has_avatar: false,
+          sample_pages: [],
+        }],
+        candidates: [],
+        count: 1,
+      })
+
+    const firstLoad = store.loadWorkspace('book-alpha')
+    const secondLoad = store.loadWorkspace('book-beta')
+    await secondLoad
+
+    resolveFirst({
+      success: true,
+      book_id: 'book-alpha',
+      documents: [{
+        id: 'doc_alpha',
+        title: '阿尔法',
+        origin: 'manual',
+        source_character: null,
+        updated_at: '2026-05-15T00:00:00',
+        tags: [],
+        is_favorite: false,
+        has_avatar: false,
+        sample_pages: [],
+      }],
+      candidates: [],
+      count: 1,
+    })
+    await firstLoad
+
+    expect(store.bookId).toBe('book-beta')
+    expect(store.documents.map(item => item.id)).toEqual(['doc_beta'])
+  })
+
+  it('ignores stale document responses after a newer document open starts', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    let resolveFirst!: (value: Awaited<ReturnType<typeof getCharacterStudioDocumentMock>>) => void
+    const betaDocument: CharacterStudioDocument = {
+      ...cloneDocument(demoDocument),
+      id: 'doc_beta',
+      meta: { ...demoDocument.meta, title: '贝塔' },
+      identity: { ...demoDocument.identity, name: '贝塔' },
+    }
+
+    getCharacterStudioDocumentMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockResolvedValueOnce({
+        success: true,
+        document: betaDocument,
+      })
+
+    await store.loadWorkspace('book-demo')
+    const firstOpen = store.openDocument('doc_alpha')
+    const secondOpen = store.openDocument('doc_beta')
+    await secondOpen
+
+    resolveFirst({
+      success: true,
+      document: cloneDocument(demoDocument),
+    })
+    await firstOpen
+
+    expect(store.currentDocument?.id).toBe('doc_beta')
+    expect(store.currentDocument?.identity.name).toBe('贝塔')
+  })
+
   it('loads active chat session when opening a document', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()

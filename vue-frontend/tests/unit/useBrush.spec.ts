@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useBrush } from '@/composables/useBrush'
@@ -125,5 +125,53 @@ describe('useBrush', () => {
     expect(imageStore.currentImage?.userMask).toBe('updated-user-mask')
     expect(consoleLog).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+
+  it('does not write a brush result after the owner unmounts', async () => {
+    const onBrushComplete = vi.fn()
+    const imageStore = useImageStore()
+    const viewport = createViewport()
+
+    imageStore.addImage('page.png', 'data:image/png;base64,page')
+    const initialCleanImageData = imageStore.currentImage?.cleanImageData
+    const initialUserMask = imageStore.currentImage?.userMask
+
+    const Harness = defineComponent({
+      setup() {
+        return {
+          ...useBrush({
+            onBrushComplete,
+            getCurrentRepairSettings: () => ({
+              inpaintMethod: 'solid',
+              fillColor: '#ffffff',
+            }),
+          }),
+        }
+      },
+      render() {
+        return h('div')
+      },
+    })
+    const wrapper = mount(Harness)
+    const brush = wrapper.vm as unknown as ReturnType<typeof useBrush>
+
+    brush.enterBrushMode('repair')
+    brush.startBrushPainting(
+      new MouseEvent('mousedown', {
+        button: 0,
+        clientX: 40,
+        clientY: 40,
+      }),
+      viewport,
+    )
+    brush.finishBrushPainting()
+    wrapper.unmount()
+
+    await flushPromises()
+    await flushPromises()
+
+    expect(imageStore.currentImage?.cleanImageData).toBe(initialCleanImageData)
+    expect(imageStore.currentImage?.userMask).toBe(initialUserMask)
+    expect(onBrushComplete).not.toHaveBeenCalled()
   })
 })

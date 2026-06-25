@@ -53,6 +53,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const pages = ref<PageContent[]>([])
     const isGeneratingPages = ref(false)
     const imageRefreshKey = ref(Date.now())
+    let initializeRequestId = 0
+    let syncRequestId = 0
+    let isMounted = true
 
     function resetLoadedContinuationData(): void {
         isDataReady.value = false
@@ -97,10 +100,17 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         }
     }
 
-    async function loadCharacters(persistentError: boolean = true): Promise<boolean> {
-        if (!bookId.value) return false
+    async function loadCharactersForBook(
+        activeBookId: string,
+        persistentError: boolean,
+        isCurrentRequest: () => boolean
+    ): Promise<boolean> {
+        if (!activeBookId) return false
 
-        const charResult = await continuationApi.getCharacters(bookId.value)
+        const charResult = await continuationApi.getCharacters(activeBookId)
+        if (!isCurrentRequest()) {
+            return false
+        }
         if (charResult.success && charResult.characters) {
             characters.value = charResult.characters
             imageRefreshKey.value = Date.now()
@@ -154,7 +164,10 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 
     async function initializeData() {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
+        const requestId = ++initializeRequestId
+        const isCurrentRequest = () => isMounted && requestId === initializeRequestId && bookId.value === activeBookId
 
         clearMessageTimer()
 
@@ -165,31 +178,44 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         resetLoadedContinuationData()
 
         try {
-            const result = await continuationApi.prepareContinuation(bookId.value)
+            const result = await continuationApi.prepareContinuation(activeBookId)
+            if (!isCurrentRequest()) {
+                return
+            }
 
             if (result.success && result.saved_data) {
                 const data = result.saved_data
                 applySavedContinuationData(data)
                 applyPreparationResult(result)
-                await loadCharacters(true)
+                await loadCharactersForBook(activeBookId, true, isCurrentRequest)
             } else if (!result.success && result.error) {
                 setMessageState(result.error, 'error', true)
             }
         } catch {
-            setMessageState('初始化数据失败', 'error', true)
+            if (isCurrentRequest()) {
+                setMessageState('初始化数据失败', 'error', true)
+            }
         } finally {
-            isLoading.value = false
+            if (isCurrentRequest()) {
+                isLoading.value = false
+            }
         }
     }
 
     async function syncAnalysisData(source: 'auto' | 'manual' = 'manual') {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
+        const requestId = ++syncRequestId
+        const isCurrentRequest = () => isMounted && requestId === syncRequestId && bookId.value === activeBookId
 
         const hasContinuationPayload = Boolean(chapterScript.value) || pages.value.length > 0
         isSyncingAnalysis.value = true
 
         try {
-            const result = await continuationApi.syncContinuationAnalysis(bookId.value)
+            const result = await continuationApi.syncContinuationAnalysis(activeBookId)
+            if (!isCurrentRequest()) {
+                return
+            }
 
             if (!result.success) {
                 const message = result.error || '分析数据同步失败'
@@ -198,7 +224,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             }
 
             applyPreparationResult(result)
-            const charactersLoaded = await loadCharacters(true)
+            const charactersLoaded = await loadCharactersForBook(activeBookId, true, isCurrentRequest)
 
             if (!result.ready) {
                 return
@@ -211,7 +237,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                 showMessage(successText, 'success')
             }
         } finally {
-            isSyncingAnalysis.value = false
+            if (isCurrentRequest()) {
+                isSyncingAnalysis.value = false
+            }
         }
     }
 
@@ -245,6 +273,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
     if (getCurrentInstance()) {
         onBeforeUnmount(() => {
+            isMounted = false
+            initializeRequestId += 1
+            syncRequestId += 1
             clearMessageTimer()
         })
     }

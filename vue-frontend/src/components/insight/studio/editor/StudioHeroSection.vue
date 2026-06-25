@@ -116,7 +116,7 @@ defineEmits<{
 .hero-kicker {
   color: var(--character-studio-editor-text-muted);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 

@@ -51,7 +51,7 @@ function formatDate(dateStr?: string): string {
 // 获取标签颜色
 function getTagColor(tagName: string): string {
   const tagInfo = allTags.value.find(t => t.name === tagName)
-  return tagInfo?.color || '#667eea'
+  return tagInfo?.color || 'var(--color-action-brand)'
 }
 
 // 编辑当前书籍
@@ -505,7 +505,7 @@ async function quickAddTagToBook(tagName: string) {
 
 <style scoped>
 .book-detail-container {
-  --book-detail-accent: #667eea;
+  --book-detail-accent: var(--color-action-brand);
   --book-detail-cover-shadow: rgba(0, 0, 0, .15);
   --book-detail-focus-shadow: rgba(102, 126, 234, .15);
   --book-detail-primary-action-shadow: rgba(102, 126, 234, .4);

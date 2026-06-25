@@ -4,7 +4,7 @@
  * 串行/批次只负责调度，具体业务步骤统一交给 atomic steps。
  */
 
-import { ref, computed } from 'vue'
+import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -462,6 +462,12 @@ export function useSequentialPipeline() {
       resetSaveState()
       toast.info('操作已取消')
     }
+  }
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      clearFinishTimer()
+    })
   }
 
   return {

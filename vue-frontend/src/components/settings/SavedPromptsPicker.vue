@@ -23,8 +23,9 @@
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, onMounted, watch } from 'vue'
-import { configApi } from '@/api/config'
+import { ref, onBeforeUnmount, onMounted, watch } from 'vue'
+import { configApi, type PromptContentResponse } from '@/api/config'
+import type { PromptListResponse } from '@/types'
 
 const props = defineProps<{
   promptType: string
@@ -36,32 +37,44 @@ const emit = defineEmits<{
 
 const promptList = ref<{ name: string }[]>([])
 const isLoading = ref(false)
+let promptListRequestId = 0
+let promptContentRequestId = 0
+let isMounted = true
 
 async function loadPromptList() {
+  const requestId = ++promptListRequestId
+  const promptType = props.promptType
   isLoading.value = true
   try {
-    let result
-    if (props.promptType === 'textbox') {
-      result = await configApi.getTextboxPrompts()
-    } else {
-      result = await configApi.getPrompts(props.promptType)
+    const result: PromptListResponse = promptType === 'textbox'
+      ? await configApi.getTextboxPrompts()
+      : await configApi.getPrompts(promptType)
+    if (!isMounted || requestId !== promptListRequestId || props.promptType !== promptType) {
+      return
     }
     const names = result.prompt_names || []
-    promptList.value = (names as unknown as string[]).map(name => ({ name }))
+    promptList.value = names.map(name => ({ name }))
   } catch {
+    if (!isMounted || requestId !== promptListRequestId || props.promptType !== promptType) {
+      return
+    }
     promptList.value = []
   } finally {
-    isLoading.value = false
+    if (isMounted && requestId === promptListRequestId && props.promptType === promptType) {
+      isLoading.value = false
+    }
   }
 }
 
 async function handleSelect(name: string) {
+  const requestId = ++promptContentRequestId
+  const promptType = props.promptType
   try {
-    let result
-    if (props.promptType === 'textbox') {
-      result = await configApi.getTextboxPromptContent(name)
-    } else {
-      result = await configApi.getPromptContent(props.promptType, name)
+    const result: PromptContentResponse = promptType === 'textbox'
+      ? await configApi.getTextboxPromptContent(name)
+      : await configApi.getPromptContent(promptType, name)
+    if (!isMounted || requestId !== promptContentRequestId || props.promptType !== promptType) {
+      return
     }
     if (result.prompt_content) {
       emit('select', result.prompt_content, name)
@@ -77,6 +90,12 @@ watch(() => props.promptType, () => {
 
 onMounted(() => {
   loadPromptList()
+})
+
+onBeforeUnmount(() => {
+  isMounted = false
+  promptListRequestId += 1
+  promptContentRequestId += 1
 })
 
 defineExpose({ refresh: loadPromptList })

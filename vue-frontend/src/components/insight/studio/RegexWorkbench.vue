@@ -34,10 +34,10 @@
             <UiInput :value="script.placement.join(', ')" type="text" @input="$emit('update:placement', index, ($event.target as HTMLInputElement).value)" />
           </label>
           <div class="toggles">
-            <label><UiInput :checked="script.markdownOnly" type="checkbox" @change="$emit('toggle:field', index, 'markdownOnly', ($event.target as HTMLInputElement).checked)" /> 仅显示</label>
-            <label><UiInput :checked="script.promptOnly" type="checkbox" @change="$emit('toggle:field', index, 'promptOnly', ($event.target as HTMLInputElement).checked)" /> 仅发送</label>
-            <label><UiInput :checked="script.runOnEdit" type="checkbox" @change="$emit('toggle:field', index, 'runOnEdit', ($event.target as HTMLInputElement).checked)" /> 编辑时运行</label>
-            <label><UiInput :checked="script.disabled" type="checkbox" @change="$emit('toggle:field', index, 'disabled', ($event.target as HTMLInputElement).checked)" /> 禁用</label>
+            <UiCheckbox :model-value="script.markdownOnly" label="仅显示" @change="$emit('toggle:field', index, 'markdownOnly', $event)" />
+            <UiCheckbox :model-value="script.promptOnly" label="仅发送" @change="$emit('toggle:field', index, 'promptOnly', $event)" />
+            <UiCheckbox :model-value="script.runOnEdit" label="编辑时运行" @change="$emit('toggle:field', index, 'runOnEdit', $event)" />
+            <UiCheckbox :model-value="script.disabled" label="禁用" @change="$emit('toggle:field', index, 'disabled', $event)" />
           </div>
         </div>
       </article>
@@ -49,6 +49,7 @@
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import type { RegexScript } from '@/types/characterStudio'
 
 defineProps<{

@@ -40,14 +40,11 @@
           />
         </UiField>
         <UiField class="ui-settings-field ui-settings-field--checkbox">
-          <label class="ui-checkbox-label">
-            <UiInput
-              type="checkbox"
-              :checked="draftDefaults.autoFontSize"
-              @change="updateAutoFontSize"
-            />
-            <span class="checkbox-text">自动计算初始字号</span>
-          </label>
+          <UiCheckbox
+            :model-value="draftDefaults.autoFontSize"
+            label="自动计算初始字号"
+            @change="updateAutoFontSize"
+          />
         </UiField>
       </UiFormGrid>
 
@@ -103,14 +100,11 @@
     <UiPanel variant="settings">
       <template #title>颜色与填充</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
-        <label class="ui-checkbox-label">
-          <UiInput
-            type="checkbox"
-            :checked="draftDefaults.useAutoTextColor"
-            @change="updateUseAutoTextColor"
-          />
-          <span class="checkbox-text">自动识别文字颜色</span>
-        </label>
+        <UiCheckbox
+          :model-value="draftDefaults.useAutoTextColor"
+          label="自动识别文字颜色"
+          @change="updateUseAutoTextColor"
+        />
       </UiField>
       <UiFormGrid>
         <UiField class="ui-settings-field">
@@ -146,14 +140,11 @@
     <UiPanel variant="settings">
       <template #title>描边</template>
       <UiField class="ui-settings-field ui-settings-field--checkbox">
-        <label class="ui-checkbox-label">
-          <UiInput
-            type="checkbox"
-            :checked="draftDefaults.strokeEnabled"
-            @change="updateStrokeEnabled"
-          />
-          <span class="checkbox-text">启用描边</span>
-        </label>
+        <UiCheckbox
+          :model-value="draftDefaults.strokeEnabled"
+          label="启用描边"
+          @change="updateStrokeEnabled"
+        />
       </UiField>
       <UiFormGrid v-if="draftDefaults.strokeEnabled">
         <UiField class="ui-settings-field">
@@ -189,6 +180,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { computed, ref, watch } from 'vue'
 import type { InpaintMethod, TextAlign, TextDirection } from '@/types/bubble'
 import type { TextStyleSettings } from '@/types/settings'
@@ -297,8 +289,8 @@ function updateFontSize(event: Event): void {
   }
 }
 
-function updateAutoFontSize(event: Event): void {
-  updateDraft({ autoFontSize: (event.target as HTMLInputElement).checked })
+function updateAutoFontSize(value: boolean): void {
+  updateDraft({ autoFontSize: value })
 }
 
 function handleLayoutDirectionChange(value: string | number): void {
@@ -322,16 +314,16 @@ function updateTextColor(event: Event): void {
   updateDraft({ textColor: (event.target as HTMLInputElement).value })
 }
 
-function updateUseAutoTextColor(event: Event): void {
-  updateDraft({ useAutoTextColor: (event.target as HTMLInputElement).checked })
+function updateUseAutoTextColor(value: boolean): void {
+  updateDraft({ useAutoTextColor: value })
 }
 
 function updateFillColor(event: Event): void {
   updateDraft({ fillColor: (event.target as HTMLInputElement).value })
 }
 
-function updateStrokeEnabled(event: Event): void {
-  updateDraft({ strokeEnabled: (event.target as HTMLInputElement).checked })
+function updateStrokeEnabled(value: boolean): void {
+  updateDraft({ strokeEnabled: value })
 }
 
 function updateStrokeColor(event: Event): void {
@@ -462,6 +454,6 @@ defineExpose({
 }
 
 .text-style-defaults-settings code {
-  font-family: Consolas, 'Courier New', monospace;
+  font-family: var(--font-mono);
 }
 </style>

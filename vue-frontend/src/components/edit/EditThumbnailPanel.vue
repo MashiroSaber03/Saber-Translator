@@ -39,19 +39,19 @@ defineEmits<{
 
 <style scoped>
 .edit-thumbnails-panel {
-  --edit-thumbnail-panel-border-default: rgba(255, 255, 255, .1);
-  --edit-thumbnail-panel-border-strong: rgba(255, 255, 255, .5);
-  --edit-thumbnail-panel-shadow-default: rgba(102, 126, 234, .5);
-  --edit-thumbnail-panel-surface-base: rgba(0, 0, 0, .3);
-  --edit-thumbnail-panel-surface-raised: rgba(255, 255, 255, .1);
-  --edit-thumbnail-panel-surface-muted: rgba(255, 255, 255, .3);
-  --edit-thumbnail-panel-surface-subtle: rgba(0, 0, 0, .7);
+  --edit-thumbnail-panel-background: rgba(0, 0, 0, .3);
+  --edit-thumbnail-panel-divider-border: rgba(255, 255, 255, .1);
+  --edit-thumbnail-panel-scrollbar-track: rgba(255, 255, 255, .1);
+  --edit-thumbnail-panel-scrollbar-thumb: rgba(255, 255, 255, .3);
+  --edit-thumbnail-panel-hover-border: rgba(255, 255, 255, .5);
+  --edit-thumbnail-panel-active-shadow: rgba(102, 126, 234, .5);
+  --edit-thumbnail-panel-index-badge-background: rgba(0, 0, 0, .7);
 
   position: relative;
   width: auto;
-  background: var(--edit-thumbnail-panel-surface-base);
+  background: var(--edit-thumbnail-panel-background);
   padding: 10px 15px;
-  border-bottom: 1px solid var(--edit-thumbnail-panel-border-default);
+  border-bottom: 1px solid var(--edit-thumbnail-panel-divider-border);
   flex-shrink: 0;
 }
 
@@ -68,12 +68,12 @@ defineEmits<{
 }
 
 .thumbnails-scroll::-webkit-scrollbar-track {
-  background: var(--edit-thumbnail-panel-surface-raised);
+  background: var(--edit-thumbnail-panel-scrollbar-track);
   border-radius: 3px;
 }
 
 .thumbnails-scroll::-webkit-scrollbar-thumb {
-  background: var(--edit-thumbnail-panel-surface-muted);
+  background: var(--edit-thumbnail-panel-scrollbar-thumb);
   border-radius: 3px;
 }
 
@@ -90,13 +90,13 @@ defineEmits<{
 }
 
 .edit-thumbnail-item:hover {
-  border-color: var(--edit-thumbnail-panel-border-strong);
+  border-color: var(--edit-thumbnail-panel-hover-border);
   transform: scale(1.05);
 }
 
 .edit-thumbnail-item.active {
   border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 10px var(--edit-thumbnail-panel-shadow-default);
+  box-shadow: 0 0 10px var(--edit-thumbnail-panel-active-shadow);
 }
 
 .edit-thumbnail-item img {
@@ -109,7 +109,7 @@ defineEmits<{
   position: absolute;
   bottom: 2px;
   right: 2px;
-  background: var(--edit-thumbnail-panel-surface-subtle);
+  background: var(--edit-thumbnail-panel-index-badge-background);
   color: var(--color-text-inverse);
   font-size: 10px;
   padding: 1px 4px;

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+
+enableAutoUnmount(afterEach)
 
 afterEach(() => {
   document.body.innerHTML = ''

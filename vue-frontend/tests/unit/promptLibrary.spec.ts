@@ -91,6 +91,16 @@ vi.mock('@/components/common/CustomSelect.vue', () => ({
 
 import PromptLibrary from '@/components/settings/PromptLibrary.vue'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('PromptLibrary', () => {
   beforeEach(() => {
     updateTranslationServiceMock.mockReset()
@@ -156,5 +166,27 @@ describe('PromptLibrary', () => {
     const deleteButton = wrapper.find('.prompt-actions__delete')
     expect(deleteButton.element.tagName).toBe('BUTTON')
     expect(deleteButton.attributes('aria-label')).toBe('删除提示词：default')
+  })
+
+  it('ignores stale prompt list responses after the prompt type changes', async () => {
+    const translatePrompts = deferred<{ prompt_names: string[] }>()
+    const visionPrompts = deferred<{ prompt_names: string[] }>()
+    getPromptsMock.mockImplementation((type?: string) => (
+      type === 'ai_vision_ocr' ? visionPrompts.promise : translatePrompts.promise
+    ))
+
+    const wrapper = mount(PromptLibrary)
+
+    const typeSelect = wrapper.find('select')
+    await typeSelect.setValue('ai_vision_ocr')
+
+    visionPrompts.resolve({ prompt_names: ['vision-current'] })
+    await flushPromises()
+    expect(wrapper.text()).toContain('vision-current')
+
+    translatePrompts.resolve({ prompt_names: ['translate-stale'] })
+    await flushPromises()
+    expect(wrapper.text()).toContain('vision-current')
+    expect(wrapper.text()).not.toContain('translate-stale')
   })
 })

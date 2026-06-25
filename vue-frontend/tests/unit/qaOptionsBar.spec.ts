@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import QAOptionsBar from '@/components/insight/qa/QAOptionsBar.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 const globalModeProps = {
   globalModeExamples: ['故事的主题是什么？'],
@@ -13,6 +14,11 @@ const globalModeProps = {
   useParentChild: true,
   useReasoning: true,
   useReranker: true,
+}
+
+const preciseModeProps = {
+  ...globalModeProps,
+  qaMode: 'precise' as const,
 }
 
 describe('QAOptionsBar', () => {
@@ -28,5 +34,13 @@ describe('QAOptionsBar', () => {
     await exampleButton.trigger('click')
 
     expect(wrapper.emitted('askExample')?.[0]?.[0]).toBe('故事的主题是什么？')
+  })
+
+  it('uses the current checkbox primitive for precise-mode boolean options', () => {
+    const wrapper = mount(QAOptionsBar, {
+      props: preciseModeProps,
+    })
+
+    expect(wrapper.findAllComponents(UiCheckbox)).toHaveLength(3)
   })
 })

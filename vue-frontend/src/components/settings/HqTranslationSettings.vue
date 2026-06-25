@@ -110,17 +110,11 @@
       <template #title>高级选项</template>
       <UiFormGrid>
         <UiField class="ui-settings-field">
-          <label class="ui-checkbox-label">
-            <UiInput type="checkbox" class="hq-translation-settings__checkbox-input" v-model="localHqSettings.forceJsonOutput" />
-            强制JSON输出
-          </label>
+          <UiCheckbox v-model="localHqSettings.forceJsonOutput" label="强制JSON输出" />
           <div class="ui-form-hint">使用 response_format: json_object</div>
         </UiField>
         <UiField class="ui-settings-field">
-          <label class="ui-checkbox-label">
-            <UiInput type="checkbox" class="hq-translation-settings__checkbox-input" v-model="localHqSettings.useStream" />
-            流式调用
-          </label>
+          <UiCheckbox v-model="localHqSettings.useStream" label="流式调用" />
           <div class="ui-form-hint">使用流式API调用</div>
         </UiField>
       </UiFormGrid>
@@ -150,6 +144,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
@@ -360,17 +355,6 @@ function handleHqPromptSelect(content: string, name: string) {
 .hq-translation-settings {
   --ui-button-sm-padding: 4px 12px;
   --ui-button-sm-font-size: 12px;
-}
-
-.ui-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.hq-translation-settings__checkbox-input {
-  width: auto;
 }
 
 .hq-translation-settings .model-input-with-fetch {

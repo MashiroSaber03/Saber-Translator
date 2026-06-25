@@ -524,22 +524,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .continuation-panel {
-  --continuation-panel-border-default: #fecaca;
-  --continuation-panel-border-strong: #bbf7d0;
-  --continuation-panel-border-muted: #bfdbfe;
-  --continuation-panel-border-subtle: #22c55e;
-  --continuation-panel-border-hover: #fca5a5;
-  --continuation-panel-surface-base: #f7f7f7;
-  --continuation-panel-surface-raised: #fef2f2;
-  --continuation-panel-surface-muted: #f0fdf4;
-  --continuation-panel-surface-subtle: #eff6ff;
-  --continuation-panel-surface-hover: #22c55e;
-  --continuation-panel-surface-active: rgba(255, 255, 255, .2);
-  --continuation-panel-surface-selected: #fee2e2;
-  --continuation-panel-surface-overlay: #fecaca;
-  --continuation-panel-text-primary: #dc2626;
-  --continuation-panel-text-secondary: #16a34a;
-  --continuation-panel-text-muted: #2563eb;
+  --continuation-panel-sync-background: #f7f7f7;
+  --continuation-panel-error-background: #fef2f2;
+  --continuation-panel-error-text: #dc2626;
+  --continuation-panel-error-border: #fecaca;
+  --continuation-panel-success-background: #f0fdf4;
+  --continuation-panel-success-text: #16a34a;
+  --continuation-panel-success-border: #bbf7d0;
+  --continuation-panel-info-background: #eff6ff;
+  --continuation-panel-info-text: #2563eb;
+  --continuation-panel-info-border: #bfdbfe;
+  --continuation-panel-step-complete-background: #22c55e;
+  --continuation-panel-step-complete-border: #22c55e;
+  --continuation-panel-step-number-active-background: rgba(255, 255, 255, .2);
+  --continuation-panel-danger-background: #fee2e2;
+  --continuation-panel-danger-hover-background: #fecaca;
+  --continuation-panel-danger-hover-border: #fca5a5;
   --ui-input-padding: 10px 12px;
   --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
   --ui-input-radius: 8px;
@@ -564,11 +564,11 @@ onBeforeUnmount(() => {
   --ui-button-secondary-color: var(--color-text-default);
   --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
   --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-danger-background: var(--continuation-panel-surface-selected);
-  --ui-button-danger-color: var(--continuation-panel-text-primary);
-  --ui-button-danger-border: 1px solid var(--continuation-panel-border-default);
-  --ui-button-danger-hover-background: var(--continuation-panel-surface-overlay);
-  --ui-button-danger-hover-border-color: var(--continuation-panel-border-hover);
+  --ui-button-danger-background: var(--continuation-panel-danger-background);
+  --ui-button-danger-color: var(--continuation-panel-error-text);
+  --ui-button-danger-border: 1px solid var(--continuation-panel-error-border);
+  --ui-button-danger-hover-background: var(--continuation-panel-danger-hover-background);
+  --ui-button-danger-hover-border-color: var(--continuation-panel-danger-hover-border);
   --ui-button-disabled-opacity: 0.5;
 
   padding: 20px;
@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   border: 1px solid var(--color-border-muted, var(--color-border-default));
   border-radius: 12px;
-  background: var(--continuation-panel-surface-base);
+  background: var(--continuation-panel-sync-background);
 }
 
 .analysis-sync-meta {
@@ -613,21 +613,21 @@ onBeforeUnmount(() => {
 }
 
 .message.error {
-  background: var(--continuation-panel-surface-raised);
-  color: var(--continuation-panel-text-primary);
-  border: 1px solid var(--continuation-panel-border-default);
+  background: var(--continuation-panel-error-background);
+  color: var(--continuation-panel-error-text);
+  border: 1px solid var(--continuation-panel-error-border);
 }
 
 .message.success {
-  background: var(--continuation-panel-surface-muted);
-  color: var(--continuation-panel-text-secondary);
-  border: 1px solid var(--continuation-panel-border-strong);
+  background: var(--continuation-panel-success-background);
+  color: var(--continuation-panel-success-text);
+  border: 1px solid var(--continuation-panel-success-border);
 }
 
 .message.info {
-  background: var(--continuation-panel-surface-subtle);
-  color: var(--continuation-panel-text-muted);
-  border: 1px solid var(--continuation-panel-border-muted);
+  background: var(--continuation-panel-info-background);
+  color: var(--continuation-panel-info-text);
+  border: 1px solid var(--continuation-panel-info-border);
 }
 
 .step-indicator {
@@ -666,8 +666,8 @@ onBeforeUnmount(() => {
 }
 
 .step.completed {
-  background: var(--continuation-panel-surface-hover);
-  border-color: var(--continuation-panel-border-subtle);
+  background: var(--continuation-panel-step-complete-background);
+  border-color: var(--continuation-panel-step-complete-border);
   color: var(--color-text-inverse);
 }
 
@@ -678,7 +678,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--continuation-panel-surface-active);
+  background: var(--continuation-panel-step-number-active-background);
   font-weight: bold;
   font-size: 13px;
 }

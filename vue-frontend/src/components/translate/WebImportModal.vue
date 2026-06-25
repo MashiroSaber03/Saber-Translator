@@ -151,28 +151,6 @@ const {
 
 <style scoped>
 .web-import-modal-body {
-  --web-import-modal-extract-border-default: #ffe0a0;
-  --web-import-modal-extract-border-strong: #e6e6e6;
-  --web-import-modal-extract-surface-base: #4a90d9;
-  --web-import-modal-extract-surface-raised: #3a7fc8;
-  --web-import-modal-extract-surface-muted: #f9f9f9;
-  --web-import-modal-extract-surface-subtle: #efefef;
-  --web-import-modal-extract-surface-hover: #fafafa;
-  --web-import-modal-extract-text-muted: #b26a00;
-  --web-import-modal-extract-text-primary: #28a745;
-  --web-import-modal-extract-text-secondary: #856404;
-  --web-import-modal-extract-text-subtle: #2f7d32;
-  --web-import-modal-settings-border-default: #ffc0c0;
-  --web-import-modal-settings-shadow-default: rgba(74, 144, 217, .2);
-  --web-import-modal-settings-surface-base: #f9f9f9;
-  --web-import-modal-settings-surface-muted: #eee;
-  --web-import-modal-settings-surface-raised: #1e1e1e;
-  --web-import-modal-settings-text-brand: #c00;
-  --web-import-modal-settings-text-disabled: #dcdcaa;
-  --web-import-modal-settings-text-inverse: #f1f5f9;
-  --web-import-modal-settings-text-muted: #ce9178;
-  --web-import-modal-settings-text-secondary: #ccc;
-  --web-import-modal-settings-text-subtle: #ec4899;
-  --web-import-modal-settings-text-supporting: #818cf8;
+  display: block;
 }
 </style>

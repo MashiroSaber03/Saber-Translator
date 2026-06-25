@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -90,6 +90,8 @@ vi.mock('@/utils/toast', () => ({
 }))
 
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
+
+enableAutoUnmount(afterEach)
 
 let pinia: ReturnType<typeof createPinia>
 

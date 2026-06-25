@@ -164,6 +164,7 @@ const PANE_WIDTH_MAX = 70
 const PANE_WIDTH_STEP = 2
 const leftPaneWidth = ref(52)
 const resizing = ref(false)
+let hydrateRequestId = 0
 
 const currentBookTitle = computed(() => {
   if (!props.bookId) return ''
@@ -241,17 +242,28 @@ async function runAction(action: () => Promise<void>) {
   }
 }
 
+function isActiveHydration(requestId: number, bookId: string, docId?: string): boolean {
+  return requestId === hydrateRequestId && props.bookId === bookId && props.docId === docId
+}
+
 async function hydrateWorkspace(nextBookId: string) {
+  const requestId = ++hydrateRequestId
+  const requestedDocId = props.docId
   try {
     if (!bookshelfStore.books.length) {
-      await bookshelfStore.fetchBooks()
+      await bookshelfStore.loadBooks()
+      if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
     }
     if (!bookshelfStore.getBookById(nextBookId)) {
       await bookshelfStore.loadBookDetail(nextBookId)
+      if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
     }
     await store.loadWorkspace(nextBookId)
-    if (props.docId) {
-      const openedRequested = await runAction(() => store.openDocument(props.docId!))
+    if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
+
+    if (requestedDocId) {
+      const openedRequested = await runAction(() => store.openDocument(requestedDocId))
+      if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
       if (openedRequested) return
       if (store.documents.length === 0) {
         void router.replace({ name: 'character-studio', query: { book: nextBookId } })
@@ -261,6 +273,7 @@ async function hydrateWorkspace(nextBookId: string) {
     if (store.documents.length > 0) {
       const fallbackDocId = store.documents[0]!.id
       const openedFallback = await runAction(() => store.openDocument(fallbackDocId))
+      if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
       if (openedFallback) {
         void router.replace({ name: 'character-studio', query: { book: nextBookId, doc: fallbackDocId } })
       }
@@ -399,13 +412,17 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  hydrateRequestId += 1
   window.removeEventListener('mousemove', handleMouseMove)
   window.removeEventListener('mouseup', handleMouseUp)
   document.body.classList.remove('studio-resizing')
 })
 
 watch(() => props.bookId, async nextBookId => {
-  if (!nextBookId) return
+  if (!nextBookId) {
+    hydrateRequestId += 1
+    return
+  }
   await hydrateWorkspace(nextBookId)
 })
 

@@ -166,35 +166,12 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 
 <style scoped>
 .settings-sidebar {
-  --settings-sidebar-shell-border-default: #dbe4ef;
-  --settings-sidebar-shell-border-strong: #e2e9f2;
-  --settings-sidebar-shell-border-muted: #d8e3f1;
-  --settings-sidebar-shell-border-subtle: #dfe8f4;
-  --settings-sidebar-shell-border-hover: #d3deed;
-  --settings-sidebar-shell-border-active: #94b5e5;
-  --settings-sidebar-shell-border-focus: #cfdcec;
-  --settings-sidebar-shell-border-selected: #d2e2fa;
-  --settings-sidebar-shell-border-danger: #d7e2ef;
-  --settings-sidebar-shell-shadow-default: rgba(28, 45, 72, .07);
-  --settings-sidebar-shell-surface-base: #eef3f9;
-  --settings-sidebar-shell-surface-raised: #c7d5e7;
-  --settings-sidebar-shell-surface-muted: #f5f8fd;
-  --settings-sidebar-shell-surface-subtle: #f4f8fd;
-  --settings-sidebar-shell-surface-hover: #4a82ce;
-  --settings-sidebar-shell-surface-active: #e9f2ff;
-  --settings-sidebar-shell-surface-selected: #edf4ff;
-  --settings-sidebar-shell-text-primary: #c7d5e7;
-  --settings-sidebar-shell-text-secondary: #eef3f9;
-  --settings-sidebar-shell-text-muted: #20314f;
-  --settings-sidebar-shell-text-subtle: #d4deeb;
-  --settings-sidebar-shell-text-supporting: #24a87a;
-  --settings-sidebar-shell-text-disabled: #dc9a2f;
-  --settings-sidebar-shell-text-inverse: #273959;
-  --settings-sidebar-shell-text-brand: #7d8ba4;
-  --settings-sidebar-shell-text-danger: #2f3d56;
-  --settings-sidebar-shell-text-warning: #5b6f8e;
-  --settings-sidebar-shell-text-success: #21579c;
-  --settings-sidebar-shell-text-info: #3a6ea7;
+  --settings-sidebar-card-border: #dbe4ef;
+  --settings-sidebar-card-shadow: rgba(28, 45, 72, .07);
+  --settings-sidebar-scrollbar-track: #eef3f9;
+  --settings-sidebar-scrollbar-thumb: #c7d5e7;
+  --settings-sidebar-title-divider: #e2e9f2;
+  --settings-sidebar-title-text: #20314f;
 
   display: flex;
   flex-direction: column;
@@ -204,7 +181,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
   height: 100%;
   padding: 10px 20px 20px;
   overflow-y: auto;
-  scrollbar-color: var(--settings-sidebar-shell-text-primary) var(--settings-sidebar-shell-text-secondary);
+  scrollbar-color: var(--settings-sidebar-scrollbar-thumb) var(--settings-sidebar-scrollbar-track);
   scrollbar-width: thin;
 }
 
@@ -218,28 +195,28 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 
 .settings-sidebar::-webkit-scrollbar-track {
   border-radius: 999px;
-  background: var(--settings-sidebar-shell-surface-base);
+  background: var(--settings-sidebar-scrollbar-track);
 }
 
 .settings-sidebar::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: var(--settings-sidebar-shell-surface-raised);
+  background: var(--settings-sidebar-scrollbar-thumb);
 }
 
 .settings-card {
   margin-bottom: 14px;
   padding: 18px;
-  border: 1px solid var(--settings-sidebar-shell-border-default);
+  border: 1px solid var(--settings-sidebar-card-border);
   border-radius: 14px;
   background: var(--color-surface-base);
-  box-shadow: 0 8px 20px var(--settings-sidebar-shell-shadow-default);
+  box-shadow: 0 8px 20px var(--settings-sidebar-card-shadow);
 }
 
 .sidebar-title {
   margin: 0 0 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--settings-sidebar-shell-border-strong);
-  color: var(--settings-sidebar-shell-text-muted);
+  border-bottom: 1px solid var(--settings-sidebar-title-divider);
+  color: var(--settings-sidebar-title-text);
   font-weight: 700;
   font-size: 24px;
   text-align: center;

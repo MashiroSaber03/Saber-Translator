@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 type SelectOption = { label: string; value: string | number }
 
@@ -18,7 +18,7 @@ defineProps<{
 }>()
 
 defineEmits<{
-  (event: 'rememberChange', value: Event): void
+  (event: 'rememberChange', value: boolean): void
   (event: 'run'): void
   (event: 'workflowModeChange', value: string | number): void
 }>()
@@ -36,15 +36,12 @@ defineEmits<{
         variant="workflow"
         @change="$emit('workflowModeChange', $event)"
       />
-      <label class="remember-workflow-mode-toggle">
-        <UiInput
-          id="rememberWorkflowModeCheckbox"
-          type="checkbox"
-          :checked="rememberWorkflowModeEnabled"
-          @change="$emit('rememberChange', $event)"
-        />
-        <span>记住操作模式</span>
-      </label>
+      <UiCheckbox
+        :model-value="rememberWorkflowModeEnabled"
+        class="remember-workflow-mode-toggle"
+        label="记住操作模式"
+        @change="$emit('rememberChange', $event)"
+      />
     </div>
     <div class="workflow-meta">
       <span class="workflow-chip">{{ workflowContextTag }}</span>

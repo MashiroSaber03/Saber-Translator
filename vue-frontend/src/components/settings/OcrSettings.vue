@@ -24,13 +24,14 @@
     </UiPanel>
     <UiPanel variant="settings">
       <template #title>混合OCR设置</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        class="ui-settings-field ui-settings-field--checkbox"
+      >
         <label for="settingsHybridOcrEnabled">启用混合OCR:</label>
-        <UiInput
-          id="settingsHybridOcrEnabled"
-          type="checkbox"
-          :checked="settings.hybridOcr.enabled"
-          @change="handleHybridOcrEnabledEvent"
+        <UiCheckbox
+          input-id="settingsHybridOcrEnabled"
+          :model-value="settings.hybridOcr.enabled"
+          @change="handleHybridOcrEnabledChange"
         />
       </UiField>
       <UiFormGrid v-show="settings.hybridOcr.enabled">
@@ -243,10 +244,7 @@
         <UiInput type="number" id="settingsAiVisionTransportRetries" v-model.number="localAiVisionOcr.transportRetries" min="0" max="10" step="1" />
       </UiField>
       <UiField class="ui-settings-field">
-        <label class="ui-checkbox-label">
-          <UiInput type="checkbox" v-model="localAiVisionOcr.useStream" />
-          流式调用
-        </label>
+        <UiCheckbox v-model="localAiVisionOcr.useStream" label="流式调用" />
         <div class="ui-form-hint">使用流式请求并在终端输出流式日志</div>
       </UiField>
       <UiField class="ui-settings-field">
@@ -271,6 +269,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { ref, computed, watch } from 'vue'
 import {
   normalizeProviderId,
@@ -421,10 +420,6 @@ function handleSourceLanguageChange() {
 }
 function handleHybridOcrEnabledChange(value: boolean) {
   settingsStore.updateHybridOcr({ enabled: value })
-}
-function handleHybridOcrEnabledEvent(event: Event) {
-  const target = event.target as HTMLInputElement | null
-  handleHybridOcrEnabledChange(Boolean(target?.checked))
 }
 function handleHybridSecondaryEngineChange(value: SelectValue) {
   const secondaryEngine = toSelectString(value)

@@ -87,8 +87,9 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, computed, onMounted } from 'vue'
-import { configApi } from '@/api/config'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { configApi, type PromptContentResponse } from '@/api/config'
+import type { PromptListResponse } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -122,6 +123,9 @@ const editingName = ref('')
 const editingContent = ref('')
 const isLoading = ref(false)
 const selectedMode = ref<'normal' | 'json' | 'paddleocr_vl'>('normal')
+let promptListRequestId = 0
+let promptContentRequestId = 0
+let isMounted = true
 
 const supportsModeSwitch = computed(() => {
   return selectedType.value === 'translate' || selectedType.value === 'ai_vision_ocr'
@@ -151,21 +155,28 @@ function getTranslationPromptMode(): 'normal' | 'json' {
 }
 
 async function loadPromptList() {
+  const requestId = ++promptListRequestId
+  const promptType = selectedType.value
   isLoading.value = true
   try {
-    let result
-    if (selectedType.value === 'textbox') {
-      result = await configApi.getTextboxPrompts()
-    } else {
-      result = await configApi.getPrompts(selectedType.value)
+    const result: PromptListResponse = promptType === 'textbox'
+      ? await configApi.getTextboxPrompts()
+      : await configApi.getPrompts(promptType)
+    if (!isMounted || requestId !== promptListRequestId || selectedType.value !== promptType) {
+      return
     }
     const names = result.prompt_names || []
     promptList.value = names.map(name => ({ name }))
   } catch (error: unknown) {
+    if (!isMounted || requestId !== promptListRequestId || selectedType.value !== promptType) {
+      return
+    }
     const errorMessage = error instanceof Error ? error.message : '加载提示词列表失败'
     toast.error(errorMessage)
   } finally {
-    isLoading.value = false
+    if (isMounted && requestId === promptListRequestId && selectedType.value === promptType) {
+      isLoading.value = false
+    }
   }
 }
 
@@ -176,12 +187,14 @@ async function selectPrompt(name: string) {
 }
 
 async function loadPrompt(name: string) {
+  const requestId = ++promptContentRequestId
+  const promptType = selectedType.value
   try {
-    let result
-    if (selectedType.value === 'textbox') {
-      result = await configApi.getTextboxPromptContent(name)
-    } else {
-      result = await configApi.getPromptContent(selectedType.value, name)
+    const result: PromptContentResponse = promptType === 'textbox'
+      ? await configApi.getTextboxPromptContent(name)
+      : await configApi.getPromptContent(promptType, name)
+    if (!isMounted || requestId !== promptContentRequestId || selectedType.value !== promptType) {
+      return
     }
     editingName.value = name
     editingContent.value = result.prompt_content || ''
@@ -274,6 +287,12 @@ function handleModeChange() {
 onMounted(() => {
   selectedMode.value = getTranslationPromptMode()
   loadPromptList()
+})
+
+onBeforeUnmount(() => {
+  isMounted = false
+  promptListRequestId += 1
+  promptContentRequestId += 1
 })
 </script>
 

@@ -3,7 +3,7 @@
  * 处理编辑模式下的图像重新渲染逻辑
  */
 
-import { ref } from 'vue'
+import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -50,9 +50,18 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
 
   /** 当前渲染的token（用于取消过期渲染） */
   let currentRenderToken: symbol | null = null
+  let isOwnerDisposed = false
 
   function isSameCurrentImage(expectedImageId: string): boolean {
-    return currentImage.value?.id === expectedImageId
+    return !isOwnerDisposed && currentImage.value?.id === expectedImageId
+  }
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      isOwnerDisposed = true
+      currentRenderToken = null
+      isRendering.value = false
+    })
   }
 
   // ============================================================
