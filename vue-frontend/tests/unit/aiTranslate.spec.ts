@@ -1,9 +1,20 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { executeAiTranslate } from '@/composables/translation/core/steps/aiTranslate'
+import {
+  executeAiTranslate,
+  type AiTranslateOutput,
+  type AiTranslateTask,
+} from '@/composables/translation/core/steps/aiTranslate'
 import { useSettingsStore } from '@/stores/settings'
+import type { BubbleState } from '@/types/bubble'
+import type { ImageData } from '@/types/image'
+import type { HqTranslationProvider, ProofreadingRound } from '@/types/settings'
+import { createBubbleState } from '@/utils/bubbleFactory'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
+import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 
 const { hqTranslateBatchMock } = vi.hoisted(() => ({
   hqTranslateBatchMock: vi.fn(),
@@ -13,8 +24,98 @@ vi.mock('@/api/translate', () => ({
   hqTranslateBatch: hqTranslateBatchMock,
 }))
 
+const DATA_URL = 'data:image/png;base64,abc'
+
+function createTestImage(overrides: Partial<ImageData> = {}): ImageData {
+  return {
+    id: 'image-1',
+    fileName: 'page-1.png',
+    width: 100,
+    height: 100,
+    originalDataURL: DATA_URL,
+    translatedDataURL: null,
+    cleanImageData: null,
+    bubbleStates: null,
+    translationStatus: 'pending',
+    translationFailed: false,
+    fontSize: 28,
+    autoFontSize: true,
+    fontFamily: 'Arial',
+    layoutDirection: 'vertical',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    inpaintMethod: 'solid',
+    strokeEnabled: false,
+    strokeColor: '#ffffff',
+    strokeWidth: 0,
+    lineSpacing: 1,
+    textAlign: 'center',
+    hasUnsavedChanges: false,
+    ...overrides,
+  }
+}
+
+function createTranslationTask(overrides: Partial<AiTranslateTask> = {}): AiTranslateTask {
+  return {
+    imageIndex: 0,
+    image: createTestImage(),
+    originalTexts: ['こんにちは'],
+    autoDirections: ['vertical'],
+    ...overrides,
+  }
+}
+
+function createProofreadBubble(overrides: Partial<BubbleState> = {}): BubbleState {
+  return createBubbleState({
+    originalText: '原文',
+    translatedText: '初始译文',
+    textDirection: 'vertical',
+    autoTextDirection: 'vertical',
+    ...overrides,
+  })
+}
+
+function createProofreadingRound(
+  index: number,
+  overrides: Partial<ProofreadingRound> = {},
+): ProofreadingRound {
+  return {
+    name: `第${index}轮`,
+    provider: 'custom',
+    apiKey: `proof-key-${index}`,
+    modelName: `proof-model-${index}`,
+    customBaseUrl: `https://proof-${index}.example.com/v1`,
+    batchSize: 1,
+    openaiOptions: createDefaultOpenAiOptions({
+      request: {
+        forceJsonOutput: false,
+      },
+      execution: {
+        useStream: true,
+        rpmLimit: index === 1 ? 4 : 6,
+        transportRetries: 1,
+        businessRetries: 0,
+      },
+    }),
+    prompt: index === 1 ? '请校对译文' : '再次校对译文',
+    ...overrides,
+  }
+}
+
+function getPayload(callIndex: number): Record<string, unknown> {
+  return hqTranslateBatchMock.mock.calls[callIndex]?.[0] as Record<string, unknown>
+}
+
 describe('executeAiTranslate', () => {
   const storageState: Record<string, string> = {}
+
+  it('keeps AI translation fixtures typed to the current contract', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/aiTranslate.spec.ts'), 'utf8')
+
+    expect(source).not.toContain('as ' + 'any')
+    expect(source).not.toMatch(new RegExp(':\\s*' + 'any\\b'))
+    expect(source).not.toContain('any' + '[]')
+  })
 
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -48,33 +149,24 @@ describe('executeAiTranslate', () => {
 
   it('preserves empty provider and zero max retries for HQ translation requests', async () => {
     const settingsStore = useSettingsStore()
-    settingsStore.settings.hqTranslation.provider = '' as any
+    settingsStore.settings.hqTranslation.provider = '' as HqTranslationProvider
     settingsStore.settings.hqTranslation.apiKey = 'hq-key'
     settingsStore.settings.hqTranslation.modelName = 'hq-model'
     const constraints = createEmptyBookTranslationConstraints()
     constraints.glossary.enabled = true
     constraints.glossary.entries = [
-      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
+      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' },
     ]
     constraints.non_translate.enabled = true
     constraints.non_translate.entries = [
-      { pattern: '<keep>', note: '', matchMode: 'text' } as any,
+      { pattern: '<keep>', note: '', matchMode: 'text' },
     ]
     settingsStore.settings.hqTranslation.openaiOptions.execution.rpmLimit = 13
     settingsStore.settings.hqTranslation.openaiOptions.execution.businessRetries = 0
 
     await executeAiTranslate({
       mode: 'hq',
-      tasks: [
-        {
-          imageIndex: 0,
-          image: {
-            originalDataURL: 'data:image/png;base64,abc',
-          } as any,
-          originalTexts: ['こんにちは'],
-          autoDirections: ['vertical'],
-        },
-      ],
+      tasks: [createTranslationTask()],
       settingsSnapshot: settingsStore.settings,
       bookTranslationConstraints: constraints,
       isBookshelfMode: true,
@@ -89,12 +181,12 @@ describe('executeAiTranslate', () => {
         openai_options: expect.objectContaining({
           execution: expect.objectContaining({
             rpm_limit: 13,
-            business_retries: 0
-          })
-        })
+            business_retries: 0,
+          }),
+        }),
       }),
     )
-    const payload = hqTranslateBatchMock.mock.calls[0]?.[0] as Record<string, unknown>
+    const payload = getPayload(0)
     expect(payload).not.toHaveProperty('low_reasoning')
     expect(payload).not.toHaveProperty('no_thinking_method')
   })
@@ -103,66 +195,18 @@ describe('executeAiTranslate', () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings.proofreading.maxRetries = 5
     settingsStore.settings.proofreading.rounds = [
-      {
-        name: '第1轮',
-        provider: 'custom',
-        apiKey: 'proof-key-1',
-        modelName: 'proof-model-1',
-        customBaseUrl: 'https://proof-1.example.com/v1',
-        batchSize: 1,
-        openaiOptions: {
-          request: {
-            forceJsonOutput: false
-          },
-          execution: {
-            useStream: true,
-            rpmLimit: 4,
-            transportRetries: 1,
-            businessRetries: 0
-          }
-        },
-        prompt: '请校对译文',
-      },
-      {
-        name: '第2轮',
-        provider: 'custom',
-        apiKey: 'proof-key-2',
-        modelName: 'proof-model-2',
-        customBaseUrl: 'https://proof-2.example.com/v1',
-        batchSize: 1,
-        openaiOptions: {
-          request: {
-            forceJsonOutput: false
-          },
-          execution: {
-            useStream: true,
-            rpmLimit: 6,
-            transportRetries: 1,
-            businessRetries: 0
-          }
-        },
-        prompt: '再次校对译文',
-      },
-    ] as any
+      createProofreadingRound(1),
+      createProofreadingRound(2),
+    ]
 
     await executeAiTranslate({
       mode: 'proofread',
       tasks: [
-        {
-          imageIndex: 0,
-          image: {
-            originalDataURL: 'data:image/png;base64,abc',
-            translatedDataURL: null,
-            bubbleStates: [
-              {
-                originalText: '原文',
-                translatedText: '初始译文',
-                textDirection: 'vertical',
-                autoTextDirection: 'vertical',
-              },
-            ],
-          } as any,
-        },
+        createTranslationTask({
+          image: createTestImage({
+            bubbleStates: [createProofreadBubble()],
+          }),
+        }),
       ],
       settingsSnapshot: settingsStore.settings,
       bookTranslationConstraints: createEmptyBookTranslationConstraints(),
@@ -177,9 +221,9 @@ describe('executeAiTranslate', () => {
         openai_options: expect.objectContaining({
           execution: expect.objectContaining({
             rpm_limit: 4,
-            business_retries: 0
-          })
-        })
+            business_retries: 0,
+          }),
+        }),
       }),
     )
     expect(hqTranslateBatchMock).toHaveBeenNthCalledWith(
@@ -189,13 +233,13 @@ describe('executeAiTranslate', () => {
         openai_options: expect.objectContaining({
           execution: expect.objectContaining({
             rpm_limit: 6,
-            business_retries: 0
-          })
-        })
+            business_retries: 0,
+          }),
+        }),
       }),
     )
-    const firstPayload = hqTranslateBatchMock.mock.calls[0]?.[0] as Record<string, unknown>
-    const secondPayload = hqTranslateBatchMock.mock.calls[1]?.[0] as Record<string, unknown>
+    const firstPayload = getPayload(0)
+    const secondPayload = getPayload(1)
     expect(firstPayload).not.toHaveProperty('low_reasoning')
     expect(firstPayload).not.toHaveProperty('no_thinking_method')
     expect(secondPayload).not.toHaveProperty('low_reasoning')
@@ -216,20 +260,11 @@ describe('executeAiTranslate', () => {
     })
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-    let result
+    let result: AiTranslateOutput | undefined
     try {
       result = await executeAiTranslate({
         mode: 'hq',
-        tasks: [
-          {
-            imageIndex: 0,
-            image: {
-              originalDataURL: 'data:image/png;base64,abc',
-            } as any,
-            originalTexts: ['こんにちは'],
-            autoDirections: ['vertical'],
-          },
-        ],
+        tasks: [createTranslationTask()],
         settingsSnapshot: settingsStore.settings,
         bookTranslationConstraints: createEmptyBookTranslationConstraints(),
         isBookshelfMode: false,
@@ -239,13 +274,13 @@ describe('executeAiTranslate', () => {
       logSpy.mockRestore()
     }
 
-    expect(result.results).toEqual([
+    expect(result?.results).toEqual([
       {
         imageIndex: 0,
         translatedTexts: ['单图译文'],
         textboxTexts: [],
         warnings: [],
-      }
+      },
     ])
   })
 
@@ -265,16 +300,7 @@ describe('executeAiTranslate', () => {
 
     const result = await executeAiTranslate({
       mode: 'hq',
-      tasks: [
-        {
-          imageIndex: 0,
-          image: {
-            originalDataURL: 'data:image/png;base64,abc',
-          } as any,
-          originalTexts: ['こんにちは'],
-          autoDirections: ['vertical'],
-        },
-      ],
+      tasks: [createTranslationTask()],
       settingsSnapshot: settingsStore.settings,
       bookTranslationConstraints: createEmptyBookTranslationConstraints(),
       isBookshelfMode: false,

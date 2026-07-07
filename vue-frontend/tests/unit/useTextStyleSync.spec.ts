@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
+import type { BubbleState } from '@/types/bubble'
 
 const { executeRenderMock, showToastMock } = vi.hoisted(() => ({
   executeRenderMock: vi.fn(),
@@ -49,6 +52,33 @@ describe('useTextStyleSync', () => {
     setActivePinia(createPinia())
     executeRenderMock.mockReset()
     showToastMock.mockReset()
+  })
+
+  it('reuses the edit render request projection for standard style rerenders', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/useTextStyleSync.ts'), 'utf8')
+
+    expect(source).toContain('buildEditRenderInput(')
+    expect(source).not.toContain('buildSavedTextStylesFromSettings')
+    expect(source).not.toContain('bubbleCoords: bubbleStates.map')
+  })
+
+  it('keeps the text-style sync owner free of scaffold narration', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/useTextStyleSync.ts'), 'utf8')
+
+    expect(source).not.toContain('/**')
+    expect(source).not.toContain('@param')
+    expect(source).not.toContain('// ============================================================')
+    expect(source).not.toContain('文字样式同步与应用 composable')
+    expect(source).not.toContain('辅助函数：')
+  })
+
+  it('keeps text-style sync tests on typed bubble fixtures', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/useTextStyleSync.spec.ts'), 'utf8')
+    const bannedAnyCast = ' as' + ' any'
+    const bannedBubbleStatesArray = 'bubbleStates: ' + 'any[]'
+
+    expect(source).not.toContain(bannedAnyCast)
+    expect(source).not.toContain(bannedBubbleStatesArray)
   })
 
   it('explicit auto font size re-application requests initialize_auto once and writes back the new sizes', async () => {
@@ -148,7 +178,7 @@ describe('useTextStyleSync', () => {
     ])
 
     const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
-    const { handleAutoTextColorChanged } = useTextStyleSync() as any
+    const { handleAutoTextColorChanged } = useTextStyleSync()
 
     await expectNoRoutineConsoleLogs(async () => {
       await handleAutoTextColorChanged(true)
@@ -243,8 +273,8 @@ describe('useTextStyleSync', () => {
   })
 
   it('does not write a style-change render result to a different current image', async () => {
-    let resolveRender!: (value: { finalImage: string; bubbleStates: any[] }) => void
-    const pendingRender = new Promise<{ finalImage: string; bubbleStates: any[] }>((resolve) => {
+    let resolveRender!: (value: { finalImage: string; bubbleStates: BubbleState[] }) => void
+    const pendingRender = new Promise<{ finalImage: string; bubbleStates: BubbleState[] }>((resolve) => {
       resolveRender = resolve
     })
     executeRenderMock.mockReturnValueOnce(pendingRender)

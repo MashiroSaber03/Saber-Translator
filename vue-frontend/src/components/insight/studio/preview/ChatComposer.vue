@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue'
-import UiButton from '@/components/ui/UiButton.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { attachmentTypeLabel, type PendingAttachmentCard } from '../characterStudioPreviewHelpers'
 
@@ -15,15 +16,14 @@ const emit = defineEmits<{
 
 const chatInput = ref('')
 const pendingFiles = ref<PendingAttachmentCard[]>([])
-const attachmentInput = ref<HTMLInputElement | null>(null)
+const attachmentInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 
 function pickAttachments() {
   attachmentInput.value?.click()
 }
 
-function handleAttachmentChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  const files = Array.from(target.files || [])
+function handleAttachmentChange(files: File[]) {
+  if (files.length === 0) return
   pendingFiles.value = [
     ...pendingFiles.value,
     ...files.map(file => ({
@@ -32,7 +32,7 @@ function handleAttachmentChange(event: Event) {
       previewUrl: URL.createObjectURL(file),
     })),
   ]
-  target.value = ''
+  attachmentInput.value?.clear()
 }
 
 function removePendingFile(index: number) {
@@ -56,78 +56,72 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="composer-card">
-    <div v-if="pendingFiles.length > 0" class="pending-files">
+  <div class="studio-chat-composer">
+    <div v-if="pendingFiles.length > 0" class="studio-chat-composer__pending-files">
       <div
         v-for="(file, index) in pendingFiles"
         :key="file.id"
-        class="pending-image-card"
+        class="studio-chat-composer__pending-card"
       >
-        <div class="pending-image-thumb">
-          <img :src="file.previewUrl" :alt="file.file.name">
+        <div class="studio-chat-composer__pending-thumb">
+          <img class="studio-chat-composer__pending-image" :src="file.previewUrl" :alt="file.file.name">
         </div>
-        <div class="pending-image-copy">
-          <strong>{{ file.file.name }}</strong>
-          <span>{{ attachmentTypeLabel(file.file.type || 'application/octet-stream') }}</span>
+        <div class="studio-chat-composer__pending-copy">
+          <strong class="studio-chat-composer__pending-name">{{ file.file.name }}</strong>
+          <span class="studio-chat-composer__pending-type">{{ attachmentTypeLabel(file.file.type || 'application/octet-stream') }}</span>
         </div>
-        <UiButton
-          variant="toolbar"
+        <UiIconButton
+          variant="plain"
           type="button"
-          class="pending-remove"
-          :aria-label="`移除附件：${file.file.name}`"
+          size="xs"
+          class="studio-chat-composer__pending-remove"
+          :label="`移除附件：${file.file.name}`"
           @click="removePendingFile(index)"
         >
-          ×
-        </UiButton>
+          <UiIcon name="x" size="14" />
+        </UiIconButton>
       </div>
     </div>
-    <div class="composer-main">
+    <div class="studio-chat-composer__main">
       <UiTextarea
         v-model="chatInput"
-        class="chat-composer-input"
+        class="studio-chat-composer__input"
+        variant="studio"
         rows="1"
+        aria-label="聊天消息内容"
         placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"
       />
-      <div class="composer-actions compact-actions">
-        <UiButton
-          variant="toolbar"
+      <div class="studio-chat-composer__actions">
+        <UiIconButton
+          variant="soft"
+          size="lg"
           data-testid="chat-upload-trigger"
-          class="action-ghost icon-btn"
           type="button"
-          title="添加图片"
-          aria-label="添加图片"
+          label="添加图片"
           :disabled="chatStreaming"
           @click="pickAttachments"
         >
-          +
-        </UiButton>
-        <UiButton
-          variant="toolbar"
+          <UiIcon name="plus" size="18" />
+        </UiIconButton>
+        <UiIconButton
+          variant="primary"
+          size="lg"
           data-testid="chat-send-trigger"
-          class="action-primary icon-btn"
           type="button"
-          :title="chatStreaming ? '回复生成中...' : '发送消息'"
-          :aria-label="chatStreaming ? '回复生成中...' : '发送消息'"
+          :label="chatStreaming ? '回复生成中...' : '发送消息'"
           :disabled="chatStreaming || (!chatInput.trim() && pendingFiles.length === 0)"
           @click="sendChat"
         >
-          {{ chatStreaming ? '…' : '↗' }}
-        </UiButton>
+          <UiIcon :name="chatStreaming ? 'loading' : 'send'" size="18" />
+        </UiIconButton>
       </div>
     </div>
-    <UiFileInput ref="attachmentInput" hidden accept="image/*" multiple @change="handleAttachmentChange" />
+    <UiFileInput ref="attachmentInput" hidden accept="image/*" multiple @files-change="handleAttachmentChange" />
   </div>
 </template>
 
 <style scoped>
-.composer-card {
-  --ui-textarea-border: 1px solid var(--studio-border-strong);
-  --ui-textarea-background: var(--studio-surface-soft);
-  --ui-textarea-radius: 14px;
-  --ui-textarea-padding: 10px 12px;
-  --ui-textarea-color: var(--studio-text-strong);
-  --ui-textarea-font-size: 13px;
-
+.studio-chat-composer {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -135,55 +129,36 @@ onUnmounted(() => {
   padding: 10px 12px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: var(--character-studio-preview-composer-background);
+  background: color-mix(in srgb, var(--color-surface-app) 94%, transparent);
 }
 
-.composer-main {
+.studio-chat-composer__main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 10px;
 }
 
-.chat-composer-input {
+.studio-chat-composer__input {
   min-height: 64px;
   resize: vertical;
 }
 
-.composer-actions {
+.studio-chat-composer__actions {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.compact-actions {
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-end;
   gap: 6px;
 }
 
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  padding: 0;
-  font-size: 22px;
-  line-height: 1;
-}
-
-.pending-files {
+.studio-chat-composer__pending-files {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  flex-wrap: wrap;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
   gap: 10px;
 }
 
-.pending-image-card {
+.studio-chat-composer__pending-card {
   position: relative;
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
@@ -192,11 +167,11 @@ onUnmounted(() => {
   padding: 8px 28px 8px 8px;
   border: 1px solid var(--studio-border-default);
   border-radius: 14px;
-  background: var(--character-studio-preview-pending-attachment-background);
+  background: color-mix(in srgb, var(--color-surface-card) 88%, transparent);
   text-align: left;
 }
 
-.pending-image-thumb {
+.studio-chat-composer__pending-thumb {
   width: 48px;
   height: 48px;
   overflow: hidden;
@@ -204,17 +179,17 @@ onUnmounted(() => {
   background: var(--studio-surface-soft);
 }
 
-.pending-image-thumb img {
+.studio-chat-composer__pending-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.pending-image-copy {
+.studio-chat-composer__pending-copy {
   min-width: 0;
 }
 
-.pending-image-copy strong {
+.studio-chat-composer__pending-name {
   display: block;
   overflow: hidden;
   color: var(--studio-text-strong);
@@ -223,54 +198,23 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.pending-image-copy span {
+.studio-chat-composer__pending-type {
   color: var(--studio-text-muted);
   font-size: 11px;
 }
 
-.pending-remove {
+.studio-chat-composer__pending-remove {
   position: absolute;
   top: 6px;
   right: 8px;
-  padding: 2px 4px;
-  color: var(--studio-text-muted);
-  cursor: pointer;
-}
-
-.action-ghost,
-.action-primary {
-  border: none;
-  border-radius: 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.action-ghost {
-  padding: 10px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-primary {
-  padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-preview-primary-action-background-start), var(--character-studio-preview-primary-action-background-end));
-  box-shadow: 0 12px 24px var(--character-studio-preview-primary-action-shadow);
-  color: var(--color-text-inverse);
-}
-
-.action-ghost:disabled,
-.action-primary:disabled {
-  cursor: not-allowed;
-  box-shadow: none;
-  opacity: 0.68;
 }
 
 @media (--breakpoint-preview-down) {
-  .composer-main {
+  .studio-chat-composer__main {
     grid-template-columns: 1fr;
   }
 
-  .compact-actions {
+  .studio-chat-composer__actions {
     flex-direction: row;
   }
 }

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import { useInsightStore, type NoteData, type NoteType } from '@/stores/insightStore'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 import NoteEditorModal from './notes/NoteEditorModal.vue'
 import NotesList from './notes/NotesList.vue'
 import NotesToolbar from './notes/NotesToolbar.vue'
@@ -96,7 +98,14 @@ async function saveNote(): Promise<void> {
 }
 
 async function deleteNote(noteId: string): Promise<void> {
-  if (!confirm('确定要删除这条笔记吗？')) return
+  const confirmed = await confirmProductAction({
+    title: '删除笔记',
+    message: '确定要删除这条笔记吗？',
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
   await insightStore.deleteNote(noteId)
 }
 
@@ -106,7 +115,7 @@ function goToPage(pageNum: number): void {
 </script>
 
 <template>
-  <div class="workspace-section notes-section">
+  <div class="notes-panel">
     <NotesToolbar
       :filter="noteTypeFilter"
       :filter-options="noteFilterOptions"
@@ -123,10 +132,11 @@ function goToPage(pageNum: number): void {
     <UiButton
       variant="secondary"
       size="sm"
-      class="btn-block"
+      class="notes-panel__add-button"
       @click="openNoteModal"
     >
-      + 添加笔记
+      <UiIcon name="plus" size="14" />
+      添加笔记
     </UiButton>
 
     <NoteEditorModal
@@ -146,23 +156,16 @@ function goToPage(pageNum: number): void {
 </template>
 
 <style scoped>
-.workspace-section.notes-section {
-  --ui-button-padding: 10px 18px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--insight-action-primary);
-  --ui-button-primary-hover-background: var(--insight-action-primary-strong);
-  --ui-button-secondary-background: var(--insight-surface-tertiary);
-  --ui-button-secondary-color: var(--insight-text-primary);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted);
-  --ui-button-secondary-hover-background: var(--color-border-muted);
-  --ui-button-sm-padding: 8px 14px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-
+.notes-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: 20px 18px;
 }
 
-.btn-block {
+.notes-panel__add-button {
+  flex: 0 0 auto;
   width: 100%;
 }
 </style>

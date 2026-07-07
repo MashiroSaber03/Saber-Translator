@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
+import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import { showToast } from '@/utils/toast'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 
 const insightStore = useInsightStore()
 
@@ -16,6 +27,13 @@ let isPagesTreeMounted = true
 
 const chapters = computed(() => insightStore.chapters)
 const totalPages = computed(() => insightStore.totalPageCount)
+const contentNavigationChips = computed<ProductChipItem[]>(() => [
+  {
+    id: 'total-pages',
+    label: `${totalPages.value}页`,
+    tone: 'neutral',
+  },
+])
 
 function toggleChapter(chapterId: string): void {
   if (expandedChapters.value.has(chapterId)) {
@@ -54,16 +72,26 @@ function getThumbnailUrl(pageNum: number): string {
   return insightApi.getThumbnailUrl(insightStore.currentBookId, pageNum)
 }
 
+function createPageThumbnailItems(startPage: number, endPage: number): ProductThumbnailGridItem[] {
+  return getPageRange(startPage, endPage).map(pageNum => ({
+    id: pageNum,
+    src: getThumbnailUrl(pageNum),
+    alt: `第${pageNum}页`,
+    label: `第 ${pageNum} 页`,
+    selected: isPageSelected(pageNum),
+    marked: isPageAnalyzed(pageNum),
+  }))
+}
+
+function selectThumbnailPage(pageId: string | number): void {
+  selectPage(Number(pageId))
+}
+
 function loadMorePages(): void {
   displayedPageCount.value = Math.min(
     displayedPageCount.value + 100,
     totalPages.value
   )
-}
-
-function handleImageError(event: Event): void {
-  const img = event.target as HTMLImageElement
-  img.style.opacity = '0'
 }
 
 function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boolean {
@@ -77,10 +105,34 @@ function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boo
   return analyzedCount === pageCount
 }
 
+function chapterStateChips(chapter: { id: string; startPage: number; endPage: number }): ProductChipItem[] {
+  const analyzed = isChapterAnalyzed(chapter)
+
+  return [
+    {
+      id: `${chapter.id}-pages`,
+      label: `${chapter.endPage - chapter.startPage + 1}页`,
+      tone: 'neutral',
+    },
+    {
+      id: `${chapter.id}-analysis`,
+      label: analyzed ? '已分析' : '待分析',
+      tone: analyzed ? 'success' : 'neutral',
+    },
+  ]
+}
+
 async function reanalyzeChapter(chapterId: string): Promise<void> {
   if (!insightStore.currentBookId) return
-  if (!confirm('确定要重新分析此章节吗？')) return
-  
+  const confirmed = await confirmProductAction({
+    title: '重新分析章节',
+    message: '确定要重新分析此章节吗？',
+    confirmText: '重新分析',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
   try {
     const response = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
     if (response.success) {
@@ -104,7 +156,7 @@ async function loadAnalyzedPages(bookId = insightStore.currentBookId): Promise<v
     pageAnalyzedMap.value = new Map()
     return
   }
-  
+
   try {
     const response = await insightApi.getAnalyzedPages(bookId)
     if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
@@ -133,7 +185,7 @@ function isCurrentAnalyzedPagesRequest(requestId: number, bookId: string): boole
 
 onMounted(async () => {
   await loadAnalyzedPages()
-  
+
   if (chapters.value.length > 0 && chapters.value[0]) {
     expandedChapters.value.add(chapters.value[0].id)
   }
@@ -164,360 +216,214 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="sidebar-section pages-tree-section">
-    <div class="section-header">
-      <h3 class="section-title">内容导航</h3>
-      <span class="page-count-badge">{{ totalPages }}页</span>
-    </div>
-    
-    <div class="pages-tree">
+  <div class="pages-tree-panel">
+    <ProductSectionHeader
+      class="pages-tree-panel__header"
+      title="内容导航"
+      size="sm"
+    >
+      <template #actions>
+        <ProductChipList
+          class="pages-tree-panel__header-chips"
+          aria-label="内容导航统计"
+          :items="contentNavigationChips"
+        />
+      </template>
+    </ProductSectionHeader>
+
+    <div class="pages-tree-panel__body">
       <template v-if="chapters.length === 0">
-        <div v-if="totalPages === 0" class="empty-hint">
-          暂无页面
-        </div>
-        <div v-else class="tree-all-pages">
-          <UiButton
-            v-for="pageNum in getPageRange(1, Math.min(totalPages, displayedPageCount))"
-            :key="pageNum"
-            variant="toolbar"
-            class="tree-page-item"
-            :class="{ 
-              selected: isPageSelected(pageNum),
-              analyzed: isPageAnalyzed(pageNum)
-            }"
-            :data-page="pageNum"
-            :aria-label="`选择第 ${pageNum} 页`"
-            :aria-pressed="isPageSelected(pageNum)"
-            @click="selectPage(pageNum)"
-          >
-            <img 
-              :src="getThumbnailUrl(pageNum)" 
-              :alt="`第${pageNum}页`"
-              class="tree-page-thumb"
-              loading="lazy"
-              @error="handleImageError($event)"
-            >
-            <span class="tree-page-num">{{ pageNum }}</span>
-          </UiButton>
-        </div>
-        <div v-if="totalPages > displayedPageCount" class="tree-load-more">
-          <UiButton variant="toolbar" class="btn-load-more" @click="loadMorePages">
+        <ProductStatusBanner
+          v-if="totalPages === 0"
+          class="pages-tree-panel__empty-status"
+          tone="neutral"
+          role="note"
+          icon-name="image"
+          title="暂无页面"
+        >
+          导入或选择书籍后将在这里显示页面缩略图。
+        </ProductStatusBanner>
+        <ProductThumbnailGrid
+          v-else
+          class="pages-tree-panel__all-pages"
+          aria-label="所有页面导航"
+          :columns="4"
+          :items="createPageThumbnailItems(1, Math.min(totalPages, displayedPageCount))"
+          @select="selectThumbnailPage"
+        />
+        <ProductActionRow
+          v-if="totalPages > displayedPageCount"
+          class="pages-tree-panel__load-more"
+          aria-label="页面导航加载操作"
+          justify="center"
+        >
+          <UiButton variant="secondary" @click="loadMorePages">
             加载更多 (还有 {{ totalPages - displayedPageCount }} 页)
           </UiButton>
-        </div>
+        </ProductActionRow>
       </template>
-      
+
       <template v-else>
-        <div 
-          v-for="chapter in chapters" 
+        <ProductRecordCard
+          v-for="chapter in chapters"
           :key="chapter.id"
-          class="tree-chapter"
-          :class="{ expanded: isChapterExpanded(chapter.id) }"
+          class="pages-tree-panel__chapter"
+          :class="{ 'pages-tree-panel__chapter--expanded': isChapterExpanded(chapter.id) }"
         >
-          <div class="tree-chapter-header">
-            <UiButton
-              variant="toolbar"
-              class="tree-chapter-toggle"
-              :aria-expanded="isChapterExpanded(chapter.id)"
-              :aria-label="`${isChapterExpanded(chapter.id) ? '收起' : '展开'}${chapter.title}`"
-              @click="toggleChapter(chapter.id)"
-            >
-              <span class="tree-expand-icon">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l8 7-8 7z" /></svg>
-              </span>
-              <span class="tree-chapter-info">
-                <span class="tree-chapter-title">{{ chapter.title }}</span>
-                <span class="tree-chapter-meta">{{ chapter.endPage - chapter.startPage + 1 }}页</span>
-              </span>
-              <span
-                class="tree-chapter-status"
-                :class="{ analyzed: isChapterAnalyzed(chapter) }"
-              ></span>
-            </UiButton>
-            <UiButton
-              variant="toolbar" 
-              class="btn-reanalyze-chapter" 
-              title="重新分析此章节"
-              @click.stop="reanalyzeChapter(chapter.id)"
-            >
-              🔄
-            </UiButton>
-          </div>
-          
-          <div class="tree-pages-grid">
-            <UiButton
-              v-for="pageNum in getPageRange(chapter.startPage, chapter.endPage)"
-              :key="pageNum"
-              variant="toolbar"
-              class="tree-page-item"
-              :class="{ 
-                selected: isPageSelected(pageNum),
-                analyzed: isPageAnalyzed(pageNum)
-              }"
-              :data-page="pageNum"
-              :aria-label="`选择第 ${pageNum} 页`"
-              :aria-pressed="isPageSelected(pageNum)"
-              @click="selectPage(pageNum)"
-            >
-              <img 
-                :src="getThumbnailUrl(pageNum)" 
-                :alt="`第${pageNum}页`"
-                class="tree-page-thumb"
-                loading="lazy"
-                @error="handleImageError($event)"
+          <template #meta>
+            <div class="pages-tree-panel__chapter-main">
+              <UiButton
+                variant="toolbar"
+                class="pages-tree-panel__chapter-toggle"
+                :aria-expanded="isChapterExpanded(chapter.id)"
+                :aria-label="`${isChapterExpanded(chapter.id) ? '收起' : '展开'}${chapter.title}`"
+                @click="toggleChapter(chapter.id)"
               >
-              <span class="tree-page-num">{{ pageNum }}</span>
-            </UiButton>
-          </div>
-        </div>
+                <span class="pages-tree-panel__expand-icon">
+                  <UiIcon name="chevron-right" size="12" stroke-width="2.5" />
+                </span>
+                <span class="pages-tree-panel__chapter-title">{{ chapter.title }}</span>
+              </UiButton>
+              <ProductChipList
+                class="pages-tree-panel__chapter-chips"
+                :aria-label="`${chapter.title}章节状态`"
+                :items="chapterStateChips(chapter)"
+              />
+            </div>
+          </template>
+
+          <template #actions>
+            <ProductActionRow
+              :aria-label="`${chapter.title}章节操作`"
+              justify="end"
+            >
+              <UiIconButton
+                title="重新分析此章节"
+                :label="`重新分析${chapter.title}`"
+                variant="soft"
+                size="xs"
+                @click.stop="reanalyzeChapter(chapter.id)"
+              >
+                <UiIcon name="refresh" size="14" />
+              </UiIconButton>
+            </ProductActionRow>
+          </template>
+
+          <ProductThumbnailGrid
+            v-if="isChapterExpanded(chapter.id)"
+            class="pages-tree-panel__pages-grid"
+            :aria-label="`${chapter.title}页面导航`"
+            :columns="4"
+            :items="createPageThumbnailItems(chapter.startPage, chapter.endPage)"
+            @select="selectThumbnailPage"
+          />
+        </ProductRecordCard>
       </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pages-tree-section {
-  --pages-tree-selected-ring: rgba(99, 102, 241, .2);
-  --pages-tree-page-number-gradient-end: rgba(0, 0, 0, .7);
+.pages-tree-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 0;
 }
 
-.pages-tree-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    padding: 12px 0;
+.pages-tree-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid var(--color-border-muted);
+  margin-bottom: 0;
 }
 
-.pages-tree-section .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 16px 12px;
-    border-bottom: 1px solid var(--color-border-muted);
+.pages-tree-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
 }
 
-.pages-tree-section .section-title {
-    margin: 0;
-    font-size: 13px;
+.pages-tree-panel__chapter {
+  --product-record-card-accent: var(--color-border-default);
+  --product-record-card-background: var(--insight-surface-page);
+  --product-record-card-border: var(--color-border-muted);
+  --product-record-card-gap: 8px;
+  --product-record-card-padding: 10px 12px;
+  --product-record-card-radius: 8px;
+  --product-record-card-shadow-hover: none;
+
+  margin: 8px 16px;
 }
 
-.page-count-badge {
-    font-size: 11px;
-    padding: 2px 8px;
-    background: var(--insight-surface-tertiary);
-    color: var(--insight-text-secondary);
-    border-radius: 10px;
+.pages-tree-panel__chapter-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.pages-tree {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
+.pages-tree-panel__chapter-toggle {
+  flex: 1 1 130px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  user-select: none;
 }
 
-.tree-chapter {
-    margin-bottom: 2px;
+.pages-tree-panel__header-chips,
+.pages-tree-panel__chapter-chips {
+  flex: 0 0 auto;
 }
 
-.tree-chapter-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    transition: background 0.15s;
-    user-select: none;
+.pages-tree-panel__expand-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--insight-text-muted);
+  transition: transform 0.2s;
 }
 
-.tree-chapter-header:hover {
-    background: var(--insight-surface-tertiary);
+.pages-tree-panel__chapter--expanded .pages-tree-panel__expand-icon {
+  transform: rotate(90deg);
 }
 
-.tree-chapter-toggle {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
+.pages-tree-panel__chapter-title {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--insight-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tree-expand-icon {
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--insight-text-muted);
-    transition: transform 0.2s;
+.pages-tree-panel__pages-grid {
+  padding: 6px 0 0 24px;
 }
 
-.tree-chapter.expanded .tree-expand-icon {
-    transform: rotate(90deg);
+.pages-tree-panel__all-pages {
+  padding: 8px 16px;
 }
 
-.tree-chapter-info {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
+.pages-tree-panel__empty-status {
+  margin: 8px 16px;
 }
 
-.tree-chapter-title {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--insight-text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.tree-chapter-meta {
-    font-size: 11px;
-    color: var(--insight-text-muted);
-    flex-shrink: 0;
-}
-
-.tree-chapter-status {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--insight-text-muted);
-    flex-shrink: 0;
-}
-
-.tree-chapter-status.analyzed {
-    background: var(--insight-status-success);
-}
-
-.btn-reanalyze-chapter {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px 6px;
-    font-size: 12px;
-    opacity: 0;
-    transition: opacity 0.2s;
-    flex-shrink: 0;
-}
-
-.tree-chapter-header:hover .btn-reanalyze-chapter {
-    opacity: 0.6;
-}
-
-.tree-chapter-header:focus-within .btn-reanalyze-chapter {
-    opacity: 0.6;
-}
-
-.tree-chapter-header:hover .btn-reanalyze-chapter:hover {
-    opacity: 1;
-}
-
-.tree-pages-grid {
-    display: none;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    padding: 8px 16px 8px 40px;
-    background: var(--insight-surface-page);
-}
-
-.tree-chapter.expanded .tree-pages-grid {
-    display: grid;
-}
-
-.tree-page-item {
-    aspect-ratio: 3/4;
-    background: var(--insight-surface-tertiary);
-    border-radius: 4px;
-    overflow: hidden;
-    cursor: pointer;
-    position: relative;
-    display: block;
-    width: 100%;
-    padding: 0;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    border: 2px solid transparent;
-    transition: all 0.15s;
-}
-
-.tree-page-item:hover {
-    border-color: var(--insight-action-primary-soft);
-    transform: scale(1.02);
-}
-
-.tree-page-item.selected {
-    border-color: var(--insight-action-primary);
-    box-shadow: 0 0 0 2px var(--pages-tree-selected-ring);
-}
-
-.tree-page-item.analyzed::after {
-    content: '';
-    position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 12px;
-    height: 12px;
-    background: var(--insight-status-success);
-    border-radius: 50%;
-    border: 1.5px solid var(--insight-surface-page);
-}
-
-.tree-page-thumb {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center;
-    background: var(--insight-surface-tertiary);
-}
-
-.tree-page-num {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 2px 4px;
-    background: linear-gradient(transparent, var(--pages-tree-page-number-gradient-end));
-    color: var(--color-text-inverse);
-    font-size: 10px;
-    text-align: center;
-}
-
-.tree-all-pages {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    padding: 8px 16px;
-}
-
-.tree-load-more {
-    padding: 12px 16px;
-    text-align: center;
-}
-
-.btn-load-more {
-    padding: 6px 16px;
-    font-size: 12px;
-    background: var(--insight-surface-tertiary);
-    border: 1px solid var(--color-border-muted);
-    border-radius: 6px;
-    color: var(--insight-text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-load-more:hover {
-    background: var(--insight-surface-secondary);
-    color: var(--insight-text-primary);
+.pages-tree-panel__load-more {
+  padding: 12px 16px;
 }
 </style>

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import type { AxiosError } from 'axios'
 
 const {
   requestUseMock,
@@ -32,9 +35,17 @@ vi.mock('axios', () => {
   }
 })
 
+type ResponseErrorHandler = (error: AxiosError) => Promise<never>
+
 describe('apiClient error normalization', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('keeps API client error fixtures typed to Axios error contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/client.api.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('rejects API failures as real Error instances with backend metadata', async () => {
@@ -42,12 +53,12 @@ describe('apiClient error normalization', () => {
     const { ApiClientError } = await import('@/api/client')
     await import('@/api/client')
 
-    const responseErrorHandler = responseUseMock.mock.calls[0]?.[1]
+    const responseErrorHandler = responseUseMock.mock.calls[0]?.[1] as ResponseErrorHandler | undefined
     if (!responseErrorHandler) {
       throw new Error('response error interceptor was not registered')
     }
 
-    const error = await responseErrorHandler({
+    const backendError = Object.assign(new Error('Request failed with status code 400'), {
       code: 'ERR_BAD_REQUEST',
       message: 'Request failed with status code 400',
       response: {
@@ -60,7 +71,8 @@ describe('apiClient error normalization', () => {
           },
         },
       },
-    } as any).catch((value: unknown) => value)
+    }) as AxiosError
+    const error = await responseErrorHandler(backendError).catch((value: unknown) => value)
 
     expect(error).toBeInstanceOf(Error)
     expect(error).toBeInstanceOf(ApiClientError)

@@ -1,15 +1,25 @@
 <script setup lang="ts">
-
-import UiInput from '@/components/ui/UiInput.vue'
-
+import UiField from '@/components/ui/UiField.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { computed, ref } from 'vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 import { providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel, getProviderBaseUrl } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
+import type { StoreImageGenConfig } from '@/types/insight'
+import InsightModelProviderSection from './InsightModelProviderSection.vue'
+import InsightSettingsPanel from './InsightSettingsPanel.vue'
+import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import {
   IMAGE_GEN_PROVIDER_OPTIONS,
   PROVIDER_DEFAULT_MODELS,
 } from './types'
+
+const emit = defineEmits<{
+  (e: 'update:config', config: StoreImageGenConfig): void
+}>()
+
+const props = defineProps<{
+  syncRequestId?: number
+}>()
 
 const insightStore = useInsightStore()
 const initialProvider = insightStore.config.imageGen?.provider || 'gpt2api'
@@ -31,32 +41,15 @@ function getDefaultModel(providerId: string): string {
 
 function onProviderChange(): void {
   const newProvider = provider.value
-  const previousProvider = insightStore.config.imageGen.provider
 
-  if (previousProvider !== newProvider) {
-    insightStore.config.imageGen.apiKey = apiKey.value
-    insightStore.config.imageGen.model = model.value
-    insightStore.config.imageGen.baseUrl = baseUrl.value
-    insightStore.config.imageGen.transportRetries = transportRetries.value
-    insightStore.config.imageGen.businessRetries = businessRetries.value
-    insightStore.config.imageGen.timeoutSeconds = timeoutSeconds.value
-  }
-
-  insightStore.setImageGenProvider(newProvider)
-
-  apiKey.value = insightStore.config.imageGen.apiKey
-  model.value = insightStore.config.imageGen.model
-  baseUrl.value = insightStore.config.imageGen.baseUrl || getProviderBaseUrl(newProvider, 'imageGen')
-  transportRetries.value = insightStore.config.imageGen.transportRetries ?? 10
-  businessRetries.value = insightStore.config.imageGen.businessRetries ?? 10
-  timeoutSeconds.value = insightStore.config.imageGen.timeoutSeconds ?? 0
+  applyDraftConfig(insightStore.switchImageGenProviderDraft(buildDraftConfig()))
 
   if (!model.value) {
     model.value = getDefaultModel(newProvider)
   }
 }
 
-function getConfig() {
+function buildDraftConfig(): StoreImageGenConfig {
   return {
     provider: provider.value,
     apiKey: apiKey.value,
@@ -68,115 +61,59 @@ function getConfig() {
   }
 }
 
-function syncFromStore(): void {
-  const imageGen = insightStore.config.imageGen
-  if (imageGen) {
-    provider.value = imageGen.provider || 'gpt2api'
-    apiKey.value = imageGen.apiKey || ''
-    model.value = imageGen.model ?? getDefaultModel(provider.value)
-    baseUrl.value = imageGen.baseUrl || getProviderBaseUrl(provider.value, 'imageGen')
-    transportRetries.value = imageGen.transportRetries ?? 10
-    businessRetries.value = imageGen.businessRetries ?? 10
-    timeoutSeconds.value = imageGen.timeoutSeconds ?? 0
-  }
+function applyDraftConfig(config: StoreImageGenConfig): void {
+  provider.value = config.provider || 'gpt2api'
+  apiKey.value = config.apiKey || ''
+  model.value = config.model ?? getDefaultModel(provider.value)
+  baseUrl.value = config.baseUrl || getProviderBaseUrl(provider.value, 'imageGen')
+  transportRetries.value = config.transportRetries ?? 10
+  businessRetries.value = config.businessRetries ?? 10
+  timeoutSeconds.value = config.timeoutSeconds ?? 0
 }
 
-defineExpose({
-  getConfig,
-  syncFromStore
+useInsightSettingsDraft<StoreImageGenConfig>({
+  sources: [provider, apiKey, model, baseUrl, transportRetries, businessRetries, timeoutSeconds],
+  buildDraft: buildDraftConfig,
+  applyDraft: applyDraftConfig,
+  loadDraft: () => insightStore.config.imageGen,
+  emitDraft: config => emit('update:config', config),
+  syncRequestId: () => props.syncRequestId,
 })
 </script>
 
 <template>
-  <div class="insight-settings-content">
-    <p class="settings-hint">生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。</p>
+  <InsightSettingsPanel description="生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。">
+    <InsightModelProviderSection
+      v-model:provider="provider"
+      v-model:api-key="apiKey"
+      v-model:model="model"
+      v-model:base-url="baseUrl"
+      :provider-options="IMAGE_GEN_PROVIDER_OPTIONS"
+      :show-api-key="providerRequiresApiKey(provider)"
+      credential-id="insight-imagegen-api-key"
+      provider-input-id="insight-imagegen-provider"
+      model-input-id="insight-imagegen-model"
+      base-url-input-id="insight-imagegen-base-url"
+      model-placeholder="例如: gpt-image-2"
+      model-hint="默认推荐使用当前服务商的默认生图模型。"
+      :model-error="showModelWarning ? '当前服务商需要手动填写模型名。' : ''"
+      :show-base-url="showBaseUrl"
+      base-url-placeholder="例如: http://127.0.0.1:17200 或 http://127.0.0.1:17200/v1"
+      :show-fetch="false"
+      :show-test="false"
+      @provider-change="onProviderChange"
+    />
 
-    <div class="insight-settings-field">
-      <label>服务商</label>
-      <CustomSelect
-        v-model="provider"
-        :options="IMAGE_GEN_PROVIDER_OPTIONS"
-        @change="onProviderChange"
-      />
-    </div>
+    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10" control-id="insight-imagegen-transport-retries">
+      <UiNumberField v-model="transportRetries" input-id="insight-imagegen-transport-retries" :min="0" :max="100" />
+    </UiField>
 
-    <div v-if="providerRequiresApiKey(provider)" class="insight-settings-field">
-      <label>API Key</label>
-      <UiInput v-model="apiKey" type="password" placeholder="输入 API Key" />
-    </div>
+    <UiField variant="settings" label="业务重试次数" hint="当接口返回空图片结果或结果不可解析时的额外重试次数，默认 10" control-id="insight-imagegen-business-retries">
+      <UiNumberField v-model="businessRetries" input-id="insight-imagegen-business-retries" :min="0" :max="100" />
+    </UiField>
 
-    <div class="insight-settings-field">
-      <label>模型</label>
-      <UiInput v-model="model" type="text" placeholder="例如: gpt-image-2" />
-      <p class="form-hint">默认推荐使用当前服务商的默认生图模型。</p>
-      <p v-if="showModelWarning" class="form-hint warning-text">当前服务商需要手动填写模型名。</p>
-    </div>
-
-    <div v-if="showBaseUrl" class="insight-settings-field">
-      <label>Base URL</label>
-      <UiInput v-model="baseUrl" type="text" placeholder="例如: http://127.0.0.1:17200 或 http://127.0.0.1:17200/v1" />
-    </div>
-
-    <div class="insight-settings-field">
-      <label>传输重试次数</label>
-      <UiInput v-model.number="transportRetries" type="number" min="0" max="100" />
-      <p class="form-hint">网络超时、连接错误、429/5xx 的自动重试次数，默认 10</p>
-    </div>
-
-    <div class="insight-settings-field">
-      <label>业务重试次数</label>
-      <UiInput v-model.number="businessRetries" type="number" min="0" max="100" />
-      <p class="form-hint">当接口返回空图片结果或结果不可解析时的额外重试次数，默认 10</p>
-    </div>
-
-    <div class="insight-settings-field">
-      <label>单次请求超时（秒）</label>
-      <UiInput v-model.number="timeoutSeconds" type="number" min="0" max="3600" step="1" />
-      <p class="form-hint">0 表示不限制；大于 0 时作为单次生图 HTTP 请求超时</p>
-    </div>
-  </div>
+    <UiField variant="settings" label="单次请求超时（秒）" hint="0 表示不限制；大于 0 时作为单次生图 HTTP 请求超时" control-id="insight-imagegen-timeout-seconds">
+      <UiNumberField v-model="timeoutSeconds" input-id="insight-imagegen-timeout-seconds" :min="0" :max="3600" :step="1" />
+    </UiField>
+  </InsightSettingsPanel>
 </template>
-
-<style scoped>
-.insight-settings-content {
-  --ui-input-padding: 10px 12px;
-  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-input-radius: 6px;
-  --ui-input-font-size: 14px;
-  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-input-color: var(--color-text-default);
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
-
-  padding: 16px 0;
-  min-height: 300px;
-}
-
-.insight-settings-content .settings-hint {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 13px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: var(--color-surface-muted);
-  border-radius: 4px;
-}
-
-.insight-settings-content .insight-settings-field {
-  margin-bottom: 16px;
-}
-
-.insight-settings-content .insight-settings-field label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--color-text-default);
-}
-
-.insight-settings-content .form-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-</style>

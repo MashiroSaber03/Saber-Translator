@@ -2,22 +2,39 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, type PropType } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ApplyOptionsSection from '@/components/translate/settings-sidebar/ApplyOptionsSection.vue'
+import WorkflowSection from '@/components/translate/settings-sidebar/WorkflowSection.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
-const { getFontListMock, getPreferencesMock, savePreferencesMock } = vi.hoisted(() => ({
+const {
+  getFontListMock,
+  getPreferencesMock,
+  savePreferencesMock,
+  uploadFontMock,
+} = vi.hoisted(() => ({
   getFontListMock: vi.fn(),
   getPreferencesMock: vi.fn(),
   savePreferencesMock: vi.fn(),
+  uploadFontMock: vi.fn(),
 }))
 
 vi.mock('@/api/config', () => ({
   getFontList: getFontListMock,
-  uploadFont: async () => ({ success: true }),
+  uploadFont: uploadFontMock,
   getTranslateWorkflowPreferences: getPreferencesMock,
   saveTranslateWorkflowPreferences: savePreferencesMock,
 }))
 
-vi.mock('@/components/common/CustomSelect.vue', () => ({
+vi.mock('@/components/ui/UiCombobox.vue', () => ({
   default: defineComponent({
     props: {
       modelValue: {
@@ -38,13 +55,13 @@ vi.mock('@/components/common/CustomSelect.vue', () => ({
           value: props.modelValue,
           onChange: (event: Event) => emit('change', (event.target as HTMLSelectElement).value),
         },
-        (props.options || []).map((option: any) => h('option', { value: option.value }, option.label))
+        props.options.map(option => h('option', { value: option.value }, option.label))
       )
     },
   }),
 }))
 
-vi.mock('@/components/common/CollapsiblePanel.vue', () => ({
+vi.mock('@/components/product/ProductCollapsibleSection.vue', () => ({
   default: defineComponent({
     props: {
       title: {
@@ -68,6 +85,15 @@ vi.mock('@/components/translate/PageSelectionModal.vue', () => ({
 
 import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 
+function getRememberWorkflowToggle(wrapper: ReturnType<typeof mount>) {
+  const toggle = wrapper.findAllComponents(UiCheckbox)
+    .find(checkbox => checkbox.props('label') === '记住操作模式')
+  if (!toggle) {
+    throw new Error('Remember workflow mode toggle not found')
+  }
+  return toggle
+}
+
 describe('SettingsSidebar workflow preferences', () => {
   enableAutoUnmount(afterEach)
 
@@ -76,7 +102,9 @@ describe('SettingsSidebar workflow preferences', () => {
     getFontListMock.mockReset()
     getPreferencesMock.mockReset()
     savePreferencesMock.mockReset()
+    uploadFontMock.mockReset()
     getFontListMock.mockResolvedValue({ fonts: [] })
+    uploadFontMock.mockResolvedValue({ success: true, fontPath: 'fonts/UploadedFont.ttf' })
     getPreferencesMock.mockResolvedValue({
       success: true,
       preferences: {
@@ -96,7 +124,8 @@ describe('SettingsSidebar workflow preferences', () => {
     await flushPromises()
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
-    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(false)
+    expect(wrapper.getComponent(UiSelect).exists()).toBe(true)
+    expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(false)
   })
 
   it('restores a remembered dangerous workflow mode', async () => {
@@ -112,7 +141,7 @@ describe('SettingsSidebar workflow preferences', () => {
     await flushPromises()
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('clear-all')
-    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(true)
+    expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(true)
   })
 
   it('saves the last workflow mode immediately when the dropdown changes', async () => {
@@ -131,7 +160,7 @@ describe('SettingsSidebar workflow preferences', () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
-    wrapper.findComponent(UiCheckbox).vm.$emit('change', true)
+    getRememberWorkflowToggle(wrapper).vm.$emit('change', true)
     await flushPromises()
 
     expect(savePreferencesMock).toHaveBeenCalledWith({
@@ -215,7 +244,7 @@ describe('SettingsSidebar workflow preferences', () => {
 
     const wrapper = mount(SettingsSidebar)
 
-    wrapper.findComponent(UiCheckbox).vm.$emit('change', true)
+    getRememberWorkflowToggle(wrapper).vm.$emit('change', true)
     resolvePreferences({
       success: true,
       preferences: {
@@ -226,7 +255,7 @@ describe('SettingsSidebar workflow preferences', () => {
     await flushPromises()
 
     expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
-    expect(wrapper.findComponent(UiCheckbox).props('modelValue')).toBe(true)
+    expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(true)
   })
 
   it('registers outside-click handling before async font loading settles', () => {
@@ -249,12 +278,320 @@ describe('SettingsSidebar workflow preferences', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     try {
       const wrapper = mount(SettingsSidebar)
+      const autoFontToggle = wrapper.findAllComponents(UiCheckbox)
+        .find(checkbox => checkbox.props('label') === '自动计算初始字号')
 
-      await wrapper.find('.auto-fontsize-toggle').trigger('click')
+      expect(autoFontToggle).toBeDefined()
+      autoFontToggle!.vm.$emit('change', true)
+      await flushPromises()
 
       expect(logSpy).not.toHaveBeenCalled()
     } finally {
       logSpy.mockRestore()
     }
+  })
+
+  it('receives font uploads through the typed file-input boundary', async () => {
+    const sidebarSource = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/SettingsSidebar.vue'),
+      'utf8'
+    )
+    const composableSource = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/useSettingsSidebar.ts'),
+      'utf8'
+    )
+
+    expect(sidebarSource).toContain('@files-change="handleFontUpload"')
+    expect(sidebarSource).not.toContain('id="fontUpload"')
+    expect(composableSource).toContain("import type UiFileInput from '@/components/ui/UiFileInput.vue'")
+    expect(composableSource).toContain('ref<InstanceType<typeof UiFileInput> | null>')
+    expect(`${sidebarSource}\n${composableSource}`).not.toMatch(
+      /target\.files|target\.value\s*=|@change="handleFontUpload"|ref<HTMLInputElement/
+    )
+
+    const wrapper = mount(SettingsSidebar)
+    await flushPromises()
+
+    const file = new File(['font-bytes'], 'UploadedFont.ttf', { type: 'font/ttf' })
+    wrapper.getComponent(UiFileInput).vm.$emit('files-change', [file])
+    await flushPromises()
+
+    expect(uploadFontMock).toHaveBeenCalledWith(file)
+  })
+
+  it('maps workflow section owner colors through semantic tokens', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/WorkflowSection.vue'),
+      'utf8'
+    )
+
+    expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+  })
+
+  it('maps apply-options section owner colors through semantic tokens', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/ApplyOptionsSection.vue'),
+      'utf8'
+    )
+
+    expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+  })
+
+  it('uses product chips and standard buttons for workflow status and run action', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/WorkflowSection.vue'),
+      'utf8'
+    )
+
+    expect(source).not.toContain('id="runWorkflowButton"')
+
+    const wrapper = mount(WorkflowSection, {
+      props: {
+        canRunWorkflow: true,
+        isDangerousWorkflow: true,
+        rememberWorkflowModeEnabled: false,
+        selectedWorkflowMode: 'clear-all',
+        workflowContextTag: '全书',
+        workflowDescription: '清空所有翻译结果',
+        workflowModeOptions: [{ label: '清空全部', value: 'clear-all' }],
+        workflowModeTag: '危险操作',
+        workflowStartLabel: '清空全部',
+      },
+    })
+
+    const chips = wrapper.getComponent(ProductChipList)
+    expect(wrapper.classes()).toContain('workflow-section')
+    expect(chips.props('ariaLabel')).toBe('当前操作模式')
+    expect(chips.props('items')).toEqual([
+      expect.objectContaining({ label: '全书', tone: 'neutral' }),
+      expect.objectContaining({ label: '危险操作', tone: 'danger' }),
+    ])
+
+    const runButton = wrapper.findAllComponents(UiButton)
+      .find(button => button.text() === '清空全部')
+    expect(runButton).toBeDefined()
+    expect(runButton!.props('variant')).toBe('danger')
+    expect(runButton!.props('block')).toBe(true)
+    expect(wrapper.find('.workflow-chip').exists()).toBe(false)
+    expect(wrapper.find('.workflow-run-button').exists()).toBe(false)
+
+    expect(source).not.toContain('variant="toolbar"')
+    expect(source).not.toContain('action-buttons')
+    expect(source).not.toContain('workflow-run-button')
+    expect(source).not.toContain('--ui-button-')
+  })
+
+  it('keeps workflow structure hooks under the workflow owner', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/WorkflowSection.vue'),
+      'utf8'
+    )
+
+    for (const currentHook of [
+      'workflow-section',
+      'workflow-section__mode-field',
+      'workflow-section__remember-toggle',
+      'workflow-section__meta',
+      'workflow-section__run-action',
+      'workflow-section__description',
+    ]) {
+      expect(source).toContain(currentHook)
+    }
+
+    for (const oldHook of [
+      'settings-sidebar__workflow-controls',
+      'workflow-controls',
+      'workflow-mode-field',
+      'remember-workflow-mode-toggle',
+      'workflow-meta',
+      'workflow-run-action',
+      'workflow-description',
+    ]) {
+      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldHook}\\b`))
+      expect(source).not.toMatch(new RegExp(`\\.${oldHook}\\b`))
+    }
+  })
+
+  it('keeps workflow checkbox tests on the public component boundary', () => {
+    const sources = [
+      'src/components/translate/SettingsSidebar.test.ts',
+      'tests/unit/settingsSidebar.workflowPreferences.spec.ts',
+    ].map(file => readFileSync(resolve(process.cwd(), file), 'utf8'))
+
+    for (const source of sources) {
+      expect(source).not.toMatch(/\.workflow-section__remember-toggle\s+input/)
+      expect(source).not.toMatch(/\.remember-workflow-mode-toggle\s+input/)
+    }
+
+    const wrapper = mount(WorkflowSection, {
+      props: {
+        canRunWorkflow: true,
+        isDangerousWorkflow: false,
+        rememberWorkflowModeEnabled: true,
+        selectedWorkflowMode: 'translate-current',
+        workflowContextTag: '当前页',
+        workflowDescription: '翻译当前页',
+        workflowModeOptions: [{ label: '翻译当前页', value: 'translate-current' }],
+        workflowModeTag: '翻译',
+        workflowStartLabel: '开始翻译',
+      },
+    })
+
+    const rememberToggle = wrapper.getComponent(UiCheckbox)
+    expect(rememberToggle.props('label')).toBe('记住操作模式')
+    expect(rememberToggle.props('modelValue')).toBe(true)
+  })
+
+  it('keeps SettingsSidebar select stubs typed to option contracts', () => {
+    const sources = [
+      'tests/unit/settingsSidebar.pageSelection.spec.ts',
+      'tests/unit/settingsSidebar.workflowPreferences.spec.ts',
+    ].map(file => readFileSync(resolve(process.cwd(), file), 'utf8'))
+
+    for (const source of sources) {
+      expect(source).not.toContain('option: ' + 'any')
+    }
+  })
+
+  it('routes workflow mode labels through typed settings fields', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/WorkflowSection.vue'),
+      'utf8'
+    )
+
+    expect(source).not.toMatch(/<label\b/)
+    expect(source).not.toContain('settings-sidebar__field label')
+
+    const wrapper = mount(WorkflowSection, {
+      props: {
+        canRunWorkflow: true,
+        isDangerousWorkflow: false,
+        rememberWorkflowModeEnabled: false,
+        selectedWorkflowMode: 'translate-current',
+        workflowContextTag: '当前页',
+        workflowDescription: '翻译当前页',
+        workflowModeOptions: [{ label: '翻译当前页', value: 'translate-current' }],
+        workflowModeTag: '翻译',
+        workflowStartLabel: '开始翻译',
+      },
+    })
+
+    const workflowModeField = wrapper.findAllComponents(UiField)
+      .find(field => field.props('controlId') === 'workflowModeSelect')
+    expect(workflowModeField?.props('label')).toBe('操作模式')
+  })
+
+  it('uses product action rows and standard buttons for apply options controls', () => {
+    const wrapper = mount(ApplyOptionsSection, {
+      props: {
+        applyOptions: {
+          fontSize: true,
+          fontFamily: true,
+          layoutDirection: true,
+          textColor: true,
+          fillColor: true,
+          strokeEnabled: true,
+          strokeColor: true,
+          strokeWidth: true,
+          lineSpacing: true,
+          textAlign: true,
+        },
+        hasImages: true,
+        showApplyOptions: true,
+      },
+    })
+
+    expect(wrapper.getComponent(ProductActionRow).props('ariaLabel')).toBe('批量应用文字设置')
+
+    const actionButtons = wrapper.findAllComponents(UiButton)
+      .filter(button => ['应用到全部', ''].includes(button.text()))
+    expect(actionButtons.map(button => button.props('variant'))).toEqual(['primary'])
+    const optionAction = wrapper.getComponent(UiIconButton)
+    expect(optionAction.props('label')).toBe('选择要应用的参数')
+    expect(optionAction.props('title')).toBe('选择要应用的参数')
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/ApplyOptionsSection.vue'),
+      'utf8'
+    )
+    expect(source).not.toContain('variant="toolbar"')
+    expect(source).not.toContain('settings-sidebar__apply-button-start')
+  })
+
+  it('keeps apply-options menu hooks under the apply owner', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/ApplyOptionsSection.vue'),
+      'utf8'
+    )
+
+    for (const currentHook of [
+      'apply-options-section',
+      'apply-options-section__actions',
+      'apply-options-section__menu',
+      'apply-options-section__option',
+      'apply-options-section__divider',
+    ]) {
+      expect(source).toContain(currentHook)
+    }
+
+    for (const oldHook of [
+      'settings-sidebar__apply-group',
+      'settings-sidebar__apply-actions',
+      'settings-sidebar__apply-menu',
+      'apply-options-dropdown',
+    ]) {
+      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldHook}\\b`))
+      expect(source).not.toMatch(new RegExp(`\\.${oldHook}\\b`))
+    }
+
+    expect(source).not.toMatch(/\.apply-options-section__menu\s+hr/)
+  })
+
+  it('renders apply-options menu from a typed option contract', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/settings-sidebar/ApplyOptionsSection.vue'),
+      'utf8'
+    )
+
+    expect(source).toContain('APPLY_OPTION_ITEMS')
+    expect(source).toContain('satisfies ReadonlyArray')
+    expect(source).toContain('v-for="option in APPLY_OPTION_ITEMS"')
+    expect(source).toContain('applyOptions[option.key]')
+    expect(source).toContain("$emit('updateOption', option.key, $event)")
+    expect(source).not.toContain('applyOptions.fontSize')
+    expect(source).not.toContain("updateOption', 'fontSize'")
+    expect(source).not.toContain('applyOptions.strokeWidth')
+    expect(source).not.toContain("updateOption', 'strokeWidth'")
+  })
+
+  it('links the apply-options trigger to its checklist menu', () => {
+    const wrapper = mount(ApplyOptionsSection, {
+      props: {
+        applyOptions: {
+          fontSize: true,
+          fontFamily: true,
+          layoutDirection: true,
+          textColor: true,
+          fillColor: true,
+          strokeEnabled: true,
+          strokeColor: true,
+          strokeWidth: true,
+          lineSpacing: true,
+          textAlign: true,
+        },
+        hasImages: true,
+        showApplyOptions: true,
+      },
+    })
+
+    const trigger = wrapper.getComponent(UiIconButton)
+    expect(trigger.attributes('aria-label')).toBe('选择要应用的参数')
+    expect(trigger.attributes('aria-haspopup')).toBe('true')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(trigger.attributes('aria-controls')).toBe('apply-options-section-menu')
+
+    const menu = wrapper.get('#apply-options-section-menu')
+    expect(menu.attributes('role')).toBe('group')
+    expect(menu.attributes('aria-label')).toBe('可应用的文字设置')
   })
 })

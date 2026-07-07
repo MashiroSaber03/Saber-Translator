@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChoiceCardGrid, { type ProductChoiceCardItem } from '@/components/product/ProductChoiceCardGrid.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
 interface StudioGreetingOption {
@@ -47,6 +50,12 @@ const imageModel = computed({
   get: () => props.imageOpen,
   set: value => emit('update:imageOpen', value),
 })
+
+const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreetings.map(item => ({
+  id: item.greeting_id,
+  label: item.label,
+  description: item.content,
+})))
 </script>
 
 <template>
@@ -56,37 +65,41 @@ const imageModel = computed({
     size="large"
     custom-class="studio-chat-modal"
   >
-    <div class="modal-copy">
-      <p>选择一条开场白后，将归档当前会话，并以该开场白重新开启一轮新对话。</p>
+    <div class="character-studio-preview-modals__copy">
+      <p class="character-studio-preview-modals__copy-text">选择一条开场白后，将归档当前会话，并以该开场白重新开启一轮新对话。</p>
     </div>
-    <div v-if="displayGreetings.length === 0" class="modal-empty">当前还没有可用开场白。</div>
-    <div v-else class="greeting-grid">
-      <UiButton
-        variant="toolbar"
-        v-for="item in displayGreetings"
-        :key="item.greeting_id"
-        type="button"
-        class="greeting-card"
-        :class="{ active: selectedGreetingId === item.greeting_id }"
-        @click="$emit('update:selectedGreetingId', item.greeting_id)"
-      >
-        <div class="greeting-card-head">
-          <span class="greeting-badge">{{ item.label }}</span>
-          <span v-if="selectedGreetingId === item.greeting_id" class="greeting-check">✓</span>
-        </div>
-        <p>{{ item.content }}</p>
-      </UiButton>
-    </div>
+    <ProductStatusBanner
+      v-if="displayGreetings.length === 0"
+      icon-name="message"
+      role="note"
+      tone="neutral"
+      title="暂无可用开场白"
+    >
+      当前还没有可用开场白。
+    </ProductStatusBanner>
+    <ProductChoiceCardGrid
+      v-else
+      class="character-studio-preview-modals__greeting-grid"
+      aria-label="选择开场白"
+      :items="greetingItems"
+      :model-value="selectedGreetingId"
+      @update:model-value="$emit('update:selectedGreetingId', $event)"
+    />
     <template #footer>
-      <UiButton variant="toolbar" class="action-ghost" @click="greetingModel = false">取消</UiButton>
-      <UiButton
-        variant="toolbar"
-        class="action-primary"
-        :disabled="!selectedGreetingId || chatMutating || chatStreaming"
-        @click="$emit('confirm-greeting-selection')"
+      <ProductActionRow
+        class="character-studio-preview-modals__actions"
+        aria-label="开场白选择操作"
+        variant="dialog"
       >
-        确认并重新开场
-      </UiButton>
+        <UiButton variant="secondary" @click="greetingModel = false">取消</UiButton>
+        <UiButton
+          variant="primary"
+          :disabled="!selectedGreetingId || chatMutating || chatStreaming"
+          @click="$emit('confirm-greeting-selection')"
+        >
+          确认并重新开场
+        </UiButton>
+      </ProductActionRow>
     </template>
   </BaseModal>
 
@@ -96,19 +109,42 @@ const imageModel = computed({
     size="large"
     custom-class="studio-chat-modal"
   >
-    <div v-if="chatPromptLoading" class="modal-loading">提示词加载中...</div>
-    <div v-else-if="promptPreviewError" class="modal-empty">{{ promptPreviewError }}</div>
-    <div v-else-if="promptPreview.trim()" class="prompt-preview-body">
-      <div class="prompt-tools">
-        <UiButton variant="toolbar" class="action-ghost" @click="$emit('copy-prompt-preview')" size="sm">
+    <ProductStatusBanner
+      v-if="chatPromptLoading"
+      aria-live="polite"
+      icon-name="loading"
+      role="status"
+      title="提示词加载中..."
+      tone="info"
+    >
+      正在生成本轮提示词预览。
+    </ProductStatusBanner>
+    <ProductStatusBanner
+      v-else-if="promptPreviewError"
+      role="alert"
+      tone="warning"
+      title="提示词预览不可用"
+    >
+      {{ promptPreviewError }}
+    </ProductStatusBanner>
+    <div v-else-if="promptPreview.trim()" class="character-studio-preview-modals__prompt-body">
+      <ProductActionRow class="character-studio-preview-modals__prompt-tools" aria-label="提示词预览操作">
+        <UiButton variant="secondary" @click="$emit('copy-prompt-preview')" size="sm">
           复制内容
         </UiButton>
-      </div>
-      <pre>{{ promptPreview }}</pre>
+      </ProductActionRow>
+      <pre class="character-studio-preview-modals__prompt-preview">{{ promptPreview }}</pre>
     </div>
-    <div v-else class="modal-empty" data-testid="prompt-preview-empty">
+    <ProductStatusBanner
+      v-else
+      data-testid="prompt-preview-empty"
+      icon-name="message"
+      role="note"
+      tone="neutral"
+      title="暂无提示词预览"
+    >
       请先发送至少一条消息后再查看本轮提示词。
-    </div>
+    </ProductStatusBanner>
   </BaseModal>
 
   <BaseModal
@@ -117,75 +153,33 @@ const imageModel = computed({
     size="large"
     custom-class="studio-chat-modal studio-image-modal"
   >
-    <div v-if="imageSrc" class="image-preview-body">
-      <img :src="imageSrc" :alt="imageTitle">
+    <div v-if="imageSrc" class="character-studio-preview-modals__image-preview">
+      <img class="character-studio-preview-modals__image" :src="imageSrc" :alt="imageTitle">
     </div>
   </BaseModal>
 </template>
 
 <style scoped>
-.modal-copy p,
-.modal-empty,
-.modal-loading {
+.character-studio-preview-modals__copy-text {
   color: var(--studio-text-default);
   font-size: 13px;
   line-height: 1.7;
 }
 
-.greeting-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+.character-studio-preview-modals__greeting-grid {
+  --product-choice-card-grid-gap: 12px;
+  --product-choice-card-grid-item-background: color-mix(in srgb, var(--color-surface-card) 86%, transparent);
+  --product-choice-card-grid-item-background-selected: var(--studio-surface-tint);
+  --product-choice-card-grid-item-border: var(--studio-border-default);
+  --product-choice-card-grid-item-border-selected: color-mix(in srgb, var(--color-action-brand) 28%, transparent);
+  --product-choice-card-grid-item-radius: 16px;
+  --product-choice-card-grid-item-padding: 16px;
+  --product-choice-card-grid-item-shadow-hover: 0 0 0 2px color-mix(in srgb, var(--color-action-brand) 16%, transparent);
+
   margin-top: 14px;
 }
 
-.greeting-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid var(--studio-border-default);
-  border-radius: 16px;
-  background: var(--character-studio-preview-attachment-card-background);
-  text-align: left;
-}
-
-.greeting-card.active {
-  border-color: var(--character-studio-preview-selection-border);
-  box-shadow: 0 0 0 2px var(--character-studio-preview-selection-ring);
-}
-
-.greeting-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.greeting-badge {
-  color: var(--character-studio-preview-detail-label-text);
-  font-weight: 700;
-}
-
-.greeting-check {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--character-studio-preview-primary-action-background-start);
-  color: var(--color-text-inverse);
-  line-height: 22px;
-  text-align: center;
-}
-
-.greeting-card p {
-  margin: 0;
-  color: var(--studio-text-default);
-  font-size: 13px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
-.prompt-preview-body pre {
+.character-studio-preview-modals__prompt-preview {
   max-height: 420px;
   margin: 10px 0 0;
   padding: 14px;
@@ -199,48 +193,19 @@ const imageModel = computed({
   white-space: pre-wrap;
 }
 
-.prompt-tools {
-  display: flex;
+.character-studio-preview-modals__prompt-tools {
   justify-content: flex-end;
 }
 
-.image-preview-body {
+.character-studio-preview-modals__image-preview {
   display: flex;
   justify-content: center;
 }
 
-.image-preview-body img {
+.character-studio-preview-modals__image {
   max-width: 100%;
   max-height: 70vh;
   border-radius: 16px;
   object-fit: contain;
-}
-
-.action-ghost,
-.action-primary {
-  border: none;
-  border-radius: 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.action-ghost {
-  padding: 10px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-primary {
-  padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-preview-primary-action-background-start), var(--character-studio-preview-primary-action-background-end));
-  box-shadow: 0 12px 24px var(--character-studio-preview-primary-action-shadow);
-  color: var(--color-text-inverse);
-}
-
-.action-ghost:disabled,
-.action-primary:disabled {
-  cursor: not-allowed;
-  box-shadow: none;
-  opacity: 0.68;
 }
 </style>

@@ -1,9 +1,3 @@
-/**
- * 修复池
- * 
- * 负责调用后端修复API，生成干净的背景图
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
@@ -17,7 +11,7 @@ export class InpaintPool extends TaskPool {
     progressTracker: ParallelProgressTracker,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('修复', '🖌️', nextPool, lock, progressTracker, onTaskComplete)
+    super('修复', 'paintbrush', nextPool, lock, progressTracker, onTaskComplete)
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {

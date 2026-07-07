@@ -1,32 +1,40 @@
 <template>
-  <div class="workshop-card">
-    <div class="section-head">
-      <div>
-        <h3>世界书树</h3>
-        <p>支持根条目与子条目，适合逐步积累设定与触发知识。</p>
+  <div class="lorebook-tree-editor">
+    <div class="lorebook-tree-editor__head">
+      <div class="lorebook-tree-editor__head-copy">
+        <h3 class="lorebook-tree-editor__title">世界书树</h3>
+        <p class="lorebook-tree-editor__description">支持根条目与子条目，适合逐步积累设定与触发知识。</p>
       </div>
-      <div class="actions">
-        <UiButton variant="toolbar" class="action-secondary" @click="addRootEntry">添加根条目</UiButton>
-        <UiButton variant="toolbar" class="action-ghost" :disabled="importing" @click="pickWorldbook">
+      <ProductActionRow aria-label="世界书树操作">
+        <UiButton variant="primary" @click="addRootEntry">添加根条目</UiButton>
+        <UiButton variant="secondary" :disabled="importing" @click="pickWorldbook">
           {{ importing ? '导入中...' : '导入世界书' }}
         </UiButton>
-      </div>
+      </ProductActionRow>
     </div>
 
     <UiFileInput
       ref="worldbookInput"
       hidden
       accept=".json"
-      @change="handleWorldbookSelect"
+      @files-change="handleWorldbookSelect"
     />
 
-    <div v-if="localEntries.length === 0" class="placeholder">暂无世界书条目。</div>
-    <div v-else class="tree-list">
+    <ProductEmptyState
+      v-if="localEntries.length === 0"
+      icon-name="book-open"
+      role="note"
+      size="compact"
+      title="暂无世界书条目"
+      description="添加根条目或导入世界书后，会在这里维护触发知识树。"
+    />
+    <div v-else class="lorebook-tree-editor__tree-list">
       <LorebookTreeBranch
         v-for="(entry, index) in localEntries"
         :key="entry.id"
         :entry="entry"
         :index="index"
+        :sibling-count="localEntries.length"
         @update:entry="replaceRootEntry(index, $event)"
         @remove="removeRootEntry(index)"
         @move="moveRootEntry(index, $event)"
@@ -38,8 +46,11 @@
 <script setup lang="ts">
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
+import { deepClone } from '@/utils/deepClone'
 import LorebookTreeBranch from './LorebookTreeBranch.vue'
 
 const props = defineProps<{
@@ -53,16 +64,12 @@ const emit = defineEmits<{
 }>()
 
 const localEntries = ref<LorebookEntryNode[]>([])
-const worldbookInput = ref<HTMLInputElement | null>(null)
+const worldbookInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 let syncing = false
-
-function cloneEntries(entries: LorebookEntryNode[]) {
-  return JSON.parse(JSON.stringify(entries || [])) as LorebookEntryNode[]
-}
 
 watch(() => props.entries, value => {
   syncing = true
-  localEntries.value = cloneEntries(value)
+  localEntries.value = deepClone(value || [])
   void nextTick(() => {
     syncing = false
   })
@@ -70,7 +77,7 @@ watch(() => props.entries, value => {
 
 watch(localEntries, value => {
   if (syncing) return
-  emit('update:entries', cloneEntries(value))
+  emit('update:entries', deepClone(value))
 }, { deep: true })
 
 function addRootEntry() {
@@ -96,12 +103,11 @@ function pickWorldbook() {
   worldbookInput.value?.click()
 }
 
-function handleWorldbookSelect(event: Event) {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
+function handleWorldbookSelect(files: File[]) {
+  const file = files[0]
   if (!file) return
   emit('import-worldbook', file)
-  target.value = ''
+  worldbookInput.value?.clear()
 }
 
 function replaceRootEntry(index: number, value: LorebookEntryNode) {
@@ -121,16 +127,11 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 </script>
 
 <style scoped>
-.workshop-card {
-  --lorebook-tree-editor-card-border: rgba(34, 72, 125, .12);
-  --lorebook-tree-editor-card-shadow: rgba(21, 44, 77, .08);
-  --lorebook-tree-editor-card-background: rgba(255, 255, 255, .84);
-  --lorebook-tree-editor-add-action-background: rgba(41, 96, 193, .1);
-  --lorebook-tree-editor-import-action-background: rgba(18, 47, 86, .08);
-  --lorebook-tree-editor-description-text: #5d738c;
-  --lorebook-tree-editor-add-action-text: #275ebe;
-  --lorebook-tree-editor-import-action-text: #244979;
-  --lorebook-tree-editor-empty-text: #72869c;
+.lorebook-tree-editor {
+  --lorebook-tree-editor-card-border: var(--studio-border-default);
+  --lorebook-tree-editor-card-shadow: var(--studio-shadow-floating);
+  --lorebook-tree-editor-card-background: color-mix(in srgb, var(--color-surface-card) 82%, transparent);
+  --lorebook-tree-editor-description-text: var(--studio-text-muted);
 
   border-radius: 22px;
   padding: 18px;
@@ -139,66 +140,36 @@ function moveRootEntry(index: number, offset: -1 | 1) {
   box-shadow: 0 18px 38px var(--lorebook-tree-editor-card-shadow);
 }
 
-.section-head {
+.lorebook-tree-editor__head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
 }
 
-.section-head h3 {
+.lorebook-tree-editor__head-copy {
+  min-width: 0;
+}
+
+.lorebook-tree-editor__title {
   margin: 0;
 }
 
-.section-head p {
+.lorebook-tree-editor__description {
   margin: 6px 0 0;
   color: var(--lorebook-tree-editor-description-text);
   font-size: 13px;
 }
 
-.actions {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.action-secondary,
-.action-ghost {
-  border: none;
-  border-radius: 12px;
-  padding: 10px 14px;
-  cursor: pointer;
-}
-
-.action-secondary {
-  background: var(--lorebook-tree-editor-add-action-background);
-  color: var(--lorebook-tree-editor-add-action-text);
-}
-
-.action-ghost {
-  background: var(--lorebook-tree-editor-import-action-background);
-  color: var(--lorebook-tree-editor-import-action-text);
-}
-
-.action-secondary:disabled,
-.action-ghost:disabled {
-  opacity: 0.68;
-  cursor: not-allowed;
-}
-
-.placeholder {
-  color: var(--lorebook-tree-editor-empty-text);
-  font-size: 13px;
-}
-
-.tree-list {
+.lorebook-tree-editor__tree-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 @media (--breakpoint-lg-down) {
-  .section-head {
+  .lorebook-tree-editor__head {
     flex-direction: column;
   }
 }

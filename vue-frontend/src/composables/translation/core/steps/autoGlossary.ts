@@ -9,6 +9,7 @@ import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationCons
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { TranslationSettings } from '@/types/settings'
 import type { GlossaryEntry, GlossaryExtractionStats } from '@/types/translationConstraints'
+import { deepClone } from '@/utils/deepClone'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface AutoGlossaryInput {
@@ -48,13 +49,9 @@ function shouldRunAutoGlossary(input: AutoGlossaryInput): boolean {
   return true
 }
 
-function cloneConstraints(constraints: BookTranslationConstraints): BookTranslationConstraints {
-  return JSON.parse(JSON.stringify(constraints)) as BookTranslationConstraints
-}
-
 export async function executeAutoGlossary(input: AutoGlossaryInput): Promise<AutoGlossaryOutput> {
   const fallback: AutoGlossaryOutput = {
-    bookTranslationConstraints: cloneConstraints(input.bookTranslationConstraints),
+    bookTranslationConstraints: deepClone(input.bookTranslationConstraints),
     autoGlossaryStats: {
       added: 0,
       duplicates: 0,
@@ -106,7 +103,7 @@ export async function executeAutoGlossary(input: AutoGlossaryInput): Promise<Aut
       }
     }
 
-    const nextConstraints = cloneConstraints(input.bookTranslationConstraints)
+    const nextConstraints = deepClone(input.bookTranslationConstraints)
     nextConstraints.glossary.entries = [...existingEntries, ...newEntries]
 
     const store = useBookTranslationConstraintsStore()
@@ -123,7 +120,7 @@ export async function executeAutoGlossary(input: AutoGlossaryInput): Promise<Aut
     }
 
     return {
-      bookTranslationConstraints: cloneConstraints(store.constraints),
+      bookTranslationConstraints: deepClone(store.constraints),
       autoGlossaryStats: {
         added: newEntries.length,
         duplicates: duplicateCount,

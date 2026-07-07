@@ -4,6 +4,61 @@ const jsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
 }
 
+function parseCssColorToRgb(value: string): [number, number, number] {
+  const rgbMatch = value.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/)
+  if (rgbMatch) {
+    return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])]
+  }
+
+  const rgbaMatch = value.match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)$/)
+  if (rgbaMatch) {
+    return [Number(rgbaMatch[1]), Number(rgbaMatch[2]), Number(rgbaMatch[3])]
+  }
+
+  const srgbMatch = value.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\)$/)
+  if (srgbMatch) {
+    return [
+      Math.round(Number(srgbMatch[1]) * 255),
+      Math.round(Number(srgbMatch[2]) * 255),
+      Math.round(Number(srgbMatch[3]) * 255),
+    ]
+  }
+
+  throw new Error(`Unsupported CSS color format: ${value}`)
+}
+
+function expectCssColorNear(value: string, expected: [number, number, number], tolerance = 1) {
+  const actual = parseCssColorToRgb(value)
+  actual.forEach((channel, index) => {
+    expect(Math.abs(channel - expected[index]!)).toBeLessThanOrEqual(tolerance)
+  })
+}
+
+async function enableDarkTheme(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('theme', 'dark')
+  })
+}
+
+async function expectDarkThemeSurface(page: Page, selector: string) {
+  await expect(page.locator(selector)).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark')
+
+  const bodyColors = await page.evaluate(() => {
+    const bodyStyle = window.getComputedStyle(document.body)
+    return {
+      background: bodyStyle.backgroundColor,
+      text: bodyStyle.color,
+    }
+  })
+  const background = parseCssColorToRgb(bodyColors.background)
+  const text = parseCssColorToRgb(bodyColors.text)
+
+  expect(Math.max(...background)).toBeLessThan(80)
+  expect(Math.min(...text)).toBeGreaterThan(180)
+}
+
 const demoPageSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1280" viewBox="0 0 900 1280">
   <rect width="900" height="1280" fill="#f7f4ed"/>
@@ -20,6 +75,32 @@ const demoPageSvg = `
 
 const demoPageImage = 'data:image/svg+xml;utf8,' + encodeURIComponent(demoPageSvg)
 const demoPageImageBase64 = Buffer.from(demoPageSvg).toString('base64')
+let demoRenderImageBase64: string | null = null
+
+async function getDemoRenderImageBase64(page: Page): Promise<string> {
+  if (demoRenderImageBase64) {
+    return demoRenderImageBase64
+  }
+
+  demoRenderImageBase64 = await page.evaluate(async (svgText) => {
+    const image = new Image()
+    image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText)
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve()
+      image.onerror = () => reject(new Error('Failed to rasterize demo render fixture'))
+    })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 900
+    canvas.height = 1280
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas 2D context unavailable')
+    context.drawImage(image, 0, 0)
+    return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
+  }, demoPageSvg)
+
+  return demoRenderImageBase64
+}
 
 const demoBook = {
   id: 'demo-book',
@@ -263,7 +344,7 @@ interface VisualFixtureOptions {
   editBubbles?: boolean
 }
 
-async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
+async function mockApi(route: Route, options: VisualFixtureOptions = {}, renderImageBase64 = demoPageImageBase64) {
   const requestUrl = new URL(route.request().url())
   const path = requestUrl.pathname
 
@@ -403,7 +484,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       headers: jsonHeaders,
       body: JSON.stringify({
         success: true,
-        final_image: demoPageImageBase64,
+        final_image: renderImageBase64,
         bubble_states: requestBody?.bubble_states ?? [],
       }),
     })
@@ -683,10 +764,12 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
 }
 
 async function prepareVisualPage(page: Page, options: VisualFixtureOptions = {}) {
+  const renderImageBase64 = options.editBubbles ? await getDemoRenderImageBase64(page) : demoPageImageBase64
+
   await page.route('**/*', async route => {
     const requestUrl = new URL(route.request().url())
     if (requestUrl.pathname.startsWith('/api/')) {
-      await mockApi(route, options)
+      await mockApi(route, options, renderImageBase64)
       return
     }
     await route.continue()
@@ -710,10 +793,27 @@ test.beforeEach(async ({ page }) => {
   await prepareVisualPage(page)
 })
 
+test('dark theme reaches every primary route surface without local overrides', async ({ page }) => {
+  await enableDarkTheme(page)
+
+  const routes = [
+    { path: '/', selector: '.bookshelf-page' },
+    { path: '/translate', selector: '.translate-page' },
+    { path: '/insight?book=demo-book', selector: '.insight-page' },
+    { path: '/reader?book=demo-book&chapter=demo-chapter', selector: '.reader-page' },
+    { path: '/insight/character-studio?book=demo-book', selector: '.studio-page' },
+  ]
+
+  for (const route of routes) {
+    await page.goto(route.path)
+    await expectDarkThemeSurface(page, route.selector)
+  }
+})
+
 test('bookshelf empty state keeps its layout contract', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '我的书架' })).toBeVisible()
-  await expect(page.locator('.page-title')).toHaveCSS('color', 'rgb(51, 51, 51)')
+  await expect(page.locator('.bookshelf-toolbar__title')).toHaveCSS('color', 'rgb(51, 51, 51)')
   await expect(page).toHaveScreenshot('bookshelf-empty.png', {
     fullPage: true,
     animations: 'disabled',
@@ -734,7 +834,7 @@ test('book detail modal keeps nested chapter form styling contract', async ({ pa
   await expect(chapterLabel).toHaveCSS('display', 'block')
   await expect(chapterInput).toHaveCSS('border-radius', '8px')
   const chapterInputLayout = await chapterInput.evaluate(element => {
-    const field = element.closest('.chapter-form-field')
+    const field = element.closest('.chapter-form-content__field')
     const inputBox = element.getBoundingClientRect()
     const fieldBox = field?.getBoundingClientRect()
     return {
@@ -754,7 +854,7 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
   await page.getByRole('button', { name: '新建书籍' }).click()
   const createBookModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '新建书籍' })
   await expect(createBookModal).toBeVisible()
-  await expect(createBookModal.locator('.book-modal__field').first()).toHaveCSS('margin-bottom', '20px')
+  await expect(createBookModal.getByLabel('书籍名称')).toHaveCSS('border-radius', '8px')
   await expect(createBookModal).toHaveScreenshot('bookshelf-create-book-modal.png', {
     animations: 'disabled',
   })
@@ -772,7 +872,7 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
   await page.getByRole('button', { name: '编辑书籍' }).click()
   const editBookModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '编辑书籍' })
   await expect(editBookModal).toBeVisible()
-  await expect(editBookModal.locator('.book-modal__field').first()).toHaveCSS('margin-bottom', '20px')
+  await expect(editBookModal.getByLabel('书籍名称')).toHaveCSS('border-radius', '8px')
   await expect(editBookModal).toHaveScreenshot('bookshelf-edit-book-modal.png', {
     animations: 'disabled',
   })
@@ -804,15 +904,15 @@ test('translate workspace empty state keeps its layout contract', async ({ page 
 
 test('translate loaded workspace keeps fixed sidebar sizing contract', async ({ page }) => {
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
-  await expect(page.locator('.result-section')).toBeVisible()
-  await expect(page.locator('.thumbnail-sidebar__item')).toHaveCount(2)
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
+  await expect(page.locator('.thumbnail-sidebar').getByRole('button', { name: /选择图片 \d+:/ })).toHaveCount(2)
   await expect(page.locator('.settings-sidebar')).toHaveCSS('width', '300px')
   await expect(page.locator('.settings-sidebar')).toHaveCSS('padding-left', '20px')
   await expect(page.locator('.settings-sidebar')).toHaveCSS('padding-right', '20px')
   await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('width', '230px')
   await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-left', '20px')
   await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-right', '20px')
-  await expect(page.locator('.thumbnail-sidebar .thumbnail-card h2')).toHaveCSS('color', 'rgb(44, 62, 80)')
+  await expect(page.locator('.thumbnail-sidebar__title')).toHaveCSS('color', 'rgb(44, 62, 80)')
   await expect(page.locator('.translate-shell__main')).toHaveCSS('margin-left', '340px')
   await expect(page.locator('.translate-shell__main')).toHaveCSS('margin-right', '240px')
   await expect(page).toHaveScreenshot('translate-loaded.png', {
@@ -823,14 +923,15 @@ test('translate loaded workspace keeps fixed sidebar sizing contract', async ({ 
 
 test('translate edit workspace keeps dark editor shell contract', async ({ page }) => {
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
-  await expect(page.locator('.result-section')).toBeVisible()
-  await page.locator('#toggleEditModeButton').click()
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
+  await page.getByRole('button', { name: '切换编辑模式' }).click()
 
   const workspace = page.locator('.edit-workspace')
-  const toolbar = page.locator('.edit-toolbar-wrapper')
+  const toolbar = page.locator('.edit-toolbar')
   await expect(workspace).toBeVisible()
   await expect(toolbar).toBeVisible()
-  await expect(workspace).toHaveCSS('background-color', 'rgb(26, 26, 46)')
+  const workspaceBackground = await workspace.evaluate(element => getComputedStyle(element).backgroundColor)
+  expectCssColorNear(workspaceBackground, [26, 26, 46], 2)
   await expect(toolbar).toHaveCSS('background-image', /linear-gradient/)
   await expect(page).toHaveScreenshot('translate-edit-workspace.png', {
     fullPage: true,
@@ -842,21 +943,22 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   await page.unroute('**/*')
   await prepareVisualPage(page, { editBubbles: true })
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
-  await expect(page.locator('.result-section')).toBeVisible()
-  await page.locator('#toggleEditModeButton').click()
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
+  await page.getByRole('button', { name: '切换编辑模式' }).click()
 
   const workspace = page.locator('.edit-workspace')
-  const toolbar = page.locator('.edit-toolbar-wrapper')
-  const bubble = page.locator('.bubble-highlight-box').first()
+  const toolbar = page.locator('.edit-toolbar')
+  const bubble = page.locator('.bubble-overlay__highlight-box').first()
   await expect(workspace).toBeVisible()
   await expect(toolbar).toBeVisible()
   await expect(bubble).toBeVisible()
   await bubble.click()
-  await expect(bubble).toHaveClass(/selected/)
-  expect(await page.locator('.resize-handle').count()).toBeGreaterThanOrEqual(8)
-  await expect(page.locator('.translated-editor')).toBeVisible()
-  await expect(page.locator('.edit-panel-content')).toBeVisible()
-  await expect(workspace).toHaveCSS('background-color', 'rgb(26, 26, 46)')
+  await expect(bubble).toHaveClass(/bubble-overlay__highlight-box--selected/)
+  expect(await page.locator('.bubble-overlay__resize-handle').count()).toBeGreaterThanOrEqual(8)
+  await expect(page.locator('.bubble-editor__textarea--translated')).toBeVisible()
+  await expect(page.locator('.bubble-editor')).toBeVisible()
+  const workspaceBackground = await workspace.evaluate(element => getComputedStyle(element).backgroundColor)
+  expectCssColorNear(workspaceBackground, [26, 26, 46], 2)
   await expect(toolbar).toHaveCSS('background-image', /linear-gradient/)
   await expect(page).toHaveScreenshot('translate-edit-workspace-selected-bubble.png', {
     fullPage: true,
@@ -869,15 +971,15 @@ test('translation settings modal keeps its form styling contract', async ({ page
   await expect(page.locator('.translate-page')).toBeVisible()
   const settingsModal = page.locator('.settings-modal-wrapper')
   if (!(await settingsModal.isVisible())) {
-    const guideConfigureButton = page.getByRole('button', { name: '⚙️ 立即配置' })
+    const guideConfigureButton = page.getByRole('button', { name: '立即配置' })
     if (await guideConfigureButton.isVisible()) {
       await guideConfigureButton.click()
     } else {
-      await page.locator('#openSettingsBtn').click()
+      await page.getByRole('button', { name: '设置', exact: true }).click()
     }
   }
   await expect(settingsModal).toBeVisible()
-  await page.getByRole('button', { name: '翻译服务' }).click()
+  await page.getByRole('tab', { name: '翻译服务' }).click()
   await expect(page.locator('#settingsApiKey')).toBeVisible()
   await expect(page.locator('#settingsApiKey')).toHaveCSS('border-radius', '6px')
   await expect(settingsModal).toHaveScreenshot('translation-settings-modal.png', {
@@ -887,7 +989,7 @@ test('translation settings modal keeps its form styling contract', async ({ page
 
 test('translation settings modal keeps every tab layout contract', async ({ page }) => {
   await page.goto('/translate')
-  await page.locator('#openSettingsBtn').click()
+  await page.getByRole('button', { name: '设置', exact: true }).click()
   const settingsModal = page.locator('.settings-modal-wrapper')
   await expect(settingsModal).toBeVisible()
 
@@ -904,8 +1006,8 @@ test('translation settings modal keeps every tab layout contract', async ({ page
   ]
 
   for (const tab of settingsTabs) {
-    await settingsModal.getByRole('button', { name: tab.label }).click()
-    await expect(settingsModal.locator('.settings-tab.active')).toHaveText(tab.label)
+    await settingsModal.getByRole('tab', { name: tab.label }).click()
+    await expect(settingsModal.locator('[role="tab"][aria-selected="true"]')).toHaveText(tab.label)
     await settingsModal.evaluate((element) => {
       element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
     })
@@ -918,13 +1020,13 @@ test('translation settings modal keeps every tab layout contract', async ({ page
 
 test('web import expanded settings keep modal layout contract', async ({ page }) => {
   await page.goto('/translate')
-  await page.locator('.web-import-link').click()
+  await page.getByRole('button', { name: '从网页导入漫画图片' }).click()
   const webImportModal = page.locator('.web-import-modal')
   await expect(webImportModal).toBeVisible()
-  await webImportModal.locator('.web-import-modal__settings-header').click()
-  await webImportModal.getByRole('button', { name: '高级设置' }).click()
-  await expect(webImportModal.locator('.web-import-modal__settings-content')).toBeVisible()
-  await expect(webImportModal.locator('.web-import-modal__settings-tab.active')).toHaveText('高级设置')
+  await webImportModal.getByRole('button', { name: '网页导入设置' }).click()
+  await webImportModal.getByRole('tab', { name: /高级设置/ }).click()
+  await expect(webImportModal.locator('.product-collapsible-section__body')).toBeVisible()
+  await expect(webImportModal.locator('[role="tab"][aria-selected="true"]')).toHaveText('高级设置')
   await webImportModal.evaluate((element) => {
     element.scrollTop = 0
     element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
@@ -936,15 +1038,16 @@ test('web import expanded settings keep modal layout contract', async ({ page })
 
 test('web import result and logs keep modal layout contract', async ({ page }) => {
   await page.goto('/translate')
-  await page.locator('.web-import-link').click()
+  await page.getByRole('button', { name: '从网页导入漫画图片' }).click()
   const webImportModal = page.locator('.web-import-modal')
   await expect(webImportModal).toBeVisible()
-  await webImportModal.locator('.url-input').fill('https://example.com/chapter-1')
+  await webImportModal.locator('#webImportSourceUrl').fill('https://example.com/chapter-1')
   await webImportModal.getByRole('button', { name: /开始提取/ }).click()
 
-  await expect(webImportModal.locator('.logs-section')).toBeVisible()
-  await expect(webImportModal.locator('.result-section')).toBeVisible()
-  await expect(webImportModal.locator('.result-count')).toContainText('2')
+  await expect(webImportModal.locator('.product-log-panel')).toBeVisible()
+  await expect(webImportModal.locator('.web-import-results-grid__section')).toBeVisible()
+  await expect(webImportModal.locator('.product-selectable-image-grid')).toBeVisible()
+  await expect(webImportModal.getByLabel('网页导入结果元信息')).toContainText('共 2 张')
   await expect(webImportModal).toHaveScreenshot('web-import-result-logs.png', {
     animations: 'disabled',
   })
@@ -952,10 +1055,10 @@ test('web import result and logs keep modal layout contract', async ({ page }) =
 
 test('plugin agent modal keeps three-column settings layout contract', async ({ page }) => {
   await page.goto('/translate')
-  await page.locator('#openSettingsBtn').click()
+  await page.getByRole('button', { name: '设置', exact: true }).click()
   const settingsModal = page.locator('.settings-modal-wrapper')
   await expect(settingsModal).toBeVisible()
-  await settingsModal.getByRole('button', { name: '插件管理' }).click()
+  await settingsModal.getByRole('tab', { name: '插件管理' }).click()
   await settingsModal.getByRole('button', { name: '自动生成插件' }).click()
 
   const pluginAgentModal = page.locator('.plugin-agent-modal')
@@ -977,15 +1080,15 @@ test('insight empty state keeps its layout contract', async ({ page }) => {
 
 test('insight selected-book sidebars keep their gutter contract', async ({ page }) => {
   await page.goto('/insight?book=demo-book')
-  await expect(page.locator('.analysis-control-compact')).toBeVisible()
-  await expect(page.locator('.page-detail-section')).toBeVisible()
-  await expect(page.locator('.notes-section')).toBeVisible()
-  await expect(page.locator('.analysis-control-compact')).toHaveCSS('padding-left', '16px')
-  await expect(page.locator('.page-detail-section')).toHaveCSS('padding-left', '18px')
-  await expect(page.locator('.notes-section')).toHaveCSS('padding-left', '18px')
-  await expect(page.locator('.tab-btn').nth(1)).toHaveCSS('color', 'rgb(102, 102, 102)')
-  await expect(page.locator('.overview-card.stats-card .card-title')).toHaveCSS('color', 'rgb(51, 51, 51)')
-  await expect(page.locator('.page-detail-section .section-title')).toHaveCSS('color', 'rgb(51, 51, 51)')
+  await expect(page.locator('.analysis-progress-panel')).toBeVisible()
+  await expect(page.locator('.page-detail-panel')).toBeVisible()
+  await expect(page.locator('.notes-panel')).toBeVisible()
+  await expect(page.locator('.analysis-progress-panel')).toHaveCSS('padding-left', '16px')
+  await expect(page.locator('.page-detail-panel')).toHaveCSS('padding-left', '18px')
+  await expect(page.locator('.notes-panel')).toHaveCSS('padding-left', '18px')
+  await expect(page.locator('.product-tabbed-workspace__tab').nth(1)).toHaveCSS('color', 'rgb(102, 102, 102)')
+  await expect(page.locator('.overview-panel__card--stats .overview-panel__card-title')).toHaveCSS('color', 'rgb(51, 51, 51)')
+  await expect(page.locator('.page-detail-panel .product-section-header__title')).toHaveCSS('color', 'rgb(51, 51, 51)')
   await expect(page).toHaveScreenshot('insight-selected-sidebars.png', {
     fullPage: true,
     animations: 'disabled',
@@ -995,9 +1098,11 @@ test('insight selected-book sidebars keep their gutter contract', async ({ page 
 
 test('insight overview action buttons keep their component styling', async ({ page }) => {
   await page.goto('/insight?book=demo-book')
-  await expect(page.locator('.overview-card.stats-card')).toBeVisible()
-  const currentExportButton = page.locator('.overview-card.stats-card .overview-action-button--secondary')
-  const allExportButton = page.locator('.overview-card.stats-card .overview-action-button--primary')
+  await expect(page.locator('.overview-panel__card--stats')).toBeVisible()
+  const exportActions = page.getByRole('group', { name: '概览导出操作' })
+  const currentExportButton = exportActions.getByRole('button', { name: '导出当前' })
+  const allExportButton = exportActions.getByRole('button', { name: '导出全部' })
+  await expect(exportActions).toBeVisible()
   await expect(currentExportButton).toHaveCSS('border-radius', '8px')
   await expect(currentExportButton).toHaveCSS('padding-left', '12px')
   await expect(currentExportButton).toHaveCSS('border-top-width', '1px')
@@ -1008,12 +1113,12 @@ test('insight overview action buttons keep their component styling', async ({ pa
 
 test('insight notes add modal keeps form spacing contract', async ({ page }) => {
   await page.goto('/insight?book=demo-book')
-  await expect(page.locator('.notes-section')).toBeVisible()
-  await page.getByRole('button', { name: '+ 添加笔记' }).click()
+  await expect(page.locator('.notes-panel')).toBeVisible()
+  await page.getByRole('button', { name: '添加笔记' }).click()
 
   const noteModal = page.locator('.notes-panel-modal').filter({ hasText: '添加笔记' })
   await expect(noteModal).toBeVisible()
-  await expect(noteModal.locator('.notes-panel__field').first()).toHaveCSS('margin-bottom', '16px')
+  await expect(noteModal.getByLabel('标题')).toHaveCSS('border-radius', '6px')
   await expect(noteModal).toHaveScreenshot('insight-notes-add-modal.png', {
     animations: 'disabled',
   })
@@ -1021,15 +1126,15 @@ test('insight notes add modal keeps form spacing contract', async ({ page }) => 
 
 test('insight QA save-note modal keeps nested form styling contract', async ({ page }) => {
   await page.goto('/insight?book=demo-book')
-  await page.getByRole('button', { name: /智能问答/ }).click()
-  await page.locator('.chat-input-wrapper textarea').fill('这个章节讲了什么？')
+  await page.getByRole('tab', { name: /智能问答/ }).click()
+  await page.getByLabel('输入你的问题...').fill('这个章节讲了什么？')
   await page.getByRole('button', { name: '发送' }).click()
 
   await expect(page.getByText('这是一个用于视觉回归的回答')).toBeVisible()
-  await page.getByRole('button', { name: '📝 保存为笔记' }).click()
+  await page.getByRole('button', { name: '保存为笔记' }).click()
   const qaNoteModal = page.locator('.qa-note-modal')
   await expect(qaNoteModal).toBeVisible()
-  await expect(page.locator('#qaNoteTitle')).toHaveCSS('border-radius', '8px')
+  await expect(page.locator('#qaNoteTitle')).toHaveCSS('border-radius', '6px')
   await expect(qaNoteModal).toHaveScreenshot('insight-qa-save-note-modal.png', {
     animations: 'disabled',
   })
@@ -1037,7 +1142,7 @@ test('insight QA save-note modal keeps nested form styling contract', async ({ p
 
 test('insight continuation add-character dialog keeps field layout contract', async ({ page }) => {
   await page.goto('/insight?book=demo-book')
-  await page.getByRole('button', { name: /续写/ }).click()
+  await page.getByRole('tab', { name: /续写/ }).click()
   await expect(page.getByText('续写设置')).toBeVisible()
   await page.getByRole('button', { name: /新增角色/ }).click()
 
@@ -1053,9 +1158,9 @@ test('insight continuation add-character dialog keeps field layout contract', as
 test('reader loaded state keeps its layout contract', async ({ page }) => {
   await page.goto('/reader?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.reader-page')).toBeVisible()
-  await expect(page.locator('.reader-image')).toHaveCount(2)
+  await expect(page.locator('.reader-canvas__image')).toHaveCount(2)
   await expect(page.locator('.reader-header__book-title')).toHaveCSS('color', 'rgb(255, 255, 255)')
-  await expect(page.locator('.reader-header__mode-button.active')).toHaveCSS('color', 'rgb(102, 126, 234)')
+  await expect(page.locator('.reader-header__mode-button.product-header-action--active')).toHaveCSS('color', 'rgb(102, 126, 234)')
   await expect(page).toHaveScreenshot('reader-loaded.png', {
     fullPage: true,
     animations: 'disabled',
@@ -1065,10 +1170,10 @@ test('reader loaded state keeps its layout contract', async ({ page }) => {
 test('reader settings panel keeps its control layout contract', async ({ page }) => {
   await page.goto('/reader?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.reader-page')).toBeVisible()
-  await page.locator('#settingsBtn').click()
+  await page.getByRole('button', { name: '阅读设置' }).click()
   const settingsPanel = page.locator('.reader-controls__settings-panel')
   await expect(settingsPanel).toBeVisible()
-  await expect(settingsPanel.locator('.reader-controls__setting-item')).toHaveCount(3)
+  await expect(settingsPanel.locator('.reader-controls__setting-field')).toHaveCount(3)
   await expect(settingsPanel).toHaveScreenshot('reader-settings-panel.png', {
     animations: 'disabled',
   })
@@ -1078,7 +1183,7 @@ test('mobile translate loaded workspace keeps responsive layout contract', async
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.translate-page')).toBeVisible()
-  await expect(page.locator('.result-section')).toBeVisible()
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
   await expect(page).toHaveScreenshot('mobile-translate-loaded.png', {
     fullPage: true,
     animations: 'disabled',
@@ -1090,11 +1195,40 @@ test('mobile insight selected book keeps responsive layout contract', async ({ p
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/insight?book=demo-book')
   await expect(page.locator('.insight-page')).toBeVisible()
-  await expect(page.locator('.analysis-control-compact')).toBeVisible()
+  await expect(page.getByLabel('打开导航')).toBeVisible()
+  await page.getByLabel('打开导航').click()
+  await expect(page.locator('.analysis-progress-panel')).toBeVisible()
   await expect(page).toHaveScreenshot('mobile-insight-selected.png', {
     fullPage: true,
     animations: 'disabled',
   })
+})
+
+test('narrow insight continuation wizard keeps controls inside the scroll owner', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 844 })
+  await page.goto('/insight?book=demo-book')
+  await page.getByRole('tab', { name: /续写/ }).click()
+  await expect(page.getByText('续写设置')).toBeVisible()
+
+  const layout = await page.locator('.continuation-panel').evaluate(element => {
+    const panel = element as HTMLElement
+    const scrollOwner = panel.closest('.product-workspace-panel__scroll') as HTMLElement | null
+    const stepRows = new Set(
+      Array.from(panel.querySelectorAll<HTMLElement>('.product-wizard-steps__step')).map(step => Math.round(step.getBoundingClientRect().top)),
+    )
+
+    return {
+      panelClientWidth: panel.clientWidth,
+      panelScrollWidth: panel.scrollWidth,
+      scrollOwnerClientWidth: scrollOwner?.clientWidth ?? 0,
+      scrollOwnerScrollWidth: scrollOwner?.scrollWidth ?? 0,
+      stepRowCount: stepRows.size,
+    }
+  })
+
+  expect(layout.panelScrollWidth).toBeLessThanOrEqual(layout.panelClientWidth + 1)
+  expect(layout.scrollOwnerScrollWidth).toBeLessThanOrEqual(layout.scrollOwnerClientWidth + 1)
+  expect(layout.stepRowCount).toBeGreaterThan(1)
 })
 
 test('character studio empty workspace keeps its layout contract', async ({ page }) => {
@@ -1111,14 +1245,15 @@ test('character studio editor and preview keep split workspace contract', async 
   await prepareVisualPage(page, { books: [demoBook], studioDocuments: true })
   await page.goto('/insight/character-studio?book=demo-book')
 
-  await expect(page.locator('.workspace-shell')).toBeVisible()
+  await expect(page.locator('.studio-page__workspace-shell')).toBeVisible()
   await expect(page.locator('.studio-editor')).toBeVisible()
-  await expect(page.locator('.chat-shell')).toBeVisible()
-  await expect(page.locator('.hero-kicker')).toHaveText('当前角色')
-  await expect(page.locator('.hero-kicker')).toHaveCSS('color', 'rgb(111, 132, 162)')
+  await expect(page.locator('.character-studio-preview')).toBeVisible()
+  await expect(page.locator('.studio-hero-section__kicker')).toHaveText('当前角色')
+  const heroKickerColor = await page.locator('.studio-hero-section__kicker').evaluate(element => getComputedStyle(element).color)
+  expectCssColorNear(heroKickerColor, [111, 132, 162])
   await expect(page.getByText('绫濑澪').first()).toBeVisible()
-  await expect(page.locator('.overview-hero')).toHaveCSS('border-radius', '28px')
-  await expect(page.locator('.chat-shell .workspace-card').first()).toHaveCSS('border-radius', '24px')
+  await expect(page.locator('.studio-hero-section')).toHaveCSS('border-radius', '28px')
+  await expect(page.locator('.character-studio-preview .studio-preview-workspace-panel').first()).toHaveCSS('border-radius', '24px')
   await expect(page).toHaveScreenshot('character-studio-editor-preview.png', {
     fullPage: true,
     animations: 'disabled',
@@ -1138,7 +1273,7 @@ test('character studio panes keep independent scroll containers', async ({ page 
   await expect(editorScroll).toHaveCSS('overflow-y', 'auto')
   await expect(chatScroll).toHaveCSS('overflow-y', 'auto')
 
-  await page.locator('.editor-shell').getByRole('button', { name: '🧬 角色设定', exact: true }).click()
+  await page.locator('.studio-editor__shell').getByRole('tab', { name: '角色设定', exact: true }).click()
   const editorCanScroll = await editorScroll.evaluate(element => element.scrollHeight > element.clientHeight)
   expect(editorCanScroll).toBe(true)
   await editorScroll.evaluate(element => { element.scrollTop = 160 })

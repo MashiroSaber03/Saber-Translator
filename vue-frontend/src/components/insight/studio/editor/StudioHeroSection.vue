@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductAvatar from '@/components/product/ProductAvatar.vue'
 import type { CharacterStudioDocument, CharacterStudioEditorPendingState } from '@/types/characterStudio'
 
 defineProps<{
@@ -18,128 +20,109 @@ defineEmits<{
 </script>
 
 <template>
-  <section class="overview-hero">
-    <div class="hero-main">
-      <div class="avatar-shell">
-        <img v-if="avatarUrl" :src="avatarUrl" alt="角色头像">
-        <div v-else class="avatar-placeholder">{{ document.identity.name.slice(0, 1) || '角' }}</div>
-      </div>
-      <div class="hero-copy">
-        <div class="hero-kicker">当前角色</div>
-        <h2>{{ document.meta.title || document.identity.name }}</h2>
-        <p>{{ document.identity.description || '当前角色还没有完善简介，建议先使用“AI 一键补全整卡”，再回到分区里精修。' }}</p>
-        <div class="hero-meta">
-          <span class="meta-pill">{{ formatOrigin(document.origin.type) }}</span>
-          <span v-if="document.origin.source_character" class="meta-pill">来源: {{ document.origin.source_character }}</span>
-          <span v-if="document.meta.tags.length > 0" class="meta-pill">{{ document.meta.tags.length }} 个标签</span>
-          <span v-if="document.status.frozen_sections.length > 0" class="meta-pill">已钉住 {{ document.status.frozen_sections.length }} 区块</span>
+  <section class="studio-hero-section">
+    <div class="studio-hero-section__main">
+      <ProductAvatar
+        class="studio-hero-section__avatar"
+        :image-src="avatarUrl"
+        label="角色头像"
+        :fallback-text="document.identity.name"
+        size="hero"
+        shape="portrait"
+      />
+      <div class="studio-hero-section__copy">
+        <div class="studio-hero-section__kicker">当前角色</div>
+        <h2 class="studio-hero-section__title">{{ document.meta.title || document.identity.name }}</h2>
+        <p class="studio-hero-section__description">{{ document.identity.description || '当前角色还没有完善简介，建议先使用“AI 一键补全整卡”，再回到分区里精修。' }}</p>
+        <div class="studio-hero-section__meta">
+          <span class="studio-hero-section__meta-pill">{{ formatOrigin(document.origin.type) }}</span>
+          <span v-if="document.origin.source_character" class="studio-hero-section__meta-pill">来源: {{ document.origin.source_character }}</span>
+          <span v-if="document.meta.tags.length > 0" class="studio-hero-section__meta-pill">{{ document.meta.tags.length }} 个标签</span>
+          <span v-if="document.status.frozen_sections.length > 0" class="studio-hero-section__meta-pill">已钉住 {{ document.status.frozen_sections.length }} 区块</span>
         </div>
       </div>
     </div>
-    <div class="hero-actions">
+    <ProductActionRow class="studio-hero-section__actions" aria-label="角色概览操作">
       <UiButton
-        variant="toolbar"
-        class="action-primary"
+        variant="primary"
         :disabled="isGenerationLocked"
         @click="$emit('generate', 'full')"
       >
         {{ isGenerating('full') ? '整卡补全中...' : 'AI 一键补全整卡' }}
       </UiButton>
       <UiButton
-        variant="toolbar"
-        class="action-ghost"
+        variant="secondary"
         :disabled="isGenerationLocked"
         @click="$emit('generate', 'review')"
       >
         {{ isGenerating('review') ? '审查中...' : 'AI 审查当前角色' }}
       </UiButton>
       <UiButton
-        variant="toolbar"
-        class="action-danger"
+        variant="secondary"
+        tone="danger"
         :disabled="pendingState.deleting"
         @click="$emit('delete')"
       >
         {{ pendingState.deleting ? '删除中...' : '删除文档' }}
       </UiButton>
-    </div>
+    </ProductActionRow>
   </section>
 </template>
 
 <style scoped>
-.overview-hero {
+.studio-hero-section {
   display: flex;
   justify-content: space-between;
   gap: 18px;
   padding: 22px;
   border: 1px solid var(--studio-border-default);
   border-radius: 28px;
-  background: var(--character-studio-editor-surface-base);
+  background: color-mix(in srgb, var(--color-surface-card) 88%, transparent);
   box-shadow: 0 26px 42px var(--studio-shadow-floating);
 }
 
-.hero-main {
+.studio-hero-section__main {
   display: flex;
   gap: 18px;
   min-width: 0;
 }
 
-.avatar-shell {
-  flex-shrink: 0;
-  width: 116px;
-  height: 164px;
-  overflow: hidden;
-  border-radius: 24px;
-  background: linear-gradient(180deg, var(--studio-surface-tint-strong), var(--character-studio-editor-surface-raised));
+.studio-hero-section__avatar {
+  --product-avatar-background: linear-gradient(180deg, var(--studio-surface-tint-strong), color-mix(in srgb, var(--color-text-heading) 4%, transparent));
+  --product-avatar-color: var(--color-text-primary-strong);
 }
 
-.avatar-shell img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.avatar-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  color: var(--color-text-primary-strong);
-  font-weight: 700;
-  font-size: 32px;
-}
-
-.hero-copy {
+.studio-hero-section__copy {
   min-width: 0;
 }
 
-.hero-kicker {
-  color: var(--character-studio-editor-text-muted);
+.studio-hero-section__kicker {
+  color: color-mix(in srgb, var(--color-action-primary) 27%, color-mix(in srgb, var(--color-action-brand-strong) 17.808%, var(--color-text-subtle)));
   font-size: 11px;
   letter-spacing: 0;
   text-transform: uppercase;
 }
 
-.hero-copy h2 {
+.studio-hero-section__title {
   margin: 10px 0 0;
-  color: var(--character-studio-editor-text-primary);
+  color: var(--color-text-heading);
   font-size: 30px;
 }
 
-.hero-copy p {
+.studio-hero-section__description {
   margin: 12px 0 0;
   color: var(--studio-text-muted);
   line-height: 1.8;
 }
 
-.hero-meta {
+.studio-hero-section__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
 }
 
-.meta-pill {
+.studio-hero-section__meta-pill {
   padding: 5px 10px;
   border-radius: 999px;
   background: var(--studio-surface-muted);
@@ -147,56 +130,19 @@ defineEmits<{
   font-size: 11px;
 }
 
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
+.studio-hero-section__actions {
   align-content: flex-start;
   justify-content: flex-end;
-  gap: 10px;
-}
-
-.action-ghost,
-.action-primary,
-.action-danger {
-  border: none;
-  border-radius: 14px;
-  cursor: pointer;
-}
-
-.action-ghost {
-  padding: 11px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-primary {
-  padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-editor-surface-hover), var(--character-studio-editor-surface-active));
-  box-shadow: 0 12px 24px var(--character-studio-editor-shadow-default);
-  color: var(--color-text-inverse);
-}
-
-.action-danger {
-  padding: 11px 16px;
-  background: var(--color-surface-danger-soft);
-  color: var(--studio-text-danger);
-}
-
-.action-ghost:disabled,
-.action-primary:disabled,
-.action-danger:disabled {
-  opacity: 0.62;
-  cursor: not-allowed;
 }
 
 @media (--breakpoint-studio-down) {
-  .overview-hero {
+  .studio-hero-section {
     flex-direction: column;
   }
 }
 
 @media (--breakpoint-preview-down) {
-  .hero-main {
+  .studio-hero-section__main {
     flex-direction: column;
   }
 }

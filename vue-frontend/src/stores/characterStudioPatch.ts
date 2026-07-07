@@ -13,6 +13,7 @@ import type {
   RegexScript,
   StateTask,
 } from '@/types/characterStudio'
+import { deepClone } from '@/utils/deepClone'
 
 type NormalizedPatch = {
   set: Record<string, unknown>
@@ -27,6 +28,8 @@ type NormalizedPatch = {
   taskUpdates: Array<CharacterStudioPatchUpdateOp<CharacterStudioTaskChanges>>
   taskDeletes: CharacterStudioPatchDeleteOp[]
 }
+
+type MutableCharacterStudioDocument = CharacterStudioDocument & Record<string, unknown>
 
 const WORLD_BOOK_CHANGE_KEYS = new Set<keyof CharacterStudioWorldbookChanges>([
   'comment',
@@ -85,14 +88,6 @@ const ALLOWED_PATCH_KEYS = new Set([
 const VALID_TRIGGER_TIMINGS = new Set(['initialization', 'message_received', 'message_sent'])
 const VALID_REGEX_PLACEMENTS = new Set([1, 2])
 const VALID_LOREBOOK_POSITIONS = new Set(['before_char', 'at_depth', 'after_char'])
-
-function cloneDocument(document: CharacterStudioDocument): CharacterStudioDocument {
-  return JSON.parse(JSON.stringify(document)) as CharacterStudioDocument
-}
-
-function cloneValue<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -166,16 +161,20 @@ function createGeneratedId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
 }
 
+function ensurePathRecord(target: Record<string, unknown>, key: string): Record<string, unknown> {
+  const next = target[key]
+  if (isRecord(next)) return next
+  const created: Record<string, unknown> = {}
+  target[key] = created
+  return created
+}
+
 function setByPath(target: Record<string, unknown>, path: string, value: unknown) {
   const keys = path.split('.')
   let current: Record<string, unknown> = target
   for (let index = 0; index < keys.length - 1; index += 1) {
     const key = keys[index]!
-    const next = current[key]
-    if (!isRecord(next)) {
-      current[key] = {}
-    }
-    current = current[key] as Record<string, unknown>
+    current = ensurePathRecord(current, key)
   }
   current[keys[keys.length - 1]!] = value
 }
@@ -222,7 +221,7 @@ function normalizeWorldbookAddPayload(value: unknown): CharacterStudioWorldbookA
     if (!Array.isArray(payload.children)) {
       throw new Error('worldbook_add.children 必须为数组')
     }
-    normalized.children = cloneValue(payload.children as LorebookEntryNode[])
+    normalized.children = deepClone(payload.children as LorebookEntryNode[])
   }
   return normalized
 }
@@ -408,7 +407,7 @@ function buildLorebookEntry(payload: CharacterStudioWorldbookAddPayload): Lorebo
     match_character_personality: payload.match_character_personality ?? true,
     match_character_depth_prompt: payload.match_character_depth_prompt ?? true,
     match_scenario: payload.match_scenario ?? true,
-    children: cloneValue(payload.children || []),
+    children: deepClone(payload.children || []),
   }
 }
 
@@ -448,7 +447,7 @@ function updateLorebookEntryById(
       found = true
       return {
         ...entry,
-        ...cloneValue(changes),
+        ...deepClone(changes),
       }
     }
     const nested = updateLorebookEntryById(entry.children || [], id, changes)
@@ -502,7 +501,7 @@ function updateArrayItemById<T extends { id: string }>(
   const nextItems = [...items]
   nextItems[index] = {
     ...nextItems[index]!,
-    ...cloneValue(changes),
+    ...deepClone(changes),
   }
   return nextItems
 }
@@ -523,7 +522,7 @@ export function applyCharacterStudioAgentPatch(
   document: CharacterStudioDocument,
   patch: CharacterStudioAgentPatchV2,
 ): CharacterStudioDocument {
-  const nextDocument = cloneDocument(document)
+  const nextDocument = deepClone(document) as MutableCharacterStudioDocument
   const frozenSections = new Set(nextDocument.status.frozen_sections || [])
   const normalizedPatch = normalizePatch(patch)
 
@@ -543,7 +542,7 @@ export function applyCharacterStudioAgentPatch(
     if (frozenKey && frozenSections.has(frozenKey)) {
       continue
     }
-    setByPath(nextDocument as unknown as Record<string, unknown>, path, value)
+    setByPath(nextDocument, path, value)
   }
 
   const patchedName = String(nextDocument.identity.name || '').trim()

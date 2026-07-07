@@ -1,47 +1,72 @@
 <template>
-  <div class="workbench">
-    <div class="workbench-head">
-      <div>
-        <h3>状态任务</h3>
-        <p>用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
+  <div class="task-workbench">
+    <div class="task-workbench__head">
+      <div class="task-workbench__head-copy">
+        <h3 class="task-workbench__title">状态任务</h3>
+        <p class="task-workbench__description">用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
       </div>
-      <div class="actions">
-        <UiButton variant="toolbar" class="action-ghost" :disabled="generating" @click="$emit('generate')">
+      <ProductActionRow aria-label="状态任务操作">
+        <UiButton variant="secondary" :disabled="generating" @click="$emit('generate')">
           {{ generating ? '生成中...' : 'AI 生成任务' }}
         </UiButton>
-        <UiButton variant="toolbar" class="action-secondary" @click="$emit('add')">添加任务</UiButton>
-      </div>
+        <UiButton variant="primary" @click="$emit('add')">添加任务</UiButton>
+      </ProductActionRow>
     </div>
 
-    <div v-if="tasks.length === 0" class="empty-copy">还没有状态任务，建议至少保留一个初始化任务。</div>
-    <div v-else class="task-list">
-      <article v-for="(task, index) in tasks" :key="task.id" class="task-card">
-        <div class="card-head">
-          <UiInput class="title-input" :value="task.name" type="text" @input="$emit('update:field', index, 'name', ($event.target as HTMLInputElement).value)" />
-          <UiButton variant="toolbar" class="action-danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
+    <ProductEmptyState
+      v-if="tasks.length === 0"
+      description="建议至少保留一个初始化任务。"
+      icon-name="list"
+      role="note"
+      size="compact"
+      title="还没有状态任务"
+    />
+    <div v-else class="task-workbench__task-list">
+      <ProductRecordCard v-for="(task, index) in tasks" :key="task.id" class="task-workbench__task-card">
+        <div class="task-workbench__card-head">
+          <UiInput
+            class="task-workbench__title-input"
+            :model-value="task.name"
+            type="text"
+            variant="studio"
+            @update:model-value="$emit('update:field', index, 'name', String($event))"
+          />
+          <ProductActionRow aria-label="状态任务条目操作">
+            <UiButton variant="secondary" tone="danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
+          </ProductActionRow>
         </div>
-        <div class="grid">
-          <label>
-            触发时机
-            <UiSelect :model-value="task.triggerTiming" @change="$emit('update:field', index, 'triggerTiming', $event)">
+        <UiFormGrid class="task-workbench__grid">
+          <UiField variant="settings" label="触发时机" :control-id="`task-${task.id}-trigger`">
+            <UiSelect :id="`task-${task.id}-trigger`" :model-value="task.triggerTiming" variant="studio" @change="$emit('update:field', index, 'triggerTiming', $event)">
               <option value="initialization">初始化</option>
               <option value="message_received">收到消息</option>
               <option value="message_sent">发送消息</option>
             </UiSelect>
-          </label>
-          <label>
-            间隔（事件次数）
-            <UiInput :value="String(task.interval)" type="number" min="0" @input="$emit('update:number', index, 'interval', Number(($event.target as HTMLInputElement).value || 0))" />
-          </label>
-          <label class="full">
-            任务脚本
-            <UiTextarea :value="task.commands" rows="6" @input="$emit('update:field', index, 'commands', ($event.target as HTMLTextAreaElement).value)" />
-          </label>
-          <div class="toggles full">
+          </UiField>
+          <UiField variant="settings" label="间隔（事件次数）" :control-id="`task-${task.id}-interval`">
+            <UiNumberField
+              :input-id="`task-${task.id}-interval`"
+              :model-value="task.interval"
+              :min="0"
+              size="sm"
+              variant="studio"
+              @change="value => $emit('update:number', index, 'interval', value ?? 0)"
+            />
+          </UiField>
+          <UiField class="task-workbench__field--full" variant="settings" label="任务脚本" :control-id="`task-${task.id}-commands`">
+            <UiTextarea
+              :id="`task-${task.id}-commands`"
+              :model-value="task.commands"
+              variant="studio"
+              rows="6"
+              @update:model-value="$emit('update:field', index, 'commands', $event)"
+            />
+          </UiField>
+          <div class="task-workbench__toggles task-workbench__field--full">
             <UiCheckbox :model-value="task.disabled" label="禁用任务" @change="$emit('toggle:field', index, 'disabled', $event)" />
           </div>
-        </div>
-      </article>
+        </UiFormGrid>
+      </ProductRecordCard>
     </div>
   </div>
 </template>
@@ -49,10 +74,20 @@
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import type { StateTask } from '@/types/characterStudio'
+
+type StateTaskTextField = 'name' | 'triggerTiming' | 'commands'
+type StateTaskNumberField = 'interval'
+type StateTaskToggleField = 'disabled'
 
 defineProps<{
   tasks: StateTask[]
@@ -63,148 +98,97 @@ defineEmits<{
   (e: 'generate'): void
   (e: 'add'): void
   (e: 'remove', index: number): void
-  (e: 'update:field', index: number, field: keyof StateTask, value: string): void
-  (e: 'update:number', index: number, field: keyof StateTask, value: number): void
-  (e: 'toggle:field', index: number, field: keyof StateTask, value: boolean): void
+  (e: 'update:field', index: number, field: StateTaskTextField, value: string): void
+  (e: 'update:number', index: number, field: StateTaskNumberField, value: number): void
+  (e: 'toggle:field', index: number, field: StateTaskToggleField, value: boolean): void
 }>()
 </script>
 
 <style scoped>
-.workbench {
-  --task-workbench-border-default: rgba(25, 55, 94, .08);
-  --task-workbench-surface-base: rgba(255, 255, 255, .84);
-  --task-workbench-text-primary: #516882;
-  --ui-input-border: 1px solid var(--studio-border-strong);
-  --ui-input-background: var(--studio-surface-soft);
-  --ui-input-radius: 14px;
-  --ui-input-padding: 11px 12px;
-  --ui-input-color: var(--studio-text-strong);
-  --ui-input-font-size: 13px;
-  --ui-select-border: 1px solid var(--studio-border-strong);
-  --ui-select-background: var(--studio-surface-soft);
-  --ui-select-radius: 14px;
-  --ui-select-padding: 11px 12px;
-  --ui-select-color: var(--studio-text-strong);
-  --ui-select-font-size: 13px;
-  --ui-textarea-border: 1px solid var(--studio-border-strong);
-  --ui-textarea-background: var(--studio-surface-soft);
-  --ui-textarea-radius: 14px;
-  --ui-textarea-padding: 11px 12px;
-  --ui-textarea-color: var(--studio-text-strong);
-  --ui-textarea-font-size: 13px;
+.task-workbench {
+  --task-workbench-border-default: var(--studio-border-default);
+  --task-workbench-surface-base: color-mix(in srgb, var(--color-surface-card) 82%, transparent);
 
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.workbench-head,
-.card-head {
+.task-workbench__head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
 }
 
-.workbench-head h3 {
+.task-workbench__card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.task-workbench__head-copy {
+  min-width: 0;
+}
+
+.task-workbench__title {
   margin: 0;
 }
 
-.workbench-head p {
+.task-workbench__description {
   margin: 6px 0 0;
   color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.actions,
-.toggles {
+.task-workbench__toggles {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.task-list {
+.task-workbench__task-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.task-card {
-  border-radius: 18px;
-  padding: 16px;
-  background: var(--task-workbench-surface-base);
-  border: 1px solid var(--task-workbench-border-default);
+.task-workbench__task-card {
+  --product-record-card-background: var(--task-workbench-surface-base);
+  --product-record-card-border: var(--task-workbench-border-default);
+  --product-record-card-radius: 18px;
+  --product-record-card-padding: 16px;
+  --product-record-card-gap: 14px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.task-workbench__grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   margin-top: 14px;
+  margin-bottom: 0;
 }
 
-.full {
+.task-workbench__field--full {
   grid-column: 1 / -1;
 }
 
-.title-input {
-  flex: 1;
+.task-workbench__title-input {
+  flex: 1 1 220px;
+  min-width: 0;
   font-weight: 600;
 }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--task-workbench-text-primary);
-  font-size: 12px;
-}
-
-.action-secondary,
-.action-ghost,
-.action-danger {
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-}
-
-.action-secondary,
-.action-ghost {
-  padding: 10px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-danger {
-  padding: 10px 14px;
-  background: var(--color-surface-danger-soft);
-  color: var(--studio-text-danger);
-}
-
-.action-secondary:disabled,
-.action-ghost:disabled,
-.action-danger:disabled {
-  opacity: 0.68;
-  cursor: not-allowed;
-}
-
-.small {
-  padding: 7px 10px;
-  font-size: 12px;
-}
-
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-}
-
 @media (--breakpoint-lg-down) {
-  .workbench-head,
-  .card-head,
-  .grid {
-    grid-template-columns: 1fr;
+  .task-workbench__head,
+  .task-workbench__card-head {
     flex-direction: column;
+  }
+
+  .task-workbench__grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

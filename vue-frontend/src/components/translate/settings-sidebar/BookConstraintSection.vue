@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
 defineProps<{
@@ -12,106 +15,76 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="book-constraints-panel">
-    <div class="book-constraints-title">书籍约束</div>
-    <div class="book-constraints-hint">
+  <ProductFormSection class="book-constraint-section">
+    <template #title>书籍约束</template>
+    <p class="book-constraint-section__hint">
       术语表和禁翻表按单本漫画保存，不与其他书共享。
-    </div>
-    <div class="book-constraints-actions">
+    </p>
+    <ProductActionRow
+      class="book-constraint-section__actions"
+      justify="between"
+      aria-label="书籍约束操作"
+    >
       <UiButton
-        variant="toolbar"
+        variant="secondary"
         type="button"
-        class="settings-button secondary-button"
+        class="book-constraint-section__action"
+        block
         :disabled="!canUseBookConstraints"
         @click="$emit('openGlossary')"
       >
         术语表
       </UiButton>
       <UiButton
-        variant="toolbar"
+        variant="secondary"
         type="button"
-        class="settings-button secondary-button"
+        class="book-constraint-section__action"
+        block
         :disabled="!canUseBookConstraints"
         @click="$emit('openNonTranslate')"
       >
         禁翻表
       </UiButton>
-    </div>
-    <div v-if="!canUseBookConstraints" class="book-constraints-disabled-note">
+    </ProductActionRow>
+    <ProductStatusBanner
+      v-if="!canUseBookConstraints"
+      class="book-constraint-section__status"
+      tone="neutral"
+      role="note"
+    >
       仅书架模式可用
-    </div>
-  </div>
+    </ProductStatusBanner>
+  </ProductFormSection>
 </template>
 
 <style scoped>
-.book-constraints-panel {
-  --settings-sidebar-book-constraint-panel-border: #d8e3f1;
-  --settings-sidebar-book-constraint-panel-background: #f8fbff;
-  --settings-sidebar-book-constraint-title-text: #273959;
-  --settings-sidebar-book-constraint-hint-text: #62748f;
-  --settings-sidebar-book-constraint-button-border: #bfd0e5;
-  --settings-sidebar-book-constraint-button-text: #2f4b71;
-  --settings-sidebar-book-constraint-button-disabled-background: #eef2f6;
-  --settings-sidebar-book-constraint-button-disabled-text: #8b97a7;
-  --settings-sidebar-book-constraint-button-hover-background: #eef4fb;
+.book-constraint-section {
+  --product-form-section-background: var(--color-surface-quiet);
+  --product-form-section-border: var(--color-border-muted);
+  --product-form-section-divider: var(--color-border-muted);
+  --product-form-section-title-text: var(--color-text-heading);
+  --book-constraint-section-hint-text: var(--color-text-supporting);
 
   margin-top: 14px;
-  padding: 12px;
-  border: 1px solid var(--settings-sidebar-book-constraint-panel-border);
   border-radius: 12px;
-  background: var(--settings-sidebar-book-constraint-panel-background);
 }
 
-.book-constraints-title {
-  color: var(--settings-sidebar-book-constraint-title-text);
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.book-constraints-hint {
-  margin-top: 6px;
-  color: var(--settings-sidebar-book-constraint-hint-text);
+.book-constraint-section__hint {
+  margin: 0;
+  color: var(--book-constraint-section-hint-text);
   font-size: 12px;
   line-height: 1.4;
 }
 
-.book-constraints-actions {
-  display: flex;
-  gap: 10px;
+.book-constraint-section__actions {
   margin-top: 12px;
 }
 
-.book-constraints-actions .settings-button {
+.book-constraint-section__action {
   flex: 1;
 }
 
-.secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--settings-sidebar-book-constraint-button-border);
-  border-radius: 8px;
-  background: var(--color-surface-base);
-  color: var(--settings-sidebar-book-constraint-button-text);
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.secondary-button:disabled {
-  background: var(--settings-sidebar-book-constraint-button-disabled-background);
-  color: var(--settings-sidebar-book-constraint-button-disabled-text);
-  cursor: not-allowed;
-}
-
-.secondary-button:hover:not(:disabled) {
-  background: var(--settings-sidebar-book-constraint-button-hover-background);
-}
-
-.book-constraints-disabled-note {
+.book-constraint-section__status {
   margin-top: 8px;
-  color: var(--settings-sidebar-book-constraint-button-disabled-text);
-  font-size: 12px;
 }
 </style>

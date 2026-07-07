@@ -1,37 +1,38 @@
 <template>
   <div class="hq-translation-settings">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>高质量翻译服务配置</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsHqTranslateProvider">服务商:</label>
-          <CustomSelect
+        <UiField variant="settings" label="服务商" control-id="settingsHqTranslateProvider">
+          <UiSelect
+            id="settingsHqTranslateProvider"
             :model-value="hqSettings.provider"
             :options="providerOptions"
             @change="handleProviderChange"
           />
         </UiField>
-        <UiField v-show="providerRequiresApiKey(hqSettings.provider)" class="ui-settings-field">
-          <label for="settingsHqApiKey">API Key:</label>
-          <div class="password-input-wrapper">
-            <UiInput
-              :type="showApiKey ? 'text' : 'password'"
-              id="settingsHqApiKey"
-              v-model="localHqSettings.apiKey"
-              class="secure-input"
-              placeholder="请输入API Key"
-              autocomplete="off"
-            />
-            <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="showApiKey = !showApiKey">
-              <span class="eye-icon" v-if="!showApiKey">👁</span>
-              <span class="eye-off-icon" v-else>👁‍🗨</span>
-            </UiButton>
-          </div>
+        <UiField
+          v-show="providerRequiresApiKey(hqSettings.provider)"
+          variant="settings"
+          label="API Key"
+          control-id="settingsHqApiKey"
+        >
+          <UiPasswordField
+            input-id="settingsHqApiKey"
+            v-model="localHqSettings.apiKey"
+            placeholder="请输入API Key"
+            show-label="显示高质量翻译 API Key"
+            hide-label="隐藏高质量翻译 API Key"
+          />
         </UiField>
       </UiFormGrid>
 
-      <UiField v-show="providerRequiresBaseUrl(hqSettings.provider)" class="ui-settings-field">
-        <label for="settingsHqCustomBaseUrl">Base URL:</label>
+      <UiField
+        v-show="providerRequiresBaseUrl(hqSettings.provider)"
+        variant="settings"
+        label="Base URL"
+        control-id="settingsHqCustomBaseUrl"
+      >
         <UiInput
           type="text"
           id="settingsHqCustomBaseUrl"
@@ -40,111 +41,117 @@
         />
       </UiField>
 
-      <UiField class="ui-settings-field">
-        <label for="settingsHqModelName">模型名称:</label>
-        <div class="model-input-with-fetch">
-          <UiInput
-            type="text"
-            id="settingsHqModelName"
-            v-model="localHqSettings.modelName"
-            class="hq-translation-settings__model-input"
-            placeholder="请输入模型名称"
-          />
-          <UiButton
-            variant="toolbar"
-            type="button"
-            class="fetch-models-btn"
-            title="获取可用模型列表"
-            @click="fetchModels"
-            :disabled="isFetchingModels"
-          >
-            <span class="fetch-icon">🔍</span>
-            <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
-          </UiButton>
-        </div>
-        <div v-if="modelList.length > 0" class="model-select-container">
-          <CustomSelect
-            v-model="localHqSettings.modelName"
-            :options="modelListOptions"
-          />
-          <span class="model-count">共 {{ modelList.length }} 个模型</span>
-        </div>
+      <UiField variant="settings" label="模型名称" control-id="settingsHqModelName">
+        <UiModelPicker
+          input-id="settingsHqModelName"
+          v-model="localHqSettings.modelName"
+          placeholder="请输入模型名称"
+          fetch-variant="primary"
+          :fetching="isFetchingModels"
+          :fetch-disabled="isFetchingModels"
+          :options="modelListOptions"
+          :model-count="modelList.length"
+          @fetch="fetchModels"
+        />
       </UiField>
 
-      <UiField class="ui-settings-field">
-        <UiButton variant="toolbar" class="settings-test-btn" @click="testConnection" :disabled="isTesting">
-          {{ isTesting ? '测试中...' : '🔗 测试连接' }}
+      <UiField variant="settings">
+        <UiButton variant="secondary" block @click="testConnection" :disabled="isTesting">
+          <span v-if="isTesting">测试中...</span>
+          <template v-else>
+            <UiIcon name="link" />
+            <span>测试连接</span>
+          </template>
         </UiButton>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>批处理设置</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsHqBatchSize">批次大小:</label>
-          <UiInput type="number" id="settingsHqBatchSize" v-model.number="localHqSettings.batchSize" min="1" max="10" step="1" />
-          <div class="ui-form-hint">每批处理的图片数量 (推荐3-5张)</div>
+        <UiField
+          variant="settings"
+          label="批次大小"
+          control-id="settingsHqBatchSize"
+          hint="每批处理的图片数量 (推荐3-5张)"
+        >
+          <UiNumberField input-id="settingsHqBatchSize" v-model="localHqSettings.batchSize" :min="1" :max="10" :step="1" />
         </UiField>
       </UiFormGrid>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsHqRpmLimit">RPM限制:</label>
-          <UiInput type="number" id="settingsHqRpmLimit" v-model.number="localHqSettings.rpmLimit" min="0" step="1" />
-          <div class="ui-form-hint">每分钟请求数，0表示无限制</div>
+        <UiField
+          variant="settings"
+          label="RPM限制"
+          control-id="settingsHqRpmLimit"
+          hint="每分钟请求数，0表示无限制"
+        >
+          <UiNumberField input-id="settingsHqRpmLimit" v-model="localHqSettings.rpmLimit" :min="0" :step="1" />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsHqMaxRetries">重试次数:</label>
-          <UiInput type="number" id="settingsHqMaxRetries" v-model.number="localHqSettings.businessRetries" min="0" max="10" step="1" />
-          <div class="ui-form-hint">业务重试：空结果/结构解析失败</div>
+        <UiField
+          variant="settings"
+          label="重试次数"
+          control-id="settingsHqMaxRetries"
+          hint="业务重试：空结果/结构解析失败"
+        >
+          <UiNumberField input-id="settingsHqMaxRetries" v-model="localHqSettings.businessRetries" :min="0" :max="10" :step="1" />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsHqTransportRetries">传输重试:</label>
-          <UiInput type="number" id="settingsHqTransportRetries" v-model.number="localHqSettings.transportRetries" min="0" max="10" step="1" />
-          <div class="ui-form-hint">网络超时/429/5xx</div>
+        <UiField
+          variant="settings"
+          label="传输重试"
+          control-id="settingsHqTransportRetries"
+          hint="网络超时/429/5xx"
+        >
+          <UiNumberField input-id="settingsHqTransportRetries" v-model="localHqSettings.transportRetries" :min="0" :max="10" :step="1" />
         </UiField>
       </UiFormGrid>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>高级选项</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
+        <UiField variant="settings" control="checkbox" hint="使用 response_format: json_object">
           <UiCheckbox v-model="localHqSettings.forceJsonOutput" label="强制JSON输出" />
-          <div class="ui-form-hint">使用 response_format: json_object</div>
         </UiField>
-        <UiField class="ui-settings-field">
+        <UiField variant="settings" control="checkbox" hint="使用流式API调用">
           <UiCheckbox v-model="localHqSettings.useStream" label="流式调用" />
-          <div class="ui-form-hint">使用流式API调用</div>
         </UiField>
       </UiFormGrid>
-      <UiField class="ui-settings-field">
+      <UiField variant="settings">
         <OpenAIExtraBodyEditor v-model="localHqSettings.extraBody" />
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>高质量翻译提示词</template>
-      <UiField class="ui-settings-field">
-        <UiTextarea id="settingsHqPrompt" v-model="localHqSettings.prompt" rows="6" placeholder="高质量翻译提示词" />
+      <UiField variant="settings" label="高质量翻译提示词" control-id="settingsHqPrompt">
+        <UiTextarea id="settingsHqPrompt" v-model="localHqSettings.prompt" variant="panel" rows="6" placeholder="高质量翻译提示词" />
         <SavedPromptsPicker
           prompt-type="hq_translate"
           @select="handleHqPromptSelect"
         />
-        <UiButton variant="secondary" class="hq-reset-prompt-btn" @click="resetHqPrompt" size="sm">重置为默认</UiButton>
+        <ProductActionRow aria-label="高质量翻译提示词操作" justify="start">
+          <UiButton variant="secondary" @click="resetHqPrompt" size="sm">重置为默认</UiButton>
+        </ProductActionRow>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiModelPicker from '@/components/ui/UiModelPicker.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import UiPasswordField from '@/components/ui/UiPasswordField.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { UiSelectValue } from '@/components/ui/selectTypes'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
@@ -158,12 +165,11 @@ import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
 import type { HqTranslationProvider } from '@/types/settings'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
+import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
 
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
-type SelectValue = string | number
 
 const settingsStore = useSettingsStore()
 const toast = useToast()
@@ -218,10 +224,9 @@ watch(() => localHqSettings.value.prompt, (val) => {
   settingsStore.updateHqTranslation({ prompt: val })
 })
 
-const showApiKey = ref(false)
-
 const isFetchingModels = ref(false)
 const modelList = ref<string[]>([])
+const modelFetchGuard = useLatestRequestGuard()
 
 const isTesting = ref(false)
 
@@ -231,7 +236,9 @@ const modelListOptions = computed(() => {
   return options
 })
 
-function handleProviderChange(newProvider: SelectValue) {
+function handleProviderChange(newProvider: UiSelectValue) {
+  modelFetchGuard.invalidate()
+  isFetchingModels.value = false
   settingsStore.setHqProvider(String(newProvider) as HqTranslationProvider)
   modelList.value = []
   syncLocalHqSettings()
@@ -276,9 +283,11 @@ async function fetchModels() {
     return
   }
 
+  const requestId = modelFetchGuard.next()
   isFetchingModels.value = true
   try {
     const result = await configApi.fetchModels(provider, apiKey, baseUrl)
+    if (!modelFetchGuard.isCurrent(requestId)) return
     if (result.success && result.models && result.models.length > 0) {
       modelList.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
@@ -286,10 +295,13 @@ async function fetchModels() {
       toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error: unknown) {
+    if (!modelFetchGuard.isCurrent(requestId)) return
     const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
     toast.error(errorMessage)
   } finally {
-    isFetchingModels.value = false
+    if (modelFetchGuard.isCurrent(requestId)) {
+      isFetchingModels.value = false
+    }
   }
 }
 
@@ -350,105 +362,3 @@ function handleHqPromptSelect(content: string, name: string) {
   toast.success(`已应用提示词: ${name}`)
 }
 </script>
-
-<style scoped>
-.hq-translation-settings {
-  --ui-button-sm-padding: 4px 12px;
-  --ui-button-sm-font-size: 12px;
-}
-
-.hq-translation-settings .model-input-with-fetch {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.hq-translation-settings .model-input-with-fetch .hq-translation-settings__model-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.hq-reset-prompt-btn {
-  margin-top: 8px;
-}
-
-.hq-translation-settings .password-input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.hq-translation-settings .password-input-wrapper .secure-input {
-  flex: 1;
-  padding-right: 36px;
-}
-
-.hq-translation-settings .password-toggle-btn {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  padding: 4px;
-  background: none;
-  border: none;
-  color: var(--color-text-supporting);
-  font-size: 16px;
-  line-height: 1;
-  opacity: 0.6;
-  transform: translateY(-50%);
-  transition: opacity 0.2s ease;
-}
-
-.hq-translation-settings .password-toggle-btn:hover {
-  opacity: 1;
-}
-
-.hq-translation-settings .fetch-models-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 38px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-action-primary);
-  color: var(--color-text-inverse);
-  font-size: 0.9em;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 0.2s ease, opacity 0.2s ease;
-}
-
-.hq-translation-settings .fetch-models-btn:hover:not(:disabled) {
-  background: var(--color-action-primary-hover);
-}
-
-.hq-translation-settings .fetch-models-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.hq-translation-settings .settings-test-btn {
-  width: auto;
-  padding: 10px 16px;
-  border: none;
-  border-radius: 6px;
-  background-color: var(--color-status-info, var(--color-action-primary));
-  color: var(--color-text-inverse);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease, opacity 0.2s ease;
-}
-
-.hq-translation-settings .settings-test-btn:hover:not(:disabled) {
-  background-color: var(--color-status-info-hover);
-}
-
-.hq-translation-settings .settings-test-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

@@ -6,6 +6,11 @@ export {
 } from './useValidation'
 
 export {
+  useLatestRequestGuard,
+  useKeyedLatestRequestGuard
+} from './useLatestRequestGuard'
+
+export {
   useTranslation,
   type TranslationProgress
 } from './useTranslationPipeline'

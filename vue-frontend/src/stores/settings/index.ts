@@ -1,24 +1,10 @@
-/**
- * 设置状态管理 Store
- * 管理翻译设置、OCR设置、高质量翻译设置、AI校对设置等
- * 支持 localStorage 持久化
- * 
- * 模块结构：
- * - ocr.ts: OCR识别设置
- * - translation.ts: 翻译服务设置
- * - detection.ts: 检测设置
- * - hqTranslation.ts: 高质量翻译设置
- * - proofreading.ts: AI校对设置
- * - prompts.ts: 提示词管理
- * - misc.ts: 更多设置（PDF、调试、文字样式等）
- */
-
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type {
   TranslationSettings,
   TextDetector,
   HqTranslationProvider,
+  TranslationMode,
   OpenAICompatibleOptions,
 } from '@/types/settings'
 import {
@@ -36,20 +22,31 @@ import { getProviderManifest, normalizeProviderId } from '@/config/aiProviders'
 import { getUserSettings, saveUserSettings } from '@/api/config'
 import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 import {
+  cloneOpenAiOptions,
   normalizeOpenAiOptions
 } from '@/utils/openaiOptions'
+import { deepClone } from '@/utils/deepClone'
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
+import {
+  useOcrSettings,
+  useTranslationSettings,
+  useDetectionSettings,
+  useHqTranslationSettings,
+  usePluginAgentSettings,
+  useProofreadingSettings,
+  usePromptsSettings,
+  useMiscSettings
+} from './modules'
 
 type PlainRecord = Record<string, unknown>
+type AiVisionPromptMode = TranslationSettings['aiVisionOcr']['promptMode']
+type ThemePreference = 'light' | 'dark' | 'system'
+type EffectiveTheme = 'light' | 'dark'
 
 function isPlainRecord(value: unknown): value is PlainRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function parseNumber(value: unknown): number | null {
@@ -62,6 +59,14 @@ function parseBoolean(value: unknown): boolean | null {
 
 function parseString(value: unknown): string | null {
   return typeof value === 'string' ? value : null
+}
+
+function isTranslationMode(value: unknown): value is TranslationMode {
+  return value === 'batch' || value === 'single'
+}
+
+function isAiVisionPromptMode(value: unknown): value is AiVisionPromptMode {
+  return value === 'normal' || value === 'json' || value === 'paddleocr_vl'
 }
 
 function parseCurrentOpenAiOptions(
@@ -97,7 +102,7 @@ function parseCurrentOpenAiOptions(
   }
   if (value.request.extraBody !== undefined) {
     if (!isPlainRecord(value.request.extraBody)) return null
-    request.extraBody = cloneJson(value.request.extraBody)
+    request.extraBody = deepClone(value.request.extraBody)
   }
 
   return {
@@ -117,7 +122,7 @@ function sanitizeByTemplate(value: unknown, template: unknown, path = ''): unkno
   }
 
   if (Array.isArray(template)) {
-    return Array.isArray(value) ? cloneJson(value) : null
+    return Array.isArray(value) ? deepClone(value) : null
   }
 
   if (isPlainRecord(template)) {
@@ -195,6 +200,8 @@ function parseCurrentSettings(value: unknown): TranslationSettings | null {
   if (!isCurrentProviderId(sanitized.hqTranslation.provider)) return null
   if (!isCurrentProviderId(sanitized.pluginAgent.provider)) return null
   if (!isCurrentProviderId(sanitized.aiVisionOcr.provider)) return null
+  if (!isTranslationMode(sanitized.translation.translationMode)) return null
+  if (!isAiVisionPromptMode(sanitized.aiVisionOcr.promptMode)) return null
   const rounds = sanitizeProofreadingRounds((value.proofreading as PlainRecord).rounds)
   if (!rounds) return null
   sanitized.proofreading.rounds = rounds
@@ -212,6 +219,8 @@ function sanitizeProviderConfig(
     if (value[key] === undefined) continue
     const parsed = parseString(value[key])
     if (parsed === null) return null
+    if (key === 'translationMode' && !isTranslationMode(parsed)) return null
+    if (key === 'promptMode' && !isAiVisionPromptMode(parsed)) return null
     result[key] = parsed
   }
   for (const key of ['batchSize', 'minImageSize']) {
@@ -258,48 +267,70 @@ function parseCurrentProviderConfigs(value: unknown): ProviderConfigsCache | nul
   } as ProviderConfigsCache
 }
 
-// 导入各功能模块
-import {
-  useOcrSettings,
-  useTranslationSettings,
-  useDetectionSettings,
-  useHqTranslationSettings,
-  usePluginAgentSettings,
-  useProofreadingSettings,
-  usePromptsSettings,
-  useMiscSettings
-} from './modules'
-
-// ============================================================
-// Store 定义
-// ============================================================
-
 export const useSettingsStore = defineStore('settings', () => {
-  function inferAiVisionPromptMode(prompt: unknown): 'normal' | 'json' | 'paddleocr_vl' {
-    const promptText = typeof prompt === 'string' ? prompt.trim() : ''
-    if (promptText.startsWith('对图中的') && promptText.endsWith('进行OCR:')) {
-      return 'paddleocr_vl'
-    }
-    return 'normal'
-  }
-
-  // ============================================================
-  // 核心状态定义
-  // ============================================================
-
-  /** 翻译设置 */
   const settings = ref<TranslationSettings>(createDefaultSettings())
-
-  /** 主题状态 */
-  const theme = ref<'light' | 'dark'>('light')
-
-  /** 服务商配置分组存储（用于切换服务商时保存/恢复配置） */
+  const theme = ref<ThemePreference>('light')
+  const effectiveTheme = ref<EffectiveTheme>('light')
   const providerConfigs = ref<ProviderConfigsCache>({
     translation: {},
     hqTranslation: {},
     pluginAgent: {},
     aiVisionOcr: {}
   })
+
+  let systemThemeMedia: MediaQueryList | null = null
+
+  function resolveSystemTheme(): EffectiveTheme {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    return 'light'
+  }
+
+  function applyEffectiveTheme(nextTheme: EffectiveTheme): void {
+    effectiveTheme.value = nextTheme
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', nextTheme)
+      document.body.setAttribute('data-theme', nextTheme)
+    }
+  }
+
+  function handleSystemThemeChange(event: MediaQueryListEvent): void {
+    if (theme.value === 'system') {
+      applyEffectiveTheme(event.matches ? 'dark' : 'light')
+    }
+  }
+
+  function detachSystemThemeListener(): void {
+    if (!systemThemeMedia) return
+    if (typeof systemThemeMedia.removeEventListener === 'function') {
+      systemThemeMedia.removeEventListener('change', handleSystemThemeChange)
+    } else {
+      systemThemeMedia.removeListener(handleSystemThemeChange)
+    }
+    systemThemeMedia = null
+  }
+
+  function attachSystemThemeListener(): void {
+    detachSystemThemeListener()
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)')
+    if (typeof systemThemeMedia.addEventListener === 'function') {
+      systemThemeMedia.addEventListener('change', handleSystemThemeChange)
+    } else {
+      systemThemeMedia.addListener(handleSystemThemeChange)
+    }
+  }
+
+  function applyThemePreference(): void {
+    if (theme.value === 'system') {
+      attachSystemThemeListener()
+      applyEffectiveTheme(resolveSystemTheme())
+      return
+    }
+    detachSystemThemeListener()
+    applyEffectiveTheme(theme.value)
+  }
 
   function normalizeTextDetector(detector: unknown): TextDetector {
     if (detector === 'ctd' || detector === 'yolo' || detector === 'default') {
@@ -308,13 +339,6 @@ export const useSettingsStore = defineStore('settings', () => {
     return 'default'
   }
 
-  // ============================================================
-  // localStorage 持久化方法
-  // ============================================================
-
-  /**
-   * 保存设置到 localStorage
-   */
   function saveToStorage(): void {
     try {
       const data = JSON.stringify(settings.value)
@@ -324,9 +348,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /**
-   * 保存服务商配置缓存到 localStorage
-   */
   function saveProviderConfigsToStorage(): void {
     try {
       const data = JSON.stringify(providerConfigs.value)
@@ -341,9 +362,9 @@ export const useSettingsStore = defineStore('settings', () => {
       const defaults = createDefaultSettings()
       const stored = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
       const parsedSettings = stored ? parseCurrentSettings(JSON.parse(stored)) : null
-      const baseSettings = parsedSettings ? cloneJson(parsedSettings) : defaults
+      const baseSettings = parsedSettings ? deepClone(parsedSettings) : defaults
 
-      baseSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
+      baseSettings.pluginAgent = deepClone(settings.value.pluginAgent)
       localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, JSON.stringify(baseSettings))
     } catch {
       return
@@ -360,7 +381,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const nextProviderConfigs: ProviderConfigsCache = {
         translation: parsed?.translation || {},
         hqTranslation: parsed?.hqTranslation || {},
-        pluginAgent: JSON.parse(JSON.stringify(providerConfigs.value.pluginAgent)),
+        pluginAgent: deepClone(providerConfigs.value.pluginAgent),
         aiVisionOcr: parsed?.aiVisionOcr || {}
       }
 
@@ -370,10 +391,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /**
-   * 从 localStorage 加载设置
-   * 从当前 settings schema 存储键读取设置。
-   */
   function loadFromStorage(): void {
     try {
       const data = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
@@ -385,7 +402,6 @@ export const useSettingsStore = defineStore('settings', () => {
         }
         settings.value = parsed
         settings.value.textDetector = normalizeTextDetector(settings.value.textDetector)
-        // 确保数值类型正确
         ensureNumericTypes()
 
         // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
@@ -401,9 +417,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /**
-   * 从 localStorage 加载服务商配置缓存
-   */
   function loadProviderConfigsFromStorage(): void {
     try {
       const data = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
@@ -419,10 +432,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /**
-   * 确保设置中的数值类型正确
-   * textStyle 由编辑侧栏默认样式统一决定，不在数值归一化里处理。
-   */
   function ensureNumericTypes(): void {
     const defaults = createDefaultSettings()
     const parseNumberOrFallback = (value: unknown, fallback: number): number => {
@@ -529,7 +538,6 @@ export const useSettingsStore = defineStore('settings', () => {
         }
       }
     )
-    av.promptMode = av.promptMode || inferAiVisionPromptMode(av.prompt)
     av.openaiOptions.request.forceJsonOutput = av.promptMode === 'json'
     // 对于 minImageSize，0 是合法值（表示禁用自动放大），所以不能用 || 操作符
     if (av.minImageSize === undefined || av.minImageSize === null || isNaN(Number(av.minImageSize))) {
@@ -573,11 +581,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   }
 
-  // ============================================================
-  // 初始化各功能模块
-  // ============================================================
-
-  // OCR 设置模块
   const ocrModule = useOcrSettings(
     settings,
     providerConfigs,
@@ -585,7 +588,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveProviderConfigsToStorage
   )
 
-  // 翻译服务设置模块
   const translationModule = useTranslationSettings(
     settings,
     providerConfigs,
@@ -593,10 +595,8 @@ export const useSettingsStore = defineStore('settings', () => {
     saveProviderConfigsToStorage
   )
 
-  // 检测设置模块
   const detectionModule = useDetectionSettings(settings, saveToStorage)
 
-  // 高质量翻译设置模块
   const hqTranslationModule = useHqTranslationSettings(
     settings,
     providerConfigs,
@@ -611,56 +611,47 @@ export const useSettingsStore = defineStore('settings', () => {
     saveProviderConfigsToStorage
   )
 
-  // AI校对设置模块
   const proofreadingModule = useProofreadingSettings(settings, saveToStorage)
 
-  // 提示词管理模块
   const promptsModule = usePromptsSettings(settings, saveToStorage)
 
-  // 更多设置模块
   const miscModule = useMiscSettings(settings, saveToStorage)
 
-  // ============================================================
-  // 初始化方法
-  // ============================================================
-
-  /**
-   * 初始化设置（从 localStorage 加载）
-   */
   function initSettings(): void {
     loadFromStorage()
     loadProviderConfigsFromStorage()
+    loadThemeFromStorage()
   }
 
-  /**
-   * 重置所有设置为默认值
-   */
   function resetToDefaults(): void {
     settings.value = createDefaultSettings()
     saveToStorage()
   }
 
-  function setTheme(nextTheme: 'light' | 'dark'): void {
+  function setTheme(nextTheme: ThemePreference): void {
     theme.value = nextTheme
     try {
       localStorage.setItem(STORAGE_KEY_THEME, nextTheme)
-      if (typeof document !== 'undefined') {
-        document.documentElement.setAttribute('data-theme', nextTheme)
-        document.body.setAttribute('data-theme', nextTheme)
-      }
     } catch {
-      return
+      // Theme persistence is best-effort; the active product theme should still update.
     }
+    applyThemePreference()
   }
 
   function toggleTheme(): void {
-    setTheme(theme.value === 'light' ? 'dark' : 'light')
+    if (theme.value === 'light') {
+      setTheme('dark')
+    } else if (theme.value === 'dark') {
+      setTheme('system')
+    } else {
+      setTheme('light')
+    }
   }
 
   function loadThemeFromStorage(): void {
     try {
       const storedTheme = localStorage.getItem(STORAGE_KEY_THEME)
-      if (storedTheme === 'light' || storedTheme === 'dark') {
+      if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
         setTheme(storedTheme)
       }
     } catch {
@@ -668,13 +659,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  // ============================================================
-  // 后端同步方法
-  // ============================================================
-
-  /**
-   * 从后端加载用户设置
-   */
   async function loadFromBackend(): Promise<boolean> {
     try {
       const response = await getUserSettings()
@@ -700,9 +684,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /**
-   * 将后端设置应用到当前设置
-   */
   function applyBackendSettings(backendSettings: Record<string, unknown>): boolean {
     const schemaVersion = backendSettings.settingsSchemaVersion
     if (schemaVersion !== 3) {
@@ -714,38 +695,37 @@ export const useSettingsStore = defineStore('settings', () => {
     if (!parsedSettings) {
       return false
     }
-    settings.value = parsedSettings
+
+    let parsedProviderConfigs: ProviderConfigsCache | null = null
 
     if (nestedProviderConfigs && typeof nestedProviderConfigs === 'object') {
-      const parsedProviderConfigs = parseCurrentProviderConfigs(nestedProviderConfigs)
+      parsedProviderConfigs = parseCurrentProviderConfigs(nestedProviderConfigs)
       if (!parsedProviderConfigs) {
         return false
       }
+    }
+
+    settings.value = parsedSettings
+
+    if (parsedProviderConfigs) {
       providerConfigs.value = parsedProviderConfigs
     }
 
     return true
   }
 
-  /**
-   * 构建服务商分组配置用于保存到后端
-   */
   function buildProviderSettingsForBackend(): ProviderConfigsCache {
-    return JSON.parse(JSON.stringify(providerConfigs.value)) as ProviderConfigsCache
+    return deepClone(providerConfigs.value)
   }
 
-  /**
-   * 保存设置到后端
-   */
   async function saveToBackend(): Promise<boolean> {
     try {
-      // 保存当前所有服务商的配置到缓存
       translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
       hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
       pluginAgentModule.savePluginAgentProviderConfig(settings.value.pluginAgent.provider)
       ocrModule.saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
 
-      const backendSettings: Record<string, unknown> = JSON.parse(JSON.stringify(settings.value))
+      const backendSettings: Record<string, unknown> = deepClone(settings.value)
       backendSettings.settingsSchemaVersion = 3
       backendSettings.providerConfigs = buildProviderSettingsForBackend()
 
@@ -767,7 +747,7 @@ export const useSettingsStore = defineStore('settings', () => {
         apiKey: settings.value.pluginAgent.apiKey,
         modelName: settings.value.pluginAgent.modelName,
         customBaseUrl: settings.value.pluginAgent.customBaseUrl,
-        openaiOptions: JSON.parse(JSON.stringify(settings.value.pluginAgent.openaiOptions))
+        openaiOptions: cloneOpenAiOptions(settings.value.pluginAgent.openaiOptions)
       }
 
       savePluginAgentSettingsToStorage()
@@ -778,19 +758,19 @@ export const useSettingsStore = defineStore('settings', () => {
       try {
         const response = await getUserSettings()
         if (response.success && response.settings && typeof response.settings === 'object') {
-          backendSettings = JSON.parse(JSON.stringify(response.settings))
+          backendSettings = deepClone(response.settings)
         }
       } catch {
         // Backend settings are best-effort; saving proceeds with the current plugin Agent state.
       }
 
-      backendSettings.pluginAgent = JSON.parse(JSON.stringify(settings.value.pluginAgent))
+      backendSettings.pluginAgent = deepClone(settings.value.pluginAgent)
       const backendProviderConfigs = (
         backendSettings.providerConfigs && typeof backendSettings.providerConfigs === 'object'
-          ? JSON.parse(JSON.stringify(backendSettings.providerConfigs))
+          ? deepClone(backendSettings.providerConfigs)
           : {}
       ) as Record<string, unknown>
-      backendProviderConfigs.pluginAgent = JSON.parse(JSON.stringify(providerConfigs.value.pluginAgent))
+      backendProviderConfigs.pluginAgent = deepClone(providerConfigs.value.pluginAgent)
       backendSettings.providerConfigs = backendProviderConfigs
 
       backendSettings.settingsSchemaVersion = 3
@@ -806,17 +786,12 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  // ============================================================
-  // 返回 Store
-  // ============================================================
-
   return {
-    // 核心状态
     settings,
     providerConfigs,
     theme,
+    effectiveTheme,
 
-    // OCR 模块
     ocrEngine: ocrModule.ocrEngine,
     sourceLanguage: ocrModule.sourceLanguage,
     setOcrEngine: ocrModule.setOcrEngine,
@@ -830,7 +805,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveAiVisionOcrProviderConfig: ocrModule.saveAiVisionOcrProviderConfig,
     restoreAiVisionOcrProviderConfig: ocrModule.restoreAiVisionOcrProviderConfig,
 
-    // 翻译服务模块
     translationProvider: translationModule.translationProvider,
     setTranslationProvider: translationModule.setTranslationProvider,
     updateTranslationService: translationModule.updateTranslationService,
@@ -839,7 +813,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveTranslationProviderConfig: translationModule.saveTranslationProviderConfig,
     restoreTranslationProviderConfig: translationModule.restoreTranslationProviderConfig,
 
-    // 检测设置模块
     setTextDetector: detectionModule.setTextDetector,
     setMinTextBlockAreaPercent: detectionModule.setMinTextBlockAreaPercent,
     setEnableAuxYoloDetection: detectionModule.setEnableAuxYoloDetection,
@@ -850,7 +823,6 @@ export const useSettingsStore = defineStore('settings', () => {
     updateBoxExpand: detectionModule.updateBoxExpand,
     updatePreciseMask: detectionModule.updatePreciseMask,
 
-    // 高质量翻译模块
     hqProvider: hqTranslationModule.hqProvider,
     setHqProvider: hqTranslationModule.setHqProvider,
     updateHqTranslation: hqTranslationModule.updateHqTranslation,
@@ -859,14 +831,12 @@ export const useSettingsStore = defineStore('settings', () => {
     saveHqProviderConfig: hqTranslationModule.saveHqProviderConfig,
     restoreHqProviderConfig: hqTranslationModule.restoreHqProviderConfig,
 
-    // 插件 Agent 模块
     pluginAgentProvider: pluginAgentModule.pluginAgentProvider,
     setPluginAgentProvider: pluginAgentModule.setPluginAgentProvider,
     updatePluginAgent: pluginAgentModule.updatePluginAgent,
     savePluginAgentProviderConfig: pluginAgentModule.savePluginAgentProviderConfig,
     restorePluginAgentProviderConfig: pluginAgentModule.restorePluginAgentProviderConfig,
 
-    // AI校对模块
     isProofreadingEnabled: proofreadingModule.isProofreadingEnabled,
     setProofreadingEnabled: proofreadingModule.setProofreadingEnabled,
     addProofreadingRound: proofreadingModule.addProofreadingRound,
@@ -874,11 +844,9 @@ export const useSettingsStore = defineStore('settings', () => {
     removeProofreadingRound: proofreadingModule.removeProofreadingRound,
     setProofreadingMaxRetries: proofreadingModule.setProofreadingMaxRetries,
 
-    // 提示词管理模块
     setTextboxPrompt: promptsModule.setTextboxPrompt,
     setUseTextboxPrompt: promptsModule.setUseTextboxPrompt,
 
-    // 更多设置模块
     textStyle: miscModule.textStyle,
     updateSettings: miscModule.updateSettings,
     updateTextStyle: miscModule.updateTextStyle,
@@ -889,7 +857,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
     setLamaDisableResize: miscModule.setLamaDisableResize,
 
-    // 持久化方法
     saveToStorage,
     loadFromStorage,
     setTheme,
@@ -898,12 +865,10 @@ export const useSettingsStore = defineStore('settings', () => {
     initSettings,
     resetToDefaults,
 
-    // 后端同步方法
     loadFromBackend,
     saveToBackend,
     savePluginAgentSettings
   }
 })
 
-// 导出类型
 export type { ProviderConfigsCache } from './types'

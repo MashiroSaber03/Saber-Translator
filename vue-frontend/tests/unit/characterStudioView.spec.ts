@@ -1,7 +1,11 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import CharacterStudioView from '@/views/CharacterStudioView.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 
@@ -28,6 +32,31 @@ describe('CharacterStudioView workspace shell', () => {
     setActivePinia(createPinia())
     pushMock.mockReset()
     replaceMock.mockReset()
+  })
+
+  it('uses current product copy for the missing-book empty state', () => {
+    const wrapper = mount(CharacterStudioView, {
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
+          CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
+          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
+          StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
+        },
+      },
+    })
+
+    const emptyState = wrapper.getComponent(ProductEmptyState)
+    expect(emptyState.props()).toMatchObject({
+      eyebrow: '缺少上下文',
+      iconName: 'alert-triangle',
+      title: '未检测到书籍参数',
+      description: '请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊需要当前书籍的分析上下文。',
+    })
+    expect(wrapper.text()).toContain('角色工坊需要当前书籍的分析上下文')
+    expect(wrapper.text()).not.toContain('仍然依赖')
+    expect(wrapper.find('.studio-empty-state').exists()).toBe(false)
+    expect(wrapper.find('.empty-badge').exists()).toBe(false)
   })
 
   it('renders dedicated scroll containers for the two-pane workspace', async () => {
@@ -77,8 +106,64 @@ describe('CharacterStudioView workspace shell', () => {
       },
     })
 
+    expect(wrapper.find('.product-split-workspace').exists()).toBe(true)
     expect(wrapper.find('[data-testid="editor-scroll"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="chat-scroll"]').exists()).toBe(true)
+  })
+
+  it('maps view owner colors through semantic tokens', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/CharacterStudioView.vue'), 'utf8')
+    const style = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
+
+    expect(style).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+  })
+
+  it('keeps Studio owner tokens explicit without styling primitive buttons from the view root', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/CharacterStudioView.vue'), 'utf8')
+    const rootStyle = source.match(/\.studio-page \{(?<body>[\s\S]*?)\n\}/)
+
+    expect(rootStyle?.groups?.body ?? '').toContain('--studio-surface-tint-muted:')
+    expect(rootStyle?.groups?.body ?? '').toContain('--studio-shadow-floating:')
+    expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-button-/)
+  })
+
+  it('keeps the split-pane slot height contract aligned with current Studio child owners', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/CharacterStudioView.vue'), 'utf8')
+    const style = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
+
+    expect(style).toContain('.studio-page__workspace-slot-content > .studio-editor')
+    expect(style).toContain('.studio-page__workspace-slot-content > .character-studio-preview')
+    expect(style).not.toContain('.workspace-slot-content > .chat-shell')
+  })
+
+  it('keeps page-local shell hooks under the Studio page owner', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/CharacterStudioView.vue'), 'utf8')
+
+    for (const currentHook of [
+      'class="studio-page__missing-context-state"',
+      'class="studio-page__workspace-root"',
+      'class="studio-page__workspace-error-banner"',
+      'class="studio-page__workspace-shell"',
+      'class="studio-page__workspace-slot-content"',
+      'class="studio-page__resource-overlay"',
+      'class="studio-page__resource-dialog"',
+    ]) {
+      expect(source).toContain(currentHook)
+    }
+
+    for (const legacyHook of [
+      'class="studio-missing-context-state"',
+      'class="workspace-root"',
+      'class="workspace-error-banner"',
+      'class="workspace-shell"',
+      'class="workspace-slot-content"',
+      'class="resource-overlay"',
+      'class="resource-dialog"',
+    ]) {
+      expect(source).not.toContain(legacyHook)
+    }
+
+    expect(source).not.toMatch(/\.(?:workspace-root|workspace-shell|workspace-slot-content|workspace-error-banner|resource-overlay|resource-dialog)\b/)
   })
 
   it('exposes the pane resizer as a keyboard-adjustable separator', async () => {
@@ -104,7 +189,7 @@ describe('CharacterStudioView workspace shell', () => {
       },
     })
 
-    const resizer = wrapper.find('.pane-resizer')
+    const resizer = wrapper.find('[role="separator"]')
     expect(resizer.attributes('role')).toBe('separator')
     expect(resizer.attributes('aria-orientation')).toBe('vertical')
     expect(resizer.attributes('aria-valuemin')).toBe('35')
@@ -141,6 +226,11 @@ describe('CharacterStudioView workspace shell', () => {
     })
 
     expect(wrapper.text()).toContain('导出失败：测试错误')
+    const banner = wrapper.getComponent(ProductStatusBanner)
+    expect(banner.props('tone')).toBe('danger')
+    expect(banner.props('ariaLive')).toBe('assertive')
+    expect(wrapper.find('.workspace-error').exists()).toBe(false)
+    expect(wrapper.find('.workspace-error__message').exists()).toBe(false)
   })
 
   it('renders the resource dialog shell when the resource panel is open', async () => {

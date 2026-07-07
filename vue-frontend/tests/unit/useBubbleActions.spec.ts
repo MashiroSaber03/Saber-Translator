@@ -1,4 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -7,6 +9,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { useBubbleActions } from '@/composables/useBubbleActions'
+import { showToast } from '@/utils/toast'
 
 const { ocrSingleBubbleMock } = vi.hoisted(() => ({
   ocrSingleBubbleMock: vi.fn(async () => ({
@@ -36,6 +39,22 @@ describe('useBubbleActions', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it('keeps OCR request projection out of the edit interaction owner', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/useBubbleActions.ts'), 'utf8')
+
+    expect(source).toContain('buildSingleBubbleOcrRequest(')
+    expect(source).not.toContain('serializeOpenAICompatibleOptionsForApi')
+    expect(source).not.toContain('normalizeProviderId')
+    expect(source).not.toContain('ai_vision_provider:')
+    expect(source).not.toContain('bubble_textlines:')
+  })
+
+  it('keeps bubble action image fixtures typed to the current load contract', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/useBubbleActions.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('runs one trailing preview render after updates arrive during an in-flight render', async () => {
@@ -119,7 +138,7 @@ describe('useBubbleActions', () => {
         translationStatus: 'pending',
         translationFailed: false,
         hasUnsavedChanges: false,
-      } as any,
+},
     ])
     imageStore.setCurrentImageIndex(0)
 
@@ -205,7 +224,7 @@ describe('useBubbleActions', () => {
         translationStatus: 'pending',
         translationFailed: false,
         hasUnsavedChanges: false,
-      } as any,
+},
     ])
     imageStore.setCurrentImageIndex(0)
     bubbleStore.setBubbles([
@@ -255,5 +274,77 @@ describe('useBubbleActions', () => {
     expect(onDelayedPreview).toHaveBeenCalled()
     expect(ocrSingleBubbleMock).toHaveBeenCalled()
     expect(consoleLog).not.toHaveBeenCalled()
+  })
+
+  it('reports color repair canvas failures through the action boundary', async () => {
+    const originalImage = globalThis.Image
+    class InstantImage {
+      naturalWidth = 200
+      naturalHeight = 120
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    globalThis.Image = InstantImage as unknown as typeof Image
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      fillStyle: '',
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(() => {
+      throw new Error('canvas export failed')
+    })
+
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    imageStore.setImages([
+      {
+        id: 'img-1',
+        fileName: 'test.png',
+        originalDataURL: 'data:image/png;base64,abc',
+        translatedDataURL: null,
+        cleanImageData: null,
+        bubbleStates: null,
+        translationStatus: 'pending',
+        translationFailed: false,
+        hasUnsavedChanges: false,
+      },
+    ])
+    imageStore.setCurrentImageIndex(0)
+    bubbleStore.setBubbles([
+      createBubbleState({
+        coords: [0, 0, 100, 60],
+        polygon: [],
+        inpaintMethod: 'solid',
+        fillColor: '#ffffff',
+      }),
+    ])
+    bubbleStore.selectBubble(0)
+
+    const Harness = defineComponent({
+      setup() {
+        return {
+          ...useBubbleActions(),
+        }
+      },
+      render() {
+        return h('div')
+      },
+    })
+    const wrapper = mount(Harness)
+    const actions = wrapper.vm as unknown as ReturnType<typeof useBubbleActions>
+
+    try {
+      await actions.repairSelectedBubble()
+      await flushPromises()
+
+      expect(showToast).toHaveBeenCalledWith('canvas export failed', 'error')
+    } finally {
+      globalThis.Image = originalImage
+      wrapper.unmount()
+    }
   })
 })

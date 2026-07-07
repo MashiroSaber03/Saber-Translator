@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductDetailPanel from '@/components/product/ProductDetailPanel.vue'
+import ProductDetailSection from '@/components/product/ProductDetailSection.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 
@@ -37,177 +44,105 @@ const noteCommentModel = computed({
   set: value => emit('update:noteComment', value),
 })
 
+const citationChips = computed<ProductChipItem[]>(() => {
+  return props.pendingQAData?.citations.map(citation => ({
+    id: citation.page,
+    label: `第${citation.page}页`,
+    tone: 'primary',
+  })) ?? []
+})
 </script>
 
 <template>
   <BaseModal
     :model-value="visible"
-    title="📝 添加笔记"
+    title="添加笔记"
     size="medium"
     custom-class="qa-note-modal"
+    frame-variant="soft"
+    footer-tone="muted"
     body-padding="spacious"
     width="90%"
     max-width="560px"
-    border-radius="16px"
-    footer-background="var(--insight-surface-secondary)"
     @close="$emit('close')"
   >
-    <div class="qa-note-modal-body">
-      <div v-if="pendingQAData" class="qa-preview">
-        <div class="qa-preview-section">
-          <label>问题</label>
-          <div class="qa-preview-content">{{ pendingQAData.question }}</div>
-        </div>
-        <div class="qa-preview-section">
-          <label>回答</label>
-          <div class="qa-preview-content" v-html="renderMarkdown(pendingQAData.answer)"></div>
-        </div>
-        <div v-if="pendingQAData.citations.length > 0" class="qa-preview-section">
-          <label>引用页码</label>
-          <div class="qa-preview-citations">
-            <span
-              v-for="citation in pendingQAData.citations"
-              :key="citation.page"
-              class="qa-citation-badge"
-            >
-              第{{ citation.page }}页
-            </span>
-          </div>
-        </div>
-      </div>
+    <template #title>
+      <span class="qa-note-modal__title">
+        <UiIcon name="file-text" />
+        <span>添加笔记</span>
+      </span>
+    </template>
 
-      <div class="note-form">
-        <div class="qa-note-modal__field">
-          <label for="qaNoteTitle">笔记标题 <span class="optional">(可选)</span></label>
+    <div class="qa-note-modal__body">
+      <ProductDetailPanel v-if="pendingQAData" aria-label="问答预览">
+        <ProductDetailSection label="问题">
+          {{ pendingQAData.question }}
+        </ProductDetailSection>
+
+        <ProductDetailSection label="回答" scroll>
+          <div v-html="renderMarkdown(pendingQAData.answer)"></div>
+        </ProductDetailSection>
+
+        <ProductDetailSection
+          v-if="pendingQAData.citations.length > 0"
+          label="引用页码"
+          :framed="false"
+        >
+          <ProductChipList
+            aria-label="引用页码"
+            :items="citationChips"
+          />
+        </ProductDetailSection>
+      </ProductDetailPanel>
+
+      <div class="qa-note-modal__form">
+        <UiField
+          variant="settings"
+          label="笔记标题"
+          hint="可选"
+          control-id="qaNoteTitle"
+        >
           <UiInput
             id="qaNoteTitle"
             v-model="noteTitleModel"
             type="text"
-            class="qa-note-modal__form-input"
             placeholder="默认使用问题作为标题..."
           />
-        </div>
-        <div class="qa-note-modal__field">
-          <label for="qaNoteComment">补充说明 <span class="optional">(可选)</span></label>
+        </UiField>
+
+        <UiField
+          variant="settings"
+          label="补充说明"
+          hint="可选"
+          control-id="qaNoteComment"
+        >
           <UiTextarea
             id="qaNoteComment"
             v-model="noteCommentModel"
-            class="qa-note-modal__form-textarea"
             rows="3"
+            variant="panel"
             placeholder="添加你的评论或补充..."
           />
-        </div>
+        </UiField>
       </div>
     </div>
 
     <template #footer>
-      <UiButton variant="secondary" @click="$emit('close')">取消</UiButton>
-      <UiButton variant="primary" @click="$emit('save')">保存笔记</UiButton>
+      <ProductActionRow
+        aria-label="问答笔记保存操作"
+        variant="dialog"
+      >
+        <UiButton variant="secondary" @click="$emit('close')">取消</UiButton>
+        <UiButton variant="primary" @click="$emit('save')">保存笔记</UiButton>
+      </ProductActionRow>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
-.qa-preview {
-  margin-bottom: 16px;
-  padding: 16px;
-  border-radius: 12px;
-  background: var(--insight-surface-tertiary);
-}
-
-.qa-preview-section {
-  margin-bottom: 16px;
-}
-
-.qa-preview-section:last-child {
-  margin-bottom: 0;
-}
-
-.qa-preview-section label {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--insight-text-secondary);
-  font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.qa-preview-content {
-  max-height: 150px;
-  padding: 12px;
-  overflow-y: auto;
-  border-radius: 8px;
-  background: var(--insight-surface-secondary);
-  color: var(--insight-text-primary);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.qa-preview-citations {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.qa-citation-badge {
+.qa-note-modal__title {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
-  border-radius: 12px;
-  background: var(--insight-action-primary);
-  color: var(--color-text-inverse);
-  font-weight: 500;
-  font-size: 12px;
-}
-
-.note-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.qa-note-modal__field {
-  margin-bottom: 0;
-}
-
-.note-form label {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--insight-text-primary);
-  font-weight: 500;
-  font-size: 13px;
-}
-
-.optional {
-  color: var(--insight-text-secondary);
-  font-weight: 400;
-  font-size: 12px;
-}
-
-.qa-note-modal__form-input,
-.qa-note-modal__form-textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 8px;
-  background: var(--insight-surface-secondary);
-  color: var(--insight-text-primary);
-  font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.qa-note-modal__form-input:focus,
-.qa-note-modal__form-textarea:focus {
-  border-color: var(--insight-action-primary);
-  outline: none;
-  box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
-}
-
-.qa-note-modal__form-textarea {
-  min-height: 80px;
-  resize: vertical;
-  font-family: inherit;
-  line-height: 1.5;
+  gap: 8px;
 }
 </style>

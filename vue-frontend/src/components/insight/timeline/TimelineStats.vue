@@ -1,20 +1,41 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import type { TimelineStats } from './timelineTypes'
 
-defineProps<{
+const props = defineProps<{
   stats?: TimelineStats
   totalEvents: number
   totalPages: number
 }>()
+
+const statItems = computed<ProductChipItem[]>(() => {
+  const items: ProductChipItem[] = []
+
+  if (props.stats?.total_arcs) {
+    items.push({ id: 'arcs', iconName: 'book-marked', label: `${props.stats.total_arcs} 个剧情弧`, tone: 'neutral' })
+  }
+
+  items.push({ id: 'events', iconName: 'bar-chart', label: `${props.totalEvents} 个事件`, tone: 'neutral' })
+
+  if (props.stats?.total_characters) {
+    items.push({ id: 'characters', iconName: 'users', label: `${props.stats.total_characters} 个角色`, tone: 'neutral' })
+  }
+
+  if (props.stats?.total_threads) {
+    items.push({ id: 'threads', iconName: 'link', label: `${props.stats.total_threads} 条线索`, tone: 'neutral' })
+  }
+
+  items.push({ id: 'pages', iconName: 'file-text', label: `${props.totalPages} 页`, tone: 'neutral' })
+
+  return items
+})
 </script>
 
 <template>
   <div class="timeline-stats">
-    <span v-if="stats?.total_arcs" class="stat-badge">🎭 {{ stats.total_arcs }} 个剧情弧</span>
-    <span class="stat-badge">📊 {{ totalEvents }} 个事件</span>
-    <span v-if="stats?.total_characters" class="stat-badge">👥 {{ stats.total_characters }} 个角色</span>
-    <span v-if="stats?.total_threads" class="stat-badge">🔗 {{ stats.total_threads }} 条线索</span>
-    <span class="stat-badge">📄 {{ totalPages }} 页</span>
+    <ProductChipList aria-label="时间线统计" :items="statItems" />
   </div>
 </template>
 
@@ -26,16 +47,5 @@ defineProps<{
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--color-border-muted);
-}
-
-.stat-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  background: var(--insight-surface-tertiary);
-  border-radius: 16px;
-  font-size: 13px;
-  color: var(--insight-text-secondary);
 }
 </style>

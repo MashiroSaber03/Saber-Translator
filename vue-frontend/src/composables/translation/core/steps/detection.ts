@@ -1,11 +1,15 @@
-/**
- * 检测步骤
- */
 import { parallelDetect, type ParallelDetectResponse } from '@/api/parallelTranslate'
-import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
+import type {
+    BubbleApiResponse,
+    BubbleCoords,
+    BubbleGlobalDefaults,
+    BubbleState,
+    BubbleTextline,
+} from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { TranslationSettings } from '@/types/settings'
-import { createBubbleState } from '@/utils/bubbleFactory'
+import { createBubbleStatesFromResponse, detectTextDirection } from '@/utils/bubbleFactory'
+import { extractBase64Payload } from '@/utils/dataUrl'
 
 export interface DetectionInput {
     imageIndex: number
@@ -20,12 +24,20 @@ export interface DetectionOutput {
     bubbleAngles: number[]
     bubblePolygons: number[][][]
     autoDirections: string[]
-    textMask?: string  // 文字检测掩膜
+    textMask?: string
     textlinesPerBubble: BubbleTextline[][]
     originalTexts?: string[]
     bubbleStates: BubbleState[]
 }
-function createBubbleStatesFromDetection(
+
+function normalizeAutoDirection(direction: string | undefined, coords: BubbleCoords): 'v' | 'h' {
+    if (direction === 'v' || direction === 'h') {
+        return direction
+    }
+    return detectTextDirection(coords) === 'vertical' ? 'v' : 'h'
+}
+
+function buildDetectionBubbleResponse(
     image: AppImageData,
     result: {
         bubbleCoords: BubbleCoords[]
@@ -33,58 +45,45 @@ function createBubbleStatesFromDetection(
         autoDirections: string[]
         textlinesPerBubble: BubbleTextline[][]
     },
-    settingsSnapshot: TranslationSettings
-): BubbleState[] {
+): BubbleApiResponse {
+    return {
+        bubble_coords: result.bubbleCoords,
+        bubble_angles: result.bubbleAngles,
+        auto_directions: result.bubbleCoords.map((coords, index) =>
+            normalizeAutoDirection(result.autoDirections[index], coords)
+        ),
+        textlines_per_bubble: result.textlinesPerBubble,
+        original_texts: image.originalTexts || [],
+        bubble_texts: image.bubbleTexts || [],
+        textbox_texts: image.textboxTexts || [],
+    }
+}
+
+function buildDetectionBubbleDefaults(settingsSnapshot: TranslationSettings): BubbleGlobalDefaults {
     const textStyle = settingsSnapshot.textStyle
 
-    return result.bubbleCoords.map((coords, index) => {
-        const autoDirection = result.autoDirections[index] === 'h'
-            ? 'horizontal'
-            : result.autoDirections[index] === 'v'
-                ? 'vertical'
-                : (coords[3] - coords[1]) > (coords[2] - coords[0])
-                    ? 'vertical'
-                    : 'horizontal'
-
-        const textDirection = textStyle.layoutDirection === 'vertical' || textStyle.layoutDirection === 'horizontal'
-            ? textStyle.layoutDirection
-            : autoDirection
-
-        return createBubbleState({
-            coords,
-            polygon: [],
-            originalText: image.originalTexts?.[index] || '',
-            translatedText: image.bubbleTexts?.[index] || '',
-            textboxText: image.textboxTexts?.[index] || '',
-            rotationAngle: result.bubbleAngles[index] || 0,
-            textDirection,
-            autoTextDirection: autoDirection,
-            textlines: result.textlinesPerBubble[index] || [],
-            fontSize: textStyle.fontSize,
-            fontFamily: textStyle.fontFamily,
-            textColor: textStyle.textColor,
-            fillColor: textStyle.fillColor,
-            strokeEnabled: textStyle.strokeEnabled,
-            strokeColor: textStyle.strokeColor,
-            strokeWidth: textStyle.strokeWidth,
-            lineSpacing: textStyle.lineSpacing,
-            textAlign: textStyle.textAlign,
-            inpaintMethod: textStyle.inpaintMethod
-        })
-    })
+    return {
+        fontSize: textStyle.fontSize,
+        fontFamily: textStyle.fontFamily,
+        textDirection: textStyle.layoutDirection,
+        textColor: textStyle.textColor,
+        fillColor: textStyle.fillColor,
+        strokeEnabled: textStyle.strokeEnabled,
+        strokeColor: textStyle.strokeColor,
+        strokeWidth: textStyle.strokeWidth,
+        lineSpacing: textStyle.lineSpacing,
+        textAlign: textStyle.textAlign,
+        inpaintMethod: textStyle.inpaintMethod,
+    }
 }
 
 export async function executeDetection(input: DetectionInput): Promise<DetectionOutput> {
     const { image, translationMode = 'standard', forceDetect = false, settingsSnapshot } = input
 
-    // 如果图片已有 bubbleStates 数据（包括空数组），跳过检测
-    // - bubbleStates === null/undefined: 从未处理过，需要自动检测
-    // - bubbleStates === []: 用户主动清空，跳过检测（避免"框复活"）
-    // - bubbleStates.length > 0: 有气泡数据，复用已有数据
+    // A persisted empty array is a user-cleared state, not a missing detection result.
     const existingBubbles = image.bubbleStates
     if (!forceDetect && existingBubbles !== null && existingBubbles !== undefined) {
         if (existingBubbles.length > 0) {
-            // 坐标需要转换为整数，后端 numpy 切片需要整数索引
             return {
                 bubbleCoords: existingBubbles.map(s =>
                     s.coords.map(c => Math.round(c)) as BubbleCoords
@@ -92,7 +91,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
                 bubbleAngles: existingBubbles.map(s => s.rotationAngle || 0),
                 bubblePolygons: existingBubbles.map(s => s.polygon || []),
                 autoDirections: existingBubbles.map(s => s.autoTextDirection || s.textDirection || 'vertical'),
-                textMask: image.textMask ?? undefined,  // 从持久化数据中获取掩膜
+                textMask: image.textMask ?? undefined,
                 textlinesPerBubble: existingBubbles.map((bubble, index) =>
                     bubble.textlines && bubble.textlines.length > 0
                         ? bubble.textlines
@@ -116,9 +115,8 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
     }
 
     const settings = settingsSnapshot
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = extractBase64Payload(image.originalDataURL)
 
-    // 步骤1: 使用用户选择的检测器进行检测（获取文本框）
     const response: ParallelDetectResponse = await parallelDetect({
         image: base64,
         translation_mode: translationMode,
@@ -141,9 +139,6 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         throw new Error(response.error || '检测失败')
     }
 
-    // 步骤2: 固定使用 Default 检测器生成精确文字掩膜
-    // 无论用户选择哪个检测器，都统一使用 Default 生成掩膜
-    // 这样所有检测器都能享受精确掩膜的好处
     let textMaskData: string | undefined = undefined
 
     try {
@@ -151,10 +146,10 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
             image: base64,
             translation_mode: translationMode,
             translation_scope: 'image',
-            detector_type: 'default',  // 固定使用 Default 检测器生成掩膜
-            enable_aux_yolo_detection: false,  // 掩膜路径不需要辅助检测
-            enable_saber_yolo_refine: false,  // 掩膜路径不需要二阶段纠错
-            box_expand_ratio: 0,       // 掩膜生成不需要扩展
+            detector_type: 'default',
+            enable_aux_yolo_detection: false,
+            enable_saber_yolo_refine: false,
+            box_expand_ratio: 0,
             box_expand_top: 0,
             box_expand_bottom: 0,
             box_expand_left: 0,
@@ -165,7 +160,7 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
             textMaskData = maskResponse.raw_mask
         }
     } catch {
-        // 掩膜生成失败不影响主流程，继续使用检测结果
+        // Mask generation is best-effort; detection results remain usable without it.
     }
 
     const detectionResult = {
@@ -173,18 +168,14 @@ export async function executeDetection(input: DetectionInput): Promise<Detection
         bubbleAngles: response.bubble_angles || [],
         bubblePolygons: response.bubble_polygons || [],
         autoDirections: response.auto_directions || [],
-        textMask: textMaskData,  // 返回生成的精确掩膜
+        textMask: textMaskData,
         textlinesPerBubble: response.textlines_per_bubble || []
     }
     return {
         ...detectionResult,
-        bubbleStates: createBubbleStatesFromDetection(image, detectionResult, settingsSnapshot)
+        bubbleStates: createBubbleStatesFromResponse(
+            buildDetectionBubbleResponse(image, detectionResult),
+            buildDetectionBubbleDefaults(settingsSnapshot)
+        )
     }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }

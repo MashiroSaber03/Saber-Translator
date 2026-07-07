@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
+import type { ProductSegmentedTab } from '@/components/product/ProductSegmentedTabs.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import EmbeddingRebuildControl from './EmbeddingRebuildControl.vue'
 
 type QAMode = 'precise' | 'global'
@@ -30,6 +34,10 @@ const emit = defineEmits<{
   (event: 'update:useReranker', value: boolean): void
 }>()
 
+const qaModeTabs: ProductSegmentedTab[] = [
+  { id: 'precise', label: '精确模式', iconName: 'target' },
+  { id: 'global', label: '全局模式', iconName: 'globe' },
+]
 const showPreciseModeOptions = computed(() => props.qaMode === 'precise')
 const parentChildModel = computed({
   get: () => props.useParentChild,
@@ -51,65 +59,96 @@ const thresholdModel = computed({
   get: () => props.threshold,
   set: value => emit('update:threshold', Number(value)),
 })
+const globalExampleChips = computed<ProductChipItem[]>(() => {
+  return props.globalModeExamples.map(example => ({
+    id: example,
+    label: example,
+    ariaLabel: `提问示例：${example}`,
+    interactive: true,
+    tone: 'neutral',
+  }))
+})
+
+function askExample(id: string | number): void {
+  emit('askExample', String(id))
+}
+
+function updateQaMode(mode: string): void {
+  if (mode !== 'precise' && mode !== 'global') return
+  emit('update:qaMode', mode)
+}
 </script>
 
 <template>
-  <div class="chat-options">
-    <div class="qa-mode-toggle" title="精确模式：使用RAG检索相关片段；全局模式：使用全文摘要">
-      <UiButton
-        variant="toolbar"
-        type="button"
-        class="qa-mode-btn"
-        :class="{ active: qaMode === 'precise' }"
-        @click="$emit('update:qaMode', 'precise')"
-      >
-        🎯 精确模式
-      </UiButton>
-      <UiButton
-        variant="toolbar"
-        type="button"
-        class="qa-mode-btn"
-        :class="{ active: qaMode === 'global' }"
-        @click="$emit('update:qaMode', 'global')"
-      >
-        🌐 全局模式
-      </UiButton>
-    </div>
+  <div class="qa-options-bar">
+    <ProductSegmentedTabs
+      class="qa-options-bar__mode-tabs"
+      title="精确模式：使用RAG检索相关片段；全局模式：使用全文摘要"
+      aria-label="问答模式"
+      :tabs="qaModeTabs"
+      :active-tab="qaMode"
+      @update:active-tab="updateQaMode"
+    />
 
-    <span class="chat-option-divider">|</span>
+    <span class="qa-options-bar__divider" aria-hidden="true">|</span>
 
-    <div v-if="showPreciseModeOptions" class="precise-mode-options">
+    <div v-if="showPreciseModeOptions" class="qa-options-bar__precise-options">
       <UiCheckbox
         v-model="parentChildModel"
-        class="qa-option-checkbox"
+        class="qa-options-bar__option-checkbox"
         label="父子块模式"
         title="启用父子块模式"
       />
       <UiCheckbox
         v-model="reasoningModel"
-        class="qa-option-checkbox"
+        class="qa-options-bar__option-checkbox"
         label="推理检索"
         title="启用推理检索"
       />
       <UiCheckbox
         v-model="rerankerModel"
-        class="qa-option-checkbox"
+        class="qa-options-bar__option-checkbox"
         label="重排序"
         title="启用重排序"
       />
 
-      <span class="chat-option-divider">|</span>
+      <span class="qa-options-bar__divider" aria-hidden="true">|</span>
 
-      <label class="input-label compact" title="返回的最大结果数">
-        <span>Top K:</span>
-        <UiInput v-model.number="topKModel" type="number" min="1" max="20" class="input-small" />
-      </label>
-      <label class="input-label compact" title="相关性阈值">
-        <span>阈值:</span>
-        <UiInput v-model.number="thresholdModel" type="number" min="0" max="1" step="0.1" class="input-small" />
-      </label>
+      <UiField
+        class="qa-options-bar__number-field"
+        variant="settings"
+        layout="inline"
+        label="Top K:"
+        control-id="qaTopK"
+        title="返回的最大结果数"
+      >
+        <UiNumberField
+          v-model="topKModel"
+          input-id="qaTopK"
+          :min="1"
+          :max="20"
+          size="xs"
+        />
+      </UiField>
+      <UiField
+        class="qa-options-bar__number-field"
+        variant="settings"
+        layout="inline"
+        label="阈值:"
+        control-id="qaThreshold"
+        title="相关性阈值"
+      >
+        <UiNumberField
+          v-model="thresholdModel"
+          input-id="qaThreshold"
+          :min="0"
+          :max="1"
+          :step="0.1"
+          size="xs"
+        />
+      </UiField>
 
-      <span class="chat-option-divider">|</span>
+      <span class="qa-options-bar__divider" aria-hidden="true">|</span>
 
       <EmbeddingRebuildControl
         :is-rebuilding="isRebuildingEmbeddings"
@@ -118,80 +157,53 @@ const thresholdModel = computed({
       />
     </div>
 
-    <div v-else class="global-mode-hint">
-      <span class="hint-text">💡 全局模式使用全文摘要回答，适合总结性问题</span>
-      <div class="welcome-examples">
-        <UiButton
-          v-for="(example, index) in globalModeExamples"
-          :key="index"
-          variant="toolbar"
-          type="button"
-          class="example-tag"
-          :aria-label="`提问示例：${example}`"
-          @click="$emit('askExample', example)"
-        >
-          {{ example }}
-        </UiButton>
-      </div>
+    <div v-else class="qa-options-bar__global-hint">
+      <span class="qa-options-bar__hint-text">全局模式使用全文摘要回答，适合总结性问题</span>
+      <ProductChipList
+        class="qa-options-bar__example-list"
+        aria-label="全局模式示例问题"
+        :items="globalExampleChips"
+        @select="askExample"
+      />
     </div>
   </div>
 </template>
 
 <style scoped>
-.chat-options {
+.qa-options-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
+  min-width: 0;
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--color-border-muted);
 }
 
-.qa-mode-toggle {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--insight-surface-secondary);
+.qa-options-bar__mode-tabs {
+  flex: 0 0 auto;
 }
 
-.qa-mode-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--insight-text-secondary);
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.qa-mode-btn:hover {
-  background: var(--insight-surface-tertiary);
-  color: var(--insight-text-primary);
-}
-
-.qa-mode-btn.active {
-  background: var(--insight-action-primary);
-  color: var(--color-text-inverse);
-  font-weight: 500;
-}
-
-.chat-option-divider {
+.qa-options-bar__divider {
   margin: 0 4px;
   color: var(--color-border-muted);
 }
 
-.precise-mode-options {
+.qa-options-bar__precise-options {
   display: flex;
   flex-wrap: wrap;
+  flex: 1 1 360px;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
-.qa-option-checkbox,
-.input-label.compact {
+.qa-options-bar__option-checkbox,
+.qa-options-bar__number-field {
+  --ui-field-inline-label-color: var(--insight-text-secondary);
+  --ui-field-inline-label-font-size: 13px;
+
   display: flex;
   align-items: center;
   gap: 6px;
@@ -200,48 +212,23 @@ const thresholdModel = computed({
   cursor: pointer;
 }
 
-.input-small {
-  width: 50px;
-  padding: 2px 6px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 4px;
-  background: var(--insight-surface-page);
-  color: var(--insight-text-primary);
-  font-size: 12px;
-}
-
-.global-mode-hint {
+.qa-options-bar__global-hint {
   display: flex;
+  flex: 1 1 260px;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
-.hint-text {
+.qa-options-bar__hint-text {
   color: var(--insight-text-secondary);
   font-size: 13px;
   font-style: italic;
+  overflow-wrap: anywhere;
 }
 
-.welcome-examples {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+.qa-options-bar__example-list {
+  max-width: 100%;
   margin-top: 12px;
-}
-
-.example-tag {
-  padding: 6px 12px;
-  border-radius: 16px;
-  background: var(--insight-surface-secondary);
-  color: var(--insight-text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.example-tag:hover {
-  background: var(--insight-action-primary);
-  color: var(--color-text-inverse);
 }
 </style>

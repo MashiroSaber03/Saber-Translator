@@ -1,9 +1,3 @@
-/**
- * 并行翻译管线主控制器
- *
- * 协调各个调度池，但具体业务逻辑全部交给共享 atomic steps。
- */
-
 import type { ImageData } from '@/types/image'
 import type { PipelineTask, ParallelTranslationMode, ParallelExecutionResult, ParallelConfig } from './types'
 import { DeepLearningLock } from './DeepLearningLock'
@@ -137,6 +131,9 @@ export class ParallelPipeline {
       removeTextWithOcr: runtime.settingsSnapshot.removeTextWithOcr,
       autoSaveEnabled: runtime.autoSaveEnabled,
     })
+    if (chainConfig.includes('save')) {
+      this.progressTracker.startSaveProgress(images.length)
+    }
     this.setupPoolChain(mode, images.length, chainConfig)
 
     const tasks: PipelineTask[] = images.map((imageData, localIndex) =>

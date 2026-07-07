@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { useImageStore } from '@/stores/imageStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -62,6 +64,14 @@ describe('saveStep bookshelf persistence helpers', () => {
     const imageStore = useImageStore()
     imageStore.addImage('page-1.png', 'data:image/png;base64,original-1')
     imageStore.addImage('page-2.png', 'data:image/png;base64,original-2')
+  })
+
+  it('keeps the save-step owner free of scaffold file narration', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/translation/core/saveStep.ts'), 'utf8')
+
+    expect(source).not.toContain('自动保存步骤实现')
+    expect(source).not.toContain('统一使用 TaskContext + PersistenceService')
+    expect(source).not.toContain('/**')
   })
 
   it('treats missing session meta as an uninitialized bookshelf session', async () => {

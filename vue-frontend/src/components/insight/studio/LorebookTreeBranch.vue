@@ -1,60 +1,85 @@
 <template>
-  <div class="branch-node">
-    <details class="node-details" open>
-      <summary class="node-summary">
-        <div class="summary-main">
-          <UiInput v-model="localEntry.comment" class="title-input" type="text" />
-          <div class="meta-line">
-            <span>{{ localEntry.keys.length }} 个关键词</span>
-            <span>优先级 {{ localEntry.priority }}</span>
-            <span>{{ localEntry.position }}</span>
+  <div class="lorebook-tree-branch">
+    <details class="lorebook-tree-branch__details" open>
+      <summary class="lorebook-tree-branch__summary">
+        <div class="lorebook-tree-branch__summary-main">
+          <UiInput v-model="localEntry.comment" class="lorebook-tree-branch__title-input" type="text" variant="studio" />
+          <div class="lorebook-tree-branch__meta">
+            <span class="lorebook-tree-branch__meta-item">{{ localEntry.keys.length }} 个关键词</span>
+            <span class="lorebook-tree-branch__meta-item">优先级 {{ localEntry.priority }}</span>
+            <span class="lorebook-tree-branch__meta-item">{{ localEntry.position }}</span>
           </div>
         </div>
-        <div class="summary-actions" @click.prevent>
-          <UiButton variant="toolbar" class="mini-btn" @click="move(-1)" :disabled="index === 0">上移</UiButton>
-          <UiButton variant="toolbar" class="mini-btn" @click="move(1)">下移</UiButton>
-          <UiButton variant="toolbar" class="mini-btn" @click="addChild">子项</UiButton>
-          <UiButton variant="toolbar" class="action-danger" @click="$emit('remove')">删除</UiButton>
-        </div>
+        <ProductActionRow class="lorebook-tree-branch__actions" aria-label="世界书条目操作" @click.prevent>
+          <UiButton variant="secondary" size="sm" @click="move(-1)" :disabled="index === 0">上移</UiButton>
+          <UiButton variant="secondary" size="sm" @click="move(1)" :disabled="index >= siblingCount - 1">下移</UiButton>
+          <UiButton variant="secondary" size="sm" @click="addChild">子项</UiButton>
+          <UiButton variant="secondary" tone="danger" size="sm" @click="$emit('remove')">删除</UiButton>
+        </ProductActionRow>
       </summary>
 
-      <div class="node-body">
-        <div class="grid">
-          <label>
-            关键词（逗号分隔）
-            <UiInput :value="localEntry.keys.join(', ')" type="text" @input="updateKeys($event)" />
-          </label>
-          <label>
-            次级关键词（逗号分隔）
-            <UiInput :value="(localEntry.secondary_keys || []).join(', ')" type="text" @input="updateSecondaryKeys($event)" />
-          </label>
-          <label class="full">
-            内容
-            <UiTextarea v-model="localEntry.content" rows="4" />
-          </label>
-          <label>
-            优先级
-            <UiInput v-model.number="localEntry.priority" type="number" min="0" step="10" />
-          </label>
-          <label>
-            注入位置
-            <UiSelect v-model="localEntry.position">
+      <div class="lorebook-tree-branch__body">
+        <UiFormGrid class="lorebook-tree-branch__grid">
+          <UiField variant="settings" label="关键词（逗号分隔）" :control-id="entryControlId('keys')">
+            <UiInput
+              :id="entryControlId('keys')"
+              :model-value="localEntry.keys.join(', ')"
+              type="text"
+              variant="studio"
+              @update:model-value="updateKeys(String($event))"
+            />
+          </UiField>
+          <UiField variant="settings" label="次级关键词（逗号分隔）" :control-id="entryControlId('secondary-keys')">
+            <UiInput
+              :id="entryControlId('secondary-keys')"
+              :model-value="(localEntry.secondary_keys || []).join(', ')"
+              type="text"
+              variant="studio"
+              @update:model-value="updateSecondaryKeys(String($event))"
+            />
+          </UiField>
+          <UiField class="lorebook-tree-branch__field--full" variant="settings" label="内容" :control-id="entryControlId('content')">
+            <UiTextarea :id="entryControlId('content')" v-model="localEntry.content" rows="4" variant="studio" />
+          </UiField>
+          <UiField variant="settings" label="优先级" :control-id="entryControlId('priority')">
+            <UiNumberField
+              :input-id="entryControlId('priority')"
+              v-model="localEntry.priority"
+              aria-label="世界书条目优先级"
+              :min="0"
+              :step="10"
+              variant="studio"
+            />
+          </UiField>
+          <UiField variant="settings" label="注入位置" :control-id="entryControlId('position')">
+            <UiSelect :id="entryControlId('position')" v-model="localEntry.position" variant="studio">
               <option value="before_char">before_char</option>
               <option value="after_char">after_char</option>
               <option value="at_depth">at_depth</option>
             </UiSelect>
-          </label>
-          <label>
-            深度
-            <UiInput v-model.number="localEntry.depth" type="number" min="0" />
-          </label>
-          <label>
-            概率
-            <UiInput v-model.number="localEntry.probability" type="number" min="0" max="100" />
-          </label>
-        </div>
+          </UiField>
+          <UiField variant="settings" label="深度" :control-id="entryControlId('depth')">
+            <UiNumberField
+              :input-id="entryControlId('depth')"
+              v-model="localEntry.depth"
+              aria-label="世界书条目深度"
+              :min="0"
+              variant="studio"
+            />
+          </UiField>
+          <UiField variant="settings" label="概率" :control-id="entryControlId('probability')">
+            <UiNumberField
+              :input-id="entryControlId('probability')"
+              v-model="localEntry.probability"
+              aria-label="世界书条目概率"
+              :min="0"
+              :max="100"
+              variant="studio"
+            />
+          </UiField>
+        </UiFormGrid>
 
-        <div class="toggles">
+        <div class="lorebook-tree-branch__toggles">
           <UiCheckbox v-model="localEntry.enabled" label="启用" />
           <UiCheckbox v-model="localEntry.constant" label="常驻" />
           <UiCheckbox v-model="localEntry.selective" label="选择触发" />
@@ -62,12 +87,13 @@
           <UiCheckbox v-model="localEntry.use_regex" label="用正则匹配" />
         </div>
 
-        <div v-if="localEntry.children.length > 0" class="children">
+        <div v-if="localEntry.children.length > 0" class="lorebook-tree-branch__children">
           <LorebookTreeBranch
             v-for="(child, childIndex) in localEntry.children"
             :key="child.id"
             :entry="child"
             :index="childIndex"
+            :sibling-count="localEntry.children.length"
             @update:entry="replaceChild(childIndex, $event)"
             @remove="removeChild(childIndex)"
             @move="moveChild(childIndex, $event)"
@@ -81,15 +107,21 @@
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
+import { deepClone } from '@/utils/deepClone'
 
 const props = defineProps<{
   entry: LorebookEntryNode
   index: number
+  siblingCount: number
 }>()
 
 const emit = defineEmits<{
@@ -98,12 +130,12 @@ const emit = defineEmits<{
   (e: 'move', offset: -1 | 1): void
 }>()
 
-const localEntry = ref<LorebookEntryNode>(JSON.parse(JSON.stringify(props.entry)) as LorebookEntryNode)
+const localEntry = ref<LorebookEntryNode>(deepClone(props.entry))
 let syncing = false
 
 watch(() => props.entry, value => {
   syncing = true
-  localEntry.value = JSON.parse(JSON.stringify(value)) as LorebookEntryNode
+  localEntry.value = deepClone(value)
   void nextTick(() => {
     syncing = false
   })
@@ -111,21 +143,23 @@ watch(() => props.entry, value => {
 
 watch(localEntry, value => {
   if (syncing) return
-  emit('update:entry', JSON.parse(JSON.stringify(value)) as LorebookEntryNode)
+  emit('update:entry', deepClone(value))
 }, { deep: true })
 
 function splitCsv(value: string) {
   return value.split(/[,，]/).map(item => item.trim()).filter(Boolean)
 }
 
-function updateKeys(event: Event) {
-  const target = event.target as HTMLInputElement
-  localEntry.value.keys = splitCsv(target.value)
+function entryControlId(field: string) {
+  return `lorebook-${localEntry.value.id}-${field}`
 }
 
-function updateSecondaryKeys(event: Event) {
-  const target = event.target as HTMLInputElement
-  localEntry.value.secondary_keys = splitCsv(target.value)
+function updateKeys(value: string) {
+  localEntry.value.keys = splitCsv(value)
+}
+
+function updateSecondaryKeys(value: string) {
+  localEntry.value.secondary_keys = splitCsv(value)
 }
 
 function addChild() {
@@ -168,58 +202,40 @@ function move(offset: -1 | 1) {
 </script>
 
 <style scoped>
-.branch-node {
-  --lorebook-tree-branch-border-default: rgba(37, 99, 199, .12);
-  --lorebook-tree-branch-surface-base: rgba(255, 255, 255, .82);
-  --lorebook-tree-branch-text-primary: #14304c;
-  --lorebook-tree-branch-text-secondary: #516882;
-  --ui-input-border: 1px solid var(--studio-border-strong);
-  --ui-input-background: var(--studio-surface-soft);
-  --ui-input-radius: 14px;
-  --ui-input-padding: 10px 12px;
-  --ui-input-color: var(--studio-text-strong);
-  --ui-input-font-size: 13px;
-  --ui-select-border: 1px solid var(--studio-border-strong);
-  --ui-select-background: var(--studio-surface-soft);
-  --ui-select-radius: 14px;
-  --ui-select-padding: 10px 12px;
-  --ui-select-color: var(--studio-text-strong);
-  --ui-select-font-size: 13px;
-  --ui-textarea-border: 1px solid var(--studio-border-strong);
-  --ui-textarea-background: var(--studio-surface-soft);
-  --ui-textarea-radius: 14px;
-  --ui-textarea-padding: 10px 12px;
-  --ui-textarea-color: var(--studio-text-strong);
-  --ui-textarea-font-size: 13px;
+.lorebook-tree-branch {
+  --lorebook-tree-branch-border-default: var(--studio-border-default);
+  --lorebook-tree-branch-surface-base: color-mix(in srgb, var(--color-surface-card) 82%, transparent);
+  --lorebook-tree-branch-text-primary: var(--studio-text-strong);
 
   border-radius: 18px;
   background: var(--lorebook-tree-branch-surface-base);
   border: 1px solid var(--studio-border-default);
 }
 
-.node-details {
+.lorebook-tree-branch__details {
   border-radius: 18px;
 }
 
-.node-summary {
+.lorebook-tree-branch__summary {
   list-style: none;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
   cursor: pointer;
 }
 
-.node-summary::-webkit-details-marker {
+.lorebook-tree-branch__summary::-webkit-details-marker {
   display: none;
 }
 
-.summary-main {
+.lorebook-tree-branch__summary-main {
   min-width: 0;
   flex: 1;
 }
 
-.title-input {
+.lorebook-tree-branch__title-input {
   width: 100%;
   border: none;
   background: transparent;
@@ -229,7 +245,7 @@ function move(offset: -1 | 1) {
   padding: 0;
 }
 
-.meta-line {
+.lorebook-tree-branch__meta {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -238,62 +254,32 @@ function move(offset: -1 | 1) {
   font-size: 11px;
 }
 
-.summary-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+.lorebook-tree-branch__actions {
   align-items: flex-start;
 }
 
-.node-body {
+.lorebook-tree-branch__body {
   padding: 0 16px 16px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.lorebook-tree-branch__grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 10px;
+  margin-bottom: 0;
 }
 
-.full {
+.lorebook-tree-branch__field--full {
   grid-column: 1 / -1;
 }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--lorebook-tree-branch-text-secondary);
-  font-size: 12px;
-}
-
-.toggles {
+.lorebook-tree-branch__toggles {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 12px;
 }
 
-.mini-btn,
-.action-danger {
-  border: none;
-  border-radius: 12px;
-  padding: 7px 10px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.mini-btn {
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-danger {
-  background: var(--color-surface-danger-soft);
-  color: var(--studio-text-danger);
-}
-
-.children {
+.lorebook-tree-branch__children {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -303,9 +289,9 @@ label {
 }
 
 @media (--breakpoint-lg-down) {
-  .node-summary,
-  .summary-actions,
-  .grid {
+  .lorebook-tree-branch__summary,
+  .lorebook-tree-branch__actions,
+  .lorebook-tree-branch__grid {
     grid-template-columns: 1fr;
     flex-direction: column;
   }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
 defineProps<{
@@ -13,58 +14,38 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="navigation-buttons">
+  <ProductActionRow
+    class="settings-navigation-buttons"
+    justify="between"
+    aria-label="图片导航"
+  >
     <UiButton
-      id="prevImageButton"
-      class="navigation-button"
-      variant="toolbar"
+      class="settings-navigation-buttons__action"
+      variant="secondary"
+      block
       :disabled="!canGoPrevious"
       @click="$emit('previous')"
     >
       上一张
     </UiButton>
     <UiButton
-      id="nextImageButton"
-      class="navigation-button"
-      variant="toolbar"
+      class="settings-navigation-buttons__action"
+      variant="secondary"
+      block
       :disabled="!canGoNext"
       @click="$emit('next')"
     >
       下一张
     </UiButton>
-  </div>
+  </ProductActionRow>
 </template>
 
 <style scoped>
-.navigation-buttons {
-  --settings-sidebar-navigation-button-background: #6c7784;
-  --settings-sidebar-navigation-button-disabled-background: #c2c9d4;
-  --settings-sidebar-navigation-button-hover-background: #5a6572;
-
-  display: flex;
-  gap: 10px;
+.settings-navigation-buttons {
   margin-top: 16px;
 }
 
-.navigation-button {
+.settings-navigation-buttons__action {
   flex: 1;
-  min-height: 38px;
-  border: none;
-  border-radius: 8px;
-  background: var(--settings-sidebar-navigation-button-background);
-  color: var(--color-text-inverse);
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.navigation-button:disabled {
-  background: var(--settings-sidebar-navigation-button-disabled-background);
-  cursor: not-allowed;
-}
-
-.navigation-button:hover:not(:disabled) {
-  background: var(--settings-sidebar-navigation-button-hover-background);
 }
 </style>

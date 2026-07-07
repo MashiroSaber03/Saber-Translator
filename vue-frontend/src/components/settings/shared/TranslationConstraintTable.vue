@@ -1,45 +1,59 @@
 <template>
-  <div class="constraint-table">
-    <div class="constraint-toolbar">
-      <UiInput
+  <div class="translation-constraint-table">
+    <div class="translation-constraint-table__toolbar">
+      <ProductSearchField
         v-model="searchText"
-        class="constraint-search"
-        type="text"
+        class="translation-constraint-table__search-field"
+        aria-label="搜索约束表格"
         placeholder="搜索表格内容..."
       />
-      <div class="constraint-actions">
+      <ProductActionRow aria-label="约束表格操作" justify="start">
         <UiButton variant="secondary" type="button" @click="addRow" size="sm">新增</UiButton>
-        <UiButton variant="secondary" type="button" @click="triggerImport('json')" size="sm">导入 JSON</UiButton>
-        <UiButton variant="secondary" type="button" @click="triggerImport('xlsx')" size="sm">导入 XLSX</UiButton>
-        <UiButton variant="secondary" type="button" @click="exportJson" size="sm">导出 JSON</UiButton>
-        <UiButton variant="secondary" type="button" @click="exportXlsx" size="sm">导出 XLSX</UiButton>
-      </div>
+        <UiButton variant="secondary" type="button" @click="triggerImport('json')" size="sm">
+          导入 JSON
+        </UiButton>
+        <UiButton variant="secondary" type="button" @click="triggerImport('xlsx')" size="sm">
+          导入 XLSX
+        </UiButton>
+        <UiButton variant="secondary" type="button" @click="exportJson" size="sm">
+          导出 JSON
+        </UiButton>
+        <UiButton variant="secondary" type="button" @click="exportXlsx" size="sm">
+          导出 XLSX
+        </UiButton>
+      </ProductActionRow>
       <UiFileInput
         ref="jsonImportInput"
-        class="hidden-input"
         accept=".json,application/json"
-        @change="handleImport($event, 'json')"
+        hidden
+        @files-change="handleImport($event, 'json')"
       />
       <UiFileInput
         ref="xlsxImportInput"
-        class="hidden-input"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        @change="handleImport($event, 'xlsx')"
+        hidden
+        @files-change="handleImport($event, 'xlsx')"
       />
     </div>
 
-    <table class="settings-table">
+    <table class="translation-constraint-table__table">
       <thead>
         <tr>
           <th
             v-for="column in columns"
             :key="column.key"
-            :aria-sort="sortKey === column.key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"
+            :aria-sort="
+              sortKey === column.key
+                ? sortDirection === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'
+            "
           >
             <UiButton
               variant="toolbar"
               type="button"
-              class="sortable-header-button"
+              class="translation-constraint-table__sort-action"
               :aria-label="`按${column.label}排序`"
               @click="toggleSort(column.key)"
             >
@@ -50,36 +64,37 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="({ row, originalIndex }, index) in filteredRows" :key="`${rowKeyPrefix}-${index}`">
+        <tr
+          v-for="({ row, originalIndex }, index) in filteredRows"
+          :key="`${rowKeyPrefix}-${index}`"
+        >
           <td v-for="column in columns" :key="column.key">
-            <div
-              v-if="column.type === 'select'"
-              class="select-cell"
-            >
-              <CustomSelect
-                :model-value="String(row[column.key] ?? '')"
+            <div v-if="column.type === 'select'" class="translation-constraint-table__select-cell">
+              <UiSelect
+                :model-value="getCellValue(row, column.key)"
                 :options="column.options || []"
-                fit
                 @change="updateCell(originalIndex, column.key, String($event))"
               />
             </div>
             <UiTextarea
               v-else-if="column.type === 'textarea'"
-              class="constraint-cell-field"
-              :model-value="String(row[column.key] ?? '')"
+              class="translation-constraint-table__cell-field"
+              :model-value="getCellValue(row, column.key)"
               :rows="2"
               @update:model-value="updateCell(originalIndex, column.key, $event)"
             />
             <UiInput
               v-else
-              class="constraint-cell-field"
-              :value="String(row[column.key] ?? '')"
+              class="translation-constraint-table__cell-field"
+              :model-value="getCellValue(row, column.key)"
               type="text"
-              @input="updateCell(originalIndex, column.key, ($event.target as HTMLInputElement).value)"
+              @update:model-value="updateCell(originalIndex, column.key, $event)"
             />
           </td>
-          <td class="action-cell">
-            <UiButton variant="danger" type="button" @click="removeRow(originalIndex)" size="sm">删除</UiButton>
+          <td class="translation-constraint-table__action-cell">
+            <UiButton variant="danger" type="button" @click="removeRow(originalIndex)" size="sm">
+              删除
+            </UiButton>
           </td>
         </tr>
       </tbody>
@@ -92,18 +107,22 @@ import UiInput from '@/components/ui/UiInput.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductSearchField from '@/components/product/ProductSearchField.vue'
 import { computed, ref } from 'vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 import { useToast } from '@/utils/toast'
+import { triggerBlobDownload } from '@/utils/browserDownload'
 import {
   exportRowsToJson,
   exportRowsToXlsxBuffer,
   importRowsFromJson,
   importRowsFromXlsxBuffer,
+  getStringField,
   type TranslationConstraintColumn,
 } from '@/utils/translationConstraintTable'
 
-type TableRow = Record<string, string>
+type TableRow = object
 
 type EditableColumn = TranslationConstraintColumn & {
   type?: 'text' | 'textarea' | 'select'
@@ -127,17 +146,36 @@ const toast = useToast()
 const searchText = ref('')
 const sortKey = ref<string>('')
 const sortDirection = ref<'asc' | 'desc'>('asc')
-const jsonImportInput = ref<HTMLInputElement | null>(null)
-const xlsxImportInput = ref<HTMLInputElement | null>(null)
+const jsonImportInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+const xlsxImportInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+
+function getCellValue(row: TableRow, key: string): string {
+  return getStringField(row, key)
+}
+
+function withCellValue(row: TableRow, key: string, value: string): TableRow {
+  return {
+    ...row,
+    [key]: value,
+  }
+}
+
+function toStringRows(rows: TableRow[]): Record<string, string>[] {
+  return rows.map(row => {
+    const nextRow: Record<string, string> = {}
+    for (const column of props.columns) {
+      nextRow[column.key] = getCellValue(row, column.key)
+    }
+    return nextRow
+  })
+}
 
 const filteredRows = computed(() => {
   const rowsWithIndex = props.modelValue.map((row, originalIndex) => ({ row, originalIndex }))
   const query = searchText.value.trim().toLowerCase()
   const rows = query
     ? rowsWithIndex.filter(({ row }) =>
-        props.columns.some(column =>
-          String(row[column.key] ?? '').toLowerCase().includes(query),
-        ),
+        props.columns.some(column => getCellValue(row, column.key).toLowerCase().includes(query))
       )
     : rowsWithIndex
 
@@ -146,8 +184,8 @@ const filteredRows = computed(() => {
   }
 
   return [...rows].sort((left, right) => {
-    const leftValue = String(left.row[sortKey.value] ?? '').toLowerCase()
-    const rightValue = String(right.row[sortKey.value] ?? '').toLowerCase()
+    const leftValue = getCellValue(left.row, sortKey.value).toLowerCase()
+    const rightValue = getCellValue(right.row, sortKey.value).toLowerCase()
     const compare = leftValue.localeCompare(rightValue, undefined, { numeric: true })
     return sortDirection.value === 'asc' ? compare : compare * -1
   })
@@ -167,14 +205,10 @@ function removeRow(index: number): void {
   emitRows(nextRows)
 }
 
-function updateCell(index: number, key: string, value: string): void {
+function updateCell(index: number, key: string, value: string | number | boolean): void {
+  const nextValue = String(value)
   const nextRows = props.modelValue.map((row, rowIndex) =>
-    rowIndex === index
-      ? {
-          ...row,
-          [key]: value,
-        }
-      : row,
+    rowIndex === index ? withCellValue(row, key, nextValue) : row
   )
   emitRows(nextRows)
 }
@@ -197,51 +231,44 @@ function triggerImport(format: 'json' | 'xlsx'): void {
   xlsxImportInput.value?.click()
 }
 
-async function handleImport(event: Event, format: 'json' | 'xlsx'): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+async function handleImport(files: File[], format: 'json' | 'xlsx'): Promise<void> {
+  const file = files[0]
   if (!file) {
     return
   }
 
   try {
-    const importedRows = format === 'json'
-      ? importRowsFromJson(await file.text(), props.columns)
-      : importRowsFromXlsxBuffer(await file.arrayBuffer(), props.columns)
+    const importedRows =
+      format === 'json'
+        ? importRowsFromJson(await file.text(), props.columns)
+        : importRowsFromXlsxBuffer(await file.arrayBuffer(), props.columns)
     emitRows(mergeImportedRows(importedRows))
     toast.success(`已导入 ${importedRows.length} 条记录`)
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '导入失败')
   } finally {
-    input.value = ''
+    clearImportInput(format)
   }
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  try {
-    link.href = url
-    link.download = filename
-    link.click()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+function clearImportInput(format: 'json' | 'xlsx'): void {
+  const inputRef = format === 'json' ? jsonImportInput : xlsxImportInput
+  inputRef.value?.clear()
 }
 
 function exportJson(): void {
-  const blob = new Blob([exportRowsToJson(props.modelValue)], {
+  const blob = new Blob([exportRowsToJson(toStringRows(props.modelValue))], {
     type: 'application/json;charset=utf-8',
   })
-  downloadBlob(blob, `${props.exportBaseName}.json`)
+  triggerBlobDownload(blob, `${props.exportBaseName}.json`)
 }
 
 function exportXlsx(): void {
-  const buffer = exportRowsToXlsxBuffer(props.modelValue, props.columns)
+  const buffer = exportRowsToXlsxBuffer(toStringRows(props.modelValue), props.columns)
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  downloadBlob(blob, `${props.exportBaseName}.xlsx`)
+  triggerBlobDownload(blob, `${props.exportBaseName}.xlsx`)
 }
 
 function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
@@ -251,14 +278,12 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 
   const existingRows = [...props.modelValue]
   const existingKeys = new Set(
-    existingRows
-      .map(row => String(row[props.dedupeKey as string] ?? '').trim())
-      .filter(Boolean),
+    existingRows.map(row => getCellValue(row, props.dedupeKey as string).trim()).filter(Boolean)
   )
 
   const mergedRows = [...existingRows]
   for (const row of importedRows) {
-    const key = String(row[props.dedupeKey] ?? '').trim()
+    const key = getCellValue(row, props.dedupeKey).trim()
     if (!key || existingKeys.has(key)) {
       continue
     }
@@ -270,14 +295,14 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 </script>
 
 <style scoped>
-.constraint-table {
-  --translation-constraint-table-field-border: #cfd6e4;
-  --translation-constraint-table-field-focus-border: #5b73f2;
-  --translation-constraint-table-field-focus-ring: rgba(88, 125, 255, .18);
-  --translation-constraint-table-field-text: #1f2430;
+.translation-constraint-table {
+  --translation-constraint-table-field-border: var(--color-border-input);
+  --translation-constraint-table-field-focus-border: var(--color-border-brand);
+  --translation-constraint-table-field-focus-ring: var(--color-focus-brand-subtle);
+  --translation-constraint-table-field-text: var(--color-text-strong);
 }
 
-.constraint-toolbar {
+.translation-constraint-table__toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -285,49 +310,24 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   flex-wrap: wrap;
 }
 
-.constraint-search {
+.translation-constraint-table__search-field {
   flex: 1 1 260px;
   min-width: 220px;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--translation-constraint-table-field-border);
-  border-radius: 8px;
-  background: var(--color-surface-base);
-  color: var(--translation-constraint-table-field-text);
-  font-size: 14px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  box-sizing: border-box;
 }
 
-.constraint-search:focus {
-  outline: none;
-  border-color: var(--translation-constraint-table-field-focus-border);
-  box-shadow: 0 0 0 2px var(--translation-constraint-table-field-focus-ring);
-}
-
-.constraint-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.hidden-input {
-  display: none;
-}
-
-.settings-table {
+.translation-constraint-table__table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.settings-table th,
-.settings-table td {
+.translation-constraint-table__table th,
+.translation-constraint-table__table td {
   border: 1px solid var(--color-border-muted);
   padding: 8px;
   vertical-align: top;
 }
 
-.constraint-cell-field {
+.translation-constraint-table__cell-field {
   width: 100%;
   min-height: 40px;
   padding: 0 12px;
@@ -336,27 +336,29 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   background: var(--color-surface-base);
   color: var(--translation-constraint-table-field-text);
   font-size: 14px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   box-sizing: border-box;
 }
 
-.constraint-cell-field:is(textarea) {
+.translation-constraint-table__cell-field:is(textarea) {
   min-height: 72px;
   padding: 10px 12px;
   resize: vertical;
 }
 
-.constraint-cell-field:focus {
+.translation-constraint-table__cell-field:focus {
   outline: none;
   border-color: var(--translation-constraint-table-field-focus-border);
   box-shadow: 0 0 0 2px var(--translation-constraint-table-field-focus-ring);
 }
 
-.select-cell {
+.translation-constraint-table__select-cell {
   min-width: 0;
 }
 
-.sortable-header-button {
+.translation-constraint-table__sort-action {
   width: 100%;
   color: inherit;
   font-weight: inherit;
@@ -364,7 +366,7 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   user-select: none;
 }
 
-.action-cell {
+.translation-constraint-table__action-cell {
   width: 88px;
 }
 </style>

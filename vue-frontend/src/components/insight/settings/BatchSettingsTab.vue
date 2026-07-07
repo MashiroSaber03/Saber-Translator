@@ -1,13 +1,27 @@
 <script setup lang="ts">
-
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, computed } from 'vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import { ref, computed, watch } from 'vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
+import type { BatchConfig } from '@/types/insight'
+import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { ARCHITECTURE_OPTIONS, ARCHITECTURE_PRESETS, type CustomLayer } from './types'
+
+const emit = defineEmits<{
+  (e: 'update:config', config: BatchConfig): void
+}>()
+
+const props = defineProps<{
+  syncRequestId?: number
+}>()
 
 const insightStore = useInsightStore()
 
@@ -17,9 +31,9 @@ const architecturePreset = ref(insightStore.config.batch.architecturePreset)
 
 function createDefaultCustomLayers(): CustomLayer[] {
   return [
-    { name: "批量分析", units: 5, align: false },
-    { name: "段落总结", units: 5, align: false },
-    { name: "全书总结", units: 0, align: false }
+    { name: '批量分析', units: 5, align: false },
+    { name: '段落总结', units: 5, align: false },
+    { name: '全书总结', units: 0, align: false },
   ]
 }
 
@@ -27,7 +41,7 @@ function cloneCustomLayers(layers: CustomLayer[]): CustomLayer[] {
   return layers.map(layer => ({
     name: layer.name,
     units: layer.units ?? 5,
-    align: layer.align ?? false
+    align: layer.align ?? false,
   }))
 }
 
@@ -95,7 +109,7 @@ function getLayerUnitsTitle(idx: number): string {
   return idx === 0 ? '每批分析的页数' : '每组包含单元数（0=全部汇总）'
 }
 
-function getConfig() {
+function buildDraftConfig(): BatchConfig {
   return {
     pagesPerBatch: pagesPerBatch.value,
     contextBatchCount: contextBatchCount.value,
@@ -103,12 +117,12 @@ function getConfig() {
     customLayers: customLayers.value.map(l => ({
       name: l.name,
       units: l.units,
-      align: l.align
-    }))
+      align: l.align,
+    })),
   }
 }
 
-function syncFromStore(): void {
+function refreshDraftFromStore(): void {
   pagesPerBatch.value = insightStore.config.batch.pagesPerBatch
   contextBatchCount.value = insightStore.config.batch.contextBatchCount
   architecturePreset.value = insightStore.config.batch.architecturePreset
@@ -120,212 +134,179 @@ function syncFromStore(): void {
   }
 }
 
-defineExpose({ getConfig, syncFromStore })
+function emitConfig(): void {
+  emit('update:config', buildDraftConfig())
+}
+
+watch(
+  [pagesPerBatch, contextBatchCount, architecturePreset, customLayers],
+  emitConfig,
+  { deep: true, immediate: true }
+)
+
+watch(() => props.syncRequestId, () => {
+  refreshDraftFromStore()
+  emitConfig()
+})
 </script>
 
 <template>
-  <div class="insight-settings-content">
-    <p class="settings-hint">配置批量分析的参数，影响分析速度和质量。</p>
+  <InsightSettingsPanel class="batch-settings-tab" description="配置批量分析的参数，影响分析速度和质量。">
+    <UiFormGrid>
+      <UiField
+        variant="settings"
+        label="每批次分析页数"
+        :hint="`每次发送给 VLM 的图片数量，建议 3-5 张。${batchEstimate}`"
+        control-id="insight-batch-pages-per-batch"
+      >
+        <UiNumberField
+          v-model="pagesPerBatch"
+          input-id="insight-batch-pages-per-batch"
+          :min="1"
+          :max="10"
+          @change="onPagesPerBatchChange"
+        />
+      </UiField>
 
-    <div class="insight-settings-field">
-      <label>每批次分析页数</label>
-      <UiInput v-model.number="pagesPerBatch" type="number" min="1" max="10" @change="onPagesPerBatchChange" />
-      <p class="form-hint">每次发送给 VLM 的图片数量，建议 3-5 张。{{ batchEstimate }}</p>
-    </div>
+      <UiField
+        variant="settings"
+        label="上文参考批次数"
+        hint="每批分析时参考前几批的结果作为上下文，0 表示不参考"
+        control-id="insight-batch-context-batch-count"
+      >
+        <UiNumberField
+          v-model="contextBatchCount"
+          input-id="insight-batch-context-batch-count"
+          :min="0"
+          :max="5"
+        />
+      </UiField>
+    </UiFormGrid>
 
-    <div class="insight-settings-field">
-      <label>上文参考批次数</label>
-      <UiInput v-model.number="contextBatchCount" type="number" min="0" max="5" />
-      <p class="form-hint">每批分析时参考前几批的结果作为上下文，0 表示不参考</p>
-    </div>
+    <UiField variant="settings" label="分析架构" :hint="architectureDescription">
+      <UiSelect v-model="architecturePreset" :options="ARCHITECTURE_OPTIONS" />
+    </UiField>
 
-    <div class="insight-settings-field">
-      <label>分析架构</label>
-      <CustomSelect v-model="architecturePreset" :options="ARCHITECTURE_OPTIONS" />
-      <p class="form-hint">{{ architectureDescription }}</p>
-    </div>
-
-    <div v-if="showCustomLayersEditor" class="custom-layers-section">
-      <label class="custom-layers-label">自定义层级</label>
-      <div class="custom-layers-list">
-        <div
-          v-for="(layer, idx) in customLayers"
-          :key="idx"
-          class="custom-layer-row"
-        >
-          <span class="layer-index">第{{ idx + 1 }}层</span>
-          <UiInput
-            type="text"
-            :value="layer.name"
-            :disabled="!canEditLayerName(idx)"
-            placeholder="层级名称"
-            class="layer-name-input"
-            @change="updateCustomLayer(idx, 'name', ($event.target as HTMLInputElement).value)"
-          />
-          <UiInput
-            type="number"
-            :value="layer.units"
-            :disabled="!canEditLayerUnits(idx)"
-            :title="getLayerUnitsTitle(idx)"
-            min="0" max="20"
-            class="layer-units-input"
-            @change="updateCustomLayer(idx, 'units', parseInt(($event.target as HTMLInputElement).value) || 0)"
-          />
-          <div class="layer-align-label">
-            <UiCheckbox
-              :model-value="layer.align"
-              class="layer-align-checkbox"
-              label="章节对齐"
-              @update:model-value="updateCustomLayer(idx, 'align', $event)"
+    <div v-if="showCustomLayersEditor" class="batch-settings-tab__custom-layers">
+      <UiField variant="settings" label="自定义层级" hint="第一层固定为批量分析，最后一层固定为全书总结。中间可添加任意汇总层级。">
+        <div class="batch-settings-tab__custom-layer-list">
+          <div
+            v-for="(layer, idx) in customLayers"
+            :key="idx"
+            class="batch-settings-tab__layer-row"
+          >
+            <span class="batch-settings-tab__layer-index">第{{ idx + 1 }}层</span>
+            <UiInput
+              type="text"
+              :model-value="layer.name"
+              :disabled="!canEditLayerName(idx)"
+              placeholder="层级名称"
+              class="batch-settings-tab__layer-name-input"
+              @update:model-value="updateCustomLayer(idx, 'name', $event)"
             />
+            <UiNumberField
+              :model-value="layer.units ?? 0"
+              :disabled="!canEditLayerUnits(idx)"
+              :input-id="`insight-batch-layer-units-${idx}`"
+              :title="getLayerUnitsTitle(idx)"
+              :min="0"
+              :max="20"
+              size="xs"
+              @change="updateCustomLayer(idx, 'units', $event)"
+            />
+            <div class="batch-settings-tab__layer-align-label">
+              <UiCheckbox
+                :model-value="layer.align"
+                class="batch-settings-tab__layer-align-checkbox"
+                label="章节对齐"
+                @update:model-value="updateCustomLayer(idx, 'align', $event)"
+              />
+            </div>
+            <UiButton v-if="canDeleteLayer(idx)" variant="danger" type="button" size="sm" @click="removeCustomLayer(idx)">
+              <UiIcon name="trash" />
+              <span>删除</span>
+            </UiButton>
           </div>
-          <UiButton variant="toolbar" v-if="canDeleteLayer(idx)" type="button" class="layer-delete-btn" @click="removeCustomLayer(idx)">删除</UiButton>
         </div>
-      </div>
-      <UiButton variant="secondary" type="button" class="layer-add-btn" @click="addCustomLayer" size="sm">+ 添加层级</UiButton>
-      <p class="form-hint">第一层固定为批量分析，最后一层固定为全书总结。中间可添加任意汇总层级。</p>
+        <ProductActionRow aria-label="自定义层级操作" justify="start">
+          <UiButton variant="secondary" type="button" @click="addCustomLayer" size="sm">
+            <UiIcon name="plus" />
+            <span>添加层级</span>
+          </UiButton>
+        </ProductActionRow>
+      </UiField>
     </div>
 
-    <div class="batch-info-box">
-      <h4>当前架构预览</h4>
-      <ul class="layers-preview-list">
-        <li v-for="(layer, idx) in previewLayers" :key="idx">
-          <strong>第{{ idx + 1 }}层 - {{ layer.name }}</strong>
+    <ProductStatusBanner
+      class="batch-settings-tab__summary-banner"
+      title="当前架构预览"
+      tone="neutral"
+      icon-name="list"
+      role="note"
+    >
+      <ol class="batch-settings-tab__layers-preview">
+        <li
+          v-for="(layer, idx) in previewLayers"
+          :key="idx"
+          class="batch-settings-tab__preview-layer"
+        >
+          <strong class="batch-settings-tab__preview-layer-title">第{{ idx + 1 }}层 - {{ layer.name }}</strong>
           {{ layer.units > 0 ? ` - 每${layer.units}个单元汇总` : ' - 汇总全部' }}
-          <span v-if="layer.align" class="align-badge">(按章节对齐)</span>
+          <span v-if="layer.align" class="batch-settings-tab__align-badge">(按章节对齐)</span>
         </li>
-      </ul>
-    </div>
+      </ol>
+    </ProductStatusBanner>
 
-    <div class="batch-estimate-box">
-      <p>当前配置：每 <strong>{{ pagesPerBatch }}</strong> 页一批</p>
-    </div>
-  </div>
+    <ProductStatusBanner
+      class="batch-settings-tab__config-banner"
+      title="当前配置"
+      tone="info"
+      icon-name="settings"
+      role="note"
+    >
+      每 <strong class="batch-settings-tab__config-value">{{ pagesPerBatch }}</strong> 页一批
+    </ProductStatusBanner>
+  </InsightSettingsPanel>
 </template>
 
 <style scoped>
-.insight-settings-content {
-  --batch-settings-tab-estimate-border: rgba(99, 102, 241, .2);
-  --batch-settings-tab-estimate-background-end: rgba(99, 102, 241, .05);
-  --batch-settings-tab-delete-background: #ef4444;
-  --batch-settings-tab-delete-hover-background: #dc2626;
-  --ui-input-padding: 10px 12px;
-  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-input-radius: 6px;
-  --ui-input-font-size: 14px;
-  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-input-color: var(--color-text-default);
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
-  --ui-button-padding: 10px 16px;
-  --ui-button-radius: 6px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-
-  padding: 16px 0;
-  min-height: 300px;
-}
-
-.insight-settings-content .settings-hint {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 13px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: var(--color-surface-muted);
-  border-radius: 4px;
-}
-
-.insight-settings-content .insight-settings-field {
-  margin-bottom: 16px;
-}
-
-.insight-settings-content .insight-settings-field label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--color-text-default);
-}
-
-.insight-settings-content .form-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.insight-settings-content .batch-info-box {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 8px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .batch-info-box h4 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-default);
-}
-
-.insight-settings-content .layers-preview-list {
+.batch-settings-tab__layers-preview {
   margin: 0;
   padding-left: 20px;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.insight-settings-content .layers-preview-list li {
+.batch-settings-tab__preview-layer {
   margin-bottom: 4px;
 }
 
-.insight-settings-content .align-badge {
+.batch-settings-tab__align-badge {
   color: var(--color-text-brand);
   font-size: 12px;
 }
 
-.insight-settings-content .batch-estimate-box {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: linear-gradient(135deg, var(--color-focus-brand-soft), var(--batch-settings-tab-estimate-background-end));
-  border-radius: 6px;
-  border: 1px solid var(--batch-settings-tab-estimate-border);
-}
-
-.insight-settings-content .batch-estimate-box p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-default);
-}
-
-.insight-settings-content .batch-estimate-box strong {
+.batch-settings-tab__config-value {
   color: var(--color-text-brand);
 }
 
-.custom-layers-section {
+.batch-settings-tab__summary-banner {
   margin-top: 16px;
 }
 
-.insight-settings-content .custom-layers-label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  font-size: 14px;
+.batch-settings-tab__config-banner {
+  margin-top: 12px;
 }
 
-.insight-settings-content .custom-layers-list {
+.batch-settings-tab__custom-layers {
+  margin-top: 16px;
+}
+
+.batch-settings-tab__custom-layer-list {
   margin-bottom: 8px;
 }
 
-.insight-settings-content .custom-layer-row {
+.batch-settings-tab__layer-row {
   display: flex;
   flex-direction: row;
   gap: 8px;
@@ -337,29 +318,17 @@ defineExpose({ getConfig, syncFromStore })
   border: 1px solid var(--color-border-default);
 }
 
-.insight-settings-content .layer-index {
+.batch-settings-tab__layer-index {
   min-width: 50px;
   color: var(--color-text-secondary);
   font-size: 13px;
 }
 
-.insight-settings-content .layer-name-input {
+.batch-settings-tab__layer-name-input {
   flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 6px;
-  font-size: 14px;
 }
 
-.insight-settings-content .layer-units-input {
-  width: 70px;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.insight-settings-content .layer-align-label {
+.batch-settings-tab__layer-align-label {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -370,27 +339,7 @@ defineExpose({ getConfig, syncFromStore })
   text-align: center;
 }
 
-.insight-settings-content .layer-align-checkbox {
+.batch-settings-tab__layer-align-checkbox {
   align-items: center;
-}
-
-.insight-settings-content .layer-delete-btn {
-  padding: 6px 12px;
-  background: var(--batch-settings-tab-delete-background);
-  color: var(--color-text-inverse);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.insight-settings-content .layer-delete-btn:hover {
-  background: var(--batch-settings-tab-delete-hover-background);
-}
-
-.insight-settings-content .layer-add-btn {
-  margin-top: 4px;
-  border: 1px solid var(--color-border-default);
 }
 </style>

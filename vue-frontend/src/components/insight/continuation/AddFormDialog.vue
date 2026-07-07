@@ -1,8 +1,14 @@
 <template>
-  <ContinuationDialogShell title="➕ 新增形态" @close="close">
+  <ContinuationDialogShell title="新增形态" @close="close">
     <ContinuationDialogForm>
-      <ContinuationDialogField label="形态名称" required :error="formNameError">
+      <ContinuationDialogField
+        label="形态名称"
+        control-id="continuationAddFormName"
+        required
+        :error="formNameError"
+      >
         <UiInput
+          id="continuationAddFormName"
           v-model="formName"
           type="text"
           aria-label="形态名称"
@@ -12,10 +18,12 @@
         />
       </ContinuationDialogField>
 
-      <ContinuationDialogField label="形态描述（可选）">
+      <ContinuationDialogField label="形态描述（可选）" control-id="continuationAddFormDescription">
         <UiTextarea
+          id="continuationAddFormDescription"
           v-model="description"
           rows="2"
+          variant="panel"
           aria-label="形态描述（可选）"
           class="continuation-dialog__form-input"
           placeholder="简单描述该形态的特征..."
@@ -31,7 +39,8 @@
           :disabled="!formName.trim() || isAdding"
           @click="add"
         >
-          {{ isAdding ? '添加中...' : '✓ 确认添加' }}
+          <UiIcon v-if="!isAdding" name="check" size="15" />
+          <span>{{ isAdding ? '添加中...' : '确认添加' }}</span>
         </UiButton>
       </ContinuationDialogActions>
     </template>
@@ -43,6 +52,7 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import { onBeforeUnmount, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
 import ContinuationDialogField from './ContinuationDialogField.vue'
 import ContinuationDialogForm from './ContinuationDialogForm.vue'

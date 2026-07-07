@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   readonly?: boolean
   error?: boolean | string
   size?: 'lg' | 'md' | 'sm' | 'xs'
+  variant?: 'default' | 'editor' | 'studio' | 'embedded'
 }>(), {
   modelValue: undefined,
   value: undefined,
@@ -23,6 +24,7 @@ const props = withDefaults(defineProps<{
   readonly: false,
   error: false,
   size: 'md',
+  variant: 'default',
 })
 
 const emit = defineEmits<{
@@ -31,6 +33,7 @@ const emit = defineEmits<{
 }>()
 
 const attrs = useAttrs()
+const inputRef = ref<HTMLInputElement | null>(null)
 const isComposing = ref(false)
 const inputValue = computed(() => props.modelValue ?? props.value ?? '')
 const textCompositionInputTypes = new Set([
@@ -69,13 +72,20 @@ function handleCompositionEnd(event: CompositionEvent) {
   target.composing = false
   target.dispatchEvent(new Event('input', { bubbles: true }))
 }
+
+function focus() {
+  inputRef.value?.focus()
+}
+
+defineExpose({ focus })
 </script>
 
 <template>
   <input
+    ref="inputRef"
     v-bind="attrs"
     class="ui-input"
-    :class="[`ui-input--${size}`, { 'ui-input--error': Boolean(error) }]"
+    :class="[`ui-input--${size}`, `ui-input--${variant}`, { 'ui-input--error': Boolean(error) }]"
     :value="inputValue"
     :checked="type === 'checkbox' ? checked ?? Boolean(modelValue) : undefined"
     :type="type"
@@ -145,6 +155,46 @@ function handleCompositionEnd(event: CompositionEvent) {
   min-height: 28px;
   padding: 4px 8px;
   font-size: 0.78rem;
+}
+
+:where(.ui-input--editor) {
+  border: var(--ui-input-editor-border, 1px solid var(--color-border-input));
+  background: var(--ui-input-editor-background, var(--color-surface-base));
+  color: var(--ui-input-editor-color, var(--color-text-strong));
+}
+
+:where(.ui-input--editor):focus {
+  border-color: var(--ui-input-editor-focus-border, var(--color-border-brand-gradient));
+  box-shadow: 0 0 0 3px var(--ui-input-editor-focus-shadow, color-mix(in srgb, var(--color-action-brand) 16%, transparent));
+}
+
+:where(.ui-input--studio) {
+  min-height: 38px;
+  padding: var(--ui-input-studio-padding, 10px 12px);
+  border: var(--ui-input-studio-border, 1px solid var(--color-border-muted));
+  border-radius: var(--ui-input-studio-radius, 14px);
+  background: var(--ui-input-studio-background, var(--color-surface-input, var(--color-surface-card)));
+  color: var(--ui-input-studio-color, var(--color-text-default));
+  font-size: var(--ui-input-studio-font-size, 13px);
+}
+
+:where(.ui-input--studio.ui-input--lg) {
+  min-height: 44px;
+  padding: var(--ui-input-studio-lg-padding, 12px 14px);
+  border-radius: var(--ui-input-studio-lg-radius, 16px);
+}
+
+:where(.ui-input--studio):focus {
+  border-color: var(--ui-input-studio-focus-border, var(--color-border-brand));
+  box-shadow: 0 0 0 3px var(--ui-input-studio-focus-shadow, var(--color-focus-brand-soft));
+}
+
+:where(.ui-input--embedded) {
+  padding: var(--ui-input-embedded-padding, 8px);
+  border: var(--ui-input-embedded-border, none);
+  border-radius: var(--ui-input-embedded-radius, 0);
+  background: var(--ui-input-embedded-background, transparent);
+  font-size: var(--ui-input-embedded-font-size, 14px);
 }
 
 :where(.ui-input--error) {

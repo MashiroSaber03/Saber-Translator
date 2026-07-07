@@ -1,12 +1,18 @@
 <script setup lang="ts">
-
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
-import { ref, computed, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onUnmounted, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { PageAnalysisData } from '@/api/insight'
+import { triggerBlobDownload } from '@/utils/browserDownload'
 
 const insightStore = useInsightStore()
 
@@ -15,6 +21,8 @@ const isLoading = ref(false)
 const isReanalyzing = ref(false)
 const pendingReanalyzePage = ref<number | null>(null)
 const showImagePreview = ref(false)
+const isPageImageUnavailable = ref(false)
+const imagePreviewLayer = ref<ComponentPublicInstance | null>(null)
 const errorMessage = ref('')
 let pageDetailRequestSequence = 0
 let isPageDetailMounted = true
@@ -159,8 +167,15 @@ async function reanalyzePage(): Promise<void> {
   }
 }
 
-function openImagePreview(): void {
+async function openImagePreview(): Promise<void> {
+  if (isPageImageUnavailable.value || !pageImageUrl.value) return
   showImagePreview.value = true
+  await nextTick()
+
+  const previewElement = imagePreviewLayer.value?.$el
+  if (previewElement instanceof HTMLElement) {
+    previewElement.focus()
+  }
 }
 
 function closeImagePreview(): void {
@@ -187,6 +202,11 @@ function handlePreviewKeydown(event: KeyboardEvent): void {
   }
 }
 
+function handlePageImageError(): void {
+  isPageImageUnavailable.value = true
+  closeImagePreview()
+}
+
 const isExporting = ref(false)
 
 async function exportPageData(): Promise<void> {
@@ -200,18 +220,18 @@ async function exportPageData(): Promise<void> {
     let markdown = `# 第 ${selectedPageNum.value} 页分析数据\n\n`
 
     if (pageAnalysis.value.page_summary) {
-      markdown += `## 📝 页面摘要\n\n${pageAnalysis.value.page_summary}\n\n`
+      markdown += `## 页面摘要\n\n${pageAnalysis.value.page_summary}\n\n`
     }
 
     if (pageAnalysis.value.scene) {
-      markdown += `## 🎬 场景\n\n${pageAnalysis.value.scene}\n\n`
+      markdown += `## 场景\n\n${pageAnalysis.value.scene}\n\n`
     }
     if (pageAnalysis.value.mood) {
-      markdown += `## 🎭 氛围\n\n${pageAnalysis.value.mood}\n\n`
+      markdown += `## 氛围\n\n${pageAnalysis.value.mood}\n\n`
     }
 
     if (dialogues.value.length > 0) {
-      markdown += `## 💬 对话内容\n\n`
+      markdown += `## 对话内容\n\n`
       for (const d of dialogues.value) {
         markdown += `**${d.speaker}**: ${d.text}\n\n`
         if (d.originalText) {
@@ -221,15 +241,7 @@ async function exportPageData(): Promise<void> {
     }
 
     const blob = new Blob([markdown], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    try {
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`
-      a.click()
-    } finally {
-      URL.revokeObjectURL(url)
-    }
+    triggerBlobDownload(blob, `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`)
 
   } catch {
     errorMessage.value = '导出失败'
@@ -241,6 +253,10 @@ async function exportPageData(): Promise<void> {
 watch(selectedPageNum, () => {
   loadPageDetail()
 }, { immediate: true })
+
+watch(pageImageUrl, () => {
+  isPageImageUnavailable.value = false
+})
 
 watch(() => insightStore.dataRefreshKey, async (newKey) => {
   if (newKey <= 0 || !selectedPageNum.value) return
@@ -258,113 +274,168 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="workspace-section page-detail-section">
-    <h3 class="section-title">📄 页面详情</h3>
+  <div class="page-detail-panel">
+    <ProductSectionHeader title="页面详情" icon-name="file-text" size="sm" />
 
-    <div class="page-detail">
-      <div v-if="!selectedPageNum" class="placeholder-text">
-        <div class="empty-icon">📄</div>
-        <p>点击左侧导航树中的页面查看详情</p>
-      </div>
+    <div class="page-detail-panel__body">
+      <ProductStatusBanner
+        v-if="!selectedPageNum"
+        tone="neutral"
+        icon-name="file-text"
+        title="选择页面查看详情"
+      >
+        点击左侧导航树中的页面查看详情。
+      </ProductStatusBanner>
 
-      <div v-else-if="isLoading" class="loading-state">
-        <div class="loading-spinner"></div>
+      <div v-else-if="isLoading" class="page-detail-panel__loading-state">
+        <UiSpinner
+          class="page-detail-panel__loading-indicator"
+          label="加载页面详情"
+          :decorative="false"
+          :size="32"
+        />
         <p>加载中...</p>
       </div>
 
-      <div v-else class="page-detail-content">
-        <div class="page-detail-header">
-          <h4>📄 第 {{ selectedPageNum }} 页</h4>
-          <div class="page-nav-buttons">
+      <div v-else class="page-detail-panel__content">
+        <div class="page-detail-panel__header">
+          <h4 class="page-detail-panel__title">
+            <UiIcon name="file-text" />
+            <span>第 {{ selectedPageNum }} 页</span>
+          </h4>
+          <div class="page-detail-panel__nav-buttons">
             <UiButton
-              variant="toolbar"
-              class="btn-page-nav"
-              :class="{ disabled: !hasPrevPage }"
+              variant="secondary"
+              size="xs"
               :disabled="!hasPrevPage"
               title="上一页 (←)"
               @click="navigatePrev"
             >
-              ◀ 上一张
+              <UiIcon name="chevron-left" size="14" />
+              <span>上一张</span>
             </UiButton>
-            <span class="page-indicator">{{ selectedPageNum }} / {{ totalPages }}</span>
+            <span class="page-detail-panel__page-indicator">{{ selectedPageNum }} / {{ totalPages }}</span>
             <UiButton
-              variant="toolbar"
-              class="btn-page-nav"
-              :class="{ disabled: !hasNextPage }"
+              variant="secondary"
+              size="xs"
               :disabled="!hasNextPage"
               title="下一页 (→)"
               @click="navigateNext"
             >
-              下一张 ▶
+              <span>下一张</span>
+              <UiIcon name="chevron-right" size="14" />
             </UiButton>
           </div>
         </div>
 
-        <div v-if="errorMessage" class="error-message">
-          ⚠️ {{ errorMessage }}
-        </div>
+        <ProductStatusBanner
+          v-if="errorMessage"
+          class="page-detail-panel__error-feedback"
+          icon-name="alert-triangle"
+          role="alert"
+          tone="danger"
+        >
+          {{ errorMessage }}
+        </ProductStatusBanner>
 
         <UiButton
           variant="toolbar"
-          class="page-detail-image"
-          :aria-label="`预览第 ${selectedPageNum} 页图片`"
+          class="page-detail-panel__image-trigger"
+          :aria-label="isPageImageUnavailable ? `第 ${selectedPageNum} 页图片加载失败` : `预览第 ${selectedPageNum} 页图片`"
+          :disabled="isPageImageUnavailable || !pageImageUrl"
           @click="openImagePreview"
         >
           <img
+            v-if="!isPageImageUnavailable"
+            class="page-detail-panel__image"
             :src="pageImageUrl"
             :alt="`第${selectedPageNum}页`"
-            @error="($event.target as HTMLImageElement).style.display = 'none'"
+            @error="handlePageImageError"
           >
-          <div class="image-overlay">
-            <span class="zoom-hint">🔍 点击放大</span>
+          <div
+            v-else
+            class="page-detail-panel__image-fallback"
+            role="img"
+            :aria-label="`第${selectedPageNum}页图片加载失败`"
+          >
+            <UiIcon name="image" size="28" />
+            <span>图片加载失败</span>
+          </div>
+          <div v-if="!isPageImageUnavailable" class="page-detail-panel__image-overlay">
+            <span class="page-detail-panel__zoom-hint">
+              <UiIcon name="search" />
+              <span>点击放大</span>
+            </span>
           </div>
         </UiButton>
 
-        <div class="analysis-status-tag" :class="{ analyzed: isPageAnalyzed }">
-          {{ isPageAnalyzed ? '✓ 已分析' : '○ 未分析' }}
+        <div
+          class="page-detail-panel__analysis-status"
+          :class="{ 'page-detail-panel__analysis-status--analyzed': isPageAnalyzed }"
+        >
+          {{ isPageAnalyzed ? '已分析' : '未分析' }}
         </div>
 
-        <div v-if="pageAnalysis?.page_summary" class="page-summary">
-          <h5>📝 页面摘要</h5>
-          <p>{{ pageAnalysis.page_summary }}</p>
+        <div v-if="pageAnalysis?.page_summary" class="page-detail-panel__summary">
+          <h5 class="page-detail-panel__summary-title">
+            <UiIcon name="file-text" />
+            <span>页面摘要</span>
+          </h5>
+          <p class="page-detail-panel__summary-text">{{ pageAnalysis.page_summary }}</p>
         </div>
-        <div v-else class="page-summary empty">
-          <p>此页尚未分析，点击下方按钮开始分析</p>
-        </div>
+        <ProductStatusBanner
+          v-else
+          class="page-detail-panel__summary-feedback"
+          icon-name="file-text"
+          role="note"
+          title="此页尚未分析"
+          tone="neutral"
+        >
+          点击下方按钮开始分析。
+        </ProductStatusBanner>
 
-        <div v-if="sceneDescription || moodDescription" class="scene-mood-info">
-          <div v-if="sceneDescription" class="info-item">
-            <span class="info-label">🎬 场景：</span>
-            <span class="info-value">{{ sceneDescription }}</span>
+        <div v-if="sceneDescription || moodDescription" class="page-detail-panel__scene-mood">
+          <div v-if="sceneDescription" class="page-detail-panel__info-item">
+            <span class="page-detail-panel__info-label">场景：</span>
+            <span class="page-detail-panel__info-value">{{ sceneDescription }}</span>
           </div>
-          <div v-if="moodDescription" class="info-item">
-            <span class="info-label">🎭 氛围：</span>
-            <span class="info-value">{{ moodDescription }}</span>
+          <div v-if="moodDescription" class="page-detail-panel__info-item">
+            <span class="page-detail-panel__info-label">氛围：</span>
+            <span class="page-detail-panel__info-value">{{ moodDescription }}</span>
           </div>
         </div>
 
-        <div v-if="dialogues.length > 0" class="dialogues-section">
-          <h5>💬 对话内容 ({{ dialogues.length }})</h5>
+        <div v-if="dialogues.length > 0" class="page-detail-panel__dialogues">
+          <h5 class="page-detail-panel__dialogues-title">
+            <UiIcon name="message" />
+            <span>对话内容 ({{ dialogues.length }})</span>
+          </h5>
           <div
             v-for="(dialogue, index) in dialogues"
             :key="index"
-            class="dialogue-item"
+            class="page-detail-panel__dialogue-item"
           >
-            <div class="dialogue-speaker">
-              <span class="speaker-icon">👤</span>
+            <div class="page-detail-panel__dialogue-speaker">
               {{ dialogue.speaker }}
             </div>
-            <div class="dialogue-text">{{ dialogue.text }}</div>
-            <div v-if="dialogue.originalText" class="dialogue-original">
-              <span class="original-label">原文：</span>{{ dialogue.originalText }}
+            <div class="page-detail-panel__dialogue-text">{{ dialogue.text }}</div>
+            <div v-if="dialogue.originalText" class="page-detail-panel__dialogue-original">
+              <span class="page-detail-panel__original-label">原文：</span>{{ dialogue.originalText }}
             </div>
           </div>
         </div>
-        <div v-else-if="isPageAnalyzed" class="dialogues-section empty">
-          <p>此页没有检测到对话内容</p>
-        </div>
+        <ProductStatusBanner
+          v-else-if="isPageAnalyzed"
+          class="page-detail-panel__dialogue-feedback"
+          icon-name="message"
+          role="note"
+          title="此页没有检测到对话内容"
+          tone="neutral"
+        >
+          此页已完成分析，但没有识别到可展示的对话。
+        </ProductStatusBanner>
 
-        <div class="page-detail-actions">
+        <div class="page-detail-panel__actions">
           <UiButton
             variant="secondary"
             size="sm"
@@ -372,8 +443,16 @@ onUnmounted(() => {
             :loading="isReanalyzing || isReanalyzeTaskRunning"
             @click="reanalyzePage"
           >
-            <span v-if="isReanalyzing || isReanalyzeTaskRunning" class="btn-spinner"></span>
-            {{ isReanalyzing ? '启动中...' : (isReanalyzeTaskRunning ? '分析中...' : '🔄 重新分析') }}
+            <UiSpinner
+              v-if="isReanalyzing || isReanalyzeTaskRunning"
+              class="page-detail-panel__action-spinner"
+            />
+            <span v-if="isReanalyzing">启动中...</span>
+            <span v-else-if="isReanalyzeTaskRunning">分析中...</span>
+            <template v-else>
+              <UiIcon name="refresh" />
+              <span>重新分析</span>
+            </template>
           </UiButton>
           <UiButton
             v-if="isPageAnalyzed"
@@ -382,7 +461,11 @@ onUnmounted(() => {
             :disabled="isExporting"
             @click="exportPageData"
           >
-            {{ isExporting ? '导出中...' : '📄 导出此页' }}
+            <span v-if="isExporting">导出中...</span>
+            <template v-else>
+              <UiIcon name="file-text" />
+              <span>导出此页</span>
+            </template>
           </UiButton>
         </div>
       </div>
@@ -390,34 +473,51 @@ onUnmounted(() => {
 
     <OverlayLayer
       v-if="showImagePreview"
-      class="image-preview-modal"
+      ref="imagePreviewLayer"
+      class="page-detail-panel__image-preview-modal"
       tabindex="0"
       @backdrop="closeImagePreview"
       @keydown="handlePreviewKeydown"
     >
-      <div class="image-preview-content" @click.stop>
-        <UiButton variant="toolbar" class="preview-close" title="关闭 (Esc)" @click="closeImagePreview">&times;</UiButton>
-        <img :src="pageImageUrl" :alt="`第${selectedPageNum}页`">
-        <div class="preview-nav">
-          <UiButton
-            variant="toolbar"
-            class="preview-nav-btn prev"
+      <div class="page-detail-panel__image-preview-content" @click.stop>
+        <UiIconButton
+          class="page-detail-panel__preview-close"
+          label="关闭图片预览"
+          title="关闭 (Esc)"
+          variant="inverse"
+          size="xl"
+          shape="circle"
+          @click="closeImagePreview"
+        >
+          <UiIcon name="x" size="24" />
+        </UiIconButton>
+        <img class="page-detail-panel__preview-image" :src="pageImageUrl" :alt="`第${selectedPageNum}页`">
+        <div class="page-detail-panel__preview-nav">
+          <UiIconButton
+            class="page-detail-panel__preview-nav-button page-detail-panel__preview-nav-button--prev"
             :disabled="!hasPrevPage"
+            label="预览上一页"
             title="上一页 (←)"
+            variant="inverse"
+            size="lg"
+            shape="circle"
             @click.stop="navigatePrev"
           >
-            ◀
-          </UiButton>
-          <span class="preview-page-info">{{ selectedPageNum }} / {{ totalPages }}</span>
-          <UiButton
-            variant="toolbar"
-            class="preview-nav-btn next"
+            <UiIcon name="chevron-left" size="20" />
+          </UiIconButton>
+          <span class="page-detail-panel__preview-page-info">{{ selectedPageNum }} / {{ totalPages }}</span>
+          <UiIconButton
+            class="page-detail-panel__preview-nav-button page-detail-panel__preview-nav-button--next"
             :disabled="!hasNextPage"
+            label="预览下一页"
             title="下一页 (→)"
+            variant="inverse"
+            size="lg"
+            shape="circle"
             @click.stop="navigateNext"
           >
-            ▶
-          </UiButton>
+            <UiIcon name="chevron-right" size="20" />
+          </UiIconButton>
         </div>
       </div>
     </OverlayLayer>
@@ -425,111 +525,69 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.workspace-section.page-detail-section {
-  --page-detail-error-background: rgba(239, 68, 68, .1);
-  --page-detail-image-overlay-background: rgba(0, 0, 0, 0);
-  --page-detail-image-overlay-hover-background: rgba(0, 0, 0, .3);
-  --page-detail-analyzed-background: rgba(34, 197, 94, .1);
-  --page-detail-preview-backdrop: rgba(0, 0, 0, .95);
-  --page-detail-preview-control-background: rgba(255, 255, 255, .2);
-  --page-detail-preview-control-hover-background: rgba(255, 255, 255, .3);
-  --page-detail-error-text: #ef4444;
-  --page-detail-success-text: #22c55e;
-  --ui-button-padding: 10px 18px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--insight-action-primary);
-  --ui-button-primary-hover-background: var(--insight-action-primary-strong);
-  --ui-button-secondary-background: var(--insight-surface-tertiary);
-  --ui-button-secondary-color: var(--insight-text-primary);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted);
-  --ui-button-secondary-hover-background: var(--color-border-muted);
-  --ui-button-sm-padding: 8px 14px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
+.page-detail-panel {
+  --page-detail-image-fallback-background: var(--insight-surface-secondary);
+  --page-detail-image-fallback-border: var(--color-border-muted);
+  --page-detail-image-fallback-text: var(--insight-text-secondary);
+  --page-detail-image-overlay-background: transparent;
+  --page-detail-image-overlay-hover-background: var(--color-overlay-scrim-subtle);
+  --page-detail-analyzed-background: color-mix(in srgb, var(--color-status-success) 12%, transparent);
+  --page-detail-preview-backdrop: color-mix(in srgb, var(--color-overlay-backdrop-solid) 95%, transparent);
+  --page-detail-success-text: var(--color-status-success);
 
   padding: 20px 18px;
 }
 
-.page-detail-section .placeholder-text {
+.page-detail-panel__loading-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
   text-align: center;
   padding: 24px;
   color: var(--insight-text-secondary);
 }
 
-.page-detail-section .placeholder-text p {
-  max-width: 220px;
-  margin: 0 auto;
+.page-detail-panel__loading-indicator {
+  color: var(--insight-action-primary);
 }
 
-.page-detail-section .empty-icon {
-  font-size: 48px;
+.page-detail-panel__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 12px;
   margin-bottom: 12px;
 }
 
-.page-detail-section .loading-state {
-  text-align: center;
-  padding: 24px;
-  color: var(--insight-text-secondary);
-}
-
-.page-detail-section .loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--color-border-muted);
-  border-top-color: var(--insight-action-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 12px;
-}
-
-.page-detail-section .page-detail-header h4 {
+.page-detail-panel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-size: 16px;
 }
 
-.page-detail-section .page-nav-buttons {
+.page-detail-panel__nav-buttons {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.page-detail-section .btn-page-nav {
-  padding: 4px 12px;
-  font-size: 12px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 4px;
-  background: var(--insight-surface-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.page-detail-section .btn-page-nav:hover:not(.disabled) {
-  background: var(--insight-surface-hover);
-  border-color: var(--insight-action-primary);
-}
-
-.page-detail-section .btn-page-nav.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.page-detail-section .page-indicator {
+.page-detail-panel__page-indicator {
   font-size: 12px;
   color: var(--insight-text-secondary);
   min-width: 60px;
   text-align: center;
 }
 
-.page-detail-section .error-message {
-  font-size: 12px;
-  color: var(--page-detail-error-text);
-  background: var(--page-detail-error-background);
-  padding: 8px 12px;
-  border-radius: 4px;
+.page-detail-panel__error-feedback {
   margin-bottom: 12px;
 }
 
-.page-detail-section .page-detail-image {
+.page-detail-panel__image-trigger {
   position: relative;
   display: block;
   width: 100%;
@@ -543,13 +601,30 @@ onUnmounted(() => {
   text-align: left;
 }
 
-.page-detail-section .page-detail-image img {
+.page-detail-panel__image-trigger:disabled {
+  cursor: not-allowed;
+}
+
+.page-detail-panel__image {
   max-width: 100%;
   display: block;
   border-radius: 4px;
 }
 
-.page-detail-section .image-overlay {
+.page-detail-panel__image-fallback {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed var(--page-detail-image-fallback-border);
+  border-radius: 4px;
+  background: var(--page-detail-image-fallback-background);
+  color: var(--page-detail-image-fallback-text);
+  font-size: 13px;
+}
+
+.page-detail-panel__image-overlay {
   position: absolute;
   inset: 0;
   background: var(--page-detail-image-overlay-background);
@@ -559,22 +634,27 @@ onUnmounted(() => {
   transition: background 0.2s;
 }
 
-.page-detail-section .page-detail-image:hover .image-overlay {
+.page-detail-panel__image-trigger:hover .page-detail-panel__image-overlay,
+.page-detail-panel__image-trigger:focus-visible .page-detail-panel__image-overlay {
   background: var(--page-detail-image-overlay-hover-background);
 }
 
-.page-detail-section .zoom-hint {
+.page-detail-panel__zoom-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-text-inverse);
   font-size: 14px;
   opacity: 0;
   transition: opacity 0.2s;
 }
 
-.page-detail-section .page-detail-image:hover .zoom-hint {
+.page-detail-panel__image-trigger:hover .page-detail-panel__zoom-hint,
+.page-detail-panel__image-trigger:focus-visible .page-detail-panel__zoom-hint {
   opacity: 1;
 }
 
-.page-detail-section .analysis-status-tag {
+.page-detail-panel__analysis-status {
   display: inline-block;
   font-size: 11px;
   padding: 2px 8px;
@@ -584,33 +664,40 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
-.page-detail-section .analysis-status-tag.analyzed {
+.page-detail-panel__analysis-status--analyzed {
   background: var(--page-detail-analyzed-background);
   color: var(--page-detail-success-text);
 }
 
-.page-detail-section .page-summary {
+.page-detail-panel__summary {
   margin-bottom: 16px;
 }
 
-.page-detail-section .page-summary h5 {
-  font-size: 14px;
-  margin: 0 0 8px;
+.page-detail-panel__summary-title,
+.page-detail-panel__dialogues-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--insight-text-primary);
 }
 
-.page-detail-section .page-summary p {
+.page-detail-panel__summary-title {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.page-detail-panel__summary-text {
   font-size: 14px;
   line-height: 1.6;
   color: var(--insight-text-secondary);
   margin: 0;
 }
 
-.page-detail-section .page-summary.empty p {
-  font-style: italic;
+.page-detail-panel__summary-feedback {
+  margin-bottom: 16px;
 }
 
-.page-detail-section .scene-mood-info {
+.page-detail-panel__scene-mood {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -620,35 +707,32 @@ onUnmounted(() => {
   border-radius: 6px;
 }
 
-.page-detail-section .info-item {
+.page-detail-panel__info-item {
   font-size: 13px;
 }
 
-.page-detail-section .info-label {
+.page-detail-panel__info-label {
   color: var(--insight-text-secondary);
 }
 
-.page-detail-section .info-value {
+.page-detail-panel__info-value {
   color: var(--insight-text-primary);
 }
 
-.page-detail-section .dialogues-section {
+.page-detail-panel__dialogues {
   margin-bottom: 16px;
 }
 
-.page-detail-section .dialogues-section h5 {
+.page-detail-panel__dialogues-title {
   font-size: 14px;
   margin: 0 0 12px;
-  color: var(--insight-text-primary);
 }
 
-.page-detail-section .dialogues-section.empty p {
-  font-size: 13px;
-  color: var(--insight-text-secondary);
-  font-style: italic;
+.page-detail-panel__dialogue-feedback {
+  margin-bottom: 16px;
 }
 
-.page-detail-section .dialogue-item {
+.page-detail-panel__dialogue-item {
   padding: 10px 12px;
   margin: 8px 0;
   background: var(--insight-surface-secondary);
@@ -656,7 +740,7 @@ onUnmounted(() => {
   border-left: 3px solid var(--insight-action-primary);
 }
 
-.page-detail-section .dialogue-speaker {
+.page-detail-panel__dialogue-speaker {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -666,17 +750,13 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
-.page-detail-section .speaker-icon {
-  font-size: 14px;
-}
-
-.page-detail-section .dialogue-text {
+.page-detail-panel__dialogue-text {
   font-size: 14px;
   line-height: 1.6;
   color: var(--insight-text-primary);
 }
 
-.page-detail-section .dialogue-original {
+.page-detail-panel__dialogue-original {
   font-size: 12px;
   color: var(--insight-text-secondary);
   margin-top: 6px;
@@ -684,28 +764,17 @@ onUnmounted(() => {
   border-top: 1px dashed var(--color-border-muted);
 }
 
-.page-detail-section .original-label {
+.page-detail-panel__original-label {
   font-weight: 500;
 }
 
-.page-detail-section .page-detail-actions {
+.page-detail-panel__actions {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border-muted);
 }
 
-.page-detail-section .btn-spinner {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid currentcolor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-right: 6px;
-}
-
-.page-detail-section .image-preview-modal {
+.page-detail-panel__image-preview-modal {
   background: var(--page-detail-preview-backdrop);
   display: flex;
   align-items: center;
@@ -713,7 +782,7 @@ onUnmounted(() => {
   outline: none;
 }
 
-.page-detail-section .image-preview-content {
+.page-detail-panel__image-preview-content {
   position: relative;
   max-width: 90vw;
   max-height: 90vh;
@@ -722,58 +791,30 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.page-detail-section .image-preview-content img {
+.page-detail-panel__preview-image {
   max-width: 100%;
   max-height: calc(90vh - 60px);
   object-fit: contain;
 }
 
-.page-detail-section .preview-close {
+.page-detail-panel__preview-close {
   position: absolute;
   top: -45px;
   right: 0;
-  background: none;
-  border: none;
-  color: var(--color-text-inverse);
-  font-size: 36px;
-  cursor: pointer;
-  padding: 5px 10px;
-  transition: transform 0.2s;
 }
 
-.page-detail-section .preview-close:hover {
-  transform: scale(1.1);
-}
-
-.page-detail-section .preview-nav {
+.page-detail-panel__preview-nav {
   display: flex;
   align-items: center;
   gap: 16px;
   margin-top: 16px;
 }
 
-.page-detail-section .preview-nav-btn {
-  width: 40px;
-  height: 40px;
-  border: none;
-  border-radius: 50%;
-  background: var(--page-detail-preview-control-background);
+.page-detail-panel__preview-nav-button {
   color: var(--color-text-inverse);
-  font-size: 18px;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.page-detail-section .preview-nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.page-detail-section .preview-nav-btn:hover:not(:disabled) {
-  background: var(--page-detail-preview-control-hover-background);
-}
-
-.page-detail-section .preview-page-info {
+.page-detail-panel__preview-page-info {
   color: var(--color-text-inverse);
   font-size: 14px;
   min-width: 80px;

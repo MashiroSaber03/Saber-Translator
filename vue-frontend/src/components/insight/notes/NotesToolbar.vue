@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 defineProps<{
   filter: string
@@ -12,33 +13,14 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="section-header-with-actions">
-    <h3 class="section-title">📝 笔记</h3>
-    <div class="notes-filter">
-      <CustomSelect
+  <ProductSectionHeader title="笔记" icon-name="file-text" size="sm">
+    <template #actions>
+      <UiSelect
         :model-value="filter"
+        aria-label="筛选笔记类型"
         :options="filterOptions"
-        @update:model-value="$emit('update:filter', String($event))"
+        @change="$emit('update:filter', String($event))"
       />
-    </div>
-  </div>
+    </template>
+  </ProductSectionHeader>
 </template>
-
-<style scoped>
-.section-header-with-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--insight-text-secondary);
-  font-weight: 600;
-  font-size: 14px;
-}
-</style>

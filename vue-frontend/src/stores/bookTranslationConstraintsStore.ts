@@ -41,21 +41,7 @@ export const useBookTranslationConstraintsStore = defineStore('bookTranslationCo
       if (!response.success || !response.book) {
         return false
       }
-      const rawGlossary = response.book.translation_constraints?.glossary as Record<string, unknown> | undefined
-      const normalizedResponse = normalizeBookTranslationConstraints(response.book.translation_constraints)
-      const normalizedPayload = normalizeBookTranslationConstraints(payload)
-      constraints.value = {
-        ...normalizedResponse,
-        glossary: {
-          ...normalizedResponse.glossary,
-          autoExtractEnabled: rawGlossary && ('autoExtractEnabled' in rawGlossary || 'auto_extract_enabled' in rawGlossary)
-            ? normalizedResponse.glossary.autoExtractEnabled
-            : normalizedPayload.glossary.autoExtractEnabled,
-          autoExtractPrompt: rawGlossary && ('autoExtractPrompt' in rawGlossary || 'auto_extract_prompt' in rawGlossary)
-            ? normalizedResponse.glossary.autoExtractPrompt
-            : normalizedPayload.glossary.autoExtractPrompt,
-        },
-      }
+      constraints.value = normalizeBookTranslationConstraints(response.book.translation_constraints)
       return true
     } catch {
       return false

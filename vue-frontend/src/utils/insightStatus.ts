@@ -1,5 +1,4 @@
-import type { InsightStatusResponse } from '@/types'
-import type { AnalysisStatus } from '@/types/insight'
+import type { AnalysisStatus, InsightStatusResponse } from '@/types/insight'
 
 /**
  * 统一解析分析状态：

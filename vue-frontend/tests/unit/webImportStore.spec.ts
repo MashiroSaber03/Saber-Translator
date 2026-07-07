@@ -165,6 +165,40 @@ describe('webImportStore settings workflow', () => {
     expect(store.providerConfigs.agent.custom?.modelName).toBe('custom-model')
   })
 
+  it('keeps current payload parsing in the WebImport settings helper', async () => {
+    const {
+      buildWebImportSettingsPayload,
+      parseLocalWebImportSettingsPayload,
+      parseWebImportSettingsPayload,
+    } = await import('@/stores/webImportSettingsPayload')
+    const settings = createDefaultWebImportSettings()
+    settings.agent.provider = 'deepseek'
+    settings.agent.apiKey = 'deepseek-key'
+    settings.agent.modelName = 'deepseek-chat'
+    const providerConfigs = createDefaultWebImportProviderConfigs()
+    providerConfigs.agent.deepseek = {
+      apiKey: 'deepseek-key',
+      modelName: 'deepseek-chat',
+      customBaseUrl: '',
+    }
+
+    const payload = buildWebImportSettingsPayload(settings, providerConfigs)
+
+    expect(parseWebImportSettingsPayload({
+      settings: payload.settings,
+      providerConfigs: payload.providerConfigs,
+    })).toEqual(payload)
+    expect(parseLocalWebImportSettingsPayload(payload)).toEqual(payload)
+    expect(parseWebImportSettingsPayload({
+      settings: {
+        agent: {
+          provider: 'deepseek',
+        },
+      },
+      providerConfigs,
+    })).toBeNull()
+  })
+
   it('ignores incomplete backend data instead of filling missing fields', async () => {
     getWebImportSettingsMock.mockResolvedValue({
       success: true,

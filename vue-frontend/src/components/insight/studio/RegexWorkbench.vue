@@ -1,46 +1,76 @@
 <template>
-  <div class="workbench">
-    <div class="workbench-head">
-      <div>
-        <h3>正则脚本</h3>
-        <p>统一维护提示替换、显示替换与运行位置，避免把运行时逻辑埋进大表单。</p>
+  <div class="regex-workbench">
+    <div class="regex-workbench__head">
+      <div class="regex-workbench__head-copy">
+        <h3 class="regex-workbench__title">正则脚本</h3>
+        <p class="regex-workbench__description">统一维护提示替换、显示替换与运行位置，避免把运行时逻辑埋进大表单。</p>
       </div>
-      <div class="actions">
-        <UiButton variant="toolbar" class="action-ghost" :disabled="generating" @click="$emit('generate')">
+      <ProductActionRow aria-label="正则脚本操作">
+        <UiButton variant="secondary" :disabled="generating" @click="$emit('generate')">
           {{ generating ? '生成中...' : 'AI 生成脚本' }}
         </UiButton>
-        <UiButton variant="toolbar" class="action-secondary" @click="$emit('add')">添加脚本</UiButton>
-      </div>
+        <UiButton variant="primary" @click="$emit('add')">添加脚本</UiButton>
+      </ProductActionRow>
     </div>
 
-    <div v-if="scripts.length === 0" class="empty-copy">还没有正则脚本，可用于隐藏状态块、格式修复或 HTML 呈现。</div>
-    <div v-else class="script-list">
-      <article v-for="(script, index) in scripts" :key="script.id" class="script-card">
-        <div class="card-head">
-          <UiInput class="title-input" :value="script.scriptName" type="text" @input="$emit('update:field', index, 'scriptName', ($event.target as HTMLInputElement).value)" />
-          <UiButton variant="toolbar" class="action-danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
+    <ProductEmptyState
+      v-if="scripts.length === 0"
+      description="可用于隐藏状态块、格式修复或 HTML 呈现。"
+      icon-name="case-sensitive"
+      role="note"
+      size="compact"
+      title="还没有正则脚本"
+    />
+    <div v-else class="regex-workbench__script-list">
+      <ProductRecordCard v-for="(script, index) in scripts" :key="script.id" class="regex-workbench__script-card">
+        <div class="regex-workbench__card-head">
+          <UiInput
+            class="regex-workbench__title-input"
+            :model-value="script.scriptName"
+            type="text"
+            variant="studio"
+            @update:model-value="$emit('update:field', index, 'scriptName', String($event))"
+          />
+          <ProductActionRow aria-label="正则脚本条目操作">
+            <UiButton variant="secondary" tone="danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
+          </ProductActionRow>
         </div>
-        <div class="grid">
-          <label class="full">
-            查找正则
-            <UiInput :value="script.findRegex" type="text" @input="$emit('update:field', index, 'findRegex', ($event.target as HTMLInputElement).value)" />
-          </label>
-          <label class="full">
-            替换内容
-            <UiTextarea :value="script.replaceString" rows="4" @input="$emit('update:field', index, 'replaceString', ($event.target as HTMLTextAreaElement).value)" />
-          </label>
-          <label>
-            作用位置（Placement，逗号分隔）
-            <UiInput :value="script.placement.join(', ')" type="text" @input="$emit('update:placement', index, ($event.target as HTMLInputElement).value)" />
-          </label>
-          <div class="toggles">
+        <UiFormGrid class="regex-workbench__grid">
+          <UiField class="regex-workbench__field--full" variant="settings" label="查找正则" :control-id="`regex-${script.id}-find`">
+            <UiInput
+              :id="`regex-${script.id}-find`"
+              :model-value="script.findRegex"
+              type="text"
+              variant="studio"
+              @update:model-value="$emit('update:field', index, 'findRegex', String($event))"
+            />
+          </UiField>
+          <UiField class="regex-workbench__field--full" variant="settings" label="替换内容" :control-id="`regex-${script.id}-replace`">
+            <UiTextarea
+              :id="`regex-${script.id}-replace`"
+              :model-value="script.replaceString"
+              variant="studio"
+              rows="4"
+              @update:model-value="$emit('update:field', index, 'replaceString', $event)"
+            />
+          </UiField>
+          <UiField variant="settings" label="作用位置（Placement，逗号分隔）" :control-id="`regex-${script.id}-placement`">
+            <UiInput
+              :id="`regex-${script.id}-placement`"
+              :model-value="script.placement.join(', ')"
+              type="text"
+              variant="studio"
+              @update:model-value="$emit('update:placement', index, String($event))"
+            />
+          </UiField>
+          <div class="regex-workbench__toggles">
             <UiCheckbox :model-value="script.markdownOnly" label="仅显示" @change="$emit('toggle:field', index, 'markdownOnly', $event)" />
             <UiCheckbox :model-value="script.promptOnly" label="仅发送" @change="$emit('toggle:field', index, 'promptOnly', $event)" />
             <UiCheckbox :model-value="script.runOnEdit" label="编辑时运行" @change="$emit('toggle:field', index, 'runOnEdit', $event)" />
             <UiCheckbox :model-value="script.disabled" label="禁用" @change="$emit('toggle:field', index, 'disabled', $event)" />
           </div>
-        </div>
-      </article>
+        </UiFormGrid>
+      </ProductRecordCard>
     </div>
   </div>
 </template>
@@ -50,7 +80,15 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import type { RegexScript } from '@/types/characterStudio'
+
+type RegexTextField = 'scriptName' | 'findRegex' | 'replaceString'
+type RegexToggleField = 'markdownOnly' | 'promptOnly' | 'runOnEdit' | 'disabled'
 
 defineProps<{
   scripts: RegexScript[]
@@ -61,142 +99,97 @@ defineEmits<{
   (e: 'generate'): void
   (e: 'add'): void
   (e: 'remove', index: number): void
-  (e: 'update:field', index: number, field: keyof RegexScript, value: string): void
+  (e: 'update:field', index: number, field: RegexTextField, value: string): void
   (e: 'update:placement', index: number, rawValue: string): void
-  (e: 'toggle:field', index: number, field: keyof RegexScript, value: boolean): void
+  (e: 'toggle:field', index: number, field: RegexToggleField, value: boolean): void
 }>()
 </script>
 
 <style scoped>
-.workbench {
-  --regex-workbench-border-default: rgba(25, 55, 94, .08);
-  --regex-workbench-surface-base: rgba(255, 255, 255, .84);
-  --regex-workbench-text-primary: #516882;
-  --ui-input-border: 1px solid var(--studio-border-strong);
-  --ui-input-background: var(--studio-surface-soft);
-  --ui-input-radius: 14px;
-  --ui-input-padding: 11px 12px;
-  --ui-input-color: var(--studio-text-strong);
-  --ui-input-font-size: 13px;
-  --ui-textarea-border: 1px solid var(--studio-border-strong);
-  --ui-textarea-background: var(--studio-surface-soft);
-  --ui-textarea-radius: 14px;
-  --ui-textarea-padding: 11px 12px;
-  --ui-textarea-color: var(--studio-text-strong);
-  --ui-textarea-font-size: 13px;
+.regex-workbench {
+  --regex-workbench-border-default: var(--studio-border-default);
+  --regex-workbench-surface-base: color-mix(in srgb, var(--color-surface-card) 82%, transparent);
 
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.workbench-head,
-.card-head {
+.regex-workbench__head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
 }
 
-.workbench-head h3 {
+.regex-workbench__card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.regex-workbench__head-copy {
+  min-width: 0;
+}
+
+.regex-workbench__title {
   margin: 0;
 }
 
-.workbench-head p {
+.regex-workbench__description {
   margin: 6px 0 0;
   color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.actions,
-.toggles {
+.regex-workbench__toggles {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.script-list {
+.regex-workbench__script-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.script-card {
-  border-radius: 18px;
-  padding: 16px;
-  background: var(--regex-workbench-surface-base);
-  border: 1px solid var(--regex-workbench-border-default);
+.regex-workbench__script-card {
+  --product-record-card-background: var(--regex-workbench-surface-base);
+  --product-record-card-border: var(--regex-workbench-border-default);
+  --product-record-card-radius: 18px;
+  --product-record-card-padding: 16px;
+  --product-record-card-gap: 14px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.regex-workbench__grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   margin-top: 14px;
+  margin-bottom: 0;
 }
 
-.full {
+.regex-workbench__field--full {
   grid-column: 1 / -1;
 }
 
-.title-input {
-  flex: 1;
+.regex-workbench__title-input {
+  flex: 1 1 220px;
+  min-width: 0;
   font-weight: 600;
 }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--regex-workbench-text-primary);
-  font-size: 12px;
-}
-
-.action-secondary,
-.action-ghost,
-.action-danger {
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-}
-
-.action-secondary,
-.action-ghost {
-  padding: 10px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-danger {
-  padding: 10px 14px;
-  background: var(--color-surface-danger-soft);
-  color: var(--studio-text-danger);
-}
-
-.action-secondary:disabled,
-.action-ghost:disabled,
-.action-danger:disabled {
-  opacity: 0.68;
-  cursor: not-allowed;
-}
-
-.small {
-  padding: 7px 10px;
-  font-size: 12px;
-}
-
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-}
-
 @media (--breakpoint-lg-down) {
-  .workbench-head,
-  .card-head,
-  .grid {
-    grid-template-columns: 1fr;
+  .regex-workbench__head,
+  .regex-workbench__card-head {
     flex-direction: column;
+  }
+
+  .regex-workbench__grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

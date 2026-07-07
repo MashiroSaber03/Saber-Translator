@@ -1,7 +1,13 @@
 <template>
-  <div class="openai-extra-body-editor">
-    <div class="editor-header">
-      <label>{{ label }}</label>
+  <UiField
+    class="openai-extra-body-editor"
+    variant="settings"
+    :label="label"
+    control-id="openAiExtraBody"
+    :hint="errorMessage ? '' : hint"
+    :error="errorMessage"
+  >
+    <template #label-actions>
       <UiButton
         variant="secondary"
         type="button"
@@ -11,23 +17,26 @@
       >
         格式化
       </UiButton>
-    </div>
+    </template>
     <UiTextarea
-      :value="localText"
+      id="openAiExtraBody"
+      :model-value="localText"
       :rows="rows"
       :placeholder="placeholder"
       :disabled="disabled"
+      :error="Boolean(errorMessage)"
+      variant="panel"
       class="extra-body-textarea"
-      @input="handleInput"
+      @update:model-value="handleInput"
     />
-    <div v-if="errorMessage" class="input-error">{{ errorMessage }}</div>
-    <div v-else class="ui-form-hint">{{ hint }}</div>
-  </div>
+  </UiField>
 </template>
 
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import { deepClone } from '@/utils/deepClone'
 import { ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
@@ -53,10 +62,6 @@ const emit = defineEmits<{
 
 const localText = ref('')
 const errorMessage = ref('')
-
-function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
-}
 
 function formatValue(value?: Record<string, unknown>): string {
   if (!value || Object.keys(value).length === 0) return ''
@@ -88,8 +93,7 @@ watch(
   { immediate: true, deep: true }
 )
 
-function handleInput(event: Event): void {
-  const nextValue = (event.target as HTMLTextAreaElement).value
+function handleInput(nextValue: string): void {
   localText.value = nextValue
 
   const trimmed = nextValue.trim()
@@ -102,7 +106,7 @@ function handleInput(event: Event): void {
   try {
     const parsed = parseObject(trimmed)
     errorMessage.value = ''
-    emit('update:modelValue', cloneRecord(parsed))
+    emit('update:modelValue', deepClone(parsed))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'JSON 解析失败'
   }
@@ -117,7 +121,7 @@ function formatJson(): void {
     const formatted = JSON.stringify(parsed, null, 2)
     localText.value = formatted
     errorMessage.value = ''
-    emit('update:modelValue', cloneRecord(parsed))
+    emit('update:modelValue', deepClone(parsed))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'JSON 解析失败'
   }
@@ -126,19 +130,6 @@ function formatJson(): void {
 
 <style scoped>
 .openai-extra-body-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.editor-header label {
   margin-bottom: 0;
 }
 
@@ -146,10 +137,5 @@ function formatJson(): void {
   font-family: var(--font-mono);
   line-height: 1.5;
   resize: vertical;
-}
-
-.input-error {
-  color: var(--color-text-danger-strong);
-  font-size: 12px;
 }
 </style>

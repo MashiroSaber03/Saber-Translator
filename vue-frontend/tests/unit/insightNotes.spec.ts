@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { ref } from 'vue'
 
 const {
@@ -104,5 +106,160 @@ describe('useInsightNotes', () => {
 
     expect(notesState.notes.value).toEqual([])
     expect(localStorage.getItem('manga_notes_book-2')).toBeNull()
+  })
+
+  it('falls back to local notes when the notes API returns an error response', async () => {
+    localStorage.setItem('manga_notes_book-1', JSON.stringify([
+      {
+        id: 'cached-note',
+        type: 'text',
+        content: 'cached note',
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
+      },
+    ]))
+    getNotesMock.mockResolvedValueOnce({
+      success: false,
+      error: 'notes service unavailable',
+    })
+
+    const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
+    const notesState = useInsightNotes({ currentBookId: ref('book-1') })
+
+    await notesState.loadNotes()
+
+    expect(notesState.error.value).toBe('notes service unavailable')
+    expect(notesState.notes.value).toEqual([
+      {
+        id: 'cached-note',
+        type: 'text',
+        content: 'cached note',
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
+      },
+    ])
+  })
+
+  it('maps API note payloads through a typed current-schema mapper', async () => {
+    getNotesMock.mockResolvedValueOnce({
+      success: true,
+      notes: [{
+        id: 'note-1',
+        type: 'qa',
+        content: 'answer',
+        page_num: 12,
+        title: '问题记录',
+        tags: ['角色'],
+        question: '为什么？',
+        answer: '因为剧情需要。',
+        citations: [{ page: 12, content: '证据' }],
+        comment: '保留当前字段',
+        created_at: '2026-06-25T00:00:00.000Z',
+        updated_at: '2026-06-25T00:00:01.000Z',
+      }],
+    })
+
+    const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
+    const notesState = useInsightNotes({ currentBookId: ref('book-1') })
+
+    await notesState.loadNotes()
+
+    expect(notesState.notes.value).toEqual([{
+      id: 'note-1',
+      type: 'qa',
+      content: 'answer',
+      pageNum: 12,
+      title: '问题记录',
+      tags: ['角色'],
+      question: '为什么？',
+      answer: '因为剧情需要。',
+      citations: [{ page: 12, content: '证据' }],
+      comment: '保留当前字段',
+      createdAt: '2026-06-25T00:00:00.000Z',
+      updatedAt: '2026-06-25T00:00:01.000Z',
+    }])
+
+    const source = readFileSync(resolve(process.cwd(), 'src/stores/insight/useInsightNotes.ts'), 'utf8')
+    expect(source).toContain(
+      "import { filterValidInsightNotes, mapInsightApiNote } from '@/stores/insight/insightNotesModels'"
+    )
+    expect(source).not.toContain('function isNoteData')
+    expect(source).not.toContain('function mapApiNote')
+    expect(source).not.toContain('as unknown as NoteData')
+    expect(source).not.toContain('使用转换器自动')
+    expect(source).not.toContain('/**')
+  })
+
+  it('keeps note payload validation in a focused model helper', async () => {
+    const {
+      filterValidInsightNotes,
+      mapInsightApiNote,
+    } = await import('@/stores/insight/insightNotesModels')
+
+    expect(filterValidInsightNotes([
+      {
+        id: 'valid-note',
+        type: 'text',
+        content: 'stored note',
+        pageNum: 2,
+      },
+      {
+        id: 'invalid-note',
+        type: 'text',
+        content: 'bad citations',
+        citations: [{ page: Number.NaN, content: 'bad' }],
+      },
+    ])).toEqual([
+      {
+        id: 'valid-note',
+        type: 'text',
+        content: 'stored note',
+        pageNum: 2,
+      },
+    ])
+
+    expect(mapInsightApiNote({
+      id: 'api-note',
+      type: 'qa',
+      content: 'mapped note',
+      page_num: 7,
+      created_at: '2026-06-25T00:00:00.000Z',
+      updated_at: '2026-06-25T00:00:01.000Z',
+    })).toEqual({
+      id: 'api-note',
+      type: 'qa',
+      content: 'mapped note',
+      pageNum: 7,
+      createdAt: '2026-06-25T00:00:00.000Z',
+      updatedAt: '2026-06-25T00:00:01.000Z',
+    })
+
+    expect(() => mapInsightApiNote({
+      id: 'api-note',
+      type: 'qa',
+      content: null,
+    })).toThrow('笔记响应格式无效')
+  })
+
+  it('keeps notes property tests focused on async behavior contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/property/insightNotes.property.ts'), 'utf8')
+
+    for (const staleNarration of [
+      '漫画分析笔记属性测试',
+      '测试数据生成器',
+      '属性测试',
+      '生成有效',
+      '// ============================================================',
+      '/' + '**',
+      '验证',
+      'return true',
+      '每次测试创建新的 Pinia 实例',
+      '创建新的 store 实例模拟重新加载',
+    ]) {
+      expect(source).not.toContain(staleNarration)
+    }
+
+    expect(source).toContain('fc.asyncProperty')
+    expect(source).toContain('await store.addNote')
   })
 })

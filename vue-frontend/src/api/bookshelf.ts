@@ -1,78 +1,102 @@
-/**
- * 书架 API
- * 包含书籍 CRUD、章节管理、标签管理等功能
- */
-
 import { apiClient } from './client'
 import type { ApiResponse, BookData, ChapterData, TagData } from '@/types'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 
-// ==================== 书籍 API ====================
+const BOOKS_ENDPOINT = '/api/bookshelf/books'
+const TAGS_ENDPOINT = '/api/bookshelf/tags'
 
-/**
- * 书籍列表响应
- */
 export interface BookListResponse {
   success: boolean
   books?: BookData[]
   error?: string
 }
 
-/**
- * 书籍详情响应
- */
 export interface BookDetailResponse {
   success: boolean
   book?: BookData
   error?: string
 }
 
-/**
- * 获取书籍参数
- */
 export interface GetBooksParams {
-  /** 搜索关键词 */
   search?: string
-  /** 标签名称数组（逗号分隔） */
   tags?: string[]
 }
 
-/**
- * 获取书籍列表
- * @param params 可选的搜索和标签筛选参数
- */
-export async function getBooks(params?: GetBooksParams): Promise<BookListResponse> {
-  // 搜索和标签筛选通过查询参数交给后端执行。
-  const queryParams = new URLSearchParams()
+export interface ChapterListResponse {
+  success: boolean
+  chapters?: ChapterData[]
+  error?: string
+}
 
+export interface ChapterDetailResponse {
+  success: boolean
+  chapter?: ChapterData
+  error?: string
+}
+
+export interface ChapterImageData {
+  index: number
+  original: string
+  translated?: string
+  fileName?: string
+  relativePath?: string
+}
+
+export interface ChapterImagesResponse {
+  success: boolean
+  images?: ChapterImageData[]
+  error?: string
+}
+
+export interface TagListResponse {
+  success: boolean
+  tags?: TagData[]
+  error?: string
+}
+
+export interface TagDetailResponse {
+  success: boolean
+  tag?: TagData
+  error?: string
+}
+
+function bookshelfPathSegment(value: string): string {
+  return encodeURIComponent(value)
+}
+
+function bookPath(bookId: string): string {
+  return `${BOOKS_ENDPOINT}/${bookshelfPathSegment(bookId)}`
+}
+
+function chapterPath(bookId: string, chapterId?: string): string {
+  const basePath = `${bookPath(bookId)}/chapters`
+  return chapterId ? `${basePath}/${bookshelfPathSegment(chapterId)}` : basePath
+}
+
+function tagPath(tagName: string): string {
+  return `${TAGS_ENDPOINT}/${encodeURIComponent(tagName)}`
+}
+
+function buildBookListUrl(params?: GetBooksParams): string {
+  const queryParams = new URLSearchParams()
   if (params?.search) {
     queryParams.append('search', params.search)
   }
   if (params?.tags && params.tags.length > 0) {
     queryParams.append('tags', params.tags.join(','))
   }
-
   const queryString = queryParams.toString()
-  const url = queryString ? `/api/bookshelf/books?${queryString}` : '/api/bookshelf/books'
-
-  return apiClient.get<BookListResponse>(url)
+  return queryString ? `${BOOKS_ENDPOINT}?${queryString}` : BOOKS_ENDPOINT
 }
 
-/**
- * 获取书籍详情
- * @param bookId 书籍 ID
- */
+export async function getBooks(params?: GetBooksParams): Promise<BookListResponse> {
+  return apiClient.get<BookListResponse>(buildBookListUrl(params))
+}
+
 export async function getBookDetail(bookId: string): Promise<BookDetailResponse> {
-  return apiClient.get<BookDetailResponse>(`/api/bookshelf/books/${bookId}`)
+  return apiClient.get<BookDetailResponse>(bookPath(bookId))
 }
 
-/**
- * 创建书籍
- * @param title 书籍标题
- * @param description 书籍描述
- * @param cover 封面图片（Base64）
- * @param tags 标签名称数组
- */
 export async function createBook(
   title: string,
   description?: string,
@@ -80,7 +104,7 @@ export async function createBook(
   tags?: string[],
   translation_constraints?: BookTranslationConstraints
 ): Promise<BookDetailResponse> {
-  return apiClient.post<BookDetailResponse>('/api/bookshelf/books', {
+  return apiClient.post<BookDetailResponse>(BOOKS_ENDPOINT, {
     title,
     description,
     cover,
@@ -89,12 +113,6 @@ export async function createBook(
   })
 }
 
-/**
- * 更新书籍
- * 支持更新 title、description、cover、tags 和翻译约束。
- * @param bookId 书籍 ID
- * @param data 更新数据
- */
 export async function updateBook(
   bookId: string,
   data: {
@@ -105,199 +123,62 @@ export async function updateBook(
     translation_constraints?: BookTranslationConstraints
   }
 ): Promise<BookDetailResponse> {
-  return apiClient.put<BookDetailResponse>(`/api/bookshelf/books/${bookId}`, data)
+  return apiClient.put<BookDetailResponse>(bookPath(bookId), data)
 }
 
-/**
- * 删除书籍
- * @param bookId 书籍 ID
- */
 export async function deleteBook(bookId: string): Promise<ApiResponse> {
-  return apiClient.delete<ApiResponse>(`/api/bookshelf/books/${bookId}`)
+  return apiClient.delete<ApiResponse>(bookPath(bookId))
 }
 
-// ==================== 章节 API ====================
-
-/**
- * 章节列表响应
- */
-export interface ChapterListResponse {
-  success: boolean
-  chapters?: ChapterData[]
-  error?: string
-}
-
-/**
- * 章节详情响应
- */
-export interface ChapterDetailResponse {
-  success: boolean
-  chapter?: ChapterData
-  error?: string
-}
-
-/**
- * 章节图片数据
- */
-export interface ChapterImageData {
-  /** 图片索引 */
-  index: number
-  /** 原图 URL 或 Base64 */
-  original: string
-  /** 翻译后图片 URL 或 Base64 */
-  translated?: string
-  /** 文件名 */
-  fileName?: string
-  /** 相对路径（用于多文件夹导入） */
-  relativePath?: string
-}
-
-/**
- * 章节图片响应
- */
-export interface ChapterImagesResponse {
-  success: boolean
-  images?: ChapterImageData[]
-  error?: string
-}
-
-/**
- * 获取书籍章节列表
- * @param bookId 书籍 ID
- */
 export async function getChapters(bookId: string): Promise<ChapterListResponse> {
-  return apiClient.get<ChapterListResponse>(`/api/bookshelf/books/${bookId}/chapters`)
+  return apiClient.get<ChapterListResponse>(chapterPath(bookId))
 }
 
-/**
- * 创建章节
- * @param bookId 书籍 ID
- * @param title 章节标题
- */
-export async function createChapter(
-  bookId: string,
-  title: string
-): Promise<ChapterDetailResponse> {
-  return apiClient.post<ChapterDetailResponse>(`/api/bookshelf/books/${bookId}/chapters`, {
-    title,
-  })
+export async function createChapter(bookId: string, title: string): Promise<ChapterDetailResponse> {
+  return apiClient.post<ChapterDetailResponse>(chapterPath(bookId), { title })
 }
 
-/**
- * 更新章节
- * @param bookId 书籍 ID
- * @param chapterId 章节 ID
- * @param title 新标题
- */
 export async function updateChapter(
   bookId: string,
   chapterId: string,
   title: string
 ): Promise<ChapterDetailResponse> {
-  return apiClient.put<ChapterDetailResponse>(
-    `/api/bookshelf/books/${bookId}/chapters/${chapterId}`,
-    { title }
-  )
+  return apiClient.put<ChapterDetailResponse>(chapterPath(bookId, chapterId), { title })
 }
 
-/**
- * 删除章节
- * @param bookId 书籍 ID
- * @param chapterId 章节 ID
- */
 export async function deleteChapter(bookId: string, chapterId: string): Promise<ApiResponse> {
-  return apiClient.delete<ApiResponse>(`/api/bookshelf/books/${bookId}/chapters/${chapterId}`)
+  return apiClient.delete<ApiResponse>(chapterPath(bookId, chapterId))
 }
 
-/**
- * 重新排序章节
- * @param bookId 书籍 ID
- * @param chapterIds 章节 ID 数组（按新顺序排列）
- */
-export async function reorderChapters(
-  bookId: string,
-  chapterIds: string[]
-): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(`/api/bookshelf/books/${bookId}/chapters/reorder`, {
+export async function reorderChapters(bookId: string, chapterIds: string[]): Promise<ApiResponse> {
+  return apiClient.post<ApiResponse>(`${chapterPath(bookId)}/reorder`, {
     chapter_ids: chapterIds,
   })
 }
 
-/**
- * 获取章节图片
- * @param bookId 书籍 ID
- * @param chapterId 章节 ID
- */
 export async function getChapterImages(
   bookId: string,
   chapterId: string
 ): Promise<ChapterImagesResponse> {
-  return apiClient.get<ChapterImagesResponse>(
-    `/api/bookshelf/books/${bookId}/chapters/${chapterId}/images`
-  )
+  return apiClient.get<ChapterImagesResponse>(`${chapterPath(bookId, chapterId)}/images`)
 }
 
-// ==================== 标签 API ====================
-
-/**
- * 标签列表响应
- */
-export interface TagListResponse {
-  success: boolean
-  tags?: TagData[]
-  error?: string
-}
-
-/**
- * 标签详情响应
- */
-export interface TagDetailResponse {
-  success: boolean
-  tag?: TagData
-  error?: string
-}
-
-/**
- * 获取所有标签
- */
 export async function getTags(): Promise<TagListResponse> {
-  return apiClient.get<TagListResponse>('/api/bookshelf/tags')
+  return apiClient.get<TagListResponse>(TAGS_ENDPOINT)
 }
 
-/**
- * 创建标签
- * @param name 标签名称
- * @param color 标签颜色
- */
 export async function createTag(name: string, color?: string): Promise<TagDetailResponse> {
-  return apiClient.post<TagDetailResponse>('/api/bookshelf/tags', { name, color })
+  return apiClient.post<TagDetailResponse>(TAGS_ENDPOINT, { name, color })
 }
 
-/**
- * 删除标签
- * @param tagName 标签名称
- */
 export async function deleteTag(tagName: string): Promise<ApiResponse> {
-  // 标签名称作为路径参数传递，必须先进行 URL 编码。
-  return apiClient.delete<ApiResponse>(`/api/bookshelf/tags/${encodeURIComponent(tagName)}`)
+  return apiClient.delete<ApiResponse>(tagPath(tagName))
 }
 
-/**
- * 更新标签
- * @param currentName 当前标签名称
- * @param name 新标签名称
- * @param color 新标签颜色
- */
 export async function updateTag(
   currentName: string,
   name: string,
   color: string
 ): Promise<TagDetailResponse> {
-  // 后端使用标签名称作为 URL 路径参数。
-  return apiClient.put<TagDetailResponse>(
-    `/api/bookshelf/tags/${encodeURIComponent(currentName)}`,
-    { name, color }
-  )
+  return apiClient.put<TagDetailResponse>(tagPath(currentName), { name, color })
 }
-
-// 标签的增删通过 updateBook API 完成，传递完整 tags 数组。

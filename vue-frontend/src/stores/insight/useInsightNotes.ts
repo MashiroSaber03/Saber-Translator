@@ -1,80 +1,28 @@
-/**
- * 笔记管理 Composable
- *
- * 管理 Insight 笔记的增删改查
- */
-
 import { ref, computed } from 'vue'
 import type { Ref } from 'vue'
 import type { NoteData, NoteType } from '@/types/insight'
-import { toCamelCase } from '@/types/insight/converters'
+import { filterValidInsightNotes, mapInsightApiNote } from '@/stores/insight/insightNotesModels'
 import * as insightApi from '@/api/insight'
 
 export interface UseInsightNotesOptions {
   currentBookId: Ref<string | null>
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isNoteType(value: unknown): value is NoteType {
-  return value === 'text' || value === 'qa'
-}
-
-function hasOptionalString(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || typeof value[key] === 'string'
-}
-
-function hasOptionalNumber(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || (typeof value[key] === 'number' && Number.isFinite(value[key]))
-}
-
-function isCitation(value: unknown): value is { page: number; content: string } {
-  return isRecord(value)
-    && typeof value.page === 'number'
-    && Number.isFinite(value.page)
-    && typeof value.content === 'string'
-}
-
-function isNoteData(value: unknown): value is NoteData {
-  if (!isRecord(value)) return false
-  if (typeof value.id !== 'string' || !isNoteType(value.type) || typeof value.content !== 'string') {
-    return false
-  }
-  if (!hasOptionalNumber(value, 'pageNum')) return false
-  if (!hasOptionalString(value, 'createdAt')) return false
-  if (!hasOptionalString(value, 'updatedAt')) return false
-  if (!hasOptionalString(value, 'title')) return false
-  if (!hasOptionalString(value, 'question')) return false
-  if (!hasOptionalString(value, 'answer')) return false
-  if (!hasOptionalString(value, 'comment')) return false
-  if (value.tags !== undefined && (!Array.isArray(value.tags) || !value.tags.every(tag => typeof tag === 'string'))) {
-    return false
-  }
-  if (value.citations !== undefined && (!Array.isArray(value.citations) || !value.citations.every(isCitation))) {
-    return false
-  }
-  return true
-}
+type NewNoteInput = Omit<NoteData, 'id' | 'createdAt' | 'updatedAt'>
+  & Partial<Pick<NoteData, 'id' | 'createdAt' | 'updatedAt'>>
 
 export function useInsightNotes(options: UseInsightNotesOptions) {
   const { currentBookId } = options
   let notesLoadRequestId = 0
 
-  /** 笔记列表 */
   const notes = ref<NoteData[]>([])
 
-  /** 笔记类型筛选 */
   const noteTypeFilter = ref<NoteType | 'all'>('all')
 
-  /** 是否正在加载 */
   const isLoading = ref(false)
 
-  /** 错误信息 */
   const error = ref<string | null>(null)
 
-  /** 过滤后的笔记列表 */
   const filteredNotes = computed(() => {
     if (noteTypeFilter.value === 'all') {
       return notes.value
@@ -109,15 +57,12 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     try {
       const stored = localStorage.getItem(storageKey)
       const parsed = stored ? JSON.parse(stored) : []
-      notes.value = Array.isArray(parsed) ? parsed.filter(isNoteData) : []
+      notes.value = Array.isArray(parsed) ? filterValidInsightNotes(parsed) : []
     } catch {
       notes.value = []
     }
   }
 
-  /**
-   * 从 API 加载笔记
-   */
   async function loadNotes(): Promise<void> {
     const requestedBookId = currentBookId.value
     const requestId = ++notesLoadRequestId
@@ -132,11 +77,13 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     try {
       const response = await insightApi.getNotes(requestedBookId)
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
-      if (response.success && response.notes) {
-        // 使用转换器自动将 snake_case 转为 camelCase
-        notes.value = response.notes.map(note =>
-          toCamelCase(note as Record<string, unknown>) as unknown as NoteData
-        )
+      if (!response.success) {
+        error.value = response.error || '加载笔记失败'
+        loadNotesFromStorage()
+        return
+      }
+      if (response.notes) {
+        notes.value = response.notes.map(mapInsightApiNote)
         saveNotesToStorage()
       }
     } catch (e) {
@@ -150,15 +97,11 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     }
   }
 
-  /**
-   * 添加笔记
-   */
-  async function addNote(note: Omit<NoteData, 'id' | 'createdAt' | 'updatedAt'>): Promise<NoteData | null> {
+  async function addNote(note: NewNoteInput): Promise<NoteData | null> {
     if (!currentBookId.value) return null
 
-    const noteInput = note as Partial<NoteData>
     const optimisticNote: NoteData = {
-      id: noteInput.id || `note_${Date.now()}`,
+      id: note.id || `note_${Date.now()}`,
       type: note.type,
       content: note.content,
       pageNum: note.pageNum,
@@ -168,13 +111,13 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       answer: note.answer,
       citations: note.citations,
       comment: note.comment,
-      createdAt: noteInput.createdAt || new Date().toISOString(),
-      updatedAt: noteInput.updatedAt || new Date().toISOString()
+      createdAt: note.createdAt || new Date().toISOString(),
+      updatedAt: note.updatedAt || new Date().toISOString()
     }
     notes.value.unshift(optimisticNote)
     saveNotesToStorage()
 
-    if (noteInput.id) {
+    if (note.id) {
       return optimisticNote
     }
 
@@ -197,8 +140,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       })
 
       if (response.success && response.note) {
-        // 使用转换器自动转换
-        const newNote = toCamelCase(response.note as Record<string, unknown>) as unknown as NoteData
+        const newNote = mapInsightApiNote(response.note)
         const index = notes.value.findIndex(existing => existing.id === optimisticNote.id)
         if (index !== -1) {
           notes.value[index] = newNote
@@ -216,18 +158,13 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     return null
   }
 
-  /**
-   * 更新笔记
-   */
   async function updateNote(noteId: string, updates: Partial<NoteData>): Promise<boolean> {
     if (!currentBookId.value) return false
 
     try {
-      // 传递完整的更新数据，包括扩展字段
       const response = await insightApi.updateNote(currentBookId.value, noteId, {
         content: updates.content,
         page_num: updates.pageNum,
-        // 扩展字段
         title: updates.title,
         tags: updates.tags,
         question: updates.question,
@@ -250,9 +187,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     return false
   }
 
-  /**
-   * 删除笔记
-   */
   async function deleteNote(noteId: string): Promise<boolean> {
     if (!currentBookId.value) return false
 
@@ -270,16 +204,10 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     return false
   }
 
-  /**
-   * 设置笔记类型筛选
-   */
   function setNoteTypeFilter(filter: NoteType | 'all'): void {
     noteTypeFilter.value = filter
   }
 
-  /**
-   * 清空笔记（切换书籍时调用）
-   */
   function clearNotes(): void {
     notesLoadRequestId += 1
     notes.value = []

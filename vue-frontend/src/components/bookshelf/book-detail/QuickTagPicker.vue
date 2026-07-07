@@ -1,97 +1,101 @@
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import { computed } from 'vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import ProductSearchField from '@/components/product/ProductSearchField.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import type { TagData } from '@/types/api'
 
-defineProps<{
+const props = defineProps<{
   availableTags: TagData[]
   filter: string
   showCreateNewTagOption: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'update:filter', value: string): void
   (event: 'add', tagName: string): void
   (event: 'submit'): void
 }>()
+
+const availableTagItems = computed<ProductChipItem[]>(() => props.availableTags.map(tag => ({
+  id: tag.name,
+  label: tag.name,
+  ariaLabel: `添加标签 ${tag.name}`,
+  iconName: 'plus',
+  interactive: true,
+  tone: 'custom',
+  backgroundColor: tag.color || 'var(--color-action-brand)',
+  borderColor: tag.color || 'var(--color-action-brand)',
+  textColor: 'var(--color-text-inverse)',
+})))
+
+function addExistingTag(id: string | number): void {
+  emit('add', String(id))
+}
 </script>
 
 <template>
-  <div class="quick-tag-input-wrapper">
-    <UiInput
+  <div class="quick-tag-picker__input-wrapper">
+    <ProductSearchField
       :model-value="filter"
-      type="text"
-      class="quick-tag-input"
       placeholder="输入标签名称进行搜索或创建..."
+      aria-label="搜索或创建标签"
       autofocus
       @update:model-value="$emit('update:filter', String($event))"
-      @keydown.enter="$emit('submit')"
+      @search="$emit('submit')"
+      @clear="$emit('update:filter', '')"
     />
   </div>
 
-  <div class="quick-tag-list">
-    <UiButton
-      v-for="tag in availableTags"
-      :key="tag.name"
-      variant="toolbar"
-      type="button"
-      class="quick-tag-item"
-      :aria-label="`添加标签 ${tag.name}`"
-      @click="$emit('add', tag.name)"
-    >
-      <span class="tag-color-dot" :style="{ background: tag.color || 'var(--color-action-brand)' }"></span>
-      <span class="quick-tag-name">{{ tag.name }}</span>
-      <span class="tag-add-icon">+</span>
-    </UiButton>
+  <div class="quick-tag-picker__list">
+    <ProductChipList
+      v-if="availableTagItems.length"
+      aria-label="可添加标签"
+      :items="availableTagItems"
+      @select="addExistingTag"
+    />
 
-    <UiButton
+    <ProductRecordCard
       v-if="showCreateNewTagOption"
-      variant="toolbar"
-      type="button"
-      class="quick-tag-item new-tag"
+      as="button"
+      class="quick-tag-picker__item quick-tag-picker__item--new"
       :aria-label="`创建并添加标签 ${filter.trim()}`"
       @click="$emit('add', filter.trim())"
     >
-      <span class="tag-icon">+</span>
-      <span>创建并添加 "{{ filter.trim() }}"</span>
-    </UiButton>
+      <span class="quick-tag-picker__content">
+        <UiIcon name="plus" size="16" class="quick-tag-picker__icon" />
+        <span>创建并添加 "{{ filter.trim() }}"</span>
+      </span>
+    </ProductRecordCard>
 
-    <p
+    <ProductStatusBanner
       v-if="availableTags.length === 0 && !showCreateNewTagOption"
-      class="quick-tags-empty"
+      class="quick-tag-picker__empty-state"
+      tone="neutral"
+      icon-name="tags"
+      role="note"
     >
       {{ filter ? '未找到匹配的标签' : '所有标签已添加或暂无标签' }}
-    </p>
+    </ProductStatusBanner>
   </div>
 </template>
 
 <style scoped>
-.quick-tag-input-wrapper {
+.quick-tag-picker__input-wrapper {
   margin-bottom: 16px;
 }
 
-.quick-tag-input {
-  width: 100%;
-  padding: 12px 16px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 8px;
-  background: var(--color-surface-card);
-  color: var(--color-text-default);
-  font-size: 0.95rem;
-  transition: all 0.2s;
-}
+.quick-tag-picker__list {
+  --quick-tag-picker-new-background-start: var(--color-focus-brand-soft);
+  --quick-tag-picker-new-background-end: color-mix(in srgb, var(--color-action-brand-strong) 10%, transparent);
+  --quick-tag-picker-new-background-hover-start: var(--color-focus-brand-subtle);
+  --quick-tag-picker-new-background-hover-end: color-mix(in srgb, var(--color-action-brand-strong) 18%, transparent);
+  --quick-tag-picker-new-border: var(--shadow-action-brand);
+  --quick-tag-picker-new-border-hover: color-mix(in srgb, var(--color-action-brand) 60%, transparent);
 
-.quick-tag-input:focus {
-  outline: none;
-  border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 0 3px var(--book-detail-focus-shadow);
-}
-
-.quick-tag-input::placeholder {
-  color: var(--color-text-supporting);
-}
-
-.quick-tag-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -99,76 +103,44 @@ defineEmits<{
   overflow-y: auto;
 }
 
-.quick-tag-item {
+.quick-tag-picker__item {
+  --product-record-card-background: var(--color-surface-interactive-hover);
+  --product-record-card-border: transparent;
+  --product-record-card-accent: var(--color-border-brand-gradient);
+  --product-record-card-padding: 12px 16px;
+  --product-record-card-shadow-hover: none;
+
+  color: inherit;
+}
+
+.quick-tag-picker__content {
   display: flex;
   align-items: center;
   width: 100%;
   gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--color-surface-interactive-hover);
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.2s;
 }
 
-.quick-tag-item:hover {
-  background: var(--color-border-muted);
-  transform: translateX(4px);
+.quick-tag-picker__item--new {
+  --product-record-card-background: linear-gradient(135deg, var(--quick-tag-picker-new-background-start) 0%, var(--quick-tag-picker-new-background-end) 100%);
+  --product-record-card-border: var(--quick-tag-picker-new-border);
+  --product-record-card-accent: var(--quick-tag-picker-new-border-hover);
 }
 
-.tag-color-dot {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+.quick-tag-picker__item--new:hover {
+  --product-record-card-background: linear-gradient(135deg, var(--quick-tag-picker-new-background-hover-start) 0%, var(--quick-tag-picker-new-background-hover-end) 100%);
+  --product-record-card-border: var(--quick-tag-picker-new-border-hover);
 }
 
-.quick-tag-name {
-  flex: 1;
-  color: var(--color-text-default);
-  font-weight: 500;
-}
-
-.tag-add-icon {
-  color: var(--book-detail-accent);
-  font-weight: 600;
-  font-size: 1.2rem;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.quick-tag-item:hover .tag-add-icon {
-  opacity: 1;
-}
-
-.quick-tag-item.new-tag {
-  border: 1px dashed var(--book-detail-new-tag-border);
-  background: linear-gradient(135deg, var(--book-detail-new-tag-background-start) 0%, var(--book-detail-new-tag-background-end) 100%);
-}
-
-.quick-tag-item.new-tag:hover {
-  border-color: var(--book-detail-new-tag-border-hover);
-  background: linear-gradient(135deg, var(--book-detail-new-tag-hover-start) 0%, var(--book-detail-new-tag-hover-end) 100%);
-}
-
-.tag-icon {
+.quick-tag-picker__icon {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
-  color: var(--book-detail-accent);
-  font-weight: 600;
-  font-size: 1.1rem;
+  color: var(--color-action-brand);
 }
 
-.quick-tags-empty {
-  margin: 0;
-  padding: 24px 16px;
-  color: var(--color-text-supporting);
-  font-style: italic;
-  text-align: center;
+.quick-tag-picker__empty-state {
+  align-items: center;
 }
 </style>

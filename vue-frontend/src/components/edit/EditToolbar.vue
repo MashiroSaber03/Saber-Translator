@@ -1,307 +1,271 @@
 <template>
-  <div class="edit-toolbar-wrapper">
-    <div class="edit-toolbar toolbar-row-1">
-      <div class="image-navigator">
-        <UiButton
-          variant="toolbar"
-          class="nav-btn"
+  <div class="edit-toolbar">
+    <div class="edit-toolbar__row edit-toolbar__row--primary">
+      <div class="edit-toolbar__image-navigator">
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          class="edit-toolbar__nav-action"
           :disabled="!canGoPrevious"
-          @click="$emit('go-previous-image')"
+          label="上一张图片"
           title="上一张图片 (A)"
+          @click="$emit('go-previous-image')"
         >
-          ◀◀
-        </UiButton>
+          <UiIcon name="chevrons-left" size="16" />
+        </UiIconButton>
         <UiButton
           variant="toolbar"
-          class="image-indicator"
+          class="edit-toolbar__image-indicator"
           aria-label="显示或隐藏缩略图"
+          :aria-pressed="String(showThumbnails)"
           @click="$emit('toggle-thumbnails')"
           title="点击展开缩略图"
         >
-          图 <span>{{ currentImageIndex + 1 }}</span> / <span>{{ imageCount }}</span>
+          图 <span class="edit-toolbar__image-indicator-value">{{ currentImageIndex + 1 }}</span> / <span class="edit-toolbar__image-indicator-value">{{ imageCount }}</span>
         </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="nav-btn"
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          class="edit-toolbar__nav-action"
           :disabled="!canGoNext"
-          @click="$emit('go-next-image')"
+          label="下一张图片"
           title="下一张图片 (D)"
+          @click="$emit('go-next-image')"
         >
-          ▶▶
-        </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="thumb-toggle-btn"
-          :class="{ active: showThumbnails }"
-          @click="$emit('toggle-thumbnails')"
+          <UiIcon name="chevrons-right" size="16" />
+        </UiIconButton>
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          class="edit-toolbar__thumbnail-toggle"
+          :active="showThumbnails"
+          :pressed="showThumbnails"
+          label="显示或隐藏缩略图"
           title="显示/隐藏缩略图"
+          @click="$emit('toggle-thumbnails')"
         >
-          ☷
-        </UiButton>
+          <UiIcon name="list" size="16" />
+        </UiIconButton>
       </div>
 
-      <div class="toolbar-divider"></div>
+      <div class="edit-toolbar__divider"></div>
 
-      <div class="bubble-navigator">
-        <UiButton
-          variant="toolbar"
-          id="prevBubbleBtn"
-          class="nav-btn"
+      <div class="edit-toolbar__bubble-navigator">
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          class="edit-toolbar__nav-action"
           :disabled="!hasBubbles || selectedBubbleIndex <= 0"
-          @click="$emit('select-previous-bubble')"
+          label="上一个气泡"
           title="上一个气泡"
+          @click="$emit('select-previous-bubble')"
         >
-          ◀
-        </UiButton>
-        <span class="bubble-indicator">
-          气泡 <span id="currentBubbleNum">{{ selectedBubbleIndex >= 0 ? selectedBubbleIndex + 1 : 0 }}</span> / <span id="totalBubbleNum">{{ bubbleCount }}</span>
+          <UiIcon name="chevron-left" size="16" />
+        </UiIconButton>
+        <span class="edit-toolbar__bubble-indicator">
+          气泡 <span class="edit-toolbar__bubble-indicator-value">{{ selectedBubbleIndex >= 0 ? selectedBubbleIndex + 1 : 0 }}</span> / <span class="edit-toolbar__bubble-indicator-value">{{ bubbleCount }}</span>
         </span>
-        <UiButton
-          variant="toolbar"
-          id="nextBubbleBtn"
-          class="nav-btn"
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          class="edit-toolbar__nav-action"
           :disabled="!hasBubbles || selectedBubbleIndex >= bubbleCount - 1"
-          @click="$emit('select-next-bubble')"
+          label="下一个气泡"
           title="下一个气泡"
+          @click="$emit('select-next-bubble')"
         >
-          ▶
-        </UiButton>
+          <UiIcon name="chevron-right" size="16" />
+        </UiIconButton>
       </div>
 
-      <div class="toolbar-divider"></div>
+      <div class="edit-toolbar__divider"></div>
 
-      <div class="view-controls">
-        <UiButton
-          variant="toolbar"
-          class="view-control-btn layout-toggle-btn"
-          @click="$emit('toggle-layout')"
+      <div class="edit-toolbar__view-controls">
+        <UiIconButton
+          variant="inverse"
+          size="md"
+          class="edit-toolbar__view-action edit-toolbar__view-action--layout"
+          label="切换布局"
           title="切换布局：左右/上下"
+          @click="$emit('toggle-layout')"
         >
-          <svg v-if="layoutMode === 'horizontal'" viewBox="0 0 20 20" width="16" height="16">
-            <rect x="1" y="2" width="8" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <rect x="11" y="2" width="8" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-          </svg>
-          <svg v-else viewBox="0 0 20 20" width="16" height="16">
-            <rect x="2" y="1" width="16" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <rect x="2" y="11" width="16" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-          </svg>
-        </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="view-control-btn view-mode-btn"
-          @click="$emit('toggle-view-mode')"
+          <UiIcon :name="layoutMode === 'horizontal' ? 'columns' : 'rows'" size="16" />
+        </UiIconButton>
+        <UiIconButton
+          variant="inverse"
+          size="md"
+          class="edit-toolbar__view-action edit-toolbar__view-action--mode"
+          label="切换视图模式"
           title="切换视图模式"
+          @click="$emit('toggle-view-mode')"
         >
-          <span class="dual-icon">⧉</span>
-        </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="view-control-btn sync-toggle-btn"
-          :class="{ active: syncEnabled }"
-          @click="$emit('toggle-sync')"
+          <UiIcon name="image" size="16" />
+        </UiIconButton>
+        <UiIconButton
+          variant="inverse"
+          size="md"
+          class="edit-toolbar__view-action edit-toolbar__view-action--sync"
+          :active="syncEnabled"
+          :pressed="syncEnabled"
+          label="同步缩放和拖动"
           title="同步缩放/拖动"
+          @click="$emit('toggle-sync')"
         >
-          🔗
-        </UiButton>
-        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('fit-to-screen')" title="适应屏幕 (双击)">⛶</UiButton>
-        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('zoom-in')" title="放大 (+)">+</UiButton>
-        <span id="zoomLevel" class="zoom-level">{{ Math.round(scale * 100) }}%</span>
-        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('zoom-out')" title="缩小 (-)">−</UiButton>
-        <UiButton variant="toolbar" class="view-control-btn" @click="$emit('reset-zoom')" title="原始大小">1:1</UiButton>
+          <UiIcon name="link" size="16" />
+        </UiIconButton>
+        <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="适应屏幕" title="适应屏幕 (双击)" @click="$emit('fit-to-screen')">
+          <UiIcon name="maximize" size="16" />
+        </UiIconButton>
+        <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="放大" title="放大 (+)" @click="$emit('zoom-in')">
+          <UiIcon name="plus" size="16" />
+        </UiIconButton>
+        <span class="edit-toolbar__zoom-level">{{ Math.round(scale * 100) }}%</span>
+        <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="缩小" title="缩小 (-)" @click="$emit('zoom-out')">
+          <UiIcon name="minus" size="16" />
+        </UiIconButton>
+        <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="原始大小" title="原始大小" @click="$emit('reset-zoom')">
+          <UiIcon name="home" size="16" />
+        </UiIconButton>
       </div>
 
-      <div class="toolbar-spacer"></div>
+      <div class="edit-toolbar__spacer"></div>
 
-      <UiButton variant="toolbar" class="action-secondary" @click="$emit('exit-edit-mode')">退出编辑</UiButton>
+      <UiButton variant="inverse" size="sm" @click="$emit('exit-edit-mode')">退出编辑</UiButton>
     </div>
 
-    <div class="edit-toolbar toolbar-row-2">
-      <div class="annotation-tools">
+    <div class="edit-toolbar__row edit-toolbar__row--secondary">
+      <div class="edit-toolbar__annotation-tools">
         <UiButton
           variant="toolbar"
-          class="annotation-btn detect-btn"
+          class="edit-toolbar__annotation-action edit-toolbar__annotation-action--detect"
           @click="$emit('auto-detect-bubbles')"
           title="自动检测当前图片的文本框"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <path d="M9 9l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-          </svg>
-          <span>检测</span>
+          <UiIcon name="scan-search" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">检测</span>
         </UiButton>
         <UiButton
           variant="toolbar"
-          class="annotation-btn detect-btn"
+          class="edit-toolbar__annotation-action edit-toolbar__annotation-action--detect"
           @click="$emit('detect-all-images')"
           title="批量检测所有图片"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <circle cx="5" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="1" />
-            <path d="M7 7l2 2" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
-            <circle cx="10" cy="10" r="2.5" fill="none" stroke="currentColor" stroke-width="1" />
-            <path d="M12 12l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
-          <span>批量检测</span>
+          <UiIcon name="scan-line" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">批量检测</span>
         </UiButton>
         <UiButton
           variant="toolbar"
-          class="annotation-btn primary-action-btn"
+          class="edit-toolbar__annotation-action edit-toolbar__annotation-action--primary"
           @click="$emit('translate-with-bubbles')"
           title="使用当前文本框翻译此图片"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <path d="M2 3h5M4.5 3v7M2 6h5" stroke="currentColor" stroke-width="1.2" fill="none" />
-            <path d="M9 13l2-7 2 7M9.5 11h3" stroke="currentColor" stroke-width="1.2" fill="none" />
-          </svg>
-          <span>翻译</span>
+          <UiIcon name="languages" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">翻译</span>
         </UiButton>
 
-        <div class="toolbar-divider"></div>
+        <div class="edit-toolbar__divider"></div>
 
         <UiButton
           variant="toolbar"
-          class="annotation-btn"
-          :class="{ active: isDrawingMode }"
+          class="edit-toolbar__annotation-action"
+          :class="{ 'edit-toolbar__annotation-action--active': isDrawingMode }"
+          :aria-pressed="String(isDrawingMode)"
           @click="$emit('toggle-drawing-mode')"
           title="添加气泡框（或中键拖拽绘制）"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.5" />
-          </svg>
-          <span>添加</span>
+          <UiIcon name="square-plus" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">添加</span>
         </UiButton>
         <UiButton
           variant="toolbar"
-          class="annotation-btn"
+          class="edit-toolbar__annotation-action"
           :disabled="!hasSelection"
           @click="$emit('delete-selected-bubbles')"
           title="删除选中气泡框 (Delete)"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <path d="M5 8h6" stroke="currentColor" stroke-width="1.5" />
-          </svg>
-          <span>删除</span>
+          <UiIcon name="square-minus" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">删除</span>
         </UiButton>
         <UiButton
           variant="toolbar"
-          class="annotation-btn"
-          :class="{ 'is-loading': isRepairLoading }"
+          class="edit-toolbar__annotation-action"
+          :class="{ 'edit-toolbar__annotation-action--loading': isRepairLoading }"
           :disabled="!hasSelection || isRepairLoading"
           @click="$emit('repair-selected-bubble')"
           title="修复选中气泡背景 (R)"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" :class="{ 'spin-icon': isRepairLoading }">
-            <path d="M2 14l3-3m0 0l6-6 3 3-6 6m-3 0l-1 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M11 5l-1-1 2-2 2 2-2 2-1-1z" fill="currentColor" />
-          </svg>
-          <span>修复</span>
+          <UiIcon name="wand-sparkles" class="edit-toolbar__annotation-icon" size="14" :class="{ 'edit-toolbar__repair-icon--spinning': isRepairLoading }" />
+          <span class="edit-toolbar__annotation-label">修复</span>
         </UiButton>
 
-        <div class="toolbar-divider"></div>
+        <div class="edit-toolbar__divider"></div>
 
         <UiButton
           variant="toolbar"
-          class="annotation-btn brush-btn"
-          :class="{ active: brushMode === 'repair' }"
+          class="edit-toolbar__annotation-action edit-toolbar__annotation-action--brush"
+          :class="{ 'edit-toolbar__annotation-action--active': brushMode === 'repair' }"
+          :aria-pressed="String(brushMode === 'repair')"
           @click="$emit('activate-repair-brush')"
           title="修复笔刷 (按住R+左键拖拽)"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <circle cx="8" cy="8" r="2" fill="currentColor" />
-          </svg>
-          <span>修复笔刷</span>
+          <UiIcon name="brush" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">修复笔刷</span>
         </UiButton>
         <UiButton
           variant="toolbar"
-          class="annotation-btn brush-btn"
-          :class="{ active: brushMode === 'restore' }"
+          class="edit-toolbar__annotation-action edit-toolbar__annotation-action--brush"
+          :class="{ 'edit-toolbar__annotation-action--active': brushMode === 'restore' }"
+          :aria-pressed="String(brushMode === 'restore')"
           @click="$emit('activate-restore-brush')"
           title="还原笔刷 (按住U+左键拖拽)"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <path d="M5 8h6M8 5v6" stroke="currentColor" stroke-width="1" transform="rotate(45 8 8)" />
-          </svg>
-          <span>还原笔刷</span>
+          <UiIcon name="eraser" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">还原笔刷</span>
         </UiButton>
-        <span v-if="brushMode" class="brush-size-indicator">
+        <span v-if="brushMode" class="edit-toolbar__brush-size">
           笔刷: {{ brushSize }}px
         </span>
 
-        <div class="help-tooltip-container">
-          <UiButton variant="toolbar" class="help-tooltip-btn" title="快捷键操作帮助">
-            <svg viewBox="0 0 16 16" width="14" height="14">
-              <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2" />
-              <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor">?</text>
-            </svg>
-            <span class="help-btn-text">快捷键</span>
-          </UiButton>
-          <div class="help-tooltip-popup">
-            <div class="help-section">
-              <div class="help-title">🖱️ 鼠标操作</div>
-              <div class="help-item"><span class="help-key">左键点击气泡</span><span class="help-desc">选择气泡</span></div>
-              <div class="help-item"><span class="help-key">Shift+左键点击</span><span class="help-desc">多选气泡</span></div>
-              <div class="help-item"><span class="help-key">左键拖拽四角/边</span><span class="help-desc">调整大小</span></div>
-              <div class="help-item"><span class="help-key">左键拖拽框内部</span><span class="help-desc">移动气泡框</span></div>
-              <div class="help-item"><span class="help-key">中键拖拽</span><span class="help-desc">绘制新气泡框</span></div>
-            </div>
-            <div class="help-section">
-              <div class="help-title">⌨️ 快捷键</div>
-              <div class="help-item"><span class="help-key">A / D</span><span class="help-desc">切换上/下一张图片</span></div>
-              <div class="help-item"><span class="help-key">Ctrl+Enter</span><span class="help-desc">应用并跳转下一张</span></div>
-              <div class="help-item"><span class="help-key">Delete / Backspace</span><span class="help-desc">删除选中气泡</span></div>
-              <div class="help-item"><span class="help-key">按住R+左键拖拽</span><span class="help-desc">修复笔刷</span></div>
-              <div class="help-item"><span class="help-key">按住U+左键拖拽</span><span class="help-desc">还原笔刷</span></div>
-              <div class="help-item"><span class="help-key">笔刷模式下滚轮</span><span class="help-desc">调整笔刷大小</span></div>
-            </div>
-          </div>
-        </div>
+        <EditToolbarHelp />
       </div>
 
       <div
         v-if="brushMode"
-        class="brush-cursor"
+        class="edit-toolbar__brush-cursor"
         :style="brushCursorStyle"
       ></div>
 
-      <OverlayLayer v-if="brushMode" class="brush-mode-hint-layer" passthrough>
-        <div class="brush-mode-hint">
+      <OverlayLayer v-if="brushMode" class="edit-toolbar__brush-mode-hint-layer" passthrough>
+        <div class="edit-toolbar__brush-mode-hint">
           {{ brushMode === 'repair' ? '修复笔刷 (R)' : '还原笔刷 (U)' }} - 滚轮调整大小
         </div>
       </OverlayLayer>
 
       <div
         v-if="isProcessing"
-        class="edit-progress-container"
-        :class="{ completed: isProgressCompleted }"
+        class="edit-toolbar__progress"
+        :class="{ 'edit-toolbar__progress--completed': isProgressCompleted }"
       >
-        <div class="edit-progress-info">
-          <span class="edit-progress-text">{{ progressText }}</span>
-          <span class="edit-progress-count">{{ progressCurrent }}/{{ progressTotal }}</span>
+        <div class="edit-toolbar__progress-info">
+          <span class="edit-toolbar__progress-text">{{ progressText }}</span>
+          <span class="edit-toolbar__progress-count">{{ progressCurrent }}/{{ progressTotal }}</span>
         </div>
-        <div
-          class="edit-progress-bar"
-          role="progressbar"
-          aria-label="编辑处理进度"
-          aria-valuemin="0"
-          :aria-valuemax="progressAriaMax"
-          :aria-valuenow="progressAriaValue"
-        >
-          <div
-            class="edit-progress-fill"
-            :class="{ animating: !isProgressCompleted }"
-            :style="{ width: progressPercent + '%' }"
-          ></div>
-        </div>
+        <UiProgressBar
+          class="edit-toolbar__progress-bar"
+          :value="progressAriaValue"
+          :max="progressAriaMax"
+          label="编辑处理进度"
+          tone="success"
+          size="sm"
+          :striped="!isProgressCompleted"
+          :animated="!isProgressCompleted"
+        />
       </div>
 
-      <div class="toolbar-spacer"></div>
+      <div class="edit-toolbar__spacer"></div>
 
-      <div class="quick-actions">
-        <UiButton variant="toolbar" class="action-primary" @click="$emit('apply-and-next')" title="应用更改并跳转下一张 (Ctrl+Enter)">
+      <div class="edit-toolbar__quick-actions">
+        <UiButton variant="primary" tone="success" size="sm" @click="$emit('apply-and-next')" title="应用更改并跳转下一张 (Ctrl+Enter)">
           应用并下一张
         </UiButton>
       </div>
@@ -312,8 +276,12 @@
 <script setup lang="ts">
 
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import { computed } from 'vue'
+import EditToolbarHelp from './EditToolbarHelp.vue'
 
 const props = defineProps<{
   currentImageIndex: number
@@ -368,12 +336,6 @@ defineEmits<{
 const progressAriaMax = computed(() => Math.max(0, props.progressTotal))
 const progressAriaValue = computed(() => Math.max(0, Math.min(props.progressCurrent, progressAriaMax.value)))
 
-const progressPercent = computed(() => {
-  if (progressAriaMax.value === 0) return 0
-  const percent = Math.round((progressAriaValue.value / progressAriaMax.value) * 100)
-  return Math.max(0, Math.min(100, percent))
-})
-
 const isProgressCompleted = computed(() => {
   return props.progressTotal > 0 && props.progressCurrent >= props.progressTotal
 })
@@ -401,90 +363,81 @@ const brushCursorStyle = computed(() => {
 </script>
 
 <style scoped>
-.edit-toolbar-wrapper {
-  --edit-toolbar-shell-start: #16213e;
-  --edit-toolbar-shell-end: #1a1a2e;
-  --edit-toolbar-shell-divider: rgba(255, 255, 255, .1);
-  --edit-toolbar-shell-divider-soft: rgba(255, 255, 255, .05);
-  --edit-toolbar-row-overlay: rgba(0, 0, 0, .15);
-  --edit-toolbar-chip-background: rgba(102, 126, 234, .2);
-  --edit-toolbar-chip-hover-background: rgba(102, 126, 234, .4);
-  --edit-toolbar-chip-active-background: rgba(102, 126, 234, .5);
-  --edit-toolbar-control-background: rgba(102, 126, 234, .3);
-  --edit-toolbar-progress-background: rgba(0, 0, 0, .3);
-  --edit-toolbar-status-accent: #0f8;
-  --edit-toolbar-apply-button-background-start: #0f8;
-  --edit-toolbar-apply-button-background-end: #00cc6a;
-  --edit-toolbar-apply-button-text: #1a1a2e;
-  --edit-toolbar-apply-button-shadow: rgba(0, 255, 136, .3);
-  --edit-toolbar-exit-button-border: rgba(255, 255, 255, .3);
-  --edit-toolbar-exit-button-hover-border: rgba(255, 255, 255, .5);
-  --edit-toolbar-help-trigger-border: #cfd6e4;
-  --edit-toolbar-help-trigger-focus-border: #5b73f2;
-  --edit-toolbar-help-trigger-background: rgba(255, 255, 255, .9);
-  --edit-toolbar-help-trigger-hover-text: #5b73f2;
-  --edit-toolbar-help-section-divider: #e5e7eb;
-  --edit-toolbar-help-popover-shadow: rgba(0, 0, 0, .15);
-  --edit-toolbar-help-title-text: #374151;
-  --edit-toolbar-help-key-text: #6b7280;
-  --edit-toolbar-help-description-text: #374151;
-  --edit-toolbar-annotation-button-border: rgba(255, 255, 255, .2);
-  --edit-toolbar-annotation-button-hover-border: rgba(255, 255, 255, .3);
-  --edit-toolbar-detect-button-border: rgba(102, 126, 234, .5);
-  --edit-toolbar-translate-button-background: rgba(0, 255, 136, .2);
-  --edit-toolbar-translate-button-hover-background: rgba(0, 255, 136, .3);
-  --edit-toolbar-translate-button-border: rgba(0, 255, 136, .4);
-  --edit-toolbar-brush-button-background: rgba(255, 193, 7, .2);
-  --edit-toolbar-brush-button-hover-background: rgba(255, 193, 7, .3);
-  --edit-toolbar-brush-button-border: rgba(255, 193, 7, .4);
-  --edit-toolbar-image-index-text: #667eea;
-  --edit-toolbar-progress-text: rgba(255, 255, 255, .9);
-  --edit-toolbar-progress-highlight: #00d4ff;
-  --edit-toolbar-progress-glow: rgba(0, 255, 136, .5);
-  --edit-toolbar-brush-hint-background: rgba(0, 0, 0, .8);
-  --edit-toolbar-brush-repair-fill: rgba(76, 175, 80, .4);
-  --edit-toolbar-brush-repair-border: #4caf50;
-  --edit-toolbar-brush-restore-fill: rgba(33, 150, 243, .4);
-  --edit-toolbar-brush-restore-border: #2196f3;
+.edit-toolbar {
+  --edit-toolbar-shell-start: var(--color-surface-inverse-panel);
+  --edit-toolbar-shell-end: var(--color-surface-inverse);
+  --edit-toolbar-shell-divider: var(--color-overlay-inverse-subtle);
+  --edit-toolbar-shell-divider-soft: color-mix(in srgb, var(--color-overlay-inverse-subtle) 50%, transparent);
+  --edit-toolbar-row-overlay: color-mix(in srgb, var(--color-overlay-scrim-subtle) 50%, transparent);
+  --edit-toolbar-chip-background: color-mix(in srgb, var(--color-action-brand) 20%, transparent);
+  --edit-toolbar-chip-hover-background: color-mix(in srgb, var(--color-action-brand) 40%, transparent);
+  --edit-toolbar-chip-active-background: color-mix(in srgb, var(--color-action-brand) 50%, transparent);
+  --edit-toolbar-control-background: color-mix(in srgb, var(--color-action-brand) 30%, transparent);
+  --edit-toolbar-progress-background: var(--color-overlay-scrim-subtle);
+  --edit-toolbar-status-accent: var(--color-action-success-bright);
+  --edit-toolbar-progress-fill-start: var(--color-action-success-bright);
+  --edit-toolbar-annotation-button-border: color-mix(in srgb, var(--color-text-inverse) 20%, transparent);
+  --edit-toolbar-annotation-button-hover-border: color-mix(in srgb, var(--color-text-inverse) 30%, transparent);
+  --edit-toolbar-detect-button-border: color-mix(in srgb, var(--color-action-brand) 50%, transparent);
+  --edit-toolbar-translate-button-background: color-mix(in srgb, var(--color-action-success-bright) 20%, transparent);
+  --edit-toolbar-translate-button-hover-background: color-mix(in srgb, var(--color-action-success-bright) 30%, transparent);
+  --edit-toolbar-translate-button-border: color-mix(in srgb, var(--color-action-success-bright) 40%, transparent);
+  --edit-toolbar-brush-button-background: color-mix(in srgb, var(--color-status-warning) 20%, transparent);
+  --edit-toolbar-brush-button-hover-background: color-mix(in srgb, var(--color-status-warning) 30%, transparent);
+  --edit-toolbar-brush-button-border: color-mix(in srgb, var(--color-status-warning) 40%, transparent);
+  --edit-toolbar-image-index-text: var(--color-action-brand);
+  --edit-toolbar-progress-text: color-mix(in srgb, var(--color-text-inverse) 90%, transparent);
+  --edit-toolbar-progress-highlight: var(--color-status-info-bright);
+  --edit-toolbar-brush-hint-background: color-mix(in srgb, var(--color-overlay-backdrop-solid) 80%, transparent);
+  --edit-toolbar-brush-repair-fill: color-mix(in srgb, var(--color-status-success) 40%, transparent);
+  --edit-toolbar-brush-repair-border: var(--color-status-success);
+  --edit-toolbar-brush-restore-fill: color-mix(in srgb, var(--color-status-info) 40%, transparent);
+  --edit-toolbar-brush-restore-border: var(--color-status-info);
+  --ui-icon-button-active-background: var(--edit-toolbar-chip-active-background);
+  --ui-icon-button-active-border: var(--color-border-brand-gradient);
+  --ui-icon-button-active-hover-background: var(--edit-toolbar-chip-hover-background);
 
   flex-shrink: 0;
   background: linear-gradient(135deg, var(--edit-toolbar-shell-start) 0%, var(--edit-toolbar-shell-end) 100%);
   border-bottom: 1px solid var(--edit-toolbar-shell-divider);
 }
 
-.edit-toolbar {
+.edit-toolbar__row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   padding: 8px 15px;
   gap: 10px;
 }
 
-.toolbar-row-1 {
+.edit-toolbar__row--primary {
   border-bottom: 1px solid var(--edit-toolbar-shell-divider-soft);
 }
 
-.toolbar-row-2 {
+.edit-toolbar__row--secondary {
   background: var(--edit-toolbar-row-overlay);
 }
 
-.toolbar-spacer {
+.edit-toolbar__spacer {
   flex: 1;
+  min-width: 0;
 }
 
-.toolbar-divider {
+.edit-toolbar__divider {
   width: 1px;
   height: 24px;
   background: var(--color-overlay-inverse-muted);
   margin: 0 5px;
 }
 
-.image-navigator {
+.edit-toolbar__image-navigator {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.image-indicator {
+.edit-toolbar__image-indicator {
   color: var(--color-text-inverse);
   font-size: 14px;
   padding: 6px 12px;
@@ -494,42 +447,23 @@ const brushCursorStyle = computed(() => {
   transition: all 0.2s;
 }
 
-.image-indicator:hover {
+.edit-toolbar__image-indicator:hover {
   background: var(--edit-toolbar-chip-hover-background);
 }
 
-.image-indicator span {
-  font-weight: bold;
+.edit-toolbar__image-indicator-value {
+  font-weight: 700;
   color: var(--edit-toolbar-image-index-text);
 }
 
-.thumb-toggle-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-overlay-inverse-subtle);
-  color: var(--color-text-inverse);
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
-}
-
-.thumb-toggle-btn:hover {
-  background: var(--color-overlay-inverse-muted);
-}
-
-.thumb-toggle-btn.active {
-  background: var(--edit-toolbar-chip-active-background);
-}
-
-.bubble-navigator {
+.edit-toolbar__bubble-navigator {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.bubble-indicator {
+.edit-toolbar__bubble-indicator {
   color: var(--color-text-inverse);
   font-size: 13px;
   padding: 4px 10px;
@@ -537,34 +471,19 @@ const brushCursorStyle = computed(() => {
   border-radius: 6px;
 }
 
-.bubble-indicator span {
-  font-weight: bold;
+.edit-toolbar__bubble-indicator-value {
+  font-weight: 700;
   color: var(--edit-toolbar-status-accent);
 }
 
-.view-controls {
+.edit-toolbar__view-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.view-control-btn {
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-overlay-inverse-subtle);
-  color: var(--color-text-inverse);
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
-}
-
-.view-control-btn:hover {
-  background: var(--color-overlay-inverse-muted);
-}
-
-.view-controls .zoom-level {
+.edit-toolbar__view-controls .edit-toolbar__zoom-level {
   min-width: 50px;
   text-align: center;
   color: var(--color-text-inverse);
@@ -572,82 +491,12 @@ const brushCursorStyle = computed(() => {
   padding: 0 8px;
 }
 
-.view-mode-btn {
-  font-size: 18px;
-}
-
-.sync-toggle-btn {
-  font-size: 12px;
-}
-
-.quick-actions {
+.edit-toolbar__quick-actions {
   display: flex;
   gap: 10px;
 }
 
-.action-primary {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--edit-toolbar-apply-button-background-start) 0%, var(--edit-toolbar-apply-button-background-end) 100%);
-  color: var(--edit-toolbar-apply-button-text);
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
-}
-
-.action-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--edit-toolbar-apply-button-shadow);
-}
-
-.action-secondary {
-  padding: 8px 16px;
-  border: 1px solid var(--edit-toolbar-exit-button-border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-inverse);
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
-}
-
-.action-secondary:hover {
-  background: var(--color-overlay-inverse-subtle);
-  border-color: var(--edit-toolbar-exit-button-hover-border);
-}
-
-.image-navigator .nav-btn,
-.bubble-navigator .nav-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  background: var(--edit-toolbar-control-background);
-  color: var(--color-text-inverse);
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  line-height: 1;
-}
-
-.image-navigator .nav-btn:disabled,
-.bubble-navigator .nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.image-navigator .nav-btn:not(:disabled):hover,
-.bubble-navigator .nav-btn:not(:disabled):hover {
-  background: var(--edit-toolbar-chip-active-background);
-}
-
-.edit-progress-container {
+.edit-toolbar__progress {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -655,7 +504,7 @@ const brushCursorStyle = computed(() => {
   margin-left: 12px;
   background: var(--edit-toolbar-progress-background);
   border-radius: 20px;
-  min-width: 200px;
+  min-width: min(100%, 200px);
   max-width: 350px;
   animation: progressFadeIn 0.3s ease;
 }
@@ -672,74 +521,55 @@ const brushCursorStyle = computed(() => {
   }
 }
 
-.edit-progress-info {
+.edit-toolbar__progress-info {
   display: flex;
   align-items: center;
   gap: 8px;
   white-space: nowrap;
 }
 
-.edit-progress-text {
+.edit-toolbar__progress-text {
   font-size: 12px;
   color: var(--edit-toolbar-progress-text);
   font-weight: 500;
 }
 
-.edit-progress-count {
+.edit-toolbar__progress-count {
   font-size: 12px;
   color: var(--edit-toolbar-status-accent);
   font-weight: 600;
   font-family: var(--font-mono);
 }
 
-.edit-progress-bar {
+.edit-toolbar__progress-bar {
   flex: 1;
-  height: 6px;
-  background: var(--color-overlay-inverse-soft);
-  border-radius: 3px;
-  overflow: hidden;
   min-width: 80px;
+
+  --ui-progress-bar-track: var(--color-overlay-inverse-soft);
+  --ui-progress-bar-stripe: color-mix(in srgb, var(--color-text-inverse) 18%, transparent);
+  --ui-progress-bar-height: 6px;
+  --ui-progress-bar-fill: linear-gradient(90deg, var(--edit-toolbar-progress-fill-start), var(--edit-toolbar-progress-highlight));
 }
 
-.edit-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--edit-toolbar-apply-button-background-start), var(--edit-toolbar-progress-highlight));
-  border-radius: 3px;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 8px var(--edit-toolbar-progress-glow);
+.edit-toolbar__progress--completed .edit-toolbar__progress-bar {
+  --ui-progress-bar-fill: var(--edit-toolbar-progress-fill-start);
 }
 
-.edit-progress-fill.animating {
-  background: linear-gradient(90deg, var(--edit-toolbar-apply-button-background-start), var(--edit-toolbar-progress-highlight), var(--edit-toolbar-apply-button-background-start));
-  background-size: 200% 100%;
-  animation: progressShine 1.5s ease-in-out infinite;
-}
-
-@keyframes progressShine {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.edit-progress-container.completed .edit-progress-fill {
-  background: var(--edit-toolbar-apply-button-background-start);
-  animation: none;
-}
-
-.edit-progress-container.completed .edit-progress-text {
+.edit-toolbar__progress--completed .edit-toolbar__progress-text {
   color: var(--edit-toolbar-status-accent);
 }
 
-.annotation-btn.is-loading {
+.edit-toolbar__annotation-action--loading {
   opacity: 0.7;
   cursor: wait;
   pointer-events: none;
 }
 
-.annotation-btn.is-loading .spin-icon {
+.edit-toolbar__annotation-action--loading .edit-toolbar__repair-icon--spinning {
   animation: spin-repair-icon 1s linear infinite;
 }
 
-.brush-size-indicator {
+.edit-toolbar__brush-size {
   color: var(--color-text-inverse);
   font-size: 12px;
   padding: 4px 8px;
@@ -748,25 +578,24 @@ const brushCursorStyle = computed(() => {
   margin-left: 8px;
 }
 
-.annotation-btn.active,
-.brush-btn.active {
+.edit-toolbar__annotation-action--active {
   background: var(--edit-toolbar-chip-active-background);
   border-color: var(--color-border-brand-gradient);
 }
 
-.brush-cursor {
+.edit-toolbar__brush-cursor {
   pointer-events: none;
   transition: width 0.1s, height 0.1s;
 }
 
-.brush-mode-hint-layer {
+.edit-toolbar__brush-mode-hint-layer {
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding-bottom: 20px;
 }
 
-.brush-mode-hint {
+.edit-toolbar__brush-mode-hint {
   padding: 8px 16px;
   background: var(--edit-toolbar-brush-hint-background);
   color: var(--color-text-inverse);
@@ -775,108 +604,14 @@ const brushCursorStyle = computed(() => {
   pointer-events: none;
 }
 
-.help-tooltip-container {
-  position: relative;
-  display: inline-flex;
-}
-
-.help-tooltip-btn {
+.edit-toolbar__annotation-tools {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--edit-toolbar-help-trigger-border);
-  border-radius: 14px;
-  background: var(--edit-toolbar-help-trigger-background);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.help-btn-text {
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.help-tooltip-btn:hover {
-  background: var(--color-surface-base);
-  border-color: var(--edit-toolbar-help-trigger-focus-border);
-  color: var(--edit-toolbar-help-trigger-hover-text);
-}
-
-.help-tooltip-popup {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 8px;
-  min-width: 260px;
-  padding: 12px 14px;
-  background: var(--color-surface-base);
-  border: 1px solid var(--color-border-muted);
-  border-radius: 10px;
-  box-shadow: 0 4px 20px var(--edit-toolbar-help-popover-shadow);
-  z-index: var(--z-overlay);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-5px);
-  transition: all 0.2s ease;
-}
-
-.help-tooltip-container:hover .help-tooltip-popup,
-.help-tooltip-container:focus-within .help-tooltip-popup {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-}
-
-.help-section {
-  margin-bottom: 10px;
-}
-
-.help-section:last-child {
-  margin-bottom: 0;
-}
-
-.help-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--edit-toolbar-help-title-text);
-  margin-bottom: 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--edit-toolbar-help-section-divider);
-}
-
-.help-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3px 0;
-  font-size: 11px;
-}
-
-.help-key {
-  color: var(--edit-toolbar-help-key-text);
-  font-family: var(--font-mono);
-  background: var(--color-surface-muted);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-}
-
-.help-desc {
-  color: var(--edit-toolbar-help-description-text);
-}
-
-.annotation-tools {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.annotation-btn {
+.edit-toolbar__annotation-action {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -890,53 +625,50 @@ const brushCursorStyle = computed(() => {
   transition: all 0.2s;
 }
 
-.annotation-btn:hover {
+.edit-toolbar__annotation-action:hover {
   background: var(--color-overlay-inverse-muted);
   border-color: var(--edit-toolbar-annotation-button-hover-border);
 }
 
-.annotation-btn:disabled {
+.edit-toolbar__annotation-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.annotation-btn svg {
+.edit-toolbar__annotation-icon {
   flex-shrink: 0;
 }
 
-.annotation-btn span {
+.edit-toolbar__annotation-label {
   white-space: nowrap;
 }
 
-.detect-btn {
+.edit-toolbar__annotation-action--detect {
   background: var(--edit-toolbar-control-background);
   border-color: var(--edit-toolbar-detect-button-border);
 }
 
-.detect-btn:hover {
+.edit-toolbar__annotation-action--detect:hover {
   background: var(--edit-toolbar-chip-active-background);
 }
 
-.primary-action-btn {
+.edit-toolbar__annotation-action--primary {
   background: var(--edit-toolbar-translate-button-background);
   border-color: var(--edit-toolbar-translate-button-border);
   color: var(--edit-toolbar-status-accent);
 }
 
-.primary-action-btn:hover {
+.edit-toolbar__annotation-action--primary:hover {
   background: var(--edit-toolbar-translate-button-hover-background);
 }
 
-.brush-btn {
+.edit-toolbar__annotation-action--brush {
   background: var(--edit-toolbar-brush-button-background);
   border-color: var(--edit-toolbar-brush-button-border);
 }
 
-.brush-btn:hover {
+.edit-toolbar__annotation-action--brush:hover {
   background: var(--edit-toolbar-brush-button-hover-background);
 }
 
-.view-control-btn.active {
-  background: var(--edit-toolbar-chip-active-background);
-}
 </style>

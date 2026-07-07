@@ -1,46 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { createDefaultSettings } from '@/stores/settings/defaults'
+import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
+import { ParallelProgressTracker } from '@/composables/translation/parallel/ParallelProgressTracker'
+import { TaskPool } from '@/composables/translation/parallel/TaskPool'
+import type { PipelineRuntime } from '@/composables/translation/core/runtime'
+import type { PipelineTask, ParallelTranslationMode } from '@/composables/translation/parallel/types'
+import type { ImageData } from '@/types/image'
 
 const {
   executeAtomicStepMock,
   executeBatchAtomicStepMock,
-  settingsStoreMock,
 } = vi.hoisted(() => ({
   executeAtomicStepMock: vi.fn(),
   executeBatchAtomicStepMock: vi.fn(),
-  settingsStoreMock: {
-    settings: {
-      hqTranslation: {
-        batchSize: 2,
-      },
-      proofreading: {
-        rounds: [{ batchSize: 2 }],
-      },
-      textStyle: {
-        fontSize: 16,
-        autoFontSize: false,
-        fontFamily: 'fonts/STSONG.TTF',
-        layoutDirection: 'auto',
-        textColor: '#000000',
-        fillColor: '#ffffff',
-        strokeEnabled: false,
-        strokeColor: '#000000',
-        strokeWidth: 1,
-        lineSpacing: 1,
-        textAlign: 'start',
-        inpaintMethod: 'solid',
-        useAutoTextColor: false,
-      },
-    },
-  },
 }))
 
 vi.mock('@/composables/translation/core/atomicSteps', () => ({
   executeAtomicStep: executeAtomicStepMock,
   executeBatchAtomicStep: executeBatchAtomicStepMock,
-}))
-
-vi.mock('@/stores/settings', () => ({
-  useSettingsStore: () => settingsStoreMock,
 }))
 
 describe('TranslatePool', () => {
@@ -49,46 +28,150 @@ describe('TranslatePool', () => {
     executeBatchAtomicStepMock.mockReset()
   })
 
-  it('routes standard mode through the shared translate atomic step', async () => {
-    executeAtomicStepMock.mockImplementation(async (_step: string, task: any) => ({
-      ...task,
-      translatedTexts: ['译文'],
-      warnings: [],
-    }))
+  function createRuntime(
+    mode: ParallelTranslationMode = 'standard',
+    overrides: Partial<PipelineRuntime> = {},
+  ): PipelineRuntime {
+    const settings = createDefaultSettings()
+    settings.hqTranslation.batchSize = 2
+    settings.proofreading.rounds = [{
+      name: 'Round 1',
+      provider: settings.hqTranslation.provider,
+      apiKey: settings.hqTranslation.apiKey,
+      modelName: settings.hqTranslation.modelName,
+      customBaseUrl: settings.hqTranslation.customBaseUrl,
+      openaiOptions: settings.hqTranslation.openaiOptions,
+      batchSize: 2,
+      prompt: settings.hqTranslation.prompt,
+    }]
 
-    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
-    const pool = new TranslatePool(null, { updatePool: vi.fn() } as any)
-    pool.setMode('standard', 1, null)
+    return {
+      mode,
+      settingsSnapshot: settings,
+      bookTranslationConstraints: createEmptyBookTranslationConstraints(),
+      savedTextStyles: null,
+      autoSaveEnabled: false,
+      isBookshelfMode: false,
+      sessionPath: null,
+      bookId: null,
+      chapterId: null,
+      ...overrides,
+    }
+  }
 
-    const task = {
+  function createSourceImage(overrides: Partial<ImageData> = {}): ImageData {
+    return {
+      id: 'img-1',
+      fileName: 'page-1.png',
+      originalDataURL: 'data:image/png;base64,abc',
+      translatedDataURL: null,
+      cleanImageData: null,
+      bubbleStates: null,
+      translationStatus: 'processing',
+      translationFailed: false,
+      hasUnsavedChanges: true,
+      fontSize: 16,
+      autoFontSize: false,
+      fontFamily: 'fonts/STSONG.TTF',
+      layoutDirection: 'auto',
+      textColor: '#000000',
+      fillColor: '#ffffff',
+      inpaintMethod: 'solid',
+      strokeEnabled: false,
+      strokeColor: '#000000',
+      strokeWidth: 1,
+      lineSpacing: 1,
+      textAlign: 'start',
+      useAutoTextColor: false,
+      ...overrides,
+    }
+  }
+
+  function createTask(overrides: Partial<PipelineTask> = {}): PipelineTask {
+    return {
       id: 'task-1',
       imageIndex: 0,
       translationMode: 'standard',
-      runtime: { mode: 'standard', settingsSnapshot: settingsStoreMock.settings },
+      runtime: createRuntime(),
       status: 'pending',
-      originalTexts: ['原文'],
-      sourceImage: { originalDataURL: 'data:image/png;base64,abc' },
+      sourceImage: createSourceImage(),
       bubbleCoords: [],
       bubbleAngles: [],
       bubblePolygons: [],
       autoDirections: [],
       textlinesPerBubble: [],
+      originalTexts: ['原文'],
       ocrResults: [],
       colors: [],
       translatedTexts: [],
       textboxTexts: [],
       warnings: [],
+      autoGlossaryStats: {
+        added: 0,
+        duplicates: 0,
+        failedPages: 0,
+      },
       persisted: false,
-    } as any
+      ...overrides,
+    }
+  }
 
-    const result = await (pool as any).process(task)
+  class TestNextPool extends TaskPool {
+    readonly enqueueMock = vi.fn()
+
+    constructor() {
+      super('Next', 'arrow-right', null, null, new ParallelProgressTracker())
+    }
+
+    override enqueue(task: PipelineTask): void {
+      this.enqueueMock(task)
+    }
+
+    protected override async process(task: PipelineTask): Promise<PipelineTask> {
+      return task
+    }
+  }
+
+  async function createTestTranslatePool(
+    nextPool: TaskPool | null,
+    onTaskComplete?: (task: PipelineTask) => void,
+  ) {
+    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
+    class TestTranslatePool extends TranslatePool {
+      run(task: PipelineTask): Promise<PipelineTask> {
+        return this.process(task)
+      }
+    }
+
+    return new TestTranslatePool(nextPool, new ParallelProgressTracker(), onTaskComplete)
+  }
+
+  it('keeps translate pool tests on current task contracts without private-member casts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/translatePool.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+  })
+
+  it('routes standard mode through the shared translate atomic step', async () => {
+    executeAtomicStepMock.mockImplementation(async (_step: string, task: PipelineTask) => ({
+      ...task,
+      translatedTexts: ['译文'],
+      warnings: [],
+    }))
+
+    const pool = await createTestTranslatePool(null)
+    pool.setMode('standard', 1, null)
+
+    const task = createTask()
+
+    const result = await pool.run(task)
 
     expect(executeAtomicStepMock).toHaveBeenCalledWith('translate', task, task.runtime)
     expect(result.translatedTexts).toEqual(['译文'])
   })
 
   it('buffers HQ tasks and flushes them through the shared aiTranslate batch step', async () => {
-    executeBatchAtomicStepMock.mockImplementation(async (_step: string, tasks: any[]) =>
+    executeBatchAtomicStepMock.mockImplementation(async (_step: string, tasks: PipelineTask[]) =>
       tasks.map((task) => ({
         ...task,
         translatedTexts: ['批量译文'],
@@ -96,95 +179,87 @@ describe('TranslatePool', () => {
       })),
     )
 
-    const nextPool = { enqueue: vi.fn() }
-    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
-    const pool = new TranslatePool(nextPool as any, { updatePool: vi.fn() } as any)
-    pool.setMode('hq', 2, nextPool as any)
+    const nextPool = new TestNextPool()
+    const pool = await createTestTranslatePool(nextPool)
+    pool.setMode('hq', 2, nextPool)
 
-    const runtime = { mode: 'hq', settingsSnapshot: settingsStoreMock.settings }
-    const firstTask = {
+    const runtime = createRuntime('hq')
+    const firstTask = createTask({
       id: 'task-1',
       imageIndex: 0,
       translationMode: 'hq',
       runtime,
-      status: 'pending',
       originalTexts: ['原文1'],
-      sourceImage: { originalDataURL: 'data:image/png;base64,abc1' },
-      bubbleCoords: [],
-      bubbleAngles: [],
-      bubblePolygons: [],
-      autoDirections: [],
-      textlinesPerBubble: [],
-      ocrResults: [],
-      colors: [],
-      translatedTexts: [],
-      textboxTexts: [],
-      warnings: [],
-      persisted: false,
-    } as any
-    const secondTask = {
-      ...firstTask,
+      sourceImage: createSourceImage({
+        id: 'img-1',
+        fileName: 'page-1.png',
+        originalDataURL: 'data:image/png;base64,abc1',
+      }),
+    })
+    const secondTask = createTask({
       id: 'task-2',
       imageIndex: 1,
+      translationMode: 'hq',
+      runtime,
       originalTexts: ['原文2'],
-      sourceImage: { originalDataURL: 'data:image/png;base64,abc2' },
-    }
+      sourceImage: createSourceImage({
+        id: 'img-2',
+        fileName: 'page-2.png',
+        originalDataURL: 'data:image/png;base64,abc2',
+      }),
+    })
 
-    const buffered = await (pool as any).process(firstTask)
-    const flushed = await (pool as any).process(secondTask)
+    const buffered = await pool.run(firstTask)
+    const flushed = await pool.run(secondTask)
 
     expect(buffered.status).toBe('buffered')
     expect(executeBatchAtomicStepMock).toHaveBeenCalledWith('aiTranslate', [firstTask, secondTask], runtime)
-    expect(nextPool.enqueue).toHaveBeenCalledTimes(2)
+    expect(nextPool.enqueueMock).toHaveBeenCalledTimes(2)
     expect(flushed.status).toBe('buffered')
   })
 
   it('reports buffered HQ sibling tasks when a batch flush fails', async () => {
     executeBatchAtomicStepMock.mockRejectedValue(new Error('ai batch failed'))
 
-    const nextPool = { enqueue: vi.fn() }
+    const nextPool = new TestNextPool()
     const onTaskComplete = vi.fn()
-    const { TranslatePool } = await import('@/composables/translation/parallel/pools/TranslatePool')
-    const pool = new TranslatePool(nextPool as any, { updatePool: vi.fn() } as any, onTaskComplete)
-    pool.setMode('hq', 2, nextPool as any)
+    const pool = await createTestTranslatePool(nextPool, onTaskComplete)
+    pool.setMode('hq', 2, nextPool)
 
-    const runtime = { mode: 'hq', settingsSnapshot: settingsStoreMock.settings }
-    const firstTask = {
+    const runtime = createRuntime('hq')
+    const firstTask = createTask({
       id: 'task-1',
       imageIndex: 0,
       translationMode: 'hq',
       runtime,
-      status: 'pending',
       originalTexts: ['原文1'],
-      sourceImage: { originalDataURL: 'data:image/png;base64,abc1' },
-      bubbleCoords: [],
-      bubbleAngles: [],
-      bubblePolygons: [],
-      autoDirections: [],
-      textlinesPerBubble: [],
-      ocrResults: [],
-      colors: [],
-      translatedTexts: [],
-      textboxTexts: [],
-      warnings: [],
-      persisted: false,
-    } as any
-    const secondTask = {
-      ...firstTask,
+      sourceImage: createSourceImage({
+        id: 'img-1',
+        fileName: 'page-1.png',
+        originalDataURL: 'data:image/png;base64,abc1',
+      }),
+    })
+    const secondTask = createTask({
       id: 'task-2',
       imageIndex: 1,
+      translationMode: 'hq',
+      runtime,
       originalTexts: ['原文2'],
-      sourceImage: { originalDataURL: 'data:image/png;base64,abc2' },
-    }
+      sourceImage: createSourceImage({
+        id: 'img-2',
+        fileName: 'page-2.png',
+        originalDataURL: 'data:image/png;base64,abc2',
+      }),
+    })
 
-    await (pool as any).process(firstTask)
-    await expect((pool as any).process(secondTask)).rejects.toThrow('ai batch failed')
+    await pool.run(firstTask)
+    await expect(pool.run(secondTask)).rejects.toThrow('ai batch failed')
 
     expect(onTaskComplete).toHaveBeenCalledWith(expect.objectContaining({
       id: 'task-1',
       status: 'failed',
       error: 'ai batch failed',
     }))
-    expect(nextPool.enqueue).not.toHaveBeenCalled()
+    expect(nextPool.enqueueMock).not.toHaveBeenCalled()
   })
 })

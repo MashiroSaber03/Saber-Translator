@@ -3,19 +3,18 @@ import type { BubbleState } from '@/types/bubble'
 import type { ImageDataUpdates } from '@/types/image'
 import type { DetectionOutput } from './steps/detection'
 
-/**
- * 统一保存检测结果到 ImageData
- * 确保所有检测结果字段都被正确保存，避免遗漏
- */
+interface DetectionResultWriterOptions {
+  imageStore?: ReturnType<typeof useImageStore>
+  updateBubbleStates?: boolean
+  bubbleStates?: BubbleState[]
+}
+
 export function saveDetectionResultToImage(
   imageIndex: number,
   result: DetectionOutput,
-  options?: {
-    updateBubbleStates?: boolean
-    bubbleStates?: BubbleState[]
-  }
+  options: DetectionResultWriterOptions = {},
 ): void {
-  const imageStore = useImageStore()
+  const imageStore = options.imageStore ?? useImageStore()
 
   const updateData: ImageDataUpdates = {
     bubbleCoords: result.bubbleCoords,
@@ -29,7 +28,7 @@ export function saveDetectionResultToImage(
       ...state,
       textlines: state.textlines && state.textlines.length > 0
         ? state.textlines
-        : (result.textlinesPerBubble[index] || [])
+        : (result.textlinesPerBubble[index] || []),
     }))
   } else if (result.bubbleStates.length > 0) {
     updateData.bubbleStates = result.bubbleStates

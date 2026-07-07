@@ -5,8 +5,10 @@ import { computed } from 'vue'
 const props = withDefaults(defineProps<{
   title: string
   customClass?: string
+  widthVariant?: 'default' | 'wide'
 }>(), {
   customClass: '',
+  widthVariant: 'default',
 })
 
 const emit = defineEmits<{
@@ -14,7 +16,7 @@ const emit = defineEmits<{
 }>()
 
 const modalMaxWidth = computed(() => (
-  props.customClass.includes('continuation-dialog-modal--wide') ? '600px' : '520px'
+  props.widthVariant === 'wide' ? '600px' : '520px'
 ))
 
 function handleUpdate(value: boolean): void {
@@ -34,7 +36,6 @@ function handleUpdate(value: boolean): void {
     width="90%"
     :max-width="modalMaxWidth"
     max-height="90vh"
-    border-radius="12px"
     footer-padding="16px 24px"
     @update:model-value="handleUpdate"
     @close="emit('close')"

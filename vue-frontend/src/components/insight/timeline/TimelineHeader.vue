@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 defineProps<{
   isLoading: boolean
@@ -13,16 +15,21 @@ defineEmits<{
 
 <template>
   <div class="timeline-header">
-    <h3>📈 剧情时间线</h3>
+    <h3 class="timeline-header__title">
+      <UiIcon name="bar-chart" size="18" />
+      <span>剧情时间线</span>
+    </h3>
     <UiButton
       variant="secondary"
       size="sm"
+      class="timeline-header__regenerate-action"
       :disabled="isLoading || isRegenerating"
       :loading="isRegenerating"
       @click="$emit('regenerate')"
     >
-      <span v-if="isRegenerating" class="btn-spinner"></span>
-      {{ isRegenerating ? '生成中...' : '🔄 重新生成' }}
+      <UiSpinner v-if="isRegenerating" :size="14" />
+      <UiIcon v-else name="refresh" size="14" />
+      <span>{{ isRegenerating ? '生成中...' : '重新生成' }}</span>
     </UiButton>
   </div>
 </template>
@@ -35,19 +42,11 @@ defineEmits<{
   margin-bottom: 16px;
 }
 
-.timeline-header h3 {
+.timeline-header__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 18px;
-}
-
-.btn-spinner {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid currentcolor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-right: 6px;
 }
 </style>

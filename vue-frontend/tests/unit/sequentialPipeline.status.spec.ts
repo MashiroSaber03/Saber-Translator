@@ -3,6 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import type { TaskContext } from '@/composables/translation/core/runtime'
 
 const {
   executeAtomicStepMock,
@@ -55,7 +58,7 @@ describe('useSequentialPipeline completion projection', () => {
     preSaveOriginalImagesMock.mockResolvedValue(true)
     finalizeSaveMock.mockResolvedValue(undefined)
 
-    executeAtomicStepMock.mockImplementation(async (step: string, task: any) => {
+    executeAtomicStepMock.mockImplementation(async (step: string, task: TaskContext) => {
       switch (step) {
         case 'detection':
           return { ...task, bubbleCoords: [[0, 0, 10, 10]], bubbleAngles: [0], autoDirections: ['vertical'], bubbleStates: [], textlinesPerBubble: [] }
@@ -101,6 +104,17 @@ describe('useSequentialPipeline completion projection', () => {
     expect(imageStore.images[0]?.hasUnsavedChanges).toBe(false)
   })
 
+  it('keeps sequential pipeline task mocks typed to the current task contract', () => {
+    for (const file of [
+      'tests/unit/sequentialPipeline.status.spec.ts',
+      'tests/unit/sequentialPipeline.validation.spec.ts',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+
+      expect(source, file).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+    }
+  })
+
   it('does not let a previous delayed finish close progress for a new run', async () => {
     vi.useFakeTimers()
     const imageStore = useImageStore()
@@ -117,7 +131,7 @@ describe('useSequentialPipeline completion projection', () => {
     expect(pipeline.progress.value.isInProgress).toBe(true)
 
     let resumeDetection: (() => void) | undefined
-    executeAtomicStepMock.mockImplementation(async (step: string, task: any) => {
+    executeAtomicStepMock.mockImplementation(async (step: string, task: TaskContext) => {
       if (step === 'detection') {
         await new Promise<void>((resolve) => {
           resumeDetection = resolve

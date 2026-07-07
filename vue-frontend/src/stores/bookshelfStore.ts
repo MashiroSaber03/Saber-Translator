@@ -1,173 +1,90 @@
-/**
- * 书架状态管理 Store
- * 管理书籍列表、搜索和标签筛选
- */
-
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import type { BookData, ChapterData, TagData } from '@/types/api'
+import { computed, ref } from 'vue'
 import * as bookshelfApi from '@/api/bookshelf'
+import type { BookData, ChapterData, TagData } from '@/types/api'
+import { normalizeBookData, normalizeChapterData } from '@/utils/bookshelfModels'
+import {
+  projectBookshelfBooks,
+  type BookSortBy,
+  type SortOrder,
+} from '@/stores/bookshelfListProjection'
 
-// ============================================================
-// 类型定义
-// ============================================================
+export type { BookSortBy, SortOrder } from '@/stores/bookshelfListProjection'
 
-/**
- * 书籍排序方式
- */
-export type BookSortBy = 'title' | 'createdAt' | 'updatedAt'
-
-/**
- * 排序方向
- */
-export type SortOrder = 'asc' | 'desc'
-
-
-// ============================================================
-// Store 定义
-// ============================================================
+interface BookUpdatePayload {
+  title?: string
+  description?: string
+  cover?: string
+  tags?: string[]
+}
 
 export const useBookshelfStore = defineStore('bookshelf', () => {
-  // ============================================================
-  // 状态定义
-  // ============================================================
-
-  /** 书籍列表 */
   const books = ref<BookData[]>([])
-
-  /** 标签列表 */
   const tags = ref<TagData[]>([])
-
-  /** 搜索关键词 */
   const searchKeyword = ref('')
-
-  /** 选中的标签名称列表，用于后端筛选。 */
   const selectedTagNames = ref<string[]>([])
-
-  /** 排序方式 */
   const sortBy = ref<BookSortBy>('updatedAt')
-
-  /** 排序方向 */
   const sortOrder = ref<SortOrder>('desc')
-
-  /** 当前展开的书籍ID（显示章节列表） */
   const expandedBookId = ref<string | null>(null)
-
-  /** 当前选中的书籍ID（用于详情显示） */
   const currentBookId = ref<string | null>(null)
-
-  /** 批量选择模式 */
   const batchMode = ref(false)
-
-  /** 批量模式下选中的书籍 ID */
   const selectedBookIds = ref<Set<string>>(new Set())
-
-  /** 是否正在加载 */
   const isLoading = ref(false)
-
-  /** 错误信息 */
   const error = ref<string | null>(null)
 
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 
-   * 过滤后的书籍列表
-   * 搜索和标签筛选由后端处理，前端直接展示当前返回结果。
-   */
-  const filteredBooks = computed(() => {
-    const keyword = searchKeyword.value.trim().toLowerCase()
-    const tagFilters = selectedTagNames.value
-
-    return books.value.filter((book) => {
-      const matchesKeyword = !keyword
-        || book.title.toLowerCase().includes(keyword)
-        || Boolean(book.description?.toLowerCase().includes(keyword))
-
-      const matchesTags = tagFilters.length === 0
-        || tagFilters.every(tagName => book.tags?.includes(tagName))
-
-      return matchesKeyword && matchesTags
-    })
-  })
-
-  /** 书籍总数 */
+  const filteredBooks = computed(() =>
+    projectBookshelfBooks(books.value, {
+      searchKeyword: searchKeyword.value,
+      selectedTagNames: selectedTagNames.value,
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value,
+    }),
+  )
   const bookCount = computed(() => books.value.length)
-
-  /** 过滤后的书籍数量 */
   const filteredBookCount = computed(() => filteredBooks.value.length)
-
-  /** 当前展开的书籍 */
   const expandedBook = computed(() => {
     if (!expandedBookId.value) return null
     return books.value.find(book => book.id === expandedBookId.value) || null
   })
-
-  /** 当前选中的书籍（用于详情显示） */
   const currentBook = computed(() => {
     if (!currentBookId.value) return null
     return books.value.find(book => book.id === currentBookId.value) || null
   })
-
-  /** 当前搜索查询 */
   const searchQuery = computed(() => searchKeyword.value)
-
-  /** 是否已选中当前书籍列表中的所有书籍 */
-  const isAllSelected = computed(() =>
-    books.value.length > 0 && books.value.every(book => selectedBookIds.value.has(book.id))
+  const isAllSelected = computed(
+    () => books.value.length > 0 && books.value.every(book => selectedBookIds.value.has(book.id)),
   )
 
-  // ============================================================
-  // 书籍管理方法
-  // ============================================================
-
-  /**
-   * 设置书籍列表
-   * @param bookList - 书籍列表
-   */
   function setBooks(bookList: BookData[]): void {
-    books.value = bookList
+    books.value = bookList.map(normalizeBookData)
   }
 
-  /**
-   * 添加书籍
-   * @param book - 书籍数据
-   */
   function addBook(book: BookData): void {
-    books.value.unshift(book)
+    books.value.unshift(normalizeBookData(book))
   }
 
   function upsertBook(book: BookData): void {
-    const index = books.value.findIndex(item => item.id === book.id)
+    const normalizedBook = normalizeBookData(book)
+    const index = books.value.findIndex(item => item.id === normalizedBook.id)
     if (index >= 0) {
-      books.value[index] = book
+      books.value[index] = normalizedBook
       return
     }
-    books.value.unshift(book)
+    books.value.unshift(normalizedBook)
   }
 
-  /**
-   * 更新书籍
-   * @param bookId - 书籍ID
-   * @param updates - 更新数据
-   */
   function updateBook(bookId: string, updates: Partial<BookData>): void {
-    const index = books.value.findIndex(b => b.id === bookId)
+    const index = books.value.findIndex(book => book.id === bookId)
     if (index >= 0) {
       const book = books.value[index]
       if (book) {
-        books.value[index] = { ...book, ...updates }
+        books.value[index] = normalizeBookData({ ...book, ...updates })
       }
     }
   }
 
-  /**
-   * 删除书籍
-   * @param bookId - 书籍ID
-   */
   function deleteBook(bookId: string): void {
-    const index = books.value.findIndex(b => b.id === bookId)
+    const index = books.value.findIndex(book => book.id === bookId)
     if (index >= 0) {
       books.value.splice(index, 1)
       if (expandedBookId.value === bookId) {
@@ -182,10 +99,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 批量删除书籍
-   * @param bookIds - 要删除的书籍 ID 列表
-   */
   function deleteBooks(bookIds: string[]): void {
     const ids = new Set(bookIds)
     books.value = books.value.filter(book => !ids.has(book.id))
@@ -198,115 +111,85 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 根据ID获取书籍
-   * @param bookId - 书籍ID
-   * @returns 书籍数据或 null
-   */
   function getBookById(bookId: string): BookData | null {
-    return books.value.find(b => b.id === bookId) || null
+    return books.value.find(book => book.id === bookId) || null
   }
 
-  // ============================================================
-  // 章节管理方法
-  // ============================================================
-
-  /**
-   * 添加章节到书籍
-   * @param bookId - 书籍ID
-   * @param chapter - 章节数据
-   */
   function addChapter(bookId: string, chapter: ChapterData): void {
-    const book = books.value.find(b => b.id === bookId)
+    const book = books.value.find(item => item.id === bookId)
     if (book) {
-      if (!book.chapters) {
-        book.chapters = []
-      }
-      book.chapters.push(chapter)
+      book.chapters ??= []
+      book.chapters.push(normalizeChapterData(chapter))
+      book.chapterCount = book.chapters.length
     }
   }
 
-  /**
-   * 更新章节
-   * @param bookId - 书籍ID
-   * @param chapterId - 章节ID
-   * @param updates - 更新数据
-   */
   function updateChapter(bookId: string, chapterId: string, updates: Partial<ChapterData>): void {
-    const book = books.value.find(b => b.id === bookId)
-    if (book && book.chapters) {
-      const chapter = book.chapters.find(c => c.id === chapterId)
+    const book = books.value.find(item => item.id === bookId)
+    const index = book?.chapters?.findIndex(item => item.id === chapterId) ?? -1
+    if (book?.chapters && index >= 0) {
+      const chapter = book.chapters[index]
       if (chapter) {
-        Object.assign(chapter, updates)
+        book.chapters[index] = normalizeChapterData({ ...chapter, ...updates })
       }
     }
   }
 
-  /**
-   * 删除章节
-   * @param bookId - 书籍ID
-   * @param chapterId - 章节ID
-   */
   function deleteChapter(bookId: string, chapterId: string): void {
-    const book = books.value.find(b => b.id === bookId)
-    if (book && book.chapters) {
-      const index = book.chapters.findIndex(c => c.id === chapterId)
-      if (index >= 0) {
-        book.chapters.splice(index, 1)
-      }
+    const book = books.value.find(item => item.id === bookId)
+    const index = book?.chapters?.findIndex(chapter => chapter.id === chapterId) ?? -1
+    if (book?.chapters && index >= 0) {
+      book.chapters.splice(index, 1)
+      book.chapterCount = book.chapters.length
     }
   }
 
-  /**
-   * 重新排序章节
-   * @param bookId - 书籍ID
-   * @param chapterIds - 新的章节ID顺序
-   */
   function reorderChapters(bookId: string, chapterIds: string[]): void {
-    const book = books.value.find(b => b.id === bookId)
-    if (book && book.chapters) {
-      const reordered: ChapterData[] = []
-      for (let i = 0; i < chapterIds.length; i++) {
-        const chapter = book.chapters.find(c => c.id === chapterIds[i])
-        if (chapter) {
-          chapter.order = i
-          reordered.push(chapter)
-        }
-      }
-      book.chapters = reordered
+    const book = books.value.find(item => item.id === bookId)
+    if (!book?.chapters) {
+      return
     }
+
+    const reordered: ChapterData[] = []
+    const orderedIds = new Set<string>()
+    for (const chapterId of chapterIds) {
+      if (orderedIds.has(chapterId)) {
+        continue
+      }
+      const chapter = book.chapters.find(item => item.id === chapterId)
+      if (chapter) {
+        orderedIds.add(chapterId)
+        reordered.push(chapter)
+      }
+    }
+
+    for (const chapter of book.chapters) {
+      if (!orderedIds.has(chapter.id)) {
+        reordered.push(chapter)
+      }
+    }
+
+    for (let index = 0; index < reordered.length; index += 1) {
+      const chapter = reordered[index]
+      if (chapter) {
+        chapter.order = index
+      }
+    }
+    book.chapters = reordered
   }
 
-  // ============================================================
-  // 标签管理方法
-  // ============================================================
-
-  /**
-   * 设置标签列表
-   * @param tagList - 标签列表
-   */
   function setTags(tagList: TagData[]): void {
     tags.value = tagList
   }
 
-  /**
-   * 添加标签
-   * @param tag - 标签数据
-   */
   function addTag(tag: TagData): void {
     tags.value.push(tag)
   }
 
-  /**
-   * 删除标签
-   * 使用标签名称作为唯一标识
-   * @param tagName - 标签名称(作为ID)
-   */
   function deleteTag(tagName: string): void {
-    const index = tags.value.findIndex(t => t.name === tagName)
+    const index = tags.value.findIndex(tag => tag.name === tagName)
     if (index >= 0) {
       tags.value.splice(index, 1)
-      // 从选中列表中移除
       const selectedIndex = selectedTagNames.value.indexOf(tagName)
       if (selectedIndex >= 0) {
         selectedTagNames.value.splice(selectedIndex, 1)
@@ -314,10 +197,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 为书籍添加标签
-   * 业务保存仍通过 updateBookApi 提交完整 tags 数组。
-   */
   function addTagToBook(bookId: string, tagName: string): void {
     const book = books.value.find(item => item.id === bookId)
     if (!book) return
@@ -328,9 +207,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 从书籍移除标签
-   */
   function removeTagFromBook(bookId: string, tagName: string): void {
     const book = books.value.find(item => item.id === bookId)
     if (!book?.tags) return
@@ -338,9 +214,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     book.tags = book.tags.filter(item => item !== tagName)
   }
 
-  /**
-   * 批量添加标签
-   */
   function batchAddTags(bookIds: string[], tagNames: string[]): void {
     for (const bookId of bookIds) {
       for (const tagName of tagNames) {
@@ -349,9 +222,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 批量移除标签
-   */
   function batchRemoveTags(bookIds: string[], tagNames: string[]): void {
     for (const bookId of bookIds) {
       for (const tagName of tagNames) {
@@ -360,29 +230,14 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  // ============================================================
-  // 搜索和筛选方法
-  // ============================================================
-
-  /**
-   * 设置搜索关键词
-   * @param keyword - 搜索关键词
-   */
   function setSearchKeyword(keyword: string): void {
     searchKeyword.value = keyword
   }
 
-  /**
-   * 清除搜索关键词
-   */
   function clearSearchKeyword(): void {
     searchKeyword.value = ''
   }
 
-  /**
-   * 切换标签筛选并重新加载书籍
-   * @param tagName - 标签名称
-   */
   function toggleTagFilter(tagName: string): void {
     const index = selectedTagNames.value.indexOf(tagName)
     if (index >= 0) {
@@ -390,38 +245,21 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     } else {
       selectedTagNames.value.push(tagName)
     }
-    // 每次标签变化都从后端重新加载数据。
-    loadBooks()
+    void loadBooks()
   }
 
-  /**
-   * 设置标签筛选
-   * @param tagNames - 标签名称列表
-   */
   function setTagFilter(tagNames: string[]): void {
     selectedTagNames.value = tagNames
   }
 
-  /**
-   * 清除标签筛选
-   */
   function clearTagFilter(): void {
     selectedTagNames.value = []
   }
 
-  /**
-   * 设置排序方式
-   * @param by - 排序字段
-   * @param order - 排序方向
-   */
   function setSort(by: BookSortBy, order: SortOrder = 'desc'): void {
     sortBy.value = by
     sortOrder.value = order
   }
-
-  // ============================================================
-  // 批量选择方法
-  // ============================================================
 
   function enterBatchMode(): void {
     batchMode.value = true
@@ -451,92 +289,39 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     selectedBookIds.value = new Set(books.value.map(book => book.id))
   }
 
-  // ============================================================
-  // 展开/折叠方法
-  // ============================================================
-
-  /**
-   * 展开书籍（显示章节列表）
-   * @param bookId - 书籍ID
-   */
   function expandBook(bookId: string): void {
     expandedBookId.value = bookId
   }
 
-  /**
-   * 折叠书籍
-   */
   function collapseBook(): void {
     expandedBookId.value = null
   }
 
-  /**
-   * 切换书籍展开状态
-   * @param bookId - 书籍ID
-   */
   function toggleBookExpand(bookId: string): void {
-    if (expandedBookId.value === bookId) {
-      expandedBookId.value = null
-    } else {
-      expandedBookId.value = bookId
-    }
+    expandedBookId.value = expandedBookId.value === bookId ? null : bookId
   }
 
-  // ============================================================
-  // 加载状态管理
-  // ============================================================
-
-  /**
-   * 设置加载状态
-   * @param loading - 是否正在加载
-   */
   function setLoading(loading: boolean): void {
     isLoading.value = loading
   }
 
-  /**
-   * 设置错误信息
-   * @param message - 错误信息
-   */
   function setError(message: string | null): void {
     error.value = message
   }
 
-  // ============================================================
-  // 当前书籍管理
-  // ============================================================
-
-  /**
-   * 设置当前书籍（用于详情显示）
-   * @param bookId - 书籍ID
-   */
   function setCurrentBook(bookId: string | null): void {
     currentBookId.value = bookId
   }
 
-  /**
-   * 设置搜索查询并重新加载书籍
-   * @param query - 搜索查询
-   */
   function setSearchQuery(query: string): void {
     searchKeyword.value = query
-    // 每次搜索变化都从后端重新加载数据。
-    loadBooks()
+    void loadBooks()
   }
 
-  // ============================================================
-  // API 调用方法
-  // ============================================================
-
-  /**
-   * 从服务器加载书籍列表
-   * 将搜索和标签筛选参数传递给后端。
-   */
   async function loadBooks(): Promise<void> {
     setLoading(true)
     setError(null)
     try {
-      // 构建当前书架筛选请求参数。
       const params: { search?: string; tags?: string[] } = {}
 
       if (searchKeyword.value.trim()) {
@@ -572,9 +357,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 从服务器加载标签列表
-   */
   async function loadTags(): Promise<void> {
     try {
       const response = await bookshelfApi.getTags()
@@ -586,14 +368,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 创建新书籍
-   * @param title - 书籍标题
-   * @param description - 书籍描述
-   * @param cover - 封面图片（Base64）
-   * @param tags - 标签名称数组
-   */
-  async function createBook(title: string, description?: string, cover?: string, tags?: string[]): Promise<BookData | null> {
+  async function createBook(
+    title: string,
+    description?: string,
+    cover?: string,
+    tags?: string[],
+  ): Promise<BookData | null> {
     try {
       const response = await bookshelfApi.createBook(title, description, cover, tags)
       if (response.success && response.book) {
@@ -606,18 +386,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 更新书籍(调用API)
-   * 支持更新 title、cover、tags。
-   * @param bookId - 书籍ID
-   * @param data - 更新数据
-   */
-  async function updateBookApi(bookId: string, data: {
-    title?: string;
-    description?: string;
-    cover?: string;
-    tags?: string[]
-  }): Promise<boolean> {
+  async function updateBookApi(bookId: string, data: BookUpdatePayload): Promise<boolean> {
     try {
       const response = await bookshelfApi.updateBook(bookId, data)
       if (response.success && response.book) {
@@ -630,10 +399,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 删除书籍（调用API）
-   * @param bookId - 书籍ID
-   */
   async function deleteBookApi(bookId: string): Promise<boolean> {
     try {
       const response = await bookshelfApi.deleteBook(bookId)
@@ -647,11 +412,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 创建标签（调用API）
-   * @param name - 标签名称
-   * @param color - 标签颜色
-   */
   async function createTag(name: string, color?: string): Promise<TagData | null> {
     try {
       const response = await bookshelfApi.createTag(name, color)
@@ -665,10 +425,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 删除标签（调用API）
-   * @param tagName - 标签名称
-   */
   async function deleteTagApi(tagName: string): Promise<boolean> {
     try {
       const response = await bookshelfApi.deleteTag(tagName)
@@ -682,18 +438,14 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 更新标签（调用API）
-   * 更新成功后刷新标签列表和书籍列表
-   * @param currentName - 当前标签名称
-   * @param name - 新标签名称
-   * @param color - 新标签颜色
-   */
-  async function updateTagApi(currentName: string, name: string, color: string): Promise<boolean> {
+  async function updateTagApi(
+    currentName: string,
+    name: string,
+    color: string,
+  ): Promise<boolean> {
     try {
       const response = await bookshelfApi.updateTag(currentName, name, color)
       if (response.success) {
-        // 更新成功后重新加载标签和书籍列表。
         await loadTags()
         await loadBooks()
         return true
@@ -704,11 +456,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 创建章节（调用API）
-   * @param bookId - 书籍ID
-   * @param title - 章节标题
-   */
   async function createChapterApi(bookId: string, title: string): Promise<ChapterData | null> {
     try {
       const response = await bookshelfApi.createChapter(bookId, title)
@@ -722,13 +469,11 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 更新章节（调用API）
-   * @param bookId - 书籍ID
-   * @param chapterId - 章节ID
-   * @param title - 新标题
-   */
-  async function updateChapterApi(bookId: string, chapterId: string, title: string): Promise<boolean> {
+  async function updateChapterApi(
+    bookId: string,
+    chapterId: string,
+    title: string,
+  ): Promise<boolean> {
     try {
       const response = await bookshelfApi.updateChapter(bookId, chapterId, title)
       if (response.success) {
@@ -741,11 +486,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 删除章节（调用API）
-   * @param bookId - 书籍ID
-   * @param chapterId - 章节ID
-   */
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<boolean> {
     try {
       const response = await bookshelfApi.deleteChapter(bookId, chapterId)
@@ -759,11 +499,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  /**
-   * 重新排序章节（调用API）
-   * @param bookId - 书籍ID
-   * @param chapterIds - 新的章节ID顺序
-   */
   async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<boolean> {
     try {
       const response = await bookshelfApi.reorderChapters(bookId, chapterIds)
@@ -777,15 +512,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  // 标签的增删改通过 updateBookApi 完成，传递完整 tags 数组。
-
-  // ============================================================
-  // 重置方法
-  // ============================================================
-
-  /**
-   * 重置所有状态
-   */
   function reset(): void {
     books.value = []
     tags.value = []
@@ -796,16 +522,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     sortBy.value = 'updatedAt'
     sortOrder.value = 'desc'
     expandedBookId.value = null
+    currentBookId.value = null
     isLoading.value = false
     error.value = null
   }
 
-  // ============================================================
-  // 返回 Store 接口
-  // ============================================================
-
   return {
-    // 状态
     books,
     tags,
     searchKeyword,
@@ -819,7 +541,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     isLoading,
     error,
 
-    // 计算属性
     filteredBooks,
     bookCount,
     filteredBookCount,
@@ -828,7 +549,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     searchQuery,
     isAllSelected,
 
-    // 书籍管理（本地）
     setBooks,
     addBook,
     updateBook,
@@ -836,13 +556,11 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     deleteBooks,
     getBookById,
 
-    // 章节管理（本地）
     addChapter,
     updateChapter,
     deleteChapter,
     reorderChapters,
 
-    // 标签管理（本地）
     setTags,
     addTag,
     deleteTag,
@@ -851,7 +569,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     batchAddTags,
     batchRemoveTags,
 
-    // 搜索和筛选
     setSearchKeyword,
     clearSearchKeyword,
     setSearchQuery,
@@ -864,19 +581,15 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     toggleBookSelection,
     toggleSelectAll,
 
-    // 展开/折叠
     expandBook,
     collapseBook,
     toggleBookExpand,
 
-    // 当前书籍
     setCurrentBook,
 
-    // 加载状态
     setLoading,
     setError,
 
-    // API 调用方法
     loadBooks,
     loadBookDetail,
     loadTags,
@@ -890,9 +603,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     updateChapterApi,
     deleteChapterApi,
     reorderChaptersApi,
-    // 标签写入通过 updateBookApi 提交完整 tags 数组。
 
-    // 重置
-    reset
+    reset,
   }
 })

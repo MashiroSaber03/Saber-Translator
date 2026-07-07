@@ -1,17 +1,70 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
+import type { UiIconName } from '@/components/ui/iconRegistry'
 import type { NoteData, NoteType } from '@/stores/insightStore'
 
-defineProps<{
+const props = defineProps<{
   note: NoteData
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'delete', noteId: string): void
   (event: 'edit', note: NoteData): void
   (event: 'showPage', pageNum: number): void
 }>()
+
+const noteTitleText = computed(() => {
+  return props.note.title || props.note.question || props.note.content || '未命名笔记'
+})
+
+const cardLabel = computed(() => `笔记：${noteTitleText.value}`)
+const editLabel = computed(() => `编辑笔记：${noteTitleText.value}`)
+const deleteLabel = computed(() => `删除笔记：${noteTitleText.value}`)
+
+const tagChips = computed<ProductChipItem[]>(() => {
+  return props.note.tags?.map(tag => ({
+    id: tag,
+    label: tag,
+    tone: 'neutral',
+  })) ?? []
+})
+
+const citationChips = computed<ProductChipItem[]>(() => {
+  const citations = props.note.citations ?? []
+  const visibleCitations = citations.slice(0, 3).map(citation => ({
+    id: citation.page,
+    label: `第${citation.page}页`,
+    ariaLabel: `查看第 ${citation.page} 页`,
+    interactive: true,
+    tone: 'primary' as const,
+  }))
+  if (citations.length > 3) {
+    visibleCitations.push({
+      id: 'more-citations',
+      label: `+${citations.length - 3}`,
+      tone: 'neutral',
+    })
+  }
+  return visibleCitations
+})
+
+const pageChips = computed<ProductChipItem[]>(() => {
+  if (!props.note.pageNum) return []
+  return [{
+    id: props.note.pageNum,
+    label: `第 ${props.note.pageNum} 页`,
+    ariaLabel: `查看第 ${props.note.pageNum} 页`,
+    iconName: 'file-text',
+    interactive: true,
+    tone: 'neutral',
+  }]
+})
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
@@ -23,124 +76,93 @@ function formatDate(dateStr: string): string {
   })
 }
 
-function getNoteTypeIcon(type: NoteType): string {
-  return type === 'qa' ? '💬' : '📝'
+function getNoteTypeIcon(type: NoteType): UiIconName {
+  return type === 'qa' ? 'message' : 'file-text'
+}
+
+function showPage(id: string | number): void {
+  if (typeof id !== 'number') return
+  emit('showPage', id)
 }
 </script>
 
 <template>
-  <div
-    class="note-item"
-    :class="{ 'qa-note': note.type === 'qa' }"
+  <ProductRecordCard
+    class="note-card"
+    role="listitem"
+    :accent="note.type === 'qa'"
+    :aria-label="cardLabel"
   >
-    <div class="note-header">
-      <span class="note-type-icon">{{ getNoteTypeIcon(note.type) }}</span>
-      <span class="note-date">{{ formatDate(note.createdAt) }}</span>
-      <div class="note-actions">
-        <UiIconButton
-          label="编辑"
-          size="sm"
-          @click.stop="$emit('edit', note)"
-        >
-          ✏️
-        </UiIconButton>
-        <UiIconButton
-          label="删除"
-          variant="danger"
-          size="sm"
-          @click.stop="$emit('delete', note.id)"
-        >
-          🗑️
-        </UiIconButton>
-      </div>
-    </div>
+    <template #icon>
+      <UiIcon class="note-card__type-icon" :name="getNoteTypeIcon(note.type)" />
+    </template>
+
+    <template #meta>
+      <span class="note-card__date">{{ formatDate(note.createdAt) }}</span>
+    </template>
+
+    <template #actions>
+      <UiIconButton
+        :label="editLabel"
+        size="sm"
+        @click.stop="emit('edit', note)"
+      >
+        <UiIcon name="pencil" />
+      </UiIconButton>
+      <UiIconButton
+        :label="deleteLabel"
+        variant="danger"
+        size="sm"
+        @click.stop="emit('delete', note.id)"
+      >
+        <UiIcon name="trash" />
+      </UiIconButton>
+    </template>
 
     <UiButton
       variant="toolbar"
-      class="note-open-button"
-      :aria-label="`编辑笔记：${note.title || note.question || note.content || '未命名笔记'}`"
-      @click="$emit('edit', note)"
+      class="note-card__open-button"
+      :aria-label="editLabel"
+      @click="emit('edit', note)"
     >
-      <span v-if="note.title" class="note-title">{{ note.title }}</span>
-      <span v-if="note.type === 'qa'" class="note-content">
-        <span class="qa-preview-text">Q: {{ note.question?.substring(0, 60) }}...</span>
+      <span v-if="note.title" class="note-card__title">{{ note.title }}</span>
+      <span v-if="note.type === 'qa'" class="note-card__content">
+        <span class="note-card__qa-preview">Q: {{ note.question?.substring(0, 60) }}...</span>
       </span>
-      <span v-else class="note-content">{{ note.content }}</span>
+      <span v-else class="note-card__content">{{ note.content }}</span>
 
-      <span v-if="note.tags && note.tags.length > 0" class="note-tags">
-        <span v-for="tag in note.tags" :key="tag" class="note-tag">{{ tag }}</span>
-      </span>
+      <ProductChipList
+        v-if="tagChips.length > 0"
+        class="note-card__tags"
+        aria-label="笔记标签"
+        :items="tagChips"
+      />
     </UiButton>
 
-    <div v-if="note.type === 'qa' && note.citations && note.citations.length > 0" class="note-citations">
-      <UiButton
-        v-for="citation in note.citations.slice(0, 3)"
-        :key="citation.page"
-        variant="toolbar"
-        class="citation-badge"
-        :aria-label="`查看第 ${citation.page} 页`"
-        @click="$emit('showPage', citation.page)"
-      >
-        第{{ citation.page }}页
-      </UiButton>
-      <span v-if="note.citations.length > 3" class="citation-badge">+{{ note.citations.length - 3 }}</span>
-    </div>
+    <template v-if="citationChips.length > 0 || pageChips.length > 0" #footer>
+      <ProductChipList
+        v-if="note.type === 'qa' && citationChips.length > 0"
+        aria-label="引用页码"
+        :items="citationChips"
+        @select="showPage"
+      />
 
-    <div v-if="note.pageNum" class="note-page-link">
-      <UiButton
-        variant="toolbar"
-        class="btn-link"
-        @click.stop="$emit('showPage', note.pageNum)"
-      >
-        📄 第 {{ note.pageNum }} 页
-      </UiButton>
-    </div>
-  </div>
+      <ProductChipList
+        v-if="pageChips.length > 0"
+        aria-label="关联页码"
+        :items="pageChips"
+        @select="showPage"
+      />
+    </template>
+  </ProductRecordCard>
 </template>
 
 <style scoped>
-.note-item {
-  margin-bottom: 10px;
-  padding: 12px;
-  border: 1px solid var(--color-border-muted);
-  border-radius: 8px;
-  background: var(--insight-surface-tertiary);
-  transition: all 0.2s ease;
-}
-
-.note-item:hover {
-  border-color: var(--insight-action-primary);
-  box-shadow: 0 2px 8px var(--color-focus-brand-soft);
-}
-
-.note-item.qa-note {
-  border-left: 3px solid var(--insight-action-primary);
-}
-
-.note-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.note-type-icon {
-  font-size: 14px;
-}
-
-.note-date {
-  flex: 1;
+.note-card__type-icon {
   color: var(--insight-text-secondary);
-  font-size: 12px;
 }
 
-.note-actions {
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.note-open-button {
+.note-card__open-button {
   display: block;
   width: 100%;
   padding: 0;
@@ -152,7 +174,7 @@ function getNoteTypeIcon(type: NoteType): string {
   text-align: left;
 }
 
-.note-title {
+.note-card__title {
   display: block;
   margin-bottom: 6px;
   overflow: hidden;
@@ -163,7 +185,7 @@ function getNoteTypeIcon(type: NoteType): string {
   white-space: nowrap;
 }
 
-.note-content {
+.note-card__content {
   display: block;
   color: var(--insight-text-secondary);
   font-size: 14px;
@@ -171,66 +193,13 @@ function getNoteTypeIcon(type: NoteType): string {
   white-space: pre-wrap;
 }
 
-.qa-preview-text {
+.note-card__qa-preview {
   color: var(--insight-text-secondary);
   font-size: 13px;
   font-style: italic;
 }
 
-.note-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.note-card__tags {
   margin-top: 8px;
-}
-
-.note-tag {
-  padding: 2px 6px;
-  border-radius: 10px;
-  background: var(--insight-action-primary);
-  color: var(--color-text-inverse);
-  font-size: 11px;
-  opacity: 0.8;
-}
-
-.note-citations {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.citation-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--insight-action-primary);
-  color: var(--color-text-inverse);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.citation-badge:hover {
-  opacity: 0.8;
-}
-
-.note-page-link {
-  margin-top: 8px;
-}
-
-.btn-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--insight-action-primary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.btn-link:hover {
-  text-decoration: underline;
 }
 </style>

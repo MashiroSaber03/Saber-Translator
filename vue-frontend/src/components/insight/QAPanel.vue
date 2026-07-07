@@ -5,6 +5,7 @@ import * as insightApi from '@/api/insight'
 import { useInsightStore, type QAMessage } from '@/stores/insightStore'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { showToast } from '@/utils/toast'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 import QAComposer from './qa/QAComposer.vue'
 import QAMessageList from './qa/QAMessageList.vue'
 import QAOptionsBar from './qa/QAOptionsBar.vue'
@@ -23,7 +24,7 @@ const isRebuildingEmbeddings = ref(false)
 const rebuildTaskId = ref<string | null>(null)
 const rebuildProgressLabel = ref('')
 const rebuildPollingFailures = ref(0)
-const messageList = ref<InstanceType<typeof QAMessageList> | null>(null)
+const messageScrollRequestId = ref(0)
 let rebuildPollingTimer: ReturnType<typeof setInterval> | null = null
 let chatRequestSequence = 0
 let isQAPanelMounted = true
@@ -91,7 +92,7 @@ async function sendQuestion(): Promise<void> {
     insightStore.removeLoadingMessages()
 
     if (response.success) {
-      const modeLabel = response.mode === 'global' ? '🌐 全局模式' : '🎯 精确模式'
+      const modeLabel = response.mode === 'global' ? '全局模式' : '精确模式'
       insightStore.addQAMessage({
         id: (Date.now() + 2).toString(),
         role: 'assistant',
@@ -138,19 +139,28 @@ function isCurrentChatRequest(requestId: number, bookId: string): boolean {
 }
 
 function scrollToBottom(): void {
-  messageList.value?.scrollToBottom()
+  messageScrollRequestId.value += 1
 }
 
 async function rebuildEmbeddings(): Promise<void> {
-  if (!insightStore.currentBookId || isRebuildingEmbeddings.value) return
-  if (!confirm('确定要重建向量索引吗？\n\n这将删除现有的向量数据并重新构建，可能需要一些时间。')) return
+  const bookId = insightStore.currentBookId
+  if (!bookId || isRebuildingEmbeddings.value) return
+
+  const confirmed = await confirmProductAction({
+    title: '重建向量索引',
+    message: '确定要重建向量索引吗？这将删除现有的向量数据并重新构建，可能需要一些时间。',
+    confirmText: '重建',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed || bookId !== insightStore.currentBookId) return
 
   insightStore.setLoading(true)
   isRebuildingEmbeddings.value = true
   rebuildProgressLabel.value = '准备启动...'
 
   try {
-    const response = await insightApi.rebuildEmbeddings(insightStore.currentBookId)
+    const response = await insightApi.rebuildEmbeddings(bookId)
 
     if (!response.success || !response.task_id) {
       showToast('重建失败: ' + (response.error || '未知错误'), 'error')
@@ -161,7 +171,7 @@ async function rebuildEmbeddings(): Promise<void> {
     rebuildTaskId.value = response.task_id
     rebuildProgressLabel.value = '任务已启动'
     rebuildPollingFailures.value = 0
-    startRebuildStatusPolling(response.task_id)
+    startRebuildStatusPolling(bookId, response.task_id)
   } catch (error) {
     const message = error instanceof Error ? error.message : '重建向量索引失败'
     showToast(message, 'error')
@@ -184,10 +194,23 @@ function resetRebuildState(): void {
   rebuildProgressLabel.value = ''
 }
 
-async function pollRebuildStatus(taskId: string): Promise<void> {
-  if (!insightStore.currentBookId) return
+function isCurrentRebuildRequest(bookId: string, taskId: string): boolean {
+  return (
+    isQAPanelMounted &&
+    rebuildTaskId.value === taskId &&
+    insightStore.currentBookId === bookId
+  )
+}
 
-  const response = await insightApi.getRebuildEmbeddingsStatus(insightStore.currentBookId, taskId)
+async function pollRebuildStatus(bookId: string, taskId: string): Promise<void> {
+  if (!isCurrentRebuildRequest(bookId, taskId)) {
+    resetRebuildState()
+    return
+  }
+
+  const response = await insightApi.getRebuildEmbeddingsStatus(bookId, taskId)
+  if (!isCurrentRebuildRequest(bookId, taskId)) return
+
   const task = response.task
   if (!task) {
     resetRebuildState()
@@ -225,10 +248,10 @@ async function pollRebuildStatus(taskId: string): Promise<void> {
   }
 }
 
-function startRebuildStatusPolling(taskId: string): void {
+function startRebuildStatusPolling(bookId: string, taskId: string): void {
   stopRebuildStatusPolling()
   rebuildPollingTimer = setInterval(() => {
-    void pollRebuildStatus(taskId).catch(() => {
+    void pollRebuildStatus(bookId, taskId).catch(() => {
       rebuildPollingFailures.value += 1
       if (rebuildPollingFailures.value >= 3) {
         resetRebuildState()
@@ -270,16 +293,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="qa-container">
+  <div class="qa-panel">
     <QAMessageList
-      ref="messageList"
       :messages="qaHistory"
       :render-markdown="renderMarkdown"
+      :scroll-request-id="messageScrollRequestId"
       @save-note="handleSaveNote"
       @select-page="selectPage"
     />
 
-    <div class="chat-input-container">
+    <div class="qa-panel__input-shell">
       <QAOptionsBar
         v-model:qa-mode="qaMode"
         v-model:use-parent-child="useParentChild"
@@ -314,13 +337,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.qa-container {
+.qa-panel {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.chat-input-container {
+.qa-panel__input-shell {
   padding: 16px;
   border-top: 1px solid var(--color-border-muted);
   background: var(--insight-surface-secondary);

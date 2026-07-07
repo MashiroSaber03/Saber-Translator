@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import StudioPreviewWorkspaceHeader from './StudioPreviewWorkspaceHeader.vue'
+import StudioPreviewWorkspacePanel from './StudioPreviewWorkspacePanel.vue'
 import type { CharacterStudioChatMessage } from '@/types/characterStudio'
 
 defineProps<{
@@ -8,108 +11,90 @@ defineProps<{
 </script>
 
 <template>
-  <section class="workspace-card runtime-workspace">
-    <div class="assistant-head">
-      <div>
-        <h4>运行日志</h4>
-        <p>查看最新一轮的变量快照、世界书命中、正则命中与任务执行记录。</p>
-      </div>
-    </div>
-    <div class="runtime-main">
+  <StudioPreviewWorkspacePanel class="runtime-workspace">
+    <StudioPreviewWorkspaceHeader
+      title="运行日志"
+      description="查看最新一轮的变量快照、世界书命中、正则命中与任务执行记录。"
+    />
+    <div class="runtime-workspace__main">
       <template v-if="latestRuntimeMessage">
-        <div class="runtime-grid">
-          <section class="runtime-card">
-            <h5>变量快照</h5>
-            <pre>{{ JSON.stringify(latestRuntimeMessage.variables_snapshot || {}, null, 2) }}</pre>
+        <div class="runtime-workspace__grid">
+          <section class="runtime-workspace__card">
+            <h5 class="runtime-workspace__card-title">变量快照</h5>
+            <pre class="runtime-workspace__card-code">{{ JSON.stringify(latestRuntimeMessage.variables_snapshot || {}, null, 2) }}</pre>
           </section>
-          <section class="runtime-card">
-            <h5>运行日志</h5>
-            <div v-if="latestRuntimeMessage.runtime_log.length > 0" class="log-list">
+          <section class="runtime-workspace__card">
+            <h5 class="runtime-workspace__card-title">运行日志</h5>
+            <div v-if="latestRuntimeMessage.runtime_log.length > 0" class="runtime-workspace__log-list">
               <div
                 v-for="(item, index) in latestRuntimeMessage.runtime_log"
                 :key="`runtime-${index}`"
-                class="log-item"
+                class="runtime-workspace__log-item"
               >
                 {{ summarizeLog(item) }}
               </div>
             </div>
-            <div v-else class="empty-copy">当前还没有运行日志。</div>
+            <ProductEmptyState
+              v-else
+              icon-name="bar-chart"
+              role="note"
+              size="compact"
+              title="当前还没有运行日志"
+            />
           </section>
         </div>
       </template>
-      <div v-else class="messages-panel runtime-empty-panel">
-        <div class="empty-copy">发送消息后，这里会显示最新一轮的运行结果。</div>
+      <div v-else class="runtime-workspace__empty-panel">
+        <ProductEmptyState
+          icon-name="bar-chart"
+          role="note"
+          size="compact"
+          title="发送消息后查看运行结果"
+          description="这里会显示最新一轮的变量快照、世界书命中、正则命中与任务执行记录。"
+        />
       </div>
     </div>
-  </section>
+  </StudioPreviewWorkspacePanel>
 </template>
 
 <style scoped>
-.workspace-card {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  width: 100%;
-  min-height: 0;
-  padding: 14px;
-  border: 1px solid var(--studio-border-default);
-  border-radius: 24px;
-  background: var(--character-studio-preview-card-background);
-  box-shadow: 0 24px 40px var(--studio-shadow-floating);
-}
-
 .runtime-workspace {
   gap: 12px;
   min-height: 0;
 }
 
-.assistant-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.assistant-head h4,
-.runtime-card h5 {
+.runtime-workspace__card-title {
   margin: 8px 0 0;
-  color: var(--character-studio-preview-heading-text);
+  color: var(--color-text-heading);
 }
 
-.assistant-head p {
-  margin: 8px 0 0;
-  color: var(--studio-text-muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.runtime-main {
+.runtime-workspace__main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
 }
 
-.runtime-grid {
+.runtime-workspace__grid {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 12px;
   width: 100%;
   min-height: 0;
 }
 
-.runtime-card {
+.runtime-workspace__card {
   display: flex;
   flex-direction: column;
   min-height: 0;
   padding: 16px;
-  border: 1px solid var(--character-studio-preview-panel-border);
+  border: 1px solid color-mix(in srgb, var(--color-border-default) 60%, transparent);
   border-radius: 18px;
-  background: var(--character-studio-preview-attachment-card-background);
+  background: color-mix(in srgb, var(--color-surface-card) 86%, transparent);
 }
 
-.runtime-card pre {
+.runtime-workspace__card-code {
   flex: 1 1 auto;
   max-height: 280px;
   min-height: 0;
@@ -121,7 +106,7 @@ defineProps<{
   word-break: break-word;
 }
 
-.messages-panel {
+.runtime-workspace__empty-panel {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -131,15 +116,12 @@ defineProps<{
   overflow: auto;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--character-studio-preview-message-list-background-start), var(--character-studio-preview-message-list-background-end));
-}
-
-.runtime-empty-panel {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-app) 95%, transparent), color-mix(in srgb, var(--color-surface-neutral-muted) 90%, transparent));
   align-items: center;
   justify-content: center;
 }
 
-.log-list {
+.runtime-workspace__log-list {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -149,24 +131,13 @@ defineProps<{
   overflow: auto;
 }
 
-.log-item {
+.runtime-workspace__log-item {
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--character-studio-preview-runtime-log-background);
+  background: color-mix(in srgb, var(--color-action-brand) 6%, transparent);
   color: var(--studio-text-default);
   font-size: 12px;
   line-height: 1.6;
 }
 
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-@media (--breakpoint-studio-down) {
-  .runtime-grid {
-    grid-template-columns: 1fr;
-  }
-}
 </style>

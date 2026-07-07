@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useInsightStore } from './insightStore'
 import { useInsightConfigManager, type ProviderConfigsCache } from './insight/useInsightConfigManager'
+import {
+  normalizeInsightImageGenConfig,
+  normalizeInsightRerankerConfig,
+} from './insight/insightConfigDefaults'
+import { applyInsightProviderSettingsFromApi } from './insight/insightProviderSettingsHydration'
 import { ref } from 'vue'
 
 describe('useInsightStore imageGen config', () => {
@@ -169,6 +174,76 @@ describe('useInsightStore imageGen config', () => {
     })
 
     expect(store.config.imageGen.businessRetries).toBe(0)
+  })
+
+  it('normalizes provider defaults through the insight config defaults helper', () => {
+    expect(normalizeInsightRerankerConfig()).toMatchObject({
+      provider: 'jina',
+      model: 'jina-reranker-v2-base-multilingual',
+      topK: 5,
+      transportRetries: 10,
+      businessRetries: 10,
+      timeoutSeconds: 0,
+    })
+
+    expect(normalizeInsightImageGenConfig({ provider: 'newapi' })).toMatchObject({
+      provider: 'newapi',
+      model: '',
+      baseUrl: '',
+      transportRetries: 10,
+      businessRetries: 10,
+      timeoutSeconds: 0,
+    })
+  })
+
+  it('hydrates provider settings through the insight provider settings helper', () => {
+    const providerConfigs: ProviderConfigsCache = {
+      vlm: {},
+      llm: {},
+      embedding: {},
+      reranker: {},
+      imageGen: {},
+    }
+
+    expect(applyInsightProviderSettingsFromApi(providerConfigs, {
+      vlmProvider: {
+        gemini: {
+          api_key: 'vlm-key',
+          model: 'gemini-2.0-flash',
+          base_url: '',
+          openai_options: {
+            request: { force_json_output: true, temperature: 0.2 },
+            execution: {
+              use_stream: false,
+              rpm_limit: 11,
+              transport_retries: 2,
+              business_retries: 3,
+            },
+          },
+          image_max_size: 1024,
+        },
+      },
+      rerankerProvider: {
+        jina: {
+          api_key: 'reranker-key',
+          model: 'jina-reranker-v2-base-multilingual',
+          top_k: 0,
+        },
+      },
+      imageGenProvider: {
+        gpt2api: {
+          api_key: 'image-key',
+          model: 'gpt-image-2',
+          business_retries: 0,
+        },
+      },
+    })).toBe(true)
+
+    expect(providerConfigs.vlm.gemini?.openaiOptions?.request.forceJsonOutput).toBe(true)
+    expect(providerConfigs.vlm.gemini?.openaiOptions?.execution.rpmLimit).toBe(11)
+    expect(providerConfigs.vlm.gemini?.imageMaxSize).toBe(1024)
+    expect(providerConfigs.reranker.jina?.topK).toBe(0)
+    expect(providerConfigs.imageGen.gpt2api?.businessRetries).toBe(0)
   })
 })
 

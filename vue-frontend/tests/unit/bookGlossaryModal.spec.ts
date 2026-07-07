@@ -1,8 +1,14 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 
 const { saveBookConstraintsMock, showToastMock } = vi.hoisted(() => ({
   saveBookConstraintsMock: vi.fn(),
@@ -36,6 +42,7 @@ vi.mock('@/utils/toast', () => ({
 
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import BookGlossaryModal from '@/components/translate/BookGlossaryModal.vue'
+import BookNonTranslateModal from '@/components/translate/BookNonTranslateModal.vue'
 
 describe('BookGlossaryModal', () => {
   beforeEach(() => {
@@ -69,7 +76,7 @@ describe('BookGlossaryModal', () => {
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
     expect(checkboxes).toHaveLength(2)
     expect((checkboxes[1]!.element as HTMLInputElement).checked).toBe(true)
-    const promptTextarea = wrapper.find('textarea.auto-glossary-prompt')
+    const promptTextarea = wrapper.find('#autoGlossaryPrompt')
     expect((promptTextarea.element as HTMLTextAreaElement).value).toBe(DEFAULT_AUTO_GLOSSARY_PROMPT)
 
     await checkboxes[1]!.setValue(false)
@@ -105,11 +112,73 @@ describe('BookGlossaryModal', () => {
       },
     })
 
-    const promptTextarea = wrapper.find('textarea.auto-glossary-prompt')
+    const promptTextarea = wrapper.find('#autoGlossaryPrompt')
     expect((promptTextarea.element as HTMLTextAreaElement).value).toBe('自定义提示词')
 
     await wrapper.find('.reset-auto-glossary-prompt-btn').trigger('click')
 
     expect((promptTextarea.element as HTMLTextAreaElement).value).toBe(DEFAULT_AUTO_GLOSSARY_PROMPT)
+  })
+
+  it('uses product dialog primitives for constraint modal forms and footers', () => {
+    const store = useBookTranslationConstraintsStore()
+    store.loadBookConstraints('book-1', {
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: true,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
+      non_translate: {
+        enabled: true,
+        entries: [],
+      },
+    })
+
+    const glossaryWrapper = mount(BookGlossaryModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+    const nonTranslateWrapper = mount(BookNonTranslateModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+
+    expect(glossaryWrapper.findAllComponents(ProductStatusBanner).length).toBeGreaterThanOrEqual(2)
+    expect(nonTranslateWrapper.findAllComponents(ProductStatusBanner).length).toBeGreaterThanOrEqual(1)
+    expect(glossaryWrapper.getComponent(UiField).props('label')).toBe('自动术语提取提示词')
+
+    const glossaryActionRows = glossaryWrapper.findAllComponents(ProductActionRow)
+    const promptActionRow = glossaryActionRows.find(row => row.props('ariaLabel') === '自动术语提取提示词操作')
+    const glossaryFooterRow = glossaryActionRows.find(row => row.props('ariaLabel') === '术语表操作')
+    expect(promptActionRow?.props('variant')).toBe('default')
+    expect(glossaryFooterRow?.props('variant')).toBe('dialog')
+
+    const nonTranslateFooterRow = nonTranslateWrapper
+      .findAllComponents(ProductActionRow)
+      .find(row => row.props('ariaLabel') === '禁翻表操作')
+    expect(nonTranslateFooterRow?.props('variant')).toBe('dialog')
+    expect(glossaryWrapper.find('.ui-checkbox-label').exists()).toBe(false)
+    expect(nonTranslateWrapper.find('.ui-checkbox-label').exists()).toBe(false)
+    expect(glossaryWrapper.find('.book-glossary-modal__prompt-field').exists()).toBe(false)
+    expect(glossaryWrapper.getComponent(UiTextarea).props('variant')).toBe('panel')
+
+    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/BookGlossaryModal.vue'), 'utf8')
+    expect(source).not.toContain('class="auto-glossary-prompt"')
+    expect(source).not.toContain('.auto-glossary-prompt')
+  })
+
+  it('uses the shared clone helper for book constraint modal drafts', () => {
+    for (const file of [
+      'src/components/translate/BookGlossaryModal.vue',
+      'src/components/translate/BookNonTranslateModal.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+
+      expect(source, file).toContain("import { deepClone } from '@/utils/deepClone'")
+      expect(source, file).not.toContain('JSON.parse(JSON.stringify(')
+    }
   })
 })

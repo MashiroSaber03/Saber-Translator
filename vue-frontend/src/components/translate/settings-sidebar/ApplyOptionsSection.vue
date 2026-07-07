@@ -1,7 +1,27 @@
 <script setup lang="ts">
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { ApplySettingsOptions } from '../useSettingsSidebar'
+
+const APPLY_OPTIONS_MENU_ID = 'apply-options-section-menu'
+const APPLY_OPTION_ITEMS = [
+  { key: 'fontSize', label: '字号' },
+  { key: 'fontFamily', label: '字体' },
+  { key: 'layoutDirection', label: '排版方向' },
+  { key: 'lineSpacing', label: '行间距' },
+  { key: 'textAlign', label: '对齐方式' },
+  { key: 'textColor', label: '文字颜色' },
+  { key: 'fillColor', label: '填充颜色' },
+  { key: 'strokeEnabled', label: '描边开关' },
+  { key: 'strokeColor', label: '描边颜色' },
+  { key: 'strokeWidth', label: '描边宽度' },
+] satisfies ReadonlyArray<{
+  key: keyof ApplySettingsOptions
+  label: string
+}>
 
 defineProps<{
   applyOptions: ApplySettingsOptions
@@ -18,157 +38,126 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="settings-sidebar__apply-group">
-    <UiButton
-      variant="toolbar"
-      type="button"
-      class="settings-sidebar__apply-button"
-      :disabled="!hasImages"
-      @click="$emit('apply')"
+  <div class="apply-options-section">
+    <ProductActionRow
+      class="apply-options-section__actions"
+      aria-label="批量应用文字设置"
+      justify="between"
     >
-      应用到全部
-    </UiButton>
-    <UiButton
-      variant="toolbar"
-      type="button"
-      class="settings-sidebar__apply-options-button"
-      title="选择要应用的参数"
-      @click="$emit('toggleOptions')"
-    >
-      ⚙️
-    </UiButton>
+      <UiButton
+        variant="primary"
+        type="button"
+        class="apply-options-section__action"
+        block
+        :disabled="!hasImages"
+        @click="$emit('apply')"
+      >
+        应用到全部
+      </UiButton>
+      <UiIconButton
+        variant="soft"
+        type="button"
+        class="apply-options-section__options-action"
+        label="选择要应用的参数"
+        title="选择要应用的参数"
+        aria-haspopup="true"
+        :aria-expanded="showApplyOptions ? 'true' : 'false'"
+        :aria-controls="showApplyOptions ? APPLY_OPTIONS_MENU_ID : undefined"
+        @click="$emit('toggleOptions')"
+      >
+        <UiIcon name="settings" size="15" />
+      </UiIconButton>
+    </ProductActionRow>
 
-    <div v-if="showApplyOptions" class="apply-options-dropdown">
-      <div class="apply-option">
+    <div
+      v-if="showApplyOptions"
+      :id="APPLY_OPTIONS_MENU_ID"
+      class="apply-options-section__menu"
+      role="group"
+      aria-label="可应用的文字设置"
+    >
+      <div class="apply-options-section__option">
         <UiCheckbox
           :model-value="Object.values(applyOptions).every(Boolean)"
           label="全选"
           @change="$emit('toggleSelectAll')"
         />
       </div>
-      <hr>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.fontSize" label="字号" @change="$emit('updateOption', 'fontSize', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.fontFamily" label="字体" @change="$emit('updateOption', 'fontFamily', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.layoutDirection" label="排版方向" @change="$emit('updateOption', 'layoutDirection', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.lineSpacing" label="行间距" @change="$emit('updateOption', 'lineSpacing', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.textAlign" label="对齐方式" @change="$emit('updateOption', 'textAlign', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.textColor" label="文字颜色" @change="$emit('updateOption', 'textColor', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.fillColor" label="填充颜色" @change="$emit('updateOption', 'fillColor', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.strokeEnabled" label="描边开关" @change="$emit('updateOption', 'strokeEnabled', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.strokeColor" label="描边颜色" @change="$emit('updateOption', 'strokeColor', $event)" />
-      </div>
-      <div class="apply-option">
-        <UiCheckbox :model-value="applyOptions.strokeWidth" label="描边宽度" @change="$emit('updateOption', 'strokeWidth', $event)" />
+      <hr class="apply-options-section__divider">
+      <div
+        v-for="option in APPLY_OPTION_ITEMS"
+        :key="option.key"
+        class="apply-options-section__option"
+      >
+        <UiCheckbox
+          :model-value="applyOptions[option.key]"
+          :label="option.label"
+          @change="$emit('updateOption', option.key, $event)"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.settings-sidebar__apply-group {
-  --settings-sidebar-apply-button-start: #4b89d0;
-  --settings-sidebar-apply-button-end: #316fb6;
-  --settings-sidebar-apply-button-disabled: #c2c9d4;
-  --settings-sidebar-apply-button-hover-start: #3f7bc4;
-  --settings-sidebar-apply-button-hover-end: #2b64a9;
-  --settings-sidebar-apply-options-end: #285d99;
-  --settings-sidebar-apply-button-divider: rgba(255, 255, 255, .24);
-  --settings-sidebar-apply-menu-border: #d7e2f2;
-  --settings-sidebar-apply-menu-divider: #e3ebf6;
-  --settings-sidebar-apply-menu-shadow: rgba(22, 37, 58, .16);
-  --settings-sidebar-apply-option-text: #405473;
-  --settings-sidebar-apply-option-hover-text: #2b5f9d;
+.apply-options-section {
+  --apply-options-section-menu-border: var(--color-border-muted);
+  --apply-options-section-menu-divider: var(--color-border-muted);
+  --apply-options-section-menu-shadow: var(--shadow-medium);
+  --apply-options-section-option-text: var(--color-text-secondary);
+  --apply-options-section-option-hover-text: var(--color-action-primary-hover);
 
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   position: relative;
   width: 100%;
-  height: 38px;
   margin-top: 8px;
 }
 
-.settings-sidebar__apply-button {
+.apply-options-section__actions {
+  width: 100%;
+}
+
+.apply-options-section__action {
   flex: 1;
   min-width: 0;
-  margin: 0;
-  border: none;
-  border-radius: 8px 0 0 8px;
-  background: linear-gradient(135deg, var(--settings-sidebar-apply-button-start) 0%, var(--settings-sidebar-apply-button-end) 100%);
-  color: var(--color-text-inverse);
   font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s ease;
 }
 
-.settings-sidebar__apply-button:disabled {
-  background: var(--settings-sidebar-apply-button-disabled);
-  cursor: not-allowed;
+.apply-options-section__options-action {
+  flex: 0 0 auto;
 }
 
-.settings-sidebar__apply-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--settings-sidebar-apply-button-hover-start) 0%, var(--settings-sidebar-apply-button-hover-end) 100%);
-}
-
-.settings-sidebar__apply-options-button {
-  width: 38px;
-  border: none;
-  border-left: 1px solid var(--settings-sidebar-apply-button-divider);
-  border-radius: 0 8px 8px 0;
-  background: linear-gradient(135deg, var(--settings-sidebar-apply-button-end) 0%, var(--settings-sidebar-apply-options-end) 100%);
-  color: var(--color-text-inverse);
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.apply-options-dropdown {
+.apply-options-section__menu {
   position: absolute;
   inset: auto 0 calc(100% + 6px) 0;
   z-index: var(--z-overlay);
   max-height: 260px;
   padding: 10px;
   overflow-y: auto;
-  border: 1px solid var(--settings-sidebar-apply-menu-border);
+  border: 1px solid var(--apply-options-section-menu-border);
   border-radius: 10px;
   background: var(--color-surface-base);
-  box-shadow: 0 12px 24px var(--settings-sidebar-apply-menu-shadow);
+  box-shadow: 0 12px 24px var(--apply-options-section-menu-shadow);
 }
 
-.apply-option {
+.apply-options-section__option {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 26px;
-  color: var(--settings-sidebar-apply-option-text);
+  color: var(--apply-options-section-option-text);
   font-size: 13px;
   cursor: pointer;
 }
 
-.apply-option:hover {
-  color: var(--settings-sidebar-apply-option-hover-text);
+.apply-options-section__option:hover {
+  color: var(--apply-options-section-option-hover-text);
 }
 
-.apply-options-dropdown hr {
+.apply-options-section__divider {
   margin: 6px 0;
   border: none;
-  border-top: 1px solid var(--settings-sidebar-apply-menu-divider);
+  border-top: 1px solid var(--apply-options-section-menu-divider);
 }
 </style>

@@ -1,8 +1,3 @@
-/**
- * Settings Store 默认值定义
- * 包含所有设置的默认值
- */
-
 import type {
   TextStyleSettings,
   BaiduOcrSettings,
@@ -34,16 +29,8 @@ import {
   DEFAULT_PROOFREADING_MAX_RETRIES
 } from '@/constants'
 import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
+import { deepClone } from '@/utils/deepClone'
 
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
-}
-
-// ============================================================
-// 默认值定义
-// ============================================================
-
-/** 默认文字样式设置 */
 export function createDefaultTextStyle(): TextStyleSettings {
   const defaults = getTextStyleDefaults()
   return {
@@ -57,15 +44,12 @@ export function createDefaultTextStyle(): TextStyleSettings {
     strokeColor: defaults.strokeColor,
     strokeWidth: defaults.strokeWidth,
     inpaintMethod: defaults.inpaintMethod,
-    // 智能颜色识别默认关闭
     useAutoTextColor: defaults.useAutoTextColor,
-    // 排版设置
     lineSpacing: defaults.lineSpacing,
     textAlign: defaults.textAlign
   }
 }
 
-/** 默认百度OCR设置 */
 export const DEFAULT_BAIDU_OCR: BaiduOcrSettings = {
   apiKey: '',
   secretKey: '',
@@ -73,12 +57,10 @@ export const DEFAULT_BAIDU_OCR: BaiduOcrSettings = {
   sourceLanguage: 'JAP'
 }
 
-/** 默认PaddleOCR-VL设置 */
 export const DEFAULT_PADDLEOCR_VL: PaddleOcrVlSettings = {
   sourceLanguage: 'japanese'
 }
 
-/** 默认AI视觉OCR设置 */
 export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
   provider: 'gemini',
   apiKey: '',
@@ -97,14 +79,12 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
   minImageSize: DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE
 }
 
-/** 默认混合OCR设置 */
 export const DEFAULT_HYBRID_OCR: HybridOcrSettings = {
   enabled: false,
   secondaryEngine: '48px_ocr',
   confidenceThreshold: 0.2
 }
 
-/** 默认翻译服务设置 */
 export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
   provider: 'siliconflow',
   apiKey: '',
@@ -118,15 +98,14 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
       businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
     }
   }),
-  translationMode: 'batch',  // 默认使用整页批量翻译
-  // 4个独立的提示词存储
+  translationMode: 'batch',
+  // Prompt variants stay separate so mode toggles do not overwrite user edits.
   batchNormalPrompt: DEFAULT_TRANSLATE_PROMPT,
   batchJsonPrompt: DEFAULT_TRANSLATE_JSON_PROMPT,
   singleNormalPrompt: DEFAULT_SINGLE_BUBBLE_PROMPT,
   singleJsonPrompt: DEFAULT_SINGLE_BUBBLE_JSON_PROMPT
 }
 
-/** 默认高质量翻译设置 */
 export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   provider: 'siliconflow',
   apiKey: '',
@@ -144,7 +123,6 @@ export const DEFAULT_HQ_TRANSLATION: HqTranslationSettings = {
   prompt: DEFAULT_HQ_TRANSLATE_PROMPT
 }
 
-/** 默认插件 Agent 设置 */
 export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
   provider: 'siliconflow',
   apiKey: '',
@@ -160,14 +138,12 @@ export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
   })
 }
 
-/** 默认AI校对设置 */
 export const DEFAULT_PROOFREADING: ProofreadingSettings = {
   enabled: false,
   rounds: [],
   maxRetries: DEFAULT_PROOFREADING_MAX_RETRIES
 }
 
-/** 默认文本框扩展参数 */
 export const DEFAULT_BOX_EXPAND: BoxExpandSettings = {
   ratio: 0,
   top: 0,
@@ -176,19 +152,16 @@ export const DEFAULT_BOX_EXPAND: BoxExpandSettings = {
   right: 0
 }
 
-/** 默认精确文字掩膜设置 */
 export const DEFAULT_PRECISE_MASK: PreciseMaskSettings = {
   dilateSize: 10,
   boxExpandRatio: 20
 }
 
-/** 默认并行翻译设置 */
 export const DEFAULT_PARALLEL: ParallelSettings = {
   enabled: false,
   deepLearningLockSize: 1
 }
 
-/** 创建默认翻译设置 */
 export function createDefaultSettings(): TranslationSettings {
   return {
     settingsSchemaVersion: 3,
@@ -202,26 +175,26 @@ export function createDefaultSettings(): TranslationSettings {
     auxYoloOverlapThreshold: 0.1,
     enableSaberYoloRefine: true,
     saberYoloRefineOverlapThreshold: 50,
-    baiduOcr: cloneJson(DEFAULT_BAIDU_OCR),
-    paddleOcrVl: cloneJson(DEFAULT_PADDLEOCR_VL),
-    aiVisionOcr: cloneJson(DEFAULT_AI_VISION_OCR),
-    hybridOcr: cloneJson(DEFAULT_HYBRID_OCR),
-    translation: cloneJson(DEFAULT_TRANSLATION_SERVICE),
+    baiduOcr: deepClone(DEFAULT_BAIDU_OCR),
+    paddleOcrVl: deepClone(DEFAULT_PADDLEOCR_VL),
+    aiVisionOcr: deepClone(DEFAULT_AI_VISION_OCR),
+    hybridOcr: deepClone(DEFAULT_HYBRID_OCR),
+    translation: deepClone(DEFAULT_TRANSLATION_SERVICE),
     targetLanguage: 'zh',
     translatePrompt: DEFAULT_TRANSLATE_PROMPT,
     useTextboxPrompt: false,
     textboxPrompt: '',
-    hqTranslation: cloneJson(DEFAULT_HQ_TRANSLATION),
-    pluginAgent: cloneJson(DEFAULT_PLUGIN_AGENT),
-    proofreading: cloneJson(DEFAULT_PROOFREADING),
-    boxExpand: cloneJson(DEFAULT_BOX_EXPAND),
-    preciseMask: cloneJson(DEFAULT_PRECISE_MASK),
+    hqTranslation: deepClone(DEFAULT_HQ_TRANSLATION),
+    pluginAgent: deepClone(DEFAULT_PLUGIN_AGENT),
+    proofreading: deepClone(DEFAULT_PROOFREADING),
+    boxExpand: deepClone(DEFAULT_BOX_EXPAND),
+    preciseMask: deepClone(DEFAULT_PRECISE_MASK),
     pdfProcessingMethod: 'backend',
     showDetectionDebug: false,
-    parallel: cloneJson(DEFAULT_PARALLEL),
+    parallel: deepClone(DEFAULT_PARALLEL),
     autoSaveInBookshelfMode: true,
     removeTextWithOcr: false,
-    enableVerboseLogs: false,  // 默认关闭详细日志
-    lamaDisableResize: false  // 默认允许LAMA自动缩放（提高速度，减少显存占用）
+    enableVerboseLogs: false,
+    lamaDisableResize: false
   }
 }

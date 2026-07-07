@@ -1,9 +1,11 @@
 <template>
-  <div class="chat-shell">
-    <PreviewTabs
+  <div class="character-studio-preview">
+    <ProductSegmentedTabs
       :active-tab="activeTab"
+      aria-label="角色工坊预览工作区"
+      layout="scroll"
       :tabs="tabs"
-      @update:active-tab="$emit('update:activeTab', $event)"
+      @update:active-tab="selectTab"
     />
 
     <ChatWorkspace
@@ -76,13 +78,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
+import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import { buildCharacterStudioPatchSummary } from '@/stores/characterStudioPatchSummary'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import CharacterStudioPreviewModals from './CharacterStudioPreviewModals.vue'
 import { studioPreviewTabs } from './characterStudioEditorConfig'
 import AgentWorkspace from './preview/AgentWorkspace.vue'
 import ChatWorkspace from './preview/ChatWorkspace.vue'
-import PreviewTabs from './preview/PreviewTabs.vue'
 import RuntimeWorkspace from './preview/RuntimeWorkspace.vue'
 import { summarizeStudioRuntimeLog as summarizeLog } from './characterStudioPreviewHelpers'
 import type {
@@ -132,7 +135,11 @@ const emit = defineEmits<{
   (event: 'update:activeTab', value: 'chat' | 'assistant' | 'runtime'): void
 }>()
 
-const tabs = studioPreviewTabs
+const tabs = studioPreviewTabs.map(tab => ({
+  id: tab.value,
+  iconName: tab.iconName,
+  label: tab.label,
+}))
 const agentInput = ref('')
 const selectedGreetingId = ref('')
 const greetingPickerOpen = ref(false)
@@ -189,7 +196,7 @@ function openPromptPreviewModal() {
 
 async function copyPromptPreview() {
   if (!props.promptPreview.trim()) return
-  await navigator.clipboard.writeText(props.promptPreview)
+  await copyTextToClipboard(props.promptPreview)
 }
 
 function sendAgent() {
@@ -197,6 +204,12 @@ function sendAgent() {
   if (!value) return
   emit('send-agent', value)
   agentInput.value = ''
+}
+
+function selectTab(tabId: string) {
+  const tab = studioPreviewTabs.find(item => item.value === tabId)
+  if (!tab) return
+  emit('update:activeTab', tab.value)
 }
 
 function attachmentUrl(attachment: CharacterStudioChatAttachment) {
@@ -211,39 +224,7 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
 </script>
 
 <style scoped>
-.chat-shell {
-  --character-studio-preview-selection-border: rgba(37, 99, 199, .28);
-  --character-studio-preview-selection-ring: rgba(37, 99, 199, .16);
-  --character-studio-preview-primary-action-shadow: rgba(37, 99, 199, .18);
-  --character-studio-preview-runtime-log-background: rgba(20, 56, 106, .06);
-  --character-studio-preview-primary-action-background-start: #2563c7;
-  --character-studio-preview-primary-action-background-end: #4d86ee;
-  --character-studio-preview-detail-label-text: #16365b;
-  --character-studio-preview-trigger-border: rgba(28, 55, 94, .1);
-  --character-studio-preview-tabs-shadow: rgba(20, 46, 82, .06);
-  --character-studio-preview-trigger-highlight: rgba(255, 255, 255, .5);
-  --character-studio-preview-active-tab-ring: rgba(37, 99, 199, .16);
-  --character-studio-preview-popover-shadow: rgba(20, 46, 82, .18);
-  --character-studio-preview-active-tab-background: rgba(77, 134, 238, .1);
-  --character-studio-preview-trigger-background: rgba(255, 255, 255, .96);
-  --character-studio-preview-card-background: rgba(252, 253, 255, .92);
-  --character-studio-preview-disabled-text: #6f84a2;
-  --character-studio-preview-active-tab-text: #16365b;
-  --character-studio-preview-heading-text: #102741;
-  --character-studio-preview-tab-text: #55708f;
-  --character-studio-preview-session-title-text: #14304c;
-  --character-studio-preview-supporting-text: #5f7591;
-  --character-studio-preview-panel-border: rgba(25, 55, 94, .08);
-  --character-studio-preview-message-list-background-start: rgba(244, 248, 255, .95);
-  --character-studio-preview-pending-attachment-background: rgba(255, 255, 255, .88);
-  --character-studio-preview-assistant-message-background: rgba(247, 250, 254, .96);
-  --character-studio-preview-composer-background: rgba(244, 248, 255, .94);
-  --character-studio-preview-message-list-background-end: rgba(238, 244, 252, .9);
-  --character-studio-preview-patch-section-background: rgba(244, 248, 255, .88);
-  --character-studio-preview-user-message-background: rgba(20, 56, 106, .08);
-  --character-studio-preview-attachment-card-background: rgba(255, 255, 255, .86);
-  --character-studio-preview-message-role-text: #5f7591;
-
+.character-studio-preview {
   display: flex;
   flex-direction: column;
   gap: 12px;

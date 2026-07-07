@@ -16,21 +16,41 @@
       @open-export="store.activeEditorTab = 'export'"
     />
 
-    <div v-if="!bookId" class="studio-empty-state">
-      <div class="empty-badge">缺少上下文</div>
-      <h2>未检测到书籍参数</h2>
-      <p>请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊仍然依赖当前书籍的分析上下文。</p>
-    </div>
+    <ProductEmptyState
+      v-if="!bookId"
+      class="studio-page__missing-context-state"
+      eyebrow="缺少上下文"
+      icon-name="alert-triangle"
+      title="未检测到书籍参数"
+      description="请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊需要当前书籍的分析上下文。"
+    />
 
-    <div v-else class="workspace-root">
-      <div v-if="store.errorMessage" class="workspace-error">
-        <span>⚠ {{ store.errorMessage }}</span>
-        <UiButton variant="toolbar" class="error-dismiss" @click="store.clearErrorMessage()">知道了</UiButton>
-      </div>
+    <div v-else class="studio-page__workspace-root">
+      <ProductStatusBanner
+        v-if="store.errorMessage"
+        class="studio-page__workspace-error-banner"
+        tone="danger"
+        aria-live="assertive"
+      >
+        {{ store.errorMessage }}
+        <template #actions>
+          <UiButton variant="secondary" size="sm" @click="store.clearErrorMessage()">知道了</UiButton>
+        </template>
+      </ProductStatusBanner>
 
-      <div class="workspace-shell" :style="workspaceStyle">
-        <section class="editor-pane">
-          <div class="column-scroll" data-testid="editor-scroll">
+      <ProductSplitWorkspace
+        v-model:left-pane-width="leftPaneWidth"
+        class="studio-page__workspace-shell"
+        aria-label="角色工坊工作区"
+        resizer-label="调整编辑区和预览区宽度"
+        :min="PANE_WIDTH_MIN"
+        :max="PANE_WIDTH_MAX"
+        :step="PANE_WIDTH_STEP"
+        left-scroll-test-id="editor-scroll"
+        right-scroll-test-id="chat-scroll"
+      >
+        <template #left>
+          <div class="studio-page__workspace-slot-content">
             <CharacterStudioEditor
               :document="store.currentDocument"
               :avatar-url="avatarUrl"
@@ -49,23 +69,10 @@
               @download="download"
             />
           </div>
-        </section>
+        </template>
 
-        <div
-          class="pane-resizer"
-          role="separator"
-          tabindex="0"
-          aria-label="调整编辑区和预览区宽度"
-          aria-orientation="vertical"
-          :aria-valuemin="PANE_WIDTH_MIN"
-          :aria-valuemax="PANE_WIDTH_MAX"
-          :aria-valuenow="Math.round(leftPaneWidth)"
-          @mousedown="startResize"
-          @keydown="handleResizerKeydown"
-        ></div>
-
-        <section class="chat-pane">
-          <div class="column-scroll" data-testid="chat-scroll">
+        <template #right>
+          <div class="studio-page__workspace-slot-content">
             <CharacterStudioPreview
               :book-id="props.bookId || ''"
               :document="store.currentDocument"
@@ -102,18 +109,18 @@
               @undo-patch="store.undoLastPatch()"
             />
           </div>
-        </section>
-      </div>
+        </template>
+      </ProductSplitWorkspace>
     </div>
 
     <template #overlay>
       <div
         v-if="store.resourcePanelOpen"
-        class="resource-overlay"
+        class="studio-page__resource-overlay"
         data-testid="resource-overlay"
         @click.self="store.resourcePanelOpen = false"
       >
-        <div class="resource-dialog" data-testid="resource-dialog">
+        <div class="studio-page__resource-dialog" data-testid="resource-dialog">
           <CharacterStudioSidebar
             :documents="store.filteredDocuments"
             :candidates="store.filteredCandidates"
@@ -138,9 +145,11 @@
 </template>
 
 <script setup lang="ts">
-import './CharacterStudioView.global.styles.css'
 import UiButton from '@/components/ui/UiButton.vue'
 import AppShell from '@/components/ui/AppShell.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductSplitWorkspace from '@/components/product/ProductSplitWorkspace.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCharacterStudioAvatarUrl } from '@/api/characterStudio'
@@ -163,7 +172,6 @@ const PANE_WIDTH_MIN = 35
 const PANE_WIDTH_MAX = 70
 const PANE_WIDTH_STEP = 2
 const leftPaneWidth = ref(52)
-const resizing = ref(false)
 let hydrateRequestId = 0
 
 const currentBookTitle = computed(() => {
@@ -184,54 +192,6 @@ const avatarUrl = computed(() => {
   if (!props.bookId || !store.currentDocument?.id || !store.currentDocument.avatar.asset_path) return ''
   return getCharacterStudioAvatarUrl(props.bookId, store.currentDocument.id)
 })
-
-const workspaceStyle = computed(() => ({
-  gridTemplateColumns: `${leftPaneWidth.value}fr 8px ${100 - leftPaneWidth.value}fr`,
-}))
-
-function handleMouseMove(event: MouseEvent) {
-  if (!resizing.value) return
-  const width = window.innerWidth || 1
-  leftPaneWidth.value = clampPaneWidth((event.clientX / width) * 100)
-}
-
-function handleMouseUp() {
-  resizing.value = false
-  document.body.classList.remove('studio-resizing')
-}
-
-function startResize() {
-  resizing.value = true
-  document.body.classList.add('studio-resizing')
-}
-
-function clampPaneWidth(value: number): number {
-  return Math.min(PANE_WIDTH_MAX, Math.max(PANE_WIDTH_MIN, value))
-}
-
-function handleResizerKeydown(event: KeyboardEvent) {
-  let next = leftPaneWidth.value
-
-  switch (event.key) {
-    case 'ArrowLeft':
-      next -= PANE_WIDTH_STEP
-      break
-    case 'ArrowRight':
-      next += PANE_WIDTH_STEP
-      break
-    case 'Home':
-      next = PANE_WIDTH_MIN
-      break
-    case 'End':
-      next = PANE_WIDTH_MAX
-      break
-    default:
-      return
-  }
-
-  event.preventDefault()
-  leftPaneWidth.value = clampPaneWidth(next)
-}
 
 async function runAction(action: () => Promise<void>) {
   try {
@@ -404,8 +364,6 @@ async function loadPromptPreviewFromChat() {
 }
 
 onMounted(async () => {
-  window.addEventListener('mousemove', handleMouseMove)
-  window.addEventListener('mouseup', handleMouseUp)
   if (props.bookId) {
     await hydrateWorkspace(props.bookId)
   }
@@ -413,9 +371,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   hydrateRequestId += 1
-  window.removeEventListener('mousemove', handleMouseMove)
-  window.removeEventListener('mouseup', handleMouseUp)
-  document.body.classList.remove('studio-resizing')
 })
 
 watch(() => props.bookId, async nextBookId => {
@@ -434,33 +389,41 @@ watch(() => props.docId, async nextDocId => {
 
 <style scoped>
 .studio-page {
-  --studio-surface-soft: rgba(245, 249, 254, 0.92);
-  --studio-surface-tint: rgba(37, 99, 199, 0.1);
-  --studio-surface-tint-muted: rgba(37, 99, 199, 0.12);
-  --studio-surface-tint-strong: rgba(37, 99, 199, 0.14);
-  --studio-surface-muted: rgba(20, 56, 106, 0.07);
-  --studio-text-strong: #183351;
-  --studio-text-default: #234977;
-  --studio-text-muted: #607794;
-  --studio-text-subtle: #6d839f;
-  --studio-text-danger: #b83535;
-  --studio-border-default: rgba(28, 55, 94, 0.08);
-  --studio-border-strong: rgba(28, 55, 94, 0.12);
-  --studio-shadow-floating: rgba(20, 46, 82, 0.08);
-  --studio-view-accent-primary: rgba(86, 138, 225, .08);
-  --studio-view-accent-secondary: #f4f7fb;
-  --studio-view-accent-muted: #f6f8fb;
-  --studio-view-accent-strong: #f8fafc;
-  --studio-view-border-default: rgba(217, 55, 55, .12);
-  --studio-view-surface-base: rgba(37, 99, 199, .22);
-  --studio-view-surface-raised: rgba(9, 25, 49, .38);
-  --studio-view-surface-muted: rgba(255, 244, 244, .92);
-  --studio-view-surface-subtle: rgba(255, 255, 255, .9);
-  --studio-view-text-primary: #122b47;
-  --ui-button-ghost-border: 1px solid var(--studio-border-default);
-  --ui-button-ghost-background: var(--color-surface-raised);
-  --ui-button-ghost-hover-border: 1px solid var(--studio-border-default);
-  --ui-button-ghost-hover-background: var(--studio-surface-tint);
+  --studio-surface-soft: color-mix(in srgb, var(--color-surface-page) 92%, transparent);
+  --studio-surface-tint: color-mix(in srgb, var(--color-action-primary) 10%, transparent);
+  --studio-surface-tint-muted: color-mix(in srgb, var(--color-action-primary) 6%, transparent);
+  --studio-surface-tint-strong: color-mix(in srgb, var(--color-action-primary) 14%, transparent);
+  --studio-surface-muted: color-mix(in srgb, var(--color-text-heading) 7%, transparent);
+  --studio-text-strong: var(--color-text-heading);
+  --studio-text-default: var(--color-text-default);
+  --studio-text-muted: var(--color-text-supporting);
+  --studio-text-subtle: var(--color-text-subtle);
+  --studio-border-default: color-mix(in srgb, var(--color-text-heading) 8%, transparent);
+  --studio-border-strong: color-mix(in srgb, var(--color-text-heading) 12%, transparent);
+  --studio-shadow-floating: var(--shadow-medium);
+  --studio-form-control-border: 1px solid var(--studio-border-strong);
+  --studio-form-control-background: var(--studio-surface-soft);
+  --studio-form-control-color: var(--studio-text-strong);
+  --studio-form-control-font-size: 13px;
+  --ui-input-studio-border: var(--studio-form-control-border);
+  --ui-input-studio-background: var(--studio-form-control-background);
+  --ui-input-studio-color: var(--studio-form-control-color);
+  --ui-input-studio-font-size: var(--studio-form-control-font-size);
+  --ui-select-studio-border: var(--studio-form-control-border);
+  --ui-select-studio-background: var(--studio-form-control-background);
+  --ui-select-studio-color: var(--studio-form-control-color);
+  --ui-select-studio-font-size: var(--studio-form-control-font-size);
+  --ui-textarea-studio-border: var(--studio-form-control-border);
+  --ui-textarea-studio-background: var(--studio-form-control-background);
+  --ui-textarea-studio-color: var(--studio-form-control-color);
+  --ui-textarea-studio-font-size: var(--studio-form-control-font-size);
+  --ui-textarea-studio-line-height: 1.7;
+  --studio-view-accent-primary: color-mix(in srgb, var(--color-action-primary) 8%, transparent);
+  --studio-view-accent-secondary: var(--color-surface-page);
+  --studio-view-accent-muted: color-mix(in srgb, var(--color-surface-page) 55%, var(--color-surface-base));
+  --studio-view-accent-strong: var(--color-surface-quiet);
+  --studio-view-surface-raised: color-mix(in srgb, var(--color-overlay-backdrop-solid) 38%, transparent);
+  --studio-view-text-primary: var(--color-text-heading);
 
   margin: 0;
   display: flex;
@@ -472,62 +435,31 @@ watch(() => props.docId, async nextDocId => {
   color: var(--studio-view-text-primary);
 }
 
-.workspace-root {
+.studio-page__workspace-root {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
 }
 
-.workspace-shell {
-  display: grid;
+.studio-page__workspace-shell {
   flex: 1;
   min-height: 0;
   padding: 18px 20px 20px;
 }
 
-.editor-pane,
-.chat-pane {
-  min-width: 0;
-  min-height: 0;
+.studio-page__workspace-slot-content {
+  min-height: 100%;
 }
 
-.chat-pane {
-  width: auto;
-  padding: 0;
-}
-
-.column-scroll {
-  height: 100%;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.editor-pane > .column-scroll {
-  scrollbar-gutter: stable;
-}
-
-.column-scroll > .studio-editor,
-.column-scroll > .chat-shell {
+.studio-page__workspace-slot-content > .studio-editor,
+.studio-page__workspace-slot-content > .character-studio-preview {
   height: auto;
   min-height: 100%;
   overflow: visible;
 }
 
-.pane-resizer {
-  width: 8px;
-  cursor: col-resize;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--studio-surface-tint), var(--studio-view-surface-base));
-}
-
-.pane-resizer:focus-visible {
-  outline: 2px solid var(--color-border-brand);
-  outline-offset: 3px;
-}
-
-.resource-overlay {
+.studio-page__resource-overlay {
   width: 100%;
   height: 100%;
   background: var(--studio-view-surface-raised);
@@ -538,7 +470,7 @@ watch(() => props.docId, async nextDocId => {
   overflow-y: auto;
 }
 
-.resource-dialog {
+.studio-page__resource-dialog {
   width: min(1180px, 100%);
   height: calc(100dvh - 120px);
   max-height: calc(100dvh - 120px);
@@ -548,72 +480,18 @@ watch(() => props.docId, async nextDocId => {
   flex-shrink: 0;
 }
 
-.resource-dialog > * {
+.studio-page__resource-dialog > * {
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.workspace-error {
+.studio-page__workspace-error-banner {
   margin: 14px 20px 0;
-  border-radius: 16px;
-  padding: 12px 16px;
-  background: var(--studio-view-surface-muted);
-  border: 1px solid var(--studio-view-border-default);
-  color: var(--studio-text-danger);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.error-dismiss {
-  border: none;
-  border-radius: 12px;
-  padding: 8px 12px;
-  cursor: pointer;
-  background: var(--color-surface-danger-soft);
-  color: inherit;
-}
-
-.studio-empty-state {
-  margin: auto;
-  max-width: 560px;
-  text-align: center;
-  padding: 48px 32px;
-  border-radius: 28px;
-  background: var(--studio-view-surface-subtle);
-  border: 1px solid var(--studio-border-default);
-  box-shadow: 0 26px 42px var(--studio-shadow-floating);
-}
-
-.empty-badge {
-  display: inline-flex;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--studio-surface-tint-muted);
-  color: var(--color-text-primary-strong);
-  font-size: 12px;
-}
-
-.studio-empty-state h2 {
-  margin: 16px 0 0;
-  font-size: 30px;
-}
-
-.studio-empty-state p {
-  margin: 12px 0 0;
-  color: var(--studio-text-muted);
-  line-height: 1.7;
 }
 
 @media (--breakpoint-studio-down) {
-  .workspace-shell {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .pane-resizer {
-    display: none;
+  .studio-page__workspace-shell {
+    padding: 14px;
   }
 }
 </style>

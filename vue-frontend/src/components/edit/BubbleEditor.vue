@@ -1,36 +1,42 @@
 <template>
-  <div class="edit-panel-content">
-    <div class="text-column original-text-column text-block">
-      <div class="text-column-header">
-        <span class="column-title">漫画原文</span>
-        <UiButton
-          variant="toolbar"
-          class="re-ocr-btn"
-          :class="{ 'is-loading': isOcrLoading }"
+  <div class="bubble-editor">
+    <div class="bubble-editor__text-panel bubble-editor__text-panel--original">
+      <div class="bubble-editor__text-panel-header">
+        <span class="bubble-editor__text-panel-title">漫画原文</span>
+        <UiIconButton
+          variant="soft"
+          size="xs"
+          class="bubble-editor__refresh-action"
+          :class="{ 'bubble-editor__refresh-action--loading': isOcrLoading }"
           :disabled="isOcrLoading"
-          @click="handleOcrRecognize"
+          label="重新OCR此气泡"
           title="重新OCR此气泡"
+          @click="handleOcrRecognize"
         >
-          <span class="button-icon">🔄</span>
-        </UiButton>
+          <UiIcon name="refresh" class="bubble-editor__refresh-icon" size="14" />
+        </UiIconButton>
       </div>
       <UiTextarea
         ref="originalTextInput"
-        v-model="localOriginalText"
-        class="text-editor original-editor"
+        :model-value="localOriginalText"
+        class="bubble-editor__textarea bubble-editor__textarea--original"
         placeholder="OCR识别的日语原文..."
         spellcheck="false"
-        @input="handleOriginalTextChange"
+        @update:model-value="handleOriginalTextChange"
       />
-      <div class="text-actions">
-        <UiButton variant="toolbar" class="text-action-btn copy-btn" @click="copyOriginalText">📋 复制</UiButton>
+      <div class="bubble-editor__text-actions">
+        <UiButton variant="toolbar" class="bubble-editor__text-action bubble-editor__text-action--copy" @click="copyOriginalText">
+          <UiIcon name="copy" size="14" />
+          <span>复制</span>
+        </UiButton>
         <UiButton
           variant="toolbar"
-          class="text-action-btn keyboard-toggle-btn"
+          class="bubble-editor__text-action bubble-editor__text-action--keyboard"
           @click="toggleJpKeyboard"
           title="显示/隐藏50音键盘"
         >
-          ⌨️ 50音
+          <UiIcon name="keyboard" size="14" />
+          <span>50音</span>
         </UiButton>
       </div>
 
@@ -43,366 +49,327 @@
       />
     </div>
 
-    <div class="text-column translated-text-column text-block">
-      <div class="text-column-header">
-        <span class="column-title">译文</span>
-        <UiButton
-          variant="toolbar"
-          class="re-translate-btn"
-          :class="{ 'is-loading': isTranslateLoading }"
+    <div class="bubble-editor__text-panel bubble-editor__text-panel--translated">
+      <div class="bubble-editor__text-panel-header">
+        <span class="bubble-editor__text-panel-title">译文</span>
+        <UiIconButton
+          variant="soft"
+          size="xs"
+          class="bubble-editor__refresh-action"
+          :class="{ 'bubble-editor__refresh-action--loading': isTranslateLoading }"
           :disabled="isTranslateLoading"
-          @click="handleReTranslate"
+          label="重新翻译此气泡"
           title="重新翻译此气泡"
+          @click="handleReTranslate"
         >
-          <span class="button-icon">🔄</span>
-        </UiButton>
+          <UiIcon name="refresh" class="bubble-editor__refresh-icon" size="14" />
+        </UiIconButton>
       </div>
       <UiTextarea
         ref="translatedTextInput"
-        v-model="localTranslatedText"
-        class="text-editor translated-editor"
+        :model-value="localTranslatedText"
+        class="bubble-editor__textarea bubble-editor__textarea--translated"
         placeholder="翻译后的中文..."
         spellcheck="false"
-        @input="handleTextChange"
+        @update:model-value="handleTextChange"
       />
-      <div class="text-actions">
-        <UiButton variant="toolbar" class="text-action-btn copy-btn" @click="copyTranslatedText">📋 复制</UiButton>
+      <div class="bubble-editor__text-actions">
+        <UiButton variant="toolbar" class="bubble-editor__text-action bubble-editor__text-action--copy" @click="copyTranslatedText">
+          <UiIcon name="copy" size="14" />
+          <span>复制</span>
+        </UiButton>
       </div>
     </div>
 
-    <div class="style-settings-section text-block">
-      <div class="office-toolbar">
-        <div class="toolbar-row toolbar-row-top">
-          <div class="combo-control font-control">
-            <label>字体</label>
-            <CustomSelect
+    <div class="bubble-editor__style-section">
+      <div class="bubble-editor__toolbar">
+        <div class="bubble-editor__toolbar-row bubble-editor__toolbar-row--top">
+          <UiField class="bubble-editor__toolbar-field bubble-editor__toolbar-field--font" variant="editor" label="字体" control-id="bubbleFontFamily">
+            <UiCombobox
+              input-id="bubbleFontFamily"
+              aria-label="字体"
               v-model="localFontFamily"
               :groups="fontSelectGroups"
               title="字体"
               @change="handleFontFamilyChange"
             />
-          </div>
-          <div class="combo-control size-control">
-            <label>字号</label>
-            <div class="size-input-wrap">
-              <UiInput
-                type="number"
-                v-model.number="localFontSize"
-                class="toolbar-fontsize-input"
-                :min="FONT_SIZE_MIN"
-                :max="FONT_SIZE_MAX"
-                :step="FONT_SIZE_STEP"
-                title="字号"
-                @change="handleFontSizeChange"
-              />
-              <div class="toolbar-fontsize-btns">
-                <UiButton variant="toolbar" class="toolbar-fontsize-btn" @click="increaseFontSize" title="增大字号">
-                  A+
-                </UiButton>
-                <UiButton variant="toolbar" class="toolbar-fontsize-btn" @click="decreaseFontSize" title="减小字号">
-                  A-
-                </UiButton>
-              </div>
-            </div>
-          </div>
+          </UiField>
+          <UiField
+            class="bubble-editor__toolbar-field bubble-editor__toolbar-field--size"
+            variant="editor"
+            label="字号"
+            control-id="bubbleFontSize"
+          >
+            <UiNumberField
+              input-id="bubbleFontSize"
+              v-model="localFontSize"
+              class="bubble-editor__number-field bubble-editor__number-field--font"
+              variant="editor"
+              :min="FONT_SIZE_MIN"
+              :max="FONT_SIZE_MAX"
+              :step="FONT_SIZE_STEP"
+              controls
+              aria-label="字号"
+              title="字号"
+              decrement-label="减小字号"
+              increment-label="增大字号"
+              @change="handleFontSizeChange"
+            />
+          </UiField>
         </div>
 
-        <div class="toolbar-row toolbar-row-actions">
-          <div class="toolbar-icon-group" aria-label="排版方向">
-            <UiButton
-              variant="toolbar"
-              class="toolbar-btn"
-              :data-active="localTextDirection === 'vertical'"
-              @click="setTextDirection('vertical')"
+        <div class="bubble-editor__toolbar-row bubble-editor__toolbar-row--actions">
+          <div class="bubble-editor__toolbar-icon-group" aria-label="排版方向">
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localTextDirection === 'vertical'"
+              :pressed="localTextDirection === 'vertical'"
+              label="竖向排版"
               title="竖向排版"
+              @click="setTextDirection('vertical')"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path
-                  d="M8 2v12M8 2L5 5M8 2l3 3"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  fill="none"
-                />
-              </svg>
-            </UiButton>
-            <UiButton
-              variant="toolbar"
-              class="toolbar-btn"
-              :data-active="localTextDirection === 'horizontal'"
-              @click="setTextDirection('horizontal')"
+              <UiIcon name="arrow-up" size="16" />
+            </UiIconButton>
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localTextDirection === 'horizontal'"
+              :pressed="localTextDirection === 'horizontal'"
+              label="横向排版"
               title="横向排版"
+              @click="setTextDirection('horizontal')"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path
-                  d="M2 8h12M14 8l-3-3M14 8l-3 3"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  fill="none"
-                />
-              </svg>
-            </UiButton>
+              <UiIcon name="arrow-right" size="16" />
+            </UiIconButton>
           </div>
 
-          <div class="toolbar-divider vertical"></div>
+          <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
 
-          <div class="toolbar-color-group">
-            <div class="toolbar-color-picker" title="文字颜色">
-              <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerTextColorPicker">
-                <svg viewBox="0 0 16 16" width="16" height="16">
-                  <text x="3" y="11" font-size="10" font-weight="bold" fill="currentColor">A</text>
-                </svg>
-                <span class="color-indicator" :style="{ background: localTextColor }"></span>
-              </UiButton>
-              <UiInput
+          <div class="bubble-editor__toolbar-color-group">
+            <div class="bubble-editor__toolbar-color-picker" title="文字颜色">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="文字颜色" title="文字颜色" @click="triggerTextColorPicker">
+                <UiIcon name="type" size="16" />
+                <span class="bubble-editor__color-indicator" :style="{ background: localTextColor }"></span>
+              </UiIconButton>
+              <UiColorInput
                 ref="textColorInput"
-                type="color"
-                v-model="localTextColor"
-                class="hidden-color-input"
-                @input="handleTextColorChange"
-                @change="handleTextColorChange"
+                :model-value="localTextColor"
+                hidden
+                aria-label="文字颜色"
+                title="文字颜色"
+                @update:model-value="handleTextColorChange"
               />
             </div>
           </div>
 
-          <div class="toolbar-divider vertical"></div>
+          <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
 
-          <!-- 背景修复方式选择器 -->
-          <div class="toolbar-inpaint-group" title="背景修复方式">
-            <CustomSelect
+          <div class="bubble-editor__toolbar-inpaint-group" title="背景修复方式">
+            <UiSelect
               v-model="localInpaintMethod"
               :options="inpaintMethodOptions"
+              aria-label="背景修复方式"
               @change="handleInpaintMethodChange"
             />
 
             <div
-              class="toolbar-color-picker toolbar-solid-color-options"
-              :class="{ hidden: localInpaintMethod !== 'solid' }"
+              class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-solid-color-options"
+              :class="{ 'bubble-editor__toolbar-solid-color-options--hidden': localInpaintMethod !== 'solid' }"
             >
-              <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerFillColorPicker">
-                <svg viewBox="0 0 16 16" width="16" height="16">
-                  <rect
-                    x="2"
-                    y="2"
-                    width="12"
-                    height="12"
-                    rx="2"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2"
-                  />
-                  <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" opacity="0.3" />
-                </svg>
-                <span class="color-indicator" :style="{ background: localFillColor }"></span>
-              </UiButton>
-              <UiInput
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" @click="triggerFillColorPicker">
+                <UiIcon name="square" size="16" />
+                <span class="bubble-editor__color-indicator" :style="{ background: localFillColor }"></span>
+              </UiIconButton>
+              <UiColorInput
                 ref="fillColorInput"
-                type="color"
-                v-model="localFillColor"
-                class="hidden-color-input"
-                @change="handleFillColorChange"
+                :model-value="localFillColor"
+                hidden
+                aria-label="背景填充颜色"
+                title="背景填充颜色"
+                @update:model-value="handleFillColorChange"
               />
             </div>
           </div>
 
-          <div class="toolbar-divider vertical"></div>
+          <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
 
-          <div class="toolbar-stroke-cluster">
-            <UiButton
-              variant="toolbar"
-              class="toolbar-btn"
-              :data-active="localStrokeEnabled"
-              @click="toggleStroke"
+          <div class="bubble-editor__toolbar-stroke-cluster">
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localStrokeEnabled"
+              :pressed="localStrokeEnabled"
+              label="文字描边"
               title="文字描边"
+              @click="toggleStroke"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <text
-                  x="3"
-                  y="12"
-                  font-size="11"
-                  font-weight="bold"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  fill="none"
-                >
-                  A
-                </text>
-                <text x="3" y="12" font-size="11" font-weight="bold" fill="currentColor">A</text>
-              </svg>
-            </UiButton>
+              <UiIcon name="case-sensitive" size="16" />
+            </UiIconButton>
 
             <div
-              class="toolbar-color-picker toolbar-stroke-options"
-              :class="{ hidden: !localStrokeEnabled }"
+              class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-stroke-options"
+              :class="{ 'bubble-editor__toolbar-stroke-options--hidden': !localStrokeEnabled }"
               title="描边颜色"
             >
-              <UiButton variant="toolbar" class="toolbar-btn toolbar-color-btn" @click="triggerStrokeColorPicker">
-                <svg viewBox="0 0 16 16" width="16" height="16">
-                  <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="2" />
-                </svg>
-                <span class="color-indicator" :style="{ background: localStrokeColor }"></span>
-              </UiButton>
-              <UiInput
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="描边颜色" title="描边颜色" @click="triggerStrokeColorPicker">
+                <UiIcon name="circle" size="16" />
+                <span class="bubble-editor__color-indicator" :style="{ background: localStrokeColor }"></span>
+              </UiIconButton>
+              <UiColorInput
                 ref="strokeColorInput"
-                type="color"
-                v-model="localStrokeColor"
-                class="hidden-color-input"
-                @change="handleStrokeColorChange"
+                :model-value="localStrokeColor"
+                hidden
+                aria-label="描边颜色"
+                title="描边颜色"
+                @update:model-value="handleStrokeColorChange"
               />
             </div>
 
             <div
-              class="toolbar-stroke-width toolbar-stroke-options"
-              :class="{ hidden: !localStrokeEnabled }"
+              class="bubble-editor__toolbar-stroke-width bubble-editor__toolbar-stroke-options"
+              :class="{ 'bubble-editor__toolbar-stroke-options--hidden': !localStrokeEnabled }"
               title="描边宽度"
             >
-              <UiInput
-                type="number"
-                v-model.number="localStrokeWidth"
-                class="toolbar-mini-input"
-                min="0"
-                max="10"
+              <UiNumberField
+                v-model="localStrokeWidth"
+                class="bubble-editor__number-field bubble-editor__number-field--compact"
+                variant="editor"
+                :min="0"
+                :max="10"
+                aria-label="描边宽度"
                 @change="handleStrokeWidthChange"
               />
-              <span class="toolbar-unit">px</span>
+              <span class="bubble-editor__toolbar-unit">px</span>
             </div>
           </div>
         </div>
 
-        <div class="toolbar-row toolbar-row-typography">
-          <div class="combo-control linespacing-control">
-            <label>行间距</label>
-            <UiInput
-              type="number"
-              v-model.number="localLineSpacing"
-              class="toolbar-mini-input linespacing-input"
-              min="0.5"
-              max="3"
-              step="0.1"
+        <div class="bubble-editor__toolbar-row bubble-editor__toolbar-row--typography">
+          <UiField
+            class="bubble-editor__toolbar-field bubble-editor__toolbar-field--line-spacing"
+            variant="editor"
+            label="行间距"
+            control-id="bubbleLineSpacing"
+          >
+            <UiNumberField
+              input-id="bubbleLineSpacing"
+              v-model="localLineSpacing"
+              class="bubble-editor__number-field bubble-editor__number-field--compact"
+              variant="editor"
+              :min="0.5"
+              :max="3"
+              :step="0.1"
+              aria-label="行间距"
               title="行间距倍数（0.5 - 3.0）"
               @change="handleLineSpacingChange"
             />
-          </div>
+          </UiField>
 
-          <div class="toolbar-divider vertical"></div>
+          <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
 
-          <div class="toolbar-icon-group" aria-label="对齐方式" title="横排=水平对齐，竖排=列内字符对齐">
-            <UiButton
-              variant="toolbar"
-              class="toolbar-btn"
-              :data-active="localTextAlign === 'start'"
-              @click="setTextAlign('start')"
+          <div class="bubble-editor__toolbar-icon-group" aria-label="对齐方式" title="横排=水平对齐，竖排=列内字符对齐">
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localTextAlign === 'start'"
+              :pressed="localTextAlign === 'start'"
+              :label="localTextDirection === 'vertical' ? '顶部对齐' : '左对齐'"
               :title="localTextDirection === 'vertical' ? '顶部对齐' : '左对齐'"
+              @click="setTextAlign('start')"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
-              </svg>
-            </UiButton>
-            <UiButton
-              variant="toolbar"
-              class="toolbar-btn"
-              :data-active="localTextAlign === 'center'"
-              @click="setTextAlign('center')"
+              <UiIcon name="align-left" size="16" />
+            </UiIconButton>
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localTextAlign === 'center'"
+              :pressed="localTextAlign === 'center'"
+              label="居中对齐"
               title="居中对齐"
+              @click="setTextAlign('center')"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path d="M2 4h12M4 8h8M3 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
-              </svg>
-            </UiButton>
-            <UiButton
-              variant="toolbar"
-              class="toolbar-btn"
-              :data-active="localTextAlign === 'end'"
-              @click="setTextAlign('end')"
+              <UiIcon name="align-center" size="16" />
+            </UiIconButton>
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localTextAlign === 'end'"
+              :pressed="localTextAlign === 'end'"
+              :label="localTextDirection === 'vertical' ? '底部对齐' : '右对齐'"
               :title="localTextDirection === 'vertical' ? '底部对齐' : '右对齐'"
+              @click="setTextAlign('end')"
             >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path d="M2 4h12M6 8h8M4 12h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
-              </svg>
-            </UiButton>
+              <UiIcon name="align-right" size="16" />
+            </UiIconButton>
           </div>
         </div>
 
-        <div class="toolbar-row toolbar-row-bottom">
-          <div class="toolbar-rotation-group" title="旋转角度">
-            <UiButton variant="toolbar" class="toolbar-btn" @click="rotateLeft" title="逆时针旋转">
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path
-                  d="M2 8a6 6 0 1 1 1.5 4"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  fill="none"
-                />
-                <path d="M2 5v3.5h3.5" stroke="currentColor" stroke-width="1.5" fill="none" />
-              </svg>
-            </UiButton>
-            <UiInput
-              type="number"
-              v-model.number="localRotationAngle"
-              class="toolbar-mini-input toolbar-rotation-input"
-              min="-180"
-              max="180"
-              step="5"
+        <div class="bubble-editor__toolbar-row bubble-editor__toolbar-row--bottom">
+          <div class="bubble-editor__toolbar-rotation-group" title="旋转角度">
+            <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action" label="逆时针旋转" title="逆时针旋转" @click="rotateLeft">
+              <UiIcon name="rotate-ccw" size="16" />
+            </UiIconButton>
+            <UiNumberField
+              v-model="localRotationAngle"
+              class="bubble-editor__number-field bubble-editor__number-field--rotation"
+              variant="editor"
+              :min="-180"
+              :max="180"
+              :step="5"
+              aria-label="旋转角度"
               @change="handleRotationChange"
             />
-            <span class="toolbar-unit">°</span>
-            <UiButton variant="toolbar" class="toolbar-btn" @click="rotateRight" title="顺时针旋转">
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path
-                  d="M14 8a6 6 0 1 0-1.5 4"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  fill="none"
-                />
-                <path d="M14 5v3.5h-3.5" stroke="currentColor" stroke-width="1.5" fill="none" />
-              </svg>
-            </UiButton>
-            <UiButton variant="toolbar" class="toolbar-btn toolbar-small-btn" @click="resetRotation" title="重置旋转">
+            <span class="bubble-editor__toolbar-unit">°</span>
+            <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action" label="顺时针旋转" title="顺时针旋转" @click="rotateRight">
+              <UiIcon name="rotate-cw" size="16" />
+            </UiIconButton>
+            <UiIconButton variant="soft" size="xs" class="bubble-editor__toolbar-action" label="重置旋转" title="重置旋转" @click="resetRotation">
               0
-            </UiButton>
+            </UiIconButton>
           </div>
 
-          <div class="toolbar-divider vertical"></div>
+          <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
 
-          <div class="toolbar-position-group" title="位置调整">
-            <UiButton variant="toolbar" class="toolbar-btn" @click="moveLeft" title="左移">
-              <svg viewBox="0 0 16 16" width="14" height="14">
-                <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none" />
-              </svg>
-            </UiButton>
-            <UiButton variant="toolbar" class="toolbar-btn" @click="moveRight" title="右移">
-              <svg viewBox="0 0 16 16" width="14" height="14">
-                <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" fill="none" />
-              </svg>
-            </UiButton>
-            <UiButton variant="toolbar" class="toolbar-btn" @click="moveUp" title="上移">
-              <svg viewBox="0 0 16 16" width="14" height="14">
-                <path d="M3 10l5-5 5 5" stroke="currentColor" stroke-width="1.5" fill="none" />
-              </svg>
-            </UiButton>
-            <UiButton variant="toolbar" class="toolbar-btn" @click="moveDown" title="下移">
-              <svg viewBox="0 0 16 16" width="14" height="14">
-                <path d="M3 6l5 5 5-5" stroke="currentColor" stroke-width="1.5" fill="none" />
-              </svg>
-            </UiButton>
-            <span class="toolbar-position-value">
+          <div class="bubble-editor__toolbar-position-group" title="位置调整">
+            <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action" label="左移" title="左移" @click="moveLeft">
+              <UiIcon name="arrow-left" size="14" />
+            </UiIconButton>
+            <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action" label="右移" title="右移" @click="moveRight">
+              <UiIcon name="arrow-right" size="14" />
+            </UiIconButton>
+            <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action" label="上移" title="上移" @click="moveUp">
+              <UiIcon name="arrow-up" size="14" />
+            </UiIconButton>
+            <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action" label="下移" title="下移" @click="moveDown">
+              <UiIcon name="arrow-down" size="14" />
+            </UiIconButton>
+            <span class="bubble-editor__toolbar-position-value">
               <span>{{ positionX }}</span>,<span>{{ positionY }}</span>
             </span>
-            <UiButton variant="toolbar" class="toolbar-btn toolbar-small-btn" @click="resetPosition" title="重置位置">
-              ⌂
-            </UiButton>
+            <UiIconButton variant="soft" size="xs" class="bubble-editor__toolbar-action" label="重置位置" title="重置位置" @click="resetPosition">
+              <UiIcon name="home" size="14" />
+            </UiIconButton>
           </div>
         </div>
       </div>
 
-      <details class="fontsize-presets-panel">
-        <summary>字号预设</summary>
-        <div class="font-size-presets">
+      <details class="bubble-editor__font-size-presets-panel">
+        <summary class="bubble-editor__font-size-presets-title">字号预设</summary>
+        <div class="bubble-editor__font-size-presets">
           <UiButton
             variant="toolbar"
             v-for="preset in FONT_SIZE_PRESETS"
             :key="preset"
-            class="preset-btn"
-            :class="{ active: localFontSize === preset }"
+            class="bubble-editor__font-size-preset"
+            :class="{ 'bubble-editor__font-size-preset--active': localFontSize === preset }"
+            :aria-pressed="String(localFontSize === preset)"
             @click="setFontSize(preset)"
           >
             {{ preset }}
@@ -410,9 +377,26 @@
         </div>
       </details>
 
-      <div class="edit-action-buttons">
-        <UiButton variant="toolbar" class="btn-apply-all" @click="applyToAll">样式同步到本页全部气泡</UiButton>
-        <UiButton variant="toolbar" class="btn-reset" @click="resetBubbleEdit">重置</UiButton>
+      <div class="bubble-editor__footer-actions">
+        <UiButton
+          variant="primary"
+          tone="success"
+          size="sm"
+          block
+          class="bubble-editor__footer-action"
+          @click="applyToAll"
+        >
+          样式同步到本页全部气泡
+        </UiButton>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          block
+          class="bubble-editor__footer-action"
+          @click="resetBubbleEdit"
+        >
+          重置
+        </UiButton>
       </div>
     </div>
   </div>
@@ -421,11 +405,16 @@
 <script setup lang="ts">
 
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import UiColorInput from '@/components/ui/UiColorInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import JapaneseKeyboard from './JapaneseKeyboard.vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import UiCombobox from '@/components/ui/UiCombobox.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useBubbleEditor, type BubbleEditorEmit, type BubbleEditorProps } from './useBubbleEditor'
 
 const props = defineProps<BubbleEditorProps>()
@@ -467,8 +456,6 @@ const {
   copyTranslatedText,
   handleFontSizeChange,
   setFontSize,
-  increaseFontSize,
-  decreaseFontSize,
   handleFontFamilyChange,
   setTextDirection,
   triggerTextColorPicker,
@@ -502,52 +489,34 @@ const {
 </script>
 
 <style scoped>
-.edit-panel-content {
-  --bubble-editor-text-column-divider: #e9ecef;
-  --bubble-editor-column-title-text: #495057;
-  --bubble-editor-translated-title-text: #27ae60;
-  --bubble-editor-text-action-background: #f8f9fa;
-  --bubble-editor-text-action-hover-border: #adb5bd;
-  --bubble-editor-original-text-background: #f8f8f8;
-  --bubble-editor-translated-text-background: #f8fff8;
-  --bubble-editor-style-panel-background: #f5f6fb;
-  --bubble-editor-style-panel-border: rgba(82, 92, 105, .12);
-  --bubble-editor-input-border: #cfd6e4;
-  --bubble-editor-input-border-focus: #5b73f2;
-  --bubble-editor-input-text: #1f2430;
-  --bubble-editor-textarea-focus-ring: rgba(52, 152, 219, .15);
-  --bubble-editor-toolbar-border: rgba(96, 110, 140, .22);
-  --bubble-editor-toolbar-row-border: rgba(226, 232, 240, .9);
-  --bubble-editor-toolbar-row-start: #fbfcff;
-  --bubble-editor-toolbar-row-end: #f4f6ff;
-  --bubble-editor-toolbar-label: #57607c;
-  --bubble-editor-toolbar-divider: rgba(15, 23, 42, .08);
-  --bubble-editor-toolbar-shadow: rgba(15, 23, 42, .12);
-  --bubble-editor-font-button-background: #f2f4ff;
-  --bubble-editor-font-button-hover-background: #dfe4ff;
-  --bubble-editor-font-button-border: #d0d7ea;
-  --bubble-editor-font-button-hover-border: #9aaefc;
-  --bubble-editor-font-button-text: #2f46c8;
-  --bubble-editor-font-button-hover-text: #1d34a8;
-  --bubble-editor-tool-button-border: rgba(119, 130, 161, .35);
-  --bubble-editor-tool-button-hover-border: #7d96ff;
-  --bubble-editor-tool-button-active-border: #5670ff;
-  --bubble-editor-tool-button-text: #3b3f4f;
-  --bubble-editor-tool-button-hover-text: #2b4bff;
-  --bubble-editor-tool-button-active-text: #3040c2;
-  --bubble-editor-tool-button-inner-shadow: rgba(0, 0, 0, .03);
-  --bubble-editor-tool-button-hover-shadow: rgba(107, 125, 255, .25);
-  --bubble-editor-tool-button-active-highlight: rgba(255, 255, 255, .7);
-  --bubble-editor-tool-button-active-background-start: #e8edff;
-  --bubble-editor-tool-button-active-background-end: #d9e2ff;
-  --bubble-editor-color-swatch-border: rgba(0, 0, 0, .2);
-  --bubble-editor-size-input-focus-ring: rgba(88, 125, 255, .15);
-  --bubble-editor-mini-input-focus-ring: rgba(88, 125, 255, .2);
-  --bubble-editor-toolbar-unit-text: #596071;
-  --bubble-editor-position-chip-text: #4a4f63;
-  --bubble-editor-position-chip-background: #eef1ff;
-  --bubble-editor-apply-all-button-background-end: #5dade2;
-  --bubble-editor-apply-all-button-shadow: rgba(52, 152, 219, .3);
+.bubble-editor {
+  --bubble-editor-translated-title-text: var(--color-surface-success);
+  --bubble-editor-text-action-hover-border: var(--color-text-disabled);
+  --bubble-editor-original-text-background: var(--color-surface-quiet);
+  --bubble-editor-translated-text-background: color-mix(in srgb, var(--color-status-success) 6%, var(--color-surface-base));
+  --bubble-editor-style-panel-background: color-mix(in srgb, var(--color-action-brand) 5%, var(--color-surface-app));
+  --bubble-editor-style-panel-border: color-mix(in srgb, var(--color-text-heading) 12%, transparent);
+  --bubble-editor-textarea-focus-ring: color-mix(in srgb, var(--color-action-primary) 15%, transparent);
+  --bubble-editor-toolbar-border: color-mix(in srgb, var(--color-text-heading) 22%, transparent);
+  --bubble-editor-toolbar-row-border: color-mix(in srgb, var(--color-border-muted) 90%, transparent);
+  --bubble-editor-toolbar-row-start: var(--color-surface-base);
+  --bubble-editor-toolbar-row-end: color-mix(in srgb, var(--color-action-brand) 4%, var(--color-surface-base));
+  --bubble-editor-toolbar-label: var(--color-text-secondary);
+  --bubble-editor-toolbar-divider: color-mix(in srgb, var(--color-overlay-backdrop-solid) 8%, transparent);
+  --bubble-editor-toolbar-shadow: color-mix(in srgb, var(--color-overlay-backdrop-solid) 12%, transparent);
+  --bubble-editor-font-button-background: color-mix(in srgb, var(--color-action-brand) 8%, var(--color-surface-base));
+  --bubble-editor-font-button-hover-background: color-mix(in srgb, var(--color-action-brand) 16%, var(--color-surface-base));
+  --bubble-editor-font-button-border: var(--color-border-muted);
+  --bubble-editor-font-button-hover-border: color-mix(in srgb, var(--color-action-brand) 45%, var(--color-border-muted));
+  --bubble-editor-font-button-text: var(--color-text-brand);
+  --bubble-editor-tool-button-active-border: var(--color-action-brand);
+  --bubble-editor-tool-button-active-text: var(--color-action-brand-strong);
+  --bubble-editor-tool-button-active-background-start: color-mix(in srgb, var(--color-action-brand) 12%, var(--color-surface-base));
+  --bubble-editor-tool-button-active-background-end: color-mix(in srgb, var(--color-action-brand) 18%, var(--color-surface-base));
+  --bubble-editor-color-swatch-border: color-mix(in srgb, var(--color-overlay-backdrop-solid) 20%, transparent);
+  --bubble-editor-toolbar-unit-text: var(--color-text-secondary);
+  --bubble-editor-position-chip-text: var(--color-text-default);
+  --bubble-editor-position-chip-background: color-mix(in srgb, var(--color-action-brand) 10%, var(--color-surface-base));
 
   flex: 1;
   display: flex;
@@ -556,79 +525,50 @@ const {
   padding: 15px;
   overflow: auto;
   min-height: 0;
-  background: var(--color-surface-card, var(--color-surface-base));
+  background: var(--color-surface-card);
 }
 
-/* 文本块 */
-.text-block {
+.bubble-editor__text-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: 100%;
 }
 
-/* 文本列头部 */
-.text-column-header {
+.bubble-editor__text-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--color-border-muted, var(--bubble-editor-text-column-divider));
+  border-bottom: 2px solid var(--color-border-muted);
 }
 
-.column-title {
+.bubble-editor__text-panel-title {
   font-weight: 600;
   font-size: 14px;
-  color: var(--color-text-strong, var(--bubble-editor-column-title-text));
+  color: var(--color-text-strong);
 }
 
-.original-text-column .column-title {
+.bubble-editor__text-panel--original .bubble-editor__text-panel-title {
   color: var(--color-text-danger-strong);
 }
 
-.translated-text-column .column-title {
+.bubble-editor__text-panel--translated .bubble-editor__text-panel-title {
   color: var(--bubble-editor-translated-title-text);
 }
 
-.re-ocr-btn,
-.re-translate-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.re-ocr-btn:hover,
-.re-translate-btn:hover {
-  background: var(--color-surface-accent);
-  color: var(--color-text-inverse);
-}
-
-.re-ocr-btn.is-loading,
-.re-translate-btn.is-loading {
-  opacity: 0.7;
-  cursor: wait;
-  pointer-events: none;
-}
-
-.re-ocr-btn.is-loading .button-icon,
-.re-translate-btn.is-loading .button-icon {
+.bubble-editor__refresh-action--loading .bubble-editor__refresh-icon {
   display: inline-block;
   animation: spin-icon 1s linear infinite;
 }
 
-/* 文本编辑器 */
-.text-editor {
+.bubble-editor__textarea {
   flex: 1;
   width: 100%;
   min-height: 60px;
   padding: 12px;
-  border: 2px solid var(--color-border-muted, var(--bubble-editor-text-column-divider));
+  border: 2px solid var(--color-border-muted);
   border-radius: 8px;
   font-size: 15px;
   line-height: 1.6;
@@ -639,31 +579,34 @@ const {
   font-family: inherit;
 }
 
-.text-editor:focus {
+.bubble-editor__textarea:focus {
   outline: none;
   border-color: var(--color-border-accent);
   box-shadow: 0 0 0 3px var(--bubble-editor-textarea-focus-ring);
 }
 
-.original-editor {
+.bubble-editor__textarea--original {
   background: var(--bubble-editor-original-text-background);
   font-family: var(--font-jp);
 }
 
-.translated-editor {
+.bubble-editor__textarea--translated {
   background: var(--bubble-editor-translated-text-background);
 }
 
-.text-actions {
+.bubble-editor__text-actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   justify-content: flex-end;
 }
 
-.text-action-btn {
+.bubble-editor__text-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  border: 1px solid var(--color-border-muted);
   border-radius: 4px;
   background: var(--color-surface-card);
   cursor: pointer;
@@ -671,16 +614,16 @@ const {
   transition: all 0.15s;
 }
 
-.text-action-btn:hover {
-  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
+.bubble-editor__text-action:hover {
+  background: var(--color-surface-app);
   border-color: var(--bubble-editor-text-action-hover-border);
 }
 
-.keyboard-toggle-btn {
-  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
+.bubble-editor__text-action--keyboard {
+  background: var(--color-surface-app);
 }
 
-.style-settings-section {
+.bubble-editor__style-section {
   width: 100%;
   padding: 16px;
   background: var(--bubble-editor-style-panel-background);
@@ -689,7 +632,13 @@ const {
   overflow-y: auto;
 }
 
-.office-toolbar {
+.bubble-editor__toolbar {
+  --ui-icon-button-active-background: linear-gradient(135deg, var(--bubble-editor-tool-button-active-background-start), var(--bubble-editor-tool-button-active-background-end));
+  --ui-icon-button-active-border: var(--bubble-editor-tool-button-active-border);
+  --ui-icon-button-active-color: var(--bubble-editor-tool-button-active-text);
+  --ui-icon-button-active-hover-background: linear-gradient(135deg, var(--bubble-editor-tool-button-active-background-start), var(--bubble-editor-tool-button-active-background-end));
+  --ui-icon-button-active-hover-border: var(--bubble-editor-tool-button-active-border);
+
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -700,21 +649,21 @@ const {
   box-shadow: 0 10px 24px var(--bubble-editor-toolbar-shadow);
 }
 
-.toolbar-row {
+.bubble-editor__toolbar-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.toolbar-row-top .combo-control {
+.bubble-editor__toolbar-row--top .bubble-editor__toolbar-field {
   flex: 1;
   min-width: 160px;
 }
 
-.toolbar-row-actions,
-.toolbar-row-typography,
-.toolbar-row-bottom {
+.bubble-editor__toolbar-row--actions,
+.bubble-editor__toolbar-row--typography,
+.bubble-editor__toolbar-row--bottom {
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--bubble-editor-toolbar-row-border);
@@ -722,11 +671,10 @@ const {
   background: linear-gradient(180deg, var(--bubble-editor-toolbar-row-start) 0%, var(--bubble-editor-toolbar-row-end) 100%);
 }
 
-.linespacing-input {
-  width: 64px;
-}
+.bubble-editor__toolbar-field {
+  --ui-field-editor-label-color: var(--bubble-editor-toolbar-label);
+  --ui-field-editor-label-font-size: 11px;
 
-.combo-control {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -734,227 +682,106 @@ const {
   color: var(--bubble-editor-toolbar-label);
 }
 
-.combo-control label {
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-.size-input-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.toolbar-divider {
+.bubble-editor__toolbar-divider {
   width: 1px;
   height: 26px;
   background: var(--bubble-editor-toolbar-divider);
 }
 
-.toolbar-divider.vertical {
+.bubble-editor__toolbar-divider--vertical {
   height: 34px;
   margin: 0 2px;
 }
 
-.toolbar-icon-group,
-.toolbar-color-group,
-.toolbar-stroke-cluster {
+.bubble-editor__toolbar-icon-group,
+.bubble-editor__toolbar-color-group,
+.bubble-editor__toolbar-stroke-cluster {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.toolbar-fontsize-input {
-  width: 60px;
-  height: 36px;
-  border: 1px solid var(--bubble-editor-input-border);
-  border-radius: 8px;
-  padding: 0 8px;
-  font-size: 14px;
-  text-align: center;
-  background: var(--color-surface-base);
-  color: var(--bubble-editor-input-text);
-}
-
-.toolbar-fontsize-input:focus {
-  outline: none;
-  border-color: var(--bubble-editor-input-border-focus);
-  box-shadow: 0 0 0 2px var(--bubble-editor-size-input-focus-ring);
-}
-
-.toolbar-fontsize-btns {
-  display: flex;
-  gap: 6px;
-}
-
-.toolbar-fontsize-btn {
-  min-width: 50px;
-  height: 34px;
-  border: 1px solid var(--bubble-editor-font-button-border);
-  border-radius: 8px;
-  background: var(--bubble-editor-font-button-background);
-  color: var(--bubble-editor-font-button-text);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.15s;
-}
-
-.toolbar-fontsize-btn:hover {
-  background: var(--bubble-editor-font-button-hover-background);
-  border-color: var(--bubble-editor-font-button-hover-border);
-  color: var(--bubble-editor-font-button-hover-text);
-}
-
-.toolbar-btn {
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--bubble-editor-tool-button-border);
-  border-radius: 8px;
-  background: var(--color-surface-base);
-  color: var(--bubble-editor-tool-button-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.12s;
-  padding: 0;
-  box-shadow: inset 0 -1px 0 var(--bubble-editor-tool-button-inner-shadow);
-}
-
-.toolbar-btn:hover {
-  border-color: var(--bubble-editor-tool-button-hover-border);
-  color: var(--bubble-editor-tool-button-hover-text);
-  box-shadow: 0 2px 8px var(--bubble-editor-tool-button-hover-shadow);
-}
-
-.toolbar-btn[data-active='true'],
-.toolbar-btn.active {
-  background: linear-gradient(135deg, var(--bubble-editor-tool-button-active-background-start), var(--bubble-editor-tool-button-active-background-end));
-  border-color: var(--bubble-editor-tool-button-active-border);
-  color: var(--bubble-editor-tool-button-active-text);
-  box-shadow: inset 0 1px 0 var(--bubble-editor-tool-button-active-highlight);
-}
-
-.toolbar-btn:active {
-  transform: scale(0.95);
-}
-
-.toolbar-btn svg {
-  pointer-events: none;
-}
-
-.toolbar-small-btn {
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.toolbar-color-picker {
+.bubble-editor__toolbar-color-picker {
   position: relative;
   display: inline-flex;
 }
 
-.toolbar-color-btn {
+.bubble-editor__toolbar-color-action {
   flex-direction: column;
   gap: 4px;
-  height: 34px;
-  padding: 4px;
 }
 
-.color-indicator {
+.bubble-editor__color-indicator {
   width: 26px;
   height: 6px;
   border-radius: 999px;
   border: 1px solid var(--bubble-editor-color-swatch-border);
 }
 
-.hidden-color-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
-
-.toolbar-stroke-options {
+.bubble-editor__toolbar-stroke-options {
   transition: opacity 0.2s;
 }
 
-.toolbar-stroke-options.hidden {
+.bubble-editor__toolbar-stroke-options--hidden {
   opacity: 0.4;
   pointer-events: none;
 }
 
-.toolbar-inpaint-group {
+.bubble-editor__toolbar-inpaint-group {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.toolbar-solid-color-options {
+.bubble-editor__toolbar-solid-color-options {
   transition:
     opacity 0.2s,
     visibility 0.2s;
 }
 
-.toolbar-solid-color-options.hidden {
+.bubble-editor__toolbar-solid-color-options--hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-.toolbar-stroke-width {
+.bubble-editor__toolbar-stroke-width {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.toolbar-mini-input {
-  width: 46px;
-  height: 32px;
-  border: 1px solid var(--bubble-editor-input-border);
-  border-radius: 6px;
-  padding: 0 6px;
-  font-size: 12px;
-  text-align: center;
-  background: var(--color-surface-base);
-  color: var(--bubble-editor-input-text);
+.bubble-editor__number-field--font {
+  --ui-number-field-input-width: 60px;
 }
 
-.toolbar-mini-input:focus {
-  outline: none;
-  border-color: var(--bubble-editor-input-border-focus);
-  box-shadow: 0 0 0 2px var(--bubble-editor-mini-input-focus-ring);
+.bubble-editor__number-field--compact {
+  --ui-number-field-input-width: 48px;
 }
 
-.toolbar-unit {
+.bubble-editor__number-field--rotation {
+  --ui-number-field-input-width: 58px;
+}
+
+.bubble-editor__toolbar-unit {
   font-size: 11px;
   color: var(--bubble-editor-toolbar-unit-text);
 }
 
-.toolbar-rotation-group {
+.bubble-editor__toolbar-rotation-group {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.toolbar-rotation-input {
-  width: 58px;
-}
-
-.toolbar-position-group {
+.bubble-editor__toolbar-position-group {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.toolbar-position-value {
+.bubble-editor__toolbar-position-value {
   font-size: 12px;
   color: var(--bubble-editor-position-chip-text);
   min-width: 48px;
@@ -964,28 +791,28 @@ const {
   background: var(--bubble-editor-position-chip-background);
 }
 
-.fontsize-presets-panel {
+.bubble-editor__font-size-presets-panel {
   margin-top: 12px;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-top: 1px solid var(--color-border-muted);
   padding-top: 12px;
 }
 
-.fontsize-presets-panel summary {
+.bubble-editor__font-size-presets-title {
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text-strong, var(--bubble-editor-column-title-text));
+  color: var(--color-text-strong);
   font-weight: 500;
   padding: 4px 0;
 }
 
-.font-size-presets {
+.bubble-editor__font-size-presets {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
 }
 
-.preset-btn {
+.bubble-editor__font-size-preset {
   padding: 6px 12px;
   background: var(--bubble-editor-font-button-background);
   border: 1px solid var(--bubble-editor-font-button-border);
@@ -996,55 +823,26 @@ const {
   transition: all 0.15s;
 }
 
-.preset-btn:hover {
+.bubble-editor__font-size-preset:hover {
   background: var(--bubble-editor-font-button-hover-background);
   border-color: var(--bubble-editor-font-button-hover-border);
 }
 
-.preset-btn.active {
+.bubble-editor__font-size-preset--active {
   background: linear-gradient(135deg, var(--bubble-editor-tool-button-active-background-start), var(--bubble-editor-tool-button-active-background-end));
   border-color: var(--bubble-editor-tool-button-active-border);
   color: var(--bubble-editor-tool-button-active-text);
 }
 
-.edit-action-buttons {
+.bubble-editor__footer-actions {
   display: flex;
   gap: 10px;
   margin-top: 15px;
   padding-top: 15px;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-top: 1px solid var(--color-border-muted);
 }
 
-.btn-apply-all,
-.btn-reset {
+.bubble-editor__footer-action {
   flex: 1;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-apply-all {
-  background: linear-gradient(135deg, var(--color-surface-accent) 0%, var(--bubble-editor-apply-all-button-background-end) 100%);
-  border: none;
-  color: var(--color-text-inverse);
-}
-
-.btn-apply-all:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--bubble-editor-apply-all-button-shadow);
-}
-
-.btn-reset {
-  background: var(--color-surface-card, var(--color-surface-base));
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  color: var(--color-text-strong, var(--bubble-editor-column-title-text));
-}
-
-.btn-reset:hover {
-  background: var(--color-surface-app, var(--bubble-editor-text-action-background));
-  border-color: var(--bubble-editor-text-action-hover-border);
 }
 </style>

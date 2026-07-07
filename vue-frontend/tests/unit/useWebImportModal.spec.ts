@@ -1,13 +1,15 @@
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick } from 'vue'
 
 import { useWebImportModal } from '@/components/translate/useWebImportModal'
 import { useImageStore } from '@/stores/imageStore'
+import { useWebImportStore } from '@/stores/webImportStore'
 
-const { checkGalleryDLSupportMock, getGalleryDLImagesMock, showToastMock } = vi.hoisted(() => ({
+const { checkGalleryDLSupportMock, fetchModelsMock, getGalleryDLImagesMock, showToastMock } = vi.hoisted(() => ({
   checkGalleryDLSupportMock: vi.fn(),
+  fetchModelsMock: vi.fn(),
   getGalleryDLImagesMock: vi.fn(),
   showToastMock: vi.fn(),
 }))
@@ -23,7 +25,7 @@ vi.mock('@/api/webImport', () => ({
 
 vi.mock('@/api/config', () => ({
   configApi: {
-    fetchModels: vi.fn(),
+    fetchModels: fetchModelsMock,
   },
 }))
 
@@ -40,6 +42,7 @@ describe('useWebImportModal', () => {
     localStorage.clear()
     checkGalleryDLSupportMock.mockReset()
     checkGalleryDLSupportMock.mockResolvedValue({ available: true, supported: true })
+    fetchModelsMock.mockReset()
     getGalleryDLImagesMock.mockReset()
     showToastMock.mockReset()
   })
@@ -63,8 +66,9 @@ describe('useWebImportModal', () => {
   it('clears pending input focus work when the owner unmounts', async () => {
     const querySelectorSpy = vi.spyOn(document, 'querySelector')
     const exposed = mountComposableHost()
+    const webImportStore = useWebImportStore()
 
-    exposed.api.webImportStore.modalVisible = true
+    webImportStore.modalVisible = true
     await nextTick()
     exposed.wrapper.unmount()
     await vi.advanceTimersByTimeAsync(150)
@@ -72,10 +76,77 @@ describe('useWebImportModal', () => {
     expect(querySelectorSpy).not.toHaveBeenCalled()
   })
 
+  it('requests source URL focus when the modal opens without exposing a child instance ref', async () => {
+    const querySelectorSpy = vi.spyOn(document, 'querySelector')
+    const exposed = mountComposableHost()
+    const webImportStore = useWebImportStore()
+
+    expect(exposed.api).not.toHaveProperty('extractBarRef')
+    expect(exposed.api.focusSourceUrlRequestId.value).toBe(0)
+
+    webImportStore.modalVisible = true
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(150)
+
+    expect(querySelectorSpy).not.toHaveBeenCalled()
+    expect(exposed.api.focusSourceUrlRequestId.value).toBe(1)
+  })
+
+  it('ignores stale URL support responses after the source URL changes', async () => {
+    const firstSupport = deferred<{ available: boolean; supported: boolean }>()
+    const secondSupport = deferred<{ available: boolean; supported: boolean }>()
+    checkGalleryDLSupportMock
+      .mockReturnValueOnce(firstSupport.promise)
+      .mockReturnValueOnce(secondSupport.promise)
+    const exposed = mountComposableHost()
+
+    exposed.api.urlInput.value = 'https://example.com/old'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(500)
+
+    exposed.api.urlInput.value = 'https://example.com/current'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(500)
+
+    secondSupport.resolve({ available: true, supported: true })
+    await flushPromises()
+    expect(exposed.api.galleryDLAvailable.value).toBe(true)
+    expect(exposed.api.galleryDLSupported.value).toBe(true)
+
+    firstSupport.resolve({ available: false, supported: false })
+    await flushPromises()
+
+    expect(exposed.api.galleryDLAvailable.value).toBe(true)
+    expect(exposed.api.galleryDLSupported.value).toBe(true)
+  })
+
+  it('ignores model fetch responses after the modal owner unmounts', async () => {
+    const modelFetch = deferred<{ success: boolean; models: Array<{ id: string }> }>()
+    fetchModelsMock.mockReturnValueOnce(modelFetch.promise)
+    const exposed = mountComposableHost()
+    const webImportStore = useWebImportStore()
+
+    webImportStore.beginSettingsEdit()
+    webImportStore.setAgentApiKey('sk-test')
+
+    const fetchPromise = exposed.api.handleFetchModels()
+    expect(exposed.api.isFetchingModels.value).toBe(true)
+
+    exposed.wrapper.unmount()
+    modelFetch.resolve({ success: true, models: [{ id: 'gpt-4o-mini' }] })
+    await fetchPromise
+    await flushPromises()
+
+    expect(exposed.api.modelList.value).toEqual([])
+    expect(exposed.api.isFetchingModels.value).toBe(false)
+    expect(showToastMock).not.toHaveBeenCalledWith('获取到 1 个模型', 'success')
+  })
+
   it('imports the selected gallery-dl page numbers instead of the first downloaded images', async () => {
     const exposed = mountComposableHost()
     const imageStore = useImageStore()
-    exposed.api.webImportStore.setExtractResult({
+    const webImportStore = useWebImportStore()
+    webImportStore.setExtractResult({
       success: true,
       comicTitle: 'Chapter',
       chapterTitle: 'Episode',
@@ -89,8 +160,8 @@ describe('useWebImportModal', () => {
         { pageNumber: 4, imageUrl: '/api/web-import/static/temp/gallery_dl/004.webp' },
       ],
     })
-    exposed.api.webImportStore.togglePageSelection(1)
-    exposed.api.webImportStore.togglePageSelection(3)
+    webImportStore.togglePageSelection(1)
+    webImportStore.togglePageSelection(3)
     getGalleryDLImagesMock.mockResolvedValue({
       success: true,
       total: 4,
@@ -111,6 +182,15 @@ describe('useWebImportModal', () => {
     ])
     expect(showToastMock).toHaveBeenCalledWith('成功导入 2 张图片', 'success')
   })
+
+  it('keeps store and internal workflow helpers private to the modal owner', () => {
+    const exposed = mountComposableHost()
+
+    expect(exposed.api).not.toHaveProperty('webImportStore')
+    expect(exposed.api).not.toHaveProperty('ensureSettingsReady')
+    expect(exposed.api).not.toHaveProperty('currentEngine')
+    expect(exposed.api).not.toHaveProperty('providerRequiresBaseUrl')
+  })
 })
 
 function mountComposableHost() {
@@ -126,4 +206,14 @@ function mountComposableHost() {
     throw new Error('useWebImportModal host did not initialize')
   }
   return { wrapper, api }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }

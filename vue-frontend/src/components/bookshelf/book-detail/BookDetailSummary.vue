@@ -1,110 +1,151 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BookData } from '@/types/api'
 
-defineProps<{
+const props = defineProps<{
   book: BookData
   chapterCount: number
   formatDate: (date?: string) => string
   getTagColor: (tagName: string) => string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'addTag'): void
   (event: 'edit'): void
   (event: 'delete'): void
   (event: 'insight'): void
   (event: 'removeTag', tagName: string): void
 }>()
+
+const coverFailed = ref(false)
+const hasVisibleCover = computed(() => {
+  return Boolean(props.book.cover && props.book.cover.length > 0 && !coverFailed.value)
+})
+const tagItems = computed<ProductChipItem[]>(() => props.book.tags?.map(tag => {
+  const tagColor = props.getTagColor(tag)
+
+  return {
+    id: tag,
+    label: tag,
+    ariaLabel: `移除标签 ${tag}`,
+    iconName: 'x',
+    interactive: true,
+    tone: 'custom',
+    backgroundColor: tagColor,
+    borderColor: tagColor,
+    textColor: 'var(--color-text-inverse)',
+  }
+}) ?? [])
+
+watch(() => props.book.cover, () => {
+  coverFailed.value = false
+})
+
+function removeTag(tagId: string | number): void {
+  emit('removeTag', String(tagId))
+}
+
+function handleCoverError(): void {
+  coverFailed.value = true
+}
 </script>
 
 <template>
-  <div class="book-info-section">
-    <div class="book-cover-large">
+  <div class="book-detail-summary">
+    <div class="book-detail-summary__cover">
       <img
-        v-if="book.cover"
+        v-if="hasVisibleCover"
+        class="book-detail-summary__cover-image"
         :src="book.cover"
         :alt="`${book.title} 封面`"
+        @error="handleCoverError"
       >
-      <div v-else class="book-cover-placeholder">📖</div>
+      <div v-else class="book-detail-summary__cover-placeholder">无封面</div>
     </div>
-    <div class="book-meta">
-      <h3>{{ book.title }}</h3>
-      <p class="meta-item">
-        <span>标签：</span>
-        <span v-if="book.tags && book.tags.length > 0" class="detail-tags">
-          <span
-            v-for="tag in book.tags"
-            :key="tag"
-            class="detail-tag"
-            :style="{ background: getTagColor(tag) }"
-          >
-            {{ tag }}
-            <UiButton
-              variant="toolbar"
-              type="button"
-              class="remove-detail-tag"
-              :aria-label="`移除标签 ${tag}`"
-              @click.stop="$emit('removeTag', tag)"
-            >
-              ×
-            </UiButton>
-          </span>
-        </span>
-        <span v-else class="no-tags-hint">暂无标签</span>
-        <UiButton
-          variant="toolbar"
-          class="btn-add-tag"
-          title="添加标签"
-          aria-label="添加标签"
-          @click="$emit('addTag')"
+    <div class="book-detail-summary__meta">
+      <h3 class="book-detail-summary__title">{{ book.title }}</h3>
+      <div class="book-detail-summary__meta-item">
+        <span class="book-detail-summary__meta-label">标签：</span>
+        <ProductChipList
+          v-if="tagItems.length > 0"
+          class="book-detail-summary__tags"
+          aria-label="书籍详情标签"
+          :items="tagItems"
+          @select="removeTag"
+        />
+        <span v-else class="book-detail-summary__no-tags-hint">暂无标签</span>
+        <UiIconButton
+          class="book-detail-summary__add-tag"
+          label="添加标签"
+          variant="soft"
+          size="sm"
+          @click="emit('addTag')"
         >
-          +
+          <UiIcon name="plus" size="14" />
+        </UiIconButton>
+      </div>
+      <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">章节数：</span><span>{{ chapterCount }}</span></p>
+      <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">创建时间：</span><span>{{ formatDate(book.createdAt) }}</span></p>
+      <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">最后更新：</span><span>{{ formatDate(book.updatedAt) }}</span></p>
+      <div class="book-detail-summary__actions">
+        <UiButton size="sm" variant="primary" @click="emit('insight')">
+          <UiIcon name="bar-chart" size="14" />
+          漫画分析
         </UiButton>
-      </p>
-      <p class="meta-item"><span>章节数：</span><span>{{ chapterCount }}</span></p>
-      <p class="meta-item"><span>创建时间：</span><span>{{ formatDate(book.created_at || book.createdAt) }}</span></p>
-      <p class="meta-item"><span>最后更新：</span><span>{{ formatDate(book.updated_at || book.updatedAt) }}</span></p>
-      <div class="book-actions">
-        <UiButton size="sm" variant="primary" @click="$emit('insight')">● 漫画分析</UiButton>
-        <UiButton size="sm" variant="secondary" @click="$emit('edit')">编辑书籍</UiButton>
-        <UiButton size="sm" variant="danger" @click="$emit('delete')">删除书籍</UiButton>
+        <UiButton size="sm" variant="secondary" @click="emit('edit')">编辑书籍</UiButton>
+        <UiButton size="sm" variant="danger" @click="emit('delete')">删除书籍</UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.book-info-section {
+.book-detail-summary {
+  --book-detail-summary-cover-shadow: var(--shadow-medium);
+
   display: flex;
   align-items: flex-start;
   gap: 24px;
 }
 
-.book-cover-large {
+.book-detail-summary__cover {
   flex-shrink: 0;
   width: 140px;
   overflow: hidden;
   border-radius: 12px;
   aspect-ratio: 3 / 4;
   background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
-  box-shadow: 0 8px 24px var(--book-detail-cover-shadow);
+  box-shadow: 0 8px 24px var(--book-detail-summary-cover-shadow);
 }
 
-.book-cover-large img {
+.book-detail-summary__cover-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.book-meta {
+.book-detail-summary__cover-placeholder {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--color-text-inverse);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.book-detail-summary__meta {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
 }
 
-.book-meta h3 {
+.book-detail-summary__title {
   margin: 0 0 16px;
   color: var(--color-text-default);
   font-weight: 600;
@@ -113,7 +154,7 @@ defineEmits<{
   word-break: break-word;
 }
 
-.meta-item {
+.book-detail-summary__meta-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -122,64 +163,28 @@ defineEmits<{
   font-size: 0.9rem;
 }
 
-.meta-item span:first-child {
+.book-detail-summary__meta-label {
   flex-shrink: 0;
   min-width: 70px;
   color: var(--color-text-default);
   font-weight: 500;
 }
 
-.detail-tags {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.book-detail-summary__tags {
+  --product-chip-list-text: var(--color-text-supporting);
 }
 
-.detail-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  color: var(--color-text-inverse);
-  font-size: 0.75rem;
-}
-
-.remove-detail-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: inherit;
-  font-size: 0.8rem;
-  line-height: 1;
-}
-
-.no-tags-hint {
+.book-detail-summary__no-tags-hint {
   color: var(--color-text-supporting);
   font-style: italic;
 }
 
-.btn-add-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+.book-detail-summary__add-tag {
+  flex: 0 0 auto;
   margin-left: 6px;
-  border: 1px dashed var(--color-border-muted);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--color-text-supporting);
-  font-size: 0.9rem;
-  cursor: pointer;
 }
 
-.btn-add-tag:hover {
-  border-color: var(--color-border-brand-gradient);
-  color: var(--book-detail-accent);
-}
-
-.book-actions {
+.book-detail-summary__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

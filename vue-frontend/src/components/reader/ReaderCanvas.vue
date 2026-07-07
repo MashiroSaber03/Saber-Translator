@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted } from 'vue'
+import { computed, watch, onBeforeUpdate, onMounted, onUnmounted, ref } from 'vue'
 import type { ChapterImageData } from '@/api/bookshelf'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 const props = defineProps<{
   images: ChapterImageData[]
@@ -16,6 +18,7 @@ const emit = defineEmits<{
 
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
+const imageWrapperRefs = ref<HTMLElement[]>([])
 
 let pageInfoTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -34,18 +37,24 @@ function getImageSource(imageData: ChapterImageData): string {
 }
 
 function updatePageInfo() {
-  const images = document.querySelectorAll('.reader-image-wrapper')
+  const images = imageWrapperRefs.value
   const viewportCenter = window.innerHeight / 2
   let currentPage = 1
-  
+
   images.forEach((img, index) => {
     const rect = img.getBoundingClientRect()
     if (rect.top < viewportCenter && rect.bottom > 0) {
       currentPage = index + 1
     }
   })
-  
+
   emit('pageChange', currentPage)
+}
+
+function setImageWrapperRef(el: Element | null) {
+  if (el instanceof HTMLElement) {
+    imageWrapperRefs.value.push(el)
+  }
 }
 
 function handleScroll() {
@@ -68,9 +77,14 @@ onMounted(() => {
   window.addEventListener('scroll', handleScroll)
 })
 
+onBeforeUpdate(() => {
+  imageWrapperRefs.value = []
+})
+
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   clearPageInfoTimer()
+  imageWrapperRefs.value = []
 })
 
 watch(
@@ -83,57 +97,64 @@ watch(
 </script>
 
 <template>
-  <main class="reader-main">
-    <div v-if="isLoading" id="loadingState" class="loading-state">
-      <div class="loading-spinner"></div>
-      <p>正在加载...</p>
+  <main class="reader-canvas">
+    <div v-if="isLoading" class="reader-canvas__loading-state">
+      <UiSpinner
+        size="48px"
+        label="正在加载阅读内容"
+        :decorative="false"
+      />
+      <p class="reader-canvas__loading-text">正在加载...</p>
     </div>
 
-    <div v-else-if="showEmptyState" id="emptyState" class="reader-empty-state">
-      <div class="empty-icon">📖</div>
-      <h2>暂无图片</h2>
-      <p>该章节还没有图片，点击下方按钮开始翻译</p>
-      <UiButton id="goTranslateBtn" class="reader-empty-action" variant="primary" @click="goToTranslate">
-        进入翻译
-      </UiButton>
-    </div>
+    <ProductEmptyState
+      v-else-if="showEmptyState"
+      class="reader-canvas__empty-state"
+      icon-name="book-open"
+      title="暂无图片"
+      description="该章节还没有图片，点击下方按钮开始翻译"
+      variant="inverse"
+    >
+      <template #actions>
+        <UiButton variant="primary" @click="goToTranslate">
+          进入翻译
+        </UiButton>
+      </template>
+    </ProductEmptyState>
 
-    <div v-else-if="showImagesContainer" id="imagesContainer" class="images-container">
-      <div 
-        v-for="(img, index) in images" 
-        :key="index" 
-        class="reader-image-wrapper"
+    <div v-else-if="showImagesContainer" class="reader-canvas__images">
+      <div
+        v-for="(img, index) in images"
+        :key="index"
+        :ref="setImageWrapperRef"
+        class="reader-canvas__image-wrapper"
       >
-        <img 
-          class="reader-image" 
-          :src="getImageSource(img)" 
+        <img
+          class="reader-canvas__image"
+          :src="getImageSource(img)"
           :alt="`第 ${index + 1} 页`"
           loading="lazy"
         />
-        <div class="image-index">{{ index + 1 }} / {{ images.length }}</div>
+        <div class="reader-canvas__image-index">{{ index + 1 }} / {{ images.length }}</div>
       </div>
     </div>
   </main>
 </template>
 
 <style scoped>
-.reader-main {
-  --reader-canvas-page-background: #1a1a2e;
-  --reader-canvas-muted-text: rgba(255, 255, 255, .7);
-  --reader-canvas-spinner-track: rgba(255, 255, 255, .1);
-  --reader-canvas-image-loading-background: rgba(255, 255, 255, .05);
-  --reader-canvas-page-index-background: rgba(0, 0, 0, .6);
-}
+.reader-canvas {
+  --reader-canvas-page-background: var(--color-surface-inverse);
+  --reader-canvas-muted-text: color-mix(in srgb, var(--color-text-inverse) 70%, transparent);
+  --reader-canvas-page-index-background: color-mix(in srgb, var(--color-surface-inverse-depth) 60%, transparent);
 
-.reader-main {
-  min-height: calc(100dvh - 56px);
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-height: calc(100dvh - 56px);
   background: var(--reader-page-background, var(--reader-canvas-page-background));
 }
 
-.loading-state {
+.reader-canvas__loading-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -142,43 +163,15 @@ watch(
   color: var(--reader-canvas-muted-text);
 }
 
-.loading-spinner {
-  width: 48px;
-  height: 48px;
-  border: 3px solid var(--reader-canvas-spinner-track);
-  border-top-color: var(--color-border-brand-gradient);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.reader-canvas__loading-text {
+  margin: 0;
 }
 
-.reader-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: calc(100dvh - 56px);
-  color: var(--reader-canvas-muted-text);
-  text-align: center;
-  padding: 20px;
+.reader-canvas__empty-state {
+  --product-empty-state-min-height: calc(100dvh - 56px);
 }
 
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.reader-empty-state h2 {
-  margin: 0 0 8px;
-  color: var(--color-text-inverse);
-  font-weight: 500;
-}
-
-.reader-empty-state p {
-  margin: 0 0 24px;
-  font-size: 14px;
-}
-
-.images-container {
+.reader-canvas__images {
   width: 100%;
   max-width: var(--reader-max-width, 100%);
   padding: 16px 0 80px;
@@ -188,13 +181,13 @@ watch(
   gap: var(--reader-gap, 8px);
 }
 
-.reader-image-wrapper {
+.reader-canvas__image-wrapper {
   width: var(--reader-image-width, 100%);
   max-width: 1200px;
   position: relative;
 }
 
-.reader-image {
+.reader-canvas__image {
   width: 100%;
   height: auto;
   display: block;
@@ -202,15 +195,7 @@ watch(
   -webkit-user-drag: none;
 }
 
-.reader-image.loading {
-  min-height: 300px;
-  background: var(--reader-canvas-image-loading-background);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.image-index {
+.reader-canvas__image-index {
   position: absolute;
   top: 8px;
   left: 8px;
@@ -223,16 +208,7 @@ watch(
   transition: opacity 0.2s;
 }
 
-.reader-image-wrapper:hover .image-index {
+.reader-canvas__image-wrapper:hover .reader-canvas__image-index {
   opacity: 1;
-}
-
-.reader-empty-action {
-  padding: 12px 24px;
-}
-
-.reader-empty-action:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow-action-brand);
 }
 </style>

@@ -8,15 +8,16 @@
     @close="handleClose"
   >
     <div class="constraint-modal-body">
-      <div class="constraint-description">
+      <ProductStatusBanner tone="info" role="note">
         命中当前文本的禁翻内容会被保护为占位符，翻译完成后再还原。
-      </div>
-      <label class="ui-checkbox-label">
-        <UiCheckbox :model-value="draft.enabled" @change="toggleEnabled" />
-        启用禁翻表
-      </label>
+      </ProductStatusBanner>
+      <UiCheckbox
+        :model-value="draft.enabled"
+        label="启用禁翻表"
+        @change="toggleEnabled"
+      />
       <TranslationConstraintTable
-        :model-value="draft.entries as unknown as Record<string, string>[]"
+        :model-value="draft.entries"
         :columns="columns"
         :empty-row="emptyRow"
         export-base-name="禁翻表"
@@ -26,13 +27,20 @@
       />
     </div>
     <template #footer>
-      <UiButton variant="secondary" @click="handleClose">取消</UiButton>
-      <UiButton variant="primary" :disabled="isSaving" @click="handleSave">保存</UiButton>
+      <ProductActionRow
+        variant="dialog"
+        aria-label="禁翻表操作"
+      >
+        <UiButton variant="secondary" @click="handleClose">取消</UiButton>
+        <UiButton variant="primary" :disabled="isSaving" @click="handleSave">保存</UiButton>
+      </ProductActionRow>
     </template>
   </BaseModal>
 </template>
 
 <script setup lang="ts">
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import { computed, ref, watch } from 'vue'
 
@@ -41,7 +49,8 @@ import UiButton from '@/components/ui/UiButton.vue'
 import TranslationConstraintTable from '@/components/settings/shared/TranslationConstraintTable.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import type { NonTranslateEntry } from '@/types/translationConstraints'
-import { validateRegexEntries } from '@/utils/translationConstraintTable'
+import { deepClone } from '@/utils/deepClone'
+import { getStringField, validateRegexEntries } from '@/utils/translationConstraintTable'
 import { showToast } from '@/utils/toast'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -76,35 +85,47 @@ const emptyRow = {
   pattern: '',
   note: '',
   matchMode: 'text',
+} satisfies NonTranslateEntry
+
+function toMatchMode(value: string): NonTranslateEntry['matchMode'] {
+  return value === 'regex' ? 'regex' : 'text'
+}
+
+function toNonTranslateEntry(row: object): NonTranslateEntry {
+  return {
+    pattern: getStringField(row, 'pattern'),
+    note: getStringField(row, 'note'),
+    matchMode: toMatchMode(getStringField(row, 'matchMode')),
+  }
 }
 
 watch(
   () => props.modelValue,
-  (value) => {
+  value => {
     isOpen.value = value
     if (value) {
       syncDraft()
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 
-watch(isOpen, (value) => {
+watch(isOpen, value => {
   if (!value && props.modelValue) {
     emit('update:modelValue', false)
   }
 })
 
 function syncDraft(): void {
-  draft.value = JSON.parse(JSON.stringify(constraintStore.nonTranslate))
+  draft.value = deepClone(constraintStore.nonTranslate)
 }
 
 function toggleEnabled(checked: boolean): void {
   draft.value.enabled = checked
 }
 
-function updateEntries(entries: Record<string, string>[]): void {
-  draft.value.entries = entries as unknown as NonTranslateEntry[]
+function updateEntries(entries: object[]): void {
+  draft.value.entries = entries.map(toNonTranslateEntry)
 }
 
 function handleClose(): void {
@@ -120,8 +141,8 @@ async function handleSave(): Promise<void> {
   }
 
   const ok = await constraintStore.saveBookConstraints({
-    ...JSON.parse(JSON.stringify(constraintStore.constraints)),
-    non_translate: JSON.parse(JSON.stringify(draft.value)),
+    ...deepClone(constraintStore.constraints),
+    non_translate: deepClone(draft.value),
   })
   if (!ok) {
     showToast('保存禁翻表失败', 'error')
@@ -141,15 +162,4 @@ async function handleSave(): Promise<void> {
   gap: 14px;
 }
 
-.constraint-description {
-  color: var(--color-text-supporting);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.ui-checkbox-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
 </style>

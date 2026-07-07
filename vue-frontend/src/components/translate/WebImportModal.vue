@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import './WebImportModal.global.styles.css'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import { useWebImportModal } from './useWebImportModal'
 import WebImportExtractBar from './web-import/WebImportExtractBar.vue'
 import WebImportFooterActions from './web-import/WebImportFooterActions.vue'
@@ -13,11 +13,11 @@ const {
   agentProviderOptions,
   checkingSupport,
   downloadProgress,
-  downloadProgressPercent,
   draftSettings,
   engineDisplayName,
   error,
   extractResult,
+  focusSourceUrlRequestId,
   galleryDLAvailable,
   galleryDLSupported,
   getPreviewUrl,
@@ -45,10 +45,9 @@ const {
   selectedEngine,
   selectedPages,
   settingsExpanded,
-  showAgentKey,
+  settingsActions,
   showAgentLogs,
   showCustomUrl,
-  showFirecrawlKey,
   status,
   supportsFetchModels,
   testingAgent,
@@ -56,29 +55,36 @@ const {
   toggleAll,
   togglePage,
   urlInput,
-  webImportStore,
 } = useWebImportModal()
 </script>
 
 <template>
   <BaseModal
     :model-value="isVisible"
-    title="🌐 从网页导入漫画"
+    title="从网页导入漫画"
     size="large"
     custom-class="web-import-modal"
+    frame-variant="floating"
+    divider-variant="soft"
     max-width="800px"
-    footer-gap="12px"
     footer-padding="16px 20px"
-    footer-border="1px solid var(--color-border-muted, var(--color-border-soft))"
     :close-on-overlay="!isProcessing"
     :close-on-esc="!isProcessing"
     @close="handleClose"
   >
-    <div class="web-import-modal-body">
+    <template #title>
+      <span class="web-import-modal__title">
+        <UiIcon name="globe" />
+        <span>从网页导入漫画</span>
+      </span>
+    </template>
+
+    <div class="web-import-modal__body">
       <WebImportExtractBar
         v-model:selected-engine="selectedEngine"
         v-model:url-input="urlInput"
         :checking-support="checkingSupport"
+        :focus-request-id="focusSourceUrlRequestId"
         :gallery-d-l-available="galleryDLAvailable"
         :gallery-d-l-supported="galleryDLSupported"
         :is-processing="isProcessing"
@@ -89,8 +95,6 @@ const {
       <WebImportSettingsPanel
         v-model:active-settings-tab="activeSettingsTab"
         v-model:settings-expanded="settingsExpanded"
-        v-model:show-agent-key="showAgentKey"
-        v-model:show-firecrawl-key="showFirecrawlKey"
         :agent-provider-options="agentProviderOptions"
         :draft-settings="draftSettings"
         :has-unsaved-settings="hasUnsavedSettings"
@@ -99,11 +103,11 @@ const {
         :model-list="modelList"
         :model-list-options="modelListOptions"
         :provider-requires-api-key="providerRequiresApiKey"
+        :settings-actions="settingsActions"
         :show-custom-url="showCustomUrl"
         :supports-fetch-models="supportsFetchModels"
         :testing-agent="testingAgent"
         :testing-firecrawl="testingFirecrawl"
-        :web-import-store="webImportStore"
         @discard-settings="handleDiscardSettings"
         @fetch-models="handleFetchModels"
         @reset-prompt="handleResetPrompt"
@@ -122,7 +126,6 @@ const {
 
       <WebImportResultsGrid
         :download-progress="downloadProgress"
-        :download-progress-percent="downloadProgressPercent"
         :engine-display-name="engineDisplayName"
         :error="error"
         :extract-result="extractResult"
@@ -150,7 +153,13 @@ const {
 </template>
 
 <style scoped>
-.web-import-modal-body {
+.web-import-modal__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.web-import-modal__body {
   display: block;
 }
 </style>

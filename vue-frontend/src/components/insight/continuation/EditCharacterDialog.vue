@@ -1,8 +1,14 @@
 <template>
-  <ContinuationDialogShell title="✏️ 编辑角色" @close="close">
+  <ContinuationDialogShell title="编辑角色" @close="close">
     <ContinuationDialogForm>
-      <ContinuationDialogField label="角色名称" required :error="nameError">
+      <ContinuationDialogField
+        label="角色名称"
+        control-id="continuationEditCharacterName"
+        required
+        :error="nameError"
+      >
         <UiInput
+          id="continuationEditCharacterName"
           v-model="localName"
           type="text"
           aria-label="角色名称"
@@ -14,9 +20,11 @@
 
       <ContinuationDialogField
         label="别名（用逗号分隔）"
+        control-id="continuationEditCharacterAliases"
         hint="AI生成脚本时可能使用这些名字引用角色"
       >
         <UiInput
+          id="continuationEditCharacterAliases"
           v-model="localAliases"
           type="text"
           aria-label="别名（用逗号分隔）"
@@ -29,7 +37,10 @@
     <template #footer>
       <ContinuationDialogActions>
         <UiButton variant="secondary" @click="close">取消</UiButton>
-        <UiButton variant="primary" :disabled="!localName.trim()" @click="save">💾 保存</UiButton>
+        <UiButton variant="primary" :disabled="!localName.trim()" @click="save">
+          <UiIcon name="save" size="15" />
+          <span>保存</span>
+        </UiButton>
       </ContinuationDialogActions>
     </template>
   </ContinuationDialogShell>
@@ -40,6 +51,7 @@ import UiInput from '@/components/ui/UiInput.vue'
 import { ref, watch } from 'vue'
 import type { CharacterProfile } from '@/api/continuation'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
 import ContinuationDialogField from './ContinuationDialogField.vue'
 import ContinuationDialogForm from './ContinuationDialogForm.vue'

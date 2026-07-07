@@ -1,55 +1,57 @@
 <template>
   <div v-if="visible" class="kana-keyboard">
-    <div class="kana-keyboard-header">
-      <span class="kana-keyboard-title">50音键盘</span>
-      <div class="kana-keyboard-tabs">
-        <UiButton
-          variant="toolbar"
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="kana-tab"
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          {{ tab.label }}
-        </UiButton>
-      </div>
-      <UiButton variant="toolbar" class="kana-keyboard-close" @click="close">✕</UiButton>
+    <div class="kana-keyboard__header">
+      <span class="kana-keyboard__title">50音键盘</span>
+      <ProductSegmentedTabs
+        class="kana-keyboard__tabs"
+        :tabs="tabs"
+        :active-tab="activeTab"
+        aria-label="假名分类"
+        layout="scroll"
+        @select="handleActiveTabSelect"
+      />
+      <UiIconButton
+        variant="inverse"
+        size="xs"
+        shape="circle"
+        label="关闭50音键盘"
+        title="关闭"
+        @click="close"
+      >
+        <UiIcon name="x" size="14" />
+      </UiIconButton>
     </div>
 
-    <div class="kana-keyboard-options">
-      <div class="kana-mode-select">
-        <span class="kana-mode-label">字符：</span>
-        <UiButton
-          variant="toolbar"
-          class="kana-mode-button"
-          :data-active="kanaMode === 'hiragana'"
-          :aria-pressed="kanaMode === 'hiragana'"
-          @click="kanaMode = 'hiragana'"
-        >
-          平假名
-        </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="kana-mode-button"
-          :data-active="kanaMode === 'katakana'"
-          :aria-pressed="kanaMode === 'katakana'"
-          @click="kanaMode = 'katakana'"
-        >
-          片假名
-        </UiButton>
-      </div>
-      <div class="kana-target-select">
-        <label>输入到：</label>
-        <CustomSelect
-          v-model="targetField"
-          :options="targetFieldOptions"
+    <div class="kana-keyboard__options">
+      <div class="kana-keyboard__mode-select">
+        <span class="kana-keyboard__mode-label">字符：</span>
+        <ProductSegmentedTabs
+          :tabs="kanaModeTabs"
+          :active-tab="kanaMode"
+          aria-label="假名字符类型"
+          @select="handleKanaModeSelect"
         />
       </div>
+      <UiField
+        class="kana-keyboard__target-select"
+        label="输入到："
+        control-id="kanaTargetField"
+        layout="inline"
+      >
+        <UiSelect
+          id="kanaTargetField"
+          :model-value="targetField"
+          :options="targetFieldOptions"
+          @change="handleTargetFieldChange"
+        />
+      </UiField>
     </div>
 
-    <div class="kana-tab-content" :class="{ active: activeTab === 'basic' }">
-      <table class="kana-table">
+    <div
+      class="kana-keyboard__tab-content"
+      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'basic' }"
+    >
+      <table class="kana-keyboard__table">
         <thead>
           <tr>
             <th></th>
@@ -62,17 +64,17 @@
         </thead>
         <tbody>
           <tr v-for="row in basicKana" :key="row.label">
-            <td class="row-label">{{ row.label }}</td>
+            <td class="kana-keyboard__row-label">{{ row.label }}</td>
             <td v-for="(kana, idx) in row.chars" :key="idx">
               <UiButton
                 variant="toolbar"
                 v-if="kana"
-                class="kana-key"
-                :class="{ pressed: pressedKey === kana.h }"
+                class="kana-keyboard__key"
+                :class="{ 'kana-keyboard__key--pressed': pressedKey === kana.h }"
                 @click="insertKana(kana)"
               >
-                <span class="kana-hiragana">{{ kana.h }}</span>
-                <span class="kana-katakana">{{ kana.k }}</span>
+                <span class="kana-keyboard__hiragana">{{ kana.h }}</span>
+                <span class="kana-keyboard__katakana">{{ kana.k }}</span>
               </UiButton>
             </td>
           </tr>
@@ -80,8 +82,11 @@
       </table>
     </div>
 
-    <div class="kana-tab-content" :class="{ active: activeTab === 'dakuten' }">
-      <table class="kana-table">
+    <div
+      class="kana-keyboard__tab-content"
+      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'dakuten' }"
+    >
+      <table class="kana-keyboard__table">
         <thead>
           <tr>
             <th></th>
@@ -94,17 +99,17 @@
         </thead>
         <tbody>
           <tr v-for="row in dakutenKana" :key="row.label">
-            <td class="row-label">{{ row.label }}</td>
+            <td class="kana-keyboard__row-label">{{ row.label }}</td>
             <td v-for="(kana, idx) in row.chars" :key="idx">
               <UiButton
                 variant="toolbar"
                 v-if="kana"
-                class="kana-key"
-                :class="{ pressed: pressedKey === kana.h }"
+                class="kana-keyboard__key"
+                :class="{ 'kana-keyboard__key--pressed': pressedKey === kana.h }"
                 @click="insertKana(kana)"
               >
-                <span class="kana-hiragana">{{ kana.h }}</span>
-                <span class="kana-katakana">{{ kana.k }}</span>
+                <span class="kana-keyboard__hiragana">{{ kana.h }}</span>
+                <span class="kana-keyboard__katakana">{{ kana.k }}</span>
               </UiButton>
             </td>
           </tr>
@@ -112,8 +117,11 @@
       </table>
     </div>
 
-    <div class="kana-tab-content" :class="{ active: activeTab === 'combo' }">
-      <table class="kana-table combo-table">
+    <div
+      class="kana-keyboard__tab-content"
+      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'combo' }"
+    >
+      <table class="kana-keyboard__table kana-keyboard__table--combo">
         <thead>
           <tr>
             <th></th>
@@ -124,17 +132,17 @@
         </thead>
         <tbody>
           <tr v-for="row in comboKana" :key="row.label">
-            <td class="row-label">{{ row.label }}</td>
+            <td class="kana-keyboard__row-label">{{ row.label }}</td>
             <td v-for="(kana, idx) in row.chars" :key="idx">
               <UiButton
                 variant="toolbar"
                 v-if="kana"
-                class="kana-key"
-                :class="{ pressed: pressedKey === kana.h }"
+                class="kana-keyboard__key"
+                :class="{ 'kana-keyboard__key--pressed': pressedKey === kana.h }"
                 @click="insertKana(kana)"
               >
-                <span class="kana-hiragana">{{ kana.h }}</span>
-                <span class="kana-katakana">{{ kana.k }}</span>
+                <span class="kana-keyboard__hiragana">{{ kana.h }}</span>
+                <span class="kana-keyboard__katakana">{{ kana.k }}</span>
               </UiButton>
             </td>
           </tr>
@@ -142,33 +150,40 @@
       </table>
     </div>
 
-    <div class="kana-tab-content" :class="{ active: activeTab === 'special' }">
-      <div class="special-chars-grid">
+    <div
+      class="kana-keyboard__tab-content"
+      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'special' }"
+    >
+      <div class="kana-keyboard__special-grid">
         <UiButton
           variant="toolbar"
           v-for="char in specialChars"
           :key="char.char"
-          class="kana-key special-key"
-          :class="{ pressed: pressedKey === char.char }"
+          class="kana-keyboard__key kana-keyboard__key--special"
+          :class="{ 'kana-keyboard__key--pressed': pressedKey === char.char }"
           @click="insertSpecialChar(char.char)"
         >
           {{ char.char }}
-          <span v-if="char.label" class="char-label">{{ char.label }}</span>
+          <span v-if="char.label" class="kana-keyboard__char-label">{{ char.label }}</span>
         </UiButton>
       </div>
     </div>
 
-    <div class="kana-keyboard-footer">
-      <UiButton variant="toolbar" class="kana-backspace" @click="deleteChar">⌫ 退格</UiButton>
+    <div class="kana-keyboard__footer">
+      <UiButton variant="danger" size="sm" @click="deleteChar">退格</UiButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-
-import UiButton from '@/components/ui/UiButton.vue'
 import { onUnmounted, ref } from 'vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
+import type { ProductSegmentedTab } from '@/components/product/ProductSegmentedTabs.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 interface KanaChar {
   h: string
@@ -185,6 +200,9 @@ interface SpecialChar {
   label?: string
 }
 
+type KanaMode = 'hiragana' | 'katakana'
+type KanaTab = 'basic' | 'dakuten' | 'combo' | 'special'
+
 const props = withDefaults(defineProps<{
   visible?: boolean
   defaultTarget?: 'original' | 'translated'
@@ -199,8 +217,8 @@ const emit = defineEmits<{
   (e: 'delete', target: 'original' | 'translated'): void
 }>()
 
-const activeTab = ref<'basic' | 'dakuten' | 'combo' | 'special'>('basic')
-const kanaMode = ref<'hiragana' | 'katakana'>('hiragana')
+const activeTab = ref<KanaTab>('basic')
+const kanaMode = ref<KanaMode>('hiragana')
 const targetField = ref<'original' | 'translated'>(props.defaultTarget)
 const pressedKey = ref<string | null>(null)
 let pressFeedbackTimer: ReturnType<typeof setTimeout> | null = null
@@ -210,11 +228,16 @@ const targetFieldOptions = [
   { label: '译文', value: 'translated' }
 ]
 
-const tabs = [
-  { id: 'basic' as const, label: '基本' },
-  { id: 'dakuten' as const, label: '浊/半浊音' },
-  { id: 'combo' as const, label: '拗音' },
-  { id: 'special' as const, label: '特殊' }
+const tabs: ProductSegmentedTab[] = [
+  { id: 'basic', label: '基本' },
+  { id: 'dakuten', label: '浊/半浊音' },
+  { id: 'combo', label: '拗音' },
+  { id: 'special', label: '特殊' }
+]
+
+const kanaModeTabs: ProductSegmentedTab[] = [
+  { id: 'hiragana', label: '平假名' },
+  { id: 'katakana', label: '片假名' }
 ]
 
 const basicKana: KanaRow[] = [
@@ -294,6 +317,24 @@ function close(): void {
   emit('close')
 }
 
+function handleActiveTabSelect(tabId: string): void {
+  if (tabId === 'basic' || tabId === 'dakuten' || tabId === 'combo' || tabId === 'special') {
+    activeTab.value = tabId
+  }
+}
+
+function handleKanaModeSelect(tabId: string): void {
+  if (tabId === 'hiragana' || tabId === 'katakana') {
+    kanaMode.value = tabId
+  }
+}
+
+function handleTargetFieldChange(value: string | number): void {
+  if (value === 'original' || value === 'translated') {
+    targetField.value = value
+  }
+}
+
 function flashPressedKey(key: string): void {
   if (pressFeedbackTimer) {
     clearTimeout(pressFeedbackTimer)
@@ -308,13 +349,13 @@ function flashPressedKey(key: string): void {
 function insertKana(kana: KanaChar): void {
   const char = kanaMode.value === 'hiragana' ? kana.h : kana.k
   flashPressedKey(kana.h)
-  
+
   emit('insert', char, targetField.value)
 }
 
 function insertSpecialChar(char: string): void {
   flashPressedKey(char)
-  
+
   emit('insert', char, targetField.value)
 }
 
@@ -331,22 +372,15 @@ onUnmounted(() => {
 
 <style scoped>
 .kana-keyboard {
-  --japanese-keyboard-panel-shadow: rgba(0, 0, 0, .15);
-  --japanese-keyboard-header-start: #ff6b6b;
-  --japanese-keyboard-header-end: #ee5a5a;
-  --japanese-keyboard-header-button-background: rgba(255, 255, 255, .2);
-  --japanese-keyboard-header-button-hover-background: rgba(255, 255, 255, .4);
-  --japanese-keyboard-tab-hover-background: rgba(255, 255, 255, .3);
-  --japanese-keyboard-mode-button-active-background: #e74c3c;
-  --japanese-keyboard-kana-key-background: #f8f9fa;
-  --japanese-keyboard-kana-key-hover-background: #e3f2fd;
-  --japanese-keyboard-kana-key-active-background: #bbdefb;
-  --japanese-keyboard-kana-key-hover-border: #2196f3;
-  --japanese-keyboard-kana-key-hover-shadow: rgba(33, 150, 243, .3);
-  --japanese-keyboard-backspace-background: rgba(231, 76, 60, .1);
-  --japanese-keyboard-backspace-hover-background: rgba(231, 76, 60, .2);
-  --japanese-keyboard-backspace-border: rgba(231, 76, 60, .3);
-  --japanese-keyboard-backspace-hover-border: rgba(231, 76, 60, .5);
+  --japanese-keyboard-panel-shadow: color-mix(in srgb, var(--color-overlay-backdrop-solid) 15%, transparent);
+  --japanese-keyboard-header-start: var(--color-status-error);
+  --japanese-keyboard-header-end: var(--color-status-error-hover);
+  --japanese-keyboard-header-button-background: var(--color-overlay-inverse-muted);
+  --japanese-keyboard-kana-key-background: var(--color-surface-quiet);
+  --japanese-keyboard-kana-key-hover-background: var(--color-surface-interactive-hover);
+  --japanese-keyboard-kana-key-active-background: color-mix(in srgb, var(--color-status-info) 25%, var(--color-surface-base));
+  --japanese-keyboard-kana-key-hover-border: var(--color-action-primary);
+  --japanese-keyboard-kana-key-hover-shadow: color-mix(in srgb, var(--color-action-primary) 30%, transparent);
 
   background: var(--color-surface-base);
   border: 1px solid var(--color-border-default);
@@ -357,7 +391,7 @@ onUnmounted(() => {
   color: var(--color-text-default);
 }
 
-.kana-keyboard-header {
+.kana-keyboard__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -366,58 +400,24 @@ onUnmounted(() => {
   color: var(--color-text-inverse);
 }
 
-.kana-keyboard-title {
+.kana-keyboard__title {
   font-weight: 600;
   font-size: 13px;
   color: var(--color-text-inverse);
 }
 
-.kana-keyboard-tabs {
-  display: flex;
-  gap: 4px;
+.kana-keyboard__tabs {
+  --product-segmented-tabs-background: var(--japanese-keyboard-header-button-background);
+  --product-segmented-tabs-border: transparent;
+  --product-segmented-tabs-active-background: var(--color-surface-base);
+  --product-segmented-tabs-active-text: var(--color-text-danger-strong);
+  --product-segmented-tabs-text: var(--color-text-inverse);
+
+  flex: 1 1 auto;
+  max-width: 360px;
 }
 
-.kana-tab {
-  padding: 4px 10px;
-  border: none;
-  border-radius: 4px;
-  background: var(--japanese-keyboard-header-button-background);
-  color: var(--color-text-inverse);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.kana-tab:hover {
-  background: var(--japanese-keyboard-tab-hover-background);
-}
-
-.kana-tab.active {
-  background: var(--color-surface-base);
-  color: var(--color-text-danger-strong);
-  font-weight: 600;
-}
-
-.kana-keyboard-close {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: var(--japanese-keyboard-header-button-background);
-  color: var(--color-text-inverse);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.kana-keyboard-close:hover {
-  background: var(--japanese-keyboard-header-button-hover-background);
-}
-
-.kana-keyboard-options {
+.kana-keyboard__options {
   display: flex;
   align-items: center;
   gap: 20px;
@@ -426,8 +426,12 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--color-border-default);
 }
 
-.kana-mode-select,
-.kana-target-select {
+.kana-keyboard__mode-select,
+.kana-keyboard__target-select {
+  --ui-field-inline-label-color: var(--color-text-default);
+  --ui-field-inline-label-font-size: 12px;
+  --ui-field-inline-label-font-weight: 500;
+
   display: flex;
   align-items: center;
   gap: 8px;
@@ -435,61 +439,40 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.kana-mode-label {
+.kana-keyboard__mode-label {
   font-weight: 500;
 }
 
-.kana-mode-button {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 999px;
-  background: var(--color-surface-base);
-  color: var(--color-text-default);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.kana-mode-button:hover {
-  border-color: var(--color-border-accent);
-}
-
-.kana-mode-button[data-active='true'] {
-  background: var(--japanese-keyboard-mode-button-active-background);
-  border-color: var(--japanese-keyboard-mode-button-active-background);
-  color: var(--color-text-inverse);
-}
-
-.kana-tab-content {
+.kana-keyboard__tab-content {
   padding: 10px;
   max-height: 280px;
   overflow-y: auto;
   background: var(--color-surface-base);
 }
 
-.kana-table {
+.kana-keyboard__table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
   background: var(--color-surface-base);
 }
 
-.kana-table th,
-.kana-table td {
+.kana-keyboard__table th,
+.kana-keyboard__table td {
   padding: 2px;
   text-align: center;
   vertical-align: middle;
   background: var(--color-surface-base);
 }
 
-.kana-table th {
+.kana-keyboard__table th {
   color: var(--color-text-secondary);
   font-weight: 500;
   font-size: 11px;
   padding-bottom: 6px;
 }
 
-.row-label {
+.kana-keyboard__row-label {
   color: var(--color-text-subtle);
   font-size: 11px;
   font-weight: 500;
@@ -498,7 +481,7 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.kana-key {
+.kana-keyboard__key {
   width: 42px;
   height: 42px;
   border: 1px solid var(--color-border-subtle);
@@ -516,39 +499,39 @@ onUnmounted(() => {
   padding: 2px;
 }
 
-.kana-hiragana {
+.kana-keyboard__hiragana {
   color: var(--color-text-default);
   font-size: 13px;
   display: block;
 }
 
-.kana-katakana {
+.kana-keyboard__katakana {
   color: var(--color-text-secondary);
   font-size: 11px;
   display: block;
 }
 
-.kana-key:hover {
+.kana-keyboard__key:hover {
   background: var(--japanese-keyboard-kana-key-hover-background);
   border-color: var(--japanese-keyboard-kana-key-hover-border);
   transform: translateY(-1px);
   box-shadow: 0 2px 6px var(--japanese-keyboard-kana-key-hover-shadow);
 }
 
-.kana-key:active,
-.kana-key.pressed {
+.kana-keyboard__key:active,
+.kana-keyboard__key--pressed {
   transform: translateY(0);
   background: var(--japanese-keyboard-kana-key-active-background);
 }
 
-.special-chars-grid {
+.kana-keyboard__special-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
   gap: 6px;
   background: var(--color-surface-base);
 }
 
-.special-key {
+.kana-keyboard__key--special {
   width: auto;
   height: auto;
   min-height: 32px;
@@ -557,17 +540,17 @@ onUnmounted(() => {
   color: var(--color-text-default);
 }
 
-.char-label {
+.kana-keyboard__char-label {
   font-size: 9px;
   color: var(--color-text-secondary);
   margin-top: 2px;
 }
 
-.combo-table .kana-key {
+.kana-keyboard__table--combo .kana-keyboard__key {
   width: 56px;
 }
 
-.kana-keyboard-footer {
+.kana-keyboard__footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -576,19 +559,4 @@ onUnmounted(() => {
   border-top: 1px solid var(--color-border-default);
 }
 
-.kana-backspace {
-  padding: 6px 16px;
-  background: var(--japanese-keyboard-backspace-background);
-  border: 1px solid var(--japanese-keyboard-backspace-border);
-  border-radius: 4px;
-  color: var(--color-text-danger-strong);
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-}
-
-.kana-backspace:hover {
-  background: var(--japanese-keyboard-backspace-hover-background);
-  border-color: var(--japanese-keyboard-backspace-hover-border);
-}
 </style>

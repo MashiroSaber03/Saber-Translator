@@ -1,8 +1,13 @@
 <script setup lang="ts">
-
-import UiButton from '@/components/ui/UiButton.vue'
 import AppShell from '@/components/ui/AppShell.vue'
-import SidebarLayout from '@/components/ui/SidebarLayout.vue'
+import ProductHeaderAction from '@/components/product/ProductHeaderAction.vue'
+import ProductPageHeader from '@/components/product/ProductPageHeader.vue'
+import ProductThemeToggle from '@/components/product/ProductThemeToggle.vue'
+import ProductTabbedWorkspace from '@/components/product/ProductTabbedWorkspace.vue'
+import ProductThreePaneWorkspace from '@/components/product/ProductThreePaneWorkspace.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import type { UiIconName } from '@/components/ui/iconRegistry'
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -20,10 +25,9 @@ import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ChapterSelectModal from '@/components/insight/ChapterSelectModal.vue'
 import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
 import CharacterStudioEntryPanel from '@/components/insight/CharacterStudioEntryPanel.vue'
-import AppHeader from '@/components/common/AppHeader.vue'
 import * as insightApi from '@/api/insight'
 import { getBookDetail } from '@/api/bookshelf'
-import { showToast } from '@/utils/toast'
+import { normalizeBookData } from '@/utils/bookshelfModels'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
 import type { BookData, ChapterData, ChapterInfo } from '@/types'
 
@@ -32,7 +36,17 @@ const router = useRouter()
 const insightStore = useInsightStore()
 const bookshelfStore = useBookshelfStore()
 
-const activeTab = ref<'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'>('overview')
+type InsightTabId = 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'
+
+const insightTabs: Array<{ id: InsightTabId; label: string; iconName: UiIconName }> = [
+  { id: 'overview', label: '概览', iconName: 'bar-chart' },
+  { id: 'qa', label: '智能问答', iconName: 'message' },
+  { id: 'timeline', label: '时间线', iconName: 'clock' },
+  { id: 'continuation', label: '续写', iconName: 'palette' },
+  { id: 'character_studio', label: '角色工坊', iconName: 'book-marked' },
+]
+
+const activeTab = ref<InsightTabId>('overview')
 const showSettingsModal = ref(false)
 const showMobileSidebar = ref(false)
 const showMobileWorkspace = ref(false)
@@ -45,7 +59,7 @@ const loadedBookDetail = ref<{
   id: string
   title: string
   cover?: string
-  total_pages: number
+  totalPages: number
 } | null>(null)
 
 const showChapterSelectModal = ref(false)
@@ -63,18 +77,16 @@ const bookCoverUrl = computed(() => {
   return currentBook.value.cover
 })
 
-function switchTab(tab: 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'): void {
-  activeTab.value = tab
-}
-
-function getChapterPageCount(chapter: ChapterData): number {
-  return chapter.page_count ?? chapter.image_count ?? chapter.imageCount ?? 0
+function switchTab(tab: string): void {
+  if (insightTabs.some(item => item.id === tab)) {
+    activeTab.value = tab as InsightTabId
+  }
 }
 
 function mapBookChaptersToInsightChapters(chapters: ChapterData[]): ChapterInfo[] {
   let pageOffset = 0
   return chapters.map((chapter, index) => {
-    const pageCount = getChapterPageCount(chapter)
+    const pageCount = chapter.imageCount ?? 0
     const startPage = pageOffset + 1
     const endPage = pageOffset + pageCount
     pageOffset = endPage
@@ -89,16 +101,18 @@ function mapBookChaptersToInsightChapters(chapters: ChapterData[]): ChapterInfo[
 }
 
 function setLoadedBookDetail(book: BookData): void {
-  loadedBookDetail.value = {
-    id: book.id,
-    title: book.title,
-    cover: book.cover,
-    total_pages: book.total_pages || 0,
-  }
-  insightStore.setBookTotalPages(book.total_pages || 0)
+  const normalizedBook = normalizeBookData(book)
 
-  if (book.chapters?.length) {
-    insightStore.setChapters(mapBookChaptersToInsightChapters(book.chapters))
+  loadedBookDetail.value = {
+    id: normalizedBook.id,
+    title: normalizedBook.title,
+    cover: normalizedBook.cover,
+    totalPages: normalizedBook.totalPages ?? 0,
+  }
+  insightStore.setBookTotalPages(normalizedBook.totalPages ?? 0)
+
+  if (normalizedBook.chapters?.length) {
+    insightStore.setChapters(mapBookChaptersToInsightChapters(normalizedBook.chapters))
   }
 }
 
@@ -197,7 +211,7 @@ function startStatusPolling(): void {
   statusPollingTimer = setInterval(async () => {
     const statusBeforePolling = insightStore.analysisStatus
     await loadAnalysisStatus()
-    
+
     const status = insightStore.analysisStatus
     const wasActiveTask = statusBeforePolling === 'running' || statusBeforePolling === 'paused'
     if ((status === 'completed' || status === 'failed' || status === 'idle') && wasActiveTask) {
@@ -235,10 +249,6 @@ function openSettingsModal(): void {
   showSettingsModal.value = true
 }
 
-function showFeatureNotice(): void {
-  showToast('🌙 该功能正在开发中，敬请期待！', 'info')
-}
-
 function closeSettingsModal(): void {
   showSettingsModal.value = false
 }
@@ -264,16 +274,16 @@ function goToTranslate(): void {
   }
 
   const chapters = insightStore.chapters
-  
+
   if (!chapters || chapters.length === 0) {
     router.push({ path: '/translate', query: { book: insightStore.currentBookId } })
   } else if (chapters.length === 1) {
-    router.push({ 
-      path: '/translate', 
-      query: { 
+    router.push({
+      path: '/translate',
+      query: {
         book: insightStore.currentBookId,
         chapter: chapters[0]!.id
-      } 
+      }
     })
   } else {
     showChapterSelectModal.value = true
@@ -282,12 +292,12 @@ function goToTranslate(): void {
 
 function handleChapterSelect(chapterId: string): void {
   showChapterSelectModal.value = false
-  router.push({ 
-    path: '/translate', 
-    query: { 
+  router.push({
+    path: '/translate',
+    query: {
       book: insightStore.currentBookId!,
       chapter: chapterId
-    } 
+    }
   })
 }
 
@@ -323,161 +333,180 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 <template>
   <AppShell class="insight-page" viewport-mode="locked">
-    <AppHeader variant="insight" logo-title="书架首页">
-      <template #header-links>
-        <router-link to="/" class="insight-header__nav-link">📚 书架</router-link>
-        <UiButton variant="link" class="insight-header__nav-link" @click="goToTranslate">🌐 翻译</UiButton>
-        <span class="insight-header__nav-link insight-header__nav-link--active">🔍 分析</span>
-        <a href="https://www.mashirosaber.top/use/manga-insight.html" target="_blank" rel="noopener noreferrer" class="insight-header__nav-link" title="使用教程">📖 教程</a>
-        <UiButton variant="toolbar" id="settingsBtn" class="insight-settings-action" title="设置" @click="openSettingsModal">⚙️</UiButton>
-        <UiButton variant="toolbar" id="themeToggle" class="insight-header__theme-toggle" title="功能开发中" @click="showFeatureNotice">
-          <span class="insight-header__theme-icon">☀️</span>
-        </UiButton>
+    <ProductPageHeader
+      variant="fixed"
+      logo-title="书架首页"
+      nav-label="漫画分析导航"
+      actions-label="漫画分析操作"
+    >
+      <template #nav>
+        <ProductHeaderAction
+          as="router-link"
+          to="/"
+          class="insight-header__nav-link"
+          icon-name="book-open"
+          label="书架"
+          collapse-label-on-mobile
+        />
+        <ProductHeaderAction
+          class="insight-header__nav-link"
+          icon-name="globe"
+          label="翻译"
+          collapse-label-on-mobile
+          @click="goToTranslate"
+        />
+        <ProductHeaderAction
+          as="span"
+          class="insight-header__nav-link insight-header__nav-link--active"
+          icon-name="search"
+          label="分析"
+          active
+          collapse-label-on-mobile
+        />
+        <ProductHeaderAction
+          as="a"
+          href="https://www.mashirosaber.top/use/manga-insight.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="insight-header__nav-link"
+          title="使用教程"
+          icon-name="file-text"
+          label="教程"
+          collapse-label-on-mobile
+        />
       </template>
-    </AppHeader>
 
-    <SidebarLayout as="main" class="insight-main">
-      <aside class="insight-sidebar" :class="{ 'mobile-visible': showMobileSidebar }">
-        <div class="sidebar-section book-info-section">
-          <div class="book-cover-wrapper">
+      <template #actions>
+        <ProductHeaderAction
+          title="设置"
+          aria-label="设置"
+          icon-name="settings"
+          icon-only
+          @click="openSettingsModal"
+        />
+        <ProductThemeToggle class="insight-header__theme-toggle" />
+      </template>
+    </ProductPageHeader>
+
+    <ProductThreePaneWorkspace
+      as="main"
+      class="insight-view__main"
+      aria-label="漫画分析三栏工作区"
+      left-width="280px"
+      right-width="320px"
+      mobile-mode="drawer"
+      :left-mobile-visible="showMobileSidebar"
+      :right-mobile-visible="showMobileWorkspace"
+    >
+      <template #left>
+        <div class="insight-view__book-summary">
+          <div class="insight-view__book-cover-frame">
             <img
               v-if="bookCoverUrl"
               :src="bookCoverUrl"
               :alt="`${currentBook?.title || '书籍'}封面`"
-              class="book-cover"
+              class="insight-view__book-cover"
             >
-            <div v-else class="book-cover-placeholder">
-              <span>📖</span>
+            <div v-else class="insight-view__book-cover-placeholder">
+              <UiIcon name="book-open" size="26" />
             </div>
           </div>
-          <h2 class="insight-book-title" :title="currentBook?.title">{{ currentBook?.title || '选择书籍' }}</h2>
-          <div class="book-meta">
-            <span class="meta-item">
-              <span class="meta-icon">📄</span> 
-              <span id="totalPages">{{ currentBook?.total_pages || 0 }}</span> 页
+          <h2 class="insight-view__book-title" :title="currentBook?.title">{{ currentBook?.title || '选择书籍' }}</h2>
+          <div class="insight-view__book-meta">
+            <span class="insight-view__book-meta-item">
+              <UiIcon name="file-text" class="insight-view__book-meta-icon" />
+              <span>{{ currentBook?.totalPages || 0 }}</span> 页
             </span>
-            <span class="meta-item">
-              <span class="meta-icon">📊</span> 
-              <span id="analyzedPages">{{ insightStore.analyzedPageCount }}</span> 已分析
+            <span class="insight-view__book-meta-item">
+              <UiIcon name="bar-chart" class="insight-view__book-meta-icon" />
+              <span>{{ insightStore.analyzedPageCount }}</span> 已分析
             </span>
           </div>
         </div>
 
-        <AnalysisProgress 
+        <AnalysisProgress
           v-if="hasSelectedBook"
           @start-polling="startStatusPolling"
           @stop-polling="stopStatusPolling"
         />
 
         <PagesTree v-if="hasSelectedBook" />
-      </aside>
+      </template>
 
-      <div class="insight-content">
-        <div v-if="!hasSelectedBook" class="select-book-prompt">
-          <div class="prompt-icon">📚</div>
-          <h2>选择要分析的书籍</h2>
-          <p>从下方列表中选择一本书籍开始智能分析</p>
+      <div class="insight-view__content">
+        <div v-if="!hasSelectedBook" class="insight-view__select-book-prompt">
+          <UiIcon name="book-open" class="insight-view__select-book-icon" size="42" />
+          <h2 class="insight-view__select-book-title">选择要分析的书籍</h2>
+          <p class="insight-view__select-book-description">从下方列表中选择一本书籍开始智能分析</p>
           <BookSelector @select="loadBook" />
         </div>
 
-        <div v-else class="content-tabs">
-          <UiButton
-            variant="toolbar" 
-            class="mobile-nav-btn" 
-            @click="toggleMobileSidebar" 
-            aria-label="打开导航"
-          >
-            📚
-          </UiButton>
-          <div class="tabs-wrapper">
-            <UiButton
-              variant="toolbar" 
-              class="tab-btn" 
-              :class="{ active: activeTab === 'overview' }"
-              @click="switchTab('overview')"
+        <ProductTabbedWorkspace
+          v-else
+          class="insight-view__tabbed-workspace"
+          :tabs="insightTabs"
+          :active-tab="activeTab"
+          aria-label="漫画分析工作区"
+          @select="switchTab"
+        >
+          <template #beforeTabs>
+            <UiIconButton
+              class="insight-view__mobile-nav-button"
+              label="打开导航"
+              :active="showMobileSidebar"
+              :pressed="showMobileSidebar"
+              @click="toggleMobileSidebar"
             >
-              <span class="tab-icon">📊</span> 概览
-            </UiButton>
-            <UiButton
-              variant="toolbar" 
-              class="tab-btn" 
-              :class="{ active: activeTab === 'qa' }"
-              @click="switchTab('qa')"
-            >
-              <span class="tab-icon">💬</span> 智能问答
-            </UiButton>
-            <UiButton
-              variant="toolbar" 
-              class="tab-btn" 
-              :class="{ active: activeTab === 'timeline' }"
-              @click="switchTab('timeline')"
-            >
-              <span class="tab-icon">📈</span> 时间线
-            </UiButton>
-            <UiButton
-              variant="toolbar" 
-              class="tab-btn" 
-              :class="{ active: activeTab === 'continuation' }"
-              @click="switchTab('continuation')"
-            >
-              <span class="tab-icon">🎨</span> 续写
-            </UiButton>
-            <UiButton
-              variant="toolbar"
-              class="tab-btn"
-              :class="{ active: activeTab === 'character_studio' }"
-              @click="switchTab('character_studio')"
-            >
-              <span class="tab-icon">🃏</span> 角色工坊
-            </UiButton>
+              <UiIcon name="book-open" />
+            </UiIconButton>
+          </template>
+
+          <div v-show="activeTab === 'overview' && hasSelectedBook" class="insight-view__tab-content">
+            <OverviewPanel />
           </div>
-          <UiButton
-            variant="toolbar" 
-            class="mobile-nav-btn" 
-            @click="toggleMobileWorkspace" 
-            aria-label="打开笔记"
-          >
-            📝
-          </UiButton>
-        </div>
 
-        <div v-show="activeTab === 'overview' && hasSelectedBook" class="tab-content">
-          <OverviewPanel />
-        </div>
+          <div v-show="activeTab === 'qa' && hasSelectedBook" class="insight-view__tab-content">
+            <QAPanel />
+          </div>
 
-        <div v-show="activeTab === 'qa' && hasSelectedBook" class="tab-content">
-          <QAPanel />
-        </div>
+          <div v-show="activeTab === 'timeline' && hasSelectedBook" class="insight-view__tab-content">
+            <TimelinePanel />
+          </div>
 
-        <div v-show="activeTab === 'timeline' && hasSelectedBook" class="tab-content">
-          <TimelinePanel />
-        </div>
+          <div v-show="activeTab === 'continuation' && hasSelectedBook" class="insight-view__tab-content">
+            <ContinuationPanel />
+          </div>
 
-        <div v-show="activeTab === 'continuation' && hasSelectedBook" class="tab-content">
-          <ContinuationPanel />
-        </div>
+          <div v-show="activeTab === 'character_studio' && hasSelectedBook" class="insight-view__tab-content">
+            <CharacterStudioEntryPanel />
+          </div>
 
-        <div v-show="activeTab === 'character_studio' && hasSelectedBook" class="tab-content">
-          <CharacterStudioEntryPanel />
-        </div>
+          <template #afterTabs>
+            <UiIconButton
+              class="insight-view__mobile-nav-button"
+              label="打开笔记"
+              :active="showMobileWorkspace"
+              :pressed="showMobileWorkspace"
+              @click="toggleMobileWorkspace"
+            >
+              <UiIcon name="file-text" />
+            </UiIconButton>
+          </template>
+        </ProductTabbedWorkspace>
       </div>
 
-      <aside 
-        v-if="hasSelectedBook" 
-        class="insight-workspace"
-        :class="{ 'mobile-visible': showMobileWorkspace }"
-      >
+      <template v-if="hasSelectedBook" #right>
         <PageDetail />
 
         <NotesPanel />
-      </aside>
-    </SidebarLayout>
+      </template>
+    </ProductThreePaneWorkspace>
 
-    <InsightSettingsModal 
+    <InsightSettingsModal
       v-if="showSettingsModal"
       @close="closeSettingsModal"
     />
-    
+
     <ChapterSelectModal
       v-if="showChapterSelectModal && insightStore.currentBookId"
       :chapters="insightStore.chapters"
@@ -489,7 +518,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
 
 <style scoped>
 .insight-page {
-  --insight-border-color: var(--color-border-muted);
+  --insight-view-sidebar-divider: var(--color-border-muted);
 
   overflow: hidden;
   margin: 0;
@@ -498,236 +527,80 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   flex-direction: column;
 }
 
-.insight-page .insight-header__nav-link {
-    color: var(--insight-text-secondary);
-    text-decoration: none;
-    font-size: 14px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    transition: all 0.2s;
+.insight-view__main {
+  flex: 1;
 }
 
-.insight-page .insight-header__nav-link:hover {
-    background: var(--insight-surface-tertiary);
-    color: var(--insight-text-primary);
+.insight-view__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.insight-page .insight-header__nav-link--active {
-    background: var(--insight-action-primary);
-    color: var(--color-text-inverse);
+.insight-view__tabbed-workspace {
+  --product-tabbed-workspace-bar-background: var(--insight-surface-secondary);
+  --product-tabbed-workspace-border: var(--insight-view-sidebar-divider);
+  --product-tabbed-workspace-tab-text: var(--insight-text-secondary);
+  --product-tabbed-workspace-tab-background-hover: var(--insight-surface-tertiary);
+  --product-tabbed-workspace-tab-background-active: var(--insight-action-primary);
 }
 
-.insight-page .insight-header__theme-toggle {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    font-size: 18px;
+.insight-view__mobile-nav-button {
+  display: none;
+  flex-shrink: 0;
 }
 
-.insight-page .insight-main {
-    display: flex;
-    flex: 1;
-    background: var(--insight-surface-page);
-    overflow: hidden;
+.insight-view__tab-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
 }
 
-.insight-page .insight-sidebar {
-    width: 280px;
-    min-width: 280px;
-    background: var(--insight-surface-secondary);
-    border-right: 1px solid var(--insight-border-color);
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-    max-height: 100%;
-}
-
-.insight-page .insight-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-width: 0;
-}
-
-.insight-page .insight-workspace {
-    width: 320px;
-    min-width: 320px;
-    background: var(--insight-surface-secondary);
-    border-left: 1px solid var(--insight-border-color);
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-    max-height: 100%;
-}
-
-.insight-page .content-tabs {
-    display: flex;
-    gap: 4px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--insight-border-color);
-    background: var(--insight-surface-secondary);
-    align-items: center;
-}
-
-.insight-page .tabs-wrapper {
-    display: flex;
-    gap: 4px;
-    flex: 1;
-}
-
-.insight-page .mobile-nav-btn {
-    display: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: var(--insight-surface-tertiary);
-    color: var(--insight-text-primary);
-    border: 1px solid var(--insight-border-color);
-    cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    transition: all 0.2s;
-    flex-shrink: 0;
-}
-
-.insight-page .mobile-nav-btn:hover {
-    background: var(--insight-action-primary);
-    color: var(--color-text-inverse);
-    border-color: var(--insight-action-primary);
-}
-
-.insight-page .mobile-nav-btn.active {
-    background: var(--insight-action-primary);
-    color: var(--color-text-inverse);
-    border-color: var(--insight-action-primary);
-}
-
-.insight-page .tab-btn {
-    padding: 8px 16px;
-    border: none;
-    background: transparent;
-    color: var(--insight-text-secondary);
-    font-size: 14px;
-    cursor: pointer;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.2s;
-}
-
-.insight-page .tab-btn:hover {
-    background: var(--insight-surface-tertiary);
-    color: var(--insight-text-primary);
-}
-
-.insight-page .tab-btn.active {
-    background: var(--insight-action-primary);
-    color: var(--color-text-inverse);
-}
-
-.insight-page .tab-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-}
-
-.insight-page .select-book-prompt {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px;
-    text-align: center;
-}
-
-.insight-page .prompt-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-}
-
-.insight-page .select-book-prompt h2 {
-    margin-bottom: 8px;
-    color: var(--insight-text-primary);
-}
-
-.insight-page .select-book-prompt p {
-    color: var(--insight-text-secondary);
-    margin-bottom: 24px;
-}
-
-.insight-page .book-selector {
-    width: 300px;
-}
-
-.insight-page .insight-settings-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 18px;
-    font-size: 14px;
-    font-weight: 500;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-decoration: none;
-    background: var(--insight-surface-tertiary);
-    color: var(--insight-text-primary);
-}
-
-.insight-page .insight-settings-action:hover {
-    background: var(--insight-border-color);
-}
-
-.insight-page .placeholder-text {
-    color: var(--insight-text-muted);
-    text-align: center;
-    padding: 20px;
-    font-size: 14px;
-}
-
-.insight-page .empty-hint {
-    color: var(--insight-text-muted);
-    text-align: center;
-    padding: 16px;
-    font-size: 13px;
-}
-
-.loading-spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid var(--insight-border-color);
-    border-top-color: var(--insight-action-primary);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-.insight-sidebar.mobile-visible,
-.insight-workspace.mobile-visible {
-  display: block;
-}
-
-@media (--breakpoint-md-up) {
-  .mobile-nav-btn {
-    display: none;
-  }
-}
-
-.book-info-section {
+.insight-view__select-book-prompt {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px 16px;
+  justify-content: center;
+  padding: 40px;
   text-align: center;
-  border-bottom: 1px solid var(--insight-border-color);
 }
 
-.book-cover-wrapper {
+.insight-view__select-book-icon {
+  margin-bottom: 16px;
+  font-size: 64px;
+}
+
+.insight-view__select-book-title {
+  margin-bottom: 8px;
+  color: var(--insight-text-primary);
+}
+
+.insight-view__select-book-description {
+  margin-bottom: 24px;
+  color: var(--insight-text-secondary);
+}
+
+@media (--breakpoint-lg-down) {
+  .insight-view__mobile-nav-button {
+    display: inline-flex;
+  }
+}
+
+.insight-view__book-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  text-align: center;
+  border-bottom: 1px solid var(--insight-view-sidebar-divider);
+}
+
+.insight-view__book-cover-frame {
   width: 120px;
   height: 160px;
   margin: 0 auto 12px;
@@ -737,7 +610,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   position: relative;
 }
 
-.book-cover {
+.insight-view__book-cover {
   width: 100%;
   height: 100%;
   max-width: 120px;
@@ -746,7 +619,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   display: block;
 }
 
-.book-cover-placeholder {
+.insight-view__book-cover-placeholder {
   position: absolute;
   inset: 0;
   display: flex;
@@ -756,7 +629,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   color: var(--insight-text-muted);
 }
 
-.insight-book-title {
+.insight-view__book-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--insight-text-primary);
@@ -767,7 +640,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   line-height: 1.4;
 }
 
-.book-meta {
+.insight-view__book-meta {
   display: flex;
   justify-content: center;
   gap: 16px;
@@ -776,23 +649,14 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
   flex-wrap: wrap;
 }
 
-.meta-item {
+.insight-view__book-meta-item {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.meta-icon {
+.insight-view__book-meta-icon {
   font-size: 14px;
-}
-
-.sidebar-section {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--insight-border-color);
-}
-
-.sidebar-section:last-child {
-  border-bottom: none;
 }
 
 </style>

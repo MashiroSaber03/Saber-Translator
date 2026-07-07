@@ -35,19 +35,19 @@ function isExpanded(id: string): boolean {
     <div
       v-for="(arc, index) in plotArcs"
       :key="arcId(arc, index)"
-      class="timeline-group"
-      :class="{ expanded: isExpanded(arcId(arc, index)) }"
+      class="timeline-track__group"
+      :class="{ 'timeline-track__group--expanded': isExpanded(arcId(arc, index)) }"
     >
-      <div class="timeline-node">
+      <div class="timeline-track__node">
         <UiButton
           variant="toolbar"
           type="button"
-          class="timeline-node-dot"
+          class="timeline-track__node-dot"
           :aria-label="`切换剧情弧 ${arc.name}`"
           :aria-expanded="String(isExpanded(arcId(arc, index)))"
           @click="$emit('toggle', arcId(arc, index))"
         ></UiButton>
-        <div class="timeline-node-line"></div>
+        <div class="timeline-track__node-line"></div>
       </div>
       <TimelineArcCard
         :arc="arc"
@@ -64,19 +64,19 @@ function isExpanded(id: string): boolean {
     <div
       v-for="group in groups"
       :key="group.id"
-      class="timeline-group"
-      :class="{ expanded: isExpanded(group.id) }"
+      class="timeline-track__group"
+      :class="{ 'timeline-track__group--expanded': isExpanded(group.id) }"
     >
-      <div class="timeline-node">
+      <div class="timeline-track__node">
         <UiButton
           variant="toolbar"
           type="button"
-          class="timeline-node-dot"
+          class="timeline-track__node-dot"
           :aria-label="`切换第 ${group.page_range.start}-${group.page_range.end} 页事件`"
           :aria-expanded="String(isExpanded(group.id))"
           @click="$emit('toggle', group.id)"
         ></UiButton>
-        <div class="timeline-node-line"></div>
+        <div class="timeline-track__node-line"></div>
       </div>
       <TimelineGroupCard
         :expanded="isExpanded(group.id)"
@@ -95,14 +95,14 @@ function isExpanded(id: string): boolean {
   padding-left: 20px;
 }
 
-.timeline-group {
+.timeline-track__group {
   display: flex;
   gap: 16px;
   position: relative;
   margin-bottom: 24px;
 }
 
-.timeline-node {
+.timeline-track__node {
   display: flex;
   flex-shrink: 0;
   flex-direction: column;
@@ -110,7 +110,7 @@ function isExpanded(id: string): boolean {
   width: 20px;
 }
 
-.timeline-node-dot {
+.timeline-track__node-dot {
   width: 14px;
   height: 14px;
   padding: 0;
@@ -123,18 +123,18 @@ function isExpanded(id: string): boolean {
   z-index: var(--z-local);
 }
 
-.timeline-node-dot:hover {
+.timeline-track__node-dot:hover {
   transform: scale(1.2);
 }
 
-.timeline-node-line {
+.timeline-track__node-line {
   flex: 1;
   width: 2px;
   margin-top: 4px;
   background: linear-gradient(180deg, var(--insight-action-primary), var(--color-border-muted));
 }
 
-.timeline-group:last-child .timeline-node-line {
+.timeline-track__group:last-child .timeline-track__node-line {
   display: none;
 }
 </style>

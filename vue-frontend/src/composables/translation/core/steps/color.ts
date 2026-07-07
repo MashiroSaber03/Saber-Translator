@@ -1,11 +1,8 @@
-/**
- * 颜色提取步骤
- * 负责为每个气泡提取文字与背景颜色。
- */
 import { parallelColor, type ParallelColorResponse } from '@/api/parallelTranslate'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
+import { extractBase64Payload } from '@/utils/dataUrl'
 
 export interface ColorInput {
     imageIndex: number
@@ -32,7 +29,7 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
         return { colors: [] }
     }
 
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = extractBase64Payload(image.originalDataURL)
 
     const bubbleStateTextlines = bubbleStates && bubbleStates.length > 0
         ? getTextlinesPerBubbleFromStates(bubbleStates)
@@ -60,11 +57,4 @@ export async function executeColor(input: ColorInput): Promise<ColorOutput> {
     return {
         colors: response.colors || []
     }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }

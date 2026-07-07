@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 import ChatComposer from './ChatComposer.vue'
 import MessageList from './MessageList.vue'
 import SessionToolbar from './SessionToolbar.vue'
+import StudioPreviewWorkspacePanel from './StudioPreviewWorkspacePanel.vue'
 import type {
   CharacterStudioChatAttachment,
   CharacterStudioChatSession,
@@ -81,7 +83,7 @@ function switchSession(sessionId: string) {
 </script>
 
 <template>
-  <section class="workspace-card chat-workspace">
+  <StudioPreviewWorkspacePanel class="chat-workspace">
     <SessionToolbar
       :archived-sessions="archivedSessions"
       :can-use-greeting="displayGreetings.length > 0"
@@ -107,9 +109,20 @@ function switchSession(sessionId: string) {
       @summarize-session="$emit('summarize-session')"
     />
 
-    <div v-if="!document" class="empty-copy">选择角色文档后可开始聊天。</div>
+    <ProductEmptyState
+      v-if="!document"
+      icon-name="users"
+      role="note"
+      size="compact"
+      title="选择角色文档后可开始聊天"
+    />
     <template v-else-if="!session">
-      <div class="empty-copy">{{ chatLoading ? '聊天会话加载中...' : '当前还没有聊天会话。' }}</div>
+      <ProductEmptyState
+        icon-name="message"
+        role="note"
+        size="compact"
+        :title="chatLoading ? '聊天会话加载中...' : '当前还没有聊天会话'"
+      />
     </template>
     <template v-else>
       <MessageList
@@ -128,31 +141,12 @@ function switchSession(sessionId: string) {
         @send-chat="$emit('send-chat', $event)"
       />
     </template>
-  </section>
+  </StudioPreviewWorkspacePanel>
 </template>
 
 <style scoped>
-.workspace-card {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  width: 100%;
-  min-height: 0;
-  padding: 14px;
-  border: 1px solid var(--studio-border-default);
-  border-radius: 24px;
-  background: var(--character-studio-preview-card-background);
-  box-shadow: 0 24px 40px var(--studio-shadow-floating);
-}
-
 .chat-workspace {
   gap: 12px;
   min-height: 0;
-}
-
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-  line-height: 1.7;
 }
 </style>

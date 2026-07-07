@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import type { ChapterData } from '@/types/api'
 import ChapterRow from './ChapterRow.vue'
 
@@ -24,14 +28,23 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="chapters-section">
-    <div class="section-header">
-      <h3>章节列表</h3>
-      <UiButton size="sm" variant="primary" @click="$emit('create')">
-        <span class="button-icon">+</span> 新建章节
-      </UiButton>
-    </div>
-    <div v-if="chapters.length > 0" class="chapters-list">
+  <div class="chapter-list">
+    <ProductSectionHeader title="章节列表" icon-name="book-open">
+      <template #actions>
+        <UiButton size="sm" variant="primary" @click="$emit('create')">
+          <UiIcon name="plus" size="14" />
+          <span>新建章节</span>
+        </UiButton>
+      </template>
+    </ProductSectionHeader>
+    <ProductScrollStack
+      v-if="chapters.length > 0"
+      class="chapter-list__list"
+      aria-label="章节列表"
+      gap="sm"
+      padding="none"
+      role="region"
+    >
       <ChapterRow
         v-for="(chapter, index) in chapters"
         :key="chapter.id"
@@ -49,66 +62,32 @@ defineEmits<{
         @read="$emit('read', $event)"
         @translate="$emit('translate', $event)"
       />
-    </div>
-    <div v-else class="empty-state-small">
-      <p>暂无章节，点击上方按钮创建</p>
-    </div>
+    </ProductScrollStack>
+    <ProductStatusBanner
+      v-else
+      class="chapter-list__empty-state"
+      tone="neutral"
+      icon-name="book-open"
+      role="note"
+    >
+      暂无章节，点击上方按钮创建
+    </ProductStatusBanner>
   </div>
 </template>
 
 <style scoped>
-.chapters-section {
+.chapter-list {
   padding-top: 16px;
   border-top: 1px solid var(--color-border-muted);
 }
 
-.section-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.section-header h3 {
-  margin: 0;
-  color: var(--color-text-default);
-  font-weight: 600;
-  font-size: 1.05rem;
-}
-
-.chapters-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 280px;
+.chapter-list__list {
+  max-block-size: 280px;
   padding-right: 4px;
-  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-.chapters-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chapters-list::-webkit-scrollbar-track {
-  border-radius: 3px;
-  background: var(--color-surface-interactive-hover);
-}
-
-.chapters-list::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: var(--color-border-muted);
-}
-
-.chapters-list::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-supporting);
-}
-
-.empty-state-small {
-  padding: 40px 20px;
-  color: var(--color-text-supporting);
-  text-align: center;
+.chapter-list__empty-state {
+  align-items: center;
 }
 </style>

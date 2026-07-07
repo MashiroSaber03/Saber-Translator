@@ -1,17 +1,17 @@
 <template>
   <div
     class="bubble-overlay"
-    :class="{ 'brush-mode': isBrushMode }"
+    :class="{ 'bubble-overlay--brush-mode': isBrushMode }"
     :style="{ '--scale': scale || 1 }"
     ref="overlayRef"
     @mousedown="handleOverlayMouseDown"
   >
     <template v-for="(bubble, index) in bubbles" :key="index">
       <div
-        class="bubble-highlight-box"
+        class="bubble-overlay__highlight-box"
         :class="{
-          selected: index === selectedIndex,
-          'multi-selected': selectedIndices.length > 1 && selectedIndices.includes(index) && index !== selectedIndex
+          'bubble-overlay__highlight-box--selected': index === selectedIndex,
+          'bubble-overlay__highlight-box--multi-selected': selectedIndices.length > 1 && selectedIndices.includes(index) && index !== selectedIndex
         }"
         :style="getBubbleStyle(bubble, index)"
         :data-index="index"
@@ -20,59 +20,59 @@
         @click.stop="handleClick(index, $event)"
         @mousedown.stop="handleBubbleMouseDown(index, $event)"
       >
-        <span class="bubble-index">{{ index + 1 }}</span>
+        <span class="bubble-overlay__index">{{ index + 1 }}</span>
         <template v-if="index === selectedIndex">
           <div
-            class="resize-handle nw"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--nw"
             data-handle="nw"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('nw', index, $event)"
           ></div>
           <div
-            class="resize-handle n"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--n"
             data-handle="n"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('n', index, $event)"
           ></div>
           <div
-            class="resize-handle ne"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--ne"
             data-handle="ne"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('ne', index, $event)"
           ></div>
           <div
-            class="resize-handle e"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--e"
             data-handle="e"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('e', index, $event)"
           ></div>
           <div
-            class="resize-handle se"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--se"
             data-handle="se"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('se', index, $event)"
           ></div>
           <div
-            class="resize-handle s"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--s"
             data-handle="s"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('s', index, $event)"
           ></div>
           <div
-            class="resize-handle sw"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--sw"
             data-handle="sw"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('sw', index, $event)"
           ></div>
           <div
-            class="resize-handle w"
+            class="bubble-overlay__resize-handle bubble-overlay__resize-handle--w"
             data-handle="w"
             :data-parent-index="index"
             @mousedown.stop="handleResizeStart('w', index, $event)"
           ></div>
-          <div class="rotate-line"></div>
+          <div class="bubble-overlay__rotate-line"></div>
           <div
-            class="rotate-handle"
+            class="bubble-overlay__rotate-handle"
             title="拖拽旋转"
             :data-parent-index="index"
             @mousedown.stop="handleRotateStart(index, $event)"
@@ -82,20 +82,18 @@
     </template>
     <div
       v-if="drawingRect"
-      class="drawing-rect"
+      class="bubble-overlay__drawing-rect"
       :style="getDrawingRectStyle()"
     ></div>
   </div>
 </template>
 <script setup lang="ts">
-
 import { ref, onUnmounted } from 'vue'
-import { storeToRefs } from 'pinia'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
-import { useBubbleStore } from '@/stores/bubbleStore'
+import { calculateDraggedCoords } from '@/utils/bubbleDrag'
 import { calculateResizedCoords, type ResizeHandle } from '@/utils/bubbleResize'
 import { buildBubbleOverlayStyle, buildDrawingRectStyle } from './bubbleOverlayGeometry'
-const bubbleStore = useBubbleStore()
+import { useBubbleOverlayInteractionState } from './useBubbleOverlayInteractionState'
 const {
   isDragging,
   draggingIndex,
@@ -108,8 +106,27 @@ const {
   resizeCurrentCoords,
   isRotating,
   rotatingIndex,
-  rotateCurrentAngle
-} = storeToRefs(bubbleStore)
+  rotateCurrentAngle,
+  dragStartX,
+  dragStartY,
+  resizeHandle,
+  resizeStartX,
+  resizeStartY,
+  resizeInitialCoords,
+  rotateStartAngle,
+  rotateInitialAngle,
+  rotateCenterX,
+  rotateCenterY,
+  isDrawing,
+  drawStartX,
+  drawStartY,
+  drawingRect,
+  isMiddleButtonDown,
+  resetDragging,
+  resetResizing,
+  resetRotating,
+  resetDrawing
+} = useBubbleOverlayInteractionState()
 const props = defineProps<{
   bubbles: BubbleState[]
   selectedIndex: number
@@ -131,26 +148,7 @@ const emit = defineEmits<{
   (e: 'rotateEnd', index: number, angle: number): void
   (e: 'drawBubble', coords: BubbleCoords): void
 }>()
-// 状态定义（本地状态，拖动状态从store共享）
 const overlayRef = ref<HTMLElement | null>(null)
-// 拖拽辅助状态（本地）
-const dragStartX = ref(0)
-const dragStartY = ref(0)
-// 调整大小辅助状态（本地）
-const resizeHandle = ref<ResizeHandle | ''>('')
-const resizeStartX = ref(0)
-const resizeStartY = ref(0)
-const resizeInitialCoords = ref<BubbleCoords | null>(null)
-// 旋转辅助状态（本地）
-const rotateStartAngle = ref(0)
-const rotateInitialAngle = ref(0)
-const rotateCenterX = ref(0)
-const rotateCenterY = ref(0)
-const isDrawing = ref(false)
-const drawStartX = ref(0)
-const drawStartY = ref(0)
-const drawingRect = ref<BubbleCoords | null>(null)
-const isMiddleButtonDown = ref(false)
 function getBubbleStyle(bubble: BubbleState, index: number): Record<string, string> {
   return buildBubbleOverlayStyle({
     bubble,
@@ -176,29 +174,25 @@ function getMousePositionInImage(event: MouseEvent): { x: number; y: number } | 
   if (!overlayRef.value) return null
   const rect = overlayRef.value.getBoundingClientRect()
   const scale = props.scale || 1
-  // 计算鼠标相对于 overlay 的位置，然后转换为图片原生坐标
   const x = (event.clientX - rect.left) / scale
   const y = (event.clientY - rect.top) / scale
   return { x, y }
 }
 function handleClick(index: number, event: MouseEvent): void {
-  // 笔刷模式下禁用气泡框交互（防御性检查，CSS已设置pointer-events:none）
   if (props.isBrushMode) return
-  // Shift+点击已在 mousedown 中处理，这里跳过
   if (event.shiftKey) {
     return
   }
-  // 普通点击：单选
   emit('select', index)
 }
 function handleOverlayMouseDown(event: MouseEvent): void {
-  // 笔刷模式下禁用气泡框交互（防御性检查，CSS已设置pointer-events:none）
   if (props.isBrushMode) return
   if (event.button === 1) {
     event.preventDefault()
-    isMiddleButtonDown.value = true
-    document.body.classList.add('middle-button-drawing')
-    startDrawing(event)
+    if (startDrawing(event)) {
+      isMiddleButtonDown.value = true
+      document.body.classList.add('middle-button-drawing')
+    }
     return
   }
   if (event.button !== 0) return
@@ -207,18 +201,14 @@ function handleOverlayMouseDown(event: MouseEvent): void {
   }
 }
 function handleBubbleMouseDown(index: number, event: MouseEvent): void {
-  // 笔刷模式下禁用气泡框交互（防御性检查，CSS已设置pointer-events:none）
   if (props.isBrushMode) return
   if (event.button !== 0) return
-  // 阻止默认行为（文本选择等）
   event.preventDefault()
   event.stopPropagation()
-  // Shift+点击进行多选
   if (event.shiftKey) {
     emit('multiSelect', index)
     return
   }
-  // 如果点击的不是当前选中的气泡，先选中它
   if (index !== props.selectedIndex) {
     emit('select', index)
     return
@@ -247,38 +237,30 @@ function updateDragging(event: MouseEvent): void {
   const scale = props.scale || 1
   const deltaX = (event.clientX - dragStartX.value) / scale
   const deltaY = (event.clientY - dragStartY.value) / scale
-  // 直接更新ref值，Vue会自动触发重新渲染
   dragOffsetX.value = deltaX
   dragOffsetY.value = deltaY
 }
 function finishDragging(event: MouseEvent): void {
-  // 立即重置状态，防止重复触发
   const wasIndex = draggingIndex.value
-  isDragging.value = false
-  draggingIndex.value = -1
-  dragOffsetX.value = 0
-  dragOffsetY.value = 0
+  resetDragging()
   const scale = props.scale || 1
   const deltaX = (event.clientX - dragStartX.value) / scale
   const deltaY = (event.clientY - dragStartY.value) / scale
   const bubble = props.bubbles[wasIndex]
   if (!bubble) return
-  const [x1, y1, x2, y2] = bubble.coords
-  const width = x2 - x1
-  const height = y2 - y1
-  let newX1 = Math.round(dragInitialX.value + deltaX)
-  let newY1 = Math.round(dragInitialY.value + deltaY)
   const imgWidth = props.imageWidth || 2000
   const imgHeight = props.imageHeight || 2000
-  const safeWidth = Math.min(width, imgWidth)
-  const safeHeight = Math.min(height, imgHeight)
-  newX1 = Math.max(0, Math.min(newX1, imgWidth - safeWidth))
-  newY1 = Math.max(0, Math.min(newY1, imgHeight - safeHeight))
-  const newCoords: BubbleCoords = [newX1, newY1, newX1 + safeWidth, newY1 + safeHeight]
+  const [x1, y1, x2, y2] = bubble.coords
+  const newCoords = calculateDraggedCoords(
+    [dragInitialX.value, dragInitialY.value, dragInitialX.value + (x2 - x1), dragInitialY.value + (y2 - y1)],
+    deltaX,
+    deltaY,
+    imgWidth,
+    imgHeight
+  )
   emit('dragEnd', wasIndex, newCoords)
 }
 function handleResizeStart(handle: string, index: number, event: MouseEvent): void {
-  // 笔刷模式下禁用气泡框交互（防御性检查，CSS已设置pointer-events:none）
   if (props.isBrushMode) return
   if (event.button !== 0) return
   event.preventDefault()
@@ -316,15 +298,10 @@ function updateResizing(event: MouseEvent): void {
     }
   )
   if (!nextCoords) return
-  // 直接更新ref值，Vue会自动触发重新渲染
   resizeCurrentCoords.value = nextCoords
 }
 function resetResizingState(): void {
-  isResizing.value = false
-  resizingIndex.value = -1
-  resizeInitialCoords.value = null
-  resizeCurrentCoords.value = null
-  resizeHandle.value = ''
+  resetResizing()
 }
 function finishResizing(event: MouseEvent): void {
   if (!resizeInitialCoords.value || !resizeHandle.value) return
@@ -356,7 +333,6 @@ function finishResizing(event: MouseEvent): void {
   resetResizingState()
 }
 function handleRotateStart(index: number, event: MouseEvent): void {
-  // 笔刷模式下禁用气泡框交互（防御性检查，CSS已设置pointer-events:none）
   if (props.isBrushMode) return
   if (event.button !== 0) return
   event.preventDefault()
@@ -365,7 +341,6 @@ function handleRotateStart(index: number, event: MouseEvent): void {
   document.removeEventListener('mouseup', handleMouseUp)
   isRotating.value = true
   rotatingIndex.value = index
-  // 获取气泡框的中心点（相对于视口）
   const bubble = props.bubbles[index]
   if (!bubble || !overlayRef.value) return
   const [x1, y1, x2, y2] = bubble.coords
@@ -391,11 +366,9 @@ function updateRotating(event: MouseEvent): void {
   let newAngle = rotateInitialAngle.value + deltaAngle
   while (newAngle > 180) newAngle -= 360
   while (newAngle < -180) newAngle += 360
-  // 按住 Shift 键时吸附到 15° 的倍数
   if (event.shiftKey) {
     newAngle = Math.round(newAngle / 15) * 15
   }
-  // 直接更新ref值，Vue会自动触发重新渲染
   rotateCurrentAngle.value = newAngle
 }
 function finishRotating(_event: MouseEvent): void {
@@ -403,21 +376,21 @@ function finishRotating(_event: MouseEvent): void {
   const index = rotatingIndex.value
   const finalAngle = rotateCurrentAngle.value
   emit('rotateEnd', index, finalAngle)
-  isRotating.value = false
-  rotatingIndex.value = -1
+  resetRotating()
 }
-function startDrawing(event: MouseEvent): void {
+function startDrawing(event: MouseEvent): boolean {
   const pos = getMousePositionInImage(event)
-  if (!pos) return
+  if (!pos) return false
   const imgWidth = props.imageWidth || 2000
   const imgHeight = props.imageHeight || 2000
-  if (pos.x < 0 || pos.x > imgWidth || pos.y < 0 || pos.y > imgHeight) return
+  if (pos.x < 0 || pos.x > imgWidth || pos.y < 0 || pos.y > imgHeight) return false
   isDrawing.value = true
   drawStartX.value = pos.x
   drawStartY.value = pos.y
   drawingRect.value = [pos.x, pos.y, pos.x, pos.y]
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
+  return true
 }
 function updateDrawing(event: MouseEvent): void {
   const pos = getMousePositionInImage(event)
@@ -431,8 +404,7 @@ function finishDrawing(event: MouseEvent): void {
     document.body.classList.remove('middle-button-drawing')
   }
   if (!pos || !drawingRect.value) {
-    isDrawing.value = false
-    drawingRect.value = null
+    resetDrawing()
     return
   }
   const imgWidth = props.imageWidth || 2000
@@ -443,13 +415,11 @@ function finishDrawing(event: MouseEvent): void {
   const y2 = Math.min(imgHeight, Math.round(Math.max(drawStartY.value, pos.y)))
   const minSize = 10
   if (x2 - x1 < minSize || y2 - y1 < minSize) {
-    isDrawing.value = false
-    drawingRect.value = null
+    resetDrawing()
     return
   }
   emit('drawBubble', [x1, y1, x2, y2])
-  isDrawing.value = false
-  drawingRect.value = null
+  resetDrawing()
 }
 function handleMouseMove(event: MouseEvent): void {
   if (isDragging.value) {
@@ -463,7 +433,6 @@ function handleMouseMove(event: MouseEvent): void {
   }
 }
 function handleMouseUp(event: MouseEvent): void {
-  // 立即解绑全局事件，防止重复触发
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseup', handleMouseUp)
   if (event.button === 1 || isMiddleButtonDown.value) {
@@ -489,33 +458,28 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/*
- * 【屏幕像素适配】使用 CSS 变量 --scale 实现反向缩放
- * 这样边框、手柄等 UI 元素在屏幕上保持固定大小，不随图片缩放而变化
- * 解决高分辨率图片缩小显示时手柄过小难以操作的问题
- */
 .bubble-overlay {
-  --bubble-overlay-box-border: rgba(255, 200, 0, .8);
-  --bubble-overlay-box-background: rgba(255, 200, 0, .1);
-  --bubble-overlay-box-hover-border: #ff6b6b;
-  --bubble-overlay-box-hover-background: rgba(255, 107, 107, .2);
-  --bubble-overlay-selection-border: #0f8;
-  --bubble-overlay-selection-background: rgba(0, 255, 136, .15);
-  --bubble-overlay-selection-glow: rgba(0, 255, 136, .5);
-  --bubble-overlay-multi-selection-border: #ff1744;
-  --bubble-overlay-multi-selection-background: rgba(255, 23, 68, .25);
-  --bubble-overlay-multi-selection-glow: rgba(255, 23, 68, .6);
-  --bubble-overlay-index-background: rgba(0, 0, 0, .7);
-  --bubble-overlay-selected-index-background: rgba(0, 255, 136, .9);
-  --bubble-overlay-selected-index-text: #1a1a2e;
-  --bubble-overlay-handle-background: #0f8;
-  --bubble-overlay-handle-active-background: #00cc6a;
-  --bubble-overlay-handle-border: #fff;
-  --bubble-overlay-handle-shadow: rgba(0, 0, 0, .3);
-  --bubble-overlay-rotate-line-background: rgba(0, 255, 136, .6);
-  --bubble-overlay-rotate-handle-glow: rgba(0, 255, 136, .8);
-  --bubble-overlay-rotate-handle-hover-glow: #0f8;
-  --bubble-overlay-drawing-fill: rgba(0, 255, 136, .1);
+  --bubble-overlay-box-border: color-mix(in srgb, var(--color-status-warning-bright) 80%, transparent);
+  --bubble-overlay-box-background: color-mix(in srgb, var(--color-status-warning-bright) 10%, transparent);
+  --bubble-overlay-box-hover-border: var(--color-status-error-bright);
+  --bubble-overlay-box-hover-background: color-mix(in srgb, var(--color-status-error-bright) 20%, transparent);
+  --bubble-overlay-selection-border: var(--color-action-success-bright);
+  --bubble-overlay-selection-background: color-mix(in srgb, var(--color-action-success-bright) 15%, transparent);
+  --bubble-overlay-selection-glow: color-mix(in srgb, var(--color-action-success-bright) 50%, transparent);
+  --bubble-overlay-multi-selection-border: var(--color-status-error-vivid);
+  --bubble-overlay-multi-selection-background: color-mix(in srgb, var(--color-status-error-vivid) 25%, transparent);
+  --bubble-overlay-multi-selection-glow: color-mix(in srgb, var(--color-status-error-vivid) 60%, transparent);
+  --bubble-overlay-index-background: var(--color-overlay-backdrop-strong);
+  --bubble-overlay-selected-index-background: color-mix(in srgb, var(--color-action-success-bright) 90%, transparent);
+  --bubble-overlay-selected-index-text: var(--color-surface-inverse);
+  --bubble-overlay-handle-background: var(--color-action-success-bright);
+  --bubble-overlay-handle-active-background: var(--color-action-success-bright-active);
+  --bubble-overlay-handle-border: var(--color-text-inverse);
+  --bubble-overlay-handle-shadow: var(--color-overlay-scrim-subtle);
+  --bubble-overlay-rotate-line-background: color-mix(in srgb, var(--color-action-success-bright) 60%, transparent);
+  --bubble-overlay-rotate-handle-glow: color-mix(in srgb, var(--color-action-success-bright) 80%, transparent);
+  --bubble-overlay-rotate-handle-hover-glow: var(--color-action-success-bright);
+  --bubble-overlay-drawing-fill: color-mix(in srgb, var(--color-action-success-bright) 10%, transparent);
 
   position: absolute;
   top: 0;
@@ -524,15 +488,15 @@ onUnmounted(() => {
   height: 100%;
   pointer-events: none;
   user-select: none;
+  /* Inverse scaling keeps overlay controls usable while the image zoom changes. */
   /* GPU compositing keeps large overlays stable while panning and zooming. */
   transform: translateZ(0);
   backface-visibility: hidden;
   will-change: contents;
 }
-/* 矩形气泡高亮框 - 使用反向缩放保持边框在屏幕上的固定宽度 */
-.bubble-highlight-box {
+
+.bubble-overlay__highlight-box {
   position: absolute;
-  /* 边框宽度反向缩放：屏幕上始终显示为 2px */
   border: calc(2px / var(--scale, 1)) solid var(--bubble-overlay-box-border);
   background: var(--bubble-overlay-box-background);
   cursor: pointer;
@@ -543,13 +507,12 @@ onUnmounted(() => {
   contain: layout style;
 }
 
-.bubble-highlight-box:hover {
+.bubble-overlay__highlight-box:hover {
   border-color: var(--bubble-overlay-box-hover-border);
   background: var(--bubble-overlay-box-hover-background);
 }
 
-.bubble-highlight-box.selected {
-  /* 选中时边框稍粗：屏幕上始终显示为 3px */
+.bubble-overlay__highlight-box--selected {
   border: calc(3px / var(--scale, 1)) solid var(--bubble-overlay-selection-border);
   background: var(--bubble-overlay-selection-background);
   box-shadow: 0 0 calc(15px / var(--scale, 1)) var(--bubble-overlay-selection-glow);
@@ -557,19 +520,18 @@ onUnmounted(() => {
   cursor: grab;
 }
 
-.bubble-highlight-box.selected:active {
+.bubble-overlay__highlight-box--selected:active {
   cursor: grabbing;
 }
 
-.bubble-highlight-box.multi-selected {
+.bubble-overlay__highlight-box--multi-selected {
   border: calc(3px / var(--scale, 1)) solid var(--bubble-overlay-multi-selection-border);
   background: var(--bubble-overlay-multi-selection-background);
   box-shadow: 0 0 calc(12px / var(--scale, 1)) var(--bubble-overlay-multi-selection-glow);
 }
-/* 气泡索引标签 - 反向缩放保持屏幕上固定大小 */
-.bubble-index {
+
+.bubble-overlay__index {
   position: absolute;
-  /* 位置也需要反向缩放 */
   top: calc(-20px / var(--scale, 1));
   left: 0;
   background: var(--bubble-overlay-index-background);
@@ -578,19 +540,17 @@ onUnmounted(() => {
   padding: calc(2px / var(--scale, 1)) calc(6px / var(--scale, 1));
   border-radius: calc(3px / var(--scale, 1));
   pointer-events: none;
-  /* 使用 transform-origin 确保从左上角缩放 */
   transform-origin: left top;
 }
 
-.bubble-highlight-box.selected .bubble-index {
+.bubble-overlay__highlight-box--selected .bubble-overlay__index {
   background: var(--bubble-overlay-selected-index-background);
   color: var(--bubble-overlay-selected-index-text);
 }
-/* 调整手柄 - 反向缩放保持屏幕上 10x10px */
-.resize-handle {
+
+.bubble-overlay__resize-handle {
   display: block;
   position: absolute;
-  /* 尺寸反向缩放 */
   width: calc(10px / var(--scale, 1));
   height: calc(10px / var(--scale, 1));
   background: var(--bubble-overlay-handle-background);
@@ -601,22 +561,21 @@ onUnmounted(() => {
   box-shadow: 0 0 calc(3px / var(--scale, 1)) var(--bubble-overlay-handle-shadow);
 }
 
-.resize-handle:hover {
+.bubble-overlay__resize-handle:hover {
   background: var(--bubble-overlay-handle-active-background);
-  /* 悬停时放大效果仍然有效 */
   transform: scale(1.2);
 }
-/* 手柄位置 - 偏移量也需要反向缩放（手柄10px，偏移5px使其居中对齐边框） */
-.resize-handle.nw { top: calc(-5px / var(--scale, 1)); left: calc(-5px / var(--scale, 1)); cursor: nwse-resize; }
-.resize-handle.n { top: calc(-5px / var(--scale, 1)); left: 50%; margin-left: calc(-5px / var(--scale, 1)); cursor: ns-resize; }
-.resize-handle.ne { top: calc(-5px / var(--scale, 1)); right: calc(-5px / var(--scale, 1)); cursor: nesw-resize; }
-.resize-handle.e { top: 50%; right: calc(-5px / var(--scale, 1)); margin-top: calc(-5px / var(--scale, 1)); cursor: ew-resize; }
-.resize-handle.se { bottom: calc(-5px / var(--scale, 1)); right: calc(-5px / var(--scale, 1)); cursor: nwse-resize; }
-.resize-handle.s { bottom: calc(-5px / var(--scale, 1)); left: 50%; margin-left: calc(-5px / var(--scale, 1)); cursor: ns-resize; }
-.resize-handle.sw { bottom: calc(-5px / var(--scale, 1)); left: calc(-5px / var(--scale, 1)); cursor: nesw-resize; }
-.resize-handle.w { top: 50%; left: calc(-5px / var(--scale, 1)); margin-top: calc(-5px / var(--scale, 1)); cursor: ew-resize; }
-/* 旋转连接线 - 反向缩放 */
-.rotate-line {
+
+.bubble-overlay__resize-handle--nw { top: calc(-5px / var(--scale, 1)); left: calc(-5px / var(--scale, 1)); cursor: nwse-resize; }
+.bubble-overlay__resize-handle--n { top: calc(-5px / var(--scale, 1)); left: 50%; margin-left: calc(-5px / var(--scale, 1)); cursor: ns-resize; }
+.bubble-overlay__resize-handle--ne { top: calc(-5px / var(--scale, 1)); right: calc(-5px / var(--scale, 1)); cursor: nesw-resize; }
+.bubble-overlay__resize-handle--e { top: 50%; right: calc(-5px / var(--scale, 1)); margin-top: calc(-5px / var(--scale, 1)); cursor: ew-resize; }
+.bubble-overlay__resize-handle--se { bottom: calc(-5px / var(--scale, 1)); right: calc(-5px / var(--scale, 1)); cursor: nwse-resize; }
+.bubble-overlay__resize-handle--s { bottom: calc(-5px / var(--scale, 1)); left: 50%; margin-left: calc(-5px / var(--scale, 1)); cursor: ns-resize; }
+.bubble-overlay__resize-handle--sw { bottom: calc(-5px / var(--scale, 1)); left: calc(-5px / var(--scale, 1)); cursor: nesw-resize; }
+.bubble-overlay__resize-handle--w { top: 50%; left: calc(-5px / var(--scale, 1)); margin-top: calc(-5px / var(--scale, 1)); cursor: ew-resize; }
+
+.bubble-overlay__rotate-line {
   display: block;
   position: absolute;
   top: calc(-25px / var(--scale, 1));
@@ -627,8 +586,8 @@ onUnmounted(() => {
   background: var(--bubble-overlay-rotate-line-background);
   pointer-events: none;
 }
-/* 旋转手柄 - 反向缩放保持屏幕上 12x12px */
-.rotate-handle {
+
+.bubble-overlay__rotate-handle {
   display: block;
   position: absolute;
   top: calc(-35px / var(--scale, 1));
@@ -646,23 +605,24 @@ onUnmounted(() => {
   transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.rotate-handle:hover {
+.bubble-overlay__rotate-handle:hover {
   transform: translateX(-50%) scale(1.2);
   box-shadow: 0 0 calc(10px / var(--scale, 1)) var(--bubble-overlay-rotate-handle-hover-glow);
 }
 
-.rotate-handle:active {
+.bubble-overlay__rotate-handle:active {
   cursor: grabbing;
   background: var(--bubble-overlay-handle-active-background);
 }
+
 /* 笔刷模式下让事件穿透到下层 viewport。 */
-.bubble-overlay.brush-mode .bubble-highlight-box,
-.bubble-overlay.brush-mode .resize-handle,
-.bubble-overlay.brush-mode .rotate-handle {
+.bubble-overlay--brush-mode .bubble-overlay__highlight-box,
+.bubble-overlay--brush-mode .bubble-overlay__resize-handle,
+.bubble-overlay--brush-mode .bubble-overlay__rotate-handle {
   pointer-events: none;
 }
-/* 绘制中的矩形 - 边框也反向缩放 */
-.drawing-rect {
+
+.bubble-overlay__drawing-rect {
   position: absolute;
   border: calc(2px / var(--scale, 1)) dashed var(--bubble-overlay-selection-border);
   background: var(--bubble-overlay-drawing-fill);

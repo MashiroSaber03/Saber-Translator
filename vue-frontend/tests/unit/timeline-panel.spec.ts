@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, nextTick } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { useTimelinePanel } from '@/components/insight/timeline/useTimelinePanel'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 const { getTimelineMock, regenerateTimelineMock, getThumbnailUrlMock } = vi.hoisted(() => ({
   getTimelineMock: vi.fn(),
@@ -94,7 +99,7 @@ describe('TimelinePanel', () => {
     expect(wrapper.text()).toContain('开端')
     expect(wrapper.text()).toContain('初始概要')
 
-    await wrapper.find('.timeline-header button').trigger('click')
+    await wrapper.find('.timeline-header__regenerate-action').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('高潮')
@@ -181,5 +186,125 @@ describe('TimelinePanel', () => {
     await flushPromises()
 
     expect(wrapper.vm.timelineData).toBeNull()
+  })
+
+  it('renders loading feedback through the shared spinner primitive', async () => {
+    const pendingTimeline = deferred<Record<string, unknown>>()
+    getTimelineMock.mockReturnValueOnce(pendingTimeline.promise)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(TimelinePanel, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await nextTick()
+
+    const spinner = wrapper.getComponent(UiSpinner)
+    expect(spinner.props('label')).toBe('加载时间线')
+    expect(spinner.props('decorative')).toBe(false)
+    expect(wrapper.text()).toContain('加载时间线...')
+
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    expect(source).toContain('timeline-panel__loading-indicator')
+    expect(source).not.toContain('timeline-loading-spinner')
+  })
+
+  it('renders load errors through the product status banner', async () => {
+    getTimelineMock.mockRejectedValueOnce(new Error('时间线服务不可用'))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(TimelinePanel, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await flushPromises()
+
+    const banner = wrapper.getComponent(ProductStatusBanner)
+    expect(banner.props('tone')).toBe('danger')
+    expect(banner.props('ariaLive')).toBe('assertive')
+    expect(wrapper.text()).toContain('时间线服务不可用')
+  })
+
+  it('renders the no-data state through the product empty-state pattern', async () => {
+    getTimelineMock.mockResolvedValueOnce({
+      success: true,
+      mode: 'enhanced',
+      story_arcs: [],
+      characters: [],
+      plot_threads: [],
+      stats: { total_events: 0, total_pages: 0 },
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+
+    const wrapper = mount(TimelinePanel, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+    await flushPromises()
+
+    const emptyState = wrapper.getComponent(ProductEmptyState)
+    expect(emptyState.props('iconName')).toBe('bar-chart')
+    expect(emptyState.props('title')).toBe('时间线尚未生成')
+    expect(emptyState.props('description')).toBe('完成漫画分析后会自动生成时间线，或点击下方按钮手动生成')
+    expect(wrapper.find('.timeline-empty-state').exists()).toBe(false)
+    expect(wrapper.find('.empty-icon').exists()).toBe(false)
+
+    const generateButton = wrapper.findAll('button').find(button => button.text().includes('生成时间线'))
+    expect(generateButton).toBeTruthy()
+    await generateButton!.trigger('click')
+    expect(regenerateTimelineMock).toHaveBeenCalledWith('book-1')
+  })
+
+  it('maps timeline owner shadows through semantic tokens', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
+
+    expect(styleBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+    expect(styleBlock).toContain('--shadow-medium')
+    expect(styleBlock).toContain('--shadow-soft')
+  })
+
+  it('does not redefine the shared button primitive skin in the timeline panel owner', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+
+    expect(source).not.toContain('--ui-button-')
+  })
+
+  it('uses timeline-panel owner hooks for parent layout styling', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
+    const oldHooks = [
+      'timeline-tab',
+      'timeline-container',
+      'timeline-status-banner',
+      'loading-state',
+      'timeline-loading-indicator',
+      'timeline-empty',
+      'timeline-section',
+    ]
+
+    for (const hook of oldHooks) {
+      const escapedHook = hook.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      expect(source).not.toMatch(new RegExp(`(?<![\\w-])${escapedHook}(?![\\w-])`))
+    }
+    expect(source).toContain('class="timeline-panel"')
+    expect(source).toContain('timeline-panel__loading-indicator')
+    expect(source).toContain('timeline-panel__section-title')
+    expect(styleBlock).not.toMatch(/\.timeline-section\s+h4/)
   })
 })

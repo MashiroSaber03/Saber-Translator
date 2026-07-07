@@ -1,42 +1,58 @@
 <template>
-  <div class="pane">
-    <div class="pane-head">
-      <h3>角色文档</h3>
-      <span>{{ documents.length }}</span>
+  <div class="document-list-pane">
+    <div class="document-list-pane__head">
+      <h3 class="document-list-pane__title">角色文档</h3>
+      <span class="document-list-pane__count">{{ documents.length }}</span>
     </div>
-    <div v-if="documents.length === 0" class="empty-copy">当前书还没有角色文档。</div>
-    <div v-else class="list">
-      <UiButton
-        variant="toolbar"
+    <ProductEmptyState
+      v-if="documents.length === 0"
+      icon-name="file-text"
+      role="note"
+      size="compact"
+      title="当前书还没有角色文档"
+    />
+    <div v-else class="document-list-pane__list">
+      <ProductRecordCard
         v-for="item in documents"
         :key="item.id"
-        class="item"
-        :class="{ active: currentDocumentId === item.id, opening: openingDocumentId === item.id }"
+        as="button"
+        class="document-list-pane__item"
+        :class="{
+          'document-list-pane__item--active': currentDocumentId === item.id,
+          'document-list-pane__item--opening': openingDocumentId === item.id,
+        }"
+        :aria-current="currentDocumentId === item.id ? 'true' : undefined"
         :disabled="!!openingDocumentId"
         @click="$emit('open', item.id)"
       >
-        <div class="item-main">
-          <strong>{{ item.title }}</strong>
-          <div class="item-meta">
-            <span>{{ formatOrigin(item.origin) }}</span>
-            <span>{{ formatTime(item.updated_at) }}</span>
+        <div class="document-list-pane__item-body">
+          <div class="document-list-pane__item-main">
+            <strong class="document-list-pane__item-title">{{ item.title }}</strong>
+            <div class="document-list-pane__item-meta">
+              <span>{{ formatOrigin(item.origin) }}</span>
+              <span>{{ formatTime(item.updated_at) }}</span>
+            </div>
           </div>
+          <ProductChipList
+            v-if="documentChips(item).length > 0"
+            class="document-list-pane__item-badges"
+            :items="documentChips(item)"
+            aria-label="角色文档状态"
+          />
         </div>
-        <div class="item-badges">
-          <span v-if="openingDocumentId === item.id" class="opening-pill">打开中...</span>
-          <span v-if="item.is_favorite" class="favorite-pill">收藏</span>
-          <span v-if="item.source_character" class="source-pill">{{ item.source_character }}</span>
-        </div>
-      </UiButton>
+      </ProductRecordCard>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import UiButton from '@/components/ui/UiButton.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import type { CharacterStudioSummary } from '@/types/characterStudio'
 
-defineProps<{
+const props = defineProps<{
   documents: CharacterStudioSummary[]
   currentDocumentId: string
   openingDocumentId: string
@@ -56,87 +72,101 @@ function formatTime(value: string) {
   if (!value) return '未更新'
   return value.slice(0, 16).replace('T', ' ')
 }
+
+function documentChips(item: CharacterStudioSummary): ProductChipItem[] {
+  const chips: ProductChipItem[] = []
+
+  if (props.openingDocumentId === item.id) {
+    chips.push({ id: `${item.id}-opening`, label: '打开中...', tone: 'primary' })
+  }
+
+  if (item.is_favorite) {
+    chips.push({ id: `${item.id}-favorite`, label: '收藏', tone: 'warning' })
+  }
+
+  if (item.source_character) {
+    chips.push({ id: `${item.id}-source`, label: item.source_character, tone: 'primary' })
+  }
+
+  return chips
+}
 </script>
 
 <style scoped>
-.pane {
-  --document-list-pane-active-border: rgba(37, 99, 199, .24);
-  --document-list-pane-active-shadow: rgba(31, 70, 120, .08);
-  --document-list-pane-active-background: rgba(255, 255, 255, .95);
-  --document-list-pane-favorite-background: rgba(255, 178, 46, .16);
-  --document-list-pane-title-text: #122b47;
-  --document-list-pane-favorite-text: #9a6708;
+.document-list-pane {
+  --document-list-pane-active-border: color-mix(in srgb, var(--color-action-primary) 24%, transparent);
+  --document-list-pane-active-shadow: var(--studio-shadow-floating);
+  --document-list-pane-active-background: var(--color-surface-raised);
+  --document-list-pane-title-text: var(--studio-text-strong);
 
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.pane-head {
+.document-list-pane__head {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.pane-head h3 {
+.document-list-pane__title {
   margin: 0;
   font-size: 14px;
 }
 
-.pane-head span {
+.document-list-pane__count {
   font-size: 12px;
   color: var(--studio-text-subtle);
 }
 
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 8px 0;
-}
-
-.list {
+.document-list-pane__list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.item {
+.document-list-pane__item {
+  --product-record-card-background: var(--color-surface-raised);
+  --product-record-card-border: transparent;
+  --product-record-card-radius: 16px;
+  --product-record-card-padding: 12px;
+
+  width: 100%;
+}
+
+.document-list-pane__item-body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   width: 100%;
   text-align: left;
-  border: 1px solid transparent;
-  background: var(--color-surface-raised);
-  border-radius: 16px;
-  padding: 12px 12px;
-  cursor: pointer;
 }
 
-.item:disabled {
-  opacity: 0.74;
+.document-list-pane__item--active {
+  --product-record-card-background: var(--document-list-pane-active-background);
+  --product-record-card-border: var(--document-list-pane-active-border);
+  --product-record-card-shadow: 0 12px 24px var(--document-list-pane-active-shadow);
+}
+
+.document-list-pane__item--opening {
   cursor: wait;
 }
 
-.item.active {
-  border-color: var(--document-list-pane-active-border);
-  background: var(--document-list-pane-active-background);
-  box-shadow: 0 12px 24px var(--document-list-pane-active-shadow);
+.document-list-pane__item-main {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
-.item.opening {
-  cursor: wait;
-}
-
-.item-main strong {
+.document-list-pane__item-title {
   display: block;
   color: var(--document-list-pane-title-text);
   font-size: 13px;
 }
 
-.item-meta {
+.document-list-pane__item-meta {
   display: flex;
   gap: 8px;
   margin-top: 6px;
@@ -145,33 +175,7 @@ function formatTime(value: string) {
   flex-wrap: wrap;
 }
 
-.item-badges {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-end;
-}
-
-.opening-pill,
-.favorite-pill,
-.source-pill {
-  border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 10px;
-}
-
-.opening-pill {
-  background: var(--studio-surface-tint-strong);
-  color: var(--color-text-primary-strong);
-}
-
-.favorite-pill {
-  background: var(--document-list-pane-favorite-background);
-  color: var(--document-list-pane-favorite-text);
-}
-
-.source-pill {
-  background: var(--studio-surface-tint);
-  color: var(--color-text-primary-strong);
+.document-list-pane__item-badges {
+  justify-content: flex-end;
 }
 </style>

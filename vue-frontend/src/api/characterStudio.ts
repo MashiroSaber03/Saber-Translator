@@ -1,54 +1,69 @@
 import { apiClient } from './client'
+import { downloadBlob, readApiErrorMessage } from './download'
+import { readSseStream } from './sse'
 import type {
+  CharacterStudioDocument,
   CharacterStudioChatStateResponse,
   CharacterStudioDocumentResponse,
   CharacterStudioIndexResponse,
   ExportDiagnostic,
 } from '@/types/characterStudio'
 
-async function parseApiErrorMessage(response: Response, fallback: string): Promise<string> {
-  const text = await response.text()
-  if (!text) return fallback
-  try {
-    const parsed = JSON.parse(text) as { error?: string; message?: string }
-    return parsed.error || parsed.message || text
-  } catch {
-    return text
+function characterStudioPathSegment(value: string): string {
+  return encodeURIComponent(value)
+}
+
+function characterStudioEndpoint(bookId: string, suffix = ''): string {
+  return `/api/manga-insight/${characterStudioPathSegment(bookId)}/character-studio${suffix}`
+}
+
+function characterStudioDocumentEndpoint(bookId: string, docId: string, suffix = ''): string {
+  return characterStudioEndpoint(bookId, `/documents/${characterStudioPathSegment(docId)}${suffix}`)
+}
+
+function characterStudioQuery(params: Record<string, string | null | undefined>): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) {
+      query.set(key, value)
+    }
   }
+  const serialized = query.toString()
+  return serialized ? `?${serialized}` : ''
 }
 
 export async function getCharacterStudioIndex(bookId: string): Promise<CharacterStudioIndexResponse> {
-  return apiClient.get<CharacterStudioIndexResponse>(`/api/manga-insight/${bookId}/character-studio/index`)
+  return apiClient.get<CharacterStudioIndexResponse>(characterStudioEndpoint(bookId, '/index'))
 }
 
 export async function getCharacterStudioCandidates(bookId: string): Promise<CharacterStudioIndexResponse> {
-  return apiClient.get<CharacterStudioIndexResponse>(`/api/manga-insight/${bookId}/character-studio/candidates`)
+  return apiClient.get<CharacterStudioIndexResponse>(characterStudioEndpoint(bookId, '/candidates'))
 }
 
 export async function createCharacterStudioDocument(
   bookId: string,
   payload?: { candidate_name?: string; title?: string }
 ): Promise<CharacterStudioDocumentResponse> {
-  return apiClient.post<CharacterStudioDocumentResponse>(`/api/manga-insight/${bookId}/character-studio/documents`, payload || {})
+  return apiClient.post<CharacterStudioDocumentResponse>(characterStudioEndpoint(bookId, '/documents'), payload || {})
 }
 
 export async function getCharacterStudioDocument(bookId: string, docId: string): Promise<CharacterStudioDocumentResponse> {
-  return apiClient.get<CharacterStudioDocumentResponse>(`/api/manga-insight/${bookId}/character-studio/documents/${docId}`)
+  return apiClient.get<CharacterStudioDocumentResponse>(characterStudioDocumentEndpoint(bookId, docId))
 }
 
 export async function saveCharacterStudioDocument(
   bookId: string,
   docId: string,
-  payload: Record<string, unknown>
+  payload: CharacterStudioDocument
 ): Promise<CharacterStudioDocumentResponse> {
   return apiClient.put<CharacterStudioDocumentResponse>(
-    `/api/manga-insight/${bookId}/character-studio/documents/${docId}`,
+    characterStudioDocumentEndpoint(bookId, docId),
     payload
   )
 }
 
 export async function deleteCharacterStudioDocument(bookId: string, docId: string): Promise<{ success: boolean; error?: string; message?: string }> {
-  return apiClient.delete(`/api/manga-insight/${bookId}/character-studio/documents/${docId}`)
+  return apiClient.delete(characterStudioDocumentEndpoint(bookId, docId))
 }
 
 export async function generateCharacterStudioSection(
@@ -57,13 +72,13 @@ export async function generateCharacterStudioSection(
   section: string
 ): Promise<CharacterStudioDocumentResponse> {
   return apiClient.post<CharacterStudioDocumentResponse>(
-    `/api/manga-insight/${bookId}/character-studio/documents/${docId}/generate/${section}`,
+    characterStudioDocumentEndpoint(bookId, docId, `/generate/${characterStudioPathSegment(section)}`),
     {}
   )
 }
 
 export async function validateCharacterStudioDocument(bookId: string, docId: string): Promise<ExportDiagnostic & { success: boolean; message?: string; error?: string }> {
-  return apiClient.post(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/validate`, {})
+  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/validate'), {})
 }
 
 export async function runCharacterStudioAgent(
@@ -71,14 +86,14 @@ export async function runCharacterStudioAgent(
   docId: string,
   message: string
 ): Promise<{ success: boolean; content?: string; context?: string; error?: string; message?: string }> {
-  return apiClient.post(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/agent`, { message })
+  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/agent'), { message })
 }
 
 export async function getCharacterStudioChatState(
   bookId: string,
   docId: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.get(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat`)
+  return apiClient.get(characterStudioDocumentEndpoint(bookId, docId, '/chat'))
 }
 
 export async function createCharacterStudioChatSession(
@@ -86,7 +101,7 @@ export async function createCharacterStudioChatSession(
   docId: string,
   greetingId?: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.post(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/sessions`, {
+  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/chat/sessions'), {
     greeting_id: greetingId || null,
   })
 }
@@ -96,7 +111,10 @@ export async function switchCharacterStudioChatSession(
   docId: string,
   sessionId: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.post(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/sessions/${encodeURIComponent(sessionId)}/activate`, {})
+  return apiClient.post(
+    characterStudioDocumentEndpoint(bookId, docId, `/chat/sessions/${characterStudioPathSegment(sessionId)}/activate`),
+    {}
+  )
 }
 
 export async function editCharacterStudioChatMessage(
@@ -106,7 +124,11 @@ export async function editCharacterStudioChatMessage(
   messageId: string,
   content: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
-  return apiClient.put(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/messages/${encodeURIComponent(messageId)}`, {
+  return apiClient.put(characterStudioDocumentEndpoint(
+    bookId,
+    docId,
+    `/chat/messages/${characterStudioPathSegment(messageId)}`
+  ), {
     session_id: sessionId,
     content,
   })
@@ -118,7 +140,13 @@ export async function deleteCharacterStudioChatMessage(
   sessionId: string,
   messageId: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
-  return apiClient.delete(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/messages/${encodeURIComponent(messageId)}?session_id=${encodeURIComponent(sessionId)}`)
+  return apiClient.delete(
+    characterStudioDocumentEndpoint(
+      bookId,
+      docId,
+      `/chat/messages/${characterStudioPathSegment(messageId)}${characterStudioQuery({ session_id: sessionId })}`
+    )
+  )
 }
 
 export async function summarizeCharacterStudioChatSession(
@@ -127,7 +155,7 @@ export async function summarizeCharacterStudioChatSession(
   sessionId: string,
   cutoffMessageId?: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
-  return apiClient.post(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/summary`, {
+  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/chat/summary'), {
     session_id: sessionId,
     cutoff_message_id: cutoffMessageId || null,
   })
@@ -138,16 +166,11 @@ export async function exportCharacterStudioChatSession(
   docId: string,
   sessionId: string,
 ): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/export?session_id=${encodeURIComponent(sessionId)}`)
-  if (!response.ok) {
-    throw new Error(await parseApiErrorMessage(response, '导出聊天记录失败'))
-  }
-  const disposition = response.headers.get('content-disposition') || ''
-  const match = disposition.match(/filename="?([^";]+)"?/)
-  return {
-    blob: await response.blob(),
-    filename: match?.[1] || `${docId}.${sessionId}.chat.json`,
-  }
+  return downloadBlob({
+    url: characterStudioDocumentEndpoint(bookId, docId, `/chat/export${characterStudioQuery({ session_id: sessionId })}`),
+    fallbackFilename: `${docId}.${sessionId}.chat.json`,
+    fallbackErrorMessage: '导出聊天记录失败',
+  })
 }
 
 export async function importCharacterStudioChatSession(
@@ -157,7 +180,7 @@ export async function importCharacterStudioChatSession(
 ): Promise<CharacterStudioChatStateResponse> {
   const form = new FormData()
   form.append('file', file)
-  return apiClient.upload(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/import`, form)
+  return apiClient.upload(characterStudioDocumentEndpoint(bookId, docId, '/chat/import'), form)
 }
 
 export async function getCharacterStudioChatPromptPreview(
@@ -165,7 +188,9 @@ export async function getCharacterStudioChatPromptPreview(
   docId: string,
   sessionId: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.get(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/prompt-preview?session_id=${encodeURIComponent(sessionId)}`)
+  return apiClient.get(
+    characterStudioDocumentEndpoint(bookId, docId, `/chat/prompt-preview${characterStudioQuery({ session_id: sessionId })}`)
+  )
 }
 
 export type CharacterStudioChatStreamEvent =
@@ -176,46 +201,24 @@ export type CharacterStudioChatStreamEvent =
   | { type: 'error'; message: string }
   | { type: 'heartbeat'; ok: boolean }
 
-async function readSseResponse(
+async function readCharacterStudioChatStream(
   response: Response,
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
 ): Promise<void> {
-  const reader = response.body?.getReader()
-  if (!reader) {
-    throw new Error('无法读取聊天事件流')
-  }
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let eventType = ''
-  let eventData = ''
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const rawLine of lines) {
-        const line = rawLine.trimEnd()
-        if (line.startsWith('event:')) {
-          eventType = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          eventData = line.slice(5).trim()
-        } else if (line === '' && eventType && eventData) {
-          const parsed = JSON.parse(eventData) as Record<string, unknown>
-          const event = { type: eventType, ...parsed } as CharacterStudioChatStreamEvent
-          onEvent(event)
-          if (event.type === 'error') {
-            throw new Error(event.message || '聊天事件流返回错误')
-          }
-          eventType = ''
-          eventData = ''
-        }
+  await readSseStream<Record<string, unknown>>(response, {
+    missingBodyMessage: '无法读取聊天事件流',
+    parseErrorMessage: '解析聊天事件流失败',
+    onMessage(message) {
+      const event = {
+        type: message.event,
+        ...message.data,
+      } as CharacterStudioChatStreamEvent
+      onEvent(event)
+      if (event.type === 'error') {
+        throw new Error(event.message || '聊天事件流返回错误')
       }
-    }
-  } finally {
-    reader.releaseLock()
-  }
+    },
+  })
 }
 
 export async function streamCharacterStudioChatMessage(
@@ -235,16 +238,16 @@ export async function streamCharacterStudioChatMessage(
   for (const file of payload.attachments || []) {
     form.append(file.name || 'attachment', file)
   }
-  const response = await fetch(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/messages/stream`, {
+  const response = await fetch(characterStudioDocumentEndpoint(bookId, docId, '/chat/messages/stream'), {
     method: 'POST',
     body: form,
     signal: payload.signal,
     headers: { Accept: 'text/event-stream' },
   })
   if (!response.ok) {
-    throw new Error(await parseApiErrorMessage(response, '聊天消息发送失败'))
+    throw new Error(await readApiErrorMessage(response, '聊天消息发送失败'))
   }
-  await readSseResponse(response, payload.onEvent)
+  await readCharacterStudioChatStream(response, payload.onEvent)
 }
 
 export async function regenerateCharacterStudioChatMessage(
@@ -255,7 +258,11 @@ export async function regenerateCharacterStudioChatMessage(
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/messages/${encodeURIComponent(messageId)}/regenerate/stream`, {
+  const response = await fetch(characterStudioDocumentEndpoint(
+    bookId,
+    docId,
+    `/chat/messages/${characterStudioPathSegment(messageId)}/regenerate/stream`
+  ), {
     method: 'POST',
     body: JSON.stringify({ session_id: sessionId }),
     signal,
@@ -265,9 +272,9 @@ export async function regenerateCharacterStudioChatMessage(
     },
   })
   if (!response.ok) {
-    throw new Error(await parseApiErrorMessage(response, '消息重生失败'))
+    throw new Error(await readApiErrorMessage(response, '消息重生失败'))
   }
-  await readSseResponse(response, onEvent)
+  await readCharacterStudioChatStream(response, onEvent)
 }
 
 export async function importCharacterStudioFile(
@@ -276,7 +283,7 @@ export async function importCharacterStudioFile(
 ): Promise<CharacterStudioDocumentResponse> {
   const form = new FormData()
   form.append('file', file)
-  return apiClient.upload<CharacterStudioDocumentResponse>(`/api/manga-insight/${bookId}/character-studio/imports`, form)
+  return apiClient.upload<CharacterStudioDocumentResponse>(characterStudioEndpoint(bookId, '/imports'), form)
 }
 
 export async function importWorldbookIntoCharacterStudioDocument(
@@ -287,37 +294,31 @@ export async function importWorldbookIntoCharacterStudioDocument(
   const form = new FormData()
   form.append('file', file)
   return apiClient.upload<CharacterStudioDocumentResponse>(
-    `/api/manga-insight/${bookId}/character-studio/documents/${docId}/worldbook/import`,
+    characterStudioDocumentEndpoint(bookId, docId, '/worldbook/import'),
     form
   )
 }
 
 export async function downloadCharacterStudioExport(bookId: string, docId: string, format: string): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/export?format=${encodeURIComponent(format)}`)
-  if (!response.ok) {
-    throw new Error(await parseApiErrorMessage(response, '导出失败'))
-  }
-  const disposition = response.headers.get('content-disposition') || ''
-  const match = disposition.match(/filename="?([^";]+)"?/)
-  const filename = match?.[1] || `${docId}.${format}`
-  return { blob: await response.blob(), filename }
+  return downloadBlob({
+    url: characterStudioDocumentEndpoint(bookId, docId, `/export${characterStudioQuery({ format })}`),
+    fallbackFilename: `${docId}.${format}`,
+    fallbackErrorMessage: '导出失败',
+  })
 }
 
 export async function downloadCharacterStudioWorldbook(bookId: string, docId: string): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`/api/manga-insight/${bookId}/character-studio/documents/${docId}/worldbook/export`)
-  if (!response.ok) {
-    throw new Error(await parseApiErrorMessage(response, '导出世界书失败'))
-  }
-  const disposition = response.headers.get('content-disposition') || ''
-  const match = disposition.match(/filename="?([^";]+)"?/)
-  const filename = match?.[1] || `${docId}.worldbook.json`
-  return { blob: await response.blob(), filename }
+  return downloadBlob({
+    url: characterStudioDocumentEndpoint(bookId, docId, '/worldbook/export'),
+    fallbackFilename: `${docId}.worldbook.json`,
+    fallbackErrorMessage: '导出世界书失败',
+  })
 }
 
 export function getCharacterStudioAvatarUrl(bookId: string, docId: string): string {
-  return `/api/manga-insight/${bookId}/character-studio/documents/${docId}/avatar`
+  return characterStudioDocumentEndpoint(bookId, docId, '/avatar')
 }
 
 export function getCharacterStudioChatAttachmentUrl(bookId: string, docId: string, assetPath: string): string {
-  return `/api/manga-insight/${bookId}/character-studio/documents/${docId}/chat/attachment?asset_path=${encodeURIComponent(assetPath)}`
+  return characterStudioDocumentEndpoint(bookId, docId, `/chat/attachment${characterStudioQuery({ asset_path: assetPath })}`)
 }

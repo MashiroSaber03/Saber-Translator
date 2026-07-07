@@ -1,9 +1,9 @@
 <template>
   <div class="plugin-manager">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>
         <span>已安装插件</span>
-        <div class="plugin-header-actions">
+        <div class="plugin-manager__header-actions">
           <UiButton variant="secondary" :disabled="isImporting" @click="triggerImport" size="sm">
             {{ isImporting ? '导入中...' : '导入插件' }}
           </UiButton>
@@ -18,133 +18,169 @@
       <UiFileInput
         ref="pluginImportInputRef"
         accept=".zip,application/zip"
-        class="sr-only"
-        @change="handleImportFileChange"
+        class="plugin-manager__import-input"
+        @files-change="handleImportFiles"
       />
-      <div v-if="isLoading" class="loading-hint">加载中...</div>
-      <div v-else-if="plugins.length === 0" class="empty-hint">暂无已安装的插件</div>
-      <div v-else class="plugin-list">
-        <div v-for="plugin in plugins" :key="plugin.id" class="plugin-item">
-          <div class="plugin-info">
-            <div class="plugin-header">
-              <span class="plugin-name">{{ plugin.display_name }}</span>
-              <span class="plugin-version">v{{ plugin.version || '1.0.0' }}</span>
+      <ProductStatusBanner
+        v-if="isLoading"
+        class="plugin-manager__status"
+        tone="info"
+        role="status"
+        icon-name="loading"
+        title="正在加载插件"
+      >
+        正在读取已安装插件列表...
+      </ProductStatusBanner>
+      <ProductStatusBanner
+        v-else-if="plugins.length === 0"
+        class="plugin-manager__status"
+        tone="neutral"
+        role="note"
+        icon-name="settings"
+        title="暂无已安装的插件"
+      >
+        导入插件或使用自动生成插件开始。
+      </ProductStatusBanner>
+      <div v-else class="plugin-manager__list">
+        <ProductRecordCard v-for="plugin in plugins" :key="plugin.id" class="plugin-manager__plugin-card">
+          <template #meta>
+            <div class="plugin-manager__plugin-header">
+              <span class="plugin-manager__plugin-name">{{ plugin.display_name }}</span>
+              <span class="plugin-manager__plugin-version">v{{ plugin.version || '1.0.0' }}</span>
             </div>
-            <p class="plugin-description">{{ plugin.description || '暂无描述' }}</p>
-            <p class="plugin-meta">步骤: {{ (plugin.supported_steps || []).join(', ') || '无' }}</p>
-            <p class="plugin-meta">模式: {{ (plugin.supported_modes || []).join(', ') || '无' }}</p>
-          </div>
-          <div class="plugin-controls">
-            <UiButton
-              variant="toolbar"
-              class="switch"
-              :aria-label="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
-              :aria-pressed="plugin.enabled"
-              @click="togglePlugin(plugin)"
-            >
-              <span class="slider"></span>
-            </UiButton>
-            <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
-            <UiButton variant="secondary" @click="openPluginConfig(plugin)" v-if="plugin.has_config" title="配置" size="sm">⚙️</UiButton>
-            <UiButton variant="danger" @click="deletePlugin(plugin)" title="删除" size="sm">🗑️</UiButton>
-          </div>
-        </div>
-      </div>
-    </UiPanel>
+          </template>
 
-    <UiPanel variant="settings">
+          <template #actions>
+            <div class="plugin-manager__plugin-controls">
+              <UiSwitch
+                :model-value="plugin.enabled"
+                :aria-label="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
+                @change="setPluginEnabled(plugin, $event)"
+              />
+              <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
+              <UiIconButton
+                v-if="plugin.has_config"
+                variant="soft"
+                size="sm"
+                :label="`配置插件 ${plugin.display_name}`"
+                @click="openPluginConfig(plugin)"
+              >
+                <UiIcon name="settings" />
+              </UiIconButton>
+              <UiIconButton
+                variant="danger"
+                size="sm"
+                :label="`删除插件 ${plugin.display_name}`"
+                @click="deletePlugin(plugin)"
+              >
+                <UiIcon name="trash" />
+              </UiIconButton>
+            </div>
+          </template>
+
+          <p class="plugin-manager__plugin-description">{{ plugin.description || '暂无描述' }}</p>
+          <p class="plugin-manager__plugin-meta">步骤: {{ (plugin.supported_steps || []).join(', ') || '无' }}</p>
+          <p class="plugin-manager__plugin-meta">模式: {{ (plugin.supported_modes || []).join(', ') || '无' }}</p>
+        </ProductRecordCard>
+      </div>
+    </ProductFormSection>
+
+    <ProductFormSection>
       <template #title>默认启用状态</template>
-      <p class="settings-hint">设置插件在新会话中的默认启用状态</p>
-      <div v-for="plugin in plugins" :key="'default-' + plugin.id" class="default-state-item">
-        <span class="plugin-name">{{ plugin.display_name }}</span>
-        <UiButton
-          variant="toolbar"
-          class="switch"
+      <p class="plugin-manager__settings-hint">设置插件在新会话中的默认启用状态</p>
+      <div v-for="plugin in plugins" :key="'default-' + plugin.id" class="plugin-manager__default-state-item">
+        <span class="plugin-manager__plugin-name">{{ plugin.display_name }}</span>
+        <UiSwitch
+          :model-value="Boolean(defaultStates[plugin.id])"
           :aria-label="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
-          :aria-pressed="Boolean(defaultStates[plugin.id])"
-          @click="updateDefaultState(plugin.id, !defaultStates[plugin.id])"
-        >
-          <span class="slider"></span>
-        </UiButton>
+          @change="updateDefaultState(plugin.id, $event)"
+        />
       </div>
-    </UiPanel>
+    </ProductFormSection>
 
-    <OverlayLayer
-      v-if="showConfigModal"
-      class="plugin-config-modal"
-      level="popover"
-      @backdrop="closeConfigModal"
+    <BaseModal
+      :model-value="showConfigModal"
+      :title="`${configPlugin?.display_name || '插件'} 配置`"
+      custom-class="plugin-config-modal"
+      frame-variant="outlined"
+      divider-variant="soft"
+      footer-tone="muted"
+      width="90%"
+      max-width="620px"
+      max-height="80vh"
+      body-padding="none"
+      scroll-mode="contained"
+      body-display="flex"
+      body-direction="column"
+      body-min-height="0"
+      footer-padding="18px 24px 22px"
+      @update:model-value="value => { if (!value) closeConfigModal() }"
+      @close="closeConfigModal"
     >
-      <div class="plugin-config-content">
-        <div class="plugin-config-header">
-          <h4>{{ configPlugin?.display_name }} 配置</h4>
-          <UiButton
-            variant="toolbar"
-            type="button"
-            class="close-btn"
-            aria-label="关闭插件配置"
-            @click="closeConfigModal"
+      <div class="plugin-manager__config-body">
+        <ProductRecordCard
+          v-for="(field, key) in configSchema"
+          :key="key"
+          class="plugin-manager__config-field-card"
+        >
+          <template #meta>
+            <span class="plugin-manager__config-field-key">{{ key }}</span>
+          </template>
+
+          <UiField
+            variant="settings"
+            :label="field.label || key"
+            :description="field.description"
+            :control-id="'config-' + key"
           >
-            &times;
-          </UiButton>
-        </div>
-        <div class="plugin-config-body">
-          <div v-for="(field, key) in configSchema" :key="key" class="config-field" :class="`field-${field.type}`">
-            <div class="config-field-head">
-              <label :for="'config-' + key" class="config-field-label">{{ field.label || key }}</label>
-              <span class="config-field-key">{{ key }}</span>
-            </div>
-            <div class="config-field-control">
-              <template v-if="field.type === 'boolean'">
-                <UiButton
+            <template v-if="field.type === 'boolean'">
+              <div class="plugin-manager__config-switch-row">
+                <UiSwitch
                   :id="'config-' + key"
-                  variant="toolbar"
-                  class="config-switch"
-                  :aria-pressed="Boolean(configValues[key])"
-                  @click="configValues[key] = !Boolean(configValues[key])"
-                >
-                  <span class="config-switch-track"></span>
-                  <span class="config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>
-                </UiButton>
-              </template>
-              <template v-else-if="field.type === 'select'">
-                <div class="config-select-wrap">
-                  <CustomSelect
-                    :model-value="String(configValues[key] ?? '')"
-                    :options="field.options || []"
-                    @change="(v: string | number) => { configValues[key] = v }"
-                  />
-                </div>
-              </template>
-              <template v-else-if="field.type === 'number'">
-                <UiInput
-                  type="number"
-                  class="config-input"
-                  :id="'config-' + key"
-                  v-model.number="configValues[key]"
-                  :min="field.min"
-                  :max="field.max"
+                  :model-value="Boolean(configValues[key])"
+                  :aria-label="`${field.label || key}：${configValues[key] ? '禁用' : '启用'}`"
+                  @change="(value) => { configValues[key] = value }"
                 />
-              </template>
-              <template v-else>
-                <UiInput
-                  type="text"
-                  class="config-input"
-                  :id="'config-' + key"
-                  v-model="configValues[key]"
-                  :placeholder="field.placeholder"
-                />
-              </template>
-            </div>
-            <p v-if="field.description" class="field-description">{{ field.description }}</p>
-          </div>
-        </div>
-        <div class="plugin-config-footer">
+                <span class="plugin-manager__config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>
+              </div>
+            </template>
+            <template v-else-if="field.type === 'select'">
+              <UiSelect
+                :id="'config-' + key"
+                :model-value="String(configValues[key] ?? '')"
+                :options="field.options || []"
+                @change="(v: string | number) => { configValues[key] = v }"
+              />
+            </template>
+            <template v-else-if="field.type === 'number'">
+              <UiNumberField
+                :input-id="'config-' + key"
+                :model-value="getNumberConfigValue(key)"
+                nullable
+                :min="field.min"
+                :max="field.max"
+                @update:model-value="value => setConfigValue(key, value)"
+              />
+            </template>
+            <template v-else>
+              <UiInput
+                type="text"
+                :id="'config-' + key"
+                v-model="configValues[key]"
+                :placeholder="field.placeholder"
+              />
+            </template>
+          </UiField>
+        </ProductRecordCard>
+      </div>
+
+      <template #footer>
+        <ProductActionRow variant="dialog" aria-label="插件配置操作">
           <UiButton variant="secondary" @click="closeConfigModal">取消</UiButton>
           <UiButton variant="primary" @click="savePluginConfig">保存</UiButton>
-        </div>
-      </div>
-    </OverlayLayer>
+        </ProductActionRow>
+      </template>
+    </BaseModal>
 
     <PluginAgentModal
       v-model="showAgentModal"
@@ -154,19 +190,29 @@
 </template>
 
 <script setup lang="ts">
-import UiPanel from '@/components/ui/UiPanel.vue'
-import OverlayLayer from '@/components/ui/OverlayLayer.vue'
+import BaseModal from '@/components/common/BaseModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import UiField from '@/components/ui/UiField.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import UiSwitch from '@/components/ui/UiSwitch.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import { ref, onMounted } from 'vue'
 import * as pluginApi from '@/api/plugin'
 import type { PluginData } from '@/types'
 import { useToast } from '@/utils/toast'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import { triggerBlobDownload } from '@/utils/browserDownload'
 import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 type Plugin = PluginData
 
@@ -187,13 +233,22 @@ const defaultStates = ref<Record<string, boolean>>({})
 const isLoading = ref(false)
 const isRefreshing = ref(false)
 const isImporting = ref(false)
-const pluginImportInputRef = ref<HTMLInputElement | null>(null)
+const pluginImportInputRef = ref<InstanceType<typeof UiFileInput> | null>(null)
 
 const showConfigModal = ref(false)
 const configPlugin = ref<Plugin | null>(null)
 const configSchema = ref<Record<string, ConfigField>>({})
 const configValues = ref<Record<string, unknown>>({})
 const showAgentModal = ref(false)
+
+function getNumberConfigValue(key: string | number): number | null {
+  const value = configValues.value[String(key)]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function setConfigValue(key: string | number, value: unknown): void {
+  configValues.value[String(key)] = value
+}
 
 async function loadPlugins() {
   isLoading.value = true
@@ -249,16 +304,18 @@ async function refreshPluginListCore(options: { showToast: boolean }) {
   }
 }
 
-async function togglePlugin(plugin: Plugin) {
+async function setPluginEnabled(plugin: Plugin, enabled: boolean) {
+  if (plugin.enabled === enabled) return
+
   try {
-    if (plugin.enabled) {
-      await pluginApi.disablePlugin(plugin.id)
-      plugin.enabled = false
-      toast.success(`已禁用 ${plugin.display_name}`)
-    } else {
+    if (enabled) {
       await pluginApi.enablePlugin(plugin.id)
       plugin.enabled = true
       toast.success(`已启用 ${plugin.display_name}`)
+    } else {
+      await pluginApi.disablePlugin(plugin.id)
+      plugin.enabled = false
+      toast.success(`已禁用 ${plugin.display_name}`)
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '操作失败'
@@ -314,9 +371,14 @@ async function savePluginConfig() {
 }
 
 async function deletePlugin(plugin: Plugin) {
-  if (!confirm(`确定要删除插件 "${plugin.display_name}" 吗？`)) {
-    return
-  }
+  const confirmed = await confirmProductAction({
+    title: '删除插件',
+    message: `确定要删除插件 "${plugin.display_name}" 吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
   try {
     await pluginApi.deletePlugin(plugin.id)
     toast.success('插件删除成功')
@@ -332,24 +394,10 @@ function triggerImport() {
   pluginImportInputRef.value?.click()
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  try {
-    anchor.href = url
-    anchor.download = filename
-    document.body.appendChild(anchor)
-    anchor.click()
-  } finally {
-    anchor.remove()
-    URL.revokeObjectURL(url)
-  }
-}
-
 async function downloadPlugin(plugin: Plugin) {
   try {
     const result = await pluginApi.exportPlugin(plugin.id)
-    downloadBlob(result.blob, result.filename)
+    triggerBlobDownload(result.blob, result.filename)
     toast.success(`已导出 ${plugin.display_name}`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '导出插件失败'
@@ -361,9 +409,8 @@ async function importPluginFile(file: File, replace = false) {
   return pluginApi.importPlugin(file, replace)
 }
 
-async function handleImportFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
+async function handleImportFiles(files: File[]) {
+  const file = files[0]
   if (!file) return
 
   isImporting.value = true
@@ -375,7 +422,13 @@ async function handleImportFileChange(event: Event) {
     const conflictError = error as { status?: number; details?: Record<string, unknown>; message?: string }
     if (conflictError?.status === 409) {
       const pluginId = String(conflictError.details?.plugin_id || '')
-      const confirmed = confirm(`插件 "${pluginId || file.name}" 已存在，是否替换？`)
+      const confirmed = await confirmProductAction({
+        title: '替换插件',
+        message: `插件 "${pluginId || file.name}" 已存在，是否替换？`,
+        confirmText: '替换',
+        cancelText: '取消',
+        tone: 'danger',
+      })
       if (confirmed) {
         await importPluginFile(file, true)
         await refreshPluginListCore({ showToast: false })
@@ -386,7 +439,7 @@ async function handleImportFileChange(event: Event) {
       toast.error(errorMessage)
     }
   } finally {
-    target.value = ''
+    pluginImportInputRef.value?.clear()
     isImporting.value = false
   }
 }
@@ -402,140 +455,67 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>.plugin-manager .plugin-header-actions {
+<style scoped>
+.plugin-manager__header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .plugin-manager {
-  --plugin-manager-accent-primary: rgba(255, 255, 255, .2);
-  --plugin-manager-accent-secondary: rgba(255, 255, 255, .2);
-  --plugin-manager-accent-muted: rgba(248, 250, 252, .52);
-  --plugin-manager-border-default: #d5deea;
-  --plugin-manager-border-strong: rgb(140, 158, 255);
-  --plugin-manager-border-muted: #5b73f2;
-  --plugin-manager-shadow-default: rgba(15, 23, 42, .26);
-  --plugin-manager-shadow-raised: rgba(15, 23, 42, .04);
-  --plugin-manager-shadow-floating: rgba(91, 115, 242, .14);
-  --plugin-manager-shadow-strong: rgba(15, 23, 42, .18);
-  --plugin-manager-surface-base: rgba(0, 0, 0, .5);
-  --plugin-manager-surface-raised: rgba(248, 250, 252, .96);
-  --plugin-manager-surface-muted: rgba(255, 255, 255, .98);
-  --plugin-manager-surface-subtle: rgba(15, 23, 42, .06);
-  --plugin-manager-surface-hover: #f9fafc;
-  --plugin-manager-surface-active: rgba(37, 99, 235, .08);
-  --plugin-manager-surface-selected: #cbd5e1;
-  --plugin-manager-surface-overlay: #2563eb;
-  --plugin-manager-surface-inverse: #6366f1;
-  --plugin-manager-surface-contrast: rgba(248, 250, 252, .9);
-  --plugin-manager-text-primary: #1a202c;
-  --plugin-manager-text-secondary: #2563eb;
-  --ui-button-sm-padding: 4px 8px;
-  --ui-button-sm-font-size: 12px;
-  --ui-button-danger-background: transparent;
-  --ui-button-danger-border: none;
-  --ui-button-danger-shadow: none;
-  --ui-button-danger-hover-background: transparent;
-  --ui-button-danger-hover-shadow: none;
+  --plugin-manager-config-body-background-start: var(--color-overlay-inverse-muted);
+  --plugin-manager-config-body-background-end: var(--color-overlay-inverse-muted);
+  --plugin-manager-config-key-background: color-mix(in srgb, var(--color-action-brand) 8%, transparent);
+  --plugin-manager-config-key-text: var(--color-text-brand);
 }
 
-.plugin-manager .plugin-list {
-  border: 1px solid var(--color-border-muted);
-  border-radius: 4px;
-}
-
-.plugin-manager .plugin-item {
+.plugin-manager__list {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 15px;
-  border-bottom: 1px solid var(--color-border-muted);
+  flex-direction: column;
+  gap: 10px;
 }
 
-.plugin-manager .plugin-item:last-child {
-  border-bottom: none;
+.plugin-manager__plugin-card {
+  --product-record-card-background: var(--color-surface-base);
+  --product-record-card-border: var(--color-border-muted);
+  --product-record-card-padding: 14px 15px;
 }
 
-.plugin-manager .plugin-info {
-  flex: 1;
-}
-
-.plugin-manager .plugin-header {
+.plugin-manager__plugin-header {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 4px;
 }
 
-.plugin-manager .plugin-name {
+.plugin-manager__plugin-name {
   font-weight: 500;
 }
 
-.plugin-manager .plugin-version {
+.plugin-manager__plugin-version {
   font-size: 12px;
   color: var(--color-text-supporting);
 }
 
-.plugin-manager .plugin-description {
+.plugin-manager__plugin-description {
   font-size: 13px;
   color: var(--color-text-supporting);
   margin: 0;
 }
 
-.plugin-manager .plugin-meta {
+.plugin-manager__plugin-meta {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--color-text-supporting);
 }
 
-.plugin-manager .plugin-controls {
+.plugin-manager__plugin-controls {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.plugin-manager .switch {
-  position: relative;
-  display: inline-flex;
-  width: 40px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 22px;
-  background: transparent;
-}
-
-.plugin-manager .slider {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background-color: var(--color-surface-muted);
-  transition: 0.3s;
-  border-radius: 22px;
-}
-
-.plugin-manager .slider::before {
-  position: absolute;
-  content: '';
-  height: 16px;
-  width: 16px;
-  left: 3px;
-  bottom: 3px;
-  background-color: var(--color-text-inverse);
-  transition: 0.3s;
-  border-radius: 50%;
-}
-
-.plugin-manager .switch[aria-pressed='true'] .slider {
-  background-color: var(--color-action-primary);
-}
-
-.plugin-manager .switch[aria-pressed='true'] .slider::before {
-  transform: translateX(18px);
-}
-
-.plugin-manager .default-state-item {
+.plugin-manager__default-state-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -543,224 +523,65 @@ onMounted(() => {
   border-bottom: 1px solid var(--color-border-muted);
 }
 
-.plugin-manager .default-state-item:last-child {
+.plugin-manager__default-state-item:last-child {
   border-bottom: none;
 }
 
-.plugin-manager .plugin-config-modal {
-  background: var(--plugin-manager-surface-base);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.plugin-manager .plugin-config-content {
-  background: var(--color-surface-card, var(--color-surface-base));
-  border: 1px solid var(--color-border-muted, var(--color-border-muted));
-  border-radius: 16px;
-  box-shadow: 0 24px 60px var(--plugin-manager-shadow-default);
-  width: 90%;
-  max-width: 620px;
-  max-height: 80vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.plugin-manager .plugin-config-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  background: linear-gradient(180deg, var(--plugin-manager-surface-raised) 0%, var(--plugin-manager-surface-muted) 100%);
-  border-bottom: 1px solid var(--color-border-muted);
-}
-
-.plugin-manager .plugin-config-header h4 {
-  margin: 0;
-  font-size: 1.18rem;
-  font-weight: 700;
-  color: var(--color-text-strong, var(--plugin-manager-text-primary));
-}
-
-.plugin-manager .close-btn {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--color-text-supporting);
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.plugin-manager .close-btn:hover {
-  background: var(--plugin-manager-surface-subtle);
-  color: var(--color-text-strong, var(--plugin-manager-text-primary));
-}
-
-.plugin-manager .plugin-config-body {
+.plugin-manager__config-body {
   background:
-    linear-gradient(180deg, var(--plugin-manager-accent-primary) 0%, var(--plugin-manager-accent-secondary) 100%),
-    var(--color-surface-card, var(--plugin-manager-accent-muted));
+    linear-gradient(180deg, var(--plugin-manager-config-body-background-start) 0%, var(--plugin-manager-config-body-background-end) 100%),
+    var(--color-surface-card);
   padding: 20px 24px 24px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.plugin-manager .config-field {
-  padding: 16px 18px;
-  border: 1px solid var(--color-border-muted, var(--color-border-muted));
-  border-radius: 14px;
-  background: var(--color-surface-input, var(--plugin-manager-surface-hover));
-  box-shadow: 0 8px 24px var(--plugin-manager-shadow-raised);
+.plugin-manager__config-field-card {
+  --product-record-card-background: var(--color-surface-input);
+  --product-record-card-border: var(--color-border-muted);
+  --product-record-card-radius: 14px;
+  --product-record-card-padding: 16px 18px;
+  --product-record-card-shadow: 0 8px 24px var(--shadow-soft);
+  --product-record-card-gap: 10px;
 }
 
-.plugin-manager .config-field-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.plugin-manager .config-field-label {
-  display: block;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text-strong, var(--plugin-manager-text-primary));
-}
-
-.plugin-manager .config-field-key {
+.plugin-manager__config-field-key {
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
-  background: var(--plugin-manager-surface-active);
-  color: var(--plugin-manager-text-secondary);
+  background: var(--plugin-manager-config-key-background);
+  color: var(--plugin-manager-config-key-text);
   font-size: 12px;
   font-family: var(--font-mono, 'Consolas', monospace);
 }
 
-.plugin-manager .config-field-control {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-}
-
-.plugin-manager .config-input {
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-input, var(--plugin-manager-border-default));
-  border-radius: 10px;
-  background: var(--color-surface-card, var(--color-surface-base));
-  color: var(--color-text-strong, var(--plugin-manager-text-primary));
-  font-size: 14px;
-  line-height: 1.4;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
-}
-
-.plugin-manager .config-input:hover {
-  border-color: var(--plugin-manager-border-strong);
-}
-
-.plugin-manager .config-input:focus {
-  outline: none;
-  border-color: var(--plugin-manager-border-muted);
-  box-shadow: 0 0 0 3px var(--plugin-manager-shadow-floating);
-  background: var(--color-surface-base);
-}
-
-.plugin-manager .config-select-wrap {
-  width: 100%;
-}
-
-.plugin-manager .config-switch {
+.plugin-manager__config-switch-row {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  user-select: none;
 }
 
-.plugin-manager .config-switch-track {
-  position: relative;
-  width: 46px;
-  height: 26px;
-  border-radius: 999px;
-  background: var(--plugin-manager-surface-selected);
-  transition: background-color var(--transition-fast);
-}
-
-.plugin-manager .config-switch-track::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--color-surface-base);
-  box-shadow: 0 2px 6px var(--plugin-manager-shadow-strong);
-  transition: transform var(--transition-fast);
-}
-
-.plugin-manager .config-switch[aria-pressed='true'] .config-switch-track {
-  background: linear-gradient(135deg, var(--plugin-manager-surface-overlay) 0%, var(--plugin-manager-surface-inverse) 100%);
-}
-
-.plugin-manager .config-switch[aria-pressed='true'] .config-switch-track::after {
-  transform: translateX(20px);
-}
-
-.plugin-manager .config-switch-text {
+.plugin-manager__config-switch-text {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-strong, var(--plugin-manager-text-primary));
+  color: var(--color-text-strong);
 }
 
-.plugin-manager .field-description {
-  margin: 12px 0 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--color-text-supporting);
+.plugin-manager__status {
+  margin-top: 12px;
 }
 
-.plugin-manager .plugin-config-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 18px 24px 22px;
-  background: linear-gradient(0deg, var(--plugin-manager-surface-contrast) 0%, var(--plugin-manager-surface-muted) 100%);
-  border-top: 1px solid var(--color-border-muted);
-}
-
-.plugin-manager .loading-hint,
-.plugin-manager .empty-hint {
-  padding: 20px;
-  text-align: center;
-  color: var(--color-text-supporting);
-}
-
-.plugin-manager .settings-hint {
+.plugin-manager__settings-hint {
   font-size: 13px;
   color: var(--color-text-supporting);
   margin-bottom: 10px;
 }
 
-.plugin-manager .sr-only {
+.plugin-manager__import-input {
   position: absolute;
   width: 1px;
   height: 1px;

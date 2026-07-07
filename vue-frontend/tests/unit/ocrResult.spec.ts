@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createBubbleState, createBubbleStatesFromResponse } from '@/utils/bubbleFactory'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { executeOcr } from '@/composables/translation/core/steps/ocr'
 import { useSettingsStore } from '@/stores/settings'
+import type { BubbleApiResponse } from '@/types/bubble'
+import type { ImageData } from '@/types/image'
 
 const { parallelOcrMock } = vi.hoisted(() => ({
   parallelOcrMock: vi.fn(async () => ({
@@ -23,37 +28,41 @@ const { parallelOcrMock } = vi.hoisted(() => ({
   }))
 }))
 
+const ocrSettingsSnapshot = createDefaultSettings()
+ocrSettingsSnapshot.ocrEngine = 'manga_ocr'
+ocrSettingsSnapshot.sourceLanguage = 'japanese'
+ocrSettingsSnapshot.paddleOcrVl.sourceLanguage = 'japanese'
+ocrSettingsSnapshot.aiVisionOcr = {
+  ...ocrSettingsSnapshot.aiVisionOcr,
+  provider: 'custom',
+  apiKey: 'vision-key',
+  modelName: 'vision-model',
+  prompt: 'ocr prompt',
+  customBaseUrl: 'https://vision.example.com/v1',
+  openaiOptions: {
+    ...ocrSettingsSnapshot.aiVisionOcr.openaiOptions,
+    request: {
+      ...ocrSettingsSnapshot.aiVisionOcr.openaiOptions.request,
+      forceJsonOutput: true
+    },
+    execution: {
+      ...ocrSettingsSnapshot.aiVisionOcr.openaiOptions.execution,
+      useStream: false,
+      rpmLimit: 0,
+      transportRetries: 1,
+      businessRetries: 0
+    }
+  }
+}
+ocrSettingsSnapshot.hybridOcr = {
+  enabled: true,
+  secondaryEngine: '48px_ocr',
+  confidenceThreshold: 0.2
+}
+
 vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
-    settings: {
-      ocrEngine: 'manga_ocr',
-      sourceLanguage: 'japanese',
-      baiduOcr: {},
-      paddleOcrVl: { sourceLanguage: 'japanese' },
-      aiVisionOcr: {
-        provider: 'custom',
-        apiKey: 'vision-key',
-        modelName: 'vision-model',
-        prompt: 'ocr prompt',
-        customBaseUrl: 'https://vision.example.com/v1',
-        openaiOptions: {
-          request: {
-            forceJsonOutput: true
-          },
-          execution: {
-            useStream: false,
-            rpmLimit: 0,
-            transportRetries: 1,
-            businessRetries: 0
-          }
-        }
-      },
-      hybridOcr: {
-        enabled: true,
-        secondaryEngine: '48px_ocr',
-        confidenceThreshold: 0.2
-      }
-    }
+    settings: ocrSettingsSnapshot
   })
 }))
 
@@ -61,10 +70,46 @@ vi.mock('@/api/parallelTranslate', () => ({
   parallelOcr: parallelOcrMock
 }))
 
+function createTestImage(overrides: Partial<ImageData> = {}): ImageData {
+  return {
+    id: 'image-1',
+    fileName: 'page.png',
+    width: 0,
+    height: 0,
+    originalDataURL: 'data:image/png;base64,abc',
+    translatedDataURL: null,
+    cleanImageData: null,
+    bubbleStates: null,
+    translationStatus: 'pending',
+    translationFailed: false,
+    fontSize: 16,
+    autoFontSize: false,
+    fontFamily: 'fonts/STSONG.TTF',
+    layoutDirection: 'auto',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    inpaintMethod: 'solid',
+    strokeEnabled: false,
+    strokeColor: '#000000',
+    strokeWidth: 1,
+    lineSpacing: 1,
+    textAlign: 'start',
+    useAutoTextColor: false,
+    hasUnsavedChanges: false,
+    ...overrides,
+  }
+}
+
 describe('OCR result integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     parallelOcrMock.mockClear()
+  })
+
+  it('keeps OCR integration fixtures typed to current image and bubble contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/ocrResult.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('createBubbleState should initialize ocrResult as null', () => {
@@ -74,7 +119,7 @@ describe('OCR result integration', () => {
   })
 
   it('createBubbleStatesFromResponse should hydrate ocrResult and keep originalText in sync', () => {
-    const states = createBubbleStatesFromResponse({
+    const response: BubbleApiResponse = {
       bubble_coords: [[0, 0, 100, 100]],
       ocr_results: [
         {
@@ -95,7 +140,8 @@ describe('OCR result integration', () => {
           }
         ]
       ]
-    } as any)
+    }
+    const states = createBubbleStatesFromResponse(response)
 
     expect(states).toHaveLength(1)
     expect(states[0]?.originalText).toBe('テスト')
@@ -111,13 +157,13 @@ describe('OCR result integration', () => {
   })
 
   it('createBubbleStatesFromResponse should use response textlines when bubble state textlines are empty', () => {
-    const states = createBubbleStatesFromResponse({
+    const response: BubbleApiResponse = {
       bubble_coords: [[0, 0, 100, 100]],
       bubble_states: [
-        {
+        createBubbleState({
           coords: [0, 0, 100, 100],
           textlines: []
-        }
+        })
       ],
       textlines_per_bubble: [
         [
@@ -128,7 +174,8 @@ describe('OCR result integration', () => {
           }
         ]
       ]
-    } as any)
+    }
+    const states = createBubbleStatesFromResponse(response)
 
     expect(states[0]?.textlines).toEqual([
       {
@@ -143,32 +190,13 @@ describe('OCR result integration', () => {
     const settingsStore = useSettingsStore()
     const result = await executeOcr({
       imageIndex: 0,
-      image: {
+      image: createTestImage({
         id: 'img-1',
         fileName: 'test.png',
-        originalDataURL: 'data:image/png;base64,abc',
-        translatedDataURL: null,
-        cleanImageData: null,
-        bubbleStates: null,
-        translationStatus: 'pending',
-        translationFailed: false,
-        fontSize: 16,
-        autoFontSize: false,
-        fontFamily: 'fonts/STSONG.TTF',
-        layoutDirection: 'auto',
-        textColor: '#000000',
-        fillColor: '#ffffff',
-        inpaintMethod: 'solid',
-        strokeEnabled: false,
-        strokeColor: '#000000',
-        strokeWidth: 1,
-        lineSpacing: 1,
-        textAlign: 'start',
-        hasUnsavedChanges: false
-      } as any,
+      }),
       bubbleCoords: [[0, 0, 10, 10]],
       textlinesPerBubble: [],
-      settingsSnapshot: settingsStore.settings as any,
+      settingsSnapshot: settingsStore.settings,
     })
 
     expect(result.originalTexts).toEqual(['こんにちは'])
@@ -191,15 +219,9 @@ describe('OCR result integration', () => {
   it('imageStore should preserve image-level OCR results when loading images', () => {
     const store = useImageStore()
     store.setImages([
-      {
+      createTestImage({
         id: 'img-ocr',
         fileName: 'ocr.png',
-        width: 0,
-        height: 0,
-        originalDataURL: 'data:image/png;base64,abc',
-        translatedDataURL: null,
-        cleanImageData: null,
-        bubbleStates: null,
         ocrResults: [
           {
             text: '保存测试',
@@ -210,10 +232,7 @@ describe('OCR result integration', () => {
             fallbackUsed: false
           }
         ],
-        translationStatus: 'pending',
-        translationFailed: false,
-        hasUnsavedChanges: false
-      } as any
+      })
     ])
 
     expect(store.currentImage?.ocrResults?.[0]?.text).toBe('保存测试')
@@ -225,17 +244,10 @@ describe('OCR result integration', () => {
     const bubbleStore = useBubbleStore()
 
     imageStore.setImages([
-      {
+      createTestImage({
         id: 'img-sync',
         fileName: 'sync.png',
-        originalDataURL: 'data:image/png;base64,abc',
-        translatedDataURL: null,
-        cleanImageData: null,
-        bubbleStates: null,
-        translationStatus: 'pending',
-        translationFailed: false,
-        hasUnsavedChanges: false
-      } as any
+      })
     ])
     imageStore.setCurrentImageIndex(0)
 

@@ -1,8 +1,3 @@
-/**
- * 高质量翻译设置模块
- * 对应设置模态窗的 "高质量翻译" Tab
- */
-
 import { computed, type Ref } from 'vue'
 import { normalizeProviderId } from '@/config/aiProviders'
 import type {
@@ -10,156 +5,92 @@ import type {
   HqTranslationSettings,
   HqTranslationProvider
 } from '@/types/settings'
+import {
+  applyOpenAiOptionsPatch,
+  cloneOpenAiOptions,
+  omitOpenAiOptionsPatchFields,
+  type OpenAiOptionsPatch,
+} from '@/utils/openaiOptions'
 import type { ProviderConfigsCache, HqTranslationProviderConfig } from '../types'
+import {
+  applyProviderCredentials,
+  clearProviderCredentials,
+  restoreProviderCacheEntry,
+  saveProviderCacheEntry,
+  snapshotProviderCredentials,
+} from '../providerConfigCache'
 
-/**
- * 创建高质量翻译设置模块
- */
 export function useHqTranslationSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
   saveToStorage: () => void,
   saveProviderConfigsToStorage: () => void
 ) {
-  type HqTranslationUiUpdates = Partial<HqTranslationSettings> & {
-    rpmLimit?: number
-    transportRetries?: number
-    businessRetries?: number
-    forceJsonOutput?: boolean
-    useStream?: boolean
-    extraBody?: Record<string, unknown>
-  }
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 当前高质量翻译服务商 */
+  type HqTranslationUiUpdates = Partial<HqTranslationSettings> & OpenAiOptionsPatch
   const hqProvider = computed(() => settings.value.hqTranslation.provider)
 
-  // ============================================================
-  // 高质量翻译设置方法
-  // ============================================================
-
-  /**
-   * 设置高质量翻译服务商
-   * @param provider - 服务商类型
-   */
   function setHqProvider(provider: HqTranslationProvider): void {
     provider = normalizeProviderId(provider) as HqTranslationProvider
     const previousProvider = settings.value.hqTranslation.provider
     if (previousProvider === provider) return
 
-    // 保存当前服务商配置
     saveHqProviderConfig(previousProvider)
 
-    // 切换服务商
     settings.value.hqTranslation.provider = provider
 
-    // 恢复目标服务商配置（如果有）
     restoreHqProviderConfig(provider)
 
     saveToStorage()
   }
 
-  /**
-   * 更新高质量翻译设置
-   * @param updates - 要更新的设置
-   */
   function updateHqTranslation(updates: HqTranslationUiUpdates): void {
-    const {
-      rpmLimit,
-      transportRetries,
-      businessRetries,
-      forceJsonOutput,
-      useStream,
-      extraBody,
-      ...hqUpdates
-    } = updates
-
-    Object.assign(settings.value.hqTranslation, hqUpdates)
-    if (rpmLimit !== undefined) settings.value.hqTranslation.openaiOptions.execution.rpmLimit = rpmLimit
-    if (transportRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.transportRetries = transportRetries
-    if (businessRetries !== undefined) settings.value.hqTranslation.openaiOptions.execution.businessRetries = businessRetries
-    if (forceJsonOutput !== undefined) settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJsonOutput
-    if (useStream !== undefined) settings.value.hqTranslation.openaiOptions.execution.useStream = useStream
-    if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
-      settings.value.hqTranslation.openaiOptions.request.extraBody = extraBody
-    }
+    Object.assign(settings.value.hqTranslation, omitOpenAiOptionsPatchFields(updates))
+    applyOpenAiOptionsPatch(settings.value.hqTranslation.openaiOptions, updates)
     saveToStorage()
   }
 
-  /**
-   * 设置高质量翻译流式调用开关
-   * @param useStream - 是否使用流式调用
-   */
   function setHqUseStream(useStream: boolean): void {
     settings.value.hqTranslation.openaiOptions.execution.useStream = useStream
     saveToStorage()
   }
 
-  /**
-   * 设置高质量翻译强制JSON输出
-   * @param forceJsonOutput - 是否强制 JSON 输出
-   */
   function setHqForceJsonOutput(forceJsonOutput: boolean): void {
     settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJsonOutput
     saveToStorage()
   }
 
-  // ============================================================
-  // 高质量翻译服务商配置缓存方法
-  // ============================================================
-
-  /**
-   * 保存高质量翻译服务商配置到缓存
-   * @param provider - 服务商名称
-   */
   function saveHqProviderConfig(provider: string): void {
-    if (!provider) return
-    provider = normalizeProviderId(provider)
-
-    const config: HqTranslationProviderConfig = {
-      apiKey: settings.value.hqTranslation.apiKey,
-      modelName: settings.value.hqTranslation.modelName,
-      customBaseUrl: settings.value.hqTranslation.customBaseUrl,
-      batchSize: settings.value.hqTranslation.batchSize,
-      openaiOptions: JSON.parse(JSON.stringify(settings.value.hqTranslation.openaiOptions)),
-      prompt: settings.value.hqTranslation.prompt
-    }
-
-    providerConfigs.value.hqTranslation[provider] = config
-    saveProviderConfigsToStorage()
+    saveProviderCacheEntry({
+      provider,
+      cache: providerConfigs.value.hqTranslation,
+      buildConfig: (): HqTranslationProviderConfig => ({
+        ...snapshotProviderCredentials(settings.value.hqTranslation),
+        batchSize: settings.value.hqTranslation.batchSize,
+        openaiOptions: cloneOpenAiOptions(settings.value.hqTranslation.openaiOptions),
+        prompt: settings.value.hqTranslation.prompt
+      }),
+      persist: saveProviderConfigsToStorage,
+    })
   }
 
-  /**
-   * 恢复高质量翻译服务商配置从缓存
-   * @param provider - 服务商名称
-   */
   function restoreHqProviderConfig(provider: string): void {
-    if (!provider) return
-    provider = normalizeProviderId(provider)
-
-    const cached = providerConfigs.value.hqTranslation[provider]
-    if (cached) {
-      if (cached.apiKey !== undefined) settings.value.hqTranslation.apiKey = cached.apiKey
-      if (cached.modelName !== undefined) settings.value.hqTranslation.modelName = cached.modelName
-      if (cached.customBaseUrl !== undefined) settings.value.hqTranslation.customBaseUrl = cached.customBaseUrl
-      if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
-      if (cached.openaiOptions !== undefined) settings.value.hqTranslation.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
-      if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
-    } else {
-      // 无缓存时清空配置
-      settings.value.hqTranslation.apiKey = ''
-      settings.value.hqTranslation.modelName = ''
-      settings.value.hqTranslation.customBaseUrl = ''
-    }
+    restoreProviderCacheEntry({
+      provider,
+      cache: providerConfigs.value.hqTranslation,
+      applyCached: (cached) => {
+        applyProviderCredentials(settings.value.hqTranslation, cached)
+        if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
+        if (cached.openaiOptions !== undefined) settings.value.hqTranslation.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
+        if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
+      },
+      applyMissing: () => {
+        clearProviderCredentials(settings.value.hqTranslation)
+      },
+    })
   }
 
   return {
-    // 计算属性
     hqProvider,
-
-    // 方法
     setHqProvider,
     updateHqTranslation,
     setHqUseStream,

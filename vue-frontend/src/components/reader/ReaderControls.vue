@@ -1,52 +1,35 @@
 <script setup lang="ts">
-
 import UiInput from '@/components/ui/UiInput.vue'
-
 import UiButton from '@/components/ui/UiButton.vue'
+import UiColorSwatchGroup from '@/components/ui/UiColorSwatchGroup.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
-import { ref, onMounted, onUnmounted } from 'vue'
-
-export interface ReaderSettings {
-  imageWidth: number
-  imageGap: number
-  bgColor: string
-}
-
-interface StoredReaderSettings extends ReaderSettings {
-  readerSettingsSchemaVersion: 1
-}
-
-const READER_SETTINGS_KEY = 'readerSettings'
-const READER_SETTINGS_SCHEMA_VERSION = 1
-const DEFAULT_READER_SETTINGS: ReaderSettings = {
-  imageWidth: 100,
-  imageGap: 8,
-  bgColor: '#1a1a2e'
-}
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import {
+  DEFAULT_READER_SETTINGS,
+  READER_BG_COLOR_PRESETS,
+  loadReaderSettings,
+  saveReaderSettings,
+  type ReaderSettings,
+} from './readerSettings'
 
 const props = defineProps<{
-  currentPage: number
-  totalPages: number
   hasPrevChapter: boolean
   hasNextChapter: boolean
   showChapterNav: boolean
+  settingsRequestId?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'navigateChapter', direction: 'prev' | 'next'): void
-  (e: 'settingsChange', settings: ReaderSettings): void
 }>()
 
 const settings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
 const isSettingsPanelOpen = ref(false)
 const showScrollTopBtn = ref(false)
-const bgColorPresets = [
-  { color: '#1a1a2e', name: '深蓝' },
-  { color: '#ffffff', name: '白色' },
-  { color: '#f5f5dc', name: '米色' },
-  { color: '#2d2d2d', name: '深灰' }
-]
-const bgColorValues = new Set(bgColorPresets.map((preset) => preset.color))
+const bgColorPresets = READER_BG_COLOR_PRESETS
 
 function openSettings() {
   isSettingsPanelOpen.value = true
@@ -89,59 +72,22 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-function isNumberInRange(value: unknown, min: number, max: number): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
-}
-
-function isStoredReaderSettings(value: unknown): value is StoredReaderSettings {
-  if (!value || typeof value !== 'object') return false
-
-  const candidate = value as Partial<StoredReaderSettings>
-  return (
-    candidate.readerSettingsSchemaVersion === READER_SETTINGS_SCHEMA_VERSION &&
-    isNumberInRange(candidate.imageWidth, 50, 100) &&
-    isNumberInRange(candidate.imageGap, 0, 50) &&
-    typeof candidate.bgColor === 'string' &&
-    bgColorValues.has(candidate.bgColor)
-  )
-}
-
 function loadSettings() {
-  const saved = localStorage.getItem(READER_SETTINGS_KEY)
-  if (saved) {
-    try {
-      const parsed: unknown = JSON.parse(saved)
-      if (isStoredReaderSettings(parsed)) {
-        settings.value = {
-          imageWidth: parsed.imageWidth,
-          imageGap: parsed.imageGap,
-          bgColor: parsed.bgColor
-        }
-      }
-    } catch {
-      settings.value = { ...DEFAULT_READER_SETTINGS }
-    }
+  const storedSettings = loadReaderSettings()
+  if (storedSettings) {
+    settings.value = storedSettings
   }
   applySettings()
 }
 
 function saveSettings() {
-  const payload: StoredReaderSettings = {
-    readerSettingsSchemaVersion: READER_SETTINGS_SCHEMA_VERSION,
-    ...settings.value
-  }
-  try {
-    localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(payload))
-  } catch {
-    // 当前会话内设置已应用；持久化不可写时静默降级。
-  }
+  saveReaderSettings(settings.value)
 }
 
 function applySettings() {
   document.documentElement.style.setProperty('--reader-page-background', settings.value.bgColor)
   document.documentElement.style.setProperty('--reader-image-width', `${settings.value.imageWidth}%`)
   document.documentElement.style.setProperty('--reader-gap', `${settings.value.imageGap}px`)
-  emit('settingsChange', settings.value)
 }
 
 function updateImageWidth(value: number) {
@@ -166,6 +112,12 @@ function navigateChapter(direction: 'prev' | 'next') {
   emit('navigateChapter', direction)
 }
 
+watch(() => props.settingsRequestId, (requestId, previousRequestId) => {
+  if (requestId !== undefined && requestId !== previousRequestId) {
+    openSettings()
+  }
+})
+
 onMounted(() => {
   loadSettings()
 
@@ -181,63 +133,79 @@ onUnmounted(() => {
   document.documentElement.style.removeProperty('--reader-image-width')
   document.documentElement.style.removeProperty('--reader-gap')
 })
-
-defineExpose({
-  openSettings,
-  closeSettings,
-  settings
-})
 </script>
 
 <template>
   <OverlayLayer v-if="showChapterNav" class="reader-controls__chapter-nav-layer" passthrough>
-    <nav id="chapterNav" class="reader-controls__chapter-nav">
+    <nav class="reader-controls__chapter-nav" aria-label="章节导航">
       <UiButton
-        variant="toolbar"
-        id="prevChapterBtn"
+        variant="inverse"
+        size="md"
         class="reader-controls__nav-button"
         :disabled="!hasPrevChapter"
         @click="navigateChapter('prev')"
       >
-        <span class="reader-controls__nav-icon">◀</span>
+        <UiIcon name="chevron-left" class="reader-controls__nav-icon" size="16" />
         <span class="reader-controls__nav-text">上一章</span>
       </UiButton>
       <UiButton
-        variant="toolbar"
-        id="nextChapterBtn"
+        variant="inverse"
+        size="md"
         class="reader-controls__nav-button"
         :disabled="!hasNextChapter"
         @click="navigateChapter('next')"
       >
         <span class="reader-controls__nav-text">下一章</span>
-        <span class="reader-controls__nav-icon">▶</span>
+        <UiIcon name="chevron-right" class="reader-controls__nav-icon" size="16" />
       </UiButton>
     </nav>
   </OverlayLayer>
 
   <OverlayLayer v-show="showScrollTopBtn" class="reader-controls__scroll-top-layer" passthrough>
-    <UiButton
-      variant="toolbar"
-      id="scrollTopBtn"
+    <UiIconButton
+      variant="primary"
+      size="xl"
+      shape="circle"
+      elevated
       class="reader-controls__scroll-top-button"
-      title="回到顶部"
-      aria-label="回到顶部"
+      label="回到顶部"
       @click="scrollToTop"
     >
-      <span>↑</span>
-    </UiButton>
+      <UiIcon name="chevron-up" size="24" />
+    </UiIconButton>
   </OverlayLayer>
 
-  <OverlayLayer v-if="isSettingsPanelOpen" id="settingsPanel" class="reader-controls__settings-panel" level="popover">
+  <OverlayLayer
+    v-if="isSettingsPanelOpen"
+    class="reader-controls__settings-panel"
+    level="popover"
+    role="dialog"
+    aria-modal="true"
+    aria-label="阅读设置"
+  >
     <div class="reader-controls__settings-overlay" @click="closeSettings"></div>
     <div class="reader-controls__settings-content">
       <div class="reader-controls__settings-header">
-        <h3>阅读设置</h3>
-        <UiButton variant="toolbar" class="reader-controls__close-button" aria-label="关闭阅读设置" @click="closeSettings">×</UiButton>
+        <h3 class="reader-controls__settings-title">阅读设置</h3>
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          shape="circle"
+          class="reader-controls__close-button"
+          label="关闭阅读设置"
+          @click="closeSettings"
+        >
+          <UiIcon name="x" size="16" />
+        </UiIconButton>
       </div>
       <div class="reader-controls__settings-body">
-        <div class="reader-controls__setting-item">
-          <label>图片宽度</label>
+        <UiField
+          variant="settings"
+          tone="inverse"
+          label="图片宽度"
+          control-id="imageWidthSlider"
+          class="reader-controls__setting-field"
+        >
           <div class="reader-controls__setting-control">
             <UiInput
               type="range"
@@ -245,15 +213,20 @@ defineExpose({
               class="reader-controls__range"
               min="50"
               max="100"
-              :value="settings.imageWidth"
-              @input="updateImageWidth(Number(($event.target as HTMLInputElement).value))"
+              :model-value="settings.imageWidth"
+              @update:model-value="value => updateImageWidth(Number(value))"
             />
-            <span id="imageWidthValue">{{ settings.imageWidth }}%</span>
+            <span class="reader-controls__setting-value">{{ settings.imageWidth }}%</span>
           </div>
-        </div>
+        </UiField>
 
-        <div class="reader-controls__setting-item">
-          <label>图片间距</label>
+        <UiField
+          variant="settings"
+          tone="inverse"
+          label="图片间距"
+          control-id="imageGapSlider"
+          class="reader-controls__setting-field"
+        >
           <div class="reader-controls__setting-control">
             <UiInput
               type="range"
@@ -261,30 +234,26 @@ defineExpose({
               class="reader-controls__range"
               min="0"
               max="50"
-              :value="settings.imageGap"
-              @input="updateImageGap(Number(($event.target as HTMLInputElement).value))"
+              :model-value="settings.imageGap"
+              @update:model-value="value => updateImageGap(Number(value))"
             />
-            <span id="imageGapValue">{{ settings.imageGap }}px</span>
+            <span class="reader-controls__setting-value">{{ settings.imageGap }}px</span>
           </div>
-        </div>
+        </UiField>
 
-        <div class="reader-controls__setting-item">
-          <label>背景颜色</label>
-          <div class="reader-controls__setting-control reader-controls__bg-options">
-            <UiButton
-              variant="toolbar"
-              v-for="preset in bgColorPresets"
-              :key="preset.color"
-              class="reader-controls__bg-option"
-              :class="{ active: settings.bgColor === preset.color }"
-              :data-bg="preset.color"
-              :style="{ background: preset.color }"
-              :title="preset.name"
-              :aria-label="`设置背景颜色为${preset.name}`"
-              @click="updateBgColor(preset.color)"
-            ></UiButton>
-          </div>
-        </div>
+        <UiField
+          variant="settings"
+          tone="inverse"
+          label="背景颜色"
+          class="reader-controls__setting-field"
+        >
+          <UiColorSwatchGroup
+            :model-value="settings.bgColor"
+            :options="bgColorPresets"
+            aria-label="阅读背景颜色"
+            @change="updateBgColor"
+          />
+        </UiField>
       </div>
     </div>
   </OverlayLayer>
@@ -294,18 +263,14 @@ defineExpose({
 .reader-controls__chapter-nav-layer,
 .reader-controls__scroll-top-layer,
 .reader-controls__settings-panel {
-  --reader-controls-chapter-nav-start: rgba(26, 26, 46, .95);
-  --reader-controls-chapter-nav-end: rgba(26, 26, 46, .8);
-  --reader-controls-button-background: rgba(255, 255, 255, .1);
-  --reader-controls-button-hover-background: rgba(255, 255, 255, .2);
-  --reader-controls-button-border: rgba(255, 255, 255, .2);
-  --reader-controls-scroll-top-hover-shadow: rgba(102, 126, 234, .5);
-  --reader-controls-settings-overlay-background: rgba(0, 0, 0, .5);
-  --reader-controls-settings-panel-background: #2d2d44;
-  --reader-controls-settings-panel-shadow: rgba(0, 0, 0, .3);
-  --reader-controls-settings-divider: rgba(255, 255, 255, .1);
-  --reader-controls-setting-label-text: rgba(255, 255, 255, .7);
-  --reader-controls-swatch-active-ring: rgba(102, 126, 234, .3);
+  --reader-controls-chapter-nav-start: color-mix(in srgb, var(--color-surface-inverse) 95%, transparent);
+  --reader-controls-chapter-nav-end: color-mix(in srgb, var(--color-surface-inverse) 80%, transparent);
+  --reader-controls-settings-overlay-background: var(--color-overlay-scrim);
+  --reader-controls-settings-panel-background: var(--color-surface-inverse-raised);
+  --reader-controls-settings-panel-shadow: var(--color-overlay-scrim-subtle);
+  --reader-controls-settings-divider: var(--color-overlay-inverse-subtle);
+  --reader-controls-setting-label-text: color-mix(in srgb, var(--color-text-inverse) 70%, transparent);
+  --reader-controls-range-track: var(--color-overlay-inverse-muted);
 }
 
 .reader-controls__chapter-nav-layer {
@@ -326,33 +291,6 @@ defineExpose({
   padding: 0 16px;
 }
 
-.reader-controls__nav-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
-  background: var(--reader-controls-button-background);
-  border: 1px solid var(--reader-controls-button-border);
-  border-radius: 8px;
-  color: var(--color-text-inverse);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.reader-controls__nav-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.reader-controls__nav-button:hover:not(:disabled) {
-  background: var(--reader-controls-button-hover-background);
-}
-
-.reader-controls__nav-icon {
-  font-size: 12px;
-}
-
 .reader-controls__scroll-top-layer {
   display: flex;
   align-items: flex-end;
@@ -361,22 +299,7 @@ defineExpose({
 }
 
 .reader-controls__scroll-top-button {
-  width: 48px;
-  height: 48px;
-  background: var(--color-action-primary, var(--color-action-brand));
-  border: none;
-  border-radius: 50%;
-  color: var(--color-text-inverse);
-  font-size: 20px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px var(--shadow-action-brand);
-  transition: all 0.3s;
   z-index: var(--z-dropdown);
-}
-
-.reader-controls__scroll-top-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px var(--reader-controls-scroll-top-hover-shadow);
 }
 
 .reader-controls__settings-panel {
@@ -409,7 +332,7 @@ defineExpose({
   background: var(--reader-controls-settings-panel-background);
 }
 
-.reader-controls__settings-header h3 {
+.reader-controls__settings-title {
   margin: 0;
   color: var(--color-text-inverse);
   font-size: 16px;
@@ -417,19 +340,7 @@ defineExpose({
 }
 
 .reader-controls__close-button {
-  width: 28px;
-  height: 28px;
-  background: var(--reader-controls-button-background);
-  border: none;
-  border-radius: 50%;
-  color: var(--color-text-inverse);
-  font-size: 18px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.reader-controls__close-button:hover {
-  background: var(--reader-controls-button-hover-background);
+  flex: 0 0 auto;
 }
 
 .reader-controls__settings-body {
@@ -437,19 +348,14 @@ defineExpose({
   background: var(--reader-controls-settings-panel-background);
 }
 
-.reader-controls__setting-item {
+.reader-controls__setting-field {
+  --ui-field-inverse-label-color: var(--reader-controls-setting-label-text);
+
   margin-bottom: 20px;
 }
 
-.reader-controls__setting-item:last-child {
+.reader-controls__setting-field:last-child {
   margin-bottom: 0;
-}
-
-.reader-controls__setting-item label {
-  display: block;
-  color: var(--reader-controls-setting-label-text);
-  font-size: 13px;
-  margin-bottom: 8px;
 }
 
 .reader-controls__setting-control {
@@ -462,7 +368,7 @@ defineExpose({
   flex: 1;
   height: 4px;
   appearance: none;
-  background: var(--reader-controls-button-hover-background);
+  background: var(--reader-controls-range-track);
   border-radius: 2px;
   outline: none;
 }
@@ -476,34 +382,11 @@ defineExpose({
   cursor: pointer;
 }
 
-.reader-controls__setting-control span {
+.reader-controls__setting-value {
   color: var(--color-text-inverse);
   font-size: 13px;
   min-width: 45px;
   text-align: right;
-}
-
-.reader-controls__bg-options {
-  display: flex;
-  gap: 8px;
-}
-
-.reader-controls__bg-option {
-  width: 32px;
-  height: 32px;
-  border: 2px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.reader-controls__bg-option:hover {
-  transform: scale(1.1);
-}
-
-.reader-controls__bg-option.active {
-  border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 0 2px var(--reader-controls-swatch-active-ring);
 }
 
 @media (--breakpoint-md-down) {
@@ -513,16 +396,9 @@ defineExpose({
     width: auto;
   }
 
-  .reader-controls__nav-button {
-    padding: 10px 16px;
-    font-size: 13px;
-  }
-
   .reader-controls__scroll-top-button {
-    right: 16px;
-    bottom: 72px;
-    width: 40px;
-    height: 40px;
+    transform: scale(0.9);
+    transform-origin: right bottom;
   }
 }
 </style>

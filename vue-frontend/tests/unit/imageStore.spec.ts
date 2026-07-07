@@ -1,16 +1,139 @@
-/**
- * imageStore 单元测试
- * 测试关键功能：添加图片、更新尺寸、切换图片等
- */
-
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useImageStore } from '@/stores/imageStore'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
+import { createBubbleState } from '@/utils/bubbleFactory'
+import type { ImageData, ImageDataLoadInput } from '@/types/image'
+
+function createTestImage(overrides: Partial<ImageData> = {}): ImageData {
+    return {
+        id: 'image-1',
+        fileName: 'page.png',
+        width: 0,
+        height: 0,
+        originalDataURL: 'data:image/png;base64,mockdata',
+        translatedDataURL: null,
+        cleanImageData: null,
+        bubbleStates: null,
+        translationStatus: 'pending',
+        translationFailed: false,
+        fontSize: TEXT_STYLE_DEFAULTS.fontSize,
+        autoFontSize: TEXT_STYLE_DEFAULTS.autoFontSize,
+        fontFamily: TEXT_STYLE_DEFAULTS.fontFamily,
+        layoutDirection: TEXT_STYLE_DEFAULTS.layoutDirection,
+        textColor: TEXT_STYLE_DEFAULTS.textColor,
+        fillColor: TEXT_STYLE_DEFAULTS.fillColor,
+        inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod,
+        strokeEnabled: TEXT_STYLE_DEFAULTS.strokeEnabled,
+        strokeColor: TEXT_STYLE_DEFAULTS.strokeColor,
+        strokeWidth: TEXT_STYLE_DEFAULTS.strokeWidth,
+        lineSpacing: TEXT_STYLE_DEFAULTS.lineSpacing,
+        textAlign: TEXT_STYLE_DEFAULTS.textAlign,
+        useAutoTextColor: TEXT_STYLE_DEFAULTS.useAutoTextColor,
+        hasUnsavedChanges: false,
+        ...overrides,
+    }
+}
 
 describe('imageStore', () => {
     beforeEach(() => {
         setActivePinia(createPinia())
+    })
+
+    it('uses the shared natural sort contract without tutorial narration', () => {
+        const source = readFileSync(resolve(process.cwd(), 'src/stores/imageStore.ts'), 'utf8')
+
+        expect(source).toContain("import { naturalSortCompare } from '@/utils'")
+        expect(source).toContain("import { applyImageBubbleMirrors } from '@/stores/imageBubbleMirrors'")
+        expect(source).not.toContain('function applyBubbleStateMirrors')
+        expect(source).not.toContain('localeCompare(' + 'pathB')
+        for (const staleNarration of [
+            '/' + '**',
+            '@' + 'param',
+            '@' + 'returns',
+            '图片数据' + '数组',
+            '当前图片' + '索引',
+            '如果是第一张' + '图片',
+            '按文件路径' + '/文件名',
+        ]) {
+            expect(source).not.toContain(staleNarration)
+        }
+    })
+
+    it('keeps image store property tests focused on behavior contracts', () => {
+        const source = readFileSync(resolve(process.cwd(), 'tests/property/imageStore.property.ts'), 'utf8')
+
+        for (const staleNarration of [
+            '/' + '**',
+            '图片状态管理属性测试',
+            '使用 fast-check 进行属性基测试',
+            '生成有效',
+            '验证',
+            '每次迭代重新创建 Pinia',
+            '// 批量添加图片',
+            'return store.imageCount',
+            'return uniqueIds.size',
+        ]) {
+            expect(source).not.toContain(staleNarration)
+        }
+
+        expect(source).toContain('useImageStore')
+        expect(source).toContain('expect(')
+    })
+
+    it('keeps image store fixtures typed to the current load contract', () => {
+        const source = readFileSync(resolve(process.cwd(), 'tests/unit/imageStore.spec.ts'), 'utf8')
+
+        expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+    })
+
+    it('keeps bubble mirror projection in a focused helper', async () => {
+        const { applyImageBubbleMirrors } = await import('@/stores/imageBubbleMirrors')
+        const target = createTestImage({
+            bubbleCoords: [[0, 0, 1, 1]],
+            bubbleAngles: [12],
+            originalTexts: ['old'],
+            bubbleTexts: ['old translation'],
+            textboxTexts: ['old box'],
+            textlinesPerBubble: [],
+            ocrResults: [],
+        })
+        const bubble = createBubbleState({
+            coords: [1, 2, 3, 4],
+            rotationAngle: 15,
+            originalText: '原文',
+            translatedText: 'translation',
+            textboxText: 'box text',
+            textlines: [{ polygon: [[1, 2]], direction: 'h', confidence: 0.9 }],
+            ocrResult: null,
+        })
+
+        applyImageBubbleMirrors(target, [bubble])
+
+        expect(target.bubbleStates).toEqual([bubble])
+        expect(target.bubbleCoords).toEqual([[1, 2, 3, 4]])
+        expect(target.bubbleAngles).toEqual([15])
+        expect(target.originalTexts).toEqual(['原文'])
+        expect(target.bubbleTexts).toEqual(['translation'])
+        expect(target.textboxTexts).toEqual(['box text'])
+        expect(target.textlinesPerBubble).toEqual([[{ polygon: [[1, 2]], direction: 'h', confidence: 0.9 }]])
+        expect(target.ocrResults?.[0]).toEqual({
+            text: '原文',
+            confidence: null,
+            confidenceSupported: false,
+            engine: '',
+            primaryEngine: '',
+            fallbackUsed: false,
+        })
+
+        applyImageBubbleMirrors(target, null)
+
+        expect(target.bubbleStates).toBeNull()
+        expect(target.bubbleCoords).toBeUndefined()
+        expect(target.originalTexts).toBeUndefined()
+        expect(target.ocrResults).toBeUndefined()
     })
 
     describe('图片管理', () => {
@@ -72,22 +195,21 @@ describe('imageStore', () => {
 
         it('加载缺少样式字段的图片时应补齐统一的文字样式默认值', () => {
             const store = useImageStore()
+            const imageWithoutStyleFields: ImageDataLoadInput = {
+                id: 'unstyled-image',
+                fileName: 'unstyled.png',
+                width: 0,
+                height: 0,
+                originalDataURL: 'data:image/png;base64,unstyled',
+                translatedDataURL: null,
+                cleanImageData: null,
+                bubbleStates: null,
+                translationStatus: 'pending',
+                translationFailed: false,
+                hasUnsavedChanges: false,
+            }
 
-            store.setImages([
-                {
-                    id: 'unstyled-image',
-                    fileName: 'unstyled.png',
-                    width: 0,
-                    height: 0,
-                    originalDataURL: 'data:image/png;base64,unstyled',
-                    translatedDataURL: null,
-                    cleanImageData: null,
-                    bubbleStates: null,
-                    translationStatus: 'pending',
-                    translationFailed: false,
-                    hasUnsavedChanges: false,
-                } as any
-            ])
+            store.setImages([imageWithoutStyleFields])
 
             expect(store.currentImage?.fontSize).toBe(TEXT_STYLE_DEFAULTS.fontSize)
             expect(store.currentImage?.autoFontSize).toBe(TEXT_STYLE_DEFAULTS.autoFontSize)
@@ -116,6 +238,23 @@ describe('imageStore', () => {
             expect(store.currentImage?.translationStatus).toBe('processing')
             expect(store.currentImage?.translationFailed).toBe(false)
             expect(store.currentImage?.errorMessage).toBeUndefined()
+        })
+
+        it('非失败状态即使收到错误参数也应清除错误信息', () => {
+            const nonFailedStatuses = ['pending', 'processing', 'completed'] as const
+
+            nonFailedStatuses.forEach(status => {
+                setActivePinia(createPinia())
+                const store = useImageStore()
+                store.addImage('test.png', 'data:image/png;base64,mockdata')
+
+                store.setTranslationStatus(0, 'failed', 'boom')
+                store.setTranslationStatus(0, status, 'stale error')
+
+                expect(store.currentImage?.translationStatus).toBe(status)
+                expect(store.currentImage?.translationFailed).toBe(false)
+                expect(store.currentImage?.errorMessage).toBeUndefined()
+            })
         })
 
         it('正常状态变更不应输出常规控制台日志', () => {

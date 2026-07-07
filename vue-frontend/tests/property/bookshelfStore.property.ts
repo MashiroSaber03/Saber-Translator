@@ -1,13 +1,3 @@
-/**
- * 书架状态管理属性测试
- * 
- * Feature: frontend-behavior
- * Property 1: 书籍搜索过滤一致性
- * Property 2: 标签筛选一致性
- * 
- * Validates: Requirements 3.3, 3.4
- */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
@@ -15,78 +5,76 @@ import { useBookshelfStore } from '@/stores/bookshelfStore'
 import * as bookshelfApi from '@/api/bookshelf'
 import type { BookData, TagData } from '@/types/api'
 
-// ============================================================
-// 测试数据生成器
-// ============================================================
-
-/**
- * 生成有效的书籍ID
- */
-const bookIdArb = fc.uuid()
-
-/**
- * 生成有效的书籍标题
- */
-const bookTitleArb = fc.string({ minLength: 1, maxLength: 100 })
-
-/**
- * 生成有效的书籍描述
- */
-const bookDescriptionArb = fc.option(fc.string({ maxLength: 500 }), { nil: undefined })
-
-/**
- * 生成有效的日期字符串
- */
-const dateStringArb = fc.date({ min: new Date('2020-01-01'), max: new Date('2025-12-31') })
+const bookIdArbitrary = fc.uuid()
+const bookTitleArbitrary = fc.string({ minLength: 1, maxLength: 100 })
+const bookDescriptionArbitrary = fc.option(fc.string({ maxLength: 500 }), { nil: undefined })
+const dateStringArbitrary = fc.date({ min: new Date('2020-01-01'), max: new Date('2025-12-31') })
   .map(d => d.toISOString())
 
-/**
- * 生成有效的标签数据
- */
-const tagDataArb: fc.Arbitrary<TagData> = fc.record({
+const tagDataArbitrary = fc.record({
   name: fc.string({ minLength: 1, maxLength: 50 }),
-  color: fc.option(fc.hexaString({ minLength: 6, maxLength: 6 }).map(h => `#${h}`), { nil: undefined })
+  color: fc.option(fc.hexaString({ minLength: 6, maxLength: 6 }).map(h => `#${h}`), { nil: undefined }),
+}) as fc.Arbitrary<TagData>
+
+const uniqueTagsArbitrary = (
+  constraints: { minLength?: number; maxLength?: number } = {},
+): fc.Arbitrary<TagData[]> => fc.uniqueArray(tagDataArbitrary, {
+  ...constraints,
+  selector: tag => tag.name,
 })
 
-/**
- * 生成有效的书籍数据
- */
-const bookDataArb = (tagNames: string[]): fc.Arbitrary<BookData> => fc.record({
-  id: bookIdArb,
-  title: bookTitleArb,
-  description: bookDescriptionArb,
+const bookDataArbitrary = (tagNames: string[]): fc.Arbitrary<BookData> => fc.record({
+  id: bookIdArbitrary,
+  title: bookTitleArbitrary,
+  description: bookDescriptionArbitrary,
   cover: fc.option(fc.string(), { nil: undefined }),
   tags: fc.option(
     fc.subarray(tagNames, { minLength: 0, maxLength: Math.min(tagNames.length, 5) }),
     { nil: undefined }
   ),
   chapters: fc.constant(undefined),
-  createdAt: dateStringArb,
-  updatedAt: dateStringArb
+  createdAt: dateStringArbitrary,
+  updatedAt: dateStringArbitrary,
 })
 
-/**
- * 生成书籍列表和标签列表
- */
-const bookshelfDataArb = fc.array(tagDataArb, { minLength: 0, maxLength: 10 })
+const minimalBookArbitrary = fc.record({
+  id: bookIdArbitrary,
+  title: bookTitleArbitrary,
+  description: bookDescriptionArbitrary,
+  createdAt: dateStringArbitrary,
+  updatedAt: dateStringArbitrary,
+}) as fc.Arbitrary<BookData>
+
+const selectableBookArbitrary = fc.record({
+  id: bookIdArbitrary,
+  title: bookTitleArbitrary,
+  createdAt: dateStringArbitrary,
+  updatedAt: dateStringArbitrary,
+}) as fc.Arbitrary<BookData>
+
+const uniqueBooksArbitrary = (
+  arbitrary: fc.Arbitrary<BookData>,
+  constraints: { minLength?: number; maxLength?: number } = {},
+): fc.Arbitrary<BookData[]> => fc.uniqueArray(arbitrary, {
+  ...constraints,
+  selector: book => book.id,
+})
+
+const bookshelfDataArbitrary = uniqueTagsArbitrary({ maxLength: 10 })
   .chain(tags => {
-    const tagNames = tags.map(t => t.name)
+    const tagNames = tags.map(tag => tag.name)
     return fc.tuple(
       fc.constant(tags),
-      fc.array(bookDataArb(tagNames), { minLength: 0, maxLength: 20 })
+      uniqueBooksArbitrary(bookDataArbitrary(tagNames), { maxLength: 20 })
     )
   })
 
-// ============================================================
-// 属性测试
-// ============================================================
-
-describe('书架状态管理属性测试', () => {
+describe('bookshelf store properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue({
       success: false,
-      error: 'Property test keeps backend refresh outside this invariant'
+      error: 'Property test keeps backend refresh outside this invariant',
     })
   })
 
@@ -94,315 +82,208 @@ describe('书架状态管理属性测试', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Property 1: 书籍搜索过滤一致性
-   * 
-   * 对于任意书籍列表和搜索关键词，过滤后的结果应当仅包含标题或描述中包含该关键词的书籍，
-   * 且不遗漏任何匹配项。
-   * 
-   * Feature: frontend-behavior, Property 1: 书籍搜索过滤一致性
-   * Validates: Requirements 3.3
-   */
-  it('书籍搜索过滤一致性', () => {
+  it('filters books by search keyword across title and description', () => {
     fc.assert(
       fc.property(
         fc.tuple(
-          fc.array(fc.record({
-            id: bookIdArb,
-            title: bookTitleArb,
-            description: bookDescriptionArb,
-            createdAt: dateStringArb,
-            updatedAt: dateStringArb
-          }), { minLength: 0, maxLength: 20 }),
+          uniqueBooksArbitrary(minimalBookArbitrary, { maxLength: 20 }),
           fc.string({ maxLength: 20 })
         ),
         ([books, keyword]) => {
           const store = useBookshelfStore()
-          
-          // 设置书籍列表
-          store.setBooks(books as BookData[])
-          
-          // 设置搜索关键词
+          store.setBooks(books)
           store.setSearchKeyword(keyword)
-          
+
           const filtered = store.filteredBooks
-          const keywordLower = keyword.toLowerCase().trim()
-          
-          if (keywordLower === '') {
-            // 空关键词应返回所有书籍
-            expect(filtered.length).toBe(books.length)
-          } else {
-            // 验证所有过滤结果都包含关键词
-            for (const book of filtered) {
-              const titleMatch = book.title.toLowerCase().includes(keywordLower)
-              const descMatch = book.description?.toLowerCase().includes(keywordLower) || false
-              expect(titleMatch || descMatch).toBe(true)
-            }
-            
-            // 验证没有遗漏匹配项
-            for (const book of books) {
-              const titleMatch = book.title.toLowerCase().includes(keywordLower)
-              const descMatch = book.description?.toLowerCase().includes(keywordLower) || false
-              const shouldBeIncluded = titleMatch || descMatch
-              const isIncluded = filtered.some(b => b.id === book.id)
-              expect(isIncluded).toBe(shouldBeIncluded)
-            }
+          const normalizedKeyword = keyword.toLowerCase().trim()
+
+          if (normalizedKeyword === '') {
+            expect(filtered).toHaveLength(books.length)
+            return
           }
-          
-          return true
+
+          for (const book of filtered) {
+            const titleMatch = book.title.toLowerCase().includes(normalizedKeyword)
+            const descriptionMatch = book.description?.toLowerCase().includes(normalizedKeyword) ?? false
+            expect(titleMatch || descriptionMatch).toBe(true)
+          }
+
+          for (const book of books) {
+            const titleMatch = book.title.toLowerCase().includes(normalizedKeyword)
+            const descriptionMatch = book.description?.toLowerCase().includes(normalizedKeyword) ?? false
+            const isIncluded = filtered.some(filteredBook => filteredBook.id === book.id)
+            expect(isIncluded).toBe(titleMatch || descriptionMatch)
+          }
         }
       ),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * Property 2: 标签筛选一致性
-   * 
-   * 对于任意书籍列表和标签集合，筛选后的结果应当仅包含拥有所选标签的书籍，
-   * 且不遗漏任何匹配项。
-   * 
-   * Feature: frontend-behavior, Property 2: 标签筛选一致性
-   * Validates: Requirements 3.4
-   */
-  it('标签筛选一致性', () => {
+  it('filters books by all selected tags', () => {
     fc.assert(
-      fc.property(bookshelfDataArb, ([tags, books]) => {
+      fc.property(bookshelfDataArbitrary, ([tags, books]) => {
         const store = useBookshelfStore()
-        
-        // 设置标签和书籍列表
         store.setTags(tags)
         store.setBooks(books)
-        
-        // 随机选择一些标签进行筛选
-        const tagNames = tags.map(t => t.name)
-        const selectedTagCount = Math.min(tagNames.length, 3)
-        const selectedTags = tagNames.slice(0, selectedTagCount)
-        
-        // 设置标签筛选
+
+        const tagNames = tags.map(tag => tag.name)
+        const selectedTags = tagNames.slice(0, Math.min(tagNames.length, 3))
         store.setTagFilter(selectedTags)
-        
+
         const filtered = store.filteredBooks
-        
         if (selectedTags.length === 0) {
-          // 没有选择标签时应返回所有书籍
-          expect(filtered.length).toBe(books.length)
-        } else {
-          // 验证所有过滤结果都包含所有选中的标签
-          for (const book of filtered) {
-            for (const tagName of selectedTags) {
-              expect(book.tags?.includes(tagName)).toBe(true)
-            }
-          }
-          
-          // 验证没有遗漏匹配项
-          for (const book of books) {
-            const hasAllTags = selectedTags.every(tagName => book.tags?.includes(tagName))
-            const isIncluded = filtered.some(b => b.id === book.id)
-            expect(isIncluded).toBe(hasAllTags)
+          expect(filtered).toHaveLength(books.length)
+          return
+        }
+
+        for (const book of filtered) {
+          for (const tagName of selectedTags) {
+            expect(book.tags?.includes(tagName)).toBe(true)
           }
         }
-        
-        return true
+
+        for (const book of books) {
+          const hasAllTags = selectedTags.every(tagName => book.tags?.includes(tagName))
+          const isIncluded = filtered.some(filteredBook => filteredBook.id === book.id)
+          expect(isIncluded).toBe(hasAllTags)
+        }
       }),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * 批量选择状态一致性测试
-   */
-  it('批量选择状态一致性', () => {
+  it('keeps batch selection as a toggle set', () => {
     fc.assert(
       fc.property(
         fc.tuple(
-          fc.array(fc.record({
-            id: bookIdArb,
-            title: bookTitleArb,
-            createdAt: dateStringArb,
-            updatedAt: dateStringArb
-          }), { minLength: 1, maxLength: 10 }),
+          uniqueBooksArbitrary(selectableBookArbitrary, { minLength: 1, maxLength: 10 }),
           fc.array(fc.integer({ min: 0, max: 9 }), { minLength: 1, maxLength: 20 })
         ),
         ([books, toggleIndices]) => {
           const store = useBookshelfStore()
-          
-          // 设置书籍列表
-          store.setBooks(books as BookData[])
-          
-          // 进入批量模式
+          store.setBooks(books)
           store.enterBatchMode()
           expect(store.batchMode).toBe(true)
-          
-          // 执行选择操作
+
           const expectedSelected = new Set<string>()
-          
           for (const index of toggleIndices) {
-            if (index < books.length) {
-              const bookId = books[index]?.id
-              if (bookId) {
-                store.toggleBookSelection(bookId)
-                
-                if (expectedSelected.has(bookId)) {
-                  expectedSelected.delete(bookId)
-                } else {
-                  expectedSelected.add(bookId)
-                }
-              }
+            if (index >= books.length) {
+              continue
+            }
+
+            const bookId = books[index]?.id
+            if (!bookId) {
+              continue
+            }
+
+            store.toggleBookSelection(bookId)
+            if (expectedSelected.has(bookId)) {
+              expectedSelected.delete(bookId)
+            } else {
+              expectedSelected.add(bookId)
             }
           }
-          
-          // 验证选中状态
+
           expect(store.selectedBookIds.size).toBe(expectedSelected.size)
           for (const bookId of expectedSelected) {
             expect(store.selectedBookIds.has(bookId)).toBe(true)
           }
-          
-          // 退出批量模式应清除选择
+
           store.exitBatchMode()
           expect(store.batchMode).toBe(false)
           expect(store.selectedBookIds.size).toBe(0)
-          
-          return true
         }
       ),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * 全选/取消全选一致性测试
-   */
-  it('全选/取消全选一致性', () => {
+  it('selects and clears all visible books', () => {
     fc.assert(
-      fc.property(
-        fc.array(fc.record({
-          id: bookIdArb,
-          title: bookTitleArb,
-          createdAt: dateStringArb,
-          updatedAt: dateStringArb
-        }), { minLength: 1, maxLength: 10 }),
-        (books) => {
-          const store = useBookshelfStore()
-          
-          // 设置书籍列表
-          store.setBooks(books as BookData[])
-          
-          // 进入批量模式
-          store.enterBatchMode()
-          
-          // 全选
-          store.toggleSelectAll()
-          expect(store.isAllSelected).toBe(true)
-          expect(store.selectedBookIds.size).toBe(books.length)
-          
-          // 取消全选
-          store.toggleSelectAll()
-          expect(store.isAllSelected).toBe(false)
-          expect(store.selectedBookIds.size).toBe(0)
-          
-          return true
-        }
-      ),
+      fc.property(uniqueBooksArbitrary(selectableBookArbitrary, { minLength: 1, maxLength: 10 }), (books) => {
+        const store = useBookshelfStore()
+        store.setBooks(books)
+        store.enterBatchMode()
+
+        store.toggleSelectAll()
+        expect(store.isAllSelected).toBe(true)
+        expect(store.selectedBookIds.size).toBe(books.length)
+
+        store.toggleSelectAll()
+        expect(store.isAllSelected).toBe(false)
+        expect(store.selectedBookIds.size).toBe(0)
+      }),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * 标签切换筛选一致性测试
-   */
-  it('标签切换筛选一致性', () => {
+  it('toggles tag filter selections', () => {
     fc.assert(
       fc.property(
         fc.tuple(
-          fc.array(tagDataArb, { minLength: 1, maxLength: 5 }),
+          uniqueTagsArbitrary({ minLength: 1, maxLength: 5 }),
           fc.array(fc.integer({ min: 0, max: 4 }), { minLength: 1, maxLength: 10 })
         ),
         ([tags, toggleIndices]) => {
           const store = useBookshelfStore()
-          
-          // 设置标签列表
           store.setTags(tags)
-          
-          // 清除之前的筛选状态
           store.clearTagFilter()
-          
-          // 执行标签切换操作
+
           const expectedSelected = new Set<string>()
-          
           for (const index of toggleIndices) {
-            if (index < tags.length) {
-              const tagName = tags[index]?.name
-              if (tagName) {
-                store.toggleTagFilter(tagName)
-                
-                if (expectedSelected.has(tagName)) {
-                  expectedSelected.delete(tagName)
-                } else {
-                  expectedSelected.add(tagName)
-                }
-              }
+            if (index >= tags.length) {
+              continue
+            }
+
+            const tagName = tags[index]?.name
+            if (!tagName) {
+              continue
+            }
+
+            store.toggleTagFilter(tagName)
+            if (expectedSelected.has(tagName)) {
+              expectedSelected.delete(tagName)
+            } else {
+              expectedSelected.add(tagName)
             }
           }
-          
-          // 验证选中的标签数量
+
           const expectedArray = Array.from(expectedSelected)
-          expect(store.selectedTagNames.length).toBe(expectedArray.length)
-          
-          // 验证每个期望的标签都在选中列表中
+          expect(store.selectedTagNames).toHaveLength(expectedArray.length)
           for (const tagName of expectedArray) {
-            expect(store.selectedTagNames.includes(tagName)).toBe(true)
+            expect(store.selectedTagNames).toContain(tagName)
           }
-          
-          return true
         }
       ),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * 书籍删除后选中状态更新测试
-   */
-  it('书籍删除后选中状态应正确更新', () => {
+  it('removes a deleted book from batch selection', () => {
     fc.assert(
       fc.property(
         fc.tuple(
-          fc.array(fc.record({
-            id: bookIdArb,
-            title: bookTitleArb,
-            createdAt: dateStringArb,
-            updatedAt: dateStringArb
-          }), { minLength: 2, maxLength: 10 }),
+          uniqueBooksArbitrary(selectableBookArbitrary, { minLength: 2, maxLength: 10 }),
           fc.integer({ min: 0, max: 9 })
         ),
         ([books, deleteIndex]) => {
           const store = useBookshelfStore()
-          
-          // 设置书籍列表
-          store.setBooks(books as BookData[])
-          
-          // 进入批量模式并选中要删除的书籍
+          store.setBooks(books)
           store.enterBatchMode()
-          
-          const actualIndex = Math.min(deleteIndex, books.length - 1)
-          const bookToDelete = books[actualIndex]
-          
-          if (bookToDelete) {
-            store.toggleBookSelection(bookToDelete.id)
-            expect(store.selectedBookIds.has(bookToDelete.id)).toBe(true)
-            
-            // 删除书籍
-            store.deleteBook(bookToDelete.id)
-            
-            // 验证书籍已从列表中移除
-            expect(store.books.find(b => b.id === bookToDelete.id)).toBeUndefined()
-            
-            // 验证选中状态已更新
-            expect(store.selectedBookIds.has(bookToDelete.id)).toBe(false)
+
+          const bookToDelete = books[Math.min(deleteIndex, books.length - 1)]
+          if (!bookToDelete) {
+            return
           }
-          
-          return true
+
+          store.toggleBookSelection(bookToDelete.id)
+          expect(store.selectedBookIds.has(bookToDelete.id)).toBe(true)
+
+          store.deleteBook(bookToDelete.id)
+
+          expect(store.books.find(book => book.id === bookToDelete.id)).toBeUndefined()
+          expect(store.selectedBookIds.has(bookToDelete.id)).toBe(false)
         }
       ),
       { numRuns: 100 }

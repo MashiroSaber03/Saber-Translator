@@ -1,34 +1,17 @@
-/**
- * 编辑模式渲染组合式函数
- * 处理编辑模式下的图像重新渲染逻辑
- */
-
 import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
-import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
 import { executeRender } from '@/composables/translation/core/steps'
-
-// ============================================================
-// 类型定义
-// ============================================================
+import { buildEditRenderInput } from '@/composables/edit/editRenderRequest'
 
 export interface EditRenderCallbacks {
-  /** 渲染开始 */
   onRenderStart?: () => void
-  /** 渲染成功 */
   onRenderSuccess?: (translatedDataURL: string) => void
-  /** 渲染失败 */
   onRenderError?: (error: string) => void
-  /** 渲染结束（无论成功失败） */
   onRenderEnd?: () => void
 }
-
-// ============================================================
-// 组合式函数
-// ============================================================
 
 export function useEditRender(callbacks?: EditRenderCallbacks) {
   const bubbleStore = useBubbleStore()
@@ -38,17 +21,9 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   const { bubbles } = storeToRefs(bubbleStore)
   const { currentImage } = storeToRefs(imageStore)
 
-  // ============================================================
-  // 状态
-  // ============================================================
-
-  /** 是否正在渲染 */
   const isRendering = ref(false)
-
-  /** 渲染错误信息 */
   const renderError = ref('')
 
-  /** 当前渲染的token（用于取消过期渲染） */
   let currentRenderToken: symbol | null = null
   let isOwnerDisposed = false
 
@@ -64,25 +39,15 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     })
   }
 
-  // ============================================================
-  // 辅助函数
-  // ============================================================
-
-  /**
-   * 获取干净背景图像的Base64数据
-   */
   function getCleanImageBase64(): string | null {
     const image = currentImage.value
     if (!image) return null
 
-    // 优先使用cleanImageData
     if (image.cleanImageData) {
       return image.cleanImageData
     }
 
-    // 否则使用原图
     if (image.originalDataURL) {
-      // 移除data:image/xxx;base64,前缀
       const base64Match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
       if (base64Match && base64Match[1]) {
         return base64Match[1]
@@ -92,15 +57,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     return null
   }
 
-  // ============================================================
-  // 主要功能
-  // ============================================================
-
-  /**
-   * 重新渲染整个图像
-   * @param silentMode 是否静默模式（不触发回调）
-   * @returns Promise<boolean> 是否成功
-   */
   async function reRenderFullImage(silentMode = false): Promise<boolean> {
     const image = currentImage.value
     if (!image) {
@@ -108,7 +64,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     }
     const expectedImageId = image.id
 
-    // 没有气泡坐标时跳过后端渲染。
     if (bubbles.value.length === 0) {
       // 无气泡时仍展示当前干净背景图，保证笔刷处理结果可见。
       const cleanBase64 = getCleanImageBase64()
@@ -123,7 +78,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       return true
     }
 
-    // 获取必要的图像数据
     const cleanBase64 = getCleanImageBase64()
 
     if (!cleanBase64) {
@@ -132,52 +86,22 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       return false
     }
 
-    // 创建新的渲染token
     const renderToken = Symbol('render')
     currentRenderToken = renderToken
 
-    // 设置渲染状态
     isRendering.value = true
     renderError.value = ''
     if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
       const bubbleStates = bubbles.value
-      const response = await executeRender({
+      const response = await executeRender(buildEditRenderInput({
         imageIndex: imageStore.currentImageIndex,
         cleanImage: cleanBase64,
-        bubbleCoords: bubbleStates.map((state) => state.coords.map((coord) => Math.round(coord)) as [number, number, number, number]),
-        bubbleAngles: bubbleStates.map((state) => state.rotationAngle || 0),
-        autoDirections: bubbleStates.map((state) => state.autoTextDirection || state.textDirection || 'vertical'),
-        textlinesPerBubble: bubbleStates.map((state) => state.textlines || []),
-        existingBubbleStates: bubbleStates,
-        originalTexts: bubbleStates.map((state) => state.originalText || ''),
-        ocrResults: bubbleStates.map((state) => state.ocrResult || {
-          text: state.originalText || '',
-          confidence: null,
-          confidenceSupported: false,
-          engine: '',
-          primaryEngine: '',
-          fallbackUsed: false,
-        }),
-        translatedTexts: bubbleStates.map((state) => state.translatedText || ''),
-        textboxTexts: bubbleStates.map((state) => state.textboxText || ''),
-        colors: bubbleStates.map((state) => ({
-          textColor: state.textColor || settingsStore.settings.textStyle.textColor,
-          bgColor: state.fillColor || settingsStore.settings.textStyle.fillColor,
-          autoFgColor: state.autoFgColor || null,
-          autoBgColor: state.autoBgColor || null,
-        })),
-        savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
-        currentMode: 'standard',
-        settingsSnapshot: settingsStore.settings,
-        renderStylePolicy: {
-          fontSize: 'preserve',
-          color: 'preserve',
-        },
-      })
+        bubbleStates,
+        settings: settingsStore.settings,
+      }))
 
-      // 检查token是否过期（被新的渲染请求取代）
       if (currentRenderToken !== renderToken) {
         return false
       }
@@ -203,7 +127,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         return false
       }
     } catch (error) {
-      // 检查token是否过期
       if (currentRenderToken !== renderToken) {
         return false
       }
@@ -213,7 +136,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       if (!silentMode) callbacks?.onRenderError?.(errorMsg)
       return false
     } finally {
-      // 只有当前token才能重置状态
       if (currentRenderToken === renderToken) {
         isRendering.value = false
         if (!silentMode) callbacks?.onRenderEnd?.()
@@ -221,24 +143,14 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     }
   }
 
-  /**
-   * 取消当前渲染
-   */
   function cancelRender(): void {
     currentRenderToken = null
     isRendering.value = false
   }
 
-  // ============================================================
-  // 返回接口
-  // ============================================================
-
   return {
-    // 状态
     isRendering,
     renderError,
-
-    // 方法
     reRenderFullImage,
     cancelRender
   }

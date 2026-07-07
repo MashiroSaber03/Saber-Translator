@@ -25,7 +25,9 @@ import {
 } from '@/api/pluginAgent'
 import { useSettingsStore } from '@/stores/settings'
 import type { PluginAgentProvider } from '@/types/settings'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { useToast } from '@/utils/toast'
+import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
 import { buildTimelineItems, type PluginAgentTimelineItem } from './pluginAgentTimeline'
 
 export interface PluginAgentModalProps {
@@ -40,6 +42,8 @@ export type PluginAgentModalEmit = {
 export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAgentModalEmit) {
   const settingsStore = useSettingsStore()
   const toast = useToast()
+
+  type HistoryScrollTarget = HTMLElement | { scrollToBottom: () => void }
 
   interface PluginAgentConversationMessage {
     id: string
@@ -75,7 +79,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const session = ref<PluginAgentSession | null>(null)
   const messageInput = ref('')
   const eventFeed = ref<PluginAgentEvent[]>([])
-  const messagesContainer = ref<HTMLElement | null>(null)
+  const messagesContainer = ref<HistoryScrollTarget | null>(null)
   const isDebugExpanded = ref(false)
   const isFetchingModels = ref(false)
   const isTestingConnection = ref(false)
@@ -89,6 +93,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const assistantMessageDisplayTimers = new Map<string, ReturnType<typeof setInterval>>()
   const assistantDisplayTimers = new Map<string, ReturnType<typeof setInterval>>()
   let streamAbortController: AbortController | null = null
+  const modelFetchGuard = useLatestRequestGuard()
 
   const localAgentSettings = ref({
     provider: settingsStore.settings.pluginAgent.provider,
@@ -200,6 +205,10 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   function scrollHistoryToBottom(): void {
     const element = messagesContainer.value
     if (!element) return
+    if ('scrollToBottom' in element) {
+      element.scrollToBottom()
+      return
+    }
     element.scrollTop = element.scrollHeight
   }
 
@@ -509,6 +518,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   function handleProviderChange(value: string | number): void {
+    modelFetchGuard.invalidate()
+    isFetchingModels.value = false
     const provider = String(value || '') as PluginAgentProvider
     localAgentSettings.value.provider = provider
     fetchedModels.value = []
@@ -530,6 +541,14 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
 
   function handleModelSelected(value: string | number): void {
     localAgentSettings.value.modelName = String(value || '')
+  }
+
+  function isCurrentModelFetch(requestId: number, provider: string, apiKey: string, baseUrl: string): boolean {
+    return modelFetchGuard.isCurrent(requestId, () => (
+      localAgentSettings.value.provider === provider &&
+      localAgentSettings.value.apiKey === apiKey &&
+      localAgentSettings.value.customBaseUrl === baseUrl
+    ))
   }
 
   function applyExamplePrompt(example: string): void {
@@ -766,13 +785,18 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   async function fetchModels(): Promise<void> {
+    const provider = localAgentSettings.value.provider
+    const apiKey = localAgentSettings.value.apiKey
+    const baseUrl = localAgentSettings.value.customBaseUrl
+    const requestId = modelFetchGuard.next()
     isFetchingModels.value = true
     try {
       const result = await configApi.fetchModels(
-        localAgentSettings.value.provider,
-        localAgentSettings.value.apiKey,
-        localAgentSettings.value.customBaseUrl,
+        provider,
+        apiKey,
+        baseUrl,
       )
+      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
       if (result.success && result.models?.length) {
         fetchedModels.value = result.models.map(model => ({
           id: model.id,
@@ -784,10 +808,13 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
         toast.warning(result.message || '未获取到可用模型')
       }
     } catch (error) {
+      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
       fetchedModels.value = []
       toast.error(error instanceof Error ? error.message : '获取模型失败')
     } finally {
-      isFetchingModels.value = false
+      if (modelFetchGuard.isCurrent(requestId)) {
+        isFetchingModels.value = false
+      }
     }
   }
 
@@ -833,7 +860,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   function renderMarkdown(content: string): string {
-    return marked.parse(content) as string
+    return sanitizeHtml(marked.parse(content) as string)
   }
 
   function getAssistantMessageContent(messageId: string, fallback: string): string {

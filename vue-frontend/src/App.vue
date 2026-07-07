@@ -1,24 +1,21 @@
 <script setup lang="ts">
-/**
- * 应用根组件
- * 挂载路由视图和单例全局通知
- */
 import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import ToastNotification from '@/components/common/ToastNotification.vue'
+import ProductConfirmProvider from '@/components/product/ProductConfirmProvider.vue'
+import ProductTextInputProvider from '@/components/product/ProductTextInputProvider.vue'
 
-// 初始化设置 Store 并应用主题
 const settingsStore = useSettingsStore()
 
 onMounted(() => {
-  // 初始化所有设置（包括主题、服务商配置等）
   settingsStore.initSettings()
 })
 </script>
 
 <template>
   <RouterView />
-  <!-- 全局 Toast 通知（只挂载一次） -->
+  <ProductConfirmProvider />
+  <ProductTextInputProvider />
   <ToastNotification />
 </template>

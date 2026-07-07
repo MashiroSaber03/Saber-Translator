@@ -4,7 +4,6 @@ import type { ParallelProgressTracker } from '../ParallelProgressTracker'
 import type { ResultCollector } from '../ResultCollector'
 import { executeAtomicStep } from '@/composables/translation/core/atomicSteps'
 import { projectTaskContext } from '@/composables/translation/core/taskProjector'
-import { useParallelTranslation } from '../useParallelTranslation'
 
 export class SavePool extends TaskPool {
   private resultCollector: ResultCollector
@@ -14,7 +13,7 @@ export class SavePool extends TaskPool {
     resultCollector: ResultCollector,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('保存', '💾', null, null, progressTracker, onTaskComplete)
+    super('保存', 'save', null, null, progressTracker, onTaskComplete)
     this.resultCollector = resultCollector
   }
 
@@ -33,11 +32,7 @@ export class SavePool extends TaskPool {
 
     projectTaskContext(completedTask, runtime)
 
-    const { progress } = useParallelTranslation()
-    if (progress.value.save) {
-      progress.value.save.completed = (progress.value.save.completed || 0) + 1
-    }
-
+    this.progressTracker.incrementSaveCompleted()
     this.progressTracker.incrementCompleted()
     this.resultCollector.add(completedTask)
     return completedTask

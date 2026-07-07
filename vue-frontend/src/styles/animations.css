@@ -1,8 +1,6 @@
 :root {
   --animations-shadow-default: rgba(53, 152, 219, .7);
   --animations-shadow-raised: rgba(53, 152, 219, 0);
-  --animations-shadow-floating: rgba(74, 144, 217, .4);
-  --animations-shadow-strong: rgba(74, 144, 217, 0);
 }
 
 @keyframes spin {
@@ -74,19 +72,4 @@
   100% {
     background-position: 30px 30px;
   }
-}
-
-@keyframes settingsHighlight {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 var(--animations-shadow-floating);
-  }
-
-  50% {
-    box-shadow: 0 0 0 8px var(--animations-shadow-strong);
-  }
-}
-
-.settings-highlight {
-  animation: settingsHighlight 1.5s ease-in-out infinite;
 }

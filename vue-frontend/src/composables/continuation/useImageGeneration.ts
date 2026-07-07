@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { getCurrentInstance, onBeforeUnmount, ref, type Ref } from 'vue'
 import type { PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
@@ -14,14 +14,39 @@ interface ImageGenerationComposable {
 export function useImageGeneration(bookId: Ref<string | undefined>, state: ContinuationState): ImageGenerationComposable {
     const isGenerating = ref(false)
     const generationProgress = ref(0)
+    let generationRequestId = 0
+    let isOwnerMounted = true
 
-    async function resolveStyleReferenceTokens(currentPageNumber: number): Promise<string[]> {
-        if (!bookId.value) return []
+    function startGenerationRequest(): { activeBookId: string; requestId: number } | null {
+        const activeBookId = bookId.value
+        if (!activeBookId) return null
+
+        return {
+            activeBookId,
+            requestId: ++generationRequestId
+        }
+    }
+
+    function isActiveGenerationRequest(requestId: number): boolean {
+        return isOwnerMounted && requestId === generationRequestId
+    }
+
+    function isCurrentBookGenerationRequest(activeBookId: string, requestId: number): boolean {
+        return isActiveGenerationRequest(requestId) && bookId.value === activeBookId
+    }
+
+    async function resolveStyleReferenceTokens(
+        activeBookId: string,
+        currentPageNumber: number,
+        isCurrentRequest: () => boolean
+    ): Promise<string[]> {
+        if (!isCurrentRequest()) return []
 
         const availableResult = await continuationApi.getAvailableImages(
-            bookId.value,
+            activeBookId,
             'image'
         ).catch(() => null)
+        if (!isCurrentRequest()) return []
 
         if (availableResult?.success) {
             const currentAbsolutePage = (availableResult.total_original_pages || 0) + currentPageNumber
@@ -39,12 +64,17 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
             }
         }
 
-        const styleResult = await continuationApi.getStyleReferences(bookId.value, state.styleRefPages.value)
+        const styleResult = await continuationApi.getStyleReferences(activeBookId, state.styleRefPages.value)
+        if (!isCurrentRequest()) return []
         return styleResult.success && styleResult.tokens ? styleResult.tokens : []
     }
 
     async function batchGenerateImages(pages: PageContent[], initialStyleReferenceTokens?: string[]) {
-        if (!bookId.value || pages.length === 0) return
+        if (pages.length === 0) return
+        const generationRequest = startGenerationRequest()
+        if (!generationRequest) return
+        const { activeBookId, requestId } = generationRequest
+        const isCurrentRequest = () => isCurrentBookGenerationRequest(activeBookId, requestId)
 
         isGenerating.value = true
         generationProgress.value = 0
@@ -58,10 +88,13 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                 styleReferenceTokens = [...initialStyleReferenceTokens]
             } else {
                 const firstPendingPage = pages.find(page => !page.image_url)?.page_number ?? 1
-                styleReferenceTokens = await resolveStyleReferenceTokens(firstPendingPage)
+                styleReferenceTokens = await resolveStyleReferenceTokens(activeBookId, firstPendingPage, isCurrentRequest)
+                if (!isCurrentRequest()) return
             }
 
             for (const page of pages) {
+                if (!isCurrentRequest()) return
+
                 if (page.image_url) {
                     completedPages++
                     generationProgress.value = Math.round((completedPages / totalPages) * 100)
@@ -72,7 +105,8 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                 if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
                     page.status = 'failed'
                     state.showMessage(`第 ${page.page_number} 页剧情或最终提示词无效，请先完善页面剧情或手动修改最终提示词`, 'error')
-                    await continuationApi.savePages(bookId.value, pages)
+                    await continuationApi.savePages(activeBookId, pages)
+                    if (!isCurrentRequest()) return
                     completedPages++
                     generationProgress.value = Math.round((completedPages / totalPages) * 100)
                     continue
@@ -82,13 +116,14 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
 
                 try {
                     const result = await continuationApi.generatePageImage(
-                        bookId.value,
+                        activeBookId,
                         page.page_number,
                         page,
                         styleReferenceTokens,
                         undefined,
                         state.styleRefPages.value
                     )
+                    if (!isCurrentRequest()) return
 
                     if (result.success && result.image_path) {
                         page.image_url = result.image_path
@@ -104,26 +139,35 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                         page.status = 'failed'
                     }
                 } catch {
+                    if (!isCurrentRequest()) return
                     page.status = 'failed'
                 }
 
-                await continuationApi.savePages(bookId.value, pages)
+                await continuationApi.savePages(activeBookId, pages)
+                if (!isCurrentRequest()) return
 
                 completedPages++
                 generationProgress.value = Math.round((completedPages / totalPages) * 100)
             }
             state.showMessage(`图片生成完成 (${completedPages}/${totalPages})`, 'success')
         } catch (error) {
-            state.showMessage('批量生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+            if (isCurrentRequest()) {
+                state.showMessage('批量生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+            }
         } finally {
-            isGenerating.value = false
-            generationProgress.value = 0
+            if (isActiveGenerationRequest(requestId)) {
+                isGenerating.value = false
+                generationProgress.value = 0
+            }
         }
     }
 
 
     async function regeneratePageImage(pageNumber: number) {
-        if (!bookId.value) return
+        const generationRequest = startGenerationRequest()
+        if (!generationRequest) return
+        const { activeBookId, requestId } = generationRequest
+        const isCurrentRequest = () => isCurrentBookGenerationRequest(activeBookId, requestId)
 
         const page = state.pages.value.find(p => p.page_number === pageNumber)
         if (!page) return
@@ -134,21 +178,24 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
 
             if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
                 page.status = 'failed'
-                await continuationApi.savePages(bookId.value, state.pages.value)
+                await continuationApi.savePages(activeBookId, state.pages.value)
+                if (!isCurrentRequest()) return
                 state.showMessage(`第 ${pageNumber} 页剧情或最终提示词无效，请先完善页面剧情或手动修改最终提示词`, 'error')
                 return
             }
 
-            const styleReferenceTokens = await resolveStyleReferenceTokens(pageNumber)
+            const styleReferenceTokens = await resolveStyleReferenceTokens(activeBookId, pageNumber, isCurrentRequest)
+            if (!isCurrentRequest()) return
 
             const result = await continuationApi.regeneratePageImage(
-                bookId.value,
+                activeBookId,
                 pageNumber,
                 page,
                 styleReferenceTokens,
                 undefined,
                 state.styleRefPages.value
             )
+            if (!isCurrentRequest()) return
 
             if (result.success && result.image_path) {
                 if (page.image_url) {
@@ -157,16 +204,26 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
                 page.image_url = result.image_path
                 page.status = 'generated'
 
-                await continuationApi.savePages(bookId.value, state.pages.value)
+                await continuationApi.savePages(activeBookId, state.pages.value)
+                if (!isCurrentRequest()) return
                 state.showMessage(`第 ${pageNumber} 页图片已重新生成`, 'success')
             } else {
                 page.status = 'failed'
                 state.showMessage('重新生成失败: ' + result.error, 'error')
             }
         } catch (error) {
-            page.status = 'failed'
-            state.showMessage('重新生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+            if (isCurrentRequest()) {
+                page.status = 'failed'
+                state.showMessage('重新生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+            }
         }
+    }
+
+    if (getCurrentInstance()) {
+        onBeforeUnmount(() => {
+            isOwnerMounted = false
+            generationRequestId += 1
+        })
     }
 
     return {

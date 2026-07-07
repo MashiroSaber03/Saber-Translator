@@ -1,138 +1,187 @@
 <template>
-  <div class="continuation-panel">
-    <div v-if="state.errorMessage.value || state.successMessage.value" class="message" :class="state.messageType.value || (state.errorMessage.value ? 'error' : 'success')">
-      {{ state.errorMessage.value || state.successMessage.value }}
-    </div>
-    <div class="analysis-sync-bar">
-      <div class="analysis-sync-meta">
-        <span class="analysis-sync-title">分析数据同步</span>
-        <span class="analysis-sync-status">{{ analysisSyncStatus }}</span>
-      </div>
-      <UiButton
-        variant="secondary"
-        class="analysis-sync-button"
-        :disabled="state.isSyncingAnalysis.value || !insightStore.currentBookId"
-        @click="handleManualSync" size="sm"
+  <ProductWorkspacePanel variant="wizard" aria-label="续写工作区">
+    <div class="continuation-panel">
+      <ProductStatusBanner
+        v-if="workflowMessage"
+        class="continuation-panel__message"
+        :tone="workflowMessageTone"
+        aria-live="polite"
       >
-        {{ state.isSyncingAnalysis.value ? '同步中...' : '🔄 同步分析数据' }}
-      </UiButton>
-    </div>
-    <div class="step-indicator">
-      <div 
-        v-for="(name, index) in stepNames" 
-        :key="index"
-        class="step"
-        :class="{
-          active: state.currentStep.value === index,
-          completed: state.currentStep.value > index,
-          clickable: canNavigateToStep(index)
-        }"
-        @click="navigateToStep(index)"
-      >
-        <span class="step-number">{{ index + 1 }}</span>
-        <span class="step-name">{{ name }}</span>
+        {{ workflowMessage }}
+      </ProductStatusBanner>
+      <div class="continuation-panel__sync-bar">
+        <div class="continuation-panel__sync-meta">
+          <span class="continuation-panel__sync-title">分析数据同步</span>
+          <span class="continuation-panel__sync-status">{{ analysisSyncStatus }}</span>
+        </div>
+        <UiButton
+          variant="secondary"
+          class="continuation-panel__sync-button"
+          :disabled="state.isSyncingAnalysis.value || !insightStore.currentBookId"
+          size="sm"
+          @click="handleManualSync"
+        >
+          <span v-if="state.isSyncingAnalysis.value">同步中...</span>
+          <template v-else>
+            <UiIcon name="refresh" />
+            <span>同步分析数据</span>
+          </template>
+        </UiButton>
       </div>
-    </div>
-    <div class="step-content">
-      <div v-show="state.currentStep.value === 0" class="step-panel">
-        <h3>📝 续写设置</h3>
-        <div class="continuation-panel__field">
-          <label>续写页数</label>
-          <UiInput v-model.number="state.pageCount.value" type="number" min="5" max="50" />
-          <p class="hint">建议 10-20 页</p>
-        </div>
-        <div class="continuation-panel__field">
-          <label>画风参考页数</label>
-          <UiInput v-model.number="state.styleRefPages.value" type="number" min="1" max="10" />
-          <p class="hint">用于维持画风一致性</p>
-        </div>
-        <div class="continuation-panel__field">
-          <label>续写方向（可选）</label>
-          <UiTextarea 
-            v-model="state.continuationDirection.value" 
-            rows="4" 
-            placeholder="例如：延续主线剧情，探索新的冒险..."
+      <ProductWizardSteps
+        class="continuation-panel__steps"
+        :steps="wizardSteps"
+        :active-index="state.currentStep.value"
+        aria-label="续写步骤"
+        @select="navigateToStep"
+      />
+      <div class="continuation-panel__step-content">
+        <div v-show="state.currentStep.value === 0" class="continuation-panel__step-panel">
+          <ProductSectionHeader title="续写设置" icon-name="file-text" />
+          <UiFormGrid>
+            <UiField
+              variant="settings"
+              label="续写页数"
+              hint="建议 10-20 页"
+              control-id="continuationPageCount"
+            >
+              <UiNumberField
+                v-model="state.pageCount.value"
+                input-id="continuationPageCount"
+                :min="5"
+                :max="50"
+              />
+            </UiField>
+            <UiField
+              variant="settings"
+              label="画风参考页数"
+              hint="用于维持画风一致性"
+              control-id="continuationStyleRefPages"
+            >
+              <UiNumberField
+                v-model="state.styleRefPages.value"
+                input-id="continuationStyleRefPages"
+                :min="1"
+                :max="10"
+              />
+            </UiField>
+          </UiFormGrid>
+          <UiField
+            variant="settings"
+            label="续写方向（可选）"
+            hint="留空将自动根据剧情发展生成"
+            control-id="continuationDirection"
+          >
+            <UiTextarea
+              id="continuationDirection"
+              v-model="state.continuationDirection.value"
+              rows="4"
+              variant="panel"
+              placeholder="例如：延续主线剧情，探索新的冒险..."
+            />
+          </UiField>
+          <CharacterManagementPanel
+            v-if="insightStore.currentBookId"
+            :book-id="insightStore.currentBookId"
+            :character-management="charMgmt"
+            :is-loading="state.isLoading.value"
+            :state="state"
           />
-          <p class="hint">留空将自动根据剧情发展生成</p>
+          <ProductActionRow aria-label="续写设置操作" divider justify="between">
+            <UiButton variant="danger" @click="requestClearAndRestart">
+              <UiIcon name="trash" />
+              <span>清除数据重新开始</span>
+            </UiButton>
+            <UiButton variant="primary" :disabled="!canProceedToScript" @click="goToStep(1)">
+              <span>下一步：生成脚本</span>
+              <UiIcon name="chevron-right" />
+            </UiButton>
+          </ProductActionRow>
         </div>
-        <CharacterManagementPanel 
-          v-if="insightStore.currentBookId"
-          :book-id="insightStore.currentBookId"
-          :character-management="charMgmt"
-          :is-loading="state.isLoading.value"
-          :state="state"
-        />
-        <div class="actions">
-          <UiButton variant="danger" @click="handleClearAndRestart">🗑️ 清除数据重新开始</UiButton>
-          <UiButton variant="primary" :disabled="!canProceedToScript" @click="goToStep(1)">
-            下一步：生成脚本 →
-          </UiButton>
+        <div v-show="state.currentStep.value === 1" class="continuation-panel__step-panel">
+          <ScriptGenerationPanel
+            :script="state.chapterScript.value"
+            :is-generating="isGeneratingScript"
+            :is-saving="isSavingScript"
+            :book-id="insightStore.currentBookId || ''"
+            @generate="handleGenerateScript"
+            @update-script="handleScriptUpdate"
+            @save-script="handleSaveScript"
+            @reset-script="handleResetScript"
+          />
+          <ProductActionRow aria-label="脚本生成步骤操作" divider justify="between">
+            <UiButton variant="secondary" @click="goToStep(0)">
+              <UiIcon name="chevron-left" />
+              <span>上一步</span>
+            </UiButton>
+            <UiButton variant="primary" :disabled="!canProceedToPages" @click="goToStep(2)">
+              <span>下一步：页面剧情</span>
+              <UiIcon name="chevron-right" />
+            </UiButton>
+          </ProductActionRow>
         </div>
-      </div>
-      <div v-show="state.currentStep.value === 1" class="step-panel">
-        <ScriptGenerationPanel
-          :script="state.chapterScript.value"
-          :is-generating="isGeneratingScript"
-          :is-saving="isSavingScript"
-          :book-id="insightStore.currentBookId || ''"
-          @generate="handleGenerateScript"
-          @update-script="handleScriptUpdate"
-          @save-script="handleSaveScript"
-          @reset-script="handleResetScript"
-        />
-        <div class="actions">
-          <UiButton variant="secondary" @click="goToStep(0)">← 上一步</UiButton>
-          <UiButton variant="primary" :disabled="!canProceedToPages" @click="goToStep(2)">
-            下一步：页面剧情 →
-          </UiButton>
+        <div v-show="state.currentStep.value === 2" class="continuation-panel__step-panel">
+          <PageDetailsPanel
+            :pages="state.pages.value"
+            :is-generating="state.isGeneratingPages.value"
+            @generate-details="handleGeneratePageDetails"
+            @save-changes="handleSavePageChanges"
+            @story-change="handleStoryContentChange"
+          />
+          <ProductActionRow aria-label="页面剧情步骤操作" divider justify="between">
+            <UiButton variant="secondary" @click="goToStep(1)">
+              <UiIcon name="chevron-left" />
+              <span>上一步</span>
+            </UiButton>
+            <UiButton variant="primary" :disabled="!canProceedToImages" @click="goToStep(3)">
+              <span>下一步：图片生成</span>
+              <UiIcon name="chevron-right" />
+            </UiButton>
+          </ProductActionRow>
         </div>
-      </div>
-      <div v-show="state.currentStep.value === 2" class="step-panel">
-        <PageDetailsPanel
-          :pages="state.pages.value"
-          :is-generating="state.isGeneratingPages.value"
-          @generate-details="handleGeneratePageDetails"
-          @save-changes="handleSavePageChanges"
-          @story-change="handleStoryContentChange"
-        />
-        <div class="actions">
-          <UiButton variant="secondary" @click="goToStep(1)">← 上一步</UiButton>
-          <UiButton variant="primary" :disabled="!canProceedToImages" @click="goToStep(3)">
-            下一步：图片生成 →
-          </UiButton>
-        </div>
-      </div>
-      <div v-show="state.currentStep.value === 3" class="step-panel">
-        <ImageGenerationPanel
-          :pages="state.pages.value"
-          :is-generating="imageGen.isGenerating.value"
-          :progress="imageGen.generationProgress.value"
-          :book-id="insightStore.currentBookId || ''"
-          :state="state"
-          @batch-generate="handleBatchGenerate"
-          @regenerate="handleRegenerateImage"
-          @use-previous="handleUsePrevious"
-          @prompt-change="handlePromptChange"
-        />
-        <ExportPanel
-          v-if="insightStore.currentBookId"
-          :book-id="insightStore.currentBookId"
-          :generated-count="generatedPagesCount"
-          :state="state"
-          @clear-and-restart="handleClearAndRestart"
-        />
-        <div class="actions">
-          <UiButton variant="secondary" @click="goToStep(2)">← 上一步</UiButton>
+        <div v-show="state.currentStep.value === 3" class="continuation-panel__step-panel">
+          <ImageGenerationPanel
+            :pages="state.pages.value"
+            :is-generating="imageGen.isGenerating.value"
+            :progress="imageGen.generationProgress.value"
+            :book-id="insightStore.currentBookId || ''"
+            :state="state"
+            @batch-generate="handleBatchGenerate"
+            @regenerate="handleRegenerateImage"
+            @use-previous="handleUsePrevious"
+            @prompt-change="handlePromptChange"
+          />
+          <ExportPanel
+            v-if="insightStore.currentBookId"
+            :book-id="insightStore.currentBookId"
+            :generated-count="generatedPagesCount"
+            :state="state"
+            @clear-and-restart="clearAndRestart"
+          />
+          <ProductActionRow aria-label="图片生成步骤操作" divider justify="start">
+            <UiButton variant="secondary" @click="goToStep(2)">
+              <UiIcon name="chevron-left" />
+              <span>上一步</span>
+            </UiButton>
+          </ProductActionRow>
         </div>
       </div>
     </div>
-  </div>
+  </ProductWorkspacePanel>
 </template>
 <script setup lang="ts">
 
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import ProductWorkspacePanel from '@/components/product/ProductWorkspacePanel.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductWizardSteps, { type ProductWizardStep } from '@/components/product/ProductWizardSteps.vue'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import { useContinuationState } from '@/composables/continuation/useContinuationState'
@@ -144,7 +193,10 @@ import PageDetailsPanel from './continuation/PageDetailsPanel.vue'
 import ImageGenerationPanel from './continuation/ImageGenerationPanel.vue'
 import ExportPanel from './continuation/ExportPanel.vue'
 import * as continuationApi from '@/api/continuation'
+import type { PageContent } from '@/api/continuation'
 import { hasUsableStoryContent } from '@/composables/continuation/promptValidation'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import type { PageStoryField, PageStoryValue } from './continuation/pageStoryTypes'
 const insightStore = useInsightStore()
 const bookId = computed(() => insightStore.currentBookId || '')
 const stateComposable = useContinuationState(bookId)
@@ -160,13 +212,30 @@ const scriptDirty = ref(false)
 const lastSavedScriptText = ref('')
 let promptSaveTimer: ReturnType<typeof setTimeout> | null = null
 let storySaveTimer: ReturnType<typeof setTimeout> | null = null
-function resetLocalWorkflowState() {
-  isGeneratingScript.value = false
-  isSavingScript.value = false
+
+function clearPromptSaveTimer() {
+  if (promptSaveTimer) {
+    clearTimeout(promptSaveTimer)
+    promptSaveTimer = null
+  }
+}
+
+function clearStorySaveTimer() {
   if (storySaveTimer) {
     clearTimeout(storySaveTimer)
     storySaveTimer = null
   }
+}
+
+function clearPendingAutosaves() {
+  clearPromptSaveTimer()
+  clearStorySaveTimer()
+}
+
+function resetLocalWorkflowState() {
+  isGeneratingScript.value = false
+  isSavingScript.value = false
+  clearStorySaveTimer()
 }
 const canProceedToScript = computed(() => {
   return state.isDataReady.value && state.characters.value.length > 0
@@ -181,6 +250,11 @@ const canProceedToImages = computed(() => {
 })
 const generatedPagesCount = computed(() => {
   return state.pages.value.filter(p => p.image_url && p.status === 'generated').length
+})
+const workflowMessage = computed(() => state.errorMessage.value || state.successMessage.value)
+const workflowMessageTone = computed<'success' | 'danger' | 'info'>(() => {
+  const messageType = state.messageType.value || (state.errorMessage.value ? 'error' : 'success')
+  return messageType === 'error' ? 'danger' : messageType || 'info'
 })
 const analysisSyncStatus = computed(() => {
   if (state.isSyncingAnalysis.value) {
@@ -225,6 +299,12 @@ function canNavigateToStep(step: number): boolean {
   if (step === 3) return canProceedToImages.value
   return false
 }
+const wizardSteps = computed<ProductWizardStep[]>(() => {
+  return stepNames.map((label, index) => ({
+    label,
+    disabled: !canNavigateToStep(index),
+  }))
+})
 function navigateToStep(step: number) {
   if (canNavigateToStep(step)) {
     void goToStep(step)
@@ -316,7 +396,18 @@ function handleScriptUpdate(scriptText: string) {
   state.chapterScript.value.script_text = scriptText
   scriptDirty.value = scriptText !== lastSavedScriptText.value
 }
-function handleStoryContentChange() {
+function applyPageStoryEdit(page: PageContent, field: PageStoryField, value: PageStoryValue) {
+  if (field === 'characters') {
+    page.characters = Array.isArray(value) ? value : []
+    return
+  }
+  page[field] = typeof value === 'string' ? value : ''
+}
+function handleStoryContentChange(pageNumber: number, field: PageStoryField, value: PageStoryValue) {
+  const page = state.pages.value.find(item => item.page_number === pageNumber)
+  if (!page) return
+  applyPageStoryEdit(page, field, value)
+
   if (storySaveTimer) {
     clearTimeout(storySaveTimer)
   }
@@ -436,7 +527,11 @@ async function handleUsePrevious(pageNumber: number) {
     await persistPages()
   }
 }
-async function handlePromptChange(_pageNumber: number) {
+async function handlePromptChange(pageNumber: number, prompt: string) {
+  const page = state.pages.value.find(item => item.page_number === pageNumber)
+  if (!page) return
+  page.final_prompt = prompt
+
   if (promptSaveTimer) {
     clearTimeout(promptSaveTimer)
   }
@@ -452,13 +547,10 @@ async function handlePromptChange(_pageNumber: number) {
 async function handleManualSync() {
   await state.syncAnalysisData('manual')
 }
-async function handleClearAndRestart() {
+async function clearAndRestart() {
   if (!insightStore.currentBookId) return
   try {
-    if (promptSaveTimer) {
-      clearTimeout(promptSaveTimer)
-      promptSaveTimer = null
-    }
+    clearPendingAutosaves()
     await continuationApi.clearContinuationData(insightStore.currentBookId)
     state.resetState()
     resetLocalWorkflowState()
@@ -469,6 +561,18 @@ async function handleClearAndRestart() {
   } catch (error) {
     state.showMessage('清空失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   }
+}
+
+async function requestClearAndRestart() {
+  const confirmed = await confirmProductAction({
+    title: '清空续写数据',
+    message: '确定要清空所有续写数据并重新开始吗？此操作不可恢复。',
+    confirmText: '清空',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  await clearAndRestart()
 }
 async function goToStep(step: number) {
   if (state.currentStep.value === 0 && step !== 0) {
@@ -486,10 +590,7 @@ async function goToStep(step: number) {
   state.currentStep.value = resolveReachableStep(step)
 }
 watch(() => insightStore.currentBookId, (newBookId) => {
-  if (promptSaveTimer) {
-    clearTimeout(promptSaveTimer)
-    promptSaveTimer = null
-  }
+  clearPendingAutosaves()
   resetLocalWorkflowState()
   if (newBookId) {
     state.initializeData()
@@ -511,225 +612,80 @@ watch(() => state.chapterScript.value, (script) => {
   }
 }, { immediate: true })
 onBeforeUnmount(() => {
-  if (promptSaveTimer) {
-    clearTimeout(promptSaveTimer)
-    promptSaveTimer = null
-  }
-  if (storySaveTimer) {
-    clearTimeout(storySaveTimer)
-    storySaveTimer = null
-  }
+  clearPendingAutosaves()
 })
 </script>
 
 <style scoped>
 .continuation-panel {
-  --continuation-panel-sync-background: #f7f7f7;
-  --continuation-panel-error-background: #fef2f2;
-  --continuation-panel-error-text: #dc2626;
-  --continuation-panel-error-border: #fecaca;
-  --continuation-panel-success-background: #f0fdf4;
-  --continuation-panel-success-text: #16a34a;
-  --continuation-panel-success-border: #bbf7d0;
-  --continuation-panel-info-background: #eff6ff;
-  --continuation-panel-info-text: #2563eb;
-  --continuation-panel-info-border: #bfdbfe;
-  --continuation-panel-step-complete-background: #22c55e;
-  --continuation-panel-step-complete-border: #22c55e;
-  --continuation-panel-step-number-active-background: rgba(255, 255, 255, .2);
-  --continuation-panel-danger-background: #fee2e2;
-  --continuation-panel-danger-hover-background: #fecaca;
-  --continuation-panel-danger-hover-border: #fca5a5;
-  --ui-input-padding: 10px 12px;
-  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-input-radius: 8px;
-  --ui-input-font-size: 14px;
-  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-input-color: var(--color-text-default);
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
-  --ui-textarea-padding: 10px 12px;
-  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-textarea-radius: 8px;
-  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-textarea-color: var(--color-text-default);
-  --ui-textarea-font-size: 14px;
-  --ui-textarea-focus-border: var(--color-border-brand);
-  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
-  --ui-button-padding: 10px 20px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-danger-background: var(--continuation-panel-danger-background);
-  --ui-button-danger-color: var(--continuation-panel-error-text);
-  --ui-button-danger-border: 1px solid var(--continuation-panel-error-border);
-  --ui-button-danger-hover-background: var(--continuation-panel-danger-hover-background);
-  --ui-button-danger-hover-border-color: var(--continuation-panel-danger-hover-border);
-  --ui-button-disabled-opacity: 0.5;
+  --continuation-panel-sync-background: var(--color-surface-quiet);
 
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
 }
 
-.analysis-sync-bar {
+.continuation-panel__sync-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border: 1px solid var(--color-border-muted);
   border-radius: 12px;
   background: var(--continuation-panel-sync-background);
 }
 
-.analysis-sync-meta {
+.continuation-panel__sync-meta {
   display: flex;
+  flex: 1 1 240px;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
-.analysis-sync-title {
+.continuation-panel__sync-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-default);
 }
 
-.analysis-sync-status {
+.continuation-panel__sync-status {
   font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
 }
 
-.message {
-  padding: 12px 16px;
-  border-radius: 8px;
+.continuation-panel__message {
   margin-bottom: 16px;
-  font-size: 14px;
 }
 
-.message.error {
-  background: var(--continuation-panel-error-background);
-  color: var(--continuation-panel-error-text);
-  border: 1px solid var(--continuation-panel-error-border);
-}
-
-.message.success {
-  background: var(--continuation-panel-success-background);
-  color: var(--continuation-panel-success-text);
-  border: 1px solid var(--continuation-panel-success-border);
-}
-
-.message.info {
-  background: var(--continuation-panel-info-background);
-  color: var(--continuation-panel-info-text);
-  border: 1px solid var(--continuation-panel-info-border);
-}
-
-.step-indicator {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+.continuation-panel__steps {
   margin-bottom: 24px;
-  padding: 16px;
-  background: var(--color-surface-subtle);
-  border-radius: 12px;
 }
 
-.step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 20px;
-  background: var(--color-surface-base);
-  border: 2px solid var(--color-border-muted, var(--color-border-default));
-  transition: all 0.3s;
-}
-
-.step.clickable {
-  cursor: pointer;
-}
-
-.step.clickable:hover {
-  border-color: var(--color-border-brand);
-}
-
-.step.active {
-  background: var(--color-surface-brand);
-  border-color: var(--color-border-brand);
-  color: var(--color-text-inverse);
-}
-
-.step.completed {
-  background: var(--continuation-panel-step-complete-background);
-  border-color: var(--continuation-panel-step-complete-border);
-  color: var(--color-text-inverse);
-}
-
-.step-number {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--continuation-panel-step-number-active-background);
-  font-weight: bold;
-  font-size: 13px;
-}
-
-.step:not(.active, .completed) .step-number {
-  background: var(--color-surface-subtle);
-}
-
-.step-name {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.step-content {
+.continuation-panel__step-content {
+  min-width: 0;
+  overflow: hidden;
   background: var(--color-surface-base);
   border-radius: 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border: 1px solid var(--color-border-muted);
 }
 
-.step-panel {
+.continuation-panel__step-panel {
+  min-width: 0;
   padding: 24px;
 }
 
-.step-panel h3 {
-  margin: 0 0 20px;
-  font-size: 18px;
-  font-weight: 600;
-}
+@media (--breakpoint-sm-down) {
+  .continuation-panel__sync-bar {
+    align-items: stretch;
+  }
 
-.continuation-panel__field {
-  margin-bottom: 16px;
-}
-
-.continuation-panel__field label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.actions {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  .continuation-panel__sync-button {
+    justify-content: center;
+    width: 100%;
+  }
 }
 </style>

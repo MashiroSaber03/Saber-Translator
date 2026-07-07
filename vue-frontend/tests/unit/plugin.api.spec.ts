@@ -78,4 +78,32 @@ describe('plugin api import/export helpers', () => {
     expect((formData as FormData).get('replace')).toBe('true')
     expect(result.success).toBe(true)
   })
+
+  it('encodes plugin ids consistently for management endpoints', async () => {
+    postMock.mockResolvedValue({ success: true })
+    getMock.mockResolvedValue({ success: true })
+    deleteMock.mockResolvedValue({ success: true })
+
+    const {
+      deletePlugin,
+      enablePlugin,
+      getPluginConfig,
+      savePluginConfig,
+      setPluginDefaultState,
+    } = await import('@/api/plugin')
+
+    await enablePlugin('group/plugin one')
+    await deletePlugin('group/plugin one')
+    await getPluginConfig('group/plugin one')
+    await savePluginConfig('group/plugin one', { enabled: true })
+    await setPluginDefaultState('group/plugin one', true)
+
+    expect(postMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/enable')
+    expect(deleteMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one')
+    expect(getMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/config')
+    expect(postMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/config', { enabled: true })
+    expect(postMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/set_default_state', {
+      enabled: true,
+    })
+  })
 })

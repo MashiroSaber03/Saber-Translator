@@ -5,13 +5,13 @@
         v-if="modelValue"
         ref="overlayRef"
         class="ui-modal__overlay"
-        :class="overlayClass"
+        :class="[uiPlacementClass, uiBackdropClass, uiOverlayLayerClass, uiBackdropEffectClass, overlayClass]"
         data-testid="base-dialog-overlay"
         @mousedown.self="handleOverlayMouseDown"
       >
         <div
           class="ui-modal__container"
-          :class="[uiSizeClass, uiChromeClass, customClass]"
+          :class="[uiSizeClass, uiChromeClass, uiFrameClass, uiMobilePresentationClass, customClass]"
           :style="dialogStyle"
           role="dialog"
           aria-modal="true"
@@ -19,24 +19,29 @@
           :aria-label="!showHeader && title ? title : undefined"
           data-testid="base-dialog-container"
         >
-          <!-- 模态框头部 -->
-          <div v-if="showHeader" class="ui-modal__header">
+          <div
+            v-if="showHeader"
+            class="ui-modal__header"
+            :class="[uiHeaderVariantClass, uiHeaderDividerClass]"
+          >
             <h3 :id="titleId" class="ui-modal__title">
               <slot name="title">{{ title }}</slot>
             </h3>
-            <UiButton
-              variant="toolbar"
+            <UiIconButton
               v-if="showCloseButton"
               class="ui-modal__close"
+              label="关闭"
               title="关闭"
+              variant="plain"
+              size="sm"
+              shape="circle"
               data-testid="base-dialog-close"
               @click="close"
             >
-              ✕
-            </UiButton>
+              <UiIcon name="x" size="16" />
+            </UiIconButton>
           </div>
 
-          <!-- 模态框内容 -->
           <div
             class="ui-modal__body"
             :class="[uiBodyPaddingClass, uiBodyScrollClass, bodyClass]"
@@ -45,11 +50,10 @@
             <slot></slot>
           </div>
 
-          <!-- 模态框底部 -->
           <div
             v-if="$slots.footer"
             class="ui-modal__footer"
-            :class="footerClass"
+            :class="[uiFooterDividerClass, uiFooterToneClass, footerClass]"
             data-testid="base-dialog-footer"
           >
             <slot name="footer"></slot>
@@ -83,7 +87,8 @@ function unlockBodyScroll() {
 </script>
 
 <script setup lang="ts">
-import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { computed, watch, onMounted, onUnmounted, useId } from 'vue'
 import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 
@@ -101,83 +106,64 @@ function releaseBodyScrollLock() {
   hasLockedBodyScroll = false
 }
 
-// Props 定义
 interface Props {
-  /** 控制模态框显示/隐藏（可选，默认为 true） */
   modelValue?: boolean
-  /** 模态框标题 */
   title?: string
-  /** 是否显示头部 */
   showHeader?: boolean
-  /** 是否显示关闭按钮 */
   showCloseButton?: boolean
-  /** 点击遮罩层是否关闭 */
   closeOnOverlay?: boolean
-  /** 按 ESC 键是否关闭 */
   closeOnEsc?: boolean
-  /** 模态框尺寸 */
   size?: 'small' | 'medium' | 'large' | 'full'
-  /** 自定义类名 */
+  placement?: 'center' | 'top-end'
+  backdrop?: 'default' | 'strong'
+  overlayLayer?: 'default' | 'popover'
+  backdropEffect?: 'none' | 'blur-sm'
+  mobilePresentation?: 'default' | 'fullscreen'
+  headerVariant?: 'default' | 'brand'
+  frameVariant?: 'default' | 'soft' | 'floating' | 'outlined' | 'warning'
+  dividerVariant?: 'default' | 'none' | 'soft'
+  footerTone?: 'default' | 'muted'
   customClass?: string
-  /** 遮罩层自定义类名，仅用于明确的 Teleport 布局定制 */
   overlayClass?: string
-  /** 内容区自定义类名 */
   bodyClass?: string
-  /** 底部自定义类名 */
   footerClass?: string
-  /** 内容区 padding 策略 */
   bodyPadding?: 'default' | 'none' | 'compact' | 'spacious'
-  /** 内容区滚动策略 */
   scrollMode?: 'auto' | 'contained' | 'none'
-  /** 弹窗 chrome 视觉变体 */
-  chromeVariant?: 'default' | 'compact' | 'plain'
-  /** 容器布局 */
+  chromeVariant?: 'default' | 'compact' | 'plain' | 'inverse'
   width?: string
   height?: string
   minHeight?: string
   maxWidth?: string
   maxHeight?: string
-  /** 容器视觉 */
-  background?: string
-  border?: string
-  borderRadius?: string
-  boxShadow?: string
-  /** 头部视觉 */
   headerPadding?: string
-  headerBorder?: string
-  headerBackground?: string
-  headerColor?: string
-  titleColor?: string
-  titleFontSize?: string
-  titleFontWeight?: string
-  closeColor?: string
-  closeFontSize?: string
-  closeHoverColor?: string
-  closeHoverBackground?: string
-  /** 内容区布局 */
   bodyDisplay?: string
   bodyDirection?: string
   bodyMinHeight?: string
   bodyPaddingValue?: string
   bodyTextAlign?: string
-  bodyBackground?: string
-  /** 底部布局 */
   footerGap?: string
   footerPadding?: string
-  footerBorder?: string
   footerJustify?: string
   footerWrap?: string
-  footerBackground?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  modelValue: true,  // 默认显示，当组件被渲染时
+  modelValue: true,
   title: '',
   showHeader: true,
   showCloseButton: true,
   closeOnOverlay: true,
   closeOnEsc: true,
   size: 'medium',
+  placement: 'center',
+  backdrop: 'default',
+  overlayLayer: 'default',
+  backdropEffect: 'none',
+  mobilePresentation: 'default',
+  headerVariant: 'default',
+  frameVariant: 'default',
+  dividerVariant: 'default',
+  footerTone: 'default',
   customClass: '',
   overlayClass: '',
   bodyClass: '',
@@ -190,42 +176,21 @@ const props = withDefaults(defineProps<Props>(), {
   minHeight: '',
   maxWidth: '',
   maxHeight: '',
-  background: '',
-  border: '',
-  borderRadius: '',
-  boxShadow: '',
   headerPadding: '',
-  headerBorder: '',
-  headerBackground: '',
-  headerColor: '',
-  titleColor: '',
-  titleFontSize: '',
-  titleFontWeight: '',
-  closeColor: '',
-  closeFontSize: '',
-  closeHoverColor: '',
-  closeHoverBackground: '',
   bodyDisplay: '',
   bodyDirection: '',
   bodyMinHeight: '',
   bodyPaddingValue: '',
   bodyTextAlign: '',
-  bodyBackground: '',
   footerGap: '',
   footerPadding: '',
-  footerBorder: '',
   footerJustify: '',
   footerWrap: '',
-  footerBackground: '',
 })
 
-// Emits 定义
 const emit = defineEmits<{
-  /** 更新显示状态 */
   'update:modelValue': [value: boolean]
-  /** 关闭事件 */
   close: []
-  /** 打开事件 */
   open: []
 }>()
 
@@ -239,6 +204,46 @@ const uiChromeClass = computed(() => {
   return `ui-modal__container--chrome-${props.chromeVariant}`
 })
 
+const uiFrameClass = computed(() => {
+  return `ui-modal__container--frame-${props.frameVariant}`
+})
+
+const uiPlacementClass = computed(() => {
+  return `ui-modal__overlay--placement-${props.placement}`
+})
+
+const uiBackdropClass = computed(() => {
+  return `ui-modal__overlay--backdrop-${props.backdrop}`
+})
+
+const uiOverlayLayerClass = computed(() => {
+  return `ui-modal__overlay--layer-${props.overlayLayer}`
+})
+
+const uiBackdropEffectClass = computed(() => {
+  return `ui-modal__overlay--effect-${props.backdropEffect}`
+})
+
+const uiMobilePresentationClass = computed(() => {
+  return `ui-modal__container--mobile-${props.mobilePresentation}`
+})
+
+const uiHeaderVariantClass = computed(() => {
+  return `ui-modal__header--${props.headerVariant}`
+})
+
+const uiHeaderDividerClass = computed(() => {
+  return `ui-modal__header--divider-${props.dividerVariant}`
+})
+
+const uiFooterDividerClass = computed(() => {
+  return `ui-modal__footer--divider-${props.dividerVariant}`
+})
+
+const uiFooterToneClass = computed(() => {
+  return `ui-modal__footer--tone-${props.footerTone}`
+})
+
 const uiBodyPaddingClass = computed(() => {
   return `ui-modal__body--padding-${props.bodyPadding}`
 })
@@ -248,46 +253,42 @@ const uiBodyScrollClass = computed(() => {
 })
 
 const dialogStyle = computed(() => {
+  const usesResponsivePresentation = props.mobilePresentation !== 'default'
+  const responsiveValue = (name: string, value: string) => value ? `var(${name}, ${value})` : ''
+  const layoutEntries: Array<[string, string]> = usesResponsivePresentation
+    ? [
+        ['width', responsiveValue('--ui-dialog-mobile-width', props.width)],
+        ['height', responsiveValue('--ui-dialog-mobile-height', props.height)],
+        ['minHeight', responsiveValue('--ui-dialog-mobile-min-height', props.minHeight)],
+        ['maxWidth', responsiveValue('--ui-dialog-mobile-max-width', props.maxWidth)],
+        ['maxHeight', responsiveValue('--ui-dialog-mobile-max-height', props.maxHeight)],
+      ]
+    : [
+        ['width', props.width],
+        ['height', props.height],
+        ['minHeight', props.minHeight],
+        ['maxWidth', props.maxWidth],
+        ['maxHeight', props.maxHeight],
+      ]
+
   const entries: Array<[string, string]> = [
-    ['width', props.width],
-    ['height', props.height],
-    ['minHeight', props.minHeight],
-    ['maxWidth', props.maxWidth],
-    ['maxHeight', props.maxHeight],
-    ['--modal-bg', props.background],
-    ['--ui-dialog-border', props.border],
-    ['--ui-dialog-radius', props.borderRadius],
-    ['--ui-dialog-shadow', props.boxShadow],
+    ...layoutEntries,
     ['--ui-dialog-max-height', props.maxHeight],
     ['--ui-dialog-header-padding', props.headerPadding],
-    ['--ui-dialog-header-border', props.headerBorder],
-    ['--ui-dialog-header-background', props.headerBackground],
-    ['--ui-dialog-header-color', props.headerColor],
-    ['--ui-dialog-title-color', props.titleColor],
-    ['--ui-dialog-title-font-size', props.titleFontSize],
-    ['--ui-dialog-title-font-weight', props.titleFontWeight],
-    ['--ui-dialog-close-color', props.closeColor],
-    ['--ui-dialog-close-font-size', props.closeFontSize],
-    ['--ui-dialog-close-hover-color', props.closeHoverColor],
-    ['--ui-dialog-close-hover-background', props.closeHoverBackground],
     ['--ui-dialog-body-display', props.bodyDisplay],
     ['--ui-dialog-body-direction', props.bodyDirection],
     ['--ui-dialog-body-min-height', props.bodyMinHeight],
     ['--ui-dialog-body-padding', props.bodyPaddingValue],
     ['--ui-dialog-body-text-align', props.bodyTextAlign],
-    ['--ui-dialog-body-background', props.bodyBackground],
     ['--ui-dialog-actions-gap', props.footerGap],
     ['--ui-dialog-actions-padding', props.footerPadding],
-    ['--ui-dialog-actions-border', props.footerBorder],
     ['--ui-dialog-actions-justify', props.footerJustify],
     ['--ui-dialog-actions-wrap', props.footerWrap],
-    ['--ui-dialog-actions-background', props.footerBackground],
   ]
 
   return Object.fromEntries(entries.filter(([, value]) => value !== ''))
 })
 
-// 关闭模态框
 const close = () => {
   emit('update:modelValue', false)
   emit('close')
@@ -297,14 +298,12 @@ const { overlayRef, handleOverlayMouseDown, resetOverlayDismissState } = useOver
   enabled: () => props.closeOnOverlay && props.modelValue,
 })
 
-// 处理键盘事件
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && props.closeOnEsc && props.modelValue) {
     close()
   }
 }
 
-// 监听显示状态变化
 watch(
   () => props.modelValue,
   (newValue) => {
@@ -318,7 +317,6 @@ watch(
   }
 )
 
-// 生命周期
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
   if (props.modelValue) {
@@ -333,7 +331,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 遮罩层 */
 .ui-modal__overlay {
   position: fixed;
   top: 0;
@@ -342,24 +339,43 @@ onUnmounted(() => {
   height: 100%;
   background-color: var(--base-modal-overlay-background);
   display: flex;
-  justify-content: center;
-  align-items: center;
   z-index: var(--z-overlay);
 }
 
-/* 模态框容器 */
+.ui-modal__overlay--placement-center {
+  justify-content: center;
+  align-items: center;
+}
+
+.ui-modal__overlay--placement-top-end {
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 64px 16px 16px;
+}
+
+.ui-modal__overlay--backdrop-strong {
+  background: var(--color-overlay-backdrop-strong);
+}
+
+.ui-modal__overlay--layer-popover {
+  z-index: var(--z-popover);
+}
+
+.ui-modal__overlay--effect-blur-sm {
+  backdrop-filter: blur(4px);
+}
+
 .ui-modal__container {
-  background: var(--modal-bg, var(--color-surface-base));
-  border: var(--ui-dialog-border, 0);
-  border-radius: var(--ui-dialog-radius, 12px);
-  box-shadow: var(--ui-dialog-shadow, 0 4px 20px var(--base-modal-container-shadow-color));
+  background: var(--color-surface-base);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px var(--base-modal-container-shadow-color);
   max-height: var(--ui-dialog-max-height, 90vh);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* 尺寸变体 */
 .ui-modal__container--small {
   width: 400px;
   max-width: 90vw;
@@ -380,41 +396,80 @@ onUnmounted(() => {
   height: 90vh;
 }
 
-/* 模态框头部 */
+.ui-modal__container--frame-soft {
+  border-radius: 16px;
+}
+
+.ui-modal__container--frame-floating {
+  box-shadow: 0 20px 60px var(--base-modal-container-shadow-color);
+}
+
+.ui-modal__container--frame-outlined {
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  box-shadow: 0 24px 64px var(--shadow-medium);
+}
+
+.ui-modal__container--frame-warning {
+  border: 2px solid var(--color-status-warning);
+  border-radius: 16px;
+  box-shadow: 0 25px 80px var(--color-overlay-backdrop-strong);
+}
+
 .ui-modal__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: var(--ui-dialog-header-padding, 16px 20px);
-  border-bottom: var(--ui-dialog-header-border, 1px solid var(--color-border-muted, var(--color-border-default)));
-  background: var(--ui-dialog-header-background, transparent);
-  color: var(--ui-dialog-header-color, inherit);
+  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
+  background: transparent;
+  color: inherit;
+}
+
+.ui-modal__header--brand {
+  padding: 20px 25px;
+  background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-hover) 100%);
+  color: var(--color-text-inverse);
+}
+
+.ui-modal__header--divider-none {
+  border-bottom: 0;
+}
+
+.ui-modal__header--divider-soft {
+  border-bottom-color: var(--color-border-muted, var(--color-border-soft));
 }
 
 .ui-modal__title {
   margin: 0;
-  font-size: var(--ui-dialog-title-font-size, 1.2em);
-  font-weight: var(--ui-dialog-title-font-weight, 600);
-  color: var(--ui-dialog-title-color, var(--color-text-strong, var(--color-text-heading)));
+  font-size: 1.2em;
+  font-weight: 600;
+  color: var(--color-text-strong, var(--color-text-heading));
+}
+
+.ui-modal__header--brand .ui-modal__title {
+  color: var(--color-text-inverse);
+  font-size: 1.4em;
 }
 
 .ui-modal__close {
-  background: none;
-  border: none;
-  font-size: var(--ui-dialog-close-font-size, 1.2em);
-  cursor: pointer;
-  color: var(--ui-dialog-close-color, var(--color-text-supporting, var(--color-text-secondary)));
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
+  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 .ui-modal__close:hover {
-  background-color: var(--ui-dialog-close-hover-background, var(--base-modal-close-hover-background));
-  color: var(--ui-dialog-close-hover-color, var(--color-text-strong, var(--color-text-heading)));
+  background-color: var(--base-modal-close-hover-background);
+  color: var(--color-text-strong, var(--color-text-heading));
 }
 
-/* 模态框内容 */
+.ui-modal__header--brand .ui-modal__close {
+  color: var(--color-text-inverse);
+}
+
+.ui-modal__header--brand .ui-modal__close:hover {
+  background-color: var(--color-overlay-inverse-soft);
+  color: var(--color-text-inverse);
+}
+
 .ui-modal__body {
   display: var(--ui-dialog-body-display, block);
   flex-direction: var(--ui-dialog-body-direction, row);
@@ -422,7 +477,7 @@ onUnmounted(() => {
   padding: var(--ui-dialog-body-padding, 20px);
   overflow-y: auto;
   flex: 1;
-  background: var(--ui-dialog-body-background, transparent);
+  background: transparent;
   text-align: var(--ui-dialog-body-text-align, start);
 }
 
@@ -446,15 +501,26 @@ onUnmounted(() => {
   overflow: visible;
 }
 
-/* 模态框底部 */
 .ui-modal__footer {
   display: flex;
   justify-content: var(--ui-dialog-actions-justify, flex-end);
   flex-wrap: var(--ui-dialog-actions-wrap, nowrap);
   gap: var(--ui-dialog-actions-gap, 10px);
   padding: var(--ui-dialog-actions-padding, 16px 20px);
-  border-top: var(--ui-dialog-actions-border, 1px solid var(--color-border-muted, var(--color-border-default)));
-  background: var(--ui-dialog-actions-background, transparent);
+  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  background: transparent;
+}
+
+.ui-modal__footer--divider-none {
+  border-top: 0;
+}
+
+.ui-modal__footer--divider-soft {
+  border-top-color: var(--color-border-muted, var(--color-border-soft));
+}
+
+.ui-modal__footer--tone-muted {
+  background: var(--color-surface-muted);
 }
 
 .ui-modal__container--chrome-compact .ui-modal__header {
@@ -469,7 +535,32 @@ onUnmounted(() => {
   box-shadow: none;
 }
 
-/* 过渡动画 */
+.ui-modal__container--chrome-inverse {
+  background: var(--color-overlay-backdrop-solid);
+  border: 1px solid var(--color-overlay-inverse-soft);
+  color: var(--color-text-inverse);
+  box-shadow: 0 18px 48px var(--shadow-medium);
+  backdrop-filter: blur(10px);
+}
+
+.ui-modal__container--chrome-inverse .ui-modal__title {
+  color: var(--color-text-inverse);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@media (--breakpoint-md-down) {
+  .ui-modal__container--mobile-fullscreen {
+    --ui-dialog-mobile-width: 100%;
+    --ui-dialog-mobile-max-width: 100%;
+    --ui-dialog-mobile-min-height: 0;
+    --ui-dialog-mobile-max-height: 100dvh;
+
+    margin: 0;
+    border-radius: 0;
+  }
+}
+
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.2s ease;

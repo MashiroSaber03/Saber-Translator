@@ -1,561 +1,421 @@
-/**
- * 漫画续写 API
- * 包含续写配置、脚本生成、图片生成、导出等功能
- */
-
 import { apiClient } from './client'
+import { downloadBlob } from './download'
 
-// ==================== 类型定义 ====================
-
-/**
- * 角色形态
- */
 export interface CharacterForm {
-    form_id: string           // 形态ID（如 "normal", "battle", "dark"）
-    form_name: string         // 形态显示名（如 "常服", "战斗服"）
-    description: string       // 形态描述
-    reference_image: string   // 参考图路径
-    enabled?: boolean         // 是否启用此形态
+  form_id: string
+  form_name: string
+  description: string
+  reference_image: string
+  enabled?: boolean
 }
 
-/**
- * 角色档案（支持多形态）
- */
 export interface CharacterProfile {
-    name: string              // 角色名
-    aliases: string[]         // 别名列表
-    description: string       // 角色基础描述
-    forms: CharacterForm[]    // 形态列表
-    reference_image: string   // 任意一张参考图（用于展示）
-    enabled?: boolean         // 是否启用此角色
+  name: string
+  aliases: string[]
+  description: string
+  forms: CharacterForm[]
+  reference_image: string
+  enabled?: boolean
 }
 
 export interface ChapterScript {
-    chapter_title: string
-    page_count: number
-    script_text: string
-    generated_at: string
+  chapter_title: string
+  page_count: number
+  script_text: string
+  generated_at: string
 }
 
-/**
- * 页面角色形态选择
- */
 export interface CharacterFormSelection {
-    character: string         // 角色名
-    form_id: string           // 选择的形态ID
-    form_name?: string        // 形态显示名
+  character: string
+  form_id: string
+  form_name?: string
 }
 
 export interface PageContent {
-    page_number: number
-    continuity_text: string
-    story_text: string
-    dialogue_text: string
-    characters: string[]
-    character_forms?: CharacterFormSelection[]
-    final_prompt: string
-    image_url: string
-    previous_url: string
-    status: 'pending' | 'generating' | 'generated' | 'failed'
+  page_number: number
+  continuity_text: string
+  story_text: string
+  dialogue_text: string
+  characters: string[]
+  character_forms?: CharacterFormSelection[]
+  final_prompt: string
+  image_url: string
+  previous_url: string
+  status: 'pending' | 'generating' | 'generated' | 'failed'
 }
 
-// ==================== 响应类型 ====================
-
 interface SavedContinuationData {
-    script: ChapterScript | null
-    pages: PageContent[]
-    config: {
-        page_count?: number
-        style_reference_pages?: number
-        continuation_direction?: string
-    } | null
-    has_data: boolean
+  script: ChapterScript | null
+  pages: PageContent[]
+  config: {
+    page_count?: number
+    style_reference_pages?: number
+    continuation_direction?: string
+  } | null
+  has_data: boolean
 }
 
 interface PrepareResponse {
-    success: boolean
-    ready?: boolean
-    message?: string
-    story_summary_ready?: boolean
-    timeline_ready?: boolean
-    characters_added?: number
-    total_characters?: number
-    synced_at?: string
-    error?: string
-    saved_data?: SavedContinuationData
+  success: boolean
+  ready?: boolean
+  message?: string
+  story_summary_ready?: boolean
+  timeline_ready?: boolean
+  characters_added?: number
+  total_characters?: number
+  synced_at?: string
+  error?: string
+  saved_data?: SavedContinuationData
 }
 
 export interface SyncContinuationResponse {
-    success: boolean
-    ready?: boolean
-    message?: string
-    story_summary_ready?: boolean
-    timeline_ready?: boolean
-    characters_added?: number
-    total_characters?: number
-    synced_at?: string
-    error?: string
+  success: boolean
+  ready?: boolean
+  message?: string
+  story_summary_ready?: boolean
+  timeline_ready?: boolean
+  characters_added?: number
+  total_characters?: number
+  synced_at?: string
+  error?: string
 }
 
 interface CharactersResponse {
-    success: boolean
-    characters?: CharacterProfile[]
-    error?: string
+  success: boolean
+  characters?: CharacterProfile[]
+  error?: string
 }
 
 interface UploadImageResponse {
-    success: boolean
-    image_path?: string
-    error?: string
+  success: boolean
+  image_path?: string
+  error?: string
 }
 
 interface ScriptResponse {
-    success: boolean
-    script?: ChapterScript
-    error?: string
+  success: boolean
+  script?: ChapterScript
+  error?: string
 }
 
 interface ImageGenerateResponse {
-    success: boolean
-    image_path?: string
-    pages?: PageContent[]
-    session_id?: string
-    error?: string
+  success: boolean
+  image_path?: string
+  pages?: PageContent[]
+  session_id?: string
+  error?: string
 }
 
-// ==================== API 函数 ====================
-
-/**
- * 准备续写数据（检查分析数据是否就绪）
- */
-export async function prepareContinuation(bookId: string): Promise<PrepareResponse> {
-    return apiClient.get(`/api/manga-insight/${bookId}/continuation/prepare`)
-}
-
-/**
- * 同步续写所需的分析依赖数据
- */
-export async function syncContinuationAnalysis(bookId: string): Promise<SyncContinuationResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/sync`, {})
-}
-
-/**
- * 获取角色列表
- */
-export async function getCharacters(bookId: string): Promise<CharactersResponse> {
-    return apiClient.get(`/api/manga-insight/${bookId}/continuation/characters`)
-}
-
-/**
- * 新增角色
- */
-export async function addCharacter(
-    bookId: string,
-    data: { name: string; aliases?: string[]; description?: string }
-): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
-    return apiClient.post(
-        `/api/manga-insight/${bookId}/continuation/characters`,
-        data
-    )
-}
-
-/**
- * 删除角色
- */
-export async function deleteCharacter(
-    bookId: string,
-    characterName: string
-): Promise<{ success: boolean; message?: string; error?: string }> {
-    return apiClient.delete(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}`
-    )
-}
-
-
-/**
- * 更新角色信息（名称和别名）
- */
-export async function updateCharacterInfo(
-    bookId: string,
-    characterName: string,
-    data: { name?: string; aliases?: string[]; enabled?: boolean }
-): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
-    return apiClient.put(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}`,
-        data
-    )
-}
-
-// ==================== 形态管理 API ====================
-
-/**
- * 为角色添加新形态
- */
-export async function addCharacterForm(
-    bookId: string,
-    characterName: string,
-    data: { form_id: string; form_name: string; description?: string }
-): Promise<{ success: boolean; form?: CharacterForm; error?: string }> {
-    return apiClient.post(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms`,
-        data
-    )
-}
-
-/**
- * 更新角色形态信息
- */
-export async function updateCharacterForm(
-    bookId: string,
-    characterName: string,
-    formId: string,
-    data: { form_name?: string; description?: string }
-): Promise<{ success: boolean; error?: string }> {
-    return apiClient.put(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}`,
-        data
-    )
-}
-
-/**
- * 删除角色形态
- */
-export async function deleteCharacterForm(
-    bookId: string,
-    characterName: string,
-    formId: string
-): Promise<{ success: boolean; message?: string; error?: string }> {
-    return apiClient.delete(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}`
-    )
-}
-
-/**
- * 切换角色启用状态
- */
-export async function toggleCharacterEnabled(
-    bookId: string,
-    characterName: string,
-    enabled: boolean
-): Promise<{ success: boolean; enabled?: boolean; error?: string }> {
-    return apiClient.post(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/toggle`,
-        { enabled }
-    )
-}
-
-/**
- * 切换角色形态启用状态
- */
-export async function toggleFormEnabled(
-    bookId: string,
-    characterName: string,
-    formId: string,
-    enabled: boolean
-): Promise<{ success: boolean; enabled?: boolean; error?: string }> {
-    return apiClient.post(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}/toggle`,
-        { enabled }
-    )
-}
-
-/**
- * 为指定形态上传参考图
- */
-export async function uploadFormImage(
-    bookId: string,
-    characterName: string,
-    formId: string,
-    formData: FormData
-): Promise<UploadImageResponse> {
-    return apiClient.upload(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}/image`,
-        formData
-    )
-}
-
-/**
- * 删除指定形态的参考图
- */
-export async function deleteFormImage(
-    bookId: string,
-    characterName: string,
-    formId: string
-): Promise<{ success: boolean; error?: string }> {
-    return apiClient.delete(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}/image`
-    )
-}
-
-/**
- * 生成形态正交图（三视图）
- */
-export async function generateFormOrtho(
-    bookId: string,
-    characterName: string,
-    formId: string,
-    sourceImages: File[]
-): Promise<UploadImageResponse> {
-    const formData = new FormData()
-    sourceImages.forEach((file) => {
-        formData.append(`images`, file)
-    })
-
-    return apiClient.post(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}/orthographic`,
-        formData,
-        {
-            headers: { 'Content-Type': 'multipart/form-data' },
-            timeout: 0  // AI生图可能很耗时
-        }
-    )
-}
-
-/**
- * 设置形态参考图（使用生成的三视图）
- */
-export async function setFormReference(
-    bookId: string,
-    characterName: string,
-    formId: string,
-    imagePath: string
-): Promise<{ success: boolean; error?: string }> {
-    return apiClient.post(
-        `/api/manga-insight/${bookId}/continuation/characters/${encodeURIComponent(characterName)}/forms/${encodeURIComponent(formId)}/set-reference`,
-        { image_path: imagePath }
-    )
-}
-
-/**
- * 保存编辑后的脚本
- */
-export async function saveScript(
-    bookId: string,
-    script: ChapterScript
-): Promise<ScriptResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/save-script`, {
-        script,
-    })
-}
-
-/**
- * 保存页面剧情与生成结果（持久化到服务器）
- */
-export async function savePages(
-    bookId: string,
-    pages: PageContent[]
-): Promise<{ success: boolean; error?: string }> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/save-pages`, {
-        pages
-    })
-}
-
-/**
- * 保存续写配置
- */
-export async function saveConfig(
-    bookId: string,
-    config: {
-        page_count: number
-        style_reference_pages: number
-        continuation_direction: string
-    }
-): Promise<{ success: boolean; error?: string }> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/save-config`, config)
-}
-
-/**
- * 清除续写数据（重新开始）
- */
-export async function clearContinuationData(
-    bookId: string
-): Promise<{ success: boolean; message?: string; error?: string }> {
-    return apiClient.delete(`/api/manga-insight/${bookId}/continuation/clear`)
-}
-
-/**
- * 生成单页详情（推荐使用，避免超时）
- */
-export async function generateSinglePageDetails(
-    bookId: string,
-    script: ChapterScript,
-    pageNumber: number
-): Promise<{ success: boolean; page?: PageContent; error?: string }> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/pages/${pageNumber}`, {
-        script
-    }, {
-        timeout: 0
-    })
-}
-
-/**
- * 获取最近可用的画风参考图 token
- */
-export async function getStyleReferences(
-    bookId: string,
-    count: number = 3
-): Promise<{ success: boolean; tokens?: string[]; error?: string }> {
-    return apiClient.get(`/api/manga-insight/${bookId}/continuation/style-references?count=${count}`)
-}
-
-/**
- * 生成单页图片
- */
-export async function generatePageImage(
-    bookId: string,
-    pageNumber: number,
-    page: PageContent,
-    styleReferenceTokens: string[],
-    sessionId?: string,
-    styleRefCount: number = 3  // 画风参考图数量
-): Promise<ImageGenerateResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/generate/${pageNumber}`, {
-        page,
-        style_reference_tokens: styleReferenceTokens,
-        session_id: sessionId,
-        style_ref_count: styleRefCount
-    }, {
-        timeout: 0
-    })
-}
-
-/**
- * 重新生成页面图片
- */
-export async function regeneratePageImage(
-    bookId: string,
-    pageNumber: number,
-    page: PageContent,
-    styleReferenceTokens: string[],
-    sessionId?: string,
-    styleRefCount: number = 3  // 画风参考图数量（滑动窗口大小）
-): Promise<ImageGenerateResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/regenerate/${pageNumber}`, {
-        page,
-        style_reference_tokens: styleReferenceTokens,
-        session_id: sessionId,
-        style_ref_count: styleRefCount
-    }, {
-        timeout: 0
-    })
-}
-
-/**
- * 导出为图片 ZIP
- * 后端会自动从 pages.json 加载图片路径
- */
-export async function exportAsImages(bookId: string): Promise<Blob> {
-    const response = await fetch(`/api/manga-insight/${bookId}/continuation/export/images`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-    })
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || '导出失败')
-    }
-
-    return response.blob()
-}
-
-/**
- * 导出为 PDF
- * 后端会自动从 pages.json 加载图片路径
- */
-export async function exportAsPdf(bookId: string): Promise<Blob> {
-    const response = await fetch(`/api/manga-insight/${bookId}/continuation/export/pdf`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-    })
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || '导出失败')
-    }
-
-    return response.blob()
-}
-
-// ==================== 参考图选择相关类型 ====================
-
-/**
- * 原作/续写图片信息
- */
 export interface MangaImageInfo {
-    token: string
-    page_number: number
-    path: string
-    has_image: boolean
-    is_placeholder?: boolean
-    label?: string
+  token: string
+  page_number: number
+  path: string
+  has_image: boolean
+  is_placeholder?: boolean
+  label?: string
 }
 
-/**
- * 角色形态参考图信息
- */
 export interface CharacterFormInfo {
-    token: string
-    character_name: string
-    form_id: string
-    form_name: string
-    path: string
-    has_image: boolean
-    is_placeholder?: boolean
-    label?: string
+  token: string
+  character_name: string
+  form_id: string
+  form_name: string
+  path: string
+  has_image: boolean
+  is_placeholder?: boolean
+  label?: string
 }
 
-/**
- * 可用图片列表响应
- */
 export interface AvailableImagesResponse {
-    success: boolean
-    original_images?: MangaImageInfo[]
-    continuation_images?: MangaImageInfo[]
-    character_forms?: CharacterFormInfo[]
-    total_original_pages?: number
-    error?: string
+  success: boolean
+  original_images?: MangaImageInfo[]
+  continuation_images?: MangaImageInfo[]
+  character_forms?: CharacterFormInfo[]
+  total_original_pages?: number
+  error?: string
 }
 
-/**
- * 获取可用于参考图选择的所有图片列表
- *
- * @param bookId 书籍ID
- * @param mode "script" 或 "image"
- *   - script: 脚本生成场景，只返回原作图片
- *   - image: 生图场景，返回原作图片+续写图片+角色档案
- */
-export async function getAvailableImages(
-    bookId: string,
-    mode: 'script' | 'image' = 'script'
-): Promise<AvailableImagesResponse> {
-    const params = new URLSearchParams({
-        mode
-    })
-    return apiClient.get(`/api/manga-insight/${bookId}/continuation/available-images?${params}`)
+function continuationPathSegment(value: string): string {
+  return encodeURIComponent(value)
 }
 
-/**
- * 生成脚本（支持自定义参考图 token）
- */
-export async function generateScriptWithRefs(
-    bookId: string,
-    direction: string,
-    pageCount: number,
-    referenceTokens?: string[],
-    referenceImageCount: number = 5
+function continuationEndpoint(bookId: string, suffix = ''): string {
+  return `/api/manga-insight/${continuationPathSegment(bookId)}/continuation${suffix}`
+}
+
+function characterEndpoint(bookId: string, characterName: string, suffix = ''): string {
+  return continuationEndpoint(bookId, `/characters/${encodeURIComponent(characterName)}${suffix}`)
+}
+
+function formEndpoint(
+  bookId: string,
+  characterName: string,
+  formId: string,
+  suffix = '',
+): string {
+  return characterEndpoint(
+    bookId,
+    characterName,
+    `/forms/${encodeURIComponent(formId)}${suffix}`,
+  )
+}
+
+function emptyJsonPostInit(): RequestInit {
+  return {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  }
+}
+
+export async function prepareContinuation(bookId: string): Promise<PrepareResponse> {
+  return apiClient.get(continuationEndpoint(bookId, '/prepare'))
+}
+
+export async function syncContinuationAnalysis(bookId: string): Promise<SyncContinuationResponse> {
+  return apiClient.post(continuationEndpoint(bookId, '/sync'), {})
+}
+
+export async function getCharacters(bookId: string): Promise<CharactersResponse> {
+  return apiClient.get(continuationEndpoint(bookId, '/characters'))
+}
+
+export async function addCharacter(
+  bookId: string,
+  data: { name: string; aliases?: string[]; description?: string },
+): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
+  return apiClient.post(continuationEndpoint(bookId, '/characters'), data)
+}
+
+export async function deleteCharacter(
+  bookId: string,
+  characterName: string,
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  return apiClient.delete(characterEndpoint(bookId, characterName))
+}
+
+export async function updateCharacterInfo(
+  bookId: string,
+  characterName: string,
+  data: { name?: string; aliases?: string[]; enabled?: boolean },
+): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
+  return apiClient.put(characterEndpoint(bookId, characterName), data)
+}
+
+export async function addCharacterForm(
+  bookId: string,
+  characterName: string,
+  data: { form_id: string; form_name: string; description?: string },
+): Promise<{ success: boolean; form?: CharacterForm; error?: string }> {
+  return apiClient.post(characterEndpoint(bookId, characterName, '/forms'), data)
+}
+
+export async function updateCharacterForm(
+  bookId: string,
+  characterName: string,
+  formId: string,
+  data: { form_name?: string; description?: string },
+): Promise<{ success: boolean; error?: string }> {
+  return apiClient.put(formEndpoint(bookId, characterName, formId), data)
+}
+
+export async function deleteCharacterForm(
+  bookId: string,
+  characterName: string,
+  formId: string,
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  return apiClient.delete(formEndpoint(bookId, characterName, formId))
+}
+
+export async function toggleCharacterEnabled(
+  bookId: string,
+  characterName: string,
+  enabled: boolean,
+): Promise<{ success: boolean; enabled?: boolean; error?: string }> {
+  return apiClient.post(characterEndpoint(bookId, characterName, '/toggle'), { enabled })
+}
+
+export async function toggleFormEnabled(
+  bookId: string,
+  characterName: string,
+  formId: string,
+  enabled: boolean,
+): Promise<{ success: boolean; enabled?: boolean; error?: string }> {
+  return apiClient.post(formEndpoint(bookId, characterName, formId, '/toggle'), { enabled })
+}
+
+export async function uploadFormImage(
+  bookId: string,
+  characterName: string,
+  formId: string,
+  formData: FormData,
+): Promise<UploadImageResponse> {
+  return apiClient.upload(formEndpoint(bookId, characterName, formId, '/image'), formData)
+}
+
+export async function deleteFormImage(
+  bookId: string,
+  characterName: string,
+  formId: string,
+): Promise<{ success: boolean; error?: string }> {
+  return apiClient.delete(formEndpoint(bookId, characterName, formId, '/image'))
+}
+
+export async function generateFormOrtho(
+  bookId: string,
+  characterName: string,
+  formId: string,
+  sourceImages: File[],
+): Promise<UploadImageResponse> {
+  const formData = new FormData()
+  sourceImages.forEach(file => formData.append('images', file))
+
+  return apiClient.post(formEndpoint(bookId, characterName, formId, '/orthographic'), formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+  })
+}
+
+export async function setFormReference(
+  bookId: string,
+  characterName: string,
+  formId: string,
+  imagePath: string,
+): Promise<{ success: boolean; error?: string }> {
+  return apiClient.post(formEndpoint(bookId, characterName, formId, '/set-reference'), {
+    image_path: imagePath,
+  })
+}
+
+export async function saveScript(
+  bookId: string,
+  script: ChapterScript,
 ): Promise<ScriptResponse> {
-    return apiClient.post(`/api/manga-insight/${bookId}/continuation/script`, {
-        direction,
-        page_count: pageCount,
-        reference_tokens: referenceTokens || null,
-        reference_image_count: referenceImageCount,
-    }, {
-        timeout: 0
-    })
+  return apiClient.post(continuationEndpoint(bookId, '/save-script'), { script })
+}
+
+export async function savePages(
+  bookId: string,
+  pages: PageContent[],
+): Promise<{ success: boolean; error?: string }> {
+  return apiClient.post(continuationEndpoint(bookId, '/save-pages'), { pages })
+}
+
+export async function saveConfig(
+  bookId: string,
+  config: {
+    page_count: number
+    style_reference_pages: number
+    continuation_direction: string
+  },
+): Promise<{ success: boolean; error?: string }> {
+  return apiClient.post(continuationEndpoint(bookId, '/save-config'), config)
+}
+
+export async function clearContinuationData(
+  bookId: string,
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  return apiClient.delete(continuationEndpoint(bookId, '/clear'))
+}
+
+export async function generateSinglePageDetails(
+  bookId: string,
+  script: ChapterScript,
+  pageNumber: number,
+): Promise<{ success: boolean; page?: PageContent; error?: string }> {
+  return apiClient.post(
+    continuationEndpoint(bookId, `/pages/${pageNumber}`),
+    { script },
+    { timeout: 0 },
+  )
+}
+
+export async function getStyleReferences(
+  bookId: string,
+  count = 3,
+): Promise<{ success: boolean; tokens?: string[]; error?: string }> {
+  return apiClient.get(continuationEndpoint(bookId, `/style-references?count=${count}`))
+}
+
+export async function generatePageImage(
+  bookId: string,
+  pageNumber: number,
+  page: PageContent,
+  styleReferenceTokens: string[],
+  sessionId?: string,
+  styleRefCount = 3,
+): Promise<ImageGenerateResponse> {
+  return apiClient.post(continuationEndpoint(bookId, `/generate/${pageNumber}`), {
+    page,
+    style_reference_tokens: styleReferenceTokens,
+    session_id: sessionId,
+    style_ref_count: styleRefCount,
+  }, {
+    timeout: 0,
+  })
+}
+
+export async function regeneratePageImage(
+  bookId: string,
+  pageNumber: number,
+  page: PageContent,
+  styleReferenceTokens: string[],
+  sessionId?: string,
+  styleRefCount = 3,
+): Promise<ImageGenerateResponse> {
+  return apiClient.post(continuationEndpoint(bookId, `/regenerate/${pageNumber}`), {
+    page,
+    style_reference_tokens: styleReferenceTokens,
+    session_id: sessionId,
+    style_ref_count: styleRefCount,
+  }, {
+    timeout: 0,
+  })
+}
+
+export async function exportAsImages(bookId: string): Promise<Blob> {
+  const { blob } = await downloadBlob({
+    url: continuationEndpoint(bookId, '/export/images'),
+    fallbackFilename: `${bookId}.continuation-images.zip`,
+    fallbackErrorMessage: '导出失败',
+    init: emptyJsonPostInit(),
+  })
+  return blob
+}
+
+export async function exportAsPdf(bookId: string): Promise<Blob> {
+  const { blob } = await downloadBlob({
+    url: continuationEndpoint(bookId, '/export/pdf'),
+    fallbackFilename: `${bookId}.continuation.pdf`,
+    fallbackErrorMessage: '导出失败',
+    init: emptyJsonPostInit(),
+  })
+  return blob
+}
+
+export async function getAvailableImages(
+  bookId: string,
+  mode: 'script' | 'image' = 'script',
+): Promise<AvailableImagesResponse> {
+  const params = new URLSearchParams({ mode })
+  return apiClient.get(continuationEndpoint(bookId, `/available-images?${params}`))
+}
+
+export async function generateScriptWithRefs(
+  bookId: string,
+  direction: string,
+  pageCount: number,
+  referenceTokens?: string[],
+  referenceImageCount = 5,
+): Promise<ScriptResponse> {
+  return apiClient.post(continuationEndpoint(bookId, '/script'), {
+    direction,
+    page_count: pageCount,
+    reference_tokens: referenceTokens || null,
+    reference_image_count: referenceImageCount,
+  }, {
+    timeout: 0,
+  })
 }

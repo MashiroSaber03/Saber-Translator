@@ -1,6 +1,13 @@
 <script setup lang="ts">
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductMessageBubble from '@/components/product/ProductMessageBubble.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+import StudioPreviewWorkspaceHeader from './StudioPreviewWorkspaceHeader.vue'
+import StudioPreviewWorkspacePanel from './StudioPreviewWorkspacePanel.vue'
 import type { CharacterStudioAgentPatchV2, CharacterStudioDocument } from '@/types/characterStudio'
 
 type AgentMessage = { role: 'user' | 'assistant'; content: string }
@@ -21,160 +28,154 @@ defineEmits<{
   (event: 'applyPatch'): void
   (event: 'sendAgent'): void
   (event: 'undoPatch'): void
-  (event: 'update:agentInput', value: string | number | boolean): void
+  (event: 'update:agentInput', value: string): void
 }>()
 </script>
 
 <template>
-  <section class="workspace-card assistant-workspace">
-    <div class="assistant-head">
-      <div>
-        <h4>卡片助手</h4>
-        <p>围绕角色卡本体给出结构化建议，可应用 patch 或撤销。</p>
-      </div>
-      <div class="assistant-actions">
-        <UiButton
-          variant="toolbar"
-          class="action-ghost"
-          :disabled="!pendingPatch"
-          size="sm"
-          @click="$emit('applyPatch')"
-        >
-          应用 patch
-        </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="action-ghost"
-          :disabled="!canUndoPatch"
-          size="sm"
-          @click="$emit('undoPatch')"
-        >
-          撤销 patch
-        </UiButton>
-      </div>
-    </div>
+  <StudioPreviewWorkspacePanel class="agent-workspace">
+    <StudioPreviewWorkspaceHeader
+      title="卡片助手"
+      description="围绕角色卡本体给出结构化建议，可应用 patch 或撤销。"
+    >
+      <template #actions>
+        <ProductActionRow class="agent-workspace__actions" aria-label="卡片助手 patch 操作" justify="start" variant="toolbar">
+          <UiButton
+            variant="secondary"
+            :disabled="!pendingPatch"
+            size="sm"
+            @click="$emit('applyPatch')"
+          >
+            应用 patch
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            :disabled="!canUndoPatch"
+            size="sm"
+            @click="$emit('undoPatch')"
+          >
+            撤销 patch
+          </UiButton>
+        </ProductActionRow>
+      </template>
+    </StudioPreviewWorkspaceHeader>
 
-    <div class="assistant-main">
-      <div class="messages-panel assistant-messages">
-        <div v-if="agentMessages.length === 0" class="empty-copy">还没有与卡片助手对话。</div>
-        <article
+    <div class="agent-workspace__main">
+      <div class="agent-workspace__messages">
+        <ProductEmptyState
+          v-if="agentMessages.length === 0"
+          icon-name="sparkles"
+          role="note"
+          size="compact"
+          title="还没有与卡片助手对话"
+        />
+        <ProductMessageBubble
           v-for="(item, index) in agentMessages"
           :key="`agent-${index}`"
-          class="message-card"
-          :class="item.role"
+          class="agent-workspace__message"
+          :role="item.role"
+          :avatar-icon-name="item.role === 'assistant' ? 'sparkles' : 'users'"
+          :avatar-label="item.role === 'assistant' ? '卡片助手' : '你'"
+          :aria-label="`${item.role === 'assistant' ? '卡片助手' : '你'}的助手消息`"
+          data-testid="studio-agent-message"
+          :data-message-role="item.role"
         >
-          <div class="message-head">
-            <span class="message-role">{{ item.role === 'assistant' ? '卡片助手' : '你' }}</span>
-          </div>
-          <pre class="agent-text">{{ item.content }}</pre>
-        </article>
+          <template #meta>
+            <span class="agent-workspace__message-role">{{ item.role === 'assistant' ? '卡片助手' : '你' }}</span>
+          </template>
+          <pre class="agent-workspace__message-text">{{ item.content }}</pre>
+        </ProductMessageBubble>
       </div>
 
-      <div class="composer-card assistant-composer">
-        <div class="composer-main">
+      <div class="agent-workspace__composer">
+        <div class="agent-workspace__composer-main">
           <UiTextarea
             :model-value="agentInput"
-            class="chat-composer-input"
+            class="agent-workspace__composer-input"
+            variant="studio"
             rows="1"
+            aria-label="卡片助手消息内容"
             placeholder="例如：请审查当前角色卡，并建议补充世界书与状态任务。"
             @update:model-value="$emit('update:agentInput', $event)"
           />
-          <div class="composer-actions compact-actions">
-            <UiButton
-              variant="toolbar"
+          <ProductActionRow class="agent-workspace__composer-actions" aria-label="卡片助手消息操作" justify="start">
+            <UiIconButton
+              variant="primary"
+              size="lg"
               data-testid="assistant-send-trigger"
-              class="action-primary icon-btn"
               type="button"
-              :title="agentBusy ? '助手处理中...' : '发送给助手'"
-              :aria-label="agentBusy ? '助手处理中...' : '发送给助手'"
+              :label="agentBusy ? '助手处理中...' : '发送给助手'"
               :disabled="agentBusy || !agentInput.trim() || !document"
               @click="$emit('sendAgent')"
             >
-              {{ agentBusy ? '…' : '↗' }}
-            </UiButton>
-          </div>
+              <UiIcon :name="agentBusy ? 'loading' : 'send'" size="18" />
+            </UiIconButton>
+          </ProductActionRow>
         </div>
       </div>
     </div>
 
-    <div v-if="pendingPatch" class="prompt-preview-card">
-      <h4>待应用 Patch</h4>
-      <div v-if="patchSummarySections.length > 0" class="patch-summary">
+    <div v-if="pendingPatch" class="agent-workspace__patch-card">
+      <h4 class="agent-workspace__patch-card-title">待应用 Patch</h4>
+      <div v-if="patchSummarySections.length > 0" class="agent-workspace__patch-summary">
         <section
           v-for="section in patchSummarySections"
           :key="section.key"
-          class="patch-summary-section"
+          class="agent-workspace__patch-summary-section"
         >
-          <div class="patch-summary-head">
-            <strong>{{ section.title }}</strong>
-            <span>{{ section.items.length }} 项</span>
+          <div class="agent-workspace__patch-summary-head">
+            <strong class="agent-workspace__patch-summary-title">{{ section.title }}</strong>
+            <span class="agent-workspace__patch-summary-count">{{ section.items.length }} 项</span>
           </div>
-          <ul class="patch-summary-list">
+          <ul class="agent-workspace__patch-summary-list">
             <li v-for="(item, index) in section.items" :key="`${section.key}-${index}`">{{ item }}</li>
           </ul>
         </section>
       </div>
-      <details class="patch-raw-details">
-        <summary>查看原始 JSON</summary>
-        <pre>{{ JSON.stringify(pendingPatch, null, 2) }}</pre>
+      <details class="agent-workspace__patch-raw-details">
+        <summary class="agent-workspace__patch-raw-summary">查看原始 JSON</summary>
+        <pre class="agent-workspace__patch-raw-json">{{ JSON.stringify(pendingPatch, null, 2) }}</pre>
       </details>
     </div>
 
-    <div v-if="agentHtmlPreview" class="html-preview-card">
-      <h4>HTML 预览块</h4>
-      <iframe class="preview-frame" :srcdoc="agentHtmlPreview" sandbox="allow-scripts"></iframe>
+    <div v-if="agentHtmlPreview" class="agent-workspace__html-preview-card">
+      <h4 class="agent-workspace__html-preview-title">HTML 预览块</h4>
+      <iframe class="agent-workspace__preview-frame" :srcdoc="agentHtmlPreview" sandbox="allow-scripts"></iframe>
     </div>
-  </section>
+  </StudioPreviewWorkspacePanel>
 </template>
 
 <style scoped>
-.workspace-card,
-.prompt-preview-card,
-.html-preview-card {
+.agent-workspace__patch-card,
+.agent-workspace__html-preview-card {
   width: 100%;
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 24px;
-  background: var(--character-studio-preview-card-background);
+  background: color-mix(in srgb, var(--color-surface-card) 92%, transparent);
   box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
 
-.workspace-card {
+.agent-workspace {
+  gap: 12px;
+  min-height: 0;
+}
+
+.agent-workspace__composer-actions {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  min-height: 0;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
-.assistant-workspace {
-  gap: 12px;
-  min-height: 0;
-}
-
-.assistant-head,
-.message-head,
-.composer-actions {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.assistant-head h4,
-.prompt-preview-card h4,
-.html-preview-card h4 {
+.agent-workspace__patch-card-title,
+.agent-workspace__html-preview-title {
   margin: 8px 0 0;
-  color: var(--character-studio-preview-heading-text);
+  color: var(--color-text-heading);
 }
 
-.assistant-head p {
-  margin: 8px 0 0;
-  color: var(--studio-text-muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.assistant-main {
+.agent-workspace__main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -182,7 +183,7 @@ defineEmits<{
   min-height: 0;
 }
 
-.messages-panel {
+.agent-workspace__messages {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -192,149 +193,99 @@ defineEmits<{
   overflow: auto;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--character-studio-preview-message-list-background-start), var(--character-studio-preview-message-list-background-end));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-app) 95%, transparent), color-mix(in srgb, var(--color-surface-neutral-muted) 90%, transparent));
 }
 
-.assistant-messages {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.message-card {
-  width: min(100%, 88%);
-  padding: 14px;
-  border: 1px solid var(--studio-border-default);
-  border-radius: 18px;
-  background: var(--character-studio-preview-assistant-message-background);
-}
-
-.message-card.user {
-  margin-left: auto;
-  background: var(--character-studio-preview-user-message-background);
-}
-
-.message-card.assistant {
-  margin-right: auto;
-  background: var(--studio-surface-tint);
-}
-
-.message-role {
-  color: var(--character-studio-preview-message-role-text);
+.agent-workspace__message-role {
+  color: inherit;
   font-size: 11px;
+  opacity: 0.72;
 }
 
-.agent-text {
-  margin-top: 8px;
-  color: var(--studio-text-strong);
+.agent-workspace__message-text {
+  margin: 0;
+  color: inherit;
   font-family: inherit;
   font-size: 13px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.composer-card {
-  --ui-textarea-border: 1px solid var(--studio-border-strong);
-  --ui-textarea-background: var(--studio-surface-soft);
-  --ui-textarea-radius: 14px;
-  --ui-textarea-padding: 10px 12px;
-  --ui-textarea-color: var(--studio-text-strong);
-  --ui-textarea-font-size: 13px;
-
+.agent-workspace__composer {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 6px;
-  margin-top: 2px;
+  margin-top: 0;
   padding: 10px 12px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: var(--character-studio-preview-composer-background);
+  background: color-mix(in srgb, var(--color-surface-app) 94%, transparent);
 }
 
-.assistant-composer {
-  flex: 0 0 auto;
-  margin-top: 0;
-}
-
-.composer-main {
+.agent-workspace__composer-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 10px;
 }
 
-.chat-composer-input {
+.agent-workspace__composer-input {
   min-height: 64px;
   resize: vertical;
 }
 
-.compact-actions {
-  align-items: stretch;
-  justify-content: flex-end;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  padding: 0;
-  font-size: 22px;
-  line-height: 1;
-}
-
-.patch-summary {
+.agent-workspace__patch-summary {
   display: flex;
   flex-direction: column;
   gap: 12px;
   margin-top: 12px;
 }
 
-.patch-summary-section {
+.agent-workspace__patch-summary-section {
   padding: 14px;
   border: 1px solid var(--studio-border-default);
   border-radius: 16px;
-  background: var(--character-studio-preview-patch-section-background);
+  background: color-mix(in srgb, var(--color-surface-app) 88%, transparent);
 }
 
-.patch-summary-head {
+.agent-workspace__patch-summary-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.patch-summary-head strong {
-  color: var(--character-studio-preview-detail-label-text);
+.agent-workspace__patch-summary-title {
+  color: var(--color-text-heading);
 }
 
-.patch-summary-head span {
+.agent-workspace__patch-summary-count {
   color: var(--studio-text-muted);
   font-size: 12px;
 }
 
-.patch-summary-list {
+.agent-workspace__patch-summary-list {
   margin: 10px 0 0;
   padding-left: 18px;
   color: var(--studio-text-default);
   font-size: 13px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
-.patch-raw-details {
+.agent-workspace__patch-raw-details {
   margin-top: 12px;
 }
 
-.patch-raw-details summary {
+.agent-workspace__patch-raw-summary {
   color: var(--studio-text-muted);
   font-size: 12px;
   cursor: pointer;
 }
 
-.prompt-preview-card pre {
+.agent-workspace__patch-raw-json {
   flex: 1 1 auto;
   max-height: 280px;
   min-height: 0;
@@ -346,7 +297,7 @@ defineEmits<{
   word-break: break-word;
 }
 
-.preview-frame {
+.agent-workspace__preview-frame {
   width: 100%;
   height: 260px;
   margin-top: 12px;
@@ -355,9 +306,4 @@ defineEmits<{
   background: var(--color-surface-base);
 }
 
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-  line-height: 1.7;
-}
 </style>

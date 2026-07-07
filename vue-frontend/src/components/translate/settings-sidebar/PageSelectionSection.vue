@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import ProductCollapsibleSection from '@/components/product/ProductCollapsibleSection.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiSwitch from '@/components/ui/UiSwitch.vue'
+import { ref } from 'vue'
 
 defineProps<{
   enabled: boolean
@@ -16,72 +19,81 @@ defineEmits<{
   (event: 'open'): void
   (event: 'update:enabled', value: boolean): void
 }>()
+
+const isPageSelectionExpanded = ref(false)
 </script>
 
 <template>
-  <CollapsiblePanel
+  <ProductCollapsibleSection
+    v-model:expanded="isPageSelectionExpanded"
     title="指定翻译页码"
-    :default-expanded="false"
-    variant="settings"
-    class="settings-panel"
+    class="page-selection-section"
   >
-    <div class="settings-form page-selection-form">
-      <div class="range-header-row">
-        <UiButton
-          variant="toolbar"
-          class="page-selection-toggle-compact"
-          :aria-pressed="enabled"
-          :disabled="totalImages === 0 || !supportsPageSelection"
-          @click="$emit('update:enabled', !enabled)"
-        >
+    <div class="page-selection-section__form">
+      <div class="page-selection-section__header">
+        <div class="page-selection-section__enable-control">
           <span>启用</span>
-        </UiButton>
-        <span class="total-count">共 {{ totalImages }} 张</span>
-      </div>
-
-      <div v-if="!supportsPageSelection" class="page-selection-note">当前模式不支持指定翻译页码</div>
-
-      <div v-if="isActive" class="page-selection-summary-block">
-        <div class="page-selection-summary-value">
-          {{ summaryFor(normalizedSelectedPages) }}
+          <UiSwitch
+            :model-value="enabled"
+            aria-label="启用指定翻译页码"
+            size="sm"
+            :disabled="totalImages === 0 || !supportsPageSelection"
+            @change="$emit('update:enabled', $event)"
+          />
         </div>
-        <UiButton
-          variant="toolbar"
-          type="button"
-          class="settings-button secondary-button page-selection-open-btn"
-          :disabled="totalImages === 0"
-          @click="$emit('open')"
-        >
-          选择页码
-        </UiButton>
+        <span class="page-selection-section__total-count">共 {{ totalImages }} 张</span>
       </div>
 
-      <div
+      <ProductStatusBanner
+        v-if="isActive"
+        class="page-selection-section__summary"
+        tone="neutral"
+        role="note"
+      >
+        <span class="page-selection-section__summary-value">
+          {{ summaryFor(normalizedSelectedPages) }}
+        </span>
+        <template #actions>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            block
+            type="button"
+            :disabled="totalImages === 0"
+            @click="$emit('open')"
+          >
+            选择页码
+          </UiButton>
+        </template>
+      </ProductStatusBanner>
+
+      <ProductStatusBanner
+        v-if="!supportsPageSelection"
+        class="page-selection-section__note"
+        tone="warning"
+        role="note"
+      >
+        当前模式不支持指定翻译页码
+      </ProductStatusBanner>
+
+      <ProductStatusBanner
         v-if="isActive && !hasValidPageSelection && totalImages > 0"
-        class="page-selection-error"
+        class="page-selection-section__error"
+        tone="danger"
+        role="alert"
       >
         请至少选择一页
-      </div>
+      </ProductStatusBanner>
     </div>
-  </CollapsiblePanel>
+  </ProductCollapsibleSection>
 </template>
 
 <style scoped>
-.settings-panel.collapsible-panel {
-  --settings-sidebar-page-selection-panel-border: #d8e3f1;
-  --settings-sidebar-page-selection-panel-background: #f5f8fd;
-  --settings-sidebar-page-selection-toggle-border: #d4deed;
-  --settings-sidebar-page-selection-toggle-border-active: #94b5e5;
-  --settings-sidebar-page-selection-toggle-background: #f4f8fd;
-  --settings-sidebar-page-selection-toggle-background-active: #e9f2ff;
-  --settings-sidebar-page-selection-toggle-text: #5d7090;
-  --settings-sidebar-page-selection-toggle-text-active: #21579c;
-  --settings-sidebar-page-selection-muted-text: #6f809a;
-  --settings-sidebar-page-selection-summary-text: #304464;
-  --settings-sidebar-page-selection-error-border: #f3cccc;
-  --settings-sidebar-page-selection-error-text: #b73535;
-  --settings-sidebar-page-selection-button-border: #bfd0e5;
-  --settings-sidebar-page-selection-button-text: #2f4b71;
+.page-selection-section.product-collapsible-section {
+  --settings-sidebar-page-selection-panel-border: var(--color-border-muted);
+  --settings-sidebar-page-selection-panel-background: var(--color-surface-quiet);
+  --settings-sidebar-page-selection-muted-text: var(--color-text-supporting);
+  --settings-sidebar-page-selection-summary-text: var(--color-text-default);
 
   margin: 0 0 12px;
   padding: 12px;
@@ -90,91 +102,48 @@ defineEmits<{
   background: var(--settings-sidebar-page-selection-panel-background);
 }
 
-.settings-form {
+.page-selection-section__form {
   display: flex;
   flex-direction: column;
-}
-
-.page-selection-form {
   gap: 8px;
 }
 
-.range-header-row {
+.page-selection-section__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.page-selection-toggle-compact {
+.page-selection-section__enable-control {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--settings-sidebar-page-selection-toggle-border);
-  border-radius: 999px;
-  background: var(--settings-sidebar-page-selection-toggle-background);
-  color: var(--settings-sidebar-page-selection-toggle-text);
+  color: var(--settings-sidebar-page-selection-muted-text);
   font-weight: 600;
   font-size: 12px;
-  cursor: pointer;
 }
 
-.page-selection-toggle-compact[aria-pressed='true'] {
-  border-color: var(--settings-sidebar-page-selection-toggle-border-active);
-  background: var(--settings-sidebar-page-selection-toggle-background-active);
-  color: var(--settings-sidebar-page-selection-toggle-text-active);
-}
-
-.total-count,
-.page-selection-note {
+.page-selection-section__total-count,
+.page-selection-section__note {
   color: var(--settings-sidebar-page-selection-muted-text);
   font-size: 12px;
   font-weight: 500;
 }
 
-.page-selection-summary-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0 0;
+.page-selection-section__summary {
+  margin-top: 2px;
 }
 
-.page-selection-summary-value {
+.page-selection-section__summary-value {
   color: var(--settings-sidebar-page-selection-summary-text);
   font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
 }
 
-.page-selection-open-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: stretch;
-  width: 100%;
-  padding: 0 14px;
-}
-
-.page-selection-error {
+.page-selection-section__error {
   margin-top: 2px;
-  padding: 6px 10px;
-  border: 1px solid var(--settings-sidebar-page-selection-error-border);
-  border-radius: 8px;
-  background: var(--color-surface-neutral-muted);
-  color: var(--settings-sidebar-page-selection-error-text);
   font-weight: 600;
-  font-size: 12px;
-  text-align: center;
-}
-
-.secondary-button {
-  min-height: 38px;
-  border: 1px solid var(--settings-sidebar-page-selection-button-border);
-  border-radius: 8px;
-  background: var(--color-surface-base);
-  color: var(--settings-sidebar-page-selection-button-text);
-  font-weight: 600;
-  font-size: 13px;
 }
 </style>

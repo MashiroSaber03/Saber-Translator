@@ -1,16 +1,18 @@
-/**
- * Insight 配置管理 Composable
- *
- * 统一管理 VLM/LLM/Embedding/Reranker/ImageGen 五种服务商配置的保存/恢复
- */
-
+import type { OpenAICompatibleOptions } from '@/types/settings'
+import { cloneOpenAiOptions } from '@/utils/openaiOptions'
 import type { Ref } from 'vue'
 
-/** localStorage 存储键 */
 const STORAGE_KEY = 'insight_provider_configs'
 const INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION = 1
+const DEFAULT_VLM_OPENAI_OPTIONS = {
+  request: { forceJsonOutput: false, temperature: 0.3 },
+  execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 },
+} satisfies OpenAICompatibleOptions
+const DEFAULT_LLM_OPENAI_OPTIONS = {
+  request: { forceJsonOutput: false },
+  execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 },
+} satisfies OpenAICompatibleOptions
 
-/** 服务商配置字段映射 */
 interface ProviderFieldMap {
   apiKey: string
   model: string
@@ -18,42 +20,15 @@ interface ProviderFieldMap {
   [key: string]: unknown
 }
 
-/** VLM 配置字段 */
 interface VlmFields extends ProviderFieldMap {
-  openaiOptions: {
-    request: {
-      forceJsonOutput: boolean
-      temperature?: number
-      extraBody?: Record<string, unknown>
-    }
-    execution: {
-      useStream: boolean
-      rpmLimit: number
-      transportRetries: number
-      businessRetries: number
-    }
-  }
+  openaiOptions: OpenAICompatibleOptions
   imageMaxSize: number
 }
 
-/** LLM 配置字段 */
 interface LlmFields extends ProviderFieldMap {
-  openaiOptions: {
-    request: {
-      forceJsonOutput: boolean
-      temperature?: number
-      extraBody?: Record<string, unknown>
-    }
-    execution: {
-      useStream: boolean
-      rpmLimit: number
-      transportRetries: number
-      businessRetries: number
-    }
-  }
+  openaiOptions: OpenAICompatibleOptions
 }
 
-/** Embedding 配置字段 */
 interface EmbeddingFields extends ProviderFieldMap {
   rpmLimit: number
   transportRetries: number
@@ -61,7 +36,6 @@ interface EmbeddingFields extends ProviderFieldMap {
   timeoutSeconds: number
 }
 
-/** Reranker 配置字段 */
 interface RerankerFields extends ProviderFieldMap {
   topK: number
   transportRetries: number
@@ -69,14 +43,12 @@ interface RerankerFields extends ProviderFieldMap {
   timeoutSeconds: number
 }
 
-/** ImageGen 配置字段 */
 interface ImageGenFields extends ProviderFieldMap {
   transportRetries: number
   businessRetries: number
   timeoutSeconds: number
 }
 
-/** 服务商配置缓存结构 */
 export interface ProviderConfigsCache {
   vlm: Record<string, Partial<VlmFields>>
   llm: Record<string, Partial<LlmFields>>
@@ -105,7 +77,7 @@ function hasBooleanField(value: Record<string, unknown>, key: string): boolean {
   return typeof value[key] === 'boolean'
 }
 
-function isOpenAiOptions(value: unknown): boolean {
+function isOpenAiOptions(value: unknown): value is OpenAICompatibleOptions {
   if (!isRecord(value) || !isRecord(value.request) || !isRecord(value.execution)) return false
   if (!hasBooleanField(value.request, 'forceJsonOutput')) return false
   if (value.request.temperature !== undefined && !hasNumberField(value.request, 'temperature')) return false
@@ -136,6 +108,10 @@ function isVlmConfig(value: Record<string, unknown>): value is VlmFields {
 
 function isLlmConfig(value: Record<string, unknown>): value is LlmFields {
   return hasBaseProviderFields(value) && isOpenAiOptions(value.openaiOptions)
+}
+
+function cloneOpenAiOptionsOrDefault(value: unknown, fallback: OpenAICompatibleOptions): OpenAICompatibleOptions {
+  return cloneOpenAiOptions(isOpenAiOptions(value) ? value : fallback)
 }
 
 function isEmbeddingConfig(value: Record<string, unknown>): value is EmbeddingFields {
@@ -184,15 +160,9 @@ function parseProviderConfigsStorage(value: unknown): ProviderConfigsCache | nul
   }
 }
 
-/**
- * 创建配置管理器
- */
 export function useInsightConfigManager(
   providerConfigs: Ref<ProviderConfigsCache>
 ) {
-  /**
-   * 保存配置缓存到 localStorage
-   */
   function saveToStorage(): void {
     const payload: ProviderConfigsStoragePayload = {
       insightProviderConfigSchemaVersion: INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION,
@@ -201,9 +171,6 @@ export function useInsightConfigManager(
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }
 
-  /**
-   * 从 localStorage 加载配置缓存
-   */
   function loadFromStorage(): void {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
@@ -216,9 +183,6 @@ export function useInsightConfigManager(
     }
   }
 
-  /**
-   * 创建通用的服务商配置管理器
-   */
   function createProviderManager<T extends ProviderFieldMap>(
     configType: 'vlm' | 'llm' | 'embedding' | 'reranker' | 'imageGen',
     fieldExtractor: (config: Record<string, unknown>) => Partial<T>,
@@ -226,9 +190,6 @@ export function useInsightConfigManager(
     defaultFields: Partial<T>
   ) {
     return {
-      /**
-       * 保存当前服务商配置到缓存
-       */
       save(provider: string, currentConfig: Record<string, unknown>): void {
         if (!provider) return
         const cache = providerConfigs.value[configType] as Record<string, Partial<T>>
@@ -236,9 +197,6 @@ export function useInsightConfigManager(
         saveToStorage()
       },
 
-      /**
-       * 从缓存恢复服务商配置
-       */
       restore(provider: string, currentConfig: Record<string, unknown>): void {
         if (!provider) return
         const cache = providerConfigs.value[configType] as Record<string, Partial<T>>
@@ -250,9 +208,6 @@ export function useInsightConfigManager(
         }
       },
 
-      /**
-       * 切换服务商时保存当前配置，并恢复目标服务商配置。
-       */
       switch(
         previousProvider: string,
         newProvider: string,
@@ -265,51 +220,42 @@ export function useInsightConfigManager(
     }
   }
 
-  // VLM 配置管理器
   const vlmManager = createProviderManager<VlmFields>(
     'vlm',
     (config) => ({
       apiKey: config.apiKey as string,
       model: config.model as string,
       baseUrl: config.baseUrl as string,
-      openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
-        request: { forceJsonOutput: false, temperature: 0.3 },
-        execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
-      })),
+      openaiOptions: cloneOpenAiOptionsOrDefault(config.openaiOptions, DEFAULT_VLM_OPENAI_OPTIONS),
       imageMaxSize: config.imageMaxSize as number
     }),
     (config, cached) => {
       if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
       if (cached.model !== undefined) config.model = cached.model
       if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
-      if (cached.openaiOptions !== undefined) config.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
+      if (cached.openaiOptions !== undefined) config.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
       if (cached.imageMaxSize !== undefined) config.imageMaxSize = cached.imageMaxSize
     },
     { apiKey: '', model: '', baseUrl: '' }
   )
 
-  // LLM 配置管理器
   const llmManager = createProviderManager<LlmFields>(
     'llm',
     (config) => ({
       apiKey: config.apiKey as string,
       model: config.model as string,
       baseUrl: config.baseUrl as string,
-      openaiOptions: JSON.parse(JSON.stringify(config.openaiOptions || {
-        request: { forceJsonOutput: false },
-        execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 }
-      }))
+      openaiOptions: cloneOpenAiOptionsOrDefault(config.openaiOptions, DEFAULT_LLM_OPENAI_OPTIONS)
     }),
     (config, cached) => {
       if (cached.apiKey !== undefined) config.apiKey = cached.apiKey
       if (cached.model !== undefined) config.model = cached.model
       if (cached.baseUrl !== undefined) config.baseUrl = cached.baseUrl
-      if (cached.openaiOptions !== undefined) config.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
+      if (cached.openaiOptions !== undefined) config.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
     },
     { apiKey: '', model: '', baseUrl: '' }
   )
 
-  // Embedding 配置管理器
   const embeddingManager = createProviderManager<EmbeddingFields>(
     'embedding',
     (config) => ({
@@ -333,7 +279,6 @@ export function useInsightConfigManager(
     { apiKey: '', model: '', baseUrl: '', rpmLimit: 0, transportRetries: 10, businessRetries: 10, timeoutSeconds: 0 }
   )
 
-  // Reranker 配置管理器
   const rerankerManager = createProviderManager<RerankerFields>(
     'reranker',
     (config) => ({
@@ -357,7 +302,6 @@ export function useInsightConfigManager(
     { apiKey: '', model: '', baseUrl: '', topK: 5, transportRetries: 10, businessRetries: 10, timeoutSeconds: 0 }
   )
 
-  // ImageGen 配置管理器
   const imageGenManager = createProviderManager<ImageGenFields>(
     'imageGen',
     (config) => ({

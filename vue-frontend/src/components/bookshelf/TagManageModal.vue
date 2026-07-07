@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import UiInput from '@/components/ui/UiInput.vue'
-/**
- * 标签管理模态框组件
- * 功能：创建、编辑、删除标签
- */
-
 import { ref, computed } from 'vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { showToast } from '@/utils/toast'
 import BaseModal from '@/components/common/BaseModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiColorInput from '@/components/ui/UiColorInput.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import { BOOKSHELF_DEFAULT_TAG_COLOR } from '@/constants/bookshelf'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 
 const emit = defineEmits<{
   close: []
@@ -17,18 +22,35 @@ const emit = defineEmits<{
 
 const bookshelfStore = useBookshelfStore()
 
-// 新标签表单
 const newTagName = ref('')
-const newTagColor = ref('#667eea')
+const newTagColor = ref(BOOKSHELF_DEFAULT_TAG_COLOR)
 
 const editingTagName = ref<string | null>(null)
 const editTagName = ref('')
 const editTagColor = ref('')
 
-// 计算属性
 const tags = computed(() => bookshelfStore.tags)
 
-// 创建新标签
+function tagMetadataItems(tag: { name: string; color?: string; book_count?: number }): ProductChipItem[] {
+  const tagColor = tag.color || 'var(--color-action-brand)'
+
+  return [
+    {
+      id: `tag-${tag.name}`,
+      label: tag.name,
+      tone: 'custom',
+      backgroundColor: tagColor,
+      borderColor: tagColor,
+      textColor: 'var(--color-text-inverse)',
+    },
+    {
+      id: `count-${tag.name}`,
+      label: `${tag.book_count || 0} 本`,
+      tone: 'neutral',
+    },
+  ]
+}
+
 async function createTag() {
   const name = newTagName.value.trim()
   if (!name) {
@@ -36,7 +58,6 @@ async function createTag() {
     return
   }
 
-  // 检查是否已存在
   if (tags.value.some(t => t.name === name)) {
     showToast('标签已存在', 'warning')
     return
@@ -47,7 +68,7 @@ async function createTag() {
     if (tag) {
       showToast('标签创建成功', 'success')
       newTagName.value = ''
-      newTagColor.value = '#667eea'
+      newTagColor.value = BOOKSHELF_DEFAULT_TAG_COLOR
     } else {
       showToast('创建失败', 'error')
     }
@@ -59,7 +80,7 @@ async function createTag() {
 function startEditTag(tag: { name: string; color?: string }) {
   editingTagName.value = tag.name
   editTagName.value = tag.name
-  editTagColor.value = tag.color || '#667eea'
+  editTagColor.value = tag.color || BOOKSHELF_DEFAULT_TAG_COLOR
 }
 
 function cancelEdit() {
@@ -70,28 +91,27 @@ function cancelEdit() {
 
 async function saveEditTag() {
   if (!editingTagName.value) return
-  
+
   const name = editTagName.value.trim()
   if (!name) {
     showToast('标签名称不能为空', 'warning')
     return
   }
-  
+
   const originalTagName = editingTagName.value
-  
-  // 检查新名称是否与其他标签重复（排除自己）
+
   if (name !== originalTagName && tags.value.some(t => t.name === name)) {
     showToast('标签名称已存在', 'warning')
     return
   }
-  
+
   try {
     const success = await bookshelfStore.updateTagApi(
       originalTagName,
       name,
       editTagColor.value
     )
-    
+
     if (success) {
       showToast('标签更新成功', 'success')
       cancelEdit()
@@ -103,8 +123,16 @@ async function saveEditTag() {
   }
 }
 
-// 删除标签
 async function deleteTag(tagName: string) {
+  const confirmed = await confirmProductAction({
+    title: '删除标签',
+    message: `确定要删除标签“${tagName}”吗？此操作不会删除书籍，但会从相关书籍中移除该标签。`,
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
   try {
     const success = await bookshelfStore.deleteTagApi(tagName)
     if (success) {
@@ -120,145 +148,131 @@ async function deleteTag(tagName: string) {
 
 <template>
   <BaseModal title="标签管理" @close="emit('close')">
-    <!-- 新建标签表单 -->
-    <div class="tag-manage-form">
-      <div class="form-row">
-        <UiInput
-          v-model="newTagName"
-          class="tag-manage-modal__new-name-input"
-          type="text"
-          placeholder="输入新标签名称..."
-          @keydown.enter="createTag"
-        />
-        <UiInput
-          v-model="newTagColor"
-          class="tag-manage-modal__new-color-input"
-          type="color"
-          title="选择颜色"
-        />
+    <div class="tag-manage-modal__form">
+      <UiFormGrid>
+        <UiField label="标签名称" variant="settings" control-id="tag-manage-new-name">
+          <UiInput
+            id="tag-manage-new-name"
+            v-model="newTagName"
+            type="text"
+            placeholder="输入新标签名称..."
+            @keydown.enter="createTag"
+          />
+        </UiField>
+        <UiField label="标签颜色" variant="settings" control-id="tag-manage-new-color">
+          <UiColorInput
+            input-id="tag-manage-new-color"
+            v-model="newTagColor"
+            title="选择颜色"
+          />
+        </UiField>
+      </UiFormGrid>
+      <ProductActionRow aria-label="新建标签操作" justify="start">
         <UiButton variant="primary" size="sm" @click="createTag">添加</UiButton>
-      </div>
+      </ProductActionRow>
     </div>
 
-    <!-- 标签列表 -->
-    <div class="tag-list">
-      <div v-if="tags.length === 0" class="empty-hint">
+    <div class="tag-manage-modal__list">
+      <ProductStatusBanner
+        v-if="tags.length === 0"
+        class="tag-manage-modal__empty-state"
+        tone="neutral"
+        icon-name="tags"
+        role="note"
+      >
         暂无标签，请在上方添加
-      </div>
-      
-      <div
+      </ProductStatusBanner>
+
+      <ProductRecordCard
         v-for="tag in tags"
         :key="tag.name"
-        class="tag-manage-item"
+        class="tag-manage-modal__item"
+        :aria-label="`标签 ${tag.name}`"
       >
-        <!-- 非编辑状态：显示标签信息和操作按钮 -->
-        <div v-if="editingTagName !== tag.name" class="tag-view-mode">
-          <span
-            class="tag-color-dot"
-            :style="{ backgroundColor: tag.color || 'var(--color-action-brand)' }"
-          ></span>
-          <span class="tag-name">{{ tag.name }}</span>
-          <span class="tag-book-count">{{ tag.book_count || 0 }} 本</span>
-          <!-- 编辑和删除按钮 -->
+        <div v-if="editingTagName !== tag.name" class="tag-manage-modal__view-mode">
+          <ProductChipList
+            class="tag-manage-modal__metadata"
+            :aria-label="`${tag.name} 标签信息`"
+            :items="tagMetadataItems(tag)"
+          />
           <UiButton
-            variant="toolbar"
-            class="tag-edit-btn"
+            variant="secondary"
+            size="xs"
+            class="tag-manage-modal__row-edit-action"
             @click="startEditTag(tag)"
           >
             编辑
           </UiButton>
           <UiButton
-            variant="toolbar"
-            class="tag-delete-btn"
+            variant="danger"
+            size="xs"
+            class="tag-manage-modal__row-delete-action"
             @click="deleteTag(tag.name)"
           >
             删除
           </UiButton>
         </div>
-        
-        <!-- 编辑状态：内联编辑表单 -->
-        <div v-if="editingTagName === tag.name" class="tag-edit-mode">
-          <UiInput
-            v-model="editTagColor"
-            type="color"
-            class="edit-color-input"
-            title="选择颜色"
-          />
-          <UiInput
-            v-model="editTagName"
-            type="text"
-            class="edit-name-input"
-            placeholder="标签名称"
-            @keydown.enter="saveEditTag"
-          />
-          <UiButton
-            variant="toolbar"
-            class="tag-save-btn"
-            @click="saveEditTag"
+
+        <div v-if="editingTagName === tag.name" class="tag-manage-modal__edit-mode">
+          <UiFormGrid class="tag-manage-modal__edit-fields">
+            <UiField label="编辑标签颜色" variant="settings" :control-id="`tag-edit-color-${tag.name}`">
+              <UiColorInput
+                :input-id="`tag-edit-color-${tag.name}`"
+                v-model="editTagColor"
+                title="选择颜色"
+              />
+            </UiField>
+            <UiField label="编辑标签名称" variant="settings" :control-id="`tag-edit-name-${tag.name}`">
+              <UiInput
+                :id="`tag-edit-name-${tag.name}`"
+                v-model="editTagName"
+                type="text"
+                size="sm"
+                placeholder="标签名称"
+                @keydown.enter="saveEditTag"
+              />
+            </UiField>
+          </UiFormGrid>
+          <ProductActionRow
+            aria-label="编辑标签操作"
+            class="tag-manage-modal__edit-actions"
+            justify="start"
           >
-            保存
-          </UiButton>
-          <UiButton
-            variant="toolbar"
-            class="tag-cancel-btn"
-            @click="cancelEdit"
-          >
-            取消
-          </UiButton>
+            <UiButton
+              variant="primary"
+              size="xs"
+              class="tag-manage-modal__edit-save-action"
+              @click="saveEditTag"
+            >
+              保存
+            </UiButton>
+            <UiButton
+              variant="secondary"
+              size="xs"
+              class="tag-manage-modal__edit-cancel-action"
+              @click="cancelEdit"
+            >
+              取消
+            </UiButton>
+          </ProductActionRow>
         </div>
-      </div>
+      </ProductRecordCard>
     </div>
 
     <template #footer>
-      <UiButton variant="secondary" @click="emit('close')">关闭</UiButton>
+      <ProductActionRow aria-label="标签管理弹窗操作" variant="dialog">
+        <UiButton variant="secondary" @click="emit('close')">关闭</UiButton>
+      </ProductActionRow>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
-.tag-manage-form {
-  --tag-manage-modal-danger-shadow: rgba(220, 53, 69, .4);
-  --tag-manage-modal-focus-shadow: rgba(102, 126, 234, .2);
-  --tag-manage-modal-row-background: #f8f9fa;
-  --tag-manage-modal-delete-start: #dc3545;
-  --tag-manage-modal-delete-end: #c82333;
-  --tag-manage-modal-save-end: #218838;
-  --tag-manage-modal-cancel-background: #e9ecef;
-  --tag-manage-modal-cancel-hover-background: #dee2e6;
-
+.tag-manage-modal__form {
   margin-bottom: 20px;
 }
 
-.form-row {
-  display: flex;
-  gap: 8px;
-}
-
-.tag-manage-modal__new-name-input {
-  flex: 1;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 6px;
-  font-size: 14px;
-  outline: none;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default);
-}
-
-.tag-manage-modal__new-name-input:focus {
-  border-color: var(--color-action-primary, var(--color-border-brand-gradient));
-}
-
-.tag-manage-modal__new-color-input {
-  width: 40px;
-  height: 40px;
-  padding: 2px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.tag-list {
+.tag-manage-modal__list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -266,133 +280,48 @@ async function deleteTag(tagName: string) {
   overflow-y: auto;
 }
 
-.empty-hint {
-  text-align: center;
-  padding: 32px;
-  color: var(--color-text-supporting, var(--color-text-muted));
+.tag-manage-modal__empty-state {
+  align-items: center;
 }
 
-.tag-manage-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--tag-manage-modal-row-background);
-  border-radius: 6px;
+.tag-manage-modal__item {
+  --product-record-card-background: var(--color-surface-app);
+  --product-record-card-gap: 0;
+  --product-record-card-padding: 10px 12px;
+  --product-record-card-radius: 6px;
 }
 
-.tag-view-mode,
-.tag-edit-mode {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.tag-manage-modal__view-mode,
+.tag-manage-modal__edit-mode {
   width: 100%;
 }
 
-.tag-color-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.tag-manage-modal__view-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
-.tag-name {
-  flex: 1;
-  font-size: 14px;
-  color: var(--color-text-default);
+.tag-manage-modal__edit-mode {
+  display: grid;
+  gap: 10px;
 }
 
-.tag-book-count {
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-muted));
-  margin-right: 8px;
+.tag-manage-modal__edit-fields {
+  margin-bottom: 0;
 }
 
-.tag-edit-btn {
-  padding: 4px 12px;
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
-  color: var(--color-text-inverse);
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+.tag-manage-modal__metadata {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
-.tag-edit-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--shadow-action-brand);
+.tag-manage-modal__row-edit-action,
+.tag-manage-modal__row-delete-action,
+.tag-manage-modal__edit-save-action,
+.tag-manage-modal__edit-cancel-action {
+  flex: 0 0 auto;
 }
 
-.tag-delete-btn {
-  padding: 4px 12px;
-  background: linear-gradient(135deg, var(--tag-manage-modal-delete-start) 0%, var(--tag-manage-modal-delete-end) 100%);
-  color: var(--color-text-inverse);
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-delete-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--tag-manage-modal-danger-shadow);
-}
-
-.edit-color-input {
-  width: 32px;
-  height: 32px;
-  padding: 2px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 4px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.edit-name-input {
-  flex: 1;
-  padding: 6px 10px;
-  border: 1px solid var(--color-action-primary, var(--color-border-brand-gradient));
-  border-radius: 4px;
-  font-size: 14px;
-  outline: none;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default);
-}
-
-.edit-name-input:focus {
-  box-shadow: 0 0 0 2px var(--tag-manage-modal-focus-shadow);
-}
-
-.tag-save-btn {
-  padding: 4px 12px;
-  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--tag-manage-modal-save-end) 100%);
-  color: var(--color-text-inverse);
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-save-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px var(--shadow-action-success);
-}
-
-.tag-cancel-btn {
-  padding: 4px 12px;
-  background: var(--tag-manage-modal-cancel-background);
-  color: var(--color-text-default);
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-cancel-btn:hover {
-  background: var(--color-surface-interactive-hover, var(--tag-manage-modal-cancel-hover-background));
-}
 </style>

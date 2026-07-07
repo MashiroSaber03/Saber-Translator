@@ -9,6 +9,7 @@ import {
   executeTranslate,
 } from './steps'
 import { persistPage } from './persistenceService'
+import { deepClone } from '@/utils/deepClone'
 import type { PipelineRuntime, TaskContext } from './runtime'
 import type { BubbleState } from '@/types/bubble'
 
@@ -111,7 +112,7 @@ export async function executeAtomicStep(
         bookTranslationConstraints: runtime.bookTranslationConstraints,
         isBookshelfMode: runtime.isBookshelfMode,
       })
-      runtime.bookTranslationConstraints = JSON.parse(JSON.stringify(result.bookTranslationConstraints))
+      runtime.bookTranslationConstraints = deepClone(result.bookTranslationConstraints)
       return {
         ...context,
         status: 'processing',

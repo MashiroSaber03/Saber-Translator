@@ -1,6 +1,6 @@
 # 前端 UI 架构规范
 
-> 最后更新：2026-06-25
+> 最后更新：2026-07-03
 > 目标：新增和重构 UI 默认走统一 token、layout shell、overlay layer 和 primitives。
 
 ## 样式分层
@@ -15,11 +15,11 @@
 
 ## 默认实现路径
 
-新增页面顶层布局使用 `AppShell`。有左右侧栏或三栏结构时，外层使用 `SidebarLayout`，页面文件只负责自己的 grid/flex 尺寸和业务区域命名。
+新增页面顶层布局使用 `AppShell`。页面页眉使用 `ProductPageHeader`，页眉内的动作入口使用 `ProductHeaderAction` 或组合了该 primitive 的产品组件。有左右侧栏、三栏结构或可调整工作区时，外层使用 `SidebarLayout`、`ProductThreePaneWorkspace`、`ProductTabbedWorkspace`、`ProductSplitWorkspace` 等 product shell，页面文件只负责路由数据装配、shell 选择和主区域编排。
 
 普通按钮使用 `UiButton`，图标/关闭/工具栏按钮优先使用 `UiIconButton`。禁止在业务源码新增 raw `<button>`，也禁止恢复 `.btn`、`.primary-btn`、`.ghost-btn`、`.ui-action-btn` 等旧按钮类。
 
-表单字段默认由 `UiField`、`UiInput`、`UiTextarea`、`UiModalSection` 承载。业务组件只写业务命名空间样式，不再通过父组件 `:deep()` 修改子组件内部。
+表单 section 使用 `ProductFormSection`，表单字段默认由 `UiField`、`UiFormGrid`、`UiInput`、`UiTextarea`、`UiSelect`、`UiCombobox`、`UiNumberField`、`UiPasswordField`、`UiModelPicker` 承载。固定少量选项使用 `UiSelect`，动态/可搜索模型或字体列表使用 `UiCombobox` 或专门 primitive。业务组件只写业务命名空间样式，不再通过父组件 `:deep()` 修改子组件内部。
 
 普通弹窗使用 `BaseModal` 或 `ConfirmModal`。需要定制 Teleport 容器时，必须使用明确的 `custom-class`/`overlay-class` 和同目录命名空间 `.global.styles.css`；业务 SFC 中禁止 `:global()`。
 
@@ -63,7 +63,7 @@ Owner token 不是状态矩阵仓库。组件 scoped 根变量必须同时满足
 
 业务 CSS 禁止直接选择 UI primitive 内部类，例如 `.ui-input`、`.ui-select`、`.ui-textarea`、`.ui-form-field`。需要不同尺寸、密度或视觉状态时，先扩展 primitive props/class contract，或给业务组件自己的元素加业务命名空间类。
 
-页面样式不得重写 `AppHeader` 内部结构。`AppHeader` 内部类归 `AppHeader` 自己所有；页面通过 header slot 放入的元素必须使用页面自己的命名空间类。
+页面样式不得重写 `ProductPageHeader` 或 `ProductHeaderAction` 内部结构。产品页眉 primitive 的内部类归 primitive 自己所有；页面通过 header slot 放入的元素必须使用页面自己的命名空间类，或优先沉淀为可复用 product 组件。
 
 `:global()` 和 `:deep()` 在 UI 源码中禁止使用。Teleport、body 状态类和 slot 内容样式必须放到同目录命名空间 `.global.styles.css` 或 UI primitive 中。
 

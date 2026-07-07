@@ -1,51 +1,58 @@
 <template>
   <div v-if="visible" class="edit-thumbnails-panel">
-    <div class="thumbnails-scroll">
-      <UiButton
-        v-for="(image, index) in images"
-        :key="image.id"
-        variant="toolbar"
-        class="edit-thumbnail-item"
-        :class="{ active: index === currentImageIndex }"
-        :aria-label="`切换到图片 ${index + 1}`"
-        :aria-pressed="index === currentImageIndex"
-        @click="$emit('switch-to-image', index)"
-      >
-        <img :src="image.translatedDataURL || image.originalDataURL" :alt="`图片 ${index + 1}`" />
-        <span class="thumb-index">{{ index + 1 }}</span>
-      </UiButton>
-    </div>
+    <ProductHorizontalScrollStrip
+      class="edit-thumbnails-panel__strip"
+      aria-label="编辑模式缩略图滚动条"
+    >
+      <ProductThumbnailGrid
+        class="edit-thumbnails-panel__grid"
+        aria-label="编辑图片缩略图导航"
+        :items="thumbnailItems"
+        @select="handleThumbnailSelect"
+      />
+    </ProductHorizontalScrollStrip>
   </div>
 </template>
 
 <script setup lang="ts">
-import UiButton from '@/components/ui/UiButton.vue'
+import { computed } from 'vue'
+import ProductHorizontalScrollStrip from '@/components/product/ProductHorizontalScrollStrip.vue'
+import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
+import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
 import type { ImageData } from '@/types/image'
 
-defineProps<{
-  /** 是否显示 */
+const props = defineProps<{
   visible: boolean
-  /** 图片列表 */
   images: ImageData[]
-  /** 当前图片索引 */
   currentImageIndex: number
 }>()
 
-defineEmits<{
-  /** 切换到指定图片 */
+const emit = defineEmits<{
   (e: 'switch-to-image', index: number): void
 }>()
+
+const thumbnailItems = computed<ProductThumbnailGridItem[]>(() => {
+  return props.images.map((image, index) => ({
+    id: index,
+    src: image.translatedDataURL || image.originalDataURL || '',
+    alt: `图片 ${index + 1}`,
+    label: String(index + 1),
+    selected: index === props.currentImageIndex,
+    fallbackLabel: String(index + 1),
+    ariaLabel: `切换到图片 ${index + 1}`,
+  }))
+})
+
+function handleThumbnailSelect(id: string | number): void {
+  if (typeof id !== 'number') return
+  emit('switch-to-image', id)
+}
 </script>
 
 <style scoped>
 .edit-thumbnails-panel {
-  --edit-thumbnail-panel-background: rgba(0, 0, 0, .3);
-  --edit-thumbnail-panel-divider-border: rgba(255, 255, 255, .1);
-  --edit-thumbnail-panel-scrollbar-track: rgba(255, 255, 255, .1);
-  --edit-thumbnail-panel-scrollbar-thumb: rgba(255, 255, 255, .3);
-  --edit-thumbnail-panel-hover-border: rgba(255, 255, 255, .5);
-  --edit-thumbnail-panel-active-shadow: rgba(102, 126, 234, .5);
-  --edit-thumbnail-panel-index-badge-background: rgba(0, 0, 0, .7);
+  --edit-thumbnail-panel-background: color-mix(in srgb, var(--color-overlay-backdrop-solid) 30%, transparent);
+  --edit-thumbnail-panel-divider-border: var(--color-overlay-inverse-subtle);
 
   position: relative;
   width: auto;
@@ -55,64 +62,16 @@ defineEmits<{
   flex-shrink: 0;
 }
 
-.thumbnails-scroll {
-  display: flex;
-  flex-direction: row;
+.edit-thumbnails-panel__strip {
+  --product-horizontal-scroll-strip-padding: 5px 0;
+}
+
+.edit-thumbnails-panel__grid {
+  --product-thumbnail-grid-aspect-ratio: 3 / 4;
+
+  grid-auto-columns: 60px;
+  grid-auto-flow: column;
+  grid-template-columns: none;
   gap: 10px;
-  overflow: auto hidden;
-  padding: 5px 0;
-}
-
-.thumbnails-scroll::-webkit-scrollbar {
-  height: 6px;
-}
-
-.thumbnails-scroll::-webkit-scrollbar-track {
-  background: var(--edit-thumbnail-panel-scrollbar-track);
-  border-radius: 3px;
-}
-
-.thumbnails-scroll::-webkit-scrollbar-thumb {
-  background: var(--edit-thumbnail-panel-scrollbar-thumb);
-  border-radius: 3px;
-}
-
-.edit-thumbnail-item {
-  flex-shrink: 0;
-  width: 60px;
-  height: 80px;
-  border-radius: 6px;
-  overflow: hidden;
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: all 0.2s;
-  position: relative;
-}
-
-.edit-thumbnail-item:hover {
-  border-color: var(--edit-thumbnail-panel-hover-border);
-  transform: scale(1.05);
-}
-
-.edit-thumbnail-item.active {
-  border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 10px var(--edit-thumbnail-panel-active-shadow);
-}
-
-.edit-thumbnail-item img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.edit-thumbnail-item .thumb-index {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  background: var(--edit-thumbnail-panel-index-badge-background);
-  color: var(--color-text-inverse);
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: 3px;
 }
 </style>

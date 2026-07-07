@@ -1,116 +1,151 @@
 <template>
   <div class="prompt-library">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>提示词管理</template>
-      <UiField class="ui-settings-field">
-        <label for="promptType">提示词类型:</label>
-        <CustomSelect
-          v-model="selectedType"
+      <UiField variant="settings" label="提示词类型" control-id="promptType">
+        <UiSelect
+          id="promptType"
+          :model-value="selectedType"
           :options="promptTypeOptions"
-          @change="handleTypeChange"
+          @change="handleTypeSelect"
         />
       </UiField>
 
-      <UiField v-if="supportsModeSwitch" class="ui-settings-field">
-        <label for="promptMode">提示词模式:</label>
-        <CustomSelect
+      <UiField
+        v-if="supportsModeSwitch"
+        variant="settings"
+        label="提示词模式"
+        control-id="promptMode"
+        :hint="modeHint"
+      >
+        <UiSelect
+          id="promptMode"
           :model-value="selectedMode"
           :options="availablePromptModeOptions"
-          @change="(v: string | number) => { selectedMode = String(v); handleModeChange() }"
+          @change="handleModeSelect"
         />
-        <span class="mode-hint">{{ modeHint }}</span>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>已保存的提示词</template>
-      <div v-if="isLoading" class="loading-hint">加载中...</div>
-      <div v-else-if="promptList.length === 0" class="empty-hint">暂无保存的提示词</div>
-      <div v-else class="prompt-list">
-        <div v-for="prompt in promptList" :key="prompt.name" class="prompt-item" :class="{ active: selectedPrompt === prompt.name }">
+      <ProductStatusBanner
+        v-if="isLoading"
+        tone="neutral"
+        icon-name="refresh"
+        title="正在加载提示词"
+        aria-live="polite"
+      >
+        正在同步已保存的提示词列表。
+      </ProductStatusBanner>
+      <ProductStatusBanner
+        v-else-if="promptList.length === 0"
+        tone="neutral"
+        icon-name="file-text"
+        title="暂无保存的提示词"
+      >
+        保存后的提示词会出现在这里。
+      </ProductStatusBanner>
+      <div v-else class="prompt-library__list">
+        <div
+          v-for="prompt in promptList"
+          :key="prompt.name"
+          class="prompt-library__item"
+          :class="{ 'prompt-library__item--active': selectedPrompt === prompt.name }"
+        >
           <UiButton
             variant="toolbar"
             type="button"
-            class="prompt-select"
+            class="prompt-library__select-action"
             :aria-label="`选择提示词：${prompt.name}`"
+            :aria-pressed="String(selectedPrompt === prompt.name)"
             @click="selectPrompt(prompt.name)"
           >
-            <span class="prompt-name">{{ prompt.name }}</span>
+            <span class="prompt-library__name">{{ prompt.name }}</span>
           </UiButton>
-          <div class="prompt-actions">
-            <UiButton
-              variant="secondary"
-              class="prompt-actions__load"
-              :aria-label="`加载提示词：${prompt.name}`"
+          <div class="prompt-library__actions">
+            <UiIconButton
+              class="prompt-library__load-action"
+              :label="`加载提示词：${prompt.name}`"
+              variant="soft"
+              size="sm"
               @click="loadPrompt(prompt.name)"
-              title="加载到编辑器"
-              size="sm"
             >
-              📥
-            </UiButton>
-            <UiButton
+              <UiIcon name="download" />
+            </UiIconButton>
+            <UiIconButton
               variant="danger"
-              class="prompt-actions__delete"
-              :aria-label="`删除提示词：${prompt.name}`"
-              @click="deletePrompt(prompt.name)"
-              title="删除"
-              :disabled="prompt.name === 'default'"
+              class="prompt-library__delete-action"
+              :label="`删除提示词：${prompt.name}`"
               size="sm"
+              @click="deletePrompt(prompt.name)"
+              :disabled="prompt.name === 'default'"
             >
-              🗑️
-            </UiButton>
+              <UiIcon name="trash" />
+            </UiIconButton>
           </div>
         </div>
       </div>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>提示词编辑</template>
-      <UiField class="ui-settings-field">
-        <label for="promptName">提示词名称:</label>
+      <UiField variant="settings" label="提示词名称" control-id="promptName">
         <UiInput type="text" id="promptName" v-model="editingName" placeholder="请输入提示词名称" />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="promptContent">提示词内容:</label>
-        <UiTextarea id="promptContent" v-model="editingContent" rows="8" placeholder="请输入提示词内容" />
+      <UiField variant="settings" label="提示词内容" control-id="promptContent">
+        <UiTextarea
+          id="promptContent"
+          v-model="editingContent"
+          rows="8"
+          variant="panel"
+          placeholder="请输入提示词内容"
+        />
       </UiField>
-      <div class="prompt-editor-actions">
-        <UiButton variant="primary" @click="savePrompt" :disabled="!editingName || !editingContent">保存提示词</UiButton>
-      </div>
-    </UiPanel>
+      <ProductActionRow aria-label="提示词编辑操作" justify="start">
+        <UiButton variant="primary" @click="savePrompt" :disabled="!editingName || !editingContent">
+          保存提示词
+        </UiButton>
+      </ProductActionRow>
+    </ProductFormSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { configApi, type PromptContentResponse } from '@/api/config'
 import type { PromptListResponse } from '@/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 
 const promptTypeOptions = [
   { label: '翻译提示词', value: 'translate' },
   { label: '文本框提示词', value: 'textbox' },
   { label: 'AI视觉OCR提示词', value: 'ai_vision_ocr' },
   { label: '高质量翻译提示词', value: 'hq_translate' },
-  { label: '校对提示词', value: 'proofreading' }
+  { label: '校对提示词', value: 'proofreading' },
 ]
 
 const translatePromptModeOptions = [
   { label: '普通模式', value: 'normal' },
-  { label: 'JSON格式模式', value: 'json' }
+  { label: 'JSON格式模式', value: 'json' },
 ]
 
 const aiVisionPromptModeOptions = [
   { label: '普通模式', value: 'normal' },
   { label: 'JSON格式模式', value: 'json' },
-  { label: 'OCR模型提示词', value: 'paddleocr_vl' }
+  { label: 'OCR模型提示词', value: 'paddleocr_vl' },
 ]
 
 const toast = useToast()
@@ -159,9 +194,10 @@ async function loadPromptList() {
   const promptType = selectedType.value
   isLoading.value = true
   try {
-    const result: PromptListResponse = promptType === 'textbox'
-      ? await configApi.getTextboxPrompts()
-      : await configApi.getPrompts(promptType)
+    const result: PromptListResponse =
+      promptType === 'textbox'
+        ? await configApi.getTextboxPrompts()
+        : await configApi.getPrompts(promptType)
     if (!isMounted || requestId !== promptListRequestId || selectedType.value !== promptType) {
       return
     }
@@ -190,9 +226,10 @@ async function loadPrompt(name: string) {
   const requestId = ++promptContentRequestId
   const promptType = selectedType.value
   try {
-    const result: PromptContentResponse = promptType === 'textbox'
-      ? await configApi.getTextboxPromptContent(name)
-      : await configApi.getPromptContent(promptType, name)
+    const result: PromptContentResponse =
+      promptType === 'textbox'
+        ? await configApi.getTextboxPromptContent(name)
+        : await configApi.getPromptContent(promptType, name)
     if (!isMounted || requestId !== promptContentRequestId || selectedType.value !== promptType) {
       return
     }
@@ -232,6 +269,18 @@ async function deletePrompt(name: string) {
     toast.warning('默认提示词不能删除')
     return
   }
+
+  const confirmed = await confirmProductAction({
+    title: '删除提示词',
+    message: `确定要删除提示词“${name}”吗？此操作无法撤销。`,
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) {
+    return
+  }
+
   try {
     if (selectedType.value === 'textbox') {
       await configApi.deleteTextboxPrompt(name)
@@ -262,8 +311,13 @@ function handleTypeChange() {
   } else {
     selectedMode.value = 'normal'
   }
-  
+
   loadPromptList()
+}
+
+function handleTypeSelect(value: string | number) {
+  selectedType.value = String(value)
+  handleTypeChange()
 }
 
 function handleModeChange() {
@@ -272,16 +326,25 @@ function handleModeChange() {
   } else if (selectedType.value === 'ai_vision_ocr') {
     settingsStore.updateAiVisionOcr({
       forceJsonOutput: selectedMode.value === 'json',
-      promptMode: selectedMode.value
+      promptMode: selectedMode.value,
     })
   }
-  
-  const modeLabel = selectedMode.value === 'json'
-    ? 'JSON格式'
-    : selectedMode.value === 'paddleocr_vl'
-      ? 'OCR模型提示词'
-      : '普通'
+
+  const modeLabel =
+    selectedMode.value === 'json'
+      ? 'JSON格式'
+      : selectedMode.value === 'paddleocr_vl'
+        ? 'OCR模型提示词'
+        : '普通'
   toast.info(`已切换到${modeLabel}模式`)
+}
+
+function handleModeSelect(value: string | number) {
+  const nextMode = String(value)
+  if (nextMode === 'normal' || nextMode === 'json' || nextMode === 'paddleocr_vl') {
+    selectedMode.value = nextMode
+    handleModeChange()
+  }
 }
 
 onMounted(() => {
@@ -297,24 +360,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.prompt-library {
-  --ui-button-sm-padding: 4px 8px;
-  --ui-button-sm-font-size: 12px;
-  --ui-button-danger-background: transparent;
-  --ui-button-danger-border: none;
-  --ui-button-danger-shadow: none;
-  --ui-button-danger-hover-background: transparent;
-  --ui-button-danger-hover-shadow: none;
-}
-
-.prompt-list {
+.prompt-library__list {
   max-height: 200px;
   overflow-y: auto;
   border: 1px solid var(--color-border-muted);
   border-radius: 4px;
 }
 
-.prompt-item {
+.prompt-library__item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -322,19 +375,19 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border-muted);
 }
 
-.prompt-item:last-child {
+.prompt-library__item:last-child {
   border-bottom: none;
 }
 
-.prompt-item:hover {
+.prompt-library__item:hover {
   background: var(--color-surface-hover);
 }
 
-.prompt-item.active {
+.prompt-library__item--active {
   background: var(--color-surface-subtle);
 }
 
-.prompt-name {
+.prompt-library__name {
   display: block;
   flex: 1;
   min-width: 0;
@@ -343,7 +396,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.prompt-select {
+.prompt-library__select-action {
   flex: 1;
   min-width: 0;
   justify-content: flex-start;
@@ -352,32 +405,8 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.prompt-actions {
+.prompt-library__actions {
   display: flex;
   gap: 4px;
-}
-
-.prompt-editor-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.loading-hint,
-.empty-hint {
-  padding: 20px;
-  text-align: center;
-  color: var(--color-text-supporting);
-}
-
-.prompt-actions__delete:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.mode-hint {
-  font-size: 12px;
-  color: var(--color-text-supporting);
-  margin-left: 10px;
 }
 </style>

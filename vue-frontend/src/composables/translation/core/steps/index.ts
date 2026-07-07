@@ -1,7 +1,3 @@
-/**
- * 原子步骤模块统一导出
- */
-
 export * from './detection'
 export * from './ocr'
 export * from './color'

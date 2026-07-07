@@ -23,6 +23,7 @@
     "visual:test": "playwright test"
   },
   "dependencies": {
+    "@lucide/vue": "^1.21.0",
     "axios": "^1.13.2",
     "jspdf": "^2.5.1",
     "jszip": "^3.7.1",

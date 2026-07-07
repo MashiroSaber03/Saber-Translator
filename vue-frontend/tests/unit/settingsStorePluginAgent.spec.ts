@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 
 const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
@@ -12,6 +14,25 @@ vi.mock('@/api/config', () => ({
 }))
 
 import { useSettingsStore } from '@/stores/settings'
+
+type SavedPluginAgentPayload = {
+  settingsSchemaVersion: unknown
+  translation?: {
+    modelName?: unknown
+  }
+  pluginAgent?: Record<string, unknown> & {
+    modelName?: unknown
+    rpmLimit?: unknown
+    useStream?: unknown
+  }
+  providerConfigs?: {
+    pluginAgent?: Record<string, {
+      apiKey?: unknown
+      modelName?: unknown
+      customBaseUrl?: unknown
+    }>
+  }
+}
 
 describe('settings store plugin agent configuration', () => {
   beforeEach(() => {
@@ -42,6 +63,14 @@ describe('settings store plugin agent configuration', () => {
     saveUserSettingsMock.mockResolvedValue({
       success: true,
     })
+  })
+
+  it('keeps plugin agent store tests on current payload contracts without broad any', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/settingsStorePluginAgent.spec.ts'), 'utf8')
+    const broadRecord = 'Record<string, ' + 'any>'
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+    expect(source).not.toContain(broadRecord)
   })
 
   it('keeps plugin agent credentials isolated per provider', () => {
@@ -110,18 +139,18 @@ describe('settings store plugin agent configuration', () => {
     expect(getUserSettingsMock).toHaveBeenCalledTimes(1)
     expect(saveUserSettingsMock).toHaveBeenCalledTimes(1)
 
-    const payload = saveUserSettingsMock.mock.calls[0]?.[0] as Record<string, any>
-    expect(payload.translation.modelName).toBe('backend-translation-model')
-    expect(payload.pluginAgent.modelName).toBe('agent-model')
-    expect(payload.providerConfigs.pluginAgent.siliconflow).toEqual(
+    const payload = saveUserSettingsMock.mock.calls[0]?.[0] as SavedPluginAgentPayload
+    expect(payload.translation?.modelName).toBe('backend-translation-model')
+    expect(payload.pluginAgent?.modelName).toBe('agent-model')
+    expect(payload.providerConfigs?.pluginAgent?.siliconflow).toEqual(
       expect.objectContaining({
         apiKey: 'agent-key',
         modelName: 'agent-model',
         customBaseUrl: 'https://agent.example/v1',
       }),
     )
-    expect(payload.pluginAgent.rpmLimit).toBeUndefined()
-    expect(payload.pluginAgent.useStream).toBeUndefined()
+    expect(payload.pluginAgent?.rpmLimit).toBeUndefined()
+    expect(payload.pluginAgent?.useStream).toBeUndefined()
     expect(payload.settingsSchemaVersion).toBe(3)
   })
 

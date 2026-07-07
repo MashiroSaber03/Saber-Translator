@@ -81,6 +81,7 @@ const RAW_SELECT_RE = /<select\b/
 const UI_INPUT_TAG_RE = /<UiInput\b[\s\S]*?>/g
 const UI_INPUT_BOOLEAN_TYPE_RE = /\btype\s*=\s*["'](?:checkbox|radio)["']/
 const UI_INPUT_BOOLEAN_TYPE_VALUE_RE = /\btype\s*=\s*["'](checkbox|radio)["']/
+const UI_INPUT_NUMBER_TYPE_RE = /\btype\s*=\s*["']number["']/
 const STYLE_SRC_RE = /<style[^>]+src=/
 const SCRIPT_STYLE_IMPORT_RE = /import\s+['"]\.\/([^'"]+\.styles\.css)['"]/g
 const HORIZONTAL_STYLE_SLICE_RE = /\.(?:base|layout|panels|responsive)\.styles\.css$/
@@ -109,18 +110,25 @@ const GENERIC_FORM_CLASS_TOKENS = new Set(['form-input', 'form-textarea'])
 const CSS_LEGACY_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(btn|card|form-group|modal)(?![A-Za-z0-9_-])/g
 const CSS_LEGACY_BUTTON_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-action-btn|btn-primary|btn-secondary|btn-danger|btn-sm|btn-icon|primary-btn|secondary-btn|ghost-btn|danger-btn)(?![A-Za-z0-9_-])/g
 const CSS_GENERIC_FORM_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(form-input|form-textarea)(?![A-Za-z0-9_-])/g
-const CSS_UNOWNED_GLOBAL_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(header-content|logo-container|app-logo|app-name|header-links|tutorial-link|github-link|donate-link|header-btn|mode-btn|upload-card|thumbnail-item|status-icon|ui-form-field)(?![A-Za-z0-9_-])/g
-const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
+const CSS_UNOWNED_GLOBAL_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(header-content|logo-container|app-logo|app-name|header-links|tutorial-link|github-link|donate-link|header-btn|mode-btn|upload-card|thumbnail-item|status-icon|ui-form-field|ui-field(?:--[a-z0-9-]+|__[a-z0-9-]+)?)(?![A-Za-z0-9_-])/g
+const CSS_UI_PRIMITIVE_SELECTOR_RE = /(^|[^A-Za-z0-9_-])\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-field(?:--[a-z0-9-]+|__[a-z0-9-]+)?|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
+const CSS_UI_PRIMITIVE_CHAINED_CLASS_SELECTOR_RE = /\.[A-Za-z0-9_-]+\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-field(?:--[a-z0-9-]+|__[a-z0-9-]+)?|ui-input|ui-select|ui-textarea)(?![A-Za-z0-9_-])/g
 const CSS_UI_PRIMITIVE_RELATIONAL_SELECTOR_RE = /:where\(\s*button\s*\)|:has\(\s*input\b[^)]*\)/g
 const CSS_UI_PRIMITIVE_INPUT_SELECTOR_RE = /\binput\s*\[\s*type\s*=\s*['"]checkbox['"]\s*\]/g
-const TEST_UI_PRIMITIVE_INTERNAL_SELECTOR_RE = /\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-input|ui-select|ui-textarea|ui-modal__[a-z0-9-]+)(?![A-Za-z0-9_-])/g
+const TEST_UI_PRIMITIVE_INTERNAL_SELECTOR_RE = /\.(ui-button--[a-z0-9-]+|ui-icon-button--[a-z0-9-]+|ui-form-field|ui-field(?:--[a-z0-9-]+|__[a-z0-9-]+)?|ui-input|ui-select|ui-textarea|ui-modal__[a-z0-9-]+)(?![A-Za-z0-9_-])/g
 const CSS_BARE_UI_MODAL_SELECTOR_RE = /^\s*\.ui-modal__/m
 const GLOBAL_STYLE_MODAL_DETAIL_SELECTOR_RE = /\.ui-modal__(?:body|header|footer|title|close)\b/
 const GLOBAL_FORM_SKIN_SELECTOR_RE = /(\.ui-settings-field\s+\.ui-(?:input|select|textarea)|\.ui-checkbox-label\s+input(?:\[[^\]]+\])?)/g
 const BUSINESS_PROVIDE_INJECT_RE = /\b(?:provide|inject)\s*\(/g
 const CUSTOM_STYLE_ATTR_RE = /(?::custom-style|custom-style)\s*=\s*(["'])([\s\S]*?)\1/g
+const BASE_MODAL_OPENING_TAG_RE = /<BaseModal\b[\s\S]*?(?:\/>|>)/g
+const BASE_MODAL_VISUAL_PROP_ATTR_RE = /\b(?:background|border|border-radius|box-shadow|header-border|header-background|header-color|title-color|title-font-size|title-font-weight|close-color|close-font-size|close-hover-color|close-hover-background|body-background|footer-border|footer-background)\s*=/g
+const DIRECT_LUCIDE_IMPORT_RE = /(?:from\s+['"]@lucide\/vue['"]|import\s*\([^)]*['"]@lucide\/vue['"][^)]*\))/
+const PRODUCT_STRING_ICON_FALLBACK_RE = /\bicon\s*\?:\s*string\b|v-else-if\s*=\s*["'][^"']*\.icon["']|{{\s*[^}]*\.icon\s*}}/
+const TRANSLATION_POOL_STRING_ICON_RE = /\bicon\s*:\s*string\b|poolIconName\s*\(\s*icon\s*:\s*string/
+const LOCAL_DARK_MODE_MEDIA_RE = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/
 const UI_PRIMITIVE_BUSINESS_OWNER_TOKEN_RE = /--(?:bookshelf|book-card|character-studio|edit|insight|reader|studio|translate|web-import)-[A-Za-z0-9_-]+/g
-const PUBLIC_PRIMITIVE_CUSTOM_PROPERTY_RE = /^--ui-/
+const PUBLIC_PRIMITIVE_CUSTOM_PROPERTY_RE = /^--(?:ui|product)-/
 const RAW_BUTTON_RE = /<button\b/
 const RAW_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
@@ -128,6 +136,7 @@ const RAW_BUTTON_ALLOWED_FILES = new Set([
 ])
 const RAW_FORM_CONTROL_ALLOWED_FILES = new Set([
   'src/components/ui/UiCheckbox.vue',
+  'src/components/ui/UiColorInput.vue',
   'src/components/ui/UiFileInput.vue',
   'src/components/ui/UiInput.vue',
   'src/components/ui/UiSelect.vue',
@@ -142,7 +151,18 @@ const TEST_PRIMITIVE_SELECTOR_ALLOWED_FILES = new Set([
 const UNSTYLED_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
 ])
+const DIRECT_LUCIDE_IMPORT_ALLOWED_FILES = new Set([
+  'src/components/ui/iconRegistry.ts',
+])
+const ICON_OWNERSHIP_SELF_TEST_FILES = new Set([
+  'tests/unit/uiArchitectureLint.spec.ts',
+])
 const UI_PRIMITIVE_STYLE_ALLOWED_PREFIX = 'src/components/ui/'
+const PRODUCT_PRIMITIVE_STYLE_ALLOWED_PREFIX = 'src/components/product/'
+const SHARED_PRIMITIVE_STYLE_ALLOWED_PREFIXES = [
+  UI_PRIMITIVE_STYLE_ALLOWED_PREFIX,
+  PRODUCT_PRIMITIVE_STYLE_ALLOWED_PREFIX,
+]
 const TELEPORT_STYLE_OWNER_ALLOWED_FILES = new Set([
   'src/components/common/BaseModal.vue',
 ])
@@ -162,7 +182,7 @@ const DOMAIN_SHARED_TOKEN_RE = /^--insight-/
 const GENERATED_DOMAIN_TOKEN_RE = /^--[a-z0-9-]+-variant-\d{3}$/
 const DOMAIN_SPECIFIC_GLOBAL_TOKEN_RE = /^--(?:color-edit-|color-(?:surface|text|border|shadow)-studio|shadow-edit-|shadow-studio-)/
 const LEGACY_INSIGHT_DOMAIN_ALIAS_RE = /^--insight-(?:bg-[a-z0-9-]+|color-(?:primary|warning|error|danger)|primary(?:-[a-z0-9-]+)?|(?:success|warning|error|danger)(?:-color)?)$/
-const VAGUE_COMPONENT_TOKEN_RE = /^--(?:app-header|base-modal|custom-select|toast-notification|ui-button|ui-icon-button|ui-input|ui-panel|ui-select|ui-textarea)-(?:(?:surface|text|border|shadow)-(?:base|primary|secondary|default|raised|muted|subtle|hover|floating|strong|inverse|selected|overlay)|(?:border|shadow)-(?:muted|subtle|strong))$/
+const VAGUE_COMPONENT_TOKEN_RE = /^--(?:base-modal|ui-combobox|toast-notification|ui-button|ui-icon-button|ui-input|ui-panel|ui-select|ui-textarea)-(?:(?:surface|text|border|shadow)-(?:base|primary|secondary|default|raised|muted|subtle|hover|floating|strong|inverse|selected|overlay)|(?:border|shadow)-(?:muted|subtle|strong))$/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE = /^--(?:color-gray-\d+|color-accent-purple(?:-hover)?|color-surface-[a-z0-9-]+-gradient-(?:start|end)|color-surface-editor-[a-z0-9-]+|color-surface-overlay-(?:light|medium)(?:-[a-z0-9-]+)?|color-surface-(?:plain|slate-soft|warning-tint|warning-warm)|shadow-(?:brand|success)-soft)$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
@@ -172,6 +192,7 @@ const OPTIONAL_CURRENT_SCHEMA_VERSION_RE = /\b(?:settingsSchemaVersion|webImport
 const WEB_IMPORT_PARTIAL_SCHEMA_RE = /\bPartial\s*<\s*WebImport(?:Settings|ProviderConfigs|SettingsPayload)\s*>/g
 const OPENAI_MIRROR_FIELD_PATH_RE = /(?:^|\/)openaiOptions\.ts$|src\/stores\/insightStore\.ts$|src\/stores\/insight\/useInsightConfigManager\.ts$/
 const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|对应原\s+[^*\n\r]+\.js|旧版[^*\n\r]*|原版[^*\n\r]*|【(?:简化设计|增强版|优化)[^】]*】|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
+const STALE_TEST_REQUIREMENT_NARRATION_RE = /Feature:\s*frontend-behavior|Property\s+\d+\s*:|Validates:\s*Requirements/gi
 const COMPOSABLE_IMPLEMENTATION_HISTORY_RE = /从\s+[^*\n\r]+提取|【(?:简化设计|增强版|优化)[^】]*】/g
 const EXPLICIT_ANY_RE = /\bas\s+any\b|:\s*any\b|\bany\[\]/g
 const RELATIVE_EXPORT_RE = /\bexport\s+(?:type\s+)?(?:\*|\{[\s\S]*?\})\s+from\s+['"](\.[^'"]+)['"]/g
@@ -292,7 +313,6 @@ const UI_MINDSET_SCAN_ROOTS = [
 const PAGE_CUSTOM_PROPERTY_PREFIXES = new Map([
   ['src/views/BookshelfView.vue', '--bookshelf-'],
   ['src/views/CharacterStudioView.vue', '--studio-'],
-  ['src/views/CharacterStudioView.global.styles.css', '--studio-'],
   ['src/views/InsightView.vue', '--insight-'],
   ['src/views/InsightView.styles.css', '--insight-'],
   ['src/views/ReaderView.vue', '--reader-'],
@@ -333,11 +353,11 @@ const ARCHITECTURE_DEBT_BUDGETS = {
 }
 
 const LAYOUT_OWNER_ALLOWED_FILES = new Set([
-  'src/components/common/AppHeader.vue',
   'src/components/common/BaseModal.vue',
-  'src/components/common/CustomSelect.vue',
+  'src/components/product/ProductPageHeader.vue',
   'src/components/common/ToastNotification.vue',
   'src/components/ui/AppShell.vue',
+  'src/components/ui/UiCombobox.vue',
   'src/components/ui/OverlayLayer.vue',
   'src/components/ui/SidebarLayout.vue',
   'src/components/edit/EditWorkspace.vue',
@@ -535,6 +555,9 @@ function collectSourceCustomPropertyReferencesFromPath(path, refs) {
     return
   }
   const normalizedPath = normalizePath(path)
+  if (isTestFile(normalizedPath)) {
+    return
+  }
   if (isTokenFile(normalizedPath)) {
     return
   }
@@ -1049,6 +1072,9 @@ function checkUiPrimitiveSelectors(path, normalizedPath, content) {
     for (const match of css.matchAll(CSS_UI_PRIMITIVE_SELECTOR_RE)) {
       primitiveSelectors.add(match[2])
     }
+    for (const match of css.matchAll(CSS_UI_PRIMITIVE_CHAINED_CLASS_SELECTOR_RE)) {
+      primitiveSelectors.add(match[1])
+    }
     for (const match of css.matchAll(CSS_UI_PRIMITIVE_RELATIONAL_SELECTOR_RE)) {
       primitiveRelationalSelectors.add(match[0])
     }
@@ -1069,7 +1095,7 @@ function checkUiPrimitiveSelectors(path, normalizedPath, content) {
 }
 
 function checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithoutComments) {
-  if (!normalizedPath.startsWith(UI_PRIMITIVE_STYLE_ALLOWED_PREFIX)) {
+  if (!SHARED_PRIMITIVE_STYLE_ALLOWED_PREFIXES.some(prefix => normalizedPath.startsWith(prefix))) {
     return
   }
 
@@ -1077,7 +1103,7 @@ function checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithou
   if (businessOwnerTokens.size > 0) {
     addFailure(
       path,
-      `business owner token reference(s) ${[...businessOwnerTokens].join(', ')} are not allowed in UI primitives; expose a --ui-* primitive variable and let business owners override it`
+      `business owner token reference(s) ${[...businessOwnerTokens].join(', ')} are not allowed in shared primitives; expose a public primitive variable and let business owners override it`
     )
   }
 }
@@ -1106,6 +1132,26 @@ function checkUiInputBooleanControls(path, normalizedPath, contentWithoutComment
   }
 }
 
+function checkUiInputNumericControls(path, normalizedPath, contentWithoutComments) {
+  if (!path.endsWith('.vue') || normalizedPath.startsWith(UI_PRIMITIVE_STYLE_ALLOWED_PREFIX)) {
+    return
+  }
+
+  const genericNumericControls = new Set()
+  for (const match of contentWithoutComments.matchAll(UI_INPUT_TAG_RE)) {
+    if (UI_INPUT_NUMBER_TYPE_RE.test(match[0])) {
+      genericNumericControls.add('type="number"')
+    }
+  }
+
+  if (genericNumericControls.size > 0) {
+    addFailure(
+      path,
+      `generic UiInput numeric control(s) ${[...genericNumericControls].join(', ')} are not allowed in business Vue components; use UiNumberField`
+    )
+  }
+}
+
 function checkGlobalFormSkinSelectors(path, content) {
   if (!normalizePath(path).endsWith('form-primitives.css')) {
     return
@@ -1119,7 +1165,7 @@ function checkGlobalFormSkinSelectors(path, content) {
   if (selectors.size > 0) {
     addFailure(
       path,
-      `global form skin selector(s) ${[...selectors].join(', ')} are not allowed; express settings form layout through UiField/UiPanel/Form primitives`
+      `global form skin selector(s) ${[...selectors].join(', ')} are not allowed; express settings form layout through UiField/ProductFormSection/Form primitives`
     )
   }
 }
@@ -1165,6 +1211,57 @@ function checkBaseModalCustomStyleUsage(path, normalizedPath, content) {
   }
 }
 
+function checkBaseModalVisualPropUsage(path, normalizedPath, content) {
+  if (normalizedPath === 'src/components/common/BaseModal.vue') {
+    return
+  }
+
+  const visualProps = new Set()
+  for (const tagMatch of content.matchAll(BASE_MODAL_OPENING_TAG_RE)) {
+    for (const propMatch of tagMatch[0].matchAll(BASE_MODAL_VISUAL_PROP_ATTR_RE)) {
+      visualProps.add(propMatch[0].replace(/\s*=$/, ''))
+    }
+  }
+
+  if (visualProps.size > 0) {
+    addFailure(
+      path,
+      `BaseModal visual prop(s) ${[...visualProps].join(', ')} are not allowed in business UI; use frameVariant, dividerVariant, footerTone, layout props, or scoped owner content instead`
+    )
+  }
+}
+
+function checkLocalDarkModeMedia(path, normalizedPath, contentWithoutComments) {
+  if (!isTokenFile(normalizedPath) && LOCAL_DARK_MODE_MEDIA_RE.test(contentWithoutComments)) {
+    addFailure(path, 'local prefers-color-scheme dark-mode overrides are not allowed; use product theme state and semantic tokens')
+  }
+}
+
+function checkIconOwnership(path, normalizedPath, contentWithoutComments) {
+  if (ICON_OWNERSHIP_SELF_TEST_FILES.has(normalizedPath) && !SOURCE_FIXTURE) {
+    return
+  }
+
+  if (normalizedPath.startsWith('src/components/product/')
+    && PRODUCT_STRING_ICON_FALLBACK_RE.test(contentWithoutComments)) {
+    addFailure(path, 'product icon props must use typed iconName values instead of string icon fallbacks')
+  }
+
+  if ((normalizedPath.startsWith('src/composables/translation/parallel/')
+    || normalizedPath === 'src/components/translate/TranslationProgress.vue')
+    && TRANSLATION_POOL_STRING_ICON_RE.test(contentWithoutComments)) {
+    addFailure(path, 'translation progress pool icons must use UiIconName, not raw string')
+  }
+
+  if (DIRECT_LUCIDE_IMPORT_ALLOWED_FILES.has(normalizedPath)) {
+    return
+  }
+
+  if (DIRECT_LUCIDE_IMPORT_RE.test(contentWithoutComments)) {
+    addFailure(path, 'direct @lucide/vue imports are only allowed in the UI icon registry; use UiIcon or extend src/components/ui/iconRegistry.ts')
+  }
+}
+
 function isTestFile(normalizedPath) {
   return normalizedPath.startsWith('tests/')
     || /\.test\.[jt]sx?$/.test(normalizedPath)
@@ -1189,17 +1286,35 @@ function checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithou
   }
 }
 
+function checkTestRequirementNarration(path, normalizedPath, content) {
+  if (!isTestFile(normalizedPath)) {
+    return
+  }
+
+  const phrases = new Set([...content.matchAll(STALE_TEST_REQUIREMENT_NARRATION_RE)].map(match => match[0]))
+  if (phrases.size === 0) {
+    return
+  }
+
+  addFailure(
+    path,
+    `stale test requirement/property narration ${[...phrases].join(', ')} is not allowed; describe the current product behavior contract instead`
+  )
+}
+
 function checkFile(path) {
   const content = readFileSync(path, 'utf8')
   const normalizedPath = normalizePath(path)
   const contentWithoutComments = stripCssComments(content)
 
   checkLocalBuildArtifact(path, normalizedPath)
-  checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
+  checkTestPrimitiveInternalSelectors(path, normalizedPath, content)
+  checkTestRequirementNarration(path, normalizedPath, content)
   checkOldImplementationMindset(path, normalizedPath, content)
   checkComposableSourceHygiene(path, normalizedPath, content, contentWithoutComments)
   checkTypeSourceHygiene(path, normalizedPath, contentWithoutComments)
   checkUtilSourceHygiene(path, normalizedPath, contentWithoutComments)
+  checkIconOwnership(path, normalizedPath, contentWithoutComments)
   checkRelativeExports(path, contentWithoutComments)
   checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
@@ -1208,8 +1323,11 @@ function checkFile(path) {
   checkBusinessProvideInject(path, normalizedPath, contentWithoutComments)
   checkRawCustomStyleValues(path, content)
   checkBaseModalCustomStyleUsage(path, normalizedPath, content)
+  checkBaseModalVisualPropUsage(path, normalizedPath, contentWithoutComments)
+  checkLocalDarkModeMedia(path, normalizedPath, contentWithoutComments)
   checkUiPrimitiveBusinessOwnerTokens(path, normalizedPath, contentWithoutComments)
   checkUiInputBooleanControls(path, normalizedPath, contentWithoutComments)
+  checkUiInputNumericControls(path, normalizedPath, contentWithoutComments)
 
   if (GENERATED_CSS_RE.test(normalizedPath)) {
     addFailure(path, 'generated CSS files are not allowed; use co-located named .styles.css or component scoped styles')
@@ -1509,11 +1627,13 @@ function checkScriptFile(path) {
   const contentWithoutComments = stripCssComments(content)
 
   checkLocalBuildArtifact(path, normalizedPath)
-  checkTestPrimitiveInternalSelectors(path, normalizedPath, contentWithoutComments)
+  checkTestPrimitiveInternalSelectors(path, normalizedPath, content)
+  checkTestRequirementNarration(path, normalizedPath, content)
   checkOldImplementationMindset(path, normalizedPath, content)
   checkComposableSourceHygiene(path, normalizedPath, content, contentWithoutComments)
   checkTypeSourceHygiene(path, normalizedPath, contentWithoutComments)
   checkUtilSourceHygiene(path, normalizedPath, contentWithoutComments)
+  checkIconOwnership(path, normalizedPath, contentWithoutComments)
   checkRelativeExports(path, contentWithoutComments)
   checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)

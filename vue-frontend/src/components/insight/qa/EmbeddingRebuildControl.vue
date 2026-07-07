@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 defineProps<{
   isRebuilding: boolean
@@ -20,6 +22,13 @@ defineEmits<{
     :disabled="isRebuilding"
     @click="$emit('rebuild')"
   >
-    {{ isRebuilding ? `⏳ ${progressLabel || '重建中...'}` : '🔄 重建向量' }}
+    <template v-if="isRebuilding">
+      <UiSpinner :decorative="false" label="向量索引重建中" />
+      <span>{{ progressLabel || '重建中...' }}</span>
+    </template>
+    <template v-else>
+      <UiIcon name="refresh" />
+      <span>重建向量</span>
+    </template>
   </UiButton>
 </template>

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const { extractGlossaryEntriesMock, saveBookConstraintsMock } = vi.hoisted(() => ({
   extractGlossaryEntriesMock: vi.fn(),
@@ -22,6 +24,14 @@ describe('executeAutoGlossary', () => {
     saveBookConstraintsMock.mockReset()
   })
 
+  it('keeps constraint cloning on the shared helper', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/translation/core/steps/autoGlossary.ts'), 'utf8')
+
+    expect(source).toContain("from '@/utils/deepClone'")
+    expect(source).not.toContain('function cloneConstraints')
+    expect(source).not.toContain('JSON.parse(JSON.stringify(constraints))')
+  })
+
   it('skips outside bookshelf mode', async () => {
     const settingsStore = useSettingsStore()
     const constraints = createEmptyBookTranslationConstraints()
@@ -41,6 +51,9 @@ describe('executeAutoGlossary', () => {
       duplicates: 0,
       failedPages: 0,
     })
+    expect(result.bookTranslationConstraints).toEqual(constraints)
+    expect(result.bookTranslationConstraints).not.toBe(constraints)
+    expect(result.bookTranslationConstraints.glossary.entries).not.toBe(constraints.glossary.entries)
   })
 
   it('extracts, saves and returns updated constraints when enabled', async () => {
@@ -92,9 +105,12 @@ describe('executeAutoGlossary', () => {
       },
     }))
     expect(saveBookConstraintsMock).toHaveBeenCalled()
+    expect(saveBookConstraintsMock.mock.calls[0]?.[0]).not.toBe(store.constraints)
     expect(result.bookTranslationConstraints.glossary.entries).toEqual([
       { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' },
     ])
+    expect(result.bookTranslationConstraints).not.toBe(store.constraints)
+    expect(result.bookTranslationConstraints.glossary.entries).not.toBe(store.constraints.glossary.entries)
     expect(result.autoGlossaryStats).toEqual({
       added: 1,
       duplicates: 1,

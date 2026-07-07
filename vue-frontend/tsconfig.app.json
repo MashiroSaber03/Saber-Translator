@@ -6,14 +6,12 @@
     "types": [
       "vite/client"
     ],
-    /* 路径别名 */
     "baseUrl": ".",
     "paths": {
       "@/*": [
         "src/*"
       ]
     },
-    /* 严格模式 - TypeScript 类型检查 */
     "strict": true,
     "strictNullChecks": true,
     "noUnusedLocals": true,

@@ -12,7 +12,7 @@
   margin-bottom: 15px;
 }
 
-.ui-form-grid :slotted(.ui-settings-field) {
+.ui-form-grid :slotted(.ui-field--settings) {
   margin-bottom: 0;
 }
 </style>

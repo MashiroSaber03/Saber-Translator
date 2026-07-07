@@ -1,45 +1,62 @@
 <template>
   <div class="character-management-panel">
-    <div class="section-header">
-      <div class="section-title">
-        <h4>🎭 角色档案</h4>
-        <p class="hint">点击角色查看和管理形态</p>
-      </div>
-      <UiButton variant="primary" @click="openAddCharacterDialog" size="sm">
-        ➕ 新增角色
-      </UiButton>
-    </div>
-    
-    <div v-if="characters.length === 0" class="empty-state">
-      <span v-if="isLoading">加载中...</span>
-      <span v-else>暂无角色数据，点击"新增角色"添加</span>
-    </div>
-    
-    <div v-else class="character-panel-layout">
-      <div class="character-grid-panel">
-        <UiButton
-          v-for="char in characters" 
-          :key="char.name" 
-          variant="toolbar"
-          class="character-tile"
-          :class="{ selected: selectedCharacter === char.name, disabled: char.enabled === false }"
+    <ProductSectionHeader
+      title="角色档案"
+      description="点击角色查看和管理形态"
+      icon-name="users"
+    >
+      <template #actions>
+        <UiButton variant="primary" @click="openAddCharacterDialog" size="sm">
+          <UiIcon name="plus" size="14" />
+          <span>新增角色</span>
+        </UiButton>
+      </template>
+    </ProductSectionHeader>
+
+    <ProductStatusBanner
+      v-if="characters.length === 0"
+      class="character-management-panel__empty-status"
+      tone="neutral"
+      role="note"
+      icon-name="users"
+      :title="isLoading ? '正在加载角色档案' : '暂无角色档案'"
+    >
+      {{ isLoading ? '正在加载角色数据...' : '点击“新增角色”添加角色。' }}
+    </ProductStatusBanner>
+
+    <div v-else class="character-management-panel__layout">
+      <div class="character-management-panel__grid">
+        <ProductRecordCard
+          v-for="char in characters"
+          :key="char.name"
+          as="button"
+          class="character-management-panel__tile"
+          :class="{
+            'character-management-panel__tile--selected': selectedCharacter === char.name,
+            'character-management-panel__tile--disabled': char.enabled === false
+          }"
+          :accent="selectedCharacter === char.name"
+          :aria-label="`选择角色 ${char.name}`"
           :aria-pressed="selectedCharacter === char.name"
           @click="selectCharacter(char.name)"
         >
-          <div class="tile-avatar">
-            <img v-if="char.reference_image" :src="getCharacterImageUrl(char.name)" alt="">
-            <div v-else class="tile-avatar-placeholder">
-              <span>{{ char.name.charAt(0) }}</span>
-            </div>
-            <div v-if="char.forms && char.forms.length > 1" class="tile-form-badge">
-              {{ char.forms.length }}
-            </div>
-            <div v-if="char.enabled === false" class="tile-disabled-badge">禁用</div>
-          </div>
-          <div class="tile-name">{{ char.name }}</div>
-        </UiButton>
+          <ProductAvatar
+            :image-src="char.reference_image ? getCharacterImageUrl(char.name) : ''"
+            :label="`角色 ${char.name} 头像`"
+            :fallback-text="char.name"
+            size="md"
+            shape="rounded"
+          />
+          <div class="character-management-panel__tile-name">{{ char.name }}</div>
+          <ProductChipList
+            v-if="characterTileChips(char).length > 0"
+            class="character-management-panel__tile-chips"
+            :aria-label="`${char.name}状态`"
+            :items="characterTileChips(char)"
+          />
+        </ProductRecordCard>
       </div>
-      
+
       <CharacterDetailPanel
         :character="getSelectedCharacterData()"
         :avatar-url="selectedCharacter ? getCharacterImageUrl(selectedCharacter) : ''"
@@ -56,40 +73,41 @@
         @toggle-form-enabled="handleToggleFormEnabled"
       />
     </div>
-    
+
     <AddCharacterDialog
       v-if="showAddCharDialog"
       @close="showAddCharDialog = false"
       @add="handleAddCharacter"
     />
-    
+
     <EditCharacterDialog
       v-if="showEditCharDialog && editingCharacter"
       :character="editingCharacter"
       @close="showEditCharDialog = false"
       @save="handleSaveCharacterInfo"
     />
-    
+
     <AddFormDialog
       v-if="showAddFormDialog"
       @close="showAddFormDialog = false"
       @add="handleAddForm"
     />
-    
+
     <EditFormDialog
       v-if="showEditFormDialog && editingForm"
       :form="editingForm"
       @close="showEditFormDialog = false"
       @save="handleSaveFormInfo"
     />
-    
+
     <OrthographicDialog
       v-if="showOrthoDialog && selectedCharacter"
       :character-name="selectedCharacter"
       :form-id="orthoFormId"
       :form-name="orthoFormName"
       :book-id="bookId"
-      ref="orthoDialogRef"
+      :is-generating="orthoGenerating"
+      :result-image-path="orthoResultImagePath"
       @close="closeOrthoDialog"
       @generate="handleGenerateOrtho"
       @use-result="handleUseOrthoResult"
@@ -99,9 +117,17 @@
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import ProductAvatar from '@/components/product/ProductAvatar.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import { ref, computed } from 'vue'
 import type { CharacterManagementComposable } from '@/composables/continuation/useCharacterManagement'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 import CharacterDetailPanel from './CharacterDetailPanel.vue'
 import AddCharacterDialog from './AddCharacterDialog.vue'
 import EditCharacterDialog from './EditCharacterDialog.vue'
@@ -133,7 +159,8 @@ const editingForm = ref<CharacterForm | null>(null)
 
 const orthoFormId = ref('')
 const orthoFormName = ref('')
-const orthoDialogRef = ref<InstanceType<typeof OrthographicDialog> | null>(null)
+const orthoGenerating = ref(false)
+const orthoResultImagePath = ref<string | null>(null)
 
 const characters = computed(() => state.characters.value)
 
@@ -155,6 +182,17 @@ function getFormImageUrl(charName: string, formId: string): string {
   const form = char?.forms?.find(f => f.form_id === formId)
   if (!form?.reference_image) return ''
   return state.getFormImageUrl(form.reference_image)
+}
+
+function characterTileChips(character: CharacterProfile): ProductChipItem[] {
+  const items: ProductChipItem[] = []
+  if (character.forms && character.forms.length > 1) {
+    items.push({ id: 'forms', label: `${character.forms.length} 个形态`, tone: 'primary' })
+  }
+  if (character.enabled === false) {
+    items.push({ id: 'disabled', label: '禁用', tone: 'warning' })
+  }
+  return items
 }
 
 function openAddCharacterDialog() {
@@ -181,9 +219,17 @@ async function handleSaveCharacterInfo(name: string, aliases: string[]) {
 
 async function handleDeleteCharacter() {
   if (!selectedCharacter.value) return
-  if (!confirm(`确定要删除角色"${selectedCharacter.value}"吗？`)) return
-  
-  await charMgmt.deleteCharacter(selectedCharacter.value)
+  const characterName = selectedCharacter.value
+  const confirmed = await confirmProductAction({
+    title: '删除角色',
+    message: `确定要删除角色"${characterName}"吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
+  await charMgmt.deleteCharacter(characterName)
   selectedCharacter.value = null
 }
 
@@ -217,8 +263,15 @@ async function handleSaveFormInfo(formName: string, description: string) {
 
 async function handleDeleteForm(form: CharacterForm) {
   if (!selectedCharacter.value) return
-  if (!confirm(`确定要删除形态"${form.form_name}"吗？`)) return
-  
+  const confirmed = await confirmProductAction({
+    title: '删除角色形态',
+    message: `确定要删除形态"${form.form_name}"吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
   await charMgmt.deleteForm(selectedCharacter.value, form.form_id)
 }
 
@@ -229,8 +282,15 @@ async function handleUploadFormImage(formId: string, file: File) {
 
 async function handleDeleteFormImage(formId: string) {
   if (!selectedCharacter.value) return
-  if (!confirm('确定要删除形态参考图吗？')) return
-  
+  const confirmed = await confirmProductAction({
+    title: '删除形态参考图',
+    message: '确定要删除形态参考图吗？',
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
   await charMgmt.deleteFormImage(selectedCharacter.value, formId)
 }
 
@@ -242,37 +302,40 @@ async function handleToggleFormEnabled(formId: string, enabled: boolean) {
 function handleGenerateOrthographic(formId: string, formName: string) {
   orthoFormId.value = formId
   orthoFormName.value = formName
+  orthoGenerating.value = false
+  orthoResultImagePath.value = null
   showOrthoDialog.value = true
 }
 
 async function handleGenerateOrtho(sourceImages: File[]) {
   if (!selectedCharacter.value) return
-  
-  orthoDialogRef.value?.setGenerating(true)
-  
+
+  orthoGenerating.value = true
+  orthoResultImagePath.value = null
+
   try {
     const result = await charMgmt.generateOrtho(
       selectedCharacter.value,
       orthoFormId.value,
       sourceImages
     )
-    
+
     if (result.success && result.image_path) {
-      orthoDialogRef.value?.setResult(result.image_path)
+      orthoResultImagePath.value = result.image_path
       state.showMessage('三视图生成成功', 'success')
     } else {
       state.showMessage('生成失败: ' + result.error, 'error')
-      orthoDialogRef.value?.setGenerating(false)
     }
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-    orthoDialogRef.value?.setGenerating(false)
+  } finally {
+    orthoGenerating.value = false
   }
 }
 
 async function handleUseOrthoResult(imagePath: string) {
   if (!selectedCharacter.value) return
-  
+
   try {
     await charMgmt.setFormReference(selectedCharacter.value, orthoFormId.value, imagePath)
     state.showMessage('三视图已设置为形态参考图', 'success')
@@ -286,62 +349,26 @@ function closeOrthoDialog() {
   showOrthoDialog.value = false
   orthoFormId.value = ''
   orthoFormName.value = ''
+  orthoGenerating.value = false
+  orthoResultImagePath.value = null
 }
 </script>
 
 <style scoped>
 .character-management-panel {
-  --character-management-panel-border-default: #c7d2fe;
-  --character-management-panel-shadow-default: rgba(99, 102, 241, .2);
-  --character-management-panel-surface-base: #f5f7ff;
-  --character-management-panel-surface-raised: #eef2ff;
-  --character-management-panel-surface-muted: #e8e8ff;
-  --character-management-panel-surface-subtle: #f0f0f0;
-  --character-management-panel-surface-hover: #8b5cf6;
-  --character-management-panel-surface-active: rgba(239, 68, 68, .9);
-  --character-management-panel-text-primary: #374151;
-  --ui-button-padding: 10px 20px;
-  --ui-button-radius: 8px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
+  container-type: inline-size;
+  container-name: continuation-character-management;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-}
-
-.section-title h4 {
-  margin: 0 0 4px;
-  font-size: 16px;
-}
-
-.section-title .hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 14px;
-}
-
-.character-panel-layout {
+.character-management-panel__layout {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(160px, 180px) minmax(0, 1fr);
   gap: 20px;
   min-height: 320px;
+  min-width: 0;
 }
 
-.character-grid-panel {
+.character-management-panel__grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
@@ -351,102 +378,68 @@ function closeOrthoDialog() {
   padding: 4px;
 }
 
-.character-tile {
-  display: flex;
-  flex-direction: column;
+@container continuation-character-management (max-width: 640px) {
+  .character-management-panel__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .character-management-panel__grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    max-height: none;
+  }
+}
+
+@media (--breakpoint-md-down) {
+  .character-management-panel__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .character-management-panel__grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    max-height: none;
+  }
+}
+
+.character-management-panel__tile {
+  --product-record-card-background: var(--color-surface-base);
+  --product-record-card-border: transparent;
+  --product-record-card-radius: 12px;
+  --product-record-card-padding: 10px 6px;
+  --product-record-card-gap: 6px;
+  --product-record-card-shadow-hover: none;
+
   align-items: center;
-  padding: 10px 6px;
-  border-radius: 12px;
-  background: var(--color-surface-base);
-  border: 2px solid transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
   text-align: center;
-  transition: all 0.2s ease;
 }
 
-.character-tile:hover {
-  background: var(--character-management-panel-surface-base);
-  border-color: var(--character-management-panel-border-default);
+.character-management-panel__tile:hover {
+  --product-record-card-background: var(--color-surface-muted);
+  --product-record-card-border: var(--color-border-brand);
 }
 
-.character-tile.selected {
-  background: linear-gradient(135deg, var(--character-management-panel-surface-raised) 0%, var(--character-management-panel-surface-muted) 100%);
-  border-color: var(--color-border-brand);
-  box-shadow: 0 4px 12px var(--character-management-panel-shadow-default);
+.character-management-panel__tile--selected {
+  --product-record-card-background: var(--color-surface-muted);
+  --product-record-card-border: var(--color-border-brand);
+  --product-record-card-shadow: 0 4px 12px var(--color-focus-brand-soft);
 }
 
-.character-tile.disabled {
+.character-management-panel__tile--disabled {
   opacity: 0.5;
   filter: grayscale(50%);
 }
 
-.tile-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
-  overflow: hidden;
-  position: relative;
-  background: var(--character-management-panel-surface-subtle);
-  margin-bottom: 6px;
-}
-
-.tile-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.tile-avatar-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
-  color: var(--color-text-inverse);
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.tile-form-badge {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  background: linear-gradient(135deg, var(--color-surface-brand) 0%, var(--character-management-panel-surface-hover) 100%);
-  color: var(--color-text-inverse);
-  font-size: 10px;
-  font-weight: 600;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--color-surface-base);
-}
-
-.tile-disabled-badge {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  background: var(--character-management-panel-surface-active);
-  color: var(--color-text-inverse);
-  font-size: 9px;
-  font-weight: 500;
-  padding: 1px 4px;
-  border-radius: 4px;
-}
-
-.tile-name {
+.character-management-panel__tile-name {
   font-size: 12px;
   font-weight: 500;
-  color: var(--character-management-panel-text-primary);
+  color: var(--color-text-default);
   text-align: center;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.character-management-panel__tile-chips {
+  justify-content: center;
 }
 </style>

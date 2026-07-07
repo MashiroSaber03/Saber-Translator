@@ -1,10 +1,8 @@
-/**
- * 修复步骤
- */
 import { parallelInpaint, type ParallelInpaintResponse } from '@/api/parallelTranslate'
 import type { BubbleCoords } from '@/types/bubble'
 import type { ImageData as AppImageData } from '@/types/image'
 import type { TranslationSettings } from '@/types/settings'
+import { extractBase64Payload } from '@/utils/dataUrl'
 
 export interface InpaintInput {
     imageIndex: number
@@ -12,8 +10,8 @@ export interface InpaintInput {
     translationMode?: string
     bubbleCoords: BubbleCoords[]
     bubblePolygons: number[][][]
-    textMask?: string      // 文字检测掩膜
-    userMask?: string      // 用户笔刷掩膜
+    textMask?: string
+    userMask?: string
     settingsSnapshot: TranslationSettings
 }
 
@@ -25,12 +23,12 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     const { image, bubbleCoords, bubblePolygons, textMask, userMask, translationMode = 'standard', settingsSnapshot } = input
 
     if (bubbleCoords.length === 0) {
-        return { cleanImage: extractBase64(image.originalDataURL) }
+        return { cleanImage: extractBase64Payload(image.originalDataURL) }
     }
 
     const settings = settingsSnapshot
     const { textStyle, preciseMask } = settings
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = extractBase64Payload(image.originalDataURL)
 
     const response: ParallelInpaintResponse = await parallelInpaint({
         image: base64,
@@ -38,8 +36,8 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
         translation_mode: translationMode,
         translation_scope: 'image',
         bubble_polygons: bubblePolygons,
-        raw_mask: textMask || undefined,      // 文字检测掩膜
-        user_mask: userMask || undefined,     // 用户笔刷掩膜
+        raw_mask: textMask || undefined,
+        user_mask: userMask || undefined,
         method: textStyle.inpaintMethod === 'solid' ? 'solid' : 'lama',
         lama_model: textStyle.inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe',
         fill_color: textStyle.fillColor,
@@ -52,12 +50,5 @@ export async function executeInpaint(input: InpaintInput): Promise<InpaintOutput
     }
 
     return { cleanImage: response.clean_image || '' }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }
 

@@ -311,4 +311,16 @@ describe('useContinuationState', () => {
       vi.useRealTimers()
     }
   })
+
+  it('encodes book ids when building continuation image urls', () => {
+    const state = useContinuationState(ref('book/id one#x'))
+    state.imageRefreshKey.value = 123
+
+    expect(state.getCharacterImageUrl('主角/形态')).toBe(
+      '/api/manga-insight/book%2Fid%20one%23x/continuation/characters/%E4%B8%BB%E8%A7%92%2F%E5%BD%A2%E6%80%81/image?t=123',
+    )
+    expect(state.getGeneratedImageUrl('/tmp/generated page.png')).toBe(
+      '/api/manga-insight/book%2Fid%20one%23x/continuation/generated-image?path=%2Ftmp%2Fgenerated%20page.png',
+    )
+  })
 })

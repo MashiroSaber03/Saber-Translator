@@ -1,9 +1,3 @@
-/**
- * 检测池
- * 
- * 负责调用后端检测API，获取气泡坐标、角度、多边形等信息
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
@@ -17,7 +11,7 @@ export class DetectionPool extends TaskPool {
     progressTracker: ParallelProgressTracker,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('检测', '📍', nextPool, lock, progressTracker, onTaskComplete)
+    super('检测', 'map-pin', nextPool, lock, progressTracker, onTaskComplete)
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {

@@ -1,9 +1,3 @@
-/**
- * 顺序翻译管线
- *
- * 串行/批次只负责调度，具体业务步骤统一交给 atomic steps。
- */
-
 import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -17,8 +11,11 @@ import type {
   SavedTextStyles,
   TranslationMode,
 } from './types'
-import type { ImageData as AppImageData } from '@/types/image'
 import type { TaskContext, PipelineRuntime } from './runtime'
+import {
+  resolvePipelineImageSelection,
+  type PipelineImageSelection,
+} from './pageScope'
 import {
   buildSavedTextStylesFromSettings,
   createPipelineRuntime,
@@ -88,24 +85,13 @@ export function useSequentialPipeline() {
     savedTextStyles = buildSavedTextStylesFromSettings(settingsStore.settings)
   }
 
-  function getImagesToProcess(config: PipelineConfig): { image: AppImageData; index: number }[] {
-    const images = imageStore.images
-    if (config.scope === 'current') {
-      const currentImage = imageStore.currentImage
-      return currentImage ? [{ image: currentImage, index: imageStore.currentImageIndex }] : []
-    }
-    if (config.scope === 'failed') {
-      return imageStore.getFailedImageIndices()
-        .map((index) => ({ image: images[index]!, index }))
-        .filter((item) => item.image !== undefined)
-    }
-    if (config.scope === 'selection' && config.pageSelection) {
-      return config.pageSelection.pages
-        .map((page) => page - 1)
-        .filter((index) => index >= 0 && index < images.length)
-        .map((index) => ({ image: images[index]!, index }))
-    }
-    return images.map((image, index) => ({ image, index }))
+  function getImagesToProcess(config: PipelineConfig): PipelineImageSelection[] {
+    return resolvePipelineImageSelection(
+      config,
+      imageStore.images,
+      imageStore.currentImageIndex,
+      imageStore.getFailedImageIndices(),
+    )
   }
 
   function shouldUsePerImageMode(mode: TranslationMode): boolean {

@@ -32,6 +32,28 @@ describe('bubbleStore', () => {
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
   })
 
+  it('syncs the current image mirror when resetting to the initial bubbles', () => {
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+
+    imageStore.addImage('page.png', 'data:image/png;base64,page')
+    bubbleStore.setBubbles([
+      createBubbleState({
+        coords: [0, 0, 200, 100],
+        translatedText: 'initial translation',
+      }),
+    ])
+    bubbleStore.updateBubble(0, { translatedText: 'edited translation' })
+
+    expect(imageStore.currentImage?.bubbleTexts).toEqual(['edited translation'])
+
+    bubbleStore.resetToInitial()
+
+    expect(bubbleStore.bubbles[0]?.translatedText).toBe('initial translation')
+    expect(imageStore.currentImage?.bubbleTexts).toEqual(['initial translation'])
+    expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('initial translation')
+  })
+
   it('does not write routine console logs for normal bubble state transitions', () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
     const imageStore = useImageStore()

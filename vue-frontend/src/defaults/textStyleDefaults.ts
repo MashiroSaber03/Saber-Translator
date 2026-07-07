@@ -8,6 +8,25 @@ export type TextStyleDefaults = TextStyleSettings
 
 const rawDefaults = textStyleDefaultsJson as Record<string, unknown>
 
+type ImageTextStyleFields = Pick<
+  ImageData,
+  | 'fontSize'
+  | 'autoFontSize'
+  | 'fontFamily'
+  | 'layoutDirection'
+  | 'textColor'
+  | 'fillColor'
+  | 'inpaintMethod'
+  | 'strokeEnabled'
+  | 'strokeColor'
+  | 'strokeWidth'
+  | 'lineSpacing'
+  | 'textAlign'
+  | 'useAutoTextColor'
+>
+
+type TextStyleFieldSource = Partial<Record<keyof TextStyleSettings, unknown>>
+
 function failInvalidConfig(message: string): never {
   throw new Error(`[textStyleDefaults] ${message}`)
 }
@@ -71,22 +90,46 @@ function expectNonEmptyString(value: unknown, fieldName: string): string {
   return failInvalidConfig(`${fieldName} must be a non-empty string`)
 }
 
-function parseTextStyleDefaults(source: Record<string, unknown> | TextStyleSettings): TextStyleDefaults {
-  return {
-    fontSize: expectPositiveInt(source.fontSize, 'fontSize'),
-    autoFontSize: expectBoolean(source.autoFontSize, 'autoFontSize'),
-    fontFamily: expectNonEmptyString(source.fontFamily, 'fontFamily'),
-    layoutDirection: expectTextDirection(source.layoutDirection, 'layoutDirection'),
-    textColor: expectNonEmptyString(source.textColor, 'textColor'),
-    fillColor: expectNonEmptyString(source.fillColor, 'fillColor'),
-    strokeEnabled: expectBoolean(source.strokeEnabled, 'strokeEnabled'),
-    strokeColor: expectNonEmptyString(source.strokeColor, 'strokeColor'),
-    strokeWidth: expectNonNegativeInt(source.strokeWidth, 'strokeWidth'),
-    inpaintMethod: expectInpaintMethod(source.inpaintMethod, 'inpaintMethod'),
-    useAutoTextColor: expectBoolean(source.useAutoTextColor, 'useAutoTextColor'),
-    lineSpacing: expectPositiveFloat(source.lineSpacing, 'lineSpacing'),
-    textAlign: expectTextAlign(source.textAlign, 'textAlign')
+function readTextStyleField<T>(
+  source: TextStyleFieldSource,
+  fieldName: keyof TextStyleSettings,
+  parser: (value: unknown, fieldName: string) => T,
+  base?: TextStyleSettings
+): T {
+  const value = source[fieldName]
+  if (value !== undefined) {
+    return parser(value, fieldName)
   }
+  if (base) {
+    return base[fieldName] as T
+  }
+  return failInvalidConfig(`${fieldName} is required`)
+}
+
+function buildTextStyleFields(
+  source: Record<string, unknown> | Partial<TextStyleSettings> | Partial<ImageTextStyleFields>,
+  base?: TextStyleSettings
+): TextStyleSettings {
+  const fields = source as TextStyleFieldSource
+  return {
+    fontSize: readTextStyleField(fields, 'fontSize', expectPositiveInt, base),
+    autoFontSize: readTextStyleField(fields, 'autoFontSize', expectBoolean, base),
+    fontFamily: readTextStyleField(fields, 'fontFamily', expectNonEmptyString, base),
+    layoutDirection: readTextStyleField(fields, 'layoutDirection', expectTextDirection, base),
+    textColor: readTextStyleField(fields, 'textColor', expectNonEmptyString, base),
+    fillColor: readTextStyleField(fields, 'fillColor', expectNonEmptyString, base),
+    strokeEnabled: readTextStyleField(fields, 'strokeEnabled', expectBoolean, base),
+    strokeColor: readTextStyleField(fields, 'strokeColor', expectNonEmptyString, base),
+    strokeWidth: readTextStyleField(fields, 'strokeWidth', expectNonNegativeInt, base),
+    inpaintMethod: readTextStyleField(fields, 'inpaintMethod', expectInpaintMethod, base),
+    useAutoTextColor: readTextStyleField(fields, 'useAutoTextColor', expectBoolean, base),
+    lineSpacing: readTextStyleField(fields, 'lineSpacing', expectPositiveFloat, base),
+    textAlign: readTextStyleField(fields, 'textAlign', expectTextAlign, base)
+  }
+}
+
+function parseTextStyleDefaults(source: Record<string, unknown> | TextStyleSettings): TextStyleDefaults {
+  return buildTextStyleFields(source)
 }
 
 function applyTextStyleDefaults(nextDefaults: TextStyleDefaults): void {
@@ -127,25 +170,7 @@ export function normalizeTextStyleSettings(
   style?: Partial<TextStyleSettings> | null
 ): TextStyleSettings {
   const base = getTextStyleDefaults()
-  if (!style) {
-    return base
-  }
-
-  return {
-    fontSize: style.fontSize !== undefined ? expectPositiveInt(style.fontSize, 'fontSize') : base.fontSize,
-    autoFontSize: style.autoFontSize !== undefined ? expectBoolean(style.autoFontSize, 'autoFontSize') : base.autoFontSize,
-    fontFamily: style.fontFamily !== undefined ? expectNonEmptyString(style.fontFamily, 'fontFamily') : base.fontFamily,
-    layoutDirection: style.layoutDirection !== undefined ? expectTextDirection(style.layoutDirection, 'layoutDirection') : base.layoutDirection,
-    textColor: style.textColor !== undefined ? expectNonEmptyString(style.textColor, 'textColor') : base.textColor,
-    fillColor: style.fillColor !== undefined ? expectNonEmptyString(style.fillColor, 'fillColor') : base.fillColor,
-    strokeEnabled: style.strokeEnabled !== undefined ? expectBoolean(style.strokeEnabled, 'strokeEnabled') : base.strokeEnabled,
-    strokeColor: style.strokeColor !== undefined ? expectNonEmptyString(style.strokeColor, 'strokeColor') : base.strokeColor,
-    strokeWidth: style.strokeWidth !== undefined ? expectNonNegativeInt(style.strokeWidth, 'strokeWidth') : base.strokeWidth,
-    inpaintMethod: style.inpaintMethod !== undefined ? expectInpaintMethod(style.inpaintMethod, 'inpaintMethod') : base.inpaintMethod,
-    useAutoTextColor: style.useAutoTextColor !== undefined ? expectBoolean(style.useAutoTextColor, 'useAutoTextColor') : base.useAutoTextColor,
-    lineSpacing: style.lineSpacing !== undefined ? expectPositiveFloat(style.lineSpacing, 'lineSpacing') : base.lineSpacing,
-    textAlign: style.textAlign !== undefined ? expectTextAlign(style.textAlign, 'textAlign') : base.textAlign,
-  }
+  return buildTextStyleFields(style ?? {}, base)
 }
 
 export function resolveBubbleTextDirection(
@@ -173,63 +198,12 @@ export function getBubbleDefaultsFromTextStyle(
   }
 }
 
-type ImageTextStyleFields = Pick<
-  ImageData,
-  | 'fontSize'
-  | 'autoFontSize'
-  | 'fontFamily'
-  | 'layoutDirection'
-  | 'textColor'
-  | 'fillColor'
-  | 'inpaintMethod'
-  | 'strokeEnabled'
-  | 'strokeColor'
-  | 'strokeWidth'
-  | 'lineSpacing'
-  | 'textAlign'
-  | 'useAutoTextColor'
->
-
 export function getImageTextStyleDefaults(): ImageTextStyleFields {
-  const normalized = getTextStyleDefaults()
-  return {
-    fontSize: normalized.fontSize,
-    autoFontSize: normalized.autoFontSize,
-    fontFamily: normalized.fontFamily,
-    layoutDirection: normalized.layoutDirection,
-    textColor: normalized.textColor,
-    fillColor: normalized.fillColor,
-    inpaintMethod: normalized.inpaintMethod,
-    strokeEnabled: normalized.strokeEnabled,
-    strokeColor: normalized.strokeColor,
-    strokeWidth: normalized.strokeWidth,
-    lineSpacing: normalized.lineSpacing,
-    textAlign: normalized.textAlign,
-    useAutoTextColor: normalized.useAutoTextColor
-  }
+  return buildTextStyleFields({}, getTextStyleDefaults())
 }
 
 export function normalizeImageTextStyleFields(
-  image?: Partial<ImageData> | null
+  image?: Partial<ImageData> | Record<string, unknown> | null
 ): ImageTextStyleFields {
-  const base = getImageTextStyleDefaults()
-  if (!image) {
-    return base
-  }
-
-  return {
-    fontSize: image.fontSize !== undefined ? expectPositiveInt(image.fontSize, 'fontSize') : base.fontSize,
-    autoFontSize: image.autoFontSize !== undefined ? expectBoolean(image.autoFontSize, 'autoFontSize') : base.autoFontSize,
-    fontFamily: image.fontFamily !== undefined ? expectNonEmptyString(image.fontFamily, 'fontFamily') : base.fontFamily,
-    layoutDirection: image.layoutDirection !== undefined ? expectTextDirection(image.layoutDirection, 'layoutDirection') : base.layoutDirection,
-    textColor: image.textColor !== undefined ? expectNonEmptyString(image.textColor, 'textColor') : base.textColor,
-    fillColor: image.fillColor !== undefined ? expectNonEmptyString(image.fillColor, 'fillColor') : base.fillColor,
-    inpaintMethod: image.inpaintMethod !== undefined ? expectInpaintMethod(image.inpaintMethod, 'inpaintMethod') : base.inpaintMethod,
-    strokeEnabled: image.strokeEnabled !== undefined ? expectBoolean(image.strokeEnabled, 'strokeEnabled') : base.strokeEnabled,
-    strokeColor: image.strokeColor !== undefined ? expectNonEmptyString(image.strokeColor, 'strokeColor') : base.strokeColor,
-    strokeWidth: image.strokeWidth !== undefined ? expectNonNegativeInt(image.strokeWidth, 'strokeWidth') : base.strokeWidth,
-    lineSpacing: image.lineSpacing !== undefined ? expectPositiveFloat(image.lineSpacing, 'lineSpacing') : base.lineSpacing,
-    textAlign: image.textAlign !== undefined ? expectTextAlign(image.textAlign, 'textAlign') : base.textAlign,
-    useAutoTextColor: image.useAutoTextColor !== undefined ? expectBoolean(image.useAutoTextColor, 'useAutoTextColor') : base.useAutoTextColor
-  }
+  return buildTextStyleFields(image ?? {}, getTextStyleDefaults())
 }

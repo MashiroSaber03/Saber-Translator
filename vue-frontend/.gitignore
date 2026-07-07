@@ -12,6 +12,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+coverage
+playwright-report
+blob-report
+test-results/*
+!test-results/.last-run.json
 *.local
 
 # Editor directories and files

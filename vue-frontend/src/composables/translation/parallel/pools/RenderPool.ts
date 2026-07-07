@@ -1,11 +1,3 @@
-/**
- * 渲染池
- *
- * 使用共享 render 原子步骤生成页面结果，并通过共享 projector 同步到界面。
- * 当自动保存关闭时，render 就是最终完成步骤；
- * 当自动保存开启时，render 只负责预览投影，真正完成由 SavePool 决定。
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
@@ -22,7 +14,7 @@ export class RenderPool extends TaskPool {
     resultCollector: ResultCollector,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('渲染', '✨', nextPool, null, progressTracker, onTaskComplete)
+    super('渲染', 'sparkles', nextPool, null, progressTracker, onTaskComplete)
     this.resultCollector = resultCollector
   }
 

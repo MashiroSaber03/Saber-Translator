@@ -1,9 +1,18 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RerankerSettingsTab from './RerankerSettingsTab.vue'
 import { useInsightStore } from '@/stores/insightStore'
+import UiModelPicker from '@/components/ui/UiModelPicker.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import { RERANKER_PROVIDER_OPTIONS } from './types'
+
+function latestConfig<T>(wrapper: ReturnType<typeof mount>): T {
+  const latestEvent = wrapper.emitted('update:config')?.at(-1)
+  if (!latestEvent) throw new Error('Missing update:config event')
+  return latestEvent[0] as T
+}
 
 const { testRerankerConnection } = vi.hoisted(() => ({
   testRerankerConnection: vi.fn(),
@@ -21,7 +30,7 @@ describe('RerankerSettingsTab', () => {
     testRerankerConnection.mockResolvedValue({ success: true })
   })
 
-  it('syncs runtime retry settings from the store', () => {
+  it('syncs runtime retry settings from the store', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
@@ -39,19 +48,13 @@ describe('RerankerSettingsTab', () => {
     const wrapper = mount(RerankerSettingsTab, {
       global: {
         plugins: [pinia],
-        stubs: {
-          CustomSelect: {
-            name: 'CustomSelect',
-            props: ['modelValue', 'options'],
-            template: '<div class="custom-select-stub" />',
-          },
-        },
       },
     })
 
-    wrapper.vm.syncFromStore()
+    await wrapper.setProps({ syncRequestId: 1 })
+    await flushPromises()
 
-    expect(wrapper.vm.getConfig()).toEqual({
+    expect(latestConfig(wrapper)).toEqual({
       provider: 'jina',
       apiKey: 'rerank-key',
       model: 'jina-reranker-v2-base-multilingual',
@@ -63,6 +66,36 @@ describe('RerankerSettingsTab', () => {
     })
   })
 
+  it('uses the shared select primitive for the fixed reranker provider list', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const wrapper = mount(RerankerSettingsTab, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    const selects = wrapper.findAllComponents(UiSelect)
+    expect(selects).toHaveLength(1)
+    expect(selects[0]!.props('options')).toEqual(RERANKER_PROVIDER_OPTIONS)
+  })
+
+  it('uses the shared model picker for reranker model fetch controls', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const wrapper = mount(RerankerSettingsTab, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    const modelPicker = wrapper.getComponent(UiModelPicker)
+    expect(modelPicker.props('inputId')).toBe('reranker-model')
+    expect(modelPicker.props('placeholder')).toBe('例如: jina-reranker-v2-base-multilingual')
+  })
+
   it('passes retry and timeout settings to the reranker connection test API', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -70,22 +103,15 @@ describe('RerankerSettingsTab', () => {
     const wrapper = mount(RerankerSettingsTab, {
       global: {
         plugins: [pinia],
-        stubs: {
-          CustomSelect: {
-            name: 'CustomSelect',
-            props: ['modelValue', 'options'],
-            template: '<div class="custom-select-stub" />',
-          },
-        },
       },
     })
 
-    await wrapper.get('[data-testid="reranker-api-key"]').setValue('rerank-key')
-    await wrapper.get('[data-testid="reranker-model"]').setValue('jina-reranker-v2-base-multilingual')
-    await wrapper.get('[data-testid="reranker-top-k"]').setValue('6')
-    await wrapper.get('[data-testid="reranker-transport-retries"]').setValue('7')
-    await wrapper.get('[data-testid="reranker-business-retries"]').setValue('8')
-    await wrapper.get('[data-testid="reranker-timeout-seconds"]').setValue('9')
+    await wrapper.get('#reranker-api-key').setValue('rerank-key')
+    await wrapper.get('input#reranker-model').setValue('jina-reranker-v2-base-multilingual')
+    await wrapper.get('#reranker-top-k').setValue('6')
+    await wrapper.get('#reranker-transport-retries').setValue('7')
+    await wrapper.get('#reranker-business-retries').setValue('8')
+    await wrapper.get('#reranker-timeout-seconds').setValue('9')
     const testButton = wrapper.findAll('button').find(button => button.text().includes('测试连接'))
     if (!testButton) throw new Error('Missing reranker connection test button')
     await testButton.trigger('click')

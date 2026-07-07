@@ -1,7 +1,3 @@
-/**
- * 池子模块导出
- */
-
 export { DetectionPool } from './DetectionPool'
 export { OcrPool } from './OcrPool'
 export { ColorPool } from './ColorPool'

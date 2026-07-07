@@ -2,7 +2,8 @@ import { onUnmounted, ref, type Ref } from 'vue'
 
 interface UseEditWorkspaceResizeActionsOptions {
   layoutMode: Ref<'horizontal' | 'vertical'>
-  originalViewportRef: Readonly<Ref<HTMLElement | null>>
+  originalPanelRef: Readonly<Ref<HTMLElement | null>>
+  translatedPanelRef: Readonly<Ref<HTMLElement | null>>
   editPanelRef: Readonly<Ref<HTMLElement | null>>
 }
 
@@ -26,8 +27,10 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
   function handleDividerDrag(event: MouseEvent): void {
     if (!isDraggingDivider.value) return
 
-    const container = options.originalViewportRef.value?.parentElement?.parentElement
-    if (!container) return
+    const originalPanel = options.originalPanelRef.value
+    const translatedPanel = options.translatedPanelRef.value
+    const container = originalPanel?.parentElement
+    if (!container || !originalPanel || !translatedPanel) return
 
     const containerRect = container.getBoundingClientRect()
 
@@ -36,23 +39,15 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
       const totalWidth = containerRect.width
       const leftPercent = Math.max(20, Math.min(80, (mouseX / totalWidth) * 100))
 
-      const originalPanel = container.querySelector('.original-panel') as HTMLElement
-      const translatedPanel = container.querySelector('.translated-panel') as HTMLElement
-      if (originalPanel && translatedPanel) {
-        originalPanel.style.flex = `0 0 ${leftPercent}%`
-        translatedPanel.style.flex = `0 0 ${100 - leftPercent}%`
-      }
+      originalPanel.style.flex = `0 0 ${leftPercent}%`
+      translatedPanel.style.flex = `0 0 ${100 - leftPercent}%`
     } else {
       const mouseY = event.clientY - containerRect.top
       const totalHeight = containerRect.height
       const topPercent = Math.max(20, Math.min(80, (mouseY / totalHeight) * 100))
 
-      const originalPanel = container.querySelector('.original-panel') as HTMLElement
-      const translatedPanel = container.querySelector('.translated-panel') as HTMLElement
-      if (originalPanel && translatedPanel) {
-        originalPanel.style.flex = `0 0 ${topPercent}%`
-        translatedPanel.style.flex = `0 0 ${100 - topPercent}%`
-      }
+      originalPanel.style.flex = `0 0 ${topPercent}%`
+      translatedPanel.style.flex = `0 0 ${100 - topPercent}%`
     }
   }
 

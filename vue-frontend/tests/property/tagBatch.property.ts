@@ -1,31 +1,26 @@
-/**
- * 标签批量操作属性测试
- * Property 25: 标签批量操作一致性
- * Validates: Requirements 3.5
- */
-
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import type { BookData, TagData } from '@/types/api'
 
-describe('Property 25: 标签批量操作一致性', () => {
+describe('bookshelf tag batch properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  /**
-   * 生成标签数据的 Arbitrary
-   */
   const tagArbitrary = fc.record({
     name: fc.string({ minLength: 1, maxLength: 20 }),
     color: fc.option(fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`), { nil: undefined }),
   }) as fc.Arbitrary<TagData>
 
-  /**
-   * 生成书籍数据的 Arbitrary
-   */
+  const tagListArbitrary = (
+    constraints: { minLength?: number; maxLength?: number } = {},
+  ): fc.Arbitrary<TagData[]> => fc.uniqueArray(tagArbitrary, {
+    ...constraints,
+    selector: tag => tag.name,
+  })
+
   const bookArbitrary = fc.record({
     id: fc.uuid(),
     title: fc.string({ minLength: 1, maxLength: 100 }),
@@ -37,217 +32,176 @@ describe('Property 25: 标签批量操作一致性', () => {
     updatedAt: fc.date().map(d => d.toISOString()),
   }) as fc.Arbitrary<BookData>
 
-  it('批量添加标签后书籍标签正确更新', () => {
+  const bookListArbitrary = (
+    constraints: { minLength?: number; maxLength?: number } = {},
+  ): fc.Arbitrary<BookData[]> => fc.uniqueArray(bookArbitrary, {
+    ...constraints,
+    selector: book => book.id,
+  })
+
+  it('adds every selected tag to every selected book', () => {
     fc.assert(
       fc.property(
-        fc.array(bookArbitrary, { minLength: 2, maxLength: 5 }),
-        fc.array(tagArbitrary, { minLength: 1, maxLength: 3 }),
+        bookListArbitrary({ minLength: 2, maxLength: 5 }),
+        tagListArbitrary({ minLength: 1, maxLength: 3 }),
         (books, tags) => {
           const store = useBookshelfStore()
           store.setBooks(books)
           store.setTags(tags)
 
-          const bookIds = books.map(b => b.id)
-          const tagNames = tags.map(t => t.name)
-
-          // 批量添加标签
+          const bookIds = books.map(book => book.id)
+          const tagNames = tags.map(tag => tag.name)
           store.batchAddTags(bookIds, tagNames)
 
-          // 验证：每本书都包含所有添加的标签
           for (const bookId of bookIds) {
             const book = store.getBookById(bookId)
             for (const tagName of tagNames) {
               expect(book?.tags).toContain(tagName)
             }
           }
-          
-          return true
         }
       ),
       { numRuns: 50 }
     )
   })
 
-  it('批量移除标签后书籍标签正确更新', () => {
+  it('removes every selected tag from every selected book', () => {
     fc.assert(
-      fc.property(
-        fc.array(tagArbitrary, { minLength: 2, maxLength: 4 }),
-        (tags) => {
-          const store = useBookshelfStore()
-          
-          // 创建带有标签的书籍
-          const tagNames = tags.map(t => t.name)
-          const books: BookData[] = [
-            {
-              id: 'book-1',
-              title: '测试书籍1',
-              tags: [...tagNames],
-              chapters: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              id: 'book-2',
-              title: '测试书籍2',
-              tags: [...tagNames],
-              chapters: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ]
-          
-          store.setBooks(books)
-          store.setTags(tags)
-
-          // 选择要移除的标签（第一个）
-          const tagsToRemove = [tagNames[0]]
-          const bookIds = books.map(b => b.id)
-
-          // 批量移除标签
-          store.batchRemoveTags(bookIds, tagsToRemove)
-
-          // 验证：每本书都不再包含移除的标签
-          for (const bookId of bookIds) {
-            const book = store.getBookById(bookId)
-            expect(book?.tags).not.toContain(tagsToRemove[0])
-          }
-          
-          return true
-        }
-      ),
-      { numRuns: 50 }
-    )
-  })
-
-  it('添加已存在的标签不会重复', () => {
-    fc.assert(
-      fc.property(
-        tagArbitrary,
-        (tag) => {
-          const store = useBookshelfStore()
-          
-          // 创建已有标签的书籍
-          const book: BookData = {
+      fc.property(tagListArbitrary({ minLength: 2, maxLength: 4 }), (tags) => {
+        const store = useBookshelfStore()
+        const tagNames = tags.map(tag => tag.name)
+        const books: BookData[] = [
+          {
             id: 'book-1',
-            title: '测试书籍',
-            tags: [tag.name],
+            title: 'Book 1',
+            tags: [...tagNames],
             chapters: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-          }
-          
-          store.setBooks([book])
-          store.setTags([tag])
+          },
+          {
+            id: 'book-2',
+            title: 'Book 2',
+            tags: [...tagNames],
+            chapters: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ]
 
-          // 再次添加相同标签
-          store.addTagToBook(book.id, tag.name)
+        store.setBooks(books)
+        store.setTags(tags)
 
-          // 验证：标签不会重复
-          const updatedBook = store.getBookById(book.id)
-          const tagCount = updatedBook?.tags?.filter(t => t === tag.name).length || 0
-          expect(tagCount).toBe(1)
-          
-          return true
+        const tagsToRemove = [tagNames[0]]
+        const bookIds = books.map(book => book.id)
+        store.batchRemoveTags(bookIds, tagsToRemove)
+
+        for (const bookId of bookIds) {
+          expect(store.getBookById(bookId)?.tags).not.toContain(tagsToRemove[0])
         }
-      ),
+      }),
       { numRuns: 50 }
     )
   })
 
-  it('移除不存在的标签不影响书籍', () => {
+  it('does not duplicate an existing tag on a book', () => {
+    fc.assert(
+      fc.property(tagArbitrary, (tag) => {
+        const store = useBookshelfStore()
+        const book: BookData = {
+          id: 'book-1',
+          title: 'Book',
+          tags: [tag.name],
+          chapters: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+
+        store.setBooks([book])
+        store.setTags([tag])
+        store.addTagToBook(book.id, tag.name)
+
+        const tagCount = store.getBookById(book.id)?.tags?.filter(name => name === tag.name).length ?? 0
+        expect(tagCount).toBe(1)
+      }),
+      { numRuns: 50 }
+    )
+  })
+
+  it('ignores removal for a tag that the book does not have', () => {
     fc.assert(
       fc.property(
-        fc.array(tagArbitrary, { minLength: 1, maxLength: 3 }),
+        tagListArbitrary({ minLength: 1, maxLength: 3 }),
         fc.string({ minLength: 1, maxLength: 20 }),
         (tags, nonExistentTagName) => {
-          const existingNames = new Set(tags.map(t => t.name))
-          if (existingNames.has(nonExistentTagName)) return true
+          if (tags.some(tag => tag.name === nonExistentTagName)) {
+            return
+          }
 
           const store = useBookshelfStore()
-          
-          const tagNames = tags.map(t => t.name)
+          const tagNames = tags.map(tag => tag.name)
           const book: BookData = {
             id: 'book-1',
-            title: '测试书籍',
+            title: 'Book',
             tags: [...tagNames],
             chapters: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           }
-          
+
           store.setBooks([book])
           store.setTags(tags)
 
-          const originalTags = [...(store.getBookById(book.id)?.tags || [])]
-
-          // 尝试移除不存在的标签
+          const originalTags = [...(store.getBookById(book.id)?.tags ?? [])]
           store.removeTagFromBook(book.id, nonExistentTagName)
 
-          // 验证：标签列表不变
-          const updatedBook = store.getBookById(book.id)
-          expect(updatedBook?.tags).toEqual(originalTags)
-          
-          return true
+          expect(store.getBookById(book.id)?.tags).toEqual(originalTags)
         }
       ),
       { numRuns: 50 }
     )
   })
 
-  it('批量操作只影响指定的书籍', () => {
+  it('limits batch tag updates to the requested books', () => {
     fc.assert(
-      fc.property(
-        fc.array(tagArbitrary, { minLength: 1, maxLength: 2 }),
-        (tags) => {
-          const store = useBookshelfStore()
-          
-          const tagNames = tags.map(t => t.name)
-          const books: BookData[] = [
-            {
-              id: 'book-1',
-              title: '测试书籍1',
-              tags: [],
-              chapters: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              id: 'book-2',
-              title: '测试书籍2',
-              tags: [],
-              chapters: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              id: 'book-3',
-              title: '测试书籍3',
-              tags: [],
-              chapters: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ]
-          
-          store.setBooks(books)
-          store.setTags(tags)
+      fc.property(tagListArbitrary({ minLength: 1, maxLength: 2 }), (tags) => {
+        const store = useBookshelfStore()
+        const tagNames = tags.map(tag => tag.name)
+        const books: BookData[] = [
+          {
+            id: 'book-1',
+            title: 'Book 1',
+            tags: [],
+            chapters: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: 'book-2',
+            title: 'Book 2',
+            tags: [],
+            chapters: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: 'book-3',
+            title: 'Book 3',
+            tags: [],
+            chapters: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ]
 
-          // 只对前两本书添加标签
-          store.batchAddTags(['book-1', 'book-2'], tagNames)
+        store.setBooks(books)
+        store.setTags(tags)
+        store.batchAddTags(['book-1', 'book-2'], tagNames)
 
-          // 验证：第三本书不受影响
-          const book3 = store.getBookById('book-3')
-          expect(book3?.tags?.length || 0).toBe(0)
-          
-          // 验证：前两本书有标签
-          const book1 = store.getBookById('book-1')
-          const book2 = store.getBookById('book-2')
-          expect(book1?.tags?.length).toBeGreaterThan(0)
-          expect(book2?.tags?.length).toBeGreaterThan(0)
-          
-          return true
-        }
-      ),
+        expect(store.getBookById('book-3')?.tags?.length ?? 0).toBe(0)
+        expect(store.getBookById('book-1')?.tags?.length).toBeGreaterThan(0)
+        expect(store.getBookById('book-2')?.tags?.length).toBeGreaterThan(0)
+      }),
       { numRuns: 50 }
     )
   })

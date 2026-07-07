@@ -1,8 +1,3 @@
-/**
- * 导出导入功能组合式函数
- * 提供文本导出、文本导入、图片下载等功能
- */
-
 import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -13,15 +8,15 @@ import {
   downloadUploadImage,
   downloadFinalize,
   getDownloadFileUrl,
-  cleanTempFiles
+  cleanTempFiles,
 } from '@/api/system'
 import type { BubbleState } from '@/types/bubble'
+import type { ImageData } from '@/types/image'
 import { executeRender } from '@/composables/translation/core/steps'
-import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
+import { buildEditRenderInput } from '@/composables/edit/editRenderRequest'
+import { triggerBlobDownload, triggerUrlDownload } from '@/utils/browserDownload'
+import { readFileAsText } from '@/utils/dataUrl'
 
-/**
- * 导出文本数据结构
- */
 export interface ExportTextData {
   imageIndex: number
   bubbles: Array<{
@@ -63,7 +58,9 @@ function parseImportTextData(value: unknown): ExportTextData[] {
       imageIndex,
       bubbles: bubbles.map((bubbleData, bubblePosition) => {
         if (!isRecord(bubbleData)) {
-          throw new Error(`第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡格式不正确`)
+          throw new Error(
+            `第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡格式不正确`
+          )
         }
 
         const bubbleIndex = bubbleData.bubbleIndex
@@ -71,10 +68,18 @@ function parseImportTextData(value: unknown): ExportTextData[] {
         const translated = bubbleData.translated
         const textDirection = bubbleData.textDirection
         if (!Number.isInteger(bubbleIndex) || bubbleIndex < 0) {
-          throw new Error(`第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡缺少有效 bubbleIndex`)
+          throw new Error(
+            `第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡缺少有效 bubbleIndex`
+          )
         }
-        if (typeof original !== 'string' || typeof translated !== 'string' || !isTextDirection(textDirection)) {
-          throw new Error(`第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡不符合当前文本导入 schema`)
+        if (
+          typeof original !== 'string' ||
+          typeof translated !== 'string' ||
+          !isTextDirection(textDirection)
+        ) {
+          throw new Error(
+            `第 ${imagePosition + 1} 个图片条目的第 ${bubblePosition + 1} 个气泡不符合当前文本导入 schema`
+          )
         }
 
         return {
@@ -88,69 +93,95 @@ function parseImportTextData(value: unknown): ExportTextData[] {
   })
 }
 
-/**
- * 下载格式类型
- */
-export type DownloadFormat = 'zip' | 'pdf' | 'cbz'
+export const DOWNLOAD_FORMATS = ['zip', 'pdf', 'cbz'] as const
+export type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number]
+export type DownloadImageType = 'translated' | 'original'
 
-function triggerBlobDownload(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-
-  try {
-    document.body.appendChild(link)
-    link.click()
-  } finally {
-    link.remove()
-    URL.revokeObjectURL(url)
-  }
+export interface DownloadImageEntry {
+  index: number
+  type: DownloadImageType
 }
 
-/**
- * 导出导入功能组合式函数
- */
+function resolveExportTextDirection(bubble: BubbleState): 'vertical' | 'horizontal' {
+  const direction =
+    bubble.textDirection !== 'auto' ? bubble.textDirection : bubble.autoTextDirection
+
+  return isTextDirection(direction) ? direction : 'vertical'
+}
+
+function buildExportTextData(images: ImageData[]): ExportTextData[] {
+  return images.map((image, imageIndex) => ({
+    imageIndex,
+    bubbles: (image.bubbleStates || []).map((bubble, bubbleIndex) => ({
+      bubbleIndex,
+      original: bubble.originalText || '',
+      translated: bubble.translatedText || bubble.textboxText || '',
+      textDirection: resolveExportTextDirection(bubble),
+    })),
+  }))
+}
+
+function dataUrlToPngBlob(imageDataURL: string): Blob {
+  const base64Data = imageDataURL.split(',')[1]
+  if (!base64Data) {
+    throw new Error('无效的图片数据')
+  }
+
+  const byteCharacters = atob(base64Data)
+  const byteArrays: ArrayBuffer[] = []
+
+  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+    const slice = byteCharacters.slice(offset, offset + 512)
+    const byteNumbers = new Array(slice.length)
+    for (let i = 0; i < slice.length; i++) {
+      byteNumbers[i] = slice.charCodeAt(i)
+    }
+    const uint8Array = new Uint8Array(byteNumbers)
+    byteArrays.push(uint8Array.buffer as ArrayBuffer)
+  }
+
+  return new Blob(byteArrays, { type: 'image/png' })
+}
+
+export function resolveDownloadFileName(
+  originalFileName: string,
+  imageIndex: number,
+  type: DownloadImageType,
+): string {
+  const fileName = originalFileName || `image_${imageIndex}.png`
+  return `${type}_${fileName.replace(/\.[^/.]+$/, '')}.png`
+}
+
+export function collectDownloadImageEntries(images: ImageData[]): DownloadImageEntry[] {
+  const entries: DownloadImageEntry[] = []
+
+  for (const [index, imgData] of images.entries()) {
+    if (imgData.translatedDataURL) {
+      entries.push({ index, type: 'translated' })
+    } else if (imgData.originalDataURL) {
+      entries.push({ index, type: 'original' })
+    }
+  }
+
+  return entries
+}
+
 export function useExportImport() {
   const imageStore = useImageStore()
   const settingsStore = useSettingsStore()
   const toast = useToast()
 
-  // ============================================================
-  // 状态
-  // ============================================================
-
-  /** 是否正在下载 */
   const isDownloading = ref(false)
-
-  /** 下载进度 (0-100) */
   const downloadProgress = ref(0)
-
-  /** 下载进度文本 */
   const downloadProgressText = ref('')
-
-  /** 是否正在导入 */
   const isImporting = ref(false)
-
-  /** 导入进度 (0-100) */
   const importProgress = ref(0)
-
-  /** 导入进度文本 */
   const importProgressText = ref('')
   let importProgressResetTimer: ReturnType<typeof setTimeout> | null = null
   let downloadProgressResetTimer: ReturnType<typeof setTimeout> | null = null
 
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 是否可以导出文本 */
   const canExportText = computed(() => imageStore.hasImages)
-
-  /** 是否可以导入文本 */
   const canImportText = computed(() => imageStore.hasImages)
-
-  /** 是否可以下载 */
   const canDownload = computed(() => imageStore.hasImages)
 
   function clearImportProgressResetTimer(): void {
@@ -185,13 +216,6 @@ export function useExportImport() {
     }, 2000)
   }
 
-  // ============================================================
-  // 文本导出功能
-  // ============================================================
-
-  /**
-   * 导出所有图片的文本（原文和译文）为 JSON 文件
-   */
   function exportText(): void {
     const allImages = imageStore.images
     if (allImages.length === 0) {
@@ -199,55 +223,9 @@ export function useExportImport() {
       return
     }
 
-    // 准备导出数据
-    const exportData: ExportTextData[] = []
-
-    // 遍历所有图片
-    for (let imageIndex = 0; imageIndex < allImages.length; imageIndex++) {
-      const image = allImages[imageIndex]
-      if (!image) continue
-
-      const bubbleStates = image.bubbleStates || []
-
-      // 构建该图片的文本数据
-      const imageTextData: ExportTextData = {
-        imageIndex: imageIndex,
-        bubbles: []
-      }
-
-      // 构建每个气泡的文本数据
-      for (let bubbleIndex = 0; bubbleIndex < bubbleStates.length; bubbleIndex++) {
-        const bubble = bubbleStates[bubbleIndex]
-        if (!bubble) continue
-
-        const original = bubble.originalText || ''
-        const translated = bubble.translatedText || bubble.textboxText || ''
-
-        // 获取气泡的排版方向，确保不传递 'auto'
-        let textDirection: 'vertical' | 'horizontal' = 'vertical'
-        if (bubble.textDirection && bubble.textDirection !== 'auto') {
-          textDirection = bubble.textDirection as 'vertical' | 'horizontal'
-        } else if (bubble.autoTextDirection) {
-          textDirection = bubble.autoTextDirection as 'vertical' | 'horizontal'
-        }
-
-        imageTextData.bubbles.push({
-          bubbleIndex: bubbleIndex,
-          original: original,
-          translated: translated,
-          textDirection: textDirection
-        })
-      }
-
-      exportData.push(imageTextData)
-    }
-
-    // 将数据转换为 JSON 字符串
+    const exportData = buildExportTextData(allImages)
     const jsonData = JSON.stringify(exportData, null, 2)
-
-    // 创建 Blob 并触发下载
     const blob = new Blob([jsonData], { type: 'application/json' })
-    // 生成文件名：translations_YYYYMMDD_HHMMSS.json
     const now = new Date()
     const dateStr = now.toISOString().replace(/[-:T]/g, '').slice(0, 15)
     triggerBlobDownload(blob, `translations_${dateStr}.json`)
@@ -255,64 +233,13 @@ export function useExportImport() {
     toast.success('文本导出成功！')
   }
 
-  /**
-   * 导出文本为 JSON 数据（不触发下载，用于高质量翻译等内部使用）
-   * @returns 导出的 JSON 数据，如果没有图片则返回 null
-   */
   function exportTextToJson(): ExportTextData[] | null {
     const allImages = imageStore.images
     if (allImages.length === 0) return null
 
-    const exportData: ExportTextData[] = []
-
-    for (let imageIndex = 0; imageIndex < allImages.length; imageIndex++) {
-      const image = allImages[imageIndex]
-      if (!image) continue
-
-      const bubbleStates = image.bubbleStates || []
-
-      const imageTextData: ExportTextData = {
-        imageIndex: imageIndex,
-        bubbles: []
-      }
-
-      for (let bubbleIndex = 0; bubbleIndex < bubbleStates.length; bubbleIndex++) {
-        const bubble = bubbleStates[bubbleIndex]
-        if (!bubble) continue
-
-        const original = bubble.originalText || ''
-        const translated = bubble.translatedText || bubble.textboxText || ''
-
-        let textDirection: 'vertical' | 'horizontal' = 'vertical'
-        if (bubble.textDirection && bubble.textDirection !== 'auto') {
-          textDirection = bubble.textDirection as 'vertical' | 'horizontal'
-        } else if (bubble.autoTextDirection) {
-          textDirection = bubble.autoTextDirection as 'vertical' | 'horizontal'
-        }
-
-        imageTextData.bubbles.push({
-          bubbleIndex: bubbleIndex,
-          original: original,
-          translated: translated,
-          textDirection: textDirection
-        })
-      }
-
-      exportData.push(imageTextData)
-    }
-
-    return exportData
+    return buildExportTextData(allImages)
   }
 
-  // ============================================================
-  // 文本导入功能
-  // ============================================================
-
-  /**
-   * 导入 JSON 文本文件并应用到当前图片集
-   * 导入后自动重新渲染已翻译的图片
-   * @param jsonFile - 用户选择的 JSON 文件
-   */
   async function importText(jsonFile: File): Promise<void> {
     if (!jsonFile) {
       toast.warning('未选择文件')
@@ -325,20 +252,16 @@ export function useExportImport() {
     toast.info('正在导入文本...', 0)
 
     try {
-      // 读取文件内容
       const fileContent = await readFileAsText(jsonFile)
 
-      // 解析 JSON 数据
       importProgress.value = 10
       importProgressText.value = '解析 JSON 数据...'
 
       const importedData = parseImportTextData(JSON.parse(fileContent) as unknown)
 
-      // 统计信息
       let updatedImages = 0
       let updatedBubbles = 0
 
-      // 获取当前设置
       const textStyle = settingsStore.settings.textStyle
       const currentFontSize = textStyle.autoFontSize ? 'auto' : textStyle.fontSize
       const currentFontFamily = textStyle.fontFamily
@@ -348,11 +271,9 @@ export function useExportImport() {
       importProgress.value = 20
       importProgressText.value = '开始更新图片...'
 
-      // 遍历导入的数据
       const totalImages = importedData.length
       let processedImages = 0
 
-      // 需要重新渲染的图片索引列表
       const imagesToReRender: number[] = []
 
       for (const imageData of importedData) {
@@ -363,7 +284,6 @@ export function useExportImport() {
 
         const imageIndex = imageData.imageIndex
 
-        // 检查图片索引是否有效
         if (imageIndex < 0 || imageIndex >= imageStore.images.length) {
           continue
         }
@@ -373,7 +293,6 @@ export function useExportImport() {
 
         let imageUpdated = false
 
-        // 确保导入目标所需数组存在。
         if (!image.bubbleStates) {
           image.bubbleStates = []
         }
@@ -384,17 +303,14 @@ export function useExportImport() {
           image.originalTexts = []
         }
 
-        // 遍历气泡数据
         for (const bubbleData of imageData.bubbles) {
           const bubbleIndex = bubbleData.bubbleIndex
           const original = bubbleData.original
           const translated = bubbleData.translated
-          // 获取排版方向，导入时落到可渲染方向。
           const rawDir = bubbleData.textDirection as string | undefined
           const textDirection: 'vertical' | 'horizontal' =
-            (rawDir === 'vertical' || rawDir === 'horizontal') ? rawDir : 'vertical'
+            rawDir === 'vertical' || rawDir === 'horizontal' ? rawDir : 'vertical'
 
-          // 确保数组索引存在。
           while (image.bubbleTexts.length <= bubbleIndex) {
             image.bubbleTexts.push('')
           }
@@ -402,29 +318,27 @@ export function useExportImport() {
             image.originalTexts.push('')
           }
 
-          // 更新文本数组。
           if (original) image.originalTexts[bubbleIndex] = original
           if (translated) image.bubbleTexts[bubbleIndex] = translated
 
-          // 确保气泡状态数组索引存在
           while (image.bubbleStates.length <= bubbleIndex) {
-            image.bubbleStates.push(createDefaultBubbleState(
-              currentFontSize,
-              currentFontFamily,
-              currentTextColor,
-              currentFillColor
-            ))
+            image.bubbleStates.push(
+              createDefaultBubbleState(
+                currentFontSize,
+                currentFontFamily,
+                currentTextColor,
+                currentFillColor
+              )
+            )
           }
 
           const bubbleState = image.bubbleStates[bubbleIndex]
           if (bubbleState) {
-            // 更新文本
             if (original) bubbleState.originalText = original
             if (translated) {
               bubbleState.translatedText = translated
               bubbleState.textboxText = translated
             }
-            // 更新排版方向（已经是 'vertical' | 'horizontal'）
             bubbleState.textDirection = textDirection
 
             imageUpdated = true
@@ -432,7 +346,6 @@ export function useExportImport() {
           }
         }
 
-        // 确保 bubbleTexts 与 bubbleStates 同步。
         if (imageUpdated && image.bubbleStates) {
           image.bubbleTexts = image.bubbleStates.map(bs => bs.translatedText || '')
         }
@@ -441,20 +354,16 @@ export function useExportImport() {
           updatedImages++
           image.hasUnsavedChanges = true
 
-          // 如果图片已翻译且有气泡，添加到重新渲染列表
           if (image.translatedDataURL && image.bubbleStates && image.bubbleStates.length > 0) {
             imagesToReRender.push(imageIndex)
           }
         }
       }
 
-      // 重新渲染需要更新的图片。
       if (imagesToReRender.length > 0) {
         importProgress.value = 80
         importProgressText.value = '开始渲染图片...'
         toast.info('正在渲染图片，请稍候...', 0)
-
-        const textStyle = settingsStore.settings.textStyle
 
         for (let i = 0; i < imagesToReRender.length; i++) {
           const imageIndex = imagesToReRender[i]
@@ -467,16 +376,14 @@ export function useExportImport() {
           importProgressText.value = `渲染图片 ${i + 1}/${imagesToReRender.length}`
 
           try {
-            // 背景兜底策略：clean → original。
             let cleanImageBase64 = ''
             if (img.cleanImageData) {
               cleanImageBase64 = img.cleanImageData.includes('base64,')
-                ? (img.cleanImageData.split('base64,')[1] || '')
+                ? img.cleanImageData.split('base64,')[1] || ''
                 : img.cleanImageData
             } else if (img.originalDataURL) {
-              // 兜底：使用原图作为背景
               cleanImageBase64 = img.originalDataURL.includes('base64,')
-                ? (img.originalDataURL.split('base64,')[1] || '')
+                ? img.originalDataURL.split('base64,')[1] || ''
                 : img.originalDataURL
             }
 
@@ -484,45 +391,18 @@ export function useExportImport() {
               continue
             }
 
-            const result = await executeRender({
+            const result = await executeRender(buildEditRenderInput({
               imageIndex,
               cleanImage: cleanImageBase64,
-              bubbleCoords: img.bubbleStates.map(bs => bs.coords),
-              bubbleAngles: img.bubbleStates.map(bs => bs.rotationAngle || 0),
-              autoDirections: img.bubbleStates.map(bs => bs.autoTextDirection || bs.textDirection || 'vertical'),
-              textlinesPerBubble: img.bubbleStates.map(bs => bs.textlines || []),
-              existingBubbleStates: img.bubbleStates,
-              originalTexts: img.bubbleStates.map(bs => bs.originalText || ''),
-              ocrResults: img.bubbleStates.map(bs => bs.ocrResult || {
-                text: bs.originalText || '',
-                confidence: null,
-                confidenceSupported: false,
-                engine: '',
-                primaryEngine: '',
-                fallbackUsed: false
-              }),
-              translatedTexts: img.bubbleStates.map(bs => bs.translatedText || ''),
-              textboxTexts: img.bubbleStates.map(bs => bs.textboxText || ''),
-              colors: img.bubbleStates.map(bs => ({
-                textColor: bs.textColor || textStyle.textColor,
-                bgColor: bs.fillColor || textStyle.fillColor,
-                autoFgColor: bs.autoFgColor || null,
-                autoBgColor: bs.autoBgColor || null
-              })),
-              savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
-              currentMode: 'standard',
-              settingsSnapshot: settingsStore.settings,
-              renderStylePolicy: {
-                fontSize: 'preserve',
-                color: 'preserve',
-              },
-            })
+              bubbleStates: img.bubbleStates,
+              settings: settingsStore.settings,
+            }))
 
             if (result.finalImage) {
               imageStore.updateImageByIndex(imageIndex, {
                 translatedDataURL: `data:image/png;base64,${result.finalImage}`,
                 bubbleStates: result.bubbleStates || img.bubbleStates,
-                hasUnsavedChanges: true
+                hasUnsavedChanges: true,
               })
             }
           } catch {
@@ -534,11 +414,11 @@ export function useExportImport() {
       importProgress.value = 100
       importProgressText.value = '导入完成'
 
-      // 显示导入结果
       const reRenderedCount = imagesToReRender.length
-      const message = reRenderedCount > 0
-        ? `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本，重渲染了 ${reRenderedCount} 张图片`
-        : `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本`
+      const message =
+        reRenderedCount > 0
+          ? `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本，重渲染了 ${reRenderedCount} 张图片`
+          : `导入成功！更新了 ${updatedImages} 张图片中的 ${updatedBubbles} 个气泡文本`
       toast.success(message)
     } catch (error) {
       toast.error(`导入失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -548,29 +428,6 @@ export function useExportImport() {
     }
   }
 
-  /**
-   * 读取文件为文本
-   * @param file - 文件对象
-   * @returns 文件内容字符串
-   */
-  function readFileAsText(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          resolve(e.target.result as string)
-        } else {
-          reject(new Error('读取文件失败'))
-        }
-      }
-      reader.onerror = () => reject(new Error('读取文件时出错'))
-      reader.readAsText(file)
-    })
-  }
-
-  /**
-   * 创建默认气泡状态
-   */
   function createDefaultBubbleState(
     fontSize: number | 'auto',
     fontFamily: string,
@@ -598,17 +455,10 @@ export function useExportImport() {
       lineSpacing: textStyle.lineSpacing,
       textAlign: textStyle.textAlign,
       inpaintMethod: textStyle.inpaintMethod,
-      textlines: []
+      textlines: [],
     }
   }
 
-  // ============================================================
-  // 图片下载功能
-  // ============================================================
-
-  /**
-   * 下载当前图片（翻译后或原始图片）
-   */
   function downloadCurrentImage(): void {
     const currentImage = imageStore.currentImage
     if (!currentImage) {
@@ -616,7 +466,6 @@ export function useExportImport() {
       return
     }
 
-    // 优先使用翻译后图片，如无则使用原始图片
     const imageDataURL = currentImage.translatedDataURL || currentImage.originalDataURL
 
     if (!imageDataURL) {
@@ -627,31 +476,15 @@ export function useExportImport() {
     isDownloading.value = true
 
     try {
-      // 从 Base64 数据创建 Blob
-      const base64Data = imageDataURL.split(',')[1]
-      if (!base64Data) {
-        throw new Error('无效的图片数据')
-      }
-
-      const byteCharacters = atob(base64Data)
-      const byteArrays: ArrayBuffer[] = []
-
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-        const slice = byteCharacters.slice(offset, offset + 512)
-        const byteNumbers = new Array(slice.length)
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i)
-        }
-        const uint8Array = new Uint8Array(byteNumbers)
-        byteArrays.push(uint8Array.buffer as ArrayBuffer)
-      }
-
-      const blob = new Blob(byteArrays, { type: 'image/png' })
-      // 生成文件名
-      let fileName = currentImage.fileName || `image_${imageStore.currentImageIndex}.png`
-      // 为已翻译和未翻译的图片使用不同前缀
-      const prefix = currentImage.translatedDataURL ? 'translated' : 'original'
-      fileName = `${prefix}_${fileName.replace(/\.[^/.]+$/, '')}.png`
+      const blob = dataUrlToPngBlob(imageDataURL)
+      const imageType: DownloadImageType = currentImage.translatedDataURL
+        ? 'translated'
+        : 'original'
+      const fileName = resolveDownloadFileName(
+        currentImage.fileName,
+        imageStore.currentImageIndex,
+        imageType,
+      )
       triggerBlobDownload(blob, fileName)
 
       toast.success(`下载成功: ${fileName}`)
@@ -662,10 +495,6 @@ export function useExportImport() {
     }
   }
 
-  /**
-   * 下载所有图片（逐张上传到后端，避免大数据量导致的字符串长度限制）
-   * @param format - 下载格式 (zip/pdf/cbz)
-   */
   async function downloadAllImages(format: DownloadFormat = 'zip'): Promise<void> {
     const allImages = imageStore.images
     if (allImages.length === 0) {
@@ -679,50 +508,33 @@ export function useExportImport() {
     toast.info('下载中...处理可能需要一定时间，请耐心等待...', 0)
 
     try {
-      // 收集需要发送的图像数据（只记录索引和类型，不一次性收集所有数据）
-      const imageInfoList: Array<{ index: number; type: 'translated' | 'original' }> = []
-      let translatedCount = 0
-      let originalCount = 0
-
       downloadProgress.value = 5
       downloadProgressText.value = '检查图片数据...'
 
-      for (let i = 0; i < allImages.length; i++) {
-        const imgData = allImages[i]
-        if (!imgData) continue
+      const downloadEntries = collectDownloadImageEntries(allImages)
+      const translatedCount = downloadEntries.filter(info => info.type === 'translated').length
+      const originalCount = downloadEntries.filter(info => info.type === 'original').length
 
-        // 优先使用翻译后的图片，如果没有则使用原始图片
-        if (imgData.translatedDataURL) {
-          imageInfoList.push({ index: i, type: 'translated' })
-          translatedCount++
-        } else if (imgData.originalDataURL) {
-          imageInfoList.push({ index: i, type: 'original' })
-          originalCount++
-        }
-      }
-
-      if (imageInfoList.length === 0) {
+      if (downloadEntries.length === 0) {
         toast.warning('没有可下载的图片')
         return
       }
 
-      // 步骤1: 创建下载会话（传递总图片数，与后端一致）
       downloadProgress.value = 10
       downloadProgressText.value = '创建下载会话...'
 
-      const sessionResponse = await downloadStartSession(imageInfoList.length)
+      const sessionResponse = await downloadStartSession(downloadEntries.length)
       if (!sessionResponse.success || !sessionResponse.session_id) {
         throw new Error(sessionResponse.error || '创建会话失败')
       }
       const sessionId = sessionResponse.session_id
 
-      // 步骤2: 逐张上传图片
-      const totalImages = imageInfoList.length
+      const totalImages = downloadEntries.length
       let uploadedCount = 0
       let failedCount = 0
 
-      for (let i = 0; i < imageInfoList.length; i++) {
-        const info = imageInfoList[i]
+      for (let i = 0; i < downloadEntries.length; i++) {
+        const info = downloadEntries[i]
         if (!info) continue
 
         const imgData = allImages[info.index]
@@ -732,22 +544,14 @@ export function useExportImport() {
           info.type === 'translated' ? imgData.translatedDataURL : imgData.originalDataURL
         if (!imageDataURL) continue
 
-        // 更新进度条
         const progress = 10 + (i / totalImages) * 70 // 10% - 80%
         downloadProgress.value = progress
         downloadProgressText.value = `上传图片 ${i + 1}/${totalImages}...`
 
         try {
-          // 确定文件路径（用于保留文件夹结构）
           const filePath = imgData?.relativePath || imgData?.fileName || undefined
 
-          // 传递 image_index 和 file_path（用于文件夹结构导出）
-          const uploadResponse = await downloadUploadImage(
-            sessionId,
-            imageDataURL,
-            i,
-            filePath
-          )
+          const uploadResponse = await downloadUploadImage(sessionId, imageDataURL, i, filePath)
 
           if (uploadResponse.success) {
             uploadedCount++
@@ -763,7 +567,6 @@ export function useExportImport() {
         throw new Error('所有图片上传失败')
       }
 
-      // 步骤3: 请求打包
       downloadProgress.value = 85
       downloadProgressText.value = '打包文件...'
 
@@ -772,21 +575,14 @@ export function useExportImport() {
         throw new Error(finalizeResponse.error || '打包失败')
       }
 
-      // 步骤4: 触发下载
       downloadProgress.value = 95
       downloadProgressText.value = '准备下载...'
 
-      const downloadUrl = getDownloadFileUrl(finalizeResponse.file_id, format)
-      const link = document.createElement('a')
-      link.href = downloadUrl
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      triggerUrlDownload(getDownloadFileUrl(finalizeResponse.file_id, format))
 
       downloadProgress.value = 100
       downloadProgressText.value = '下载已开始'
 
-      // 更新下载成功信息
       let successMessage = `已成功处理 ${uploadedCount} 张图片`
       if (failedCount > 0) {
         successMessage += `（${failedCount} 张失败）`
@@ -802,7 +598,6 @@ export function useExportImport() {
 
       toast.success(successMessage)
 
-      // 启动后台清理过期文件的请求（1分钟后）
       setTimeout(async () => {
         try {
           await cleanTempFiles()
@@ -825,12 +620,7 @@ export function useExportImport() {
     })
   }
 
-  // ============================================================
-  // 返回
-  // ============================================================
-
   return {
-    // 状态
     isDownloading,
     downloadProgress,
     downloadProgressText,
@@ -838,20 +628,16 @@ export function useExportImport() {
     importProgress,
     importProgressText,
 
-    // 计算属性
     canExportText,
     canImportText,
     canDownload,
 
-    // 文本导出功能
     exportText,
     exportTextToJson,
 
-    // 文本导入功能
     importText,
 
-    // 图片下载功能
     downloadCurrentImage,
-    downloadAllImages
+    downloadAllImages,
   }
 }

@@ -1,0 +1,1 @@
+export const BOOKSHELF_DEFAULT_TAG_COLOR = '#667eea'

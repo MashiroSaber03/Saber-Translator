@@ -53,12 +53,15 @@ export const PROVIDER_CAPABILITIES: Record<string, {
 )
 
 /** 根据能力过滤服务商列表 */
-export function getProvidersForCapability(capability: 'vlm' | 'embedding' | 'rerank' | 'imageGen') {
+export function getProvidersForCapability(capability: 'vlm' | 'chat' | 'embedding' | 'rerank' | 'imageGen') {
   return getProviderOptionsForCapability(capability)
 }
 
-/** VLM/LLM 服务商选项 */
+/** VLM 服务商选项 */
 export const VLM_PROVIDER_OPTIONS = getProvidersForCapability('vlm')
+
+/** LLM 服务商选项 */
+export const LLM_PROVIDER_OPTIONS = getProvidersForCapability('chat')
 
 /** Embedding 服务商选项 */
 export const EMBEDDING_PROVIDER_OPTIONS = getProvidersForCapability('embedding')
@@ -80,10 +83,10 @@ export const ARCHITECTURE_OPTIONS = [
 
 /** 提示词类型选项 */
 export const PROMPT_TYPE_OPTIONS = [
-  { value: 'batch_analysis', label: '📄 批量分析提示词' },
-  { value: 'segment_summary', label: '📑 段落总结提示词' },
-  { value: 'chapter_summary', label: '📖 章节总结提示词' },
-  { value: 'qa_response', label: '💬 问答响应提示词' },
+  { value: 'batch_analysis', label: '批量分析提示词' },
+  { value: 'segment_summary', label: '段落总结提示词' },
+  { value: 'chapter_summary', label: '章节总结提示词' },
+  { value: 'qa_response', label: '问答响应提示词' },
 ]
 
 /**

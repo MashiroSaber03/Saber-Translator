@@ -1,36 +1,45 @@
 <template>
   <div class="proofreading-settings">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>AI校对设置</template>
-      <UiField class="ui-settings-field">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="翻译完成后自动进行AI校对"
+      >
         <UiCheckbox v-model="isProofreadingEnabled" label="启用AI校对" />
-        <div class="ui-form-hint">翻译完成后自动进行AI校对</div>
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsProofreadingMaxRetries">全局重试次数:</label>
-        <UiInput
-          type="number"
-          id="settingsProofreadingMaxRetries"
-          v-model.number="proofreadingMaxRetries"
-          min="0"
-          max="10"
-          step="1"
+      <UiField variant="settings" label="全局重试次数" control-id="settingsProofreadingMaxRetries">
+        <UiNumberField
+          input-id="settingsProofreadingMaxRetries"
+          v-model="proofreadingMaxRetries"
+          :min="0"
+          :max="10"
+          :step="1"
         />
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings" v-show="isProofreadingEnabled">
+    <ProductFormSection v-show="isProofreadingEnabled">
       <template #title>
         校对轮次配置
-        <UiButton variant="secondary" @click="addRound" size="sm">+ 添加轮次</UiButton>
+        <UiButton
+          variant="secondary"
+          class="proofreading-settings__add-round-action"
+          @click="addRound"
+          size="sm"
+        >
+          <UiIcon name="plus" />
+          <span>添加轮次</span>
+        </UiButton>
       </template>
 
-      <div v-for="(round, index) in proofreadingRounds" :key="index" class="proofreading-round">
-        <div class="round-header">
-          <span class="round-title">轮次 {{ index + 1 }}: {{ round.name || '未命名' }}</span>
+      <div v-for="(round, index) in proofreadingRounds" :key="index" class="proofreading-settings__round">
+        <div class="proofreading-settings__round-header">
+          <span class="proofreading-settings__round-title">轮次 {{ index + 1 }}: {{ round.name || '未命名' }}</span>
           <UiButton
             variant="danger"
-            class="proofreading-round__delete-btn"
+            class="proofreading-settings__round-delete-action"
             @click="removeRound(index)"
             :disabled="proofreadingRounds.length <= 1"
             size="sm"
@@ -39,143 +48,214 @@
           </UiButton>
         </div>
 
-        <div class="round-content">
-          <UiField class="ui-settings-field">
-            <label>轮次名称:</label>
-            <UiInput type="text" v-model="round.name" placeholder="如: 第一轮校对" />
+        <div class="proofreading-settings__round-content">
+          <UiField
+            variant="settings"
+            label="轮次名称"
+            :control-id="roundFieldId(index, 'Name')"
+          >
+            <UiInput
+              type="text"
+              :id="roundFieldId(index, 'Name')"
+              v-model="round.name"
+              placeholder="如: 第一轮校对"
+            />
           </UiField>
 
           <UiFormGrid>
-            <UiField class="ui-settings-field">
-              <label>服务商:</label>
-              <CustomSelect
-                v-model="round.provider"
+            <UiField
+              variant="settings"
+              label="服务商"
+              :control-id="roundFieldId(index, 'Provider')"
+            >
+              <UiSelect
+                :id="roundFieldId(index, 'Provider')"
+                :model-value="round.provider"
                 :options="providerOptions"
+                @change="(value: string | number) => handleRoundProviderChange(index, value)"
               />
             </UiField>
-            <UiField v-show="providerRequiresApiKey(round.provider)" class="ui-settings-field">
-              <label>API Key:</label>
-              <div class="password-input-wrapper">
-                <UiInput
-                  :type="round.showApiKey ? 'text' : 'password'"
-                  v-model="round.apiKey"
-                  class="secure-input"
-                  placeholder="请输入API Key"
-                  autocomplete="off"
-                />
-                <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="round.showApiKey = !round.showApiKey">
-                  <span class="eye-icon" v-if="!round.showApiKey">👁</span>
-                  <span class="eye-off-icon" v-else>👁‍🗨</span>
-                </UiButton>
-              </div>
+            <UiField
+              v-show="providerRequiresApiKey(round.provider)"
+              variant="settings"
+              label="API Key"
+              :control-id="roundFieldId(index, 'ApiKey')"
+            >
+              <UiPasswordField
+                :input-id="roundFieldId(index, 'ApiKey')"
+                v-model="round.apiKey"
+                placeholder="请输入API Key"
+                :show-label="`显示${round.name} API Key`"
+                :hide-label="`隐藏${round.name} API Key`"
+              />
             </UiField>
           </UiFormGrid>
 
-          <UiField v-show="providerRequiresBaseUrl(round.provider)" class="ui-settings-field">
-            <label>Base URL:</label>
-            <UiInput type="text" v-model="round.customBaseUrl" placeholder="例如: https://api.example.com/v1" />
+          <UiField
+            v-show="providerRequiresBaseUrl(round.provider)"
+            variant="settings"
+            label="Base URL"
+            :control-id="roundFieldId(index, 'BaseUrl')"
+          >
+            <UiInput
+              type="text"
+              :id="roundFieldId(index, 'BaseUrl')"
+              v-model="round.customBaseUrl"
+              placeholder="例如: https://api.example.com/v1"
+            />
           </UiField>
 
-          <UiField class="ui-settings-field">
-            <label>模型名称:</label>
-            <div class="model-input-with-fetch">
-              <UiInput
-                type="text"
-                v-model="round.modelName"
-                class="proofreading-settings__model-input"
-                placeholder="请输入模型名称"
-              />
-              <UiButton
-                variant="toolbar"
-                type="button"
-                class="fetch-models-btn"
-                title="获取可用模型列表"
-                @click="fetchRoundModels(index)"
-                :disabled="roundFetchingStates[index]"
-              >
-                <span class="fetch-icon">🔍</span>
-                <span class="fetch-text">{{ roundFetchingStates[index] ? '获取中...' : '获取模型' }}</span>
-              </UiButton>
-            </div>
-            <div v-if="roundModelLists[index] && roundModelLists[index].length > 0" class="model-select-container">
-              <CustomSelect
-                v-model="round.modelName"
-                :options="getRoundModelOptions(index)"
-              />
-              <span class="model-count">共 {{ roundModelLists[index].length }} 个模型</span>
-            </div>
+          <UiField
+            variant="settings"
+            label="模型名称"
+            :control-id="roundFieldId(index, 'ModelName')"
+          >
+            <UiModelPicker
+              :input-id="roundFieldId(index, 'ModelName')"
+              v-model="round.modelName"
+              placeholder="请输入模型名称"
+              fetch-variant="primary"
+              :fetching="Boolean(roundFetchingStates[index])"
+              :fetch-disabled="Boolean(roundFetchingStates[index])"
+              :options="getRoundModelOptions(index)"
+              :model-count="roundModelLists[index]?.length || 0"
+              @fetch="fetchRoundModels(index)"
+            />
           </UiField>
 
-          <UiField class="ui-settings-field">
+          <UiField variant="settings">
             <UiButton
-              variant="toolbar" 
-              class="settings-test-btn" 
-              @click="testRoundConnection(index)" 
+              variant="secondary"
+              block
+              @click="testRoundConnection(index)"
               :disabled="roundTestingStates[index]"
             >
-              {{ roundTestingStates[index] ? '测试中...' : '🔗 测试连接' }}
+              <span v-if="roundTestingStates[index]">测试中...</span>
+              <template v-else>
+                <UiIcon name="link" />
+                <span>测试连接</span>
+              </template>
             </UiButton>
           </UiField>
 
           <UiFormGrid>
-            <UiField class="ui-settings-field">
-              <label>批次大小:</label>
-              <UiInput type="number" v-model.number="round.batchSize" min="1" max="10" step="1" />
+            <UiField
+              variant="settings"
+              label="批次大小"
+              :control-id="roundFieldId(index, 'BatchSize')"
+            >
+              <UiNumberField
+                :input-id="roundFieldId(index, 'BatchSize')"
+                v-model="round.batchSize"
+                :min="1"
+                :max="10"
+                :step="1"
+              />
             </UiField>
-            <UiField class="ui-settings-field">
-              <label>RPM限制:</label>
-              <UiInput type="number" v-model.number="round.openaiOptions.execution.rpmLimit" min="0" step="1" />
+            <UiField
+              variant="settings"
+              label="RPM限制"
+              :control-id="roundFieldId(index, 'RpmLimit')"
+            >
+              <UiNumberField
+                :input-id="roundFieldId(index, 'RpmLimit')"
+                v-model="round.openaiOptions.execution.rpmLimit"
+                :min="0"
+                :step="1"
+              />
             </UiField>
           </UiFormGrid>
 
           <UiFormGrid>
-            <UiField class="ui-settings-field">
-              <label>业务重试:</label>
-              <UiInput type="number" v-model.number="round.openaiOptions.execution.businessRetries" min="0" max="10" step="1" />
+            <UiField
+              variant="settings"
+              label="业务重试"
+              :control-id="roundFieldId(index, 'BusinessRetries')"
+            >
+              <UiNumberField
+                :input-id="roundFieldId(index, 'BusinessRetries')"
+                v-model="round.openaiOptions.execution.businessRetries"
+                :min="0"
+                :max="10"
+                :step="1"
+              />
             </UiField>
-            <UiField class="ui-settings-field">
-              <label>传输重试:</label>
-              <UiInput type="number" v-model.number="round.openaiOptions.execution.transportRetries" min="0" max="10" step="1" />
+            <UiField
+              variant="settings"
+              label="传输重试"
+              :control-id="roundFieldId(index, 'TransportRetries')"
+            >
+              <UiNumberField
+                :input-id="roundFieldId(index, 'TransportRetries')"
+                v-model="round.openaiOptions.execution.transportRetries"
+                :min="0"
+                :max="10"
+                :step="1"
+              />
             </UiField>
           </UiFormGrid>
           <UiFormGrid>
-            <UiField class="ui-settings-field">
+            <UiField
+              variant="settings"
+              control="checkbox"
+              hint="使用 response_format: json_object"
+            >
               <UiCheckbox v-model="round.openaiOptions.request.forceJsonOutput" label="强制JSON输出" />
-              <div class="ui-form-hint">使用 response_format: json_object</div>
             </UiField>
-            <UiField class="ui-settings-field">
+            <UiField
+              variant="settings"
+              control="checkbox"
+              hint="使用流式API调用，避免超时"
+            >
               <UiCheckbox v-model="round.openaiOptions.execution.useStream" label="流式调用" />
-              <div class="ui-form-hint">使用流式API调用，避免超时</div>
             </UiField>
           </UiFormGrid>
-          <UiField class="ui-settings-field">
+          <UiField variant="settings">
             <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
           </UiField>
 
-          <UiField class="ui-settings-field">
-            <label>校对提示词:</label>
-            <UiTextarea v-model="round.prompt" rows="4" placeholder="校对提示词" />
+          <UiField
+            variant="settings"
+            label="校对提示词"
+            :control-id="roundFieldId(index, 'Prompt')"
+          >
+            <UiTextarea
+              :id="roundFieldId(index, 'Prompt')"
+              v-model="round.prompt"
+              variant="panel"
+              rows="4"
+              placeholder="校对提示词"
+            />
             <SavedPromptsPicker
               prompt-type="proofreading"
               @select="(content, name) => handleProofreadingPromptSelect(index, content, name)"
             />
-            <UiButton variant="secondary" @click="resetRoundPrompt(index)" size="sm">重置为默认</UiButton>
+            <ProductActionRow aria-label="校对提示词操作" justify="start">
+              <UiButton variant="secondary" @click="resetRoundPrompt(index)" size="sm">
+                重置为默认
+              </UiButton>
+            </ProductActionRow>
           </UiField>
         </div>
       </div>
-    </UiPanel>
+    </ProductFormSection>
   </div>
 </template>
 
 <script setup lang="ts">
-
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiModelPicker from '@/components/ui/UiModelPicker.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import UiPasswordField from '@/components/ui/UiPasswordField.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderOptionsForCapability,
@@ -188,9 +268,9 @@ import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
+import { useKeyedLatestRequestGuard } from '@/composables/useLatestRequestGuard'
 
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
@@ -200,6 +280,7 @@ const toast = useToast()
 const roundFetchingStates = ref<Record<number, boolean>>({})
 const roundTestingStates = ref<Record<number, boolean>>({})
 const roundModelLists = ref<Record<number, string[]>>({})
+const roundModelFetchGuard = useKeyedLatestRequestGuard<number>()
 
 const proofreadingRounds = computed(() => settingsStore.settings.proofreading.rounds)
 const proofreadingMaxRetries = computed({
@@ -210,6 +291,10 @@ const isProofreadingEnabled = computed({
   get: () => settingsStore.settings.proofreading.enabled,
   set: (val: boolean) => settingsStore.setProofreadingEnabled(val)
 })
+
+function roundFieldId(index: number, field: string) {
+  return `proofreadingRound${index}${field}`
+}
 
 watch(
   () => settingsStore.settings.proofreading.rounds,
@@ -224,6 +309,31 @@ function getRoundModelOptions(index: number) {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   models.forEach(m => options.push({ label: m, value: m }))
   return options
+}
+
+function invalidateRoundModelFetch(index: number) {
+  roundModelFetchGuard.invalidate(index)
+  roundFetchingStates.value[index] = false
+}
+
+function handleRoundProviderChange(index: number, value: string | number) {
+  const round = proofreadingRounds.value[index]
+  if (!round) return
+  invalidateRoundModelFetch(index)
+  round.provider = String(value) as ProofreadingRound['provider']
+  roundModelLists.value[index] = []
+}
+
+function isCurrentRoundModelFetch(index: number, requestId: number, provider: string, apiKey: string | undefined, baseUrl: string | undefined) {
+  return roundModelFetchGuard.isCurrent(index, requestId, () => {
+    const round = proofreadingRounds.value[index]
+    return Boolean(
+      round &&
+      round.provider === provider &&
+      round.apiKey?.trim() === apiKey &&
+      round.customBaseUrl?.trim() === baseUrl
+    )
+  })
 }
 
 async function fetchRoundModels(index: number) {
@@ -244,9 +354,11 @@ async function fetchRoundModels(index: number) {
     return
   }
 
+  const requestId = roundModelFetchGuard.next(index)
   roundFetchingStates.value[index] = true
   try {
     const result = await configApi.fetchModels(provider, apiKey, baseUrl)
+    if (!isCurrentRoundModelFetch(index, requestId, provider, apiKey, baseUrl)) return
     if (result.success && result.models && result.models.length > 0) {
       roundModelLists.value[index] = result.models.map(m => m.id)
       toast.success(`轮次 ${index + 1}: 获取到 ${result.models.length} 个模型`)
@@ -254,10 +366,13 @@ async function fetchRoundModels(index: number) {
       toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error: unknown) {
+    if (!isCurrentRoundModelFetch(index, requestId, provider, apiKey, baseUrl)) return
     const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
     toast.error(errorMessage)
   } finally {
-    roundFetchingStates.value[index] = false
+    if (roundModelFetchGuard.isCurrent(index, requestId)) {
+      roundFetchingStates.value[index] = false
+    }
   }
 }
 
@@ -324,7 +439,6 @@ function addRound() {
     },
     batchSize: 3,
     prompt: DEFAULT_PROOFREADING_PROMPT,
-    showApiKey: false
   }
   settingsStore.addProofreadingRound(newRound)
   toast.success('已添加新的校对轮次')
@@ -351,26 +465,14 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
 </script>
 
 <style scoped>
-.proofreading-settings {
-  --ui-button-sm-padding: 4px 12px;
-  --ui-button-sm-font-size: 12px;
-  --ui-button-danger-background: var(--color-status-error);
-  --ui-button-danger-color: var(--color-text-inverse);
-  --ui-button-danger-border: none;
-  --ui-button-danger-shadow: none;
-  --ui-button-danger-hover-background: var(--color-status-error-hover);
-  --ui-button-danger-hover-shadow: none;
-  --ui-button-disabled-opacity: 0.5;
-}
-
-.proofreading-round {
+.proofreading-settings__round {
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   margin-bottom: 15px;
   overflow: hidden;
 }
 
-.round-header {
+.proofreading-settings__round-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -379,125 +481,11 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   border-bottom: 1px solid var(--color-border-muted);
 }
 
-.round-title {
+.proofreading-settings__round-title {
   font-weight: 500;
 }
 
-.round-content {
+.proofreading-settings__round-content {
   padding: 15px;
-}
-
-.model-input-with-fetch {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.model-input-with-fetch .proofreading-settings__model-input {
-  flex: 1;
-}
-
-.fetch-models-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background-color: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
-  color: var(--color-text-default);
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-  height: 38px;
-}
-
-.fetch-models-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.fetch-models-btn:hover:not(:disabled) {
-  background-color: var(--color-action-primary);
-  color: var(--color-text-inverse);
-  border-color: var(--color-action-primary);
-}
-
-.model-select-container {
-  margin-top: 10px;
-  padding: 12px;
-  background-color: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-muted);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.model-count {
-  font-size: 12px;
-  color: var(--color-text-supporting);
-  text-align: right;
-  margin-top: 4px;
-}
-
-.password-input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.password-input-wrapper .secure-input {
-  flex: 1;
-  padding-right: 40px;
-}
-
-.password-toggle-btn {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-supporting);
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.settings-test-btn {
-  width: 100%;
-  padding: 10px 16px;
-  background-color: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
-  color: var(--color-text-default);
-  font-weight: 500;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.settings-test-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.settings-test-btn:hover:not(:disabled) {
-  background-color: var(--color-surface-hover);
-  border-color: var(--color-action-primary);
-  color: var(--color-action-primary);
-}
-
-.settings-test-btn:active:not(:disabled) {
-  background-color: var(--color-surface-interactive-hover);
 }
 </style>

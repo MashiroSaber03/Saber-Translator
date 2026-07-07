@@ -28,7 +28,12 @@ export interface TimelineCharacter {
   description: string
   first_appearance: number
   arc?: string
-  key_moments?: unknown[]
+  key_moments?: TimelineKeyMoment[]
+}
+
+export interface TimelineKeyMoment {
+  page?: number
+  summary: string
 }
 
 export interface TimelineArc {

@@ -5,16 +5,16 @@ export interface TranslationConstraintColumn {
   label: string
 }
 
-type TableRow = Record<string, string>
+export type TranslationConstraintTableRow = Record<string, string>
 
-export function exportRowsToJson(rows: TableRow[]): string {
+export function exportRowsToJson(rows: TranslationConstraintTableRow[]): string {
   return JSON.stringify(rows, null, 2)
 }
 
 export function importRowsFromJson(
   json: string,
   columns: readonly TranslationConstraintColumn[],
-): TableRow[] {
+): TranslationConstraintTableRow[] {
   const parsed = JSON.parse(json)
   if (!Array.isArray(parsed)) {
     throw new Error('JSON 内容必须是数组')
@@ -26,7 +26,7 @@ export function importRowsFromJson(
 }
 
 export function exportRowsToXlsxBuffer(
-  rows: TableRow[],
+  rows: TranslationConstraintTableRow[],
   columns: readonly TranslationConstraintColumn[],
 ): ArrayBuffer {
   const data = rows.map(row => {
@@ -46,7 +46,7 @@ export function exportRowsToXlsxBuffer(
 export function importRowsFromXlsxBuffer(
   buffer: ArrayBuffer,
   columns: readonly TranslationConstraintColumn[],
-): TableRow[] {
+): TranslationConstraintTableRow[] {
   const workbook = XLSX.read(buffer, { type: 'array' })
   const firstSheetName = workbook.SheetNames[0]
   if (!firstSheetName) {
@@ -66,8 +66,8 @@ export function importRowsFromXlsxBuffer(
 export function normalizeImportedRow(
   row: Record<string, unknown>,
   columns: readonly TranslationConstraintColumn[],
-): TableRow {
-  const normalized: TableRow = {}
+): TranslationConstraintTableRow {
+  const normalized: TranslationConstraintTableRow = {}
   for (const column of columns) {
     const direct = row[column.key]
     const labeled = row[column.label]
@@ -76,7 +76,7 @@ export function normalizeImportedRow(
   return normalized
 }
 
-function getStringField(row: object, field: string): string {
+export function getStringField(row: object, field: string): string {
   const value = (row as Record<string, unknown>)[field]
   return typeof value === 'string' ? value : ''
 }

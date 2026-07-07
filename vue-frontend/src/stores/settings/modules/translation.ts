@@ -1,8 +1,3 @@
-/**
- * 翻译服务设置模块
- * 对应设置模态窗的 "翻译服务" Tab
- */
-
 import { computed, type Ref } from 'vue'
 import { normalizeProviderId } from '@/config/aiProviders'
 import type {
@@ -10,88 +5,50 @@ import type {
   TranslationServiceSettings,
   TranslationProvider
 } from '@/types/settings'
+import {
+  applyOpenAiOptionsPatch,
+  cloneOpenAiOptions,
+  omitOpenAiOptionsPatchFields,
+  type OpenAiOptionsPatch,
+} from '@/utils/openaiOptions'
 import type { ProviderConfigsCache, TranslationProviderConfig } from '../types'
+import {
+  applyProviderCredentials,
+  clearProviderCredentials,
+  restoreProviderCacheEntry,
+  saveProviderCacheEntry,
+  snapshotProviderCredentials,
+} from '../providerConfigCache'
 
-/**
- * 创建翻译服务设置模块
- */
 export function useTranslationSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
   saveToStorage: () => void,
   saveProviderConfigsToStorage: () => void
 ) {
-  type TranslationServiceUiUpdates = Partial<TranslationServiceSettings> & {
-    rpmLimit?: number
-    transportRetries?: number
-    businessRetries?: number
-    forceJsonOutput?: boolean
-    useStream?: boolean
-    extraBody?: Record<string, unknown>
-  }
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 当前翻译服务商 */
+  type TranslationServiceUiUpdates = Partial<TranslationServiceSettings> & OpenAiOptionsPatch
   const translationProvider = computed(() => settings.value.translation.provider)
 
-  // ============================================================
-  // 翻译服务设置方法
-  // ============================================================
-
-  /**
-   * 设置翻译服务商
-   * @param provider - 服务商类型
-   */
   function setTranslationProvider(provider: TranslationProvider): void {
     provider = normalizeProviderId(provider) as TranslationProvider
     const previousProvider = settings.value.translation.provider
     if (previousProvider === provider) return
 
-    // 保存当前服务商配置
     saveTranslationProviderConfig(previousProvider)
 
-    // 切换服务商
     settings.value.translation.provider = provider
 
-    // 恢复目标服务商配置（如果有）
     restoreTranslationProviderConfig(provider)
 
     saveToStorage()
   }
 
-  /**
-   * 更新翻译服务设置
-   * @param updates - 要更新的设置
-   */
   function updateTranslationService(updates: TranslationServiceUiUpdates): void {
-    const {
-      rpmLimit,
-      transportRetries,
-      businessRetries,
-      forceJsonOutput,
-      useStream,
-      extraBody,
-      ...serviceUpdates
-    } = updates
-
-    Object.assign(settings.value.translation, serviceUpdates)
-    if (rpmLimit !== undefined) settings.value.translation.openaiOptions.execution.rpmLimit = rpmLimit
-    if (transportRetries !== undefined) settings.value.translation.openaiOptions.execution.transportRetries = transportRetries
-    if (businessRetries !== undefined) settings.value.translation.openaiOptions.execution.businessRetries = businessRetries
-    if (forceJsonOutput !== undefined) settings.value.translation.openaiOptions.request.forceJsonOutput = forceJsonOutput
-    if (useStream !== undefined) settings.value.translation.openaiOptions.execution.useStream = useStream
-    if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
-      settings.value.translation.openaiOptions.request.extraBody = extraBody
-    }
+    Object.assign(settings.value.translation, omitOpenAiOptionsPatchFields(updates))
+    applyOpenAiOptionsPatch(settings.value.translation.openaiOptions, updates)
     saveToStorage()
   }
 
-  /**
-   * 设置翻译提示词
-   * @param prompt - 提示词内容
-   */
   function setTranslatePrompt(prompt: string): void {
     const translation = settings.value.translation
     const forceJsonOutput = translation.openaiOptions.request.forceJsonOutput
@@ -110,16 +67,10 @@ export function useTranslationSettings(
     saveToStorage()
   }
 
-  /**
-   * 设置翻译提示词模式
-   * 切换时从对应的存储字段加载提示词（不会丢失用户修改）
-   * @param forceJsonOutput - 是否为 JSON 格式模式
-   */
   function setTranslatePromptMode(forceJsonOutput: boolean): void {
-    // 更新模式状态
     settings.value.translation.openaiOptions.request.forceJsonOutput = forceJsonOutput
 
-    // 根据翻译模式和提示词模式，从对应的存储字段加载提示词
+    // Prompt variants stay separate so toggling modes restores the last edited value.
     const isSingleMode = settings.value.translation.translationMode === 'single'
     let prompt: string
     if (isSingleMode) {
@@ -136,59 +87,36 @@ export function useTranslationSettings(
     saveToStorage()
   }
 
-  // ============================================================
-  // 翻译服务商配置缓存方法
-  // ============================================================
-
-  /**
-   * 保存翻译服务商配置到缓存
-   * @param provider - 服务商名称
-   */
   function saveTranslationProviderConfig(provider: string): void {
-    if (!provider) return
-    provider = normalizeProviderId(provider)
-
-    const config: TranslationProviderConfig = {
-      apiKey: settings.value.translation.apiKey,
-      modelName: settings.value.translation.modelName,
-      customBaseUrl: settings.value.translation.customBaseUrl,
-      openaiOptions: JSON.parse(JSON.stringify(settings.value.translation.openaiOptions)),
-      translationMode: settings.value.translation.translationMode
-    }
-
-    providerConfigs.value.translation[provider] = config
-    saveProviderConfigsToStorage()
+    saveProviderCacheEntry({
+      provider,
+      cache: providerConfigs.value.translation,
+      buildConfig: (): TranslationProviderConfig => ({
+        ...snapshotProviderCredentials(settings.value.translation),
+        openaiOptions: cloneOpenAiOptions(settings.value.translation.openaiOptions),
+        translationMode: settings.value.translation.translationMode
+      }),
+      persist: saveProviderConfigsToStorage,
+    })
   }
 
-  /**
-   * 恢复翻译服务商配置从缓存
-   * @param provider - 服务商名称
-   */
   function restoreTranslationProviderConfig(provider: string): void {
-    if (!provider) return
-    provider = normalizeProviderId(provider)
-
-    const cached = providerConfigs.value.translation[provider]
-    if (cached) {
-      // 恢复缓存的配置
-      if (cached.apiKey !== undefined) settings.value.translation.apiKey = cached.apiKey
-      if (cached.modelName !== undefined) settings.value.translation.modelName = cached.modelName
-      if (cached.customBaseUrl !== undefined) settings.value.translation.customBaseUrl = cached.customBaseUrl
-      if (cached.openaiOptions !== undefined) settings.value.translation.openaiOptions = JSON.parse(JSON.stringify(cached.openaiOptions))
-      if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
-    } else {
-      // 无缓存时清空配置（保留默认值）
-      settings.value.translation.apiKey = ''
-      settings.value.translation.modelName = ''
-      settings.value.translation.customBaseUrl = ''
-    }
+    restoreProviderCacheEntry({
+      provider,
+      cache: providerConfigs.value.translation,
+      applyCached: (cached) => {
+        applyProviderCredentials(settings.value.translation, cached)
+        if (cached.openaiOptions !== undefined) settings.value.translation.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
+        if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
+      },
+      applyMissing: () => {
+        clearProviderCredentials(settings.value.translation)
+      },
+    })
   }
 
   return {
-    // 计算属性
     translationProvider,
-
-    // 方法
     setTranslationProvider,
     updateTranslationService,
     setTranslatePrompt,

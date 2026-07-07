@@ -1,58 +1,49 @@
-/**
- * 会话列表管理属性测试
- * 
- * **Feature: frontend-behavior, Property 34: 会话保存加载往返一致性**
- * **Validates: Requirements 14.1, 14.2**
- */
-
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
-import { setActivePinia, createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '@/stores/sessionStore'
+import type { SessionListItem } from '@/types/api'
 
-describe('会话列表管理属性测试', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
+function createSessionStore() {
+  setActivePinia(createPinia())
+  return useSessionStore()
+}
 
-  /**
-   * Property 34.2: 会话列表管理一致性
-   */
-  it('Property 34.2: 会话列表管理一致性', () => {
+function createSessionList(count: number, uniqueId: string): SessionListItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    name: `session_${uniqueId}_${index}`,
+    savedAt: new Date().toISOString(),
+    imageCount: index * 10,
+    version: '2.0',
+  }))
+}
+
+describe('session list properties', () => {
+  it('adds and removes sessions by name while preserving the existing list', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 5 }),
         fc.uuid(),
         (count, uniqueId) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          const sessionStore = useSessionStore()
-          
-          // 生成简单的会话列表
-          const sessions = Array.from({ length: count }, (_, i) => ({
-            name: `session_${uniqueId}_${i}`,
-            savedAt: new Date().toISOString(),
-            imageCount: i * 10,
-            version: '2.0'
-          }))
-          
-          sessionStore.setSessionList(sessions)
-          const afterSetLength = sessionStore.sessionList.length
-          
-          const newSession = {
+          const sessionStore = createSessionStore()
+          const sessions = createSessionList(count, uniqueId)
+          const newSession: SessionListItem = {
             name: `new_session_${uniqueId}`,
             savedAt: new Date().toISOString(),
             imageCount: 5,
-            version: '2.0'
+            version: '2.0',
           }
+
+          sessionStore.setSessionList(sessions)
+          expect(sessionStore.sessionList).toHaveLength(count)
+
           sessionStore.addToSessionList(newSession)
-          const afterAddLength = sessionStore.sessionList.length
-          
-          // 验证添加后长度增加
-          expect(afterAddLength).toBe(afterSetLength + 1)
-          
+          expect(sessionStore.sessionList).toHaveLength(count + 1)
+          expect(sessionStore.sessionList[0]).toEqual(newSession)
+
           sessionStore.removeFromSessionList(newSession.name)
-          expect(sessionStore.sessionList.length).toBe(afterSetLength)
+          expect(sessionStore.sessionList).toHaveLength(count)
+          expect(sessionStore.sessionList.map(session => session.name)).not.toContain(newSession.name)
         }
       ),
       { numRuns: 20 }

@@ -1,5 +1,7 @@
 ﻿# Frontend Final Line-by-Line Audit 2026-06-25
 
+> Historical record: this checklist is retained as prior final audit evidence. The current product-unification review source is `frontend-product-unification-line-audit-2026-06-28.md`.
+
 This checklist records the final frontend audit pass. The review order is global entry/config, shell/primitives, page domains, cross-cutting source, tests, and docs. Generated assets under `src/app/static/vue` and binary visual snapshots are checked by inventory/build/visual-test evidence; minified or image output is not line-reviewed.
 
 ## Status Legend

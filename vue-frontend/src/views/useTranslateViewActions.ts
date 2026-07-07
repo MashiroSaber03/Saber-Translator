@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useTranslateInit } from '@/composables/useTranslateInit'
+import { confirmProductAction, type ProductConfirmAction } from '@/composables/useProductConfirm'
 import type { WorkflowRunRequest } from '@/types/workflow'
 
 type TranslateValidationMode = 'normal' | 'hq' | 'proofread'
@@ -26,6 +27,7 @@ interface UseTranslateViewActionsOptions {
   currentBookId: ComputedRef<string | undefined>
   currentChapterId: ComputedRef<string | undefined>
   isEditMode: Ref<boolean>
+  confirmAction?: ProductConfirmAction
 }
 
 export function useTranslateViewActions(options: UseTranslateViewActionsOptions) {
@@ -42,6 +44,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     currentBookId,
     currentChapterId,
     isEditMode,
+    confirmAction = confirmProductAction,
   } = options
 
   async function loadChapterSession() {
@@ -148,31 +151,41 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
         await handleRetryFailed()
         return
       case 'delete-current':
-        deleteCurrentImage()
+        await deleteCurrentImage()
         return
       case 'clear-all':
-        clearAllImages()
+        await clearAllImages()
         return
       default:
         return
     }
   }
 
-  function deleteCurrentImage() {
+  async function deleteCurrentImage() {
     if (!currentImage.value) return
     const fileName = currentImage.value.fileName || `图片 ${imageStore.currentImageIndex + 1}`
-    if (confirm(`确定要删除当前图片 (${fileName}) 吗？`)) {
-      imageStore.deleteCurrentImage()
-      showToast('图片已删除', 'success')
-    }
+    const confirmed = await confirmAction({
+      title: '删除当前图片',
+      message: `确定要删除当前图片 (${fileName}) 吗？`,
+      confirmText: '删除',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    imageStore.deleteCurrentImage()
+    showToast('图片已删除', 'success')
   }
 
-  function clearAllImages() {
+  async function clearAllImages() {
     if (!hasImages.value) return
-    if (confirm('确定要清除所有图片吗？这将丢失所有未保存的进度。')) {
-      imageStore.clearImages()
-      showToast('所有图片已清除', 'success')
-    }
+    const confirmed = await confirmAction({
+      title: '清空图片',
+      message: '确定要清除所有图片吗？这将丢失所有未保存的进度。',
+      confirmText: '清空',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    imageStore.clearImages()
+    showToast('所有图片已清除', 'success')
   }
 
   function goToPrevious() {

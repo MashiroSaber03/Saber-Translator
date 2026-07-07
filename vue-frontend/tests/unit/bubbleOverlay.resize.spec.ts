@@ -1,5 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BubbleOverlay from '@/components/edit/BubbleOverlay.vue'
 import { createBubbleState } from '@/utils/bubbleFactory'
@@ -81,7 +83,7 @@ describe('BubbleOverlay rotated resize', () => {
       },
     })
 
-    await wrapper.find('.resize-handle.e').trigger('mousedown', {
+    await wrapper.find('.bubble-overlay__resize-handle--e').trigger('mousedown', {
       button: 0,
       clientX: 320,
       clientY: 240,
@@ -128,7 +130,7 @@ describe('BubbleOverlay rotated resize', () => {
       },
     })
 
-    await wrapper.find('.resize-handle.se').trigger('mousedown', {
+    await wrapper.find('.bubble-overlay__resize-handle--se').trigger('mousedown', {
       button: 0,
       clientX: 400,
       clientY: 300,
@@ -168,7 +170,7 @@ describe('BubbleOverlay rotated resize', () => {
       },
     })
 
-    await wrapper.find('.resize-handle.e').trigger('mousedown', {
+    await wrapper.find('.bubble-overlay__resize-handle--e').trigger('mousedown', {
       button: 0,
       clientX: 260,
       clientY: 160,
@@ -214,7 +216,7 @@ describe('BubbleOverlay rotated resize', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
 
     try {
-      await wrapper.find('.rotate-handle').trigger('mousedown', {
+      await wrapper.find('.bubble-overlay__rotate-handle').trigger('mousedown', {
         button: 0,
         clientX: 180,
         clientY: 80,
@@ -233,5 +235,97 @@ describe('BubbleOverlay rotated resize', () => {
     } finally {
       logSpy.mockRestore()
     }
+  })
+
+  it('does not leave middle-button drawing state when drawing cannot start', async () => {
+    const wrapper = mount(BubbleOverlay, {
+      props: {
+        bubbles: [makeBubble([100, 100, 200, 200], 0)],
+        selectedIndex: 0,
+        selectedIndices: [0],
+        scale: 1,
+        isDrawingMode: false,
+        imageWidth: 10,
+        imageHeight: 10,
+      },
+    })
+
+    try {
+      await wrapper.get('.bubble-overlay').trigger('mousedown', {
+        button: 1,
+        clientX: 50,
+        clientY: 50,
+      })
+
+      expect(document.body.classList.contains('middle-button-drawing')).toBe(false)
+      expect(wrapper.emitted('drawBubble')).toBeUndefined()
+    } finally {
+      document.body.classList.remove('middle-button-drawing')
+    }
+  })
+
+  it('maps overlay owner colors through semantic tokens', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/edit/BubbleOverlay.vue'),
+      'utf8',
+    )
+
+    expect(source).not.toMatch(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/)
+    expect(source).toContain('--bubble-overlay-selection-border: var(--color-action-success-bright)')
+    expect(source).toContain('--bubble-overlay-box-border: color-mix')
+  })
+
+  it('keeps overlay style comments concise and current', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/edit/BubbleOverlay.vue'),
+      'utf8',
+    )
+
+    expect(source).not.toContain('【屏幕像素适配】')
+    expect(source).not.toContain('这样边框、手柄等 UI 元素')
+    expect(source).toContain('Inverse scaling keeps overlay controls usable while the image zoom changes.')
+  })
+
+  it('keeps overlay interaction hooks under the bubble-overlay owner', () => {
+    const overlaySource = readFileSync(
+      resolve(process.cwd(), 'src/components/edit/BubbleOverlay.vue'),
+      'utf8',
+    )
+    const workspaceSource = readFileSync(
+      resolve(process.cwd(), 'src/components/edit/useEditWorkspace.ts'),
+      'utf8',
+    )
+
+    for (const currentHook of [
+      'bubble-overlay__highlight-box',
+      'bubble-overlay__highlight-box--selected',
+      'bubble-overlay__highlight-box--multi-selected',
+      'bubble-overlay__index',
+      'bubble-overlay__resize-handle',
+      'bubble-overlay__resize-handle--e',
+      'bubble-overlay__rotate-handle',
+      'bubble-overlay__drawing-rect',
+      'bubble-overlay--brush-mode',
+    ]) {
+      expect(overlaySource).toContain(currentHook)
+    }
+
+    expect(workspaceSource).toContain(".closest('.bubble-overlay__highlight-box')")
+
+    for (const oldHook of [
+      'bubble-highlight-box',
+      'bubble-index',
+      'resize-handle',
+      'rotate-handle',
+      'drawing-rect',
+    ]) {
+      expect(overlaySource).not.toMatch(new RegExp(`class="[^"]*\\b${oldHook}\\b`))
+      expect(overlaySource).not.toMatch(new RegExp(`\\.${oldHook}\\b`))
+      expect(workspaceSource).not.toContain(`.${oldHook}`)
+    }
+    expect(overlaySource).not.toContain("'brush-mode': isBrushMode")
+    expect(overlaySource).not.toContain('.bubble-overlay.brush-mode')
+    expect(overlaySource).not.toMatch(/\bselected:\s*index === selectedIndex/)
+    expect(overlaySource).not.toContain("'multi-selected'")
   })
 })

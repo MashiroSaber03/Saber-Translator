@@ -1,12 +1,3 @@
-/**
- * 翻译池
- *
- * 负责：
- * - standard: 调度共享单页 translate 原子步骤
- * - hq/proofread: 组批后调度共享 aiTranslate 批量原子步骤
- * - removeText: 跳过翻译
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask, ParallelTranslationMode } from '../types'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
@@ -23,7 +14,7 @@ export class TranslatePool extends TaskPool {
     progressTracker: ParallelProgressTracker,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('翻译', '🌐', nextPool, null, progressTracker, onTaskComplete)
+    super('翻译', 'globe', nextPool, null, progressTracker, onTaskComplete)
   }
 
   setMode(mode: ParallelTranslationMode, totalTasks: number, nextPool: TaskPool | null): void {

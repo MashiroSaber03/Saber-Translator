@@ -1,33 +1,40 @@
 <template>
   <div class="ocr-settings">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>OCR引擎选择</template>
-      <UiField class="ui-settings-field">
-        <label for="settingsOcrEngine">OCR引擎:</label>
-        <CustomSelect
+      <UiField variant="settings" label="OCR引擎" control-id="settingsOcrEngine">
+        <UiSelect
+          id="settingsOcrEngine"
           :model-value="settings.ocrEngine"
           :options="ocrEngineOptions"
           @change="handleOcrEngineChange"
         />
       </UiField>
-      <UiField v-show="settings.ocrEngine === 'paddle_ocr'" class="ui-settings-field">
-        <label for="settingsSourceLanguage">源语言:</label>
-        <CustomSelect
+      <UiField
+        v-show="settings.ocrEngine === 'paddle_ocr'"
+        variant="settings"
+        label="源语言"
+        control-id="settingsSourceLanguage"
+        :hint="getSourceLanguageHint()"
+      >
+        <UiCombobox
+          input-id="settingsSourceLanguage"
+          aria-label="源语言"
           :model-value="settings.sourceLanguage"
           :groups="sourceLanguageGroups"
           @change="handleSourceLanguageSelect"
         />
-        <div class="ui-form-hint">
-          {{ getSourceLanguageHint() }}
-        </div>
       </UiField>
-    </UiPanel>
-    <UiPanel variant="settings">
+    </ProductFormSection>
+    <ProductFormSection>
       <template #title>混合OCR设置</template>
       <UiField
-        class="ui-settings-field ui-settings-field--checkbox"
+        variant="settings"
+        control="checkbox"
+        label="启用混合OCR"
+        control-id="settingsHybridOcrEnabled"
+        :hint="settings.hybridOcr.enabled ? '首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。' : ''"
       >
-        <label for="settingsHybridOcrEnabled">启用混合OCR:</label>
         <UiCheckbox
           input-id="settingsHybridOcrEnabled"
           :model-value="settings.hybridOcr.enabled"
@@ -35,9 +42,9 @@
         />
       </UiField>
       <UiFormGrid v-show="settings.hybridOcr.enabled">
-        <UiField class="ui-settings-field">
-          <label for="settingsHybridSecondaryOcr">备用OCR:</label>
-          <CustomSelect
+        <UiField variant="settings" label="备用OCR" control-id="settingsHybridSecondaryOcr">
+          <UiSelect
+            id="settingsHybridSecondaryOcr"
             :model-value="settings.hybridOcr.secondaryEngine"
             :options="hybridSecondaryEngineOptions"
             @change="handleHybridSecondaryEngineChange"
@@ -45,126 +52,115 @@
         </UiField>
       </UiFormGrid>
       <UiFormGrid v-show="settings.hybridOcr.enabled">
-        <UiField class="ui-settings-field">
-          <label for="settingsHybridThreshold">混合阈值:</label>
-          <UiInput
-            id="settingsHybridThreshold"
-            type="number"
-            min="0"
-            max="1"
-            step="0.01"
-            :value="settings.hybridOcr.confidenceThreshold"
-            @change="handleHybridThresholdInput($event)"
+        <UiField variant="settings" label="混合阈值" control-id="settingsHybridThreshold">
+          <UiNumberField
+            input-id="settingsHybridThreshold"
+            :model-value="settings.hybridOcr.confidenceThreshold"
+            :min="0"
+            :max="1"
+            :step="0.01"
+            @change="handleHybridThresholdChange"
           />
         </UiField>
       </UiFormGrid>
-      <div v-show="settings.hybridOcr.enabled" class="ui-form-hint">
-        首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。
-      </div>
-    </UiPanel>
-    <UiPanel variant="settings" v-show="settings.ocrEngine === 'paddleocr_vl'">
+    </ProductFormSection>
+    <ProductFormSection v-show="settings.ocrEngine === 'paddleocr_vl'">
       <template #title>PaddleOCR-VL 设置</template>
-      <UiField class="ui-settings-field">
-        <label for="settingsPaddleOcrVlSourceLanguage">源语言:</label>
-        <CustomSelect
+      <UiField
+        variant="settings"
+        label="源语言"
+        control-id="settingsPaddleOcrVlSourceLanguage"
+        hint="选择图像中的源语言，用于优化 OCR 识别效果"
+      >
+        <UiCombobox
+          input-id="settingsPaddleOcrVlSourceLanguage"
+          aria-label="PaddleOCR-VL 源语言"
           :model-value="settings.paddleOcrVl.sourceLanguage"
           :groups="paddleOcrVlSourceLanguageGroups"
           @change="handlePaddleOcrVlSourceLanguageChange"
         />
-        <div class="ui-form-hint">
-          选择图像中的源语言，用于优化 OCR 识别效果
-        </div>
       </UiField>
-    </UiPanel>
-    <UiPanel variant="settings" v-show="settings.ocrEngine === 'baidu_ocr'">
+    </ProductFormSection>
+    <ProductFormSection v-show="settings.ocrEngine === 'baidu_ocr'">
       <template #title>百度OCR 设置</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsBaiduApiKey">API Key:</label>
-          <div class="password-input-wrapper">
-            <UiInput
-              :type="showBaiduApiKey ? 'text' : 'password'"
-              id="settingsBaiduApiKey"
-              v-model="localBaiduOcr.apiKey"
-              class="secure-input"
-              placeholder="请输入百度OCR API Key"
-              autocomplete="off"
-            />
-            <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="showBaiduApiKey = !showBaiduApiKey">
-              <span class="eye-icon" v-if="!showBaiduApiKey">👁</span>
-              <span class="eye-off-icon" v-else>👁‍🗨</span>
-            </UiButton>
-          </div>
+        <UiField variant="settings" label="API Key" control-id="settingsBaiduApiKey">
+          <UiPasswordField
+            input-id="settingsBaiduApiKey"
+            v-model="localBaiduOcr.apiKey"
+            placeholder="请输入百度OCR API Key"
+            show-label="显示百度 API Key"
+            hide-label="隐藏百度 API Key"
+          />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsBaiduSecretKey">Secret Key:</label>
-          <div class="password-input-wrapper">
-            <UiInput
-              :type="showBaiduSecretKey ? 'text' : 'password'"
-              id="settingsBaiduSecretKey"
-              v-model="localBaiduOcr.secretKey"
-              class="secure-input"
-              placeholder="请输入Secret Key"
-              autocomplete="off"
-            />
-            <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="showBaiduSecretKey = !showBaiduSecretKey">
-              <span class="eye-icon" v-if="!showBaiduSecretKey">👁</span>
-              <span class="eye-off-icon" v-else>👁‍🗨</span>
-            </UiButton>
-          </div>
+        <UiField variant="settings" label="Secret Key" control-id="settingsBaiduSecretKey">
+          <UiPasswordField
+            input-id="settingsBaiduSecretKey"
+            v-model="localBaiduOcr.secretKey"
+            placeholder="请输入Secret Key"
+            show-label="显示百度 Secret Key"
+            hide-label="隐藏百度 Secret Key"
+          />
         </UiField>
       </UiFormGrid>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsBaiduVersion">识别版本:</label>
-          <CustomSelect
+        <UiField variant="settings" label="识别版本" control-id="settingsBaiduVersion">
+          <UiSelect
+            id="settingsBaiduVersion"
             v-model="localBaiduOcr.version"
             :options="baiduVersionOptions"
           />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsBaiduSourceLanguage">源语言:</label>
-          <CustomSelect
+        <UiField variant="settings" label="源语言" control-id="settingsBaiduSourceLanguage">
+          <UiSelect
+            id="settingsBaiduSourceLanguage"
             v-model="localBaiduOcr.sourceLanguage"
             :options="baiduSourceLanguageOptions"
           />
         </UiField>
       </UiFormGrid>
-      <UiButton variant="toolbar" class="settings-test-btn" @click="testBaiduOcr" :disabled="isTesting">
-        {{ isTesting ? '测试中...' : '🔗 测试连接' }}
-      </UiButton>
-    </UiPanel>
-    <UiPanel variant="settings" v-show="settings.ocrEngine === 'ai_vision'">
+      <ProductActionRow aria-label="百度 OCR 操作" justify="start">
+        <UiButton variant="secondary" @click="testBaiduOcr" :disabled="isTesting">
+          <span v-if="isTesting">测试中...</span>
+          <template v-else>
+            <UiIcon name="link" />
+            <span>测试连接</span>
+          </template>
+        </UiButton>
+      </ProductActionRow>
+    </ProductFormSection>
+    <ProductFormSection v-show="settings.ocrEngine === 'ai_vision'">
       <template #title>AI视觉OCR 设置</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsAiVisionProvider">服务商:</label>
-          <CustomSelect
+        <UiField variant="settings" label="服务商" control-id="settingsAiVisionProvider">
+          <UiSelect
+            id="settingsAiVisionProvider"
             :model-value="settings.aiVisionOcr.provider"
             :options="aiVisionProviderOptions"
             @change="handleAiVisionProviderChange"
           />
         </UiField>
-        <UiField v-show="providerRequiresApiKey(settings.aiVisionOcr.provider)" class="ui-settings-field">
-          <label for="settingsAiVisionApiKey">API Key:</label>
-          <div class="password-input-wrapper">
-            <UiInput
-              :type="showAiVisionApiKey ? 'text' : 'password'"
-              id="settingsAiVisionApiKey"
-              v-model="localAiVisionOcr.apiKey"
-              class="secure-input"
-              placeholder="请输入API Key"
-              autocomplete="off"
-            />
-            <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="showAiVisionApiKey = !showAiVisionApiKey">
-              <span class="eye-icon" v-if="!showAiVisionApiKey">👁</span>
-              <span class="eye-off-icon" v-else>👁‍🗨</span>
-            </UiButton>
-          </div>
+        <UiField
+          v-show="providerRequiresApiKey(settings.aiVisionOcr.provider)"
+          variant="settings"
+          label="API Key"
+          control-id="settingsAiVisionApiKey"
+        >
+          <UiPasswordField
+            input-id="settingsAiVisionApiKey"
+            v-model="localAiVisionOcr.apiKey"
+            placeholder="请输入API Key"
+            show-label="显示 AI 视觉 API Key"
+            hide-label="隐藏 AI 视觉 API Key"
+          />
         </UiField>
       </UiFormGrid>
-      <UiField v-show="providerRequiresBaseUrl(settings.aiVisionOcr.provider)" class="ui-settings-field">
-        <label for="settingsCustomAiVisionBaseUrl">Base URL:</label>
+      <UiField
+        v-show="providerRequiresBaseUrl(settings.aiVisionOcr.provider)"
+        variant="settings"
+        label="Base URL"
+        control-id="settingsCustomAiVisionBaseUrl"
+      >
         <UiInput
           type="text"
           id="settingsCustomAiVisionBaseUrl"
@@ -172,40 +168,24 @@
           placeholder="例如: https://api.example.com/v1"
         />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsAiVisionModelName">模型名称:</label>
-        <div class="model-input-with-fetch">
-          <UiInput
-            type="text"
-            id="settingsAiVisionModelName"
-            v-model="localAiVisionOcr.modelName"
-            placeholder="如: silicon-llava2-34b"
-          />
-          <UiButton
-            variant="toolbar"
-            type="button"
-            class="fetch-models-btn"
-            title="获取可用模型列表"
-            @click="fetchAiVisionModels"
-            :disabled="isFetchingModels"
-          >
-            <span class="fetch-icon">🔍</span>
-            <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
-          </UiButton>
-        </div>
-        <div v-if="aiVisionModels.length > 0" class="model-select-container">
-          <CustomSelect
-            v-model="localAiVisionOcr.modelName"
-            :options="aiVisionModelOptions"
-          />
-          <span class="model-count">共 {{ aiVisionModels.length }} 个模型</span>
-        </div>
+      <UiField variant="settings" label="模型名称" control-id="settingsAiVisionModelName">
+        <UiModelPicker
+          input-id="settingsAiVisionModelName"
+          v-model="localAiVisionOcr.modelName"
+          placeholder="如: silicon-llava2-34b"
+          fetch-variant="primary"
+          :fetching="isFetchingModels"
+          :fetch-disabled="isFetchingModels"
+          :options="aiVisionModelOptions"
+          :model-count="aiVisionModels.length"
+          @fetch="fetchAiVisionModels"
+        />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsAiVisionOcrPrompt">OCR提示词:</label>
+      <UiField variant="settings" label="OCR提示词" control-id="settingsAiVisionOcrPrompt">
         <UiTextarea
           id="settingsAiVisionOcrPrompt"
           v-model="localAiVisionOcr.prompt"
+          variant="panel"
           rows="3"
           placeholder="AI视觉OCR提示词"
         />
@@ -213,63 +193,93 @@
           prompt-type="ai_vision_ocr"
           @select="handleAiVisionPromptSelect"
         />
-        <div class="prompt-format-selector">
-          <CustomSelect
+        <ProductActionRow aria-label="AI 视觉 OCR 提示词格式" justify="start">
+          <UiSelect
             :model-value="currentPromptMode"
             :options="promptModeOptions"
-            @change="(v: string | number) => handlePromptModeChange(String(v))"
+            @change="(v: UiSelectValue) => handlePromptModeChange(String(v))"
           />
-          <span class="ui-form-hint">{{ getPromptModeHint() }}</span>
-        </div>
-        <div v-if="currentPromptMode === 'paddleocr_vl'" class="paddleocr-vl-lang-selector">
-          <label>源语言:</label>
-          <CustomSelect
+          <span class="ocr-settings__prompt-mode-hint">{{ getPromptModeHint() }}</span>
+        </ProductActionRow>
+        <UiField
+          v-if="currentPromptMode === 'paddleocr_vl'"
+          class="ocr-settings__prompt-language-field"
+          variant="settings"
+          label="源语言"
+          control-id="settingsAiVisionPaddleOcrVlSourceLanguage"
+        >
+          <UiCombobox
+            class="ocr-settings__prompt-language-combobox"
+            input-id="settingsAiVisionPaddleOcrVlSourceLanguage"
+            aria-label="AI 视觉 OCR 专用模型源语言"
             :model-value="paddleOcrVlSourceLang"
             :groups="paddleOcrVlSourceLanguageGroups"
-            @change="(v: string | number) => handlePaddleOcrVlLangChange(String(v))"
+            @change="(v: UiSelectValue) => handlePaddleOcrVlLangChange(String(v))"
           />
-        </div>
+        </UiField>
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsRpmAiVisionOcr">RPM限制 (每分钟请求数):</label>
-        <UiInput type="number" id="settingsRpmAiVisionOcr" v-model.number="localAiVisionOcr.rpmLimit" min="0" step="1" />
-        <div class="ui-form-hint">0 表示无限制</div>
+      <UiField
+        variant="settings"
+        label="RPM限制 (每分钟请求数)"
+        control-id="settingsRpmAiVisionOcr"
+        hint="0 表示无限制"
+      >
+        <UiNumberField input-id="settingsRpmAiVisionOcr" v-model="localAiVisionOcr.rpmLimit" :min="0" :step="1" />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsAiVisionBusinessRetries">业务重试:</label>
-        <UiInput type="number" id="settingsAiVisionBusinessRetries" v-model.number="localAiVisionOcr.businessRetries" min="0" max="10" step="1" />
+      <UiField variant="settings" label="业务重试" control-id="settingsAiVisionBusinessRetries">
+        <UiNumberField input-id="settingsAiVisionBusinessRetries" v-model="localAiVisionOcr.businessRetries" :min="0" :max="10" :step="1" />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsAiVisionTransportRetries">传输重试:</label>
-        <UiInput type="number" id="settingsAiVisionTransportRetries" v-model.number="localAiVisionOcr.transportRetries" min="0" max="10" step="1" />
+      <UiField variant="settings" label="传输重试" control-id="settingsAiVisionTransportRetries">
+        <UiNumberField input-id="settingsAiVisionTransportRetries" v-model="localAiVisionOcr.transportRetries" :min="0" :max="10" :step="1" />
       </UiField>
-      <UiField class="ui-settings-field">
-        <UiCheckbox v-model="localAiVisionOcr.useStream" label="流式调用" />
-        <div class="ui-form-hint">使用流式请求并在终端输出流式日志</div>
+      <UiField
+        variant="settings"
+        control="checkbox"
+        label="流式调用"
+        control-id="settingsAiVisionUseStream"
+        hint="使用流式请求并在终端输出流式日志"
+      >
+        <UiCheckbox input-id="settingsAiVisionUseStream" v-model="localAiVisionOcr.useStream" />
       </UiField>
-      <UiField class="ui-settings-field">
+      <UiField variant="settings">
         <OpenAIExtraBodyEditor v-model="localAiVisionOcr.extraBody" />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsMinImageSize">最小图片尺寸 (像素):</label>
-        <UiInput type="number" id="settingsMinImageSize" v-model.number="localAiVisionOcr.minImageSize" min="0" step="1" />
-        <div class="ui-form-hint">VLM模型通常要求图片尺寸 ≥28px，设为0则不自动放大小图</div>
+      <UiField
+        variant="settings"
+        label="最小图片尺寸 (像素)"
+        control-id="settingsMinImageSize"
+        hint="VLM模型通常要求图片尺寸 ≥28px，设为0则不自动放大小图"
+      >
+        <UiNumberField input-id="settingsMinImageSize" v-model="localAiVisionOcr.minImageSize" :min="0" :step="1" />
       </UiField>
-      <UiButton variant="toolbar" class="settings-test-btn" @click="testAiVisionOcr" :disabled="isTesting">
-        {{ isTesting ? '测试中...' : '🔗 测试连接' }}
-      </UiButton>
-    </UiPanel>
+      <ProductActionRow aria-label="AI 视觉 OCR 操作" justify="start">
+        <UiButton variant="secondary" @click="testAiVisionOcr" :disabled="isTesting">
+          <span v-if="isTesting">测试中...</span>
+          <template v-else>
+            <UiIcon name="link" />
+            <span>测试连接</span>
+          </template>
+        </UiButton>
+      </ProductActionRow>
+    </ProductFormSection>
   </div>
 </template>
 <script setup lang="ts">
 
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiModelPicker from '@/components/ui/UiModelPicker.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import UiPasswordField from '@/components/ui/UiPasswordField.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { UiSelectValue } from '@/components/ui/selectTypes'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed, watch } from 'vue'
 import {
   normalizeProviderId,
@@ -287,7 +297,7 @@ import {
   PADDLEOCR_VL_LANG_MAP
 } from '@/constants'
 import type { OcrEngine } from '@/types/settings'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import UiCombobox from '@/components/ui/UiCombobox.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import {
@@ -305,9 +315,9 @@ import {
   promptModeOptions,
   sourceLanguageGroups
 } from './ocrSettingsOptions'
+import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
 const settingsStore = useSettingsStore()
 const toast = useToast()
-type SelectValue = string | number
 const localBaiduOcr = ref({
   apiKey: settingsStore.settings.baiduOcr.apiKey,
   secretKey: settingsStore.settings.baiduOcr.secretKey,
@@ -370,12 +380,10 @@ watch(() => localAiVisionOcr.value.useStream, (val) => {
 watch(() => localAiVisionOcr.value.minImageSize, (val) => {
   settingsStore.updateAiVisionOcr({ minImageSize: val })
 })
-const showBaiduApiKey = ref(false)
-const showBaiduSecretKey = ref(false)
-const showAiVisionApiKey = ref(false)
 const isTesting = ref(false)
 const isFetchingModels = ref(false)
 const aiVisionModels = ref<string[]>([])
+const aiVisionModelFetchGuard = useLatestRequestGuard()
 const aiVisionModelOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   aiVisionModels.value.forEach(model => {
@@ -399,29 +407,25 @@ const hybridSecondaryEngineOptions = computed(() =>
     )
     .map(option => ({ ...option }))
 )
-function toSelectString(value: SelectValue): string {
+function toSelectString(value: UiSelectValue): string {
   return String(value)
 }
 function isOcrEngine(value: string): value is OcrEngine {
   return allOcrEngineOptions.some(option => option.value === value)
 }
-function handleOcrEngineChange(value: SelectValue) {
+function handleOcrEngineChange(value: UiSelectValue) {
   const nextEngine = toSelectString(value)
   if (isOcrEngine(nextEngine)) {
     settingsStore.setOcrEngine(nextEngine)
   }
 }
-function handleSourceLanguageSelect(value: SelectValue) {
-  settings.value.sourceLanguage = toSelectString(value)
-  handleSourceLanguageChange()
-}
-function handleSourceLanguageChange() {
-  settingsStore.saveToStorage()
+function handleSourceLanguageSelect(value: UiSelectValue) {
+  settingsStore.setSourceLanguage(toSelectString(value))
 }
 function handleHybridOcrEnabledChange(value: boolean) {
   settingsStore.updateHybridOcr({ enabled: value })
 }
-function handleHybridSecondaryEngineChange(value: SelectValue) {
+function handleHybridSecondaryEngineChange(value: UiSelectValue) {
   const secondaryEngine = toSelectString(value)
   if (isSupportedHybridOcrEngine(secondaryEngine)) {
     settingsStore.updateHybridOcr({ secondaryEngine })
@@ -436,11 +440,7 @@ function handleHybridThresholdChange(value: number) {
   const normalized = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
   settingsStore.updateHybridOcr({ confidenceThreshold: normalized })
 }
-function handleHybridThresholdInput(event: Event) {
-  const target = event.target as HTMLInputElement | null
-  handleHybridThresholdChange(Number(target?.value))
-}
-function handlePaddleOcrVlSourceLanguageChange(value: SelectValue) {
+function handlePaddleOcrVlSourceLanguageChange(value: UiSelectValue) {
   settingsStore.updatePaddleOcrVl({ sourceLanguage: toSelectString(value) })
 }
 function getSourceLanguageHint(): string {
@@ -462,7 +462,9 @@ function getSourceLanguageHint(): string {
       return '选择要识别的原文语言'
   }
 }
-function handleAiVisionProviderChange(providerValue: SelectValue) {
+function handleAiVisionProviderChange(providerValue: UiSelectValue) {
+  aiVisionModelFetchGuard.invalidate()
+  isFetchingModels.value = false
   const newProvider = normalizeProviderId(toSelectString(providerValue))
   settingsStore.setAiVisionOcrProvider(newProvider)
   aiVisionModels.value = []
@@ -509,7 +511,7 @@ function handlePromptModeChange(mode: string) {
       newPrompt = DEFAULT_AI_VISION_OCR_PROMPT
       break
   }
-  settingsStore.updateAiVisionOcr({ 
+  settingsStore.updateAiVisionOcr({
     prompt: newPrompt,
     promptMode: mode as 'normal' | 'json' | 'paddleocr_vl',
     forceJsonOutput: mode === 'json'
@@ -591,9 +593,11 @@ async function fetchAiVisionModels() {
     toast.warning('自定义服务需要先填写 Base URL')
     return
   }
+  const requestId = aiVisionModelFetchGuard.next()
   isFetchingModels.value = true
   try {
     const result = await configApi.fetchModels(provider, apiKey, baseUrl)
+    if (!aiVisionModelFetchGuard.isCurrent(requestId)) return
     if (result.success && result.models && result.models.length > 0) {
       aiVisionModels.value = result.models.map(m => m.id)
       toast.success(`获取到 ${result.models.length} 个模型`)
@@ -601,10 +605,13 @@ async function fetchAiVisionModels() {
       toast.warning(result.message || '未获取到可用模型')
     }
   } catch (error: unknown) {
+    if (!aiVisionModelFetchGuard.isCurrent(requestId)) return
     const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
     toast.error(errorMessage)
   } finally {
-    isFetchingModels.value = false
+    if (aiVisionModelFetchGuard.isCurrent(requestId)) {
+      isFetchingModels.value = false
+    }
   }
 }
 function handleAiVisionPromptSelect(content: string, name: string) {
@@ -625,66 +632,14 @@ function handleAiVisionPromptSelect(content: string, name: string) {
 }
 </script>
 
-<style scoped>.settings-test-btn {
-  width: 100%;
-  padding: 10px 16px;
-  background-color: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
-  color: var(--color-text-default);
-  font-weight: 500;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+<style scoped>
+.ocr-settings__prompt-mode-hint {
+  color: var(--color-text-supporting);
+  font-size: 0.85em;
+  line-height: 1.45;
 }
 
-.settings-test-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.settings-test-btn:hover:not(:disabled) {
-  background-color: var(--color-surface-hover);
-  border-color: var(--color-action-primary);
-  color: var(--color-action-primary);
-}
-
-.model-input-with-fetch {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.fetch-models-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background-color: var(--color-surface-subtle);
-  border: 1px solid var(--color-border-muted);
-  border-radius: 6px;
-  color: var(--color-text-default);
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-  height: 38px;
-}
-
-.fetch-models-btn:hover:not(:disabled) {
-  background-color: var(--color-action-primary);
-  color: var(--color-text-inverse);
-  border-color: var(--color-action-primary);
-}
-
-.paddleocr-vl-lang-selector {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.ocr-settings__prompt-language-field {
   margin-top: 10px;
   padding: 10px 12px;
   background: var(--color-surface-subtle);
@@ -692,14 +647,7 @@ function handleAiVisionPromptSelect(content: string, name: string) {
   border: 1px solid var(--color-border-muted);
 }
 
-.paddleocr-vl-lang-selector label {
-  font-size: 13px;
-  color: var(--color-text-supporting);
-  white-space: nowrap;
-}
-
-.paddleocr-vl-lang-selector .custom-select {
-  flex: 1;
+.ocr-settings__prompt-language-combobox {
   min-width: 150px;
 }
 </style>

@@ -1,16 +1,3 @@
-/**
- * AI翻译步骤（高质量翻译 & 校对）
- * 
- * 支持两种模式：
- * - 高质量翻译（hq）：使用多模态AI根据图像和OCR结果翻译
- * - AI校对（proofread）：使用AI检查和修正已有译文
- * 
- * 特点：
- * - 批量处理多张图片
- * - 支持多轮校对
- * - 使用图像+文本上下文提升翻译质量
- */
-
 import { hqTranslateBatch } from '@/api/translate'
 import type { HqTranslateJsonData } from '@/api/translate'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
@@ -19,22 +6,16 @@ import type { TranslationSettings } from '@/types/settings'
 import type { HqTranslateResponse } from '@/types/api'
 import type { TranslationWarning } from '@/types/translationConstraints'
 import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
+import { extractBase64Payload } from '@/utils/dataUrl'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
-// ============================================================
-// 类型定义
-// ============================================================
-
-/** AI翻译任务 */
 export interface AiTranslateTask {
     imageIndex: number
     image: ImageData
-    // 高质量翻译需要
     originalTexts?: string[]
     autoDirections?: string[]
 }
 
-/** AI翻译输入 */
 export interface AiTranslateInput {
     mode: 'hq' | 'proofread'
     tasks: AiTranslateTask[]
@@ -43,7 +24,6 @@ export interface AiTranslateInput {
     isBookshelfMode: boolean
 }
 
-/** AI翻译输出 */
 export interface AiTranslateOutput {
     results: Array<{
         imageIndex: number
@@ -63,16 +43,7 @@ interface AiTranslateResultData {
     }>
 }
 
-// ============================================================
-// 主函数
-// ============================================================
 
-/**
- * 执行AI翻译步骤
- * 
- * @param input - AI翻译输入
- * @returns AI翻译输出
- */
 export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTranslateOutput> {
     const settings = input.settingsSnapshot
     const isProofread = input.mode === 'proofread'
@@ -81,10 +52,8 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         constraints: input.bookTranslationConstraints,
     })
 
-    // 1. 收集 JSON 数据
     const jsonData: HqTranslateJsonData[] = input.tasks.map(t => {
         if (isProofread) {
-            // 校对模式：使用已有译文
             return {
                 imageIndex: t.imageIndex,
                 bubbles: (t.image.bubbleStates || []).map((state, idx) => ({
@@ -93,7 +62,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                     translated: settings.useTextboxPrompt
                         ? (state.textboxText || state.translatedText || '')
                         : (state.translatedText || ''),
-                    // textDirection 已经是渲染可用的具体方向值。
                     textDirection: (state.textDirection === 'vertical' || state.textDirection === 'horizontal')
                         ? state.textDirection
                         : (state.autoTextDirection === 'vertical' || state.autoTextDirection === 'horizontal')
@@ -102,7 +70,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 }))
             }
         } else {
-            // 高质量翻译：使用 OCR 结果
             return {
                 imageIndex: t.imageIndex,
                 bubbles: (t.originalTexts || []).map((text, idx) => ({
@@ -115,15 +82,13 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         }
     })
 
-    // 2. 收集图片 Base64
     const imageBase64Array = input.tasks.map(t => {
         const dataUrl = isProofread
             ? (t.image.translatedDataURL || t.image.originalDataURL)
             : t.image.originalDataURL
-        return extractBase64(dataUrl)
+        return extractBase64Payload(dataUrl)
     })
 
-    // 3. 获取配置
     const aiConfig = isProofread ? settings.proofreading.rounds[0] : settings.hqTranslation
     const hqConfig = settings.hqTranslation
     const roundConfig = isProofread ? aiConfig : null
@@ -133,7 +98,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         : '你是一个专业的漫画翻译助手，能够根据漫画图像内容和上下文提供高质量的翻译。'
     const requestProvider = isProofread ? (roundConfig?.provider ?? '') : (hqConfig.provider ?? '')
 
-    // 4. 调用 API - 第一轮
     const response = await hqTranslateBatch({
         provider: requestProvider,
         api_key: (isProofread ? roundConfig?.apiKey : hqConfig.apiKey) || '',
@@ -141,7 +105,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         custom_base_url: isProofread ? roundConfig?.customBaseUrl : hqConfig.customBaseUrl,
         translation_mode: isProofread ? 'proofread' : 'hq',
         translation_scope: 'batch',
-        // 结构化数据交给后端构建模型消息。
         jsonData,
         imageBase64Array,
         target_language: settings.targetLanguage,
@@ -153,12 +116,10 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         openai_options: serializeOpenAICompatibleOptionsForApi((isProofread ? roundConfig?.openaiOptions : hqConfig.openaiOptions)!)
     })
 
-    // 5. 解析结果
     const forceJsonOutput = isProofread ? (roundConfig?.openaiOptions.request.forceJsonOutput || false) : hqConfig.openaiOptions.request.forceJsonOutput
     const translatedData = parseHqResponse(response, forceJsonOutput)
     let latestWarnings = response.warnings || []
 
-    // 6. 校对模式可能有多轮
     let currentData: AiTranslateResultData[] = translatedData || jsonData
     if (isProofread && settings.proofreading.rounds.length > 1) {
         for (let i = 1; i < settings.proofreading.rounds.length; i++) {
@@ -171,7 +132,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
                 custom_base_url: round.customBaseUrl,
                 translation_mode: 'proofread',
                 translation_scope: 'batch',
-                // 使用结构化输入，由后端构建消息
                 jsonData: currentData,
                 imageBase64Array,
                 target_language: settings.targetLanguage,
@@ -191,7 +151,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
         }
     }
 
-    // 7. 构建输出结果
     const results = input.tasks.map(t => {
         const taskData = currentData.find((d) => d.imageIndex === t.imageIndex)
         const taskWarnings = latestWarnings.filter((warning) => warning.imageIndex === t.imageIndex)
@@ -215,23 +174,6 @@ export async function executeAiTranslate(input: AiTranslateInput): Promise<AiTra
     return { results }
 }
 
-// ============================================================
-// 辅助函数
-// ============================================================
-
-/**
- * 提取 Base64 数据
- */
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
-}
-
-/**
- * 解析高质量翻译响应
- */
 function parseHqResponse(
     response: Pick<HqTranslateResponse, 'success' | 'results' | 'content' | 'error'>,
     forceJsonOutput: boolean
@@ -240,12 +182,10 @@ function parseHqResponse(
         return null
     }
 
-    // 优先使用后端已解析的 results
     if (response.results && response.results.length > 0) {
         return normalizeAiTranslateResultData(response.results)
     }
 
-    // 尝试从 content 解析
     const content = (response as { content?: string }).content
     if (content) {
         let parsed: unknown = null
@@ -266,7 +206,6 @@ function parseHqResponse(
             }
         }
 
-        // 单张图片 payload 统一包装成批量数组
         if (parsed) {
             if (Array.isArray(parsed)) {
                 return normalizeAiTranslateResultData(parsed)

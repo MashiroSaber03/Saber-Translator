@@ -1,40 +1,37 @@
-/**
- * 翻译 API
- * 包含图片翻译、重新渲染、高质量翻译、气泡检测等功能
- */
-
 import { apiClient } from './client'
 import type {
   ApiResponse,
-  GlossaryExtractionResponse,
-  ReRenderResponse,
-  OcrSingleBubbleResponse,
-  InpaintSingleBubbleResponse,
-  HqTranslateResponse,
   BubbleCoords,
   BubbleTextline,
+  GlossaryExtractionResponse,
+  HqTranslateResponse,
+  InpaintSingleBubbleResponse,
+  OcrSingleBubbleResponse,
+  ReRenderResponse,
 } from '@/types'
 import type {
   GlossarySettings,
   NonTranslateSettings,
   TranslationWarning,
 } from '@/types/translationConstraints'
+import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'
 
-// ==================== 请求参数类型 ====================
+const TRANSLATE_ENDPOINTS = {
+  reRenderImage: '/api/re_render_image',
+  singleText: '/api/translate_single_text',
+  hqBatch: '/api/hq_translate_batch',
+  glossaryExtract: '/api/translation/glossary/extract',
+  ocrSingleBubble: '/api/ocr_single_bubble',
+  inpaintSingleBubble: '/api/inpaint_single_bubble',
+} as const
 
-/**
- * 重新渲染请求参数（匹配后端API格式）
- */
 export interface ReRenderParams {
-  // 图片数据
-  clean_image: string // 干净背景 Base64
-  image?: string // 当前图片 Base64（可选）
+  clean_image: string
+  image?: string
   translation_mode?: string
   translation_scope?: string
-
-  // 气泡数据（必需）
-  bubble_texts: string[] // 文本数组
-  bubble_coords: BubbleCoords[] // 坐标数组
+  bubble_texts: string[]
+  bubble_coords: BubbleCoords[]
   bubble_states?: Array<{
     translatedText?: string
     coords?: BubbleCoords
@@ -50,8 +47,6 @@ export interface ReRenderParams {
     lineSpacing?: number
     textAlign?: 'start' | 'center' | 'end'
   }>
-
-  // 全局样式设置
   fontSize?: number
   fontFamily?: string
   textDirection?: string
@@ -61,8 +56,6 @@ export interface ReRenderParams {
   strokeWidth?: number
   lineSpacing?: number
   textAlign?: 'start' | 'center' | 'end'
-
-  // 控制选项
   use_individual_styles?: boolean
   use_inpainting?: boolean
   use_lama?: boolean
@@ -70,44 +63,23 @@ export interface ReRenderParams {
   autoFontSize?: boolean
 }
 
-/**
- * 高质量翻译请求参数
- * 使用结构化 jsonData + imageBase64Array，由后端构建多模态消息
- */
 export interface HqTranslateParams {
-  // 服务设置
   provider: string
   api_key: string
-  model_name: string  // 当前后端协议字段
+  model_name: string
   custom_base_url?: string
   translation_mode?: string
   translation_scope?: string
-
-  // 结构化输入：传数据，后端构建消息
   jsonData: HqTranslateJsonData[]
   imageBase64Array: string[]
   target_language?: string
   prompt?: string
   systemPrompt?: string
   isProofreading?: boolean
-  enableDebugLogs?: boolean  // 是否启用调试日志
+  enableDebugLogs?: boolean
   glossary_settings?: GlossarySettings
   non_translate_settings?: NonTranslateSettings
-
-  // 高级选项
-  openai_options?: {
-    request: {
-      force_json_output: boolean
-      temperature?: number
-      extra_body?: Record<string, unknown>
-    }
-    execution: {
-      use_stream: boolean
-      rpm_limit: number
-      transport_retries: number
-      business_retries: number
-    }
-  }
+  openai_options?: OpenAICompatibleOptionsWire
 }
 
 export interface HqTranslateJsonData {
@@ -120,10 +92,6 @@ export interface HqTranslateJsonData {
   }>
 }
 
-/**
- * 单文本翻译请求参数
- * 字段命名与后端 route_translate_single_text 保持一致
- */
 export interface TranslateSingleTextParams {
   original_text: string
   translation_mode?: string
@@ -136,19 +104,7 @@ export interface TranslateSingleTextParams {
   prompt_content?: string
   glossary_settings?: GlossarySettings
   non_translate_settings?: NonTranslateSettings
-  openai_options?: {
-    request: {
-      force_json_output: boolean
-      temperature?: number
-      extra_body?: Record<string, unknown>
-    }
-    execution: {
-      use_stream: boolean
-      rpm_limit: number
-      transport_retries: number
-      business_retries: number
-    }
-  }
+  openai_options?: OpenAICompatibleOptionsWire
 }
 
 export interface ExtractGlossaryEntriesParams {
@@ -160,120 +116,83 @@ export interface ExtractGlossaryEntriesParams {
   custom_base_url?: string
   prompt?: string
   existing_entries?: GlossarySettings['entries']
-  openai_options?: {
-    request: {
-      force_json_output: boolean
-      temperature?: number
-      extra_body?: Record<string, unknown>
-    }
-    execution: {
-      use_stream: boolean
-      rpm_limit: number
-      transport_retries: number
-      business_retries: number
-    }
-  }
+  openai_options?: OpenAICompatibleOptionsWire
 }
 
-// ==================== 渲染 API ====================
+export interface OcrSingleBubbleOptions {
+  source_language?: string
+  baidu_ocr_api_key?: string
+  baidu_ocr_secret_key?: string
+  baidu_version?: string
+  baidu_source_language?: string
+  ai_vision_provider?: string
+  ai_vision_api_key?: string
+  ai_vision_model_name?: string
+  ai_vision_ocr_prompt?: string
+  ai_vision_prompt_mode?: 'normal' | 'json' | 'paddleocr_vl'
+  custom_ai_vision_base_url?: string
+  openai_options?: OpenAICompatibleOptionsWire
+  ai_vision_min_image_size?: number
+  enable_hybrid_ocr?: boolean
+  secondary_ocr_engine?: string
+  hybrid_ocr_threshold?: number
+  bubble_textlines?: BubbleTextline[]
+  text_detector?: string
+  enable_aux_yolo_detection?: boolean
+  aux_yolo_conf_threshold?: number
+  aux_yolo_overlap_threshold?: number
+  enable_saber_yolo_refine?: boolean
+  saber_yolo_refine_overlap_threshold?: number
+}
 
-/**
- * 重新渲染图片
- * @param params 渲染参数
- */
+export interface InpaintSingleBubbleOptions {
+  bubbleAngle?: number
+  method?: 'lama'
+  lamaModel?: 'lama_mpe' | 'litelama'
+  maskData?: string
+}
+
 export async function reRenderImage(params: ReRenderParams): Promise<ReRenderResponse> {
-  return apiClient.post<ReRenderResponse>('/api/re_render_image', params)
+  return apiClient.post<ReRenderResponse>(TRANSLATE_ENDPOINTS.reRenderImage, params)
 }
 
-/**
- * 单文本翻译
- * @param params 翻译参数
- */
 export async function translateSingleText(
-  params: TranslateSingleTextParams
+  params: TranslateSingleTextParams,
 ): Promise<ApiResponse<{ translated_text: string; warnings?: TranslationWarning[] }>> {
   try {
-    const result = await apiClient.post<{ translated_text: string }>('/api/translate_single_text', params)
+    const result = await apiClient.post<{
+      translated_text: string
+      warnings?: TranslationWarning[]
+    }>(TRANSLATE_ENDPOINTS.singleText, params)
     return {
       success: true,
-      data: result
+      data: result,
     }
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : '翻译失败'
+      error: error instanceof Error ? error.message : '翻译失败',
     }
   }
 }
 
-/**
- * 高质量翻译（批量上下文翻译）
- * @param params 翻译参数
- */
 export async function hqTranslateBatch(params: HqTranslateParams): Promise<HqTranslateResponse> {
-  return apiClient.post<HqTranslateResponse>('/api/hq_translate_batch', params)
+  return apiClient.post<HqTranslateResponse>(TRANSLATE_ENDPOINTS.hqBatch, params)
 }
 
 export async function extractGlossaryEntries(
-  params: ExtractGlossaryEntriesParams
+  params: ExtractGlossaryEntriesParams,
 ): Promise<GlossaryExtractionResponse> {
-  return apiClient.post<GlossaryExtractionResponse>('/api/translation/glossary/extract', params)
+  return apiClient.post<GlossaryExtractionResponse>(TRANSLATE_ENDPOINTS.glossaryExtract, params)
 }
 
-// ==================== OCR 和修复 API ====================
-
-/**
- * 单气泡 OCR 重新识别
- * @param imageData Base64 图片数据
- * @param bubbleCoords 气泡坐标
- * @param ocrEngine OCR 引擎
- * @param ocrParams OCR 参数
- */
 export async function ocrSingleBubble(
   imageData: string,
   bubbleCoords: BubbleCoords,
   ocrEngine: string,
-  ocrParams?: {
-    source_language?: string
-    // 百度 OCR 参数
-    baidu_ocr_api_key?: string
-    baidu_ocr_secret_key?: string
-    baidu_version?: string
-    baidu_source_language?: string
-    // AI 视觉 OCR 参数
-    ai_vision_provider?: string
-    ai_vision_api_key?: string
-    ai_vision_model_name?: string
-    ai_vision_ocr_prompt?: string
-    ai_vision_prompt_mode?: 'normal' | 'json' | 'paddleocr_vl'
-    custom_ai_vision_base_url?: string
-    openai_options?: {
-      request: {
-        force_json_output: boolean
-        temperature?: number
-        extra_body?: Record<string, unknown>
-      }
-      execution: {
-        use_stream: boolean
-        rpm_limit: number
-        transport_retries: number
-        business_retries: number
-      }
-    }
-    ai_vision_min_image_size?: number
-    enable_hybrid_ocr?: boolean
-    secondary_ocr_engine?: string
-    hybrid_ocr_threshold?: number
-    bubble_textlines?: BubbleTextline[]
-    text_detector?: string
-    enable_aux_yolo_detection?: boolean
-    aux_yolo_conf_threshold?: number
-    aux_yolo_overlap_threshold?: number
-    enable_saber_yolo_refine?: boolean
-    saber_yolo_refine_overlap_threshold?: number
-  }
+  ocrParams?: OcrSingleBubbleOptions,
 ): Promise<OcrSingleBubbleResponse> {
-  return apiClient.post<OcrSingleBubbleResponse>('/api/ocr_single_bubble', {
+  return apiClient.post<OcrSingleBubbleResponse>(TRANSLATE_ENDPOINTS.ocrSingleBubble, {
     image_data: imageData,
     bubble_coords: bubbleCoords,
     ocr_engine: ocrEngine,
@@ -281,32 +200,12 @@ export async function ocrSingleBubble(
   })
 }
 
-/**
- * 单气泡背景修复选项
- */
-export interface InpaintSingleBubbleOptions {
-  /** 气泡旋转角度（度） */
-  bubbleAngle?: number
-  /** 修复方法 */
-  method?: 'lama'
-  /** LAMA 模型类型 */
-  lamaModel?: 'lama_mpe' | 'litelama'
-  /** 笔刷精确掩膜 Base64（可选，用于笔刷修复模式） */
-  maskData?: string
-}
-
-/**
- * 单气泡背景修复（LAMA 修复）
- * @param image Base64 图片数据
- * @param bubbleCoords 气泡坐标 [x1, y1, x2, y2]
- * @param options 修复选项（包含角度、模型类型等）
- */
 export async function inpaintSingleBubble(
   image: string,
   bubbleCoords: BubbleCoords,
-  options?: InpaintSingleBubbleOptions
+  options?: InpaintSingleBubbleOptions,
 ): Promise<InpaintSingleBubbleResponse> {
-  return apiClient.post<InpaintSingleBubbleResponse>('/api/inpaint_single_bubble', {
+  return apiClient.post<InpaintSingleBubbleResponse>(TRANSLATE_ENDPOINTS.inpaintSingleBubble, {
     image_data: image,
     bubble_coords: bubbleCoords,
     bubble_angle: options?.bubbleAngle ?? 0,

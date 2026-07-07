@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import {
   getBaseStepChain,
@@ -8,6 +10,12 @@ import {
 } from '@/composables/translation/core/pipelineRegistry'
 
 describe('pipelineRegistry', () => {
+  it('keeps registry tests on typed step contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/pipelineRegistry.spec.ts'), 'utf8')
+
+    expect(source).not.toContain('as ' + 'any')
+  })
+
   it('returns the current base step chains for all translation modes', () => {
     expect(getBaseStepChain('standard')).toEqual([
       'detection',
@@ -117,7 +125,7 @@ describe('pipelineRegistry', () => {
 
   it('provides the unified step labels used by the pipelines', () => {
     expect(getStepLabel('detection')).toBe('气泡检测')
-    expect(getStepLabel('autoGlossary' as any)).toBe('自动术语提取')
+    expect(getStepLabel('autoGlossary')).toBe('自动术语提取')
     expect(getStepLabel('aiTranslate')).toBe('AI翻译')
     expect(getStepLabel('save')).toBe('保存')
   })

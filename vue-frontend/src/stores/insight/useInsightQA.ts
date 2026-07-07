@@ -1,13 +1,5 @@
-/**
- * 问答管理 Composable
- *
- * 管理 Insight 问答历史
- */
-
 import { ref } from 'vue'
-import type { Ref } from 'vue'
 
-/** 问答消息 */
 export interface QAMessage {
   id: string
   role: 'user' | 'assistant'
@@ -19,20 +11,10 @@ export interface QAMessage {
   saved?: boolean
 }
 
-export interface UseInsightQAOptions {
-  currentBookId: Ref<string | null>
-}
-
-export function useInsightQA(_options: UseInsightQAOptions) {
-  /** 问答历史 */
+export function useInsightQA() {
   const qaHistory = ref<QAMessage[]>([])
-
-  /** 是否正在流式响应 */
   const isStreaming = ref(false)
 
-  /**
-   * 添加用户消息
-   */
   function addUserMessage(content: string): QAMessage {
     const message: QAMessage = {
       id: `user_${Date.now()}`,
@@ -44,9 +26,6 @@ export function useInsightQA(_options: UseInsightQAOptions) {
     return message
   }
 
-  /**
-   * 添加助手消息（初始加载状态）
-   */
   function addAssistantMessage(mode?: string): QAMessage {
     const message: QAMessage = {
       id: `assistant_${Date.now()}`,
@@ -60,9 +39,6 @@ export function useInsightQA(_options: UseInsightQAOptions) {
     return message
   }
 
-  /**
-   * 更新助手消息
-   */
   function updateAssistantMessage(
     messageId: string,
     updates: Partial<Pick<QAMessage, 'content' | 'isLoading' | 'citations' | 'mode'>>
@@ -73,9 +49,6 @@ export function useInsightQA(_options: UseInsightQAOptions) {
     }
   }
 
-  /**
-   * 追加内容到助手消息（流式响应）
-   */
   function appendToAssistantMessage(messageId: string, chunk: string): void {
     const index = qaHistory.value.findIndex(m => m.id === messageId)
     if (index !== -1) {
@@ -86,9 +59,6 @@ export function useInsightQA(_options: UseInsightQAOptions) {
     }
   }
 
-  /**
-   * 标记消息已保存为笔记
-   */
   function markAsSaved(messageId: string): void {
     const index = qaHistory.value.findIndex(m => m.id === messageId)
     if (index !== -1) {
@@ -99,25 +69,16 @@ export function useInsightQA(_options: UseInsightQAOptions) {
     }
   }
 
-  /**
-   * 清空问答历史
-   */
   function clearHistory(): void {
     qaHistory.value = []
   }
 
-  /**
-   * 删除最后一条消息（用于错误恢复）
-   */
   function removeLastMessage(): void {
     if (qaHistory.value.length > 0) {
       qaHistory.value.pop()
     }
   }
 
-  /**
-   * 设置流式响应状态
-   */
   function setStreaming(value: boolean): void {
     isStreaming.value = value
   }

@@ -1,34 +1,35 @@
 <script setup lang="ts">
-
-import UiInput from '@/components/ui/UiInput.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
-
-import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiFormGrid from '@/components/ui/UiFormGrid.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
+import type { StoreLlmConfig } from '@/types/insight'
+import InsightModelProviderSection from './InsightModelProviderSection.vue'
+import InsightSettingsPanel from './InsightSettingsPanel.vue'
+import { useInsightSettingsDraft } from './useInsightSettingsDraft'
+import { useInsightModelFetch } from './useInsightModelFetch'
 import {
-  VLM_PROVIDER_OPTIONS,
+  LLM_PROVIDER_OPTIONS,
   LLM_DEFAULT_MODELS,
-  SUPPORTED_FETCH_PROVIDERS,
-  type ModelInfo
 } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
+  (e: 'update:config', config: StoreLlmConfig): void
+}>()
+
+const props = defineProps<{
+  syncRequestId?: number
 }>()
 
 const insightStore = useInsightStore()
 
 const isTesting = ref(false)
-const isFetchingModels = ref(false)
-const models = ref<ModelInfo[]>([])
-const modelSelectVisible = ref(false)
-let modelFetchRequestId = 0
 
 const provider = ref(insightStore.config.llm.provider)
 const apiKey = ref(insightStore.config.llm.apiKey)
@@ -42,42 +43,26 @@ const transportRetries = ref(insightStore.config.llm.openaiOptions.execution.tra
 const businessRetries = ref(insightStore.config.llm.openaiOptions.execution.businessRetries)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-
-function resetModelOptions(): void {
-  models.value = []
-  modelSelectVisible.value = false
-}
+const {
+  isFetchingModels,
+  modelOptions,
+  modelCount,
+  invalidateModelFetch,
+  fetchModels,
+  selectModel,
+} = useInsightModelFetch({
+  provider,
+  apiKey,
+  baseUrl,
+  model,
+  emitMessage: (message, type) => emit('showMessage', message, type),
+})
 
 function onProviderChange(): void {
   const newProvider = provider.value
-  const previousProvider = insightStore.config.llm.provider
-  modelFetchRequestId += 1
-  isFetchingModels.value = false
-  resetModelOptions()
+  invalidateModelFetch()
 
-  if (previousProvider !== newProvider) {
-    insightStore.config.llm.apiKey = apiKey.value
-    insightStore.config.llm.model = model.value
-    insightStore.config.llm.baseUrl = baseUrl.value
-    insightStore.config.llm.openaiOptions.request.forceJsonOutput = forceJsonOutput.value
-    insightStore.config.llm.openaiOptions.request.extraBody = extraBody.value
-    insightStore.config.llm.openaiOptions.execution.useStream = useStream.value
-    insightStore.config.llm.openaiOptions.execution.rpmLimit = rpmLimit.value
-    insightStore.config.llm.openaiOptions.execution.transportRetries = transportRetries.value
-    insightStore.config.llm.openaiOptions.execution.businessRetries = businessRetries.value
-  }
-
-  insightStore.setLlmProvider(newProvider)
-
-  apiKey.value = insightStore.config.llm.apiKey
-  model.value = insightStore.config.llm.model
-  baseUrl.value = insightStore.config.llm.baseUrl
-  forceJsonOutput.value = insightStore.config.llm.openaiOptions.request.forceJsonOutput
-  extraBody.value = insightStore.config.llm.openaiOptions.request.extraBody
-  useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
-  rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
-  transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
-  businessRetries.value = insightStore.config.llm.openaiOptions.execution.businessRetries
+  applyDraftConfig(insightStore.switchLlmProviderDraft(buildDraftConfig()))
 
   if (!model.value) {
     const defaultModel = LLM_DEFAULT_MODELS[newProvider]
@@ -85,62 +70,6 @@ function onProviderChange(): void {
       model.value = defaultModel
     }
   }
-}
-
-async function fetchModels(): Promise<void> {
-  if (providerRequiresApiKey(provider.value) && !apiKey.value) {
-    emit('showMessage', '请先填写 API Key', 'error')
-    return
-  }
-
-  if (!SUPPORTED_FETCH_PROVIDERS.includes(provider.value)) {
-    emit('showMessage', `${provider.value} 不支持自动获取模型列表`, 'error')
-    return
-  }
-
-  if (provider.value === 'custom' && !baseUrl.value) {
-    emit('showMessage', '自定义服务需要先填写 Base URL', 'error')
-    return
-  }
-
-  isFetchingModels.value = true
-  const requestId = ++modelFetchRequestId
-  const requestProvider = provider.value
-  const requestApiKey = apiKey.value
-  const requestBaseUrl = baseUrl.value || undefined
-  const isCurrentRequest = () => (
-    modelFetchRequestId === requestId &&
-    provider.value === requestProvider &&
-    apiKey.value === requestApiKey &&
-    (baseUrl.value || undefined) === requestBaseUrl
-  )
-
-  try {
-    const response = await insightApi.fetchModels(requestProvider, requestApiKey, requestBaseUrl)
-    if (!isCurrentRequest()) return
-
-    if (response.success && response.models && response.models.length > 0) {
-      models.value = response.models
-      modelSelectVisible.value = true
-      emit('showMessage', `获取到 ${response.models.length} 个模型`, 'success')
-    } else {
-      emit('showMessage', response.message || '未获取到模型列表', 'error')
-      modelSelectVisible.value = false
-    }
-  } catch {
-    if (isCurrentRequest()) {
-      emit('showMessage', '获取模型列表失败', 'error')
-      modelSelectVisible.value = false
-    }
-  } finally {
-    if (modelFetchRequestId === requestId) {
-      isFetchingModels.value = false
-    }
-  }
-}
-
-function onModelSelected(modelId: string): void {
-  if (modelId) model.value = modelId
 }
 
 async function testConnection(): Promise<void> {
@@ -167,7 +96,7 @@ async function testConnection(): Promise<void> {
   }
 }
 
-function getConfig() {
+function buildDraftConfig(): StoreLlmConfig {
   return {
     useSameAsVlm: false,
     provider: provider.value,
@@ -190,213 +119,84 @@ function getConfig() {
   }
 }
 
-function syncFromStore(): void {
-  provider.value = insightStore.config.llm.provider
-  apiKey.value = insightStore.config.llm.apiKey
-  model.value = insightStore.config.llm.model
-  baseUrl.value = insightStore.config.llm.baseUrl
-  forceJsonOutput.value = insightStore.config.llm.openaiOptions.request.forceJsonOutput
-  extraBody.value = insightStore.config.llm.openaiOptions.request.extraBody
-  useStream.value = insightStore.config.llm.openaiOptions.execution.useStream
-  rpmLimit.value = insightStore.config.llm.openaiOptions.execution.rpmLimit
-  transportRetries.value = insightStore.config.llm.openaiOptions.execution.transportRetries
-  businessRetries.value = insightStore.config.llm.openaiOptions.execution.businessRetries
+function applyDraftConfig(config: StoreLlmConfig): void {
+  provider.value = config.provider
+  apiKey.value = config.apiKey
+  model.value = config.model
+  baseUrl.value = config.baseUrl
+  forceJsonOutput.value = config.openaiOptions.request.forceJsonOutput
+  extraBody.value = config.openaiOptions.request.extraBody
+  useStream.value = config.openaiOptions.execution.useStream
+  rpmLimit.value = config.openaiOptions.execution.rpmLimit
+  transportRetries.value = config.openaiOptions.execution.transportRetries
+  businessRetries.value = config.openaiOptions.execution.businessRetries
 }
 
-defineExpose({ getConfig, syncFromStore })
+useInsightSettingsDraft<StoreLlmConfig>({
+  sources: [provider, apiKey, model, baseUrl, forceJsonOutput, extraBody, useStream, rpmLimit, transportRetries, businessRetries],
+  buildDraft: buildDraftConfig,
+  applyDraft: applyDraftConfig,
+  loadDraft: () => insightStore.config.llm,
+  emitDraft: config => emit('update:config', config),
+  syncRequestId: () => props.syncRequestId,
+  deep: true,
+})
 </script>
 
 <template>
-  <div class="insight-settings-content">
-    <p class="settings-hint">LLM（对话模型）用于生成故事概要、智能问答等文本生成任务。</p>
+  <InsightSettingsPanel description="LLM（对话模型）用于生成故事概要、智能问答等文本生成任务。">
+    <InsightModelProviderSection
+      v-model:provider="provider"
+      v-model:api-key="apiKey"
+      v-model:model="model"
+      v-model:base-url="baseUrl"
+      :provider-options="LLM_PROVIDER_OPTIONS"
+      :show-api-key="providerRequiresApiKey(provider)"
+      credential-id="insight-llm-api-key"
+      provider-input-id="insight-llm-provider"
+      model-input-id="insight-llm-model"
+      base-url-input-id="insight-llm-base-url"
+      model-placeholder="例如: gpt-4o-mini"
+      fetch-variant="primary"
+      :fetching-models="isFetchingModels"
+      :model-options="modelOptions"
+      :model-count="modelCount"
+      :show-base-url="showBaseUrl"
+      :testing="isTesting"
+      @provider-change="onProviderChange"
+      @model-change="selectModel"
+      @fetch="fetchModels"
+      @test="testConnection"
+    />
 
-    <div class="insight-settings-field">
-      <label>服务商</label>
-      <CustomSelect v-model="provider" :options="VLM_PROVIDER_OPTIONS" @change="onProviderChange" />
-    </div>
+    <UiFormGrid>
+      <UiField variant="settings" label="RPM 限制" control-id="insight-llm-rpm-limit">
+        <UiNumberField v-model="rpmLimit" input-id="insight-llm-rpm-limit" :min="0" :max="100" />
+      </UiField>
+      <UiField variant="settings" label="传输重试" control-id="insight-llm-transport-retries">
+        <UiNumberField v-model="transportRetries" input-id="insight-llm-transport-retries" :min="0" :max="10" />
+      </UiField>
+      <UiField variant="settings" label="业务重试" control-id="insight-llm-business-retries">
+        <UiNumberField v-model="businessRetries" input-id="insight-llm-business-retries" :min="0" :max="10" />
+      </UiField>
+    </UiFormGrid>
 
-    <div v-if="providerRequiresApiKey(provider)" class="insight-settings-field">
-      <label>API Key</label>
-      <UiInput v-model="apiKey" type="password" placeholder="输入 API Key" />
-    </div>
-
-    <div class="insight-settings-field">
-      <label>模型</label>
-      <div class="model-input-row">
-        <UiInput v-model="model" type="text" placeholder="例如: gpt-4o-mini" class="model-field-input" />
-        <UiButton variant="secondary" class="fetch-btn" :disabled="isFetchingModels" @click="fetchModels" size="sm">
-          {{ isFetchingModels ? '获取中...' : '🔍 获取模型' }}
-        </UiButton>
-      </div>
-      <div v-if="modelSelectVisible && models.length > 0" class="model-select-container">
-        <UiSelect class="model-select" :model-value="model" @change="onModelSelected">
-          <option value="">-- 选择模型 --</option>
-          <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name || m.id }}</option>
-        </UiSelect>
-        <span class="model-count">共 {{ models.length }} 个模型</span>
-      </div>
-    </div>
-
-    <div v-if="showBaseUrl" class="insight-settings-field">
-      <label>Base URL</label>
-      <UiInput v-model="baseUrl" type="text" placeholder="自定义 API 地址" />
-    </div>
-
-    <div class="form-row">
-      <div class="insight-settings-field">
-        <label>RPM 限制</label>
-        <UiInput v-model.number="rpmLimit" type="number" min="0" max="100" />
-      </div>
-      <div class="insight-settings-field">
-        <label>传输重试</label>
-        <UiInput v-model.number="transportRetries" type="number" min="0" max="10" />
-      </div>
-      <div class="insight-settings-field">
-        <label>业务重试</label>
-        <UiInput v-model.number="businessRetries" type="number" min="0" max="10" />
-      </div>
-    </div>
-
-    <div class="insight-settings-field">
+    <UiField variant="settings" control="checkbox" hint="对 OpenAI 兼容 API 启用 response_format: json_object">
       <UiCheckbox
         v-model="forceJsonOutput"
         label="强制 JSON 输出"
       />
-      <p class="form-hint">对 OpenAI 兼容 API 启用 response_format: json_object</p>
-    </div>
+    </UiField>
 
-    <div class="insight-settings-field">
+    <UiField variant="settings" control="checkbox">
       <UiCheckbox
         v-model="useStream"
         label="使用流式请求"
       />
-    </div>
+    </UiField>
 
-    <div class="insight-settings-field">
+    <UiField variant="settings">
       <OpenAIExtraBodyEditor v-model="extraBody" />
-    </div>
-
-    <UiButton variant="secondary" :disabled="isTesting" @click="testConnection">
-      {{ isTesting ? '测试中...' : '测试连接' }}
-    </UiButton>
-  </div>
+    </UiField>
+  </InsightSettingsPanel>
 </template>
-
-<style scoped>
-.insight-settings-content {
-  --ui-input-padding: 10px 12px;
-  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-input-radius: 6px;
-  --ui-input-font-size: 14px;
-  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-input-color: var(--color-text-default);
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
-  --ui-select-padding: 8px 12px;
-  --ui-select-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-select-radius: 4px;
-  --ui-select-font-size: 13px;
-  --ui-select-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-select-color: var(--color-text-default);
-  --ui-select-focus-shadow: var(--color-focus-brand-soft);
-  --ui-button-padding: 10px 16px;
-  --ui-button-radius: 6px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-
-  padding: 16px 0;
-  min-height: 300px;
-}
-
-.insight-settings-content .settings-hint {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 13px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: var(--color-surface-muted);
-  border-radius: 4px;
-}
-
-.insight-settings-content .insight-settings-field {
-  margin-bottom: 16px;
-}
-
-.insight-settings-content .insight-settings-field label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--color-text-default);
-}
-
-.insight-settings-content .form-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.insight-settings-content .form-row {
-  display: flex;
-  gap: 16px;
-}
-
-.insight-settings-content .form-row .insight-settings-field {
-  flex: 1;
-}
-
-.insight-settings-content .model-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.insight-settings-content .model-field-input {
-  flex: 1;
-}
-
-.insight-settings-content .fetch-btn {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.insight-settings-content .model-select-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: var(--color-surface-subtle);
-  border-radius: 6px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-}
-
-.insight-settings-content .model-select {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  font-size: 13px;
-  background: var(--color-surface-input, var(--color-surface-base));
-  color: var(--color-text-default);
-  cursor: pointer;
-}
-
-.insight-settings-content .model-select:focus {
-  outline: none;
-  border-color: var(--color-border-brand);
-}
-
-.insight-settings-content .model-count {
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  white-space: nowrap;
-}
-</style>

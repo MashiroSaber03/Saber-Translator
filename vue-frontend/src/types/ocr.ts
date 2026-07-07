@@ -1,7 +1,3 @@
-/**
- * OCR 结果类型定义
- */
-
 export interface OcrResult {
   text: string
   confidence: number | null

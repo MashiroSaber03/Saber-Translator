@@ -1,30 +1,17 @@
-/**
- * 文字样式同步与应用 composable
- * 
- * 负责翻译页图片、气泡和侧边栏之间的文字样式同步：
- * - 图片 ↔ 侧边栏的双向文字样式同步
- * - 「应用到全部」批量设置功能
- * - 自动字号开关变更处理
- * - 文字样式变更后触发重渲染
- */
-
 import { ref, watch, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { showToast } from '@/utils/toast'
-import { getEffectiveDirection } from '@/types/bubble'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
+import { buildEditRenderInput } from '@/composables/edit/editRenderRequest'
 import { executeRender } from '@/composables/translation/core/steps'
+import { extractBase64Payload } from '@/utils/dataUrl'
 import type { BubbleState } from '@/types/bubble'
 import type { ImageDataUpdates } from '@/types/image'
 import type { SavedTextStyles } from '@/composables/translation/core/types'
 
-/**
- * 应用设置选项接口
- */
 export interface ApplySettingsOptions {
     fontSize: boolean
     fontFamily: boolean
@@ -47,37 +34,16 @@ function rgbToHex(rgb: [number, number, number] | null | undefined): string | nu
     }).join('')
 }
 
-function extractBase64Payload(imageData: string | null | undefined): string {
-    if (!imageData) return ''
-    return imageData.includes('base64,')
-        ? (imageData.split('base64,')[1] || '')
-        : imageData
-}
-
-/**
- * 文字样式同步与应用 composable
- */
 export function useTextStyleSync() {
     const imageStore = useImageStore()
     const settingsStore = useSettingsStore()
     const bubbleStore = useBubbleStore()
     const translation = useTranslation()
 
-    // 当前图片（计算属性）
     const currentImage = computed(() => imageStore.currentImage)
 
-    // ============================================================
-    // 同步标志与辅助函数
-    // ============================================================
-
-    /** 【防止循环触发】同步标志 */
     const isSyncingTextStyle = ref(false)
 
-    /**
-     * 辅助函数：从图片同步文字设置到侧边栏
-     * @param image 源图片数据
-     * 只同步图片中有明确定义的设置，undefined 值回退到当前 settingsStore 设置。
-     */
     function syncImageToSidebar(image: typeof imageStore.currentImage) {
         if (!image) return
 
@@ -100,10 +66,6 @@ export function useTextStyleSync() {
         })
     }
 
-    /**
-     * 辅助函数：从侧边栏同步文字设置到图片
-     * @param style 文字样式设置
-     */
     function syncSidebarToImage(style: typeof settingsStore.settings.textStyle) {
         const currentImg = imageStore.currentImage
         if (!currentImg) return
@@ -145,41 +107,14 @@ export function useTextStyleSync() {
             color: 'preserve'
         }
     ) {
-        return await executeRender({
+        return await executeRender(buildEditRenderInput({
             imageIndex: imageStore.currentImageIndex,
             cleanImage: cleanImageBase64,
-            bubbleCoords: bubbleStates.map(bs => bs.coords),
-            bubbleAngles: bubbleStates.map(bs => bs.rotationAngle || 0),
-            autoDirections: bubbleStates.map(bs => bs.autoTextDirection || getEffectiveDirection(bs)),
-            textlinesPerBubble: bubbleStates.map(bs => bs.textlines || []),
-            existingBubbleStates: bubbleStates,
-            originalTexts: bubbleStates.map(bs => bs.originalText || ''),
-            ocrResults: bubbleStates.map(bs => bs.ocrResult || {
-                text: bs.originalText || '',
-                confidence: null,
-                confidenceSupported: false,
-                engine: '',
-                primaryEngine: '',
-                fallbackUsed: false
-            }),
-            translatedTexts: bubbleStates.map(bs => bs.translatedText || ''),
-            textboxTexts: bubbleStates.map(bs => bs.textboxText || ''),
-            colors: bubbleStates.map(bs => ({
-                textColor: bs.textColor || settingsStore.settings.textStyle.textColor,
-                bgColor: bs.fillColor || settingsStore.settings.textStyle.fillColor,
-                autoFgColor: bs.autoFgColor || null,
-                autoBgColor: bs.autoBgColor || null
-            })),
-            savedTextStyles: buildSavedTextStylesFromSettings(settingsStore.settings),
-            currentMode: 'standard',
-            settingsSnapshot: settingsStore.settings,
+            bubbleStates,
+            settings: settingsStore.settings,
             renderStylePolicy,
-        })
+        }))
     }
-
-    // ============================================================
-    // 双向同步 watchers
-    // ============================================================
 
     // 切换图片时，侧边栏展示该图片保存的文字设置。
     watch(
@@ -213,16 +148,6 @@ export function useTextStyleSync() {
         { deep: true } // 深度监听，因为 textStyle 是对象
     )
 
-    // ============================================================
-    // 处理文字样式设置变更
-    // ============================================================
-
-    /**
-     * 处理文字样式设置变更
-     * 更新所有气泡的对应参数，然后重新渲染。
-     * @param settingKey - 变更的设置项
-     * @param newValue - 新值
-     */
     async function handleTextStyleChanged(settingKey: string, newValue: unknown) {
         const image = currentImage.value
         if (!image || !image.translatedDataURL || !image.bubbleStates || image.bubbleStates.length === 0) {
@@ -331,17 +256,6 @@ export function useTextStyleSync() {
         }
     }
 
-    // ============================================================
-    // 处理自动字号开关变更
-    // ============================================================
-
-    /**
-     * 处理自动字号开关变更
-     * 核心逻辑：
-     * - 开启自动字号：显式重新计算每个气泡的初始字号
-     * - 关闭自动字号：将所有气泡设为输入框中的固定字号，然后渲染
-     * @param isAutoFontSize - 自动字号是否启用
-     */
     async function handleAutoFontSizeChanged(isAutoFontSize: boolean) {
         const image = currentImage.value
         if (!image || !image.translatedDataURL) {
@@ -480,20 +394,6 @@ export function useTextStyleSync() {
         }
     }
 
-    // ============================================================
-    // 处理应用设置到全部
-    // ============================================================
-
-    /**
-     * 处理应用设置到全部
-     * 
-     * 支持将当前自动设置批量物化到所有图片：
-     * - 自动排版方向：将每个气泡的 autoTextDirection 应用到 textDirection
-     * - 自动文字颜色：将每个气泡的 autoFgColor/autoBgColor 应用到 textColor/fillColor
-     * - 自动字号：调用后端重新计算每个气泡的最佳字号
-     * 
-     * @param options - 选择要应用的设置项
-     */
     async function handleApplyToAll(options: ApplySettingsOptions) {
         // 检查是否至少选择了一个选项
         const hasSelectedOption = Object.values(options).some(v => v)
@@ -549,9 +449,6 @@ export function useTextStyleSync() {
                 textAlign: textStyle.textAlign,
             }
 
-            /**
-             * 辅助函数：应用设置到单个气泡
-             */
             const applySettingsToBubble = (bubble: typeof bubbleStore.bubbles[0]) => {
                 const updatedBubble = { ...bubble }
 
@@ -789,10 +686,6 @@ export function useTextStyleSync() {
             showToast('应用设置失败', 'error')
         }
     }
-
-    // ============================================================
-    // 返回
-    // ============================================================
 
     return {
         // 同步标志（供外部检测）

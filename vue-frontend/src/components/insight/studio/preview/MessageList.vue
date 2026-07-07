@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductMessageBubble from '@/components/product/ProductMessageBubble.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import {
@@ -49,24 +53,80 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 </script>
 
 <template>
-  <div class="messages-panel">
-    <div v-if="session.messages.length === 0" class="empty-copy">当前会话还没有消息。</div>
-    <article v-for="item in session.messages" :key="item.message_id" class="message-card" :class="item.role">
-      <div class="message-head">
-        <span class="message-role">{{ item.role === 'assistant' ? assistantName : '你' }}</span>
-        <div class="message-actions">
+  <div class="studio-message-list">
+    <ProductEmptyState
+      v-if="session.messages.length === 0"
+      icon-name="message"
+      role="note"
+      size="compact"
+      title="当前会话还没有消息"
+    />
+    <ProductMessageBubble
+      v-for="item in session.messages"
+      :key="item.message_id"
+      class="studio-message-list__bubble"
+      :role="item.role"
+      :avatar-icon-name="item.role === 'assistant' ? 'sparkles' : 'users'"
+      :avatar-label="item.role === 'assistant' ? assistantName : '你'"
+      :aria-label="`${item.role === 'assistant' ? assistantName : '你'}的聊天消息`"
+      data-testid="studio-chat-message"
+      :data-message-role="item.role"
+    >
+      <template #meta>
+        <span class="studio-message-list__role">{{ item.role === 'assistant' ? assistantName : '你' }}</span>
+      </template>
+
+      <div v-if="editingMessageId === item.message_id" class="studio-message-list__editor">
+        <UiTextarea v-model="editingContent" rows="4" variant="studio" aria-label="编辑聊天消息内容" />
+        <ProductActionRow class="studio-message-list__editor-actions" aria-label="编辑聊天消息操作" justify="start" variant="toolbar">
+          <UiButton variant="primary" size="xs" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">
+            保存并重新生成
+          </UiButton>
+          <UiButton variant="secondary" size="xs" @click="cancelEdit">取消</UiButton>
+        </ProductActionRow>
+      </div>
+      <div v-else class="studio-message-list__body">{{ item.content }}</div>
+
+      <template v-if="item.attachments.length > 0" #footer>
+        <div class="studio-message-list__attachment-grid">
+          <ProductRecordCard
+            v-for="attachment in item.attachments"
+            :key="attachment.attachment_id"
+            as="button"
+            class="studio-message-list__attachment-card"
+            :aria-label="`预览附件：${attachment.filename}`"
+            @click="$emit('open-image-preview', attachment)"
+          >
+            <div class="studio-message-list__attachment-frame">
+              <img
+                v-if="attachment.mime_type.startsWith('image/')"
+                class="studio-message-list__attachment-image"
+                :src="attachmentUrlFor(attachment)"
+                :alt="attachment.filename"
+              >
+            </div>
+            <div class="studio-message-list__attachment-info">
+              <strong class="studio-message-list__attachment-name">{{ attachment.filename }}</strong>
+              <span class="studio-message-list__attachment-type">{{ attachmentTypeLabel(attachment.mime_type) }}</span>
+            </div>
+          </ProductRecordCard>
+        </div>
+      </template>
+
+      <template #actions>
+        <ProductActionRow class="studio-message-list__actions" aria-label="聊天消息操作" justify="start" variant="toolbar">
           <UiButton
             v-if="canEditMessage(item)"
-            variant="toolbar"
-            class="action-ghost tiny"
+            variant="secondary"
+            size="xs"
             :disabled="chatStreaming || chatMutating"
             @click="startEdit(item)"
           >
             编辑
           </UiButton>
           <UiButton
-            variant="toolbar"
-            class="action-ghost tiny"
+            variant="secondary"
+            size="xs"
             :disabled="chatStreaming || chatMutating"
             @click="$emit('delete-message', item.message_id)"
           >
@@ -74,70 +134,27 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
           </UiButton>
           <UiButton
             v-if="canRegenerateMessage(item)"
-            variant="toolbar"
-            class="action-ghost tiny"
+            variant="secondary"
+            size="xs"
             :disabled="chatStreaming"
             @click="$emit('regenerate-message', item.message_id)"
           >
             重新生成
           </UiButton>
-        </div>
-      </div>
-
-      <div v-if="editingMessageId === item.message_id" class="editor-row">
-        <UiTextarea v-model="editingContent" rows="4" />
-        <div class="editor-actions">
-          <UiButton variant="toolbar" class="action-primary tiny" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">保存并重新生成</UiButton>
-          <UiButton variant="toolbar" class="action-ghost tiny" @click="cancelEdit">取消</UiButton>
-        </div>
-      </div>
-      <div v-else class="message-body">{{ item.content }}</div>
-
-      <div v-if="item.attachments.length > 0" class="attachment-grid">
-        <UiButton
-          v-for="attachment in item.attachments"
-          :key="attachment.attachment_id"
-          variant="toolbar"
-          type="button"
-          class="attachment-card"
-          @click="$emit('open-image-preview', attachment)"
-        >
-          <div class="attachment-frame">
-            <img
-              v-if="attachment.mime_type.startsWith('image/')"
-              :src="attachmentUrlFor(attachment)"
-              :alt="attachment.filename"
-            >
-          </div>
-          <div class="attachment-info">
-            <strong>{{ attachment.filename }}</strong>
-            <span>{{ attachmentTypeLabel(attachment.mime_type) }}</span>
-          </div>
-        </UiButton>
-      </div>
-    </article>
+        </ProductActionRow>
+      </template>
+    </ProductMessageBubble>
   </div>
 </template>
 
 <style scoped>
-.message-head,
-.editor-actions {
+.studio-message-list__editor {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.editor-row {
-  --ui-textarea-border: 1px solid var(--studio-border-strong);
-  --ui-textarea-background: var(--studio-surface-soft);
-  --ui-textarea-radius: 14px;
-  --ui-textarea-padding: 10px 12px;
-  --ui-textarea-color: var(--studio-text-strong);
-  --ui-textarea-font-size: 13px;
-}
-
-.messages-panel {
+.studio-message-list {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -147,86 +164,62 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   overflow: auto;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--character-studio-preview-message-list-background-start), var(--character-studio-preview-message-list-background-end));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-app) 95%, transparent), color-mix(in srgb, var(--color-surface-neutral-muted) 90%, transparent));
 }
 
-.message-card {
-  width: min(100%, 88%);
-  padding: 14px;
-  border: 1px solid var(--studio-border-default);
-  border-radius: 18px;
-  background: var(--character-studio-preview-assistant-message-background);
-}
-
-.message-card.user {
-  margin-left: auto;
-  background: var(--character-studio-preview-user-message-background);
-}
-
-.message-card.assistant {
-  margin-right: auto;
-  background: var(--studio-surface-tint);
-}
-
-.message-role {
-  color: var(--character-studio-preview-message-role-text);
+.studio-message-list__role {
+  color: inherit;
   font-size: 11px;
+  opacity: 0.72;
 }
 
-.message-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.message-body {
-  margin-top: 8px;
-  color: var(--studio-text-strong);
+.studio-message-list__body {
+  color: inherit;
   font-size: 13px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.attachment-grid {
+.studio-message-list__attachment-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 110px), 1fr));
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 0;
 }
 
-.attachment-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--studio-border-default);
-  border-radius: 14px;
-  background: var(--character-studio-preview-attachment-card-background);
-  text-align: left;
+.studio-message-list__attachment-card {
+  --product-record-card-accent: var(--studio-border-strong);
+  --product-record-card-background: color-mix(in srgb, var(--color-surface-card) 86%, transparent);
+  --product-record-card-border: var(--studio-border-default);
+  --product-record-card-padding: 8px;
+  --product-record-card-radius: 14px;
+  --product-record-card-shadow-hover: none;
 }
 
-.attachment-frame {
+.studio-message-list__attachment-frame {
+  display: block;
   aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: 10px;
   background: var(--studio-surface-soft);
 }
 
-.attachment-card img {
+.studio-message-list__attachment-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.attachment-info {
+.studio-message-list__attachment-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  margin-top: 8px;
 }
 
-.attachment-info strong {
+.studio-message-list__attachment-name {
   overflow: hidden;
   color: var(--studio-text-strong);
   font-size: 12px;
@@ -234,53 +227,9 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   white-space: nowrap;
 }
 
-.attachment-info span {
+.studio-message-list__attachment-type {
   color: var(--studio-text-muted);
   font-size: 11px;
 }
 
-.action-ghost,
-.action-primary {
-  border: none;
-  border-radius: 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.action-ghost {
-  padding: 10px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-primary {
-  padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-preview-primary-action-background-start), var(--character-studio-preview-primary-action-background-end));
-  box-shadow: 0 12px 24px var(--character-studio-preview-primary-action-shadow);
-  color: var(--color-text-inverse);
-}
-
-.action-ghost:disabled,
-.action-primary:disabled {
-  cursor: not-allowed;
-  box-shadow: none;
-  opacity: 0.68;
-}
-
-.tiny {
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.empty-copy {
-  color: var(--studio-text-subtle);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-@media (--breakpoint-studio-down) {
-  .message-card {
-    width: 100%;
-  }
-}
 </style>

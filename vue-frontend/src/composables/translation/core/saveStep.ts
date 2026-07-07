@@ -1,10 +1,3 @@
-/**
- * 自动保存步骤实现
- *
- * 统一使用 TaskContext + PersistenceService，
- * 保存 payload 只从 TaskContext 的当前快照生成。
- */
-
 import { useSessionStore } from '@/stores/sessionStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'

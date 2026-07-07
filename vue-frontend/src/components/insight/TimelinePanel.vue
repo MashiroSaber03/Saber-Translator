@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
 import PlotThreadsList from './timeline/PlotThreadsList.vue'
 import TimelineCharacterGrid from './timeline/TimelineCharacterGrid.vue'
 import TimelineHeader from './timeline/TimelineHeader.vue'
@@ -30,37 +34,51 @@ const {
 </script>
 
 <template>
-  <div class="timeline-tab">
+  <div class="timeline-panel">
     <TimelineHeader
       :is-loading="isLoading"
       :is-regenerating="isRegenerating"
       @regenerate="regenerateTimeline"
     />
 
-    <div v-if="errorMessage" class="error-message">
-      ⚠️ {{ errorMessage }}
-    </div>
+    <ProductStatusBanner
+      v-if="errorMessage"
+      aria-live="assertive"
+      class="timeline-panel__status-banner"
+      tone="danger"
+    >
+      {{ errorMessage }}
+    </ProductStatusBanner>
 
-    <div class="timeline-container">
-      <div v-if="isLoading" class="loading-state">
-        <div class="loading-spinner"></div>
+    <div class="timeline-panel__body">
+      <div v-if="isLoading" class="timeline-panel__loading-state">
+        <UiSpinner
+          class="timeline-panel__loading-indicator"
+          label="加载时间线"
+          :decorative="false"
+          :size="32"
+        />
         <p>加载时间线...</p>
       </div>
 
-      <div v-else-if="!hasTimelineData" class="timeline-empty-state">
-        <div class="empty-icon">📈</div>
-        <h4>时间线尚未生成</h4>
-        <p>完成漫画分析后会自动生成时间线，或点击下方按钮手动生成</p>
-        <UiButton
-          variant="primary"
-          size="sm"
-          class="timeline-empty-state__action"
-          :disabled="isRegenerating"
-          @click="regenerateTimeline"
-        >
-          {{ isRegenerating ? '生成中...' : '生成时间线' }}
-        </UiButton>
-      </div>
+      <ProductEmptyState
+        v-else-if="!hasTimelineData"
+        class="timeline-panel__empty"
+        icon-name="bar-chart"
+        title="时间线尚未生成"
+        description="完成漫画分析后会自动生成时间线，或点击下方按钮手动生成"
+      >
+        <template #actions>
+          <UiButton
+            variant="primary"
+            size="sm"
+            :disabled="isRegenerating"
+            @click="regenerateTimeline"
+          >
+            {{ isRegenerating ? '生成中...' : '生成时间线' }}
+          </UiButton>
+        </template>
+      </ProductEmptyState>
 
       <template v-else>
         <TimelineStats
@@ -81,8 +99,11 @@ const {
           @show-page="showPageDetail"
         />
 
-        <div v-if="isEnhancedData && plotArcs.length > 0" class="timeline-section">
-          <h4>🎭 剧情发展</h4>
+        <div v-if="isEnhancedData && plotArcs.length > 0" class="timeline-panel__section">
+          <h4 class="timeline-panel__section-title">
+            <UiIcon name="book-marked" size="16" />
+            <span>剧情发展</span>
+          </h4>
         </div>
 
         <TimelineTrack
@@ -95,8 +116,11 @@ const {
           @toggle="toggleGroup"
         />
 
-        <div v-if="plotThreads.length > 0" class="timeline-section">
-          <h4>🔗 伏笔与线索</h4>
+        <div v-if="plotThreads.length > 0" class="timeline-panel__section">
+          <h4 class="timeline-panel__section-title">
+            <UiIcon name="link" size="16" />
+            <span>伏笔与线索</span>
+          </h4>
           <PlotThreadsList :threads="plotThreads" />
         </div>
       </template>
@@ -105,88 +129,47 @@ const {
 </template>
 
 <style scoped>
-.timeline-tab {
-  --timeline-panel-card-shadow: rgba(0, 0, 0, .1);
-  --timeline-panel-character-shadow: rgba(0, 0, 0, .05);
-  --timeline-panel-summary-tag-surface: rgba(255, 255, 255, .2);
-  --ui-button-padding: 10px 18px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--insight-action-primary);
-  --ui-button-primary-hover-background: var(--insight-action-primary-strong);
-  --ui-button-secondary-background: var(--insight-surface-tertiary);
-  --ui-button-secondary-color: var(--insight-text-primary);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted);
-  --ui-button-secondary-hover-background: var(--color-border-muted);
-  --ui-button-sm-padding: 8px 14px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
+.timeline-panel {
+  --timeline-panel-card-shadow: var(--shadow-medium);
+  --timeline-panel-character-shadow: var(--shadow-soft);
 }
 
-.timeline-container {
+.timeline-panel__body {
   position: relative;
   padding: 20px;
 }
 
-.error-message {
+.timeline-panel__status-banner {
   margin-bottom: 12px;
-  padding: 8px 12px;
-  border-radius: 4px;
-  background: var(--color-focus-danger-soft);
-  color: var(--color-status-error);
-  font-size: 12px;
 }
 
-.loading-state {
+.timeline-panel__loading-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
   padding: 40px;
   color: var(--insight-text-secondary);
   text-align: center;
 }
 
-.loading-spinner {
-  width: 32px;
-  height: 32px;
-  margin: 0 auto 12px;
-  border: 3px solid var(--color-border-muted);
-  border-top-color: var(--insight-action-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.timeline-panel__loading-indicator {
+  color: var(--insight-action-primary);
 }
 
-.timeline-empty-state {
-  padding: 60px 20px;
-  text-align: center;
+.timeline-panel__empty {
+  --product-empty-state-min-height: 280px;
+
+  padding-block: 48px;
 }
 
-.empty-icon {
-  margin-bottom: 16px;
-  font-size: 48px;
-}
-
-.timeline-empty-state h4 {
-  margin: 0 0 8px;
-  color: var(--insight-text-primary);
-  font-weight: 600;
-  font-size: 18px;
-}
-
-.timeline-empty-state p {
-  margin: 0 0 20px;
-  color: var(--insight-text-secondary);
-  font-size: 14px;
-}
-
-.timeline-empty-state__action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.timeline-section {
+.timeline-panel__section {
   margin-bottom: 28px;
 }
 
-.timeline-section h4 {
-  display: inline-block;
+.timeline-panel__section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 16px;
   padding-bottom: 8px;
   border-bottom: 2px solid var(--insight-action-primary);

@@ -1,10 +1,25 @@
 import type { OpenAICompatibleOptions } from '@/types/settings'
+import { deepClone } from './deepClone'
 
 export const DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
 
+export interface OpenAICompatibleOptionsWire {
+  request: {
+    force_json_output: boolean
+    temperature?: number
+    extra_body?: Record<string, unknown>
+  }
+  execution: {
+    use_stream: boolean
+    rpm_limit: number
+    transport_retries: number
+    business_retries: number
+  }
+}
+
 function cloneRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+  return deepClone(value as Record<string, unknown>)
 }
 
 function parseNumberOrFallback(value: unknown, fallback: number): number {
@@ -25,7 +40,7 @@ function parseBooleanOrFallback(value: unknown, fallback: boolean): boolean {
 
 function recordOrEmpty(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : {}
 }
 
@@ -35,20 +50,71 @@ export function createDefaultOpenAiOptions(
   return {
     request: {
       forceJsonOutput: false,
-      ...overrides?.request
+      ...overrides?.request,
     },
     execution: {
       useStream: false,
       rpmLimit: 0,
       transportRetries: DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
       businessRetries: 0,
-      ...overrides?.execution
-    }
+      ...overrides?.execution,
+    },
   }
 }
 
 export function cloneOpenAiOptions(options: OpenAICompatibleOptions): OpenAICompatibleOptions {
-  return createDefaultOpenAiOptions(JSON.parse(JSON.stringify(options)))
+  return createDefaultOpenAiOptions(deepClone(options))
+}
+
+export interface OpenAiOptionsPatch {
+  rpmLimit?: number
+  transportRetries?: number
+  businessRetries?: number
+  forceJsonOutput?: boolean
+  useStream?: boolean
+  extraBody?: Record<string, unknown>
+}
+
+const OPENAI_OPTIONS_PATCH_FIELD_NAMES = [
+  'rpmLimit',
+  'transportRetries',
+  'businessRetries',
+  'forceJsonOutput',
+  'useStream',
+  'extraBody',
+] as const
+
+export function omitOpenAiOptionsPatchFields<T extends object>(
+  updates: T
+): Omit<T, keyof OpenAiOptionsPatch> {
+  const scopedUpdates = { ...updates } as Record<string, unknown>
+  for (const fieldName of OPENAI_OPTIONS_PATCH_FIELD_NAMES) {
+    delete scopedUpdates[fieldName]
+  }
+
+  return scopedUpdates as Omit<T, keyof OpenAiOptionsPatch>
+}
+
+export function applyOpenAiOptionsPatch(
+  options: OpenAICompatibleOptions,
+  updates: OpenAiOptionsPatch
+): OpenAICompatibleOptions {
+  if (updates.rpmLimit !== undefined) options.execution.rpmLimit = updates.rpmLimit
+  if (updates.transportRetries !== undefined) {
+    options.execution.transportRetries = updates.transportRetries
+  }
+  if (updates.businessRetries !== undefined) {
+    options.execution.businessRetries = updates.businessRetries
+  }
+  if (updates.forceJsonOutput !== undefined) {
+    options.request.forceJsonOutput = updates.forceJsonOutput
+  }
+  if (updates.useStream !== undefined) options.execution.useStream = updates.useStream
+  if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
+    options.request.extraBody = cloneRecordOrUndefined(updates.extraBody)
+  }
+
+  return options
 }
 
 export function normalizeOpenAiOptions(
@@ -67,7 +133,10 @@ export function normalizeOpenAiOptions(
 
   const temperature = request.temperature
   if (temperature !== undefined && temperature !== null && temperature !== '') {
-    normalized.request.temperature = parseOptionalNumberOrFallback(temperature, normalized.request.temperature)
+    normalized.request.temperature = parseOptionalNumberOrFallback(
+      temperature,
+      normalized.request.temperature
+    )
   }
 
   normalized.request.extraBody = cloneRecordOrUndefined(request.extraBody)
@@ -111,7 +180,10 @@ export function deserializeOpenAICompatibleOptionsFromApi(
 
   const temperature = request.temperature
   if (temperature !== undefined && temperature !== null && temperature !== '') {
-    normalized.request.temperature = parseOptionalNumberOrFallback(temperature, normalized.request.temperature)
+    normalized.request.temperature = parseOptionalNumberOrFallback(
+      temperature,
+      normalized.request.temperature
+    )
   }
 
   normalized.request.extraBody = cloneRecordOrUndefined(request.extra_body)
@@ -136,18 +208,24 @@ export function deserializeOpenAICompatibleOptionsFromApi(
   return normalized
 }
 
-export function serializeOpenAICompatibleOptionsForApi(options: OpenAICompatibleOptions) {
+export function serializeOpenAICompatibleOptionsForApi(
+  options: OpenAICompatibleOptions
+): OpenAICompatibleOptionsWire {
   return {
     request: {
       force_json_output: options.request.forceJsonOutput,
-      ...(options.request.temperature !== undefined ? { temperature: options.request.temperature } : {}),
-      ...(options.request.extraBody !== undefined ? { extra_body: cloneRecordOrUndefined(options.request.extraBody) } : {})
+      ...(options.request.temperature !== undefined
+        ? { temperature: options.request.temperature }
+        : {}),
+      ...(options.request.extraBody !== undefined
+        ? { extra_body: cloneRecordOrUndefined(options.request.extraBody) }
+        : {}),
     },
     execution: {
       use_stream: options.execution.useStream,
       rpm_limit: options.execution.rpmLimit,
       transport_retries: options.execution.transportRetries,
-      business_retries: options.execution.businessRetries
-    }
+      business_retries: options.execution.businessRetries,
+    },
   }
 }

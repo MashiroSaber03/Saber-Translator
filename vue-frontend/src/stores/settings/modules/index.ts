@@ -1,7 +1,3 @@
-/**
- * 设置模块导出索引
- */
-
 export { useOcrSettings } from './ocr'
 export { useTranslationSettings } from './translation'
 export { useDetectionSettings } from './detection'

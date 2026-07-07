@@ -1,14 +1,3 @@
-/**
- * 编辑模式属性测试
- * 
- * Feature: frontend-behavior
- * Property 9: 图片切换状态保存一致性
- * Property 28: 气泡拖拽移动一致性
- * Property 29: 气泡大小调整一致性
- * 
- * Validates: Requirements 30.3, 17.5
- */
-
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
@@ -16,88 +5,32 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords } from '@/types/bubble'
 import { createBubbleState } from '@/utils/bubbleFactory'
+import { calculateDraggedCoords } from '@/utils/bubbleDrag'
 import {
   calculateResizedCoords as calculateResizeGeometry,
   type ResizeHandle,
 } from '@/utils/bubbleResize'
 
-// ============================================================
-// 测试数据生成器
-// ============================================================
-
-/**
- * 生成有效的气泡坐标
- */
-const bubbleCoordsArb = fc.tuple(
+const bubbleCoordsArbitrary = fc.tuple(
   fc.integer({ min: 0, max: 800 }),
   fc.integer({ min: 0, max: 800 }),
   fc.integer({ min: 50, max: 1000 }),
   fc.integer({ min: 50, max: 1000 })
-).map(([x1, y1, w, h]): BubbleCoords => {
-  // 确保有效的矩形坐标
-  return [x1, y1, x1 + w, y1 + h]
-})
+).map(([x1, y1, width, height]): BubbleCoords => [x1, y1, x1 + width, y1 + height])
 
-/**
- * 生成拖拽偏移量
- */
-const dragDeltaArb = fc.record({
+const dragDeltaArbitrary = fc.record({
   deltaX: fc.integer({ min: -500, max: 500 }),
-  deltaY: fc.integer({ min: -500, max: 500 })
+  deltaY: fc.integer({ min: -500, max: 500 }),
 })
 
-/**
- * 生成调整大小的手柄类型
- */
-const resizeHandleArb = fc.constantFrom<ResizeHandle>(
+const resizeHandleArbitrary = fc.constantFrom<ResizeHandle>(
   'nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'
 )
 
-/**
- * 生成图片尺寸
- */
-const imageSizeArb = fc.record({
+const imageSizeArbitrary = fc.record({
   width: fc.integer({ min: 500, max: 2000 }),
-  height: fc.integer({ min: 500, max: 2000 })
+  height: fc.integer({ min: 500, max: 2000 }),
 })
-
-// ============================================================
-// 辅助函数
-// ============================================================
-
-/**
- * 计算拖拽后的新坐标
- * @param coords 原始坐标
- * @param deltaX X轴偏移
- * @param deltaY Y轴偏移
- * @param imageWidth 图片宽度
- * @param imageHeight 图片高度
- * @returns 新坐标
- */
-function calculateDraggedCoords(
-  coords: BubbleCoords,
-  deltaX: number,
-  deltaY: number,
-  imageWidth: number,
-  imageHeight: number
-): BubbleCoords {
-  const [x1, y1, x2, y2] = coords
-  const width = x2 - x1
-  const height = y2 - y1
-
-  // 计算新位置
-  let newX1 = Math.round(x1 + deltaX)
-  let newY1 = Math.round(y1 + deltaY)
-
-  // 边界约束
-  const safeWidth = Math.min(width, imageWidth)
-  const safeHeight = Math.min(height, imageHeight)
-
-  newX1 = Math.max(0, Math.min(newX1, imageWidth - safeWidth))
-  newY1 = Math.max(0, Math.min(newY1, imageHeight - safeHeight))
-
-  return [newX1, newY1, newX1 + safeWidth, newY1 + safeHeight]
-}
 
 function makeBubble(coords: BubbleCoords) {
   const [x1, y1, x2, y2] = coords
@@ -110,146 +43,66 @@ function makeBubble(coords: BubbleCoords) {
   })
 }
 
-// ============================================================
-// 属性测试
-// ============================================================
-
-describe('编辑模式属性测试', () => {
+describe('edit mode properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  /**
-   * Property 9: 图片切换状态保存一致性
-   * 
-   * 对于任意气泡状态，切换图片前保存的状态应当在切换回来后能够正确恢复。
-   * 
-   * Feature: frontend-behavior, Property 9: 图片切换状态保存一致性
-   * Validates: Requirements 30.3
-   */
-  it('图片切换时气泡状态应当正确保存和恢复', () => {
+  it('keeps per-image bubble state when switching away and back', () => {
     fc.assert(
       fc.property(
-        fc.array(bubbleCoordsArb, { minLength: 1, maxLength: 5 }),
-        fc.array(bubbleCoordsArb, { minLength: 1, maxLength: 5 }),
-        (coords1, coords2) => {
+        fc.array(bubbleCoordsArbitrary, { minLength: 1, maxLength: 5 }),
+        fc.array(bubbleCoordsArbitrary, { minLength: 1, maxLength: 5 }),
+        (firstCoords, secondCoords) => {
           const bubbleStore = useBubbleStore()
           const imageStore = useImageStore()
+          const firstBubbles = firstCoords.map(coords => makeBubble(coords))
+          const secondBubbles = secondCoords.map(coords => makeBubble(coords))
 
-          // 创建两张图片
-          const image1 = {
-            id: 'img1',
-            fileName: 'test1.png',
-            originalDataURL: 'data:image/png;base64,test1',
-            translatedDataURL: null,
-            cleanImageData: null,
-            bubbleStates: coords1.map((c) => makeBubble(c)),
-            bubbleCoords: coords1,
-            bubbleTexts: coords1.map(() => ''),
-            originalTexts: coords1.map(() => ''),
-            bubbleAngles: coords1.map(() => 0),
-            translationStatus: 'pending' as const,
-            translationFailed: false,
-            isManualAnnotation: false
-          }
-
-          const image2 = {
-            id: 'img2',
-            fileName: 'test2.png',
-            originalDataURL: 'data:image/png;base64,test2',
-            translatedDataURL: null,
-            cleanImageData: null,
-            bubbleStates: coords2.map((c) => makeBubble(c)),
-            bubbleCoords: coords2,
-            bubbleTexts: coords2.map(() => ''),
-            originalTexts: coords2.map(() => ''),
-            bubbleAngles: coords2.map(() => 0),
-            translationStatus: 'pending' as const,
-            translationFailed: false,
-            isManualAnnotation: false
-          }
-
-          // 添加图片
           imageStore.addImage('test1.png', 'data:image/png;base64,test1', {
-            bubbleStates: image1.bubbleStates,
-            bubbleCoords: image1.bubbleCoords
+            bubbleStates: firstBubbles,
+            bubbleCoords: firstCoords,
           })
           imageStore.addImage('test2.png', 'data:image/png;base64,test2', {
-            bubbleStates: image2.bubbleStates,
-            bubbleCoords: image2.bubbleCoords
+            bubbleStates: secondBubbles,
+            bubbleCoords: secondCoords,
           })
 
-          // 加载第一张图片的气泡状态
-          bubbleStore.setBubbles([...image1.bubbleStates!])
-
-          // 修改第一张图片的气泡状态
-          if (bubbleStore.bubbles.length > 0) {
-            bubbleStore.updateBubble(0, { translatedText: '修改后的文本' })
-          }
-
-          // 保存到图片
+          bubbleStore.setBubbles([...firstBubbles])
+          bubbleStore.updateBubble(0, { translatedText: 'changed text' })
           imageStore.updateCurrentBubbleStates([...bubbleStore.bubbles])
 
-          // 切换到第二张图片
           imageStore.setCurrentImageIndex(1)
-          bubbleStore.setBubbles([...image2.bubbleStates!])
+          bubbleStore.setBubbles([...secondBubbles])
+          expect(bubbleStore.bubbles).toHaveLength(secondCoords.length)
 
-          // 验证第二张图片的气泡数量
-          expect(bubbleStore.bubbles.length).toBe(coords2.length)
-
-          // 切换回第一张图片
           imageStore.setCurrentImageIndex(0)
           const savedStates = imageStore.currentImage?.bubbleStates
           if (savedStates) {
             bubbleStore.setBubbles([...savedStates])
           }
 
-          // 验证第一张图片的气泡数量
-          expect(bubbleStore.bubbles.length).toBe(coords1.length)
-
-          // 验证修改被保存
-          if (bubbleStore.bubbles.length > 0) {
-            expect(bubbleStore.bubbles[0]?.translatedText).toBe('修改后的文本')
-          }
-
-          return true
+          expect(bubbleStore.bubbles).toHaveLength(firstCoords.length)
+          expect(bubbleStore.bubbles[0]?.translatedText).toBe('changed text')
         }
       ),
       { numRuns: 50 }
     )
   })
 
-
-  /**
-   * Property 28: 气泡拖拽移动一致性
-   * 
-   * 对于任意气泡坐标和拖拽偏移量，拖拽后的坐标应当：
-   * 1. 保持气泡尺寸不变
-   * 2. 在图片边界内
-   * 3. 正确反映偏移量（在边界允许范围内）
-   * 
-   * Feature: frontend-behavior, Property 28: 气泡拖拽移动一致性
-   * Validates: Requirements 17.5
-   */
-  it('气泡拖拽后坐标应当正确更新且在边界内', () => {
+  it('keeps dragged bubbles inside image bounds', () => {
     fc.assert(
       fc.property(
-        bubbleCoordsArb,
-        dragDeltaArb,
-        imageSizeArb,
+        bubbleCoordsArbitrary,
+        dragDeltaArbitrary,
+        imageSizeArbitrary,
         (coords, delta, imageSize) => {
           const bubbleStore = useBubbleStore()
+          bubbleStore.setBubbles([makeBubble(coords)])
 
-          // 创建气泡
-          const bubble = makeBubble(coords)
-          bubbleStore.setBubbles([bubble])
-
-          // 计算原始尺寸
           const originalWidth = coords[2] - coords[0]
           const originalHeight = coords[3] - coords[1]
-
-          // 计算拖拽后的坐标
-          const newCoords = calculateDraggedCoords(
+          const nextCoords = calculateDraggedCoords(
             coords,
             delta.deltaX,
             delta.deltaY,
@@ -257,67 +110,41 @@ describe('编辑模式属性测试', () => {
             imageSize.height
           )
 
-          // 更新坐标
-          bubbleStore.updateBubble(0, { coords: newCoords })
+          bubbleStore.updateBubble(0, { coords: nextCoords })
 
-          // 验证坐标已更新
           const updatedBubble = bubbleStore.bubbles[0]
           expect(updatedBubble).toBeDefined()
-
-          if (updatedBubble) {
-            const [x1, y1, x2, y2] = updatedBubble.coords
-
-            // 验证尺寸保持不变（或在边界约束下尽可能保持）
-            const newWidth = x2 - x1
-            const newHeight = y2 - y1
-            expect(newWidth).toBeLessThanOrEqual(originalWidth)
-            expect(newHeight).toBeLessThanOrEqual(originalHeight)
-
-            // 验证在图片边界内
-            expect(x1).toBeGreaterThanOrEqual(0)
-            expect(y1).toBeGreaterThanOrEqual(0)
-            expect(x2).toBeLessThanOrEqual(imageSize.width)
-            expect(y2).toBeLessThanOrEqual(imageSize.height)
-
-            // 验证坐标有效性
-            expect(x2).toBeGreaterThan(x1)
-            expect(y2).toBeGreaterThan(y1)
+          if (!updatedBubble) {
+            return
           }
 
-          return true
+          const [x1, y1, x2, y2] = updatedBubble.coords
+          expect(x2 - x1).toBeLessThanOrEqual(originalWidth)
+          expect(y2 - y1).toBeLessThanOrEqual(originalHeight)
+          expect(x1).toBeGreaterThanOrEqual(0)
+          expect(y1).toBeGreaterThanOrEqual(0)
+          expect(x2).toBeLessThanOrEqual(imageSize.width)
+          expect(y2).toBeLessThanOrEqual(imageSize.height)
+          expect(x2).toBeGreaterThan(x1)
+          expect(y2).toBeGreaterThan(y1)
         }
       ),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * Property 29: 气泡大小调整一致性
-   * 
-   * 对于任意气泡坐标、调整手柄和偏移量，调整后的坐标应当：
-   * 1. 满足最小尺寸限制
-   * 2. 在图片边界内
-   * 3. 8个调整手柄方向正确
-   * 
-   * Feature: frontend-behavior, Property 29: 气泡大小调整一致性
-   * Validates: Requirements 17.5
-   */
-  it('气泡大小调整后坐标应当正确更新且满足约束', () => {
+  it('keeps resized bubbles inside image bounds when resize geometry is valid', () => {
     fc.assert(
       fc.property(
-        bubbleCoordsArb,
-        resizeHandleArb,
-        dragDeltaArb,
-        imageSizeArb,
+        bubbleCoordsArbitrary,
+        resizeHandleArbitrary,
+        dragDeltaArbitrary,
+        imageSizeArbitrary,
         (coords, handle, delta, imageSize) => {
           const bubbleStore = useBubbleStore()
+          bubbleStore.setBubbles([makeBubble(coords)])
 
-          // 创建气泡
-          const bubble = makeBubble(coords)
-          bubbleStore.setBubbles([bubble])
-
-          // 计算调整后的坐标
-          const newCoords = calculateResizeGeometry(
+          const nextCoords = calculateResizeGeometry(
             coords,
             handle,
             delta.deltaX,
@@ -332,46 +159,34 @@ describe('编辑模式属性测试', () => {
             }
           )
 
-          // 如果新坐标有效，更新并验证
-          if (newCoords) {
-            bubbleStore.updateBubble(0, { coords: newCoords })
-
-            const updatedBubble = bubbleStore.bubbles[0]
-            expect(updatedBubble).toBeDefined()
-
-            if (updatedBubble) {
-              const [x1, y1, x2, y2] = updatedBubble.coords
-
-              // 验证最小尺寸
-              const minSize = 10
-              expect(x2 - x1).toBeGreaterThanOrEqual(minSize)
-              expect(y2 - y1).toBeGreaterThanOrEqual(minSize)
-
-              // 验证在图片边界内
-              expect(x1).toBeGreaterThanOrEqual(0)
-              expect(y1).toBeGreaterThanOrEqual(0)
-              expect(x2).toBeLessThanOrEqual(imageSize.width)
-              expect(y2).toBeLessThanOrEqual(imageSize.height)
-
-              // 验证坐标有效性
-              expect(x2).toBeGreaterThan(x1)
-              expect(y2).toBeGreaterThan(y1)
-            }
+          if (!nextCoords) {
+            return
           }
 
-          return true
+          bubbleStore.updateBubble(0, { coords: nextCoords })
+          const updatedBubble = bubbleStore.bubbles[0]
+          expect(updatedBubble).toBeDefined()
+          if (!updatedBubble) {
+            return
+          }
+
+          const [x1, y1, x2, y2] = updatedBubble.coords
+          expect(x2 - x1).toBeGreaterThanOrEqual(10)
+          expect(y2 - y1).toBeGreaterThanOrEqual(10)
+          expect(x1).toBeGreaterThanOrEqual(0)
+          expect(y1).toBeGreaterThanOrEqual(0)
+          expect(x2).toBeLessThanOrEqual(imageSize.width)
+          expect(y2).toBeLessThanOrEqual(imageSize.height)
+          expect(x2).toBeGreaterThan(x1)
+          expect(y2).toBeGreaterThan(y1)
         }
       ),
       { numRuns: 100 }
     )
   })
 
-
-  /**
-   * 8个调整手柄方向正确性测试
-   */
-  it('8个调整手柄应当按正确方向调整坐标', () => {
-    const testCases: Array<{
+  it('moves the expected edges for each resize handle', () => {
+    const cases: Array<{
       handle: ResizeHandle
       expectX1Change: boolean
       expectY1Change: boolean
@@ -385,107 +200,70 @@ describe('编辑模式属性测试', () => {
       { handle: 'se', expectX1Change: false, expectY1Change: false, expectX2Change: true, expectY2Change: true },
       { handle: 's', expectX1Change: false, expectY1Change: false, expectX2Change: false, expectY2Change: true },
       { handle: 'sw', expectX1Change: true, expectY1Change: false, expectX2Change: false, expectY2Change: true },
-      { handle: 'w', expectX1Change: true, expectY1Change: false, expectX2Change: false, expectY2Change: false }
+      { handle: 'w', expectX1Change: true, expectY1Change: false, expectX2Change: false, expectY2Change: false },
     ]
 
-    for (const testCase of testCases) {
+    for (const resizeCase of cases) {
       const coords: BubbleCoords = [100, 100, 300, 300]
       const delta = 50
-      const imageSize = { width: 1000, height: 1000 }
-
-      // 计算调整后的坐标
-      const newCoords = calculateResizeGeometry(
+      const nextCoords = calculateResizeGeometry(
         coords,
-        testCase.handle,
-        testCase.handle.includes('w') ? -delta : (testCase.handle.includes('e') ? delta : 0),
-        testCase.handle.includes('n') ? -delta : (testCase.handle.includes('s') ? delta : 0),
+        resizeCase.handle,
+        resizeCase.handle.includes('w') ? -delta : (resizeCase.handle.includes('e') ? delta : 0),
+        resizeCase.handle.includes('n') ? -delta : (resizeCase.handle.includes('s') ? delta : 0),
         {
           rotationAngle: 0,
           minSize: 10,
-          imageWidth: imageSize.width,
-          imageHeight: imageSize.height,
+          imageWidth: 1000,
+          imageHeight: 1000,
           clampToImage: true,
           round: true,
         }
       )
 
-      expect(newCoords).not.toBeNull()
-
-      if (newCoords) {
-        const [x1, y1, x2, y2] = newCoords
-
-        // 验证各边是否按预期变化
-        if (testCase.expectX1Change) {
-          expect(x1).not.toBe(coords[0])
-        }
-        if (testCase.expectY1Change) {
-          expect(y1).not.toBe(coords[1])
-        }
-        if (testCase.expectX2Change) {
-          expect(x2).not.toBe(coords[2])
-        }
-        if (testCase.expectY2Change) {
-          expect(y2).not.toBe(coords[3])
-        }
+      expect(nextCoords).not.toBeNull()
+      if (!nextCoords) {
+        continue
       }
+
+      const [x1, y1, x2, y2] = nextCoords
+      if (resizeCase.expectX1Change) expect(x1).not.toBe(coords[0])
+      if (resizeCase.expectY1Change) expect(y1).not.toBe(coords[1])
+      if (resizeCase.expectX2Change) expect(x2).not.toBe(coords[2])
+      if (resizeCase.expectY2Change) expect(y2).not.toBe(coords[3])
     }
   })
 
-  /**
-   * 拖拽边界限制测试
-   */
-  it('拖拽应当正确限制在图片边界内', () => {
+  it('clamps drag movement at image edges', () => {
     const coords: BubbleCoords = [100, 100, 200, 200]
-    const imageSize = { width: 500, height: 500 }
 
-    // 测试向左上角拖拽超出边界
-    const newCoords1 = calculateDraggedCoords(coords, -200, -200, imageSize.width, imageSize.height)
-    expect(newCoords1[0]).toBe(0)
-    expect(newCoords1[1]).toBe(0)
+    expect(calculateDraggedCoords(coords, -200, -200, 500, 500).slice(0, 2)).toEqual([0, 0])
 
-    // 测试向右下角拖拽超出边界
-    const newCoords2 = calculateDraggedCoords(coords, 500, 500, imageSize.width, imageSize.height)
-    expect(newCoords2[2]).toBeLessThanOrEqual(imageSize.width)
-    expect(newCoords2[3]).toBeLessThanOrEqual(imageSize.height)
+    const bottomRight = calculateDraggedCoords(coords, 500, 500, 500, 500)
+    expect(bottomRight[2]).toBeLessThanOrEqual(500)
+    expect(bottomRight[3]).toBeLessThanOrEqual(500)
   })
 
-  /**
-   * 调整大小最小尺寸限制测试
-   */
-  it('调整大小应当遵守最小尺寸限制', () => {
+  it('rejects resize results below the minimum size', () => {
     const coords: BubbleCoords = [100, 100, 150, 150]
-    const imageSize = { width: 1000, height: 1000 }
 
-    // 尝试将宽度缩小到小于最小尺寸
-    const newCoords = calculateResizeGeometry(coords, 'e', -45, 0, {
+    expect(calculateResizeGeometry(coords, 'e', -45, 0, {
       rotationAngle: 0,
       minSize: 10,
-      imageWidth: imageSize.width,
-      imageHeight: imageSize.height,
+      imageWidth: 1000,
+      imageHeight: 1000,
       clampToImage: true,
       round: true,
-    })
-    
-    // 应当返回 null 因为尺寸太小
-    expect(newCoords).toBeNull()
+    })).toBeNull()
   })
 
-  /**
-   * 气泡坐标更新后自动排版方向重新计算测试
-   */
-  it('更新坐标后应当重新计算自动排版方向', () => {
+  it('recomputes automatic text direction after coords update', () => {
     const bubbleStore = useBubbleStore()
-
-    // 创建一个宽大于高的气泡（应该是水平方向）
-    const wideCoords: BubbleCoords = [0, 0, 200, 100]
-    const bubble = makeBubble(wideCoords)
-    bubbleStore.setBubbles([bubble])
+    bubbleStore.setBubbles([makeBubble([0, 0, 200, 100])])
 
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('horizontal')
 
-    // 更新为高大于宽的坐标（应该变成垂直方向）
-    const tallCoords: BubbleCoords = [0, 0, 100, 200]
-    bubbleStore.updateBubble(0, { coords: tallCoords })
+    bubbleStore.updateBubble(0, { coords: [0, 0, 100, 200] })
 
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
   })

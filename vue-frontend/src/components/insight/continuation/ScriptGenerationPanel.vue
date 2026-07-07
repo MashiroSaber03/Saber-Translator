@@ -1,51 +1,72 @@
 <template>
-  <div class="script-panel">
-    <h3>📝 生成续写脚本</h3>
+  <div class="script-generation-panel">
+    <ProductSectionHeader title="生成续写脚本" icon-name="file-text" />
 
-    <div class="script-editor" v-if="script">
-      <div class="script-header">
-        <h4>{{ script.chapter_title }}</h4>
-        <span class="script-meta">共 {{ script.page_count }} 页 · {{ script.generated_at }}</span>
+    <div class="script-generation-panel__editor" v-if="script">
+      <div class="script-generation-panel__header">
+        <h4 class="script-generation-panel__title">{{ script.chapter_title }}</h4>
+        <span class="script-generation-panel__meta">共 {{ script.page_count }} 页 · {{ script.generated_at }}</span>
       </div>
 
       <UiTextarea
         v-model="scriptText"
-        class="script-textarea"
+        class="script-generation-panel__textarea"
         rows="15"
+        variant="panel"
+        size="lg"
         placeholder="脚本将在此显示..."
         @update:model-value="handleScriptInput"
       />
 
-      <div class="script-actions">
-        <UiButton variant="secondary" @click="$emit('reset-script')" size="sm">↺ 重置</UiButton>
+      <ProductActionRow class="script-generation-panel__actions" aria-label="续写脚本编辑操作">
+        <UiButton variant="secondary" @click="$emit('reset-script')" size="sm">
+          <UiIcon name="refresh" size="14" />
+          <span>重置</span>
+        </UiButton>
         <UiButton variant="secondary" :disabled="!script || isSaving" @click="handleSave" size="sm">
-          {{ isSaving ? '保存中...' : '💾 保存' }}
+          <UiIcon v-if="!isSaving" name="save" size="14" />
+          <span>{{ isSaving ? '保存中...' : '保存' }}</span>
         </UiButton>
-      </div>
+      </ProductActionRow>
     </div>
 
-    <div v-else class="no-script">
-      <p>点击下方按钮生成续写脚本</p>
-    </div>
+    <ProductStatusBanner
+      v-else
+      class="script-generation-panel__empty-status"
+      tone="neutral"
+      role="note"
+      icon-name="file-text"
+      title="暂无脚本"
+    >
+      点击下方按钮生成续写脚本
+    </ProductStatusBanner>
 
-    <div class="reference-config">
-      <div class="config-row">
-        <label for="script-reference-count">VLM参考图数:</label>
-        <UiInput
-          id="script-reference-count"
-          type="number"
-          v-model.number="refCount"
-          min="1"
-          max="10"
-          class="ref-count-input"
-        />
-        <UiButton
-          variant="secondary"
-          class="ref-btn"
-          @click="openReferenceSelector" size="sm"
+    <div class="script-generation-panel__reference-config">
+      <div class="script-generation-panel__reference-row">
+        <UiField
+          class="script-generation-panel__reference-count-field"
+          variant="settings"
+          label="VLM参考图数"
+          control-id="script-reference-count"
         >
-          📷 参考图 ({{ getDisplayRefCount() }})
-        </UiButton>
+          <UiNumberField
+            input-id="script-reference-count"
+            v-model="refCount"
+            :min="1"
+            :max="10"
+            size="xs"
+            aria-label="VLM参考图数"
+          />
+        </UiField>
+        <ProductActionRow class="script-generation-panel__reference-actions" aria-label="脚本参考图操作">
+          <UiButton
+            variant="secondary"
+            @click="openReferenceSelector" size="sm"
+          >
+            <UiIcon name="camera" size="14" />
+            <span>参考图 ({{ getDisplayRefCount() }})</span>
+          </UiButton>
+        </ProductActionRow>
       </div>
     </div>
 
@@ -55,7 +76,8 @@
       :disabled="isGenerating"
       @click="handleGenerate"
     >
-      {{ isGenerating ? '生成中...' : '🎯 生成脚本' }}
+      <UiIcon v-if="!isGenerating" name="target" size="16" />
+      <span>{{ isGenerating ? '生成中...' : '生成脚本' }}</span>
     </UiButton>
 
     <ReferenceImageSelector
@@ -74,8 +96,13 @@
 
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import type { ChapterScript, MangaImageInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
@@ -190,115 +217,80 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.script-panel {
-  --ui-input-padding: 6px 10px;
-  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-input-radius: 6px;
-  --ui-input-font-size: 14px;
-  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-input-color: var(--color-text-default);
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
-  --ui-textarea-padding: 16px;
-  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-textarea-radius: 8px;
-  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-textarea-color: var(--color-text-default);
-  --ui-textarea-font-size: 14px;
-  --ui-textarea-line-height: 1.6;
-  --ui-textarea-focus-border: var(--color-border-brand);
-  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
-  --ui-button-padding: 10px 20px;
-  --ui-button-radius: 8px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-color: var(--color-text-inverse);
-  --ui-button-primary-shadow: none;
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-primary-hover-transform: none;
-  --ui-button-primary-hover-shadow: none;
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-secondary-hover-border-color: var(--color-border-muted, var(--color-border-default));
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.5;
-
-  padding: 24px;
+.script-generation-panel {
+  min-width: 0;
 }
 
-.script-panel h3 {
-  margin: 0 0 20px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.script-editor {
+.script-generation-panel__editor {
   margin-bottom: 20px;
 }
 
-.script-header {
+.script-generation-panel__header {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-width: 0;
   margin-bottom: 12px;
 }
 
-.script-header h4 {
+.script-generation-panel__title {
   margin: 0;
+  min-width: 0;
   font-size: 16px;
+  overflow-wrap: anywhere;
 }
 
-.script-meta {
+.script-generation-panel__meta {
+  min-width: 0;
   font-size: 13px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
+  overflow-wrap: anywhere;
 }
 
-.script-textarea {
+.script-generation-panel__textarea {
   width: 100%;
 }
 
-.script-actions {
+.script-generation-panel__actions {
   margin-top: 12px;
 }
 
-.no-script {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+.script-generation-panel__empty-status {
+  margin-bottom: 20px;
 }
 
-.no-script p {
-  margin: 0;
-}
-
-.reference-config {
+.script-generation-panel__reference-config {
   margin-bottom: 16px;
   padding: 12px 16px;
   background: var(--color-surface-subtle);
   border-radius: 8px;
 }
 
-.config-row {
+.script-generation-panel__reference-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
 
-.config-row label {
-  font-size: 14px;
-  color: var(--color-text-default);
-  white-space: nowrap;
+.script-generation-panel__reference-count-field {
+  flex: 1 1 150px;
+  max-width: 180px;
+  min-width: min(100%, 140px);
+  margin-bottom: 0;
 }
 
-.ref-count-input {
-  width: 60px;
-  text-align: center;
+.script-generation-panel__reference-actions {
+  flex: 1 1 220px;
+  justify-content: flex-end;
+  min-width: min(100%, 180px);
 }
 
-.ref-btn {
-  margin-left: auto;
+@media (--breakpoint-sm-down) {
+  .script-generation-panel__reference-actions {
+    justify-content: stretch;
+  }
 }
 </style>

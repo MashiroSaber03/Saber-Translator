@@ -1,14 +1,3 @@
-/**
- * 翻译配置验证组合式函数
- * 用于验证翻译前的配置完整性，包括普通翻译、高质量翻译和AI校对
- * 
- * 功能：
- * - 配置完整性检查
- * - 缺失项提示
- * - 引导用户完成配置
- * - 设置按钮高亮引导动画
- */
-
 import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
@@ -21,15 +10,12 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import type { TranslationProvider, HqTranslationProvider, ProofreadingRound } from '@/types/settings'
 import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'
+import {
+  dismissFirstTimeGuide,
+  resetFirstTimeGuideDismissal,
+  shouldShowFirstTimeGuide,
+} from '@/components/translate/firstTimeGuideState'
 
-// ============================================================
-// 常量定义
-// ============================================================
-
-/** 本地存储键名：是否已关闭设置提醒 */
-const DISMISS_SETUP_REMINDER_KEY = 'saber_translator_dismiss_setup_reminder'
-
-/** OCR 引擎显示名称映射 */
 const OCR_ENGINE_DISPLAY_NAMES: Record<string, string> = {
   manga_ocr: 'MangaOCR',
   paddle_ocr: 'PaddleOCR',
@@ -39,132 +25,55 @@ const OCR_ENGINE_DISPLAY_NAMES: Record<string, string> = {
   '48px_ocr': '48px OCR'
 }
 
-// ============================================================
-// 类型定义
-// ============================================================
-
-/** 验证结果接口 */
 export interface ValidationResult {
-  /** 验证是否通过 */
   valid: boolean
-  /** 错误消息（验证失败时） */
   message: string
-  /** 缺失的配置项列表 */
   missingItems?: string[]
 }
 
-/** 验证类型 */
 export type ValidationType = 'normal' | 'hq' | 'proofread' | 'ocr'
 
-/** 验证选项 */
 export interface ValidationOptions {
-  /** 校对轮次配置（用于校对验证） */
   proofreadingRounds?: ProofreadingRound[]
 }
 
-// ============================================================
-// 组合式函数
-// ============================================================
-
-/**
- * 翻译配置验证组合式函数
- */
 export function useValidation() {
   const settingsStore = useSettingsStore()
   const toast = useToast()
 
-  // ============================================================
-  // 状态
-  // ============================================================
-
-  /** 是否显示设置提醒弹窗 */
   const showSetupReminder = ref(false)
-
-  /** 设置按钮是否正在高亮 */
   const isSettingsButtonHighlighted = ref(false)
   let setupReminderTimer: ReturnType<typeof setTimeout> | null = null
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
-  let highlightedSettingsButton: HTMLElement | null = null
 
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 是否已关闭设置提醒 */
   const isSetupReminderDismissed = computed(() => {
-    try {
-      return localStorage.getItem(DISMISS_SETUP_REMINDER_KEY) === 'true'
-    } catch {
-      return false
-    }
+    return !shouldShowFirstTimeGuide()
   })
 
-  // ============================================================
-  // 工具函数
-  // ============================================================
-
-  /**
-   * 获取服务商显示名称
-   * @param provider - 服务商标识
-   * @returns 服务商显示名称
-   */
   function getProviderDisplayName(provider: string): string {
     return getProviderDisplayNameFromManifest(provider)
   }
 
-  /**
-   * 检查服务商是否需要 API Key
-   * @param provider - 服务商标识
-   * @returns 是否需要 API Key
-   */
   function requiresApiKey(provider: TranslationProvider): boolean {
     return providerRequiresApiKey(provider)
   }
 
-  /**
-   * 检查服务商是否为本地服务商
-   * @param provider - 服务商标识
-   * @returns 是否为本地服务商
-   */
   function isLocalProvider(provider: TranslationProvider): boolean {
     return isLocalProviderId(provider)
   }
 
-  /**
-   * 检查服务商是否需要自定义 Base URL
-   * @param provider - 服务商标识
-   * @returns 是否需要自定义 Base URL
-   */
   function requiresBaseUrl(provider: TranslationProvider): boolean {
     return providerRequiresBaseUrl(provider)
   }
 
-  /**
-   * 检查高质量翻译服务商是否需要自定义 Base URL
-   * @param provider - 服务商标识
-   * @returns 是否需要自定义 Base URL
-   */
   function hqRequiresBaseUrl(provider: HqTranslationProvider): boolean {
     return providerRequiresBaseUrl(provider)
   }
 
-  // ============================================================
-  // 验证函数
-  // ============================================================
-
-  /**
-   * 获取 OCR 引擎显示名称
-   * @param engine - OCR 引擎标识
-   * @returns OCR 引擎显示名称
-   */
   function getOcrEngineDisplayName(engine: string): string {
     return OCR_ENGINE_DISPLAY_NAMES[engine] || engine
   }
 
-  /**
-   * 验证 OCR 配置
-   * @returns 验证结果
-   */
   function validateOcrConfig(): ValidationResult {
     const settings = settingsStore.settings
     const engine = settings.ocrEngine
@@ -172,11 +81,10 @@ export function useValidation() {
     const aiVisionOcr = settings.aiVisionOcr
     const missingItems: string[] = []
 
-    // 检查 OCR 引擎是否已选择
     if (!engine) {
       return {
         valid: false,
-        message: '请先在顶部 ⚙️ 设置菜单中选择 OCR 引擎',
+        message: '请先在顶部设置菜单中选择 OCR 引擎',
         missingItems: ['OCR 引擎']
       }
     }
@@ -220,7 +128,7 @@ export function useValidation() {
       if (!isSupportedHybridOcrCombo(engine, settings.hybridOcr.secondaryEngine)) {
         return {
           valid: false,
-          message: '请先在顶部 ⚙️ 设置菜单中选择 MangaOCR / 48px OCR 组合',
+          message: '请先在顶部设置菜单中选择 MangaOCR / 48px OCR 组合',
           missingItems: ['混合OCR引擎组合']
         }
       }
@@ -230,7 +138,7 @@ export function useValidation() {
     if (missingItems.length > 0) {
       return {
         valid: false,
-        message: `请先在顶部 ⚙️ 设置菜单中填写 ${missingItems[0]}`,
+        message: `请先在顶部设置菜单中填写 ${missingItems[0]}`,
         missingItems
       }
     }
@@ -238,39 +146,31 @@ export function useValidation() {
     return { valid: true, message: '' }
   }
 
-  /**
-   * 验证普通翻译配置
-   * @returns 验证结果
-   */
   function validateTranslationConfig(): ValidationResult {
     const { translation } = settingsStore.settings
     const { provider, apiKey, modelName, customBaseUrl } = translation
     const missingItems: string[] = []
 
-    // 检查服务商是否已选择
     if (!provider) {
       return {
         valid: false,
-        message: '请先在顶部 ⚙️ 设置菜单中选择翻译服务商',
+        message: '请先在顶部设置菜单中选择翻译服务商',
         missingItems: ['翻译服务商']
       }
     }
 
-    // 检查需要 API Key 的服务商
     if (requiresApiKey(provider)) {
       if (!apiKey || apiKey.trim() === '') {
         missingItems.push(`${getProviderDisplayName(provider)} 的 API Key`)
       }
     }
 
-    // 检查模型名称
     if (!modelName || modelName.trim() === '') {
       if (isLocalProvider(provider) || requiresApiKey(provider)) {
         missingItems.push(`${getProviderDisplayName(provider)} 的模型名称`)
       }
     }
 
-    // 检查自定义 Base URL
     if (requiresBaseUrl(provider)) {
       if (!customBaseUrl || customBaseUrl.trim() === '') {
         missingItems.push('自定义 OpenAI 服务的 Base URL')
@@ -280,7 +180,7 @@ export function useValidation() {
     if (missingItems.length > 0) {
       return {
         valid: false,
-        message: `请先在顶部 ⚙️ 设置菜单中填写 ${missingItems[0]}`,
+        message: `请先在顶部设置菜单中填写 ${missingItems[0]}`,
         missingItems
       }
     }
@@ -288,35 +188,27 @@ export function useValidation() {
     return { valid: true, message: '' }
   }
 
-  /**
-   * 验证高质量翻译配置
-   * @returns 验证结果
-   */
   function validateHqTranslationConfig(): ValidationResult {
     const { hqTranslation } = settingsStore.settings
     const { provider, apiKey, modelName, customBaseUrl } = hqTranslation
     const missingItems: string[] = []
 
-    // 检查服务商是否已选择
     if (!provider) {
       return {
         valid: false,
-        message: '请先在顶部 ⚙️ 设置菜单中选择高质量翻译的服务商',
+        message: '请先在顶部设置菜单中选择高质量翻译的服务商',
         missingItems: ['高质量翻译服务商']
       }
     }
 
-    // 检查 API Key
     if (providerRequiresApiKey(provider) && (!apiKey || apiKey.trim() === '')) {
       missingItems.push('高质量翻译的 API Key')
     }
 
-    // 检查模型名称
     if (!modelName || modelName.trim() === '') {
       missingItems.push('高质量翻译的模型名称')
     }
 
-    // 检查自定义 Base URL
     if (hqRequiresBaseUrl(provider)) {
       if (!customBaseUrl || customBaseUrl.trim() === '') {
         missingItems.push('高质量翻译的 Base URL')
@@ -326,7 +218,7 @@ export function useValidation() {
     if (missingItems.length > 0) {
       return {
         valid: false,
-        message: `请先在顶部 ⚙️ 设置菜单中填写 ${missingItems[0]}`,
+        message: `请先在顶部设置菜单中填写 ${missingItems[0]}`,
         missingItems
       }
     }
@@ -334,25 +226,18 @@ export function useValidation() {
     return { valid: true, message: '' }
   }
 
-  /**
-   * 验证 AI 校对配置
-   * @param proofreadingRounds - 校对轮次配置（可选，默认从 store 获取）
-   * @returns 验证结果
-   */
   function validateProofreadingConfig(proofreadingRounds?: ProofreadingRound[]): ValidationResult {
     const rounds = proofreadingRounds || settingsStore.settings.proofreading.rounds
     const missingItems: string[] = []
 
-    // 检查是否有校对轮次
     if (!rounds || rounds.length === 0) {
       return {
         valid: false,
-        message: '请先在顶部 ⚙️ 设置菜单中添加至少一个校对轮次',
+        message: '请先在顶部设置菜单中添加至少一个校对轮次',
         missingItems: ['校对轮次']
       }
     }
 
-    // 检查每个轮次的配置
     for (let i = 0; i < rounds.length; i++) {
       const round = rounds[i]
       if (!round) continue
@@ -371,11 +256,10 @@ export function useValidation() {
         missingItems.push(`校对 ${roundName} 的模型名称`)
       }
 
-      // 如果有缺失项，返回第一个错误
       if (missingItems.length > 0) {
         return {
           valid: false,
-          message: `请先在顶部 ⚙️ 设置菜单中为 ${missingItems[0]}`,
+          message: `请先在顶部设置菜单中为 ${missingItems[0]}`,
           missingItems
         }
       }
@@ -384,13 +268,6 @@ export function useValidation() {
     return { valid: true, message: '' }
   }
 
-  /**
-   * 翻译前验证配置
-   * 验证失败时显示错误消息并高亮设置按钮
-   * @param type - 验证类型：'normal' | 'hq' | 'proofread' | 'ocr'
-   * @param options - 额外选项
-   * @returns 验证是否通过
-   */
   function validateBeforeTranslation(
     type: ValidationType = 'normal',
     options: ValidationOptions = {}
@@ -415,9 +292,7 @@ export function useValidation() {
     }
 
     if (!result.valid) {
-      // 显示错误消息
       toast.error(result.message)
-      // 高亮设置按钮
       highlightSettingsButton()
       return false
     }
@@ -425,12 +300,7 @@ export function useValidation() {
     return true
   }
 
-  /**
-   * 验证完整的翻译流程配置（OCR + 翻译）
-   * @returns 验证是否通过
-   */
   function validateFullTranslationConfig(): boolean {
-    // 先验证 OCR 配置
     const ocrResult = validateOcrConfig()
     if (!ocrResult.valid) {
       toast.error(ocrResult.message)
@@ -438,7 +308,6 @@ export function useValidation() {
       return false
     }
 
-    // 再验证翻译配置
     const translationResult = validateTranslationConfig()
     if (!translationResult.valid) {
       toast.error(translationResult.message)
@@ -448,10 +317,6 @@ export function useValidation() {
 
     return true
   }
-
-  // ============================================================
-  // UI 交互函数
-  // ============================================================
 
   function clearSetupReminderTimer(): void {
     if (setupReminderTimer) {
@@ -465,36 +330,18 @@ export function useValidation() {
       clearTimeout(highlightTimer)
       highlightTimer = null
     }
-    highlightedSettingsButton?.classList.remove('settings-highlight')
-    highlightedSettingsButton = null
     isSettingsButtonHighlighted.value = false
   }
 
-  /**
-   * 高亮设置按钮以引导用户
-   * 添加脉冲动画和发光效果
-   */
   function highlightSettingsButton(): void {
     clearHighlightTimer()
-    const settingsBtn = document.getElementById('openSettingsBtn')
-    if (!settingsBtn) return
-
     isSettingsButtonHighlighted.value = true
-    highlightedSettingsButton = settingsBtn
 
-    // 使用 CSS 类切换代替直接操作 style，样式由 AppHeader 和当前组件 owner 管理。
-    settingsBtn.classList.add('settings-highlight')
-
-    // 3秒后移除效果
     highlightTimer = setTimeout(() => {
       clearHighlightTimer()
     }, 3000)
   }
 
-  /**
-   * 检查并显示设置提醒弹窗
-   * 如果用户未选择"不再显示"，则显示提醒
-   */
   function checkAndShowSetupReminder(): void {
     if (isSetupReminderDismissed.value) {
       return
@@ -502,37 +349,17 @@ export function useValidation() {
     showSetupReminder.value = true
   }
 
-  /**
-   * 关闭设置提醒弹窗
-   * @param shouldDismiss - 是否永久关闭（不再显示）
-   */
   function closeSetupReminder(shouldDismiss: boolean = false): void {
     if (shouldDismiss) {
-      try {
-        localStorage.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
-      } catch {
-        // Storage can be unavailable in restricted browser contexts; the reminder remains dismissible for this session.
-      }
+      dismissFirstTimeGuide()
     }
     showSetupReminder.value = false
   }
 
-  /**
-   * 重置"不再显示"状态
-   * 用于测试或用户主动重置
-   */
   function resetSetupReminderDismiss(): void {
-    try {
-      localStorage.removeItem(DISMISS_SETUP_REMINDER_KEY)
-    } catch {
-      // Storage can be unavailable in restricted browser contexts; the computed value already falls back safely.
-    }
+    resetFirstTimeGuideDismissal()
   }
 
-  /**
-   * 初始化验证器
-   * 页面加载时延迟显示设置提醒弹窗
-   */
   function initValidation(): void {
     clearSetupReminderTimer()
     setupReminderTimer = setTimeout(() => {
@@ -548,19 +375,12 @@ export function useValidation() {
     })
   }
 
-  // ============================================================
-  // 返回
-  // ============================================================
-
   return {
-    // 状态
     showSetupReminder,
     isSettingsButtonHighlighted,
 
-    // 计算属性
     isSetupReminderDismissed,
 
-    // 验证函数
     validateOcrConfig,
     validateTranslationConfig,
     validateHqTranslationConfig,
@@ -568,14 +388,12 @@ export function useValidation() {
     validateBeforeTranslation,
     validateFullTranslationConfig,
 
-    // UI 交互函数
     highlightSettingsButton,
     checkAndShowSetupReminder,
     closeSetupReminder,
     resetSetupReminderDismiss,
     initValidation,
 
-    // 工具函数
     getProviderDisplayName,
     getOcrEngineDisplayName,
     requiresApiKey,
@@ -583,5 +401,3 @@ export function useValidation() {
     requiresBaseUrl
   }
 }
-
-// 类型已在上方定义并导出

@@ -1,62 +1,53 @@
 <template>
-  <div class="export-panel">
-    <h3>📦 导出成品</h3>
+  <div class="continuation-export-panel">
+    <ProductSectionHeader title="导出成品" icon-name="download" />
 
-    <div class="export-options">
-      <div class="export-summary">
-        <p>共生成 <strong>{{ generatedCount }}</strong> 页图片，可导出为以下格式：</p>
+    <div class="continuation-export-panel__options">
+      <div class="continuation-export-panel__summary">
+        <p class="continuation-export-panel__summary-text">共生成 <strong class="continuation-export-panel__summary-count">{{ generatedCount }}</strong> 页图片，可导出为以下格式：</p>
       </div>
 
-      <div class="export-formats">
-        <UiButton
-          variant="toolbar"
-          type="button"
-          class="format-card"
-          :class="{ selected: selectedFormat === 'images' }"
-          :aria-pressed="String(selectedFormat === 'images')"
-          @click="selectedFormat = 'images'"
-        >
-          <span class="format-icon">🖼️</span>
-          <span class="format-name">图片 ZIP</span>
-          <span class="format-desc">所有页面打包下载</span>
-        </UiButton>
-        <UiButton
-          variant="toolbar"
-          type="button"
-          class="format-card"
-          :class="{ selected: selectedFormat === 'pdf' }"
-          :aria-pressed="String(selectedFormat === 'pdf')"
-          @click="selectedFormat = 'pdf'"
-        >
-          <span class="format-icon">📄</span>
-          <span class="format-name">PDF 文档</span>
-          <span class="format-desc">方便阅读和分享</span>
-        </UiButton>
-      </div>
+      <ProductChoiceCardGrid
+        class="continuation-export-panel__format-grid"
+        aria-label="导出格式"
+        :model-value="selectedFormat"
+        :items="exportFormatItems"
+        @select="handleFormatSelect"
+      />
 
       <UiButton
         variant="primary"
-        class="export-download-action"
+        class="continuation-export-panel__download-action"
         block
         :disabled="isExporting"
         size="lg"
         @click="handleExport"
       >
-        {{ isExporting ? '导出中...' : '📥 下载' }}
+        <UiIcon v-if="!isExporting" name="download" size="18" />
+        <span>{{ isExporting ? '导出中...' : '下载' }}</span>
       </UiButton>
 
-      <div class="export-actions">
-        <UiButton variant="secondary" @click="clearAndRestart">🗑️ 清空并重新开始</UiButton>
-      </div>
+      <ProductActionRow aria-label="导出操作" justify="center">
+        <UiButton variant="secondary" @click="clearAndRestart">
+          <UiIcon name="trash" size="15" />
+          <span>清空并重新开始</span>
+        </UiButton>
+      </ProductActionRow>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChoiceCardGrid, { type ProductChoiceCardItem } from '@/components/product/ProductChoiceCardGrid.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import { ref } from 'vue'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 import * as continuationApi from '@/api/continuation'
+import { triggerBlobDownload } from '@/utils/browserDownload'
 
 const props = defineProps<{
   bookId: string
@@ -69,8 +60,20 @@ const emit = defineEmits<{
 }>()
 
 const state = props.state
-const selectedFormat = ref<'images' | 'pdf'>('images')
+type ExportFormat = 'images' | 'pdf'
+
+const exportFormatItems: ProductChoiceCardItem[] = [
+  { id: 'images', label: '图片 ZIP', description: '所有页面打包下载', iconName: 'image' },
+  { id: 'pdf', label: 'PDF 文档', description: '方便阅读和分享', iconName: 'file-text' },
+]
+
+const selectedFormat = ref<ExportFormat>('images')
 const isExporting = ref(false)
+
+function handleFormatSelect(formatId: string): void {
+  if (formatId !== 'images' && formatId !== 'pdf') return
+  selectedFormat.value = formatId
+}
 
 async function handleExport() {
   if (!props.bookId || state.pages.value.length === 0) {
@@ -92,17 +95,7 @@ async function handleExport() {
       filename = `continuation_${Date.now()}.pdf`
     }
 
-    const url = window.URL.createObjectURL(blob)
-    try {
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = filename
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-    } finally {
-      window.URL.revokeObjectURL(url)
-    }
+    triggerBlobDownload(blob, filename)
 
     state.showMessage('导出成功', 'success')
   } catch (error) {
@@ -113,111 +106,50 @@ async function handleExport() {
 }
 
 async function clearAndRestart() {
-  if (!confirm('确定要清空所有续写数据并重新开始吗？此操作不可恢复。')) {
-    return
-  }
+  const confirmed = await confirmProductAction({
+    title: '清空续写数据',
+    message: '确定要清空所有续写数据并重新开始吗？此操作不可恢复。',
+    confirmText: '清空',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
 
   emit('clear-and-restart')
 }
 </script>
 
 <style scoped>
-.export-panel {
-  --export-panel-selected-format-background: rgba(99, 102, 241, .05);
-  --ui-button-padding: 10px 20px;
-  --ui-button-radius: 8px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-disabled-opacity: 0.5;
-
-  padding: 24px;
+.continuation-export-panel {
+  min-width: 0;
 }
 
-.export-panel h3 {
-  margin: 0 0 20px;
-  font-size: 18px;
-  font-weight: 600;
+.continuation-export-panel__options {
+  width: 100%;
 }
 
-.export-options {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.export-summary {
+.continuation-export-panel__summary {
   margin-bottom: 24px;
   text-align: center;
 }
 
-.export-summary p {
+.continuation-export-panel__summary-text {
   margin: 0;
   font-size: 16px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
 }
 
-.export-summary strong {
+.continuation-export-panel__summary-count {
   color: var(--color-text-brand);
   font-size: 20px;
 }
 
-.export-formats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+.continuation-export-panel__format-grid {
   margin-bottom: 24px;
 }
 
-.format-card {
-  display: block;
-  width: 100%;
-  padding: 24px;
-  border: 2px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: center;
-}
-
-.format-card:hover {
-  border-color: var(--color-border-brand);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--color-focus-brand-soft);
-}
-
-.format-card.selected {
-  border-color: var(--color-border-brand);
-  background: var(--export-panel-selected-format-background);
-}
-
-.format-icon {
-  font-size: 48px;
-  display: block;
-  margin-bottom: 12px;
-}
-
-.format-name {
-  display: block;
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.format-desc {
-  display: block;
-  font-size: 14px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.export-download-action {
+.continuation-export-panel__download-action {
   margin-bottom: 16px;
 }
 
-.export-actions {
-  text-align: center;
-}
 </style>

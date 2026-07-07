@@ -4,7 +4,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useImageViewer } from '@/composables/useImageViewer'
-import { useBrush } from '@/composables/useBrush'
+import { useBrush, type BrushSurface } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useEditWorkspaceExit } from '@/composables/edit/useEditWorkspaceExit'
@@ -16,19 +16,19 @@ import {
   isBookshelfSessionInitialized,
   saveBookshelfPageProgress
 } from '@/composables/translation/core/saveStep'
+import { deepClone } from '@/utils/deepClone'
 import { showToast } from '@/utils/toast'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 
 export interface EditWorkspaceProps {
-  /** 编辑模式是否激活 */
   isEditModeActive: boolean
 }
 
 export type EditWorkspaceEmit = {
-  /** 退出编辑模式 */
   (e: 'exit'): void
 }
 
@@ -37,14 +37,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const bubbleStore = useBubbleStore()
   const sessionStore = useSessionStore()
 
-  // 使用编辑模式渲染 composable
   const {
     reRenderFullImage
   } = useEditRender({
     onRenderError: () => showToast('渲染失败，请重试', 'error')
   })
 
-  // 使用气泡操作 composable
   const {
     isDrawingMode,
     isDrawingBox,
@@ -68,14 +66,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     handleOcrRecognize: bubbleOcrRecognize
   } = useBubbleActions({
     onReRender: () => reRenderFullImage(),
-    onDelayedPreview: () => reRenderFullImage()  // 延迟预览也触发重新渲染
+    onDelayedPreview: () => reRenderFullImage()
   })
 
-  // 本地绘制辅助变量（用于坐标计算）
   const drawStartX = ref(0)
   const drawStartY = ref(0)
 
-  // 使用笔刷 composable（传入渲染回调）
   const {
     brushMode,
     brushSize,
@@ -125,29 +121,27 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     error: sessionSaveError,
   } = storeToRefs(sessionStore)
 
-  /** 当前图片宽度（从 Store 响应式获取） */
   const currentImageWidth = computed(() => currentImage.value?.width || 0)
 
-  /** 当前图片高度（从 Store 响应式获取） */
   const currentImageHeight = computed(() => currentImage.value?.height || 0)
 
-  /** 更新当前图片尺寸（在图片加载完成时调用） */
   function updateImageDimensions(): void {
-    const img = originalWrapperRef.value?.querySelector('img')
+    const img = originalImageRef.value
     if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
       imageStore.updateCurrentImageDimensions(img.naturalWidth, img.naturalHeight)
     }
   }
 
-  // ============================================================
-  // 模板引用
-  // ============================================================
 
   type EditImageComparisonExposed = InstanceType<typeof EditImageComparison> & {
     originalViewportRef: HTMLElement | null
     originalWrapperRef: HTMLElement | null
+    originalImageRef: HTMLImageElement | null
+    originalPanelRef: HTMLElement | null
     translatedViewportRef: HTMLElement | null
     translatedWrapperRef: HTMLElement | null
+    translatedImageRef: HTMLImageElement | null
+    translatedPanelRef: HTMLElement | null
     editPanelRef: HTMLElement | null
   }
 
@@ -155,24 +149,21 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const imageComparisonRef = ref<EditImageComparisonExposed | null>(null)
   const originalViewportRef = computed(() => imageComparisonRef.value?.originalViewportRef ?? null)
   const originalWrapperRef = computed(() => imageComparisonRef.value?.originalWrapperRef ?? null)
+  const originalImageRef = computed(() => imageComparisonRef.value?.originalImageRef ?? null)
+  const originalPanelRef = computed(() => imageComparisonRef.value?.originalPanelRef ?? null)
   const translatedViewportRef = computed(() => imageComparisonRef.value?.translatedViewportRef ?? null)
   const translatedWrapperRef = computed(() => imageComparisonRef.value?.translatedWrapperRef ?? null)
+  const translatedImageRef = computed(() => imageComparisonRef.value?.translatedImageRef ?? null)
+  const translatedPanelRef = computed(() => imageComparisonRef.value?.translatedPanelRef ?? null)
   const editPanelRef = computed(() => imageComparisonRef.value?.editPanelRef ?? null)
 
-  // ============================================================
-  // 视图状态
-  // ============================================================
 
-  /** 视图模式: 'dual' | 'original' | 'translated' */
   const viewMode = ref<'dual' | 'original' | 'translated'>('dual')
 
-  /** 布局模式: 'horizontal' | 'vertical' */
   const layoutMode = ref<'horizontal' | 'vertical'>('horizontal')
 
-  /** 是否显示缩略图 */
   const showThumbnails = ref(false)
 
-  /** 是否同步缩放/平移 */
   const syncEnabled = ref(true)
 
   const {
@@ -184,22 +175,19 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     stopPanelResize,
   } = useEditWorkspaceResizeActions({
     layoutMode,
-    originalViewportRef,
+    originalPanelRef,
+    translatedPanelRef,
     editPanelRef,
   })
 
   // 独立修复设置由编辑工作区持有，未选中气泡时仍能作为新气泡默认值。
 
-  /** 当前编辑面板选择的修复方式 */
   const currentInpaintMethod = ref<InpaintMethod>('solid')
 
-  /** 当前编辑面板选择的填充颜色 */
   const currentFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
 
-  /** 单气泡 OCR 识别中 */
   const isOcrLoading = ref(false)
 
-  /** 修复气泡背景中 */
   const isRepairLoading = ref(false)
 
   let layoutFitTimeout: ReturnType<typeof setTimeout> | null = null
@@ -221,38 +209,25 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  // ============================================================
-  // 图片查看器状态
-  // 【业务契约 DualImageViewer】支持两套独立变换状态，syncEnabled 开启时联动
-  // ============================================================
-
-  // 原图查看器
   const originalViewer = useImageViewer()
-  // 翻译图查看器
   const translatedViewer = useImageViewer()
 
-  // 主缩放比例（用于工具栏显示和统一的缩放操作）
   const scale = computed(() => translatedViewer.scale.value)
   const translateX = computed(() => translatedViewer.translateX.value)
   const translateY = computed(() => translatedViewer.translateY.value)
 
-  // 原图视口的缩放比例（sync关闭时两个视口可能缩放不同）
   const originalScale = computed(() => originalViewer.scale.value)
 
-  // 当前活动的视口（用于拖动时确定操作哪个视口）
   const activeViewport = ref<'original' | 'translated' | null>(null)
 
-  /** 原图变换样式 */
   const originalTransformStyle = computed(() => ({
     transform: `translate(${originalViewer.translateX.value}px, ${originalViewer.translateY.value}px) scale(${originalViewer.scale.value})`
   }))
 
-  /** 翻译图变换样式 */
   const translatedTransformStyle = computed(() => ({
     transform: `translate(${translatedViewer.translateX.value}px, ${translatedViewer.translateY.value}px) scale(${translatedViewer.scale.value})`
   }))
 
-  /** 放大（两个视口同时） */
   function zoomIn(): void {
     translatedViewer.zoomIn()
     if (syncEnabled.value) {
@@ -260,7 +235,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  /** 缩小（两个视口同时） */
   function zoomOut(): void {
     translatedViewer.zoomOut()
     if (syncEnabled.value) {
@@ -268,7 +242,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  /** 重置缩放（两个视口同时） */
   function resetZoom(): void {
     translatedViewer.resetZoom()
     if (syncEnabled.value) {
@@ -276,16 +249,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  // 绘制、气泡操作和笔刷状态由专用 composable 管理。
-
-
-  // ============================================================
-  // 图片导航方法
-  // ============================================================
-
-  /** 导航前的公共处理（业务逻辑） */
   function prepareForNavigation(): void {
-    // 退出笔刷模式，调用exitBrushMode确保状态正确清理
     if (brushMode.value) {
       exitBrushMode()
     }
@@ -295,62 +259,46 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     saveBubbleStatesToImage()
   }
 
-  /** 选择第一个气泡（如果存在） */
   function selectFirstBubbleIfExists(): void {
     if (bubbleStore.bubbles.length > 0) {
       bubbleStore.selectBubble(0)
     }
   }
 
-  /** 切换到上一张图片 */
   function goToPreviousImage(): void {
     if (canGoPrevious.value) {
       prepareForNavigation()
       imageStore.goToPrevious()
-      // watch(currentImageIndex) 会自动触发 loadBubbleStatesFromImage
     }
   }
 
-  /** 切换到下一张图片 */
   function goToNextImage(): void {
     if (canGoNext.value) {
       prepareForNavigation()
       imageStore.goToNext()
-      // watch(currentImageIndex) 会自动触发 loadBubbleStatesFromImage
     }
   }
 
-  /** 切换到指定图片 */
   function switchToImage(index: number): void {
     if (index !== currentImageIndex.value && index >= 0 && index < imageCount.value) {
       prepareForNavigation()
       imageStore.setCurrentImageIndex(index)
-      // watch(currentImageIndex) 会自动触发 loadBubbleStatesFromImage
     }
   }
 
-  /** 保存气泡状态到当前图片 */
   function saveBubbleStatesToImage(): void {
     if (!currentImage.value) return
-    
-    // 保持 null vs [] 语义区分：
-    // - null/undefined：从未处理过
-    // - []：处理过但用户删光了
-    // 只要 currentImage.bubbleStates 曾经是数组（包括空数组），就应该保存当前状态
+
+    // null/undefined 表示未处理；[] 表示处理过但用户主动清空。
     const hadBubbleStates = Array.isArray(currentImage.value.bubbleStates)
-    
+
     if (bubbles.value.length > 0) {
-      // 有气泡，保存当前状态
       imageStore.updateCurrentBubbleStates([...bubbles.value])
-      // 设置手动标注标记，使缩略图显示标记
       imageStore.setManuallyAnnotated(true)
     } else if (hadBubbleStates) {
-      // 用户删光了气泡，保存空数组（保持"处理过"的语义）
       imageStore.updateCurrentBubbleStates([])
-      // 删空也是手动操作，保持标记为 true，翻译时会跳过而不是重新检测
       imageStore.setManuallyAnnotated(true)
     }
-    // 如果 bubbleStates 从未是数组且当前也没有气泡，不做任何操作（保持 null 语义）
   }
 
   const {
@@ -400,7 +348,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     resetZoom,
   })
 
-  /** 从当前图片加载气泡状态 */
   function loadBubbleStatesFromImage(): void {
     if (currentImage.value?.bubbleStates) {
       // skipSync=true 避免冗余同步（数据已经在 imageStore 中）
@@ -434,35 +381,22 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     selectFirstBubbleIfExists,
   })
 
-  // ============================================================
-  // 气泡导航方法
-  // ============================================================
 
-  /** 选择上一个气泡 */
   function selectPreviousBubble(): void {
     bubbleStore.selectPrevious()
-    // selectBubbleNew() 刻意不滚动到气泡，避免画面跳动
   }
 
-  /** 选择下一个气泡 */
   function selectNextBubble(): void {
     bubbleStore.selectNext()
-    // selectBubbleNew() 刻意不滚动到气泡，避免画面跳动
   }
 
-  // ============================================================
-  // 视图控制方法
-  // ============================================================
 
-  /** 切换缩略图显示 */
   function toggleThumbnails(): void {
     showThumbnails.value = !showThumbnails.value
   }
 
-  /** 切换布局模式 */
   function toggleLayout(): void {
     layoutMode.value = layoutMode.value === 'horizontal' ? 'vertical' : 'horizontal'
-    // 保存到 localStorage
     try {
       localStorage.setItem(LAYOUT_MODE_KEY, layoutMode.value)
     } catch {
@@ -478,7 +412,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }, 300)
   }
 
-  /** 切换视图模式 */
   function toggleViewMode(): void {
     const modes: Array<'dual' | 'original' | 'translated'> = ['dual', 'original', 'translated']
     const currentIndex = modes.indexOf(viewMode.value)
@@ -488,7 +421,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  /** 切换同步状态 */
   function toggleSync(): void {
     syncEnabled.value = !syncEnabled.value
     // 开启同步时，立即同步两个视口的变换状态
@@ -497,21 +429,20 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  /** 适应屏幕 */
   function fitToScreen(): void {
     const viewport = translatedViewportRef.value || originalViewportRef.value
     const wrapper = translatedWrapperRef.value || originalWrapperRef.value
     if (!viewport || !wrapper) return
 
-    const img = wrapper.querySelector('img')
+    const img = translatedImageRef.value || originalImageRef.value
     if (!img || !img.naturalWidth) return
 
     const viewportRect = viewport.getBoundingClientRect()
     const scaleX = viewportRect.width / img.naturalWidth
     const scaleY = viewportRect.height / img.naturalHeight
-    const newScale = Math.min(scaleX, scaleY) * 0.95 // 留5%边距
+    const fitPadding = 0.95
+    const newScale = Math.min(scaleX, scaleY) * fitPadding
 
-    // 居中
     const newTranslateX = (viewportRect.width - img.naturalWidth * newScale) / 2
     const newTranslateY = (viewportRect.height - img.naturalHeight * newScale) / 2
 
@@ -521,13 +452,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     originalViewer.setTransform(transform)
   }
 
-  // ============================================================
-  // 鼠标事件处理
-  // ============================================================
 
-  /** 处理滚轮缩放 */
   function handleWheel(event: WheelEvent, viewport: 'original' | 'translated'): void {
-    // 笔刷模式下调整笔刷大小
     if (brushMode.value) {
       const delta = event.deltaY > 0 ? -5 : 5
       adjustBrushSize(delta)
@@ -539,29 +465,25 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const mouseY = event.clientY - rect.top
 
     const factor = event.deltaY > 0 ? 0.9 : 1.1
-    
-    // 【业务契约 DualImageViewer】操作对应视口，同步时联动另一个
+
     const viewer = viewport === 'original' ? originalViewer : translatedViewer
     viewer.zoomAt(mouseX, mouseY, factor)
-    
+
     if (syncEnabled.value) {
       const otherViewer = viewport === 'original' ? translatedViewer : originalViewer
       otherViewer.setTransform(viewer.getTransform())
     }
   }
 
-  /** 处理鼠标按下 */
   function handleMouseDown(event: MouseEvent, viewport: 'original' | 'translated'): void {
-    // 笔刷模式下开始涂抹
     if (brushMode.value) {
-      const viewportEl = viewport === 'original' ? originalViewportRef.value : translatedViewportRef.value
-      if (viewportEl) {
-        startBrushPainting(event, viewportEl)
+      const surface = getBrushSurface(viewport)
+      if (surface) {
+        startBrushPainting(event, surface)
       }
       return
     }
 
-    // 中键绘制新气泡
     if (event.button === 1) {
       isMiddleButtonDown.value = true
       startDrawing(event, viewport)
@@ -569,52 +491,59 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       return
     }
 
-    // 绘制模式下左键绘制
     if (isDrawingMode.value && event.button === 0) {
       startDrawing(event, viewport)
       event.preventDefault()
       return
     }
 
-    // 左键拖动
     if (event.button === 0) {
-      // 检查是否点击了气泡高亮框
-      if ((event.target as HTMLElement).closest('.bubble-highlight-box')) {
+      if ((event.target as HTMLElement).closest('.bubble-overlay__highlight-box')) {
         return
       }
-      
-      // 点击空白处清除多选（非 Shift 时）
+
       if (!event.shiftKey) {
         handleClearMultiSelect()
       }
-      
-      // 记录当前操作的视口
+
       activeViewport.value = viewport
       const viewer = viewport === 'original' ? originalViewer : translatedViewer
       viewer.startDrag(event.clientX, event.clientY)
-      
-      // 添加全局事件监听
+
       document.addEventListener('mousemove', handleDragMove)
       document.addEventListener('mouseup', handleDragEnd)
       event.preventDefault()
     }
   }
 
-  /** 处理拖动移动 */
+  function getBrushSurface(viewport: 'original' | 'translated'): BrushSurface | null {
+    const viewportEl = viewport === 'original' ? originalViewportRef.value : translatedViewportRef.value
+    const wrapper = viewport === 'original' ? originalWrapperRef.value : translatedWrapperRef.value
+    const image = viewport === 'original' ? originalImageRef.value : translatedImageRef.value
+
+    if (!viewportEl || !wrapper || !image) {
+      return null
+    }
+
+    return {
+      viewport: viewportEl,
+      wrapper,
+      image,
+    }
+  }
+
   function handleDragMove(event: MouseEvent): void {
     if (!activeViewport.value) return
-    
+
     const viewer = activeViewport.value === 'original' ? originalViewer : translatedViewer
     viewer.drag(event.clientX, event.clientY)
-    
-    // 【业务契约 DualImageViewer】同步时联动另一个视口
+
     if (syncEnabled.value) {
       const otherViewer = activeViewport.value === 'original' ? translatedViewer : originalViewer
       otherViewer.setTransform(viewer.getTransform())
     }
   }
 
-  /** 处理拖动结束 */
   function handleDragEnd(): void {
     if (activeViewport.value) {
       const viewer = activeViewport.value === 'original' ? originalViewer : translatedViewer
@@ -626,22 +555,17 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
 
-  // 记录当前绘制使用的视口
   let drawingViewport: 'original' | 'translated' = 'translated'
 
-  /** 开始绘制新气泡 */
   function startDrawing(event: MouseEvent, viewport: 'original' | 'translated' = 'translated'): void {
-    // 记录当前绘制的视口，用于后续坐标计算。
     drawingViewport = viewport
-    
-    // 获取对应视口的wrapper和scale
+
     const wrapper = viewport === 'original' ? originalWrapperRef.value : translatedWrapperRef.value
     const viewer = viewport === 'original' ? originalViewer : translatedViewer
     if (!wrapper) return
-    
+
     const wrapperRect = wrapper.getBoundingClientRect()
-    
-    // 计算鼠标相对于wrapper的位置，然后转换为图片原生坐标
+
     const imgX = (event.clientX - wrapperRect.left) / viewer.scale.value
     const imgY = (event.clientY - wrapperRect.top) / viewer.scale.value
 
@@ -650,16 +574,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     isDrawingBox.value = true
     currentDrawingRect.value = [imgX, imgY, imgX, imgY]
 
-    // 添加全局事件监听
     document.addEventListener('mousemove', handleDrawingMove)
     document.addEventListener('mouseup', handleDrawingEnd)
   }
 
-  /** 处理绘制移动 */
   function handleDrawingMove(event: MouseEvent): void {
     if (!isDrawingBox.value) return
 
-    // 使用开始绘制时记录的视口。
     const wrapper = drawingViewport === 'original' ? originalWrapperRef.value : translatedWrapperRef.value
     const viewer = drawingViewport === 'original' ? originalViewer : translatedViewer
     if (!wrapper) return
@@ -668,7 +589,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const imgX = (event.clientX - wrapperRect.left) / viewer.scale.value
     const imgY = (event.clientY - wrapperRect.top) / viewer.scale.value
 
-    // 更新临时矩形
     currentDrawingRect.value = [
       Math.min(drawStartX.value, imgX),
       Math.min(drawStartY.value, imgY),
@@ -677,12 +597,10 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     ]
   }
 
-  /** 处理绘制结束 */
   function handleDrawingEnd(_event: MouseEvent): void {
     document.removeEventListener('mousemove', handleDrawingMove)
     document.removeEventListener('mouseup', handleDrawingEnd)
 
-    // 先保存中键状态，再重置，用于后续判断是否退出绘制模式
     const wasMiddleButton = isMiddleButtonDown.value
 
     if (!isDrawingBox.value || !currentDrawingRect.value) {
@@ -696,11 +614,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const width = x2 - x1
     const height = y2 - y1
 
-    // 最小尺寸检查
     if (width > 10 && height > 10) {
-      // 添加新气泡
       bubbleStore.addBubble(currentDrawingRect.value)
-      // 选中新添加的气泡
       bubbleStore.selectBubble(bubbleStore.bubbleCount - 1)
     }
 
@@ -708,31 +623,26 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     currentDrawingRect.value = null
     isMiddleButtonDown.value = false
 
-    // 如果不是中键绘制（即通过"添加"按钮进入的绘制模式），绘制完成后退出绘制模式
     if (!wasMiddleButton && isDrawingMode.value) {
       isDrawingMode.value = false
     }
   }
 
-  /** 处理图片加载完成 */
   function handleImageLoad(viewport: 'original' | 'translated'): void {
-    // 获取图片元素和尺寸
-    const wrapperRef = viewport === 'original' ? originalWrapperRef : translatedWrapperRef
-    const img = wrapperRef.value?.querySelector('img')
+    const img = viewport === 'original' ? originalImageRef.value : translatedImageRef.value
     const width = img?.naturalWidth || 0
     const height = img?.naturalHeight || 0
-    
-    // 原图加载完成时更新尺寸
+
     if (viewport === 'original') {
       updateImageDimensions()
     }
-    
+
     // 只在以下情况自动适应屏幕：
     // 1. 初始状态（scale=1, translate=0,0）- 首次进入编辑模式
     // 2. 检测到超大图片（超过4K）- 强制适应以避免渲染问题
     const isInitialState = scale.value === 1 && translateX.value === 0 && translateY.value === 0
     const isLargeImage = width > 3840 || height > 2160
-    
+
     if (viewport === 'original' && (isInitialState || isLargeImage)) {
       nextTick(() => {
         if (imageLoadFitTimeout) {
@@ -746,7 +656,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  /** 处理重新渲染 */
   function handleReRender(): void {
     reRenderFullImage()
   }
@@ -764,46 +673,38 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     exitEditMode()
   }
 
-  /**
-   * 处理气泡更新并同步独立修复设置
-   * 即使没有选中气泡，也能更新编辑面板的修复设置状态
-   */
   function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
-    // 同步修复设置到独立状态（不依赖气泡选中）
     if (updates.inpaintMethod !== undefined) {
       currentInpaintMethod.value = updates.inpaintMethod
     }
     if (updates.fillColor !== undefined) {
       currentFillColor.value = updates.fillColor
     }
-    
-    // 如果有选中的气泡，才更新气泡状态
+
     if (selectedBubbleIndex.value >= 0) {
       handleBubbleUpdate(updates)
     }
   }
 
-  /**
-   * 重置当前气泡到初始状态
-   * 快照在进入编辑模式和切换图片时刷新，由工作区统一持有。
-   */
+  function handleApplyStyleToAllBubbles(updates: Partial<BubbleState>): void {
+    bubbleStore.updateAllBubbles(updates)
+    handleReRender()
+  }
+
   function handleResetCurrentBubble(index: number): void {
     const initialState = bubbleStore.initialStates[index]
     if (!initialState) {
       showToast('无法重置：找不到初始状态', 'warning')
       return
     }
-    
-    // 使用初始状态的深拷贝来更新当前气泡
-    const clonedState = JSON.parse(JSON.stringify(initialState))
+
+    const clonedState = deepClone(initialState)
     bubbleStore.updateBubble(index, clonedState)
     showToast('气泡已重置', 'success')
-    
-    // 触发重新渲染
+
     reRenderFullImage()
   }
 
-  /** 处理重新 OCR 识别单个气泡（带 loading 状态） */
   async function handleOcrRecognize(index: number): Promise<void> {
     isOcrLoading.value = true
     try {
@@ -813,7 +714,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  /** 处理修复选中气泡背景（带 loading 状态） */
   async function handleRepairSelectedBubble(): Promise<void> {
     isRepairLoading.value = true
     try {
@@ -823,41 +723,30 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  // ============================================================
-  // 笔刷方法 - 使用 useBrush composable
-  // ============================================================
 
-  /** 激活修复笔刷 */
   function activateRepairBrush(): void {
     toggleBrushMode('repair')
   }
 
-  /** 激活还原笔刷 */
   function activateRestoreBrush(): void {
     toggleBrushMode('restore')
   }
 
-  /** 全局鼠标移动处理（用于笔刷光标跟踪和涂抹） */
   function handleGlobalMouseMove(event: MouseEvent): void {
     continueBrushPainting(event)
   }
 
-  /** 全局鼠标抬起处理（用于结束笔刷涂抹） */
   function handleGlobalMouseUp(): void {
     finishBrushPainting()
   }
 
-  // ============================================================
-  // 其他方法
-  // ============================================================
 
-  /** 保存当前编辑结果并跳转到下一张。 */
   async function applyAndNext(): Promise<void> {
     if (exitDialogState.value !== 'saving') {
       closeExitDialog()
     }
     saveBubbleStatesToImage()
-    
+
     // 等待渲染完成后再切图，避免下一张读取到未落盘的画面。
     const renderSucceeded = await reRenderFullImage()
     if (!renderSucceeded) {
@@ -872,7 +761,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       try {
         let initialized = await isBookshelfSessionInitialized()
         if (!initialized) {
-          const shouldInitialize = confirm('当前章节尚未初始化存档。首次使用“应用并下一张”需要先保存整章原图和基础元数据，是否继续？')
+          const shouldInitialize = await confirmProductAction({
+            title: '初始化章节存档',
+            message: '当前章节尚未初始化存档。首次使用“应用并下一张”需要先保存整章原图和基础元数据，是否继续？',
+            confirmText: '继续',
+            cancelText: '取消',
+          })
           if (!shouldInitialize) {
             return
           }
@@ -893,8 +787,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
         return
       }
     }
-    
-    // 检查是否是最后一张
+
     if (canGoNext.value) {
       if (brushMode.value) {
         exitBrushMode()
@@ -905,13 +798,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  // ============================================================
-  // 生命周期
-  // ============================================================
-
-  // ============================================================
-  // 错误边界
-  // ============================================================
 
   onErrorCaptured((err) => {
     const userMessage = err instanceof Error ? err.message : '操作失败，请重试'
@@ -920,12 +806,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     return false
   })
 
-  // ============================================================
-  // 生命周期钩子
-  // ============================================================
 
   onMounted(() => {
-    // 加载保存的布局模式
     try {
       const savedLayout = localStorage.getItem(LAYOUT_MODE_KEY)
       if (savedLayout === 'horizontal' || savedLayout === 'vertical') {
@@ -938,9 +820,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     // 键盘快捷键需要在编辑工作区获得焦点之外仍然可用。
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('keyup', handleKeyUp)
-    // 添加全局鼠标移动监听（用于笔刷光标跟踪和涂抹）
     document.addEventListener('mousemove', handleGlobalMouseMove)
-    // 添加全局鼠标抬起监听（用于结束笔刷涂抹）
     document.addEventListener('mouseup', handleGlobalMouseUp)
 
     // 加载当前图片的气泡状态，保留当前缩放状态。
@@ -953,7 +833,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   })
 
   onUnmounted(() => {
-    // 移除全局事件监听
     document.removeEventListener('keydown', handleKeyDown)
     document.removeEventListener('keyup', handleKeyUp)
     document.removeEventListener('mousemove', handleGlobalMouseMove)
@@ -967,7 +846,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     clearDelayedFitTimers()
   })
 
-  // 监听编辑模式激活状态
   watch(() => props.isEditModeActive, (active) => {
     if (active) {
       loadBubbleStatesFromImage()
@@ -989,7 +867,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   })
 
-  // 监听当前图片变化，切图时保持当前缩放状态。
   watch(currentImageIndex, () => {
     if (props.isEditModeActive) {
       if (exitDialogState.value !== 'saving') {
@@ -999,7 +876,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   })
 
-  // 选中气泡变化时，同步编辑工作区持有的修复默认值。
   watch(selectedBubble, (bubble) => {
     if (bubble) {
       currentInpaintMethod.value = bubble.inpaintMethod || 'solid'
@@ -1115,6 +991,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     handleDrawingEnd,
     handleImageLoad,
     handleReRender,
+    handleApplyStyleToAllBubbles,
     handleExitToolbarAction,
     handleBubbleUpdateWithSync,
     handleResetCurrentBubble,

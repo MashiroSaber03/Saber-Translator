@@ -1,130 +1,77 @@
-/**
- * 掩膜工具
- * 用于管理编辑模式中的用户笔刷掩膜。
- *
- * 前端职责：
- * 1. 创建初始用户掩膜
- * 2. 在用户使用笔刷时更新用户掩膜
- * 3. 将用户掩膜交给后端执行最终图像修复
- */
+type BrushPoint = {
+  x: number
+  y: number
+}
 
-/**
- * 初始化用户掩膜（灰色画布）
- * @param width - 图片宽度
- * @param height - 图片高度
- * @returns Base64 编码的灰色掩膜图片
- */
+const INITIAL_MASK_COLOR = 'rgb(127, 127, 127)'
+const MASK_DATA_URL_PREFIX = 'data:image/png;base64,'
+
+function maskCanvasToBase64(canvas: HTMLCanvasElement): string {
+  return canvas.toDataURL('image/png').split(',')[1] || ''
+}
+
+function createMaskCanvas(width: number, height: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  return [canvas, canvas.getContext('2d')!]
+}
+
 export function createInitialUserMask(width: number, height: number): string {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')!
-
-    // 填充灰色 (127)
-    ctx.fillStyle = 'rgb(127, 127, 127)'
-    ctx.fillRect(0, 0, width, height)
-
-    // 转为 Base64（去掉 data URL 前缀）
-    const dataUrl = canvas.toDataURL('image/png')
-    return dataUrl.split(',')[1] || ''
+  const [canvas, context] = createMaskCanvas(width, height)
+  context.fillStyle = INITIAL_MASK_COLOR
+  context.fillRect(0, 0, width, height)
+  return maskCanvasToBase64(canvas)
 }
 
-/**
- * 更新用户掩膜 - 添加消除区域（白色）
- * @param currentUserMask - 当前用户掩膜 (Base64)
- * @param width - 图片宽度
- * @param height - 图片高度
- * @param path - 笔刷路径
- * @param radius - 笔刷半径
- * @returns 更新后的用户掩膜 (Base64)
- */
+function paintUserMask(
+  currentUserMask: string | null | undefined,
+  width: number,
+  height: number,
+  path: BrushPoint[],
+  radius: number,
+  brushColor: 'white' | 'black',
+): Promise<string> {
+  const sourceMask = currentUserMask || createInitialUserMask(width, height)
+
+  return new Promise((resolve, reject) => {
+    const [canvas, context] = createMaskCanvas(width, height)
+    const image = new Image()
+
+    image.onload = () => {
+      context.drawImage(image, 0, 0, width, height)
+      context.fillStyle = brushColor
+
+      for (const point of path) {
+        context.beginPath()
+        context.arc(point.x, point.y, radius, 0, Math.PI * 2)
+        context.fill()
+      }
+
+      resolve(maskCanvasToBase64(canvas))
+    }
+
+    image.onerror = reject
+    image.src = `${MASK_DATA_URL_PREFIX}${sourceMask}`
+  })
+}
+
 export async function addErasureToUserMask(
-    currentUserMask: string | null | undefined,
-    width: number,
-    height: number,
-    path: Array<{ x: number, y: number }>,
-    radius: number
+  currentUserMask: string | null | undefined,
+  width: number,
+  height: number,
+  path: BrushPoint[],
+  radius: number,
 ): Promise<string> {
-    // 如果没有现有掩膜，先创建一个
-    if (!currentUserMask) {
-        currentUserMask = createInitialUserMask(width, height)
-    }
-
-    return new Promise((resolve, reject) => {
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')!
-
-        const img = new Image()
-        img.onload = () => {
-            // 绘制现有掩膜（缩放到目标尺寸）
-            ctx.drawImage(img, 0, 0, width, height)
-
-            // 用白色绘制笔刷路径
-            ctx.fillStyle = 'white'
-            for (const pos of path) {
-                ctx.beginPath()
-                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-                ctx.fill()
-            }
-
-            // 转为 Base64
-            const dataUrl = canvas.toDataURL('image/png')
-            const newMask = dataUrl.split(',')[1] || ''
-            resolve(newMask)
-        }
-        img.onerror = reject
-        img.src = 'data:image/png;base64,' + currentUserMask
-    })
+  return paintUserMask(currentUserMask, width, height, path, radius, 'white')
 }
 
-/**
- * 更新用户掩膜 - 添加还原区域（黑色）
- * @param currentUserMask - 当前用户掩膜 (Base64)
- * @param width - 图片宽度
- * @param height - 图片高度
- * @param path - 笔刷路径
- * @param radius - 笔刷半径
- * @returns 更新后的用户掩膜 (Base64)
- */
 export async function addRestorationToUserMask(
-    currentUserMask: string | null | undefined,
-    width: number,
-    height: number,
-    path: Array<{ x: number, y: number }>,
-    radius: number
+  currentUserMask: string | null | undefined,
+  width: number,
+  height: number,
+  path: BrushPoint[],
+  radius: number,
 ): Promise<string> {
-    // 如果没有现有掩膜，先创建一个
-    if (!currentUserMask) {
-        currentUserMask = createInitialUserMask(width, height)
-    }
-
-    return new Promise((resolve, reject) => {
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')!
-
-        const img = new Image()
-        img.onload = () => {
-            // 绘制现有掩膜（缩放到目标尺寸）
-            ctx.drawImage(img, 0, 0, width, height)
-
-            // 用黑色绘制笔刷路径
-            ctx.fillStyle = 'black'
-            for (const pos of path) {
-                ctx.beginPath()
-                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-                ctx.fill()
-            }
-
-            // 转为 Base64
-            const dataUrl = canvas.toDataURL('image/png')
-            const newMask = dataUrl.split(',')[1] || ''
-            resolve(newMask)
-        }
-        img.onerror = reject
-        img.src = 'data:image/png;base64,' + currentUserMask
-    })
+  return paintUserMask(currentUserMask, width, height, path, radius, 'black')
 }

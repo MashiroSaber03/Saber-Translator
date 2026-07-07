@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
+import type { TaskContext } from '@/composables/translation/core/runtime'
 
 const {
   executeAtomicStepMock,
@@ -37,7 +38,7 @@ describe('useSequentialPipeline validation', () => {
     executeAtomicStepMock.mockReset()
     validateBeforeTranslationMock.mockReset()
 
-    executeAtomicStepMock.mockImplementation(async (step: string, task: any) => {
+    executeAtomicStepMock.mockImplementation(async (step: string, task: TaskContext) => {
       switch (step) {
         case 'detection':
           return {

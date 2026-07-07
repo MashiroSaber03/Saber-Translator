@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
@@ -85,7 +87,6 @@ describe('useTranslateInit', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
-    window._isChangingFromSwitchImage = false
   })
 
   it('does not write routine console logs during successful initialization and image switching', async () => {
@@ -105,7 +106,7 @@ describe('useTranslateInit', () => {
     translateInit.switchImage(1)
     await vi.advanceTimersByTimeAsync(100)
 
-    expect(window._isChangingFromSwitchImage).toBe(false)
+    expect(translateInit.isSwitchingImage.value).toBe(false)
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
@@ -125,10 +126,10 @@ describe('useTranslateInit', () => {
     const wrapper = mount(Harness)
     translateInit.switchImage(1)
 
-    expect(window._isChangingFromSwitchImage).toBe(true)
+    expect(translateInit.isSwitchingImage.value).toBe(true)
 
     wrapper.unmount()
-    expect(window._isChangingFromSwitchImage).toBe(false)
+    expect(translateInit.isSwitchingImage.value).toBe(false)
   })
 
   it('ignores stale bookshelf context responses after the route leaves bookshelf mode', async () => {
@@ -170,5 +171,31 @@ describe('useTranslateInit', () => {
     expect(translateInit.currentBookTitle.value).toBeNull()
     expect(translateInit.currentChapterTitle.value).toBeNull()
     expect(setContext).not.toHaveBeenCalled()
+  })
+
+  it('keeps initialization source comments focused on current behavior contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/useTranslateInit.ts'), 'utf8')
+
+    for (const staleNarration of [
+      '翻译页面初始化组合式函数',
+      '// ============================================================',
+      '类型定义',
+      '状态定义',
+      '初始化方法',
+      '图片切换逻辑',
+      '生命周期',
+      '返回',
+      '@param',
+      '1. 初始化设置',
+      '2. 初始化字体列表',
+      '3. 初始化提示词设置',
+      '4. 清理 GPU 资源',
+      '5. 处理书籍/章节 URL 参数',
+    ]) {
+      expect(source).not.toContain(staleNarration)
+    }
+
+    expect(source).toContain('null 和 [] 的语义区分')
+    expect(source).toContain('Backend settings are optional')
   })
 })

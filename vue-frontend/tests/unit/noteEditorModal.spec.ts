@@ -1,8 +1,17 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import NoteEditorModal from '@/components/insight/notes/NoteEditorModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import ProductDetailPanel from '@/components/product/ProductDetailPanel.vue'
+import ProductDetailSection from '@/components/product/ProductDetailSection.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import type { NoteData } from '@/stores/insightStore'
 
 const baseModalStub = defineComponent({
@@ -44,12 +53,117 @@ describe('NoteEditorModal', () => {
       },
     })
 
-    const citationButton = wrapper.find('.qa-citation-badge')
-    expect(citationButton.element.tagName).toBe('BUTTON')
-    expect(citationButton.attributes('aria-label')).toBe('查看第 7 页')
+    const citations = wrapper.getComponent(ProductChipList)
+    expect(citations.props('ariaLabel')).toBe('引用页码')
+    expect(citations.props('items')).toEqual([
+      {
+        id: 7,
+        label: '第7页',
+        ariaLabel: '查看第 7 页',
+        interactive: true,
+        tone: 'primary',
+      },
+    ])
 
-    await citationButton.trigger('click')
+    citations.vm.$emit('select', 7)
 
     expect(wrapper.emitted('showPage')?.[0]?.[0]).toBe(7)
+
+    expect(wrapper.getComponent(ProductDetailPanel).props('ariaLabel')).toBe('问答笔记预览')
+    const detailSections = wrapper.findAllComponents(ProductDetailSection)
+    expect(detailSections.map(section => section.props('label'))).toEqual(['问题', '回答', '引用页码'])
+    expect(detailSections.map(section => section.props('framed'))).toEqual([true, true, false])
+  })
+
+  it('uses product field primitives for editable text notes', () => {
+    const wrapper = mount(NoteEditorModal, {
+      props: {
+        editingNote: null,
+        noteContent: '记录内容',
+        notePageNum: 8,
+        noteTags: '剧情',
+        noteTitle: '伏笔',
+        noteType: 'text',
+        noteTypeOptions: [
+          { label: '问答笔记', value: 'qa' },
+          { label: '文本笔记', value: 'text' },
+        ],
+        visible: true,
+      },
+      global: {
+        stubs: {
+          BaseModal: baseModalStub,
+        },
+      },
+    })
+
+    const fields = wrapper.findAllComponents(UiField)
+    expect(fields.map(field => field.props('variant'))).toEqual([
+      'settings',
+      'settings',
+      'settings',
+      'settings',
+      'settings',
+    ])
+    expect(fields.map(field => field.props('label'))).toEqual([
+      '笔记类型',
+      '标题',
+      '内容',
+      '关联页码',
+      '标签',
+    ])
+    expect(fields.map(field => field.props('required'))).toEqual([
+      false,
+      false,
+      true,
+      false,
+      false,
+    ])
+
+    const noteTypeSelect = wrapper.getComponent(UiSelect)
+    expect(noteTypeSelect.props('modelValue')).toBe('text')
+    expect(noteTypeSelect.props('options')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'qa' }),
+      expect.objectContaining({ value: 'text' }),
+    ]))
+    expect(wrapper.getComponent(UiTextarea).props('variant')).toBe('panel')
+  })
+
+  it('renders note editor actions through the product dialog action row', () => {
+    const wrapper = mount(NoteEditorModal, {
+      props: {
+        editingNote: null,
+        noteContent: '记录内容',
+        notePageNum: 8,
+        noteTags: '剧情',
+        noteTitle: '伏笔',
+        noteType: 'text',
+        noteTypeOptions: [
+          { label: '问答笔记', value: 'qa' },
+          { label: '文本笔记', value: 'text' },
+        ],
+        visible: true,
+      },
+      global: {
+        stubs: {
+          BaseModal: baseModalStub,
+        },
+      },
+    })
+
+    const actionRow = wrapper.getComponent(ProductActionRow)
+
+    expect(actionRow.props('variant')).toBe('dialog')
+    expect(actionRow.props('ariaLabel')).toBe('笔记编辑操作')
+  })
+
+  it('keeps modal body styling scoped to the note editor owner', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/notes/NoteEditorModal.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('class="note-editor-modal__body"')
+    expect(source).not.toContain('notes-modal-body')
   })
 })

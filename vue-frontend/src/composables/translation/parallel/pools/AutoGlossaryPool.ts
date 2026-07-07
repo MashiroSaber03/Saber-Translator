@@ -1,9 +1,3 @@
-/**
- * 自动术语提取池
- *
- * 负责在正式翻译前根据 OCR 结果自动提取当前页术语并写回书籍术语表。
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { ParallelProgressTracker } from '../ParallelProgressTracker'
@@ -15,7 +9,7 @@ export class AutoGlossaryPool extends TaskPool {
     progressTracker: ParallelProgressTracker,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('术语', '📚', nextPool, null, progressTracker, onTaskComplete)
+    super('术语', 'tags', nextPool, null, progressTracker, onTaskComplete)
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {

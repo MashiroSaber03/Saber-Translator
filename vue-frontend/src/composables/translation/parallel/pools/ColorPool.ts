@@ -1,9 +1,3 @@
-/**
- * 颜色提取池
- * 
- * 负责调用后端颜色提取API，识别文字和背景颜色
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
@@ -17,7 +11,7 @@ export class ColorPool extends TaskPool {
     progressTracker: ParallelProgressTracker,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('颜色', '🎨', nextPool, lock, progressTracker, onTaskComplete)
+    super('颜色', 'palette', nextPool, lock, progressTracker, onTaskComplete)
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {

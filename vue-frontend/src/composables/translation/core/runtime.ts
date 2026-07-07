@@ -1,6 +1,8 @@
 import { useSessionStore } from '@/stores/sessionStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
+import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
+import { deepClone } from '@/utils/deepClone'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { ImageData as AppImageData } from '@/types/image'
@@ -58,10 +60,6 @@ export interface TaskContext {
   finalImage?: string
   bubbleStates?: BubbleState[] | null
   persisted: boolean
-}
-
-function cloneDeep<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
 }
 
 export function buildSavedTextStylesFromSettings(settings: TranslationSettings): SavedTextStyles {
@@ -133,7 +131,7 @@ export function createPipelineRuntime(
     throw new Error('创建 PipelineRuntime 失败：缺少设置快照')
   }
 
-  const settingsSnapshot = cloneDeep(sourceSettings)
+  const settingsSnapshot = deepClone(sourceSettings)
   const bookId = options?.bookId ?? sessionStore?.currentBookId ?? null
   const chapterId = options?.chapterId ?? sessionStore?.currentChapterId ?? null
   const sessionPath = options?.sessionPath ?? getBookshelfSessionPath(bookId, chapterId)
@@ -141,18 +139,13 @@ export function createPipelineRuntime(
   const autoSaveEnabled = options?.autoSaveEnabled ?? (
     settingsSnapshot.autoSaveInBookshelfMode && isBookshelfMode
   )
-  const defaultConstraints: BookTranslationConstraints = {
-    glossary: { enabled: false, autoExtractEnabled: false, entries: [] },
-    non_translate: { enabled: false, entries: [] },
-  }
-
   return {
     mode,
     settingsSnapshot,
-    bookTranslationConstraints: cloneDeep(
+    bookTranslationConstraints: deepClone(
       options?.bookTranslationConstraints
         ?? bookTranslationConstraintsStore?.constraints
-        ?? defaultConstraints,
+        ?? createEmptyBookTranslationConstraints(),
     ),
     savedTextStyles: options?.savedTextStyles ?? buildSavedTextStylesFromSettings(settingsSnapshot),
     autoSaveEnabled,
@@ -169,7 +162,7 @@ export function createTaskContext(
   translationMode: TranslationMode,
   runtime?: PipelineRuntime
 ): TaskContext {
-  const sourceImage = cloneDeep(image)
+  const sourceImage = deepClone(image)
   return {
     id: `task-${imageIndex}`,
     imageIndex,

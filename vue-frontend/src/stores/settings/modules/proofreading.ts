@@ -1,85 +1,42 @@
-/**
- * AI 校对设置模块
- * 对应设置模态窗的 "AI校对" Tab
- */
-
 import { computed, type Ref } from 'vue'
 import type {
   TranslationSettings,
   ProofreadingRound
 } from '@/types/settings'
+import {
+  applyOpenAiOptionsPatch,
+  omitOpenAiOptionsPatchFields,
+  type OpenAiOptionsPatch,
+} from '@/utils/openaiOptions'
 
-/**
- * 创建 AI 校对设置模块
- */
 export function useProofreadingSettings(
   settings: Ref<TranslationSettings>,
   saveToStorage: () => void
 ) {
-  type ProofreadingRoundUiUpdates = Partial<ProofreadingRound> & {
-    rpmLimit?: number
-    transportRetries?: number
-    businessRetries?: number
-    forceJsonOutput?: boolean
-    useStream?: boolean
-    extraBody?: Record<string, unknown>
-  }
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** AI校对是否启用 */
+  type ProofreadingRoundUiUpdates = Partial<ProofreadingRound> & OpenAiOptionsPatch
   const isProofreadingEnabled = computed(() => settings.value.proofreading.enabled)
 
-  // ============================================================
-  // AI校对设置方法
-  // ============================================================
-
-  /**
-   * 设置AI校对启用状态
-   * @param enabled - 是否启用
-   */
   function setProofreadingEnabled(enabled: boolean): void {
     settings.value.proofreading.enabled = enabled
     saveToStorage()
   }
 
-  /**
-   * 添加校对轮次
-   * @param round - 校对轮次配置
-   */
   function addProofreadingRound(round: ProofreadingRound): void {
     settings.value.proofreading.rounds.push(round)
     saveToStorage()
   }
 
-  /**
-   * 更新校对轮次
-   * @param index - 轮次索引
-   * @param updates - 要更新的配置
-   */
   function updateProofreadingRound(index: number, updates: ProofreadingRoundUiUpdates): void {
     if (index >= 0 && index < settings.value.proofreading.rounds.length) {
       const round = settings.value.proofreading.rounds[index]
       if (round) {
-        Object.assign(round, updates)
-        if (updates.rpmLimit !== undefined) round.openaiOptions.execution.rpmLimit = updates.rpmLimit
-        if (updates.transportRetries !== undefined) round.openaiOptions.execution.transportRetries = updates.transportRetries
-        if (updates.businessRetries !== undefined) round.openaiOptions.execution.businessRetries = updates.businessRetries
-        if (updates.forceJsonOutput !== undefined) round.openaiOptions.request.forceJsonOutput = updates.forceJsonOutput
-        if (updates.useStream !== undefined) round.openaiOptions.execution.useStream = updates.useStream
-        if (Object.prototype.hasOwnProperty.call(updates, 'extraBody')) {
-          round.openaiOptions.request.extraBody = updates.extraBody
-        }
+        Object.assign(round, omitOpenAiOptionsPatchFields(updates))
+        applyOpenAiOptionsPatch(round.openaiOptions, updates)
         saveToStorage()
       }
     }
   }
 
-  /**
-   * 删除校对轮次
-   * @param index - 轮次索引
-   */
   function removeProofreadingRound(index: number): void {
     if (index >= 0 && index < settings.value.proofreading.rounds.length) {
       settings.value.proofreading.rounds.splice(index, 1)
@@ -87,20 +44,13 @@ export function useProofreadingSettings(
     }
   }
 
-  /**
-   * 设置校对重试次数
-   * @param maxRetries - 最大重试次数
-   */
   function setProofreadingMaxRetries(maxRetries: number): void {
     settings.value.proofreading.maxRetries = maxRetries
     saveToStorage()
   }
 
   return {
-    // 计算属性
     isProofreadingEnabled,
-
-    // 方法
     setProofreadingEnabled,
     addProofreadingRound,
     updateProofreadingRound,

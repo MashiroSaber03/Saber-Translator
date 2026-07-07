@@ -1,21 +1,18 @@
-/**
- * 网页导入设置模块
- */
-
 import type { Ref } from 'vue'
 import type {
-  WebImportAgentProviderConfig,
   WebImportProviderConfigs,
   WebImportSettings,
 } from '@/types/webImport'
 import { DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT } from '@/constants'
 import { normalizeProviderId, providerSupportsCapability } from '@/config/aiProviders'
+import {
+  applyProviderCredentials,
+  clearProviderCredentials,
+  restoreProviderCacheEntry,
+  saveProviderCacheEntry,
+  snapshotProviderCredentials,
+} from '../providerConfigCache'
 
-// ============================================================
-// 默认值
-// ============================================================
-
-/** 创建默认网页导入设置 */
 export function createDefaultWebImportSettings(): WebImportSettings {
   return {
     firecrawl: {
@@ -85,33 +82,13 @@ function toWebImportAgentProvider(provider: string): WebImportSettings['agent'][
   return isWebImportAgentProvider(canonicalProvider) ? canonicalProvider : null
 }
 
-function createEmptyAgentProviderConfig(): WebImportAgentProviderConfig {
-  return {
-    apiKey: '',
-    modelName: '',
-    customBaseUrl: ''
-  }
-}
-
-// ============================================================
-// Composable
-// ============================================================
-
 export function useWebImportSettings(
   webImportSettings: Ref<WebImportSettings>,
   providerConfigs: Ref<WebImportProviderConfigs>
 ) {
-  // ============================================================
-  // Firecrawl 设置
-  // ============================================================
-
   function setFirecrawlApiKey(apiKey: string): void {
     webImportSettings.value.firecrawl.apiKey = apiKey
   }
-
-  // ============================================================
-  // Agent 设置
-  // ============================================================
 
   function setAgentProvider(provider: string): void {
     const canonicalProvider = toWebImportAgentProvider(provider)
@@ -148,10 +125,6 @@ export function useWebImportSettings(
     webImportSettings.value.agent.timeout = timeout
   }
 
-  // ============================================================
-  // 提取设置
-  // ============================================================
-
   function setExtractionPrompt(prompt: string): void {
     webImportSettings.value.extraction.prompt = prompt
   }
@@ -163,10 +136,6 @@ export function useWebImportSettings(
   function resetExtractionPrompt(): void {
     webImportSettings.value.extraction.prompt = DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT
   }
-
-  // ============================================================
-  // 下载设置
-  // ============================================================
 
   function setDownloadConcurrency(concurrency: number): void {
     webImportSettings.value.download.concurrency = concurrency
@@ -187,10 +156,6 @@ export function useWebImportSettings(
   function setDownloadUseReferer(useReferer: boolean): void {
     webImportSettings.value.download.useReferer = useReferer
   }
-
-  // ============================================================
-  // 图片预处理设置
-  // ============================================================
 
   function setImagePreprocessEnabled(enabled: boolean): void {
     webImportSettings.value.imagePreprocess.enabled = enabled
@@ -224,10 +189,6 @@ export function useWebImportSettings(
     webImportSettings.value.imagePreprocess.formatConvert.targetFormat = format
   }
 
-  // ============================================================
-  // 高级设置
-  // ============================================================
-
   function setCustomCookie(cookie: string): void {
     webImportSettings.value.advanced.customCookie = cookie
   }
@@ -240,10 +201,6 @@ export function useWebImportSettings(
     webImportSettings.value.advanced.bypassProxy = bypass
   }
 
-  // ============================================================
-  // UI 设置
-  // ============================================================
-
   function setShowAgentLogs(show: boolean): void {
     webImportSettings.value.ui.showAgentLogs = show
   }
@@ -253,37 +210,30 @@ export function useWebImportSettings(
   }
 
   function saveAgentProviderConfig(provider: string): void {
-    const canonicalProvider = toWebImportAgentProvider(provider)
-    if (!canonicalProvider) return
-
-    providerConfigs.value.agent[canonicalProvider] = {
-      apiKey: webImportSettings.value.agent.apiKey,
-      modelName: webImportSettings.value.agent.modelName,
-      customBaseUrl: webImportSettings.value.agent.customBaseUrl
-    }
+    saveProviderCacheEntry({
+      provider,
+      cache: providerConfigs.value.agent,
+      buildConfig: () => snapshotProviderCredentials(webImportSettings.value.agent),
+      normalizeProvider: toWebImportAgentProvider,
+    })
   }
 
   function restoreAgentProviderConfig(provider: string): void {
-    const canonicalProvider = toWebImportAgentProvider(provider)
-    const cached = canonicalProvider ? providerConfigs.value.agent[canonicalProvider] : undefined
-
-    if (cached) {
-      webImportSettings.value.agent.apiKey = cached.apiKey ?? ''
-      webImportSettings.value.agent.modelName = cached.modelName ?? ''
-      webImportSettings.value.agent.customBaseUrl = cached.customBaseUrl ?? ''
-      return
-    }
-
-    const emptyConfig = createEmptyAgentProviderConfig()
-    webImportSettings.value.agent.apiKey = emptyConfig.apiKey
-    webImportSettings.value.agent.modelName = emptyConfig.modelName
-    webImportSettings.value.agent.customBaseUrl = emptyConfig.customBaseUrl
+    restoreProviderCacheEntry({
+      provider,
+      cache: providerConfigs.value.agent,
+      applyCached: cached => {
+        applyProviderCredentials(webImportSettings.value.agent, cached)
+      },
+      applyMissing: () => {
+        clearProviderCredentials(webImportSettings.value.agent)
+      },
+      normalizeProvider: toWebImportAgentProvider,
+    })
   }
 
   return {
-    // Firecrawl
     setFirecrawlApiKey,
-    // Agent
     setAgentProvider,
     setAgentApiKey,
     setAgentBaseUrl,
@@ -293,17 +243,14 @@ export function useWebImportSettings(
     setAgentTimeout,
     saveAgentProviderConfig,
     restoreAgentProviderConfig,
-    // 提取
     setExtractionPrompt,
     setExtractionMaxIterations,
     resetExtractionPrompt,
-    // 下载
     setDownloadConcurrency,
     setDownloadTimeout,
     setDownloadRetries,
     setDownloadDelay,
     setDownloadUseReferer,
-    // 图片预处理
     setImagePreprocessEnabled,
     setImageAutoRotate,
     setImageCompressionEnabled,
@@ -312,11 +259,9 @@ export function useWebImportSettings(
     setImageMaxHeight,
     setImageFormatConvertEnabled,
     setImageTargetFormat,
-    // 高级
     setCustomCookie,
     setCustomHeaders,
     setBypassProxy,
-    // UI
     setShowAgentLogs,
     setAutoImport,
   }

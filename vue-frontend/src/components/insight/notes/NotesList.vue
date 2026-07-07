@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { NoteData } from '@/stores/insightStore'
+import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import NoteCard from './NoteCard.vue'
 
 defineProps<{
@@ -14,10 +16,24 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="notes-list">
-    <div v-if="notes.length === 0" class="placeholder-text">
-      暂无笔记
-    </div>
+  <ProductScrollStack
+    class="notes-list"
+    role="list"
+    aria-label="笔记列表"
+    padding="none"
+    :empty="notes.length === 0"
+  >
+    <template #empty>
+      <ProductStatusBanner
+        class="notes-list__empty-status"
+        tone="neutral"
+        role="note"
+        icon-name="file-text"
+        title="暂无笔记"
+      >
+        添加笔记后会显示在这里。
+      </ProductStatusBanner>
+    </template>
 
     <NoteCard
       v-for="note in notes"
@@ -27,20 +43,15 @@ defineEmits<{
       @edit="$emit('edit', $event)"
       @show-page="$emit('showPage', $event)"
     />
-  </div>
+  </ProductScrollStack>
 </template>
 
 <style scoped>
 .notes-list {
-  max-height: 300px;
   margin-bottom: 12px;
-  overflow-y: auto;
 }
 
-.placeholder-text {
-  padding: 20px;
-  color: var(--insight-text-muted);
-  font-size: 14px;
-  text-align: center;
+.notes-list__empty-status {
+  margin: 8px;
 }
 </style>

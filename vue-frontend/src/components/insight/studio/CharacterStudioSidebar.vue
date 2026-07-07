@@ -1,35 +1,49 @@
 <template>
-  <div class="sidebar-shell">
-    <div class="sidebar-toolbar">
-      <div class="toolbar-copy">
-        <div class="kicker">导航与资源</div>
-        <h2>当前书籍角色工坊</h2>
-        <p>从分析候选锁定角色名，再用 AI 补全整卡；也可以直接空白新建或导入外部角色卡。候选仅预填角色名，不再直接抽离压缩后的分析字段。</p>
+  <div class="character-studio-sidebar">
+    <div class="character-studio-sidebar__toolbar">
+      <div class="character-studio-sidebar__toolbar-copy">
+        <div class="character-studio-sidebar__kicker">导航与资源</div>
+        <h2 class="character-studio-sidebar__title">当前书籍角色工坊</h2>
       </div>
 
-      <div class="toolbar-actions">
-        <UiInput
-          :value="search"
-          class="search-input"
+      <div class="character-studio-sidebar__actions">
+        <ProductSearchField
+          :model-value="search"
+          class="character-studio-sidebar__search"
+          aria-label="搜索角色资源"
           placeholder="搜索角色 / 标签 / 来源"
-          type="text"
           :disabled="workspaceLoading"
-          @input="$emit('update:search', ($event.target as HTMLInputElement).value)"
+          @update:model-value="$emit('update:search', $event)"
+          @clear="$emit('update:search', '')"
         />
-        <div class="action-row">
-          <UiButton variant="toolbar" class="action-primary" :disabled="creatingManual || importingFile" @click="$emit('create-manual')">
+        <ProductActionRow
+          class="character-studio-sidebar__action-row"
+          aria-label="角色资源操作"
+          justify="start"
+        >
+          <UiButton
+            variant="primary"
+            class="character-studio-sidebar__create-action"
+            :disabled="creatingManual || importingFile"
+            @click="$emit('create-manual')"
+          >
             {{ creatingManual ? '新建中...' : '空白新建' }}
           </UiButton>
-          <UiButton variant="toolbar" class="action-ghost" :disabled="creatingManual || importingFile" @click="pickImport">
+          <UiButton
+            variant="secondary"
+            class="character-studio-sidebar__import-action"
+            :disabled="creatingManual || importingFile"
+            @click="pickImport"
+          >
             {{ importingFile ? '导入中...' : '导入' }}
           </UiButton>
-        </div>
+        </ProductActionRow>
       </div>
 
-      <UiFileInput ref="fileInput" hidden accept=".json,.png,.jpg,.jpeg,.webp,.gif,.bmp" @change="handleFileSelect" />
+      <UiFileInput ref="fileInput" hidden accept=".json,.png,.jpg,.jpeg,.webp,.gif,.bmp" @files-change="handleFileSelect" />
     </div>
 
-    <div class="sidebar-content">
+    <div class="character-studio-sidebar__content">
       <DocumentListPane
         :documents="documents"
         :current-document-id="currentDocumentId"
@@ -48,9 +62,10 @@
 </template>
 
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductSearchField from '@/components/product/ProductSearchField.vue'
 import { ref } from 'vue'
 import type { CharacterStudioCandidate, CharacterStudioSummary } from '@/types/characterStudio'
 import DocumentListPane from './DocumentListPane.vue'
@@ -77,40 +92,27 @@ const emit = defineEmits<{
   (e: 'import-file', file: File): void
 }>()
 
-const fileInput = ref<HTMLInputElement | null>(null)
+const fileInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 
 function pickImport() {
   fileInput.value?.click()
 }
 
-function handleFileSelect(event: Event) {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
+function handleFileSelect(files: File[]) {
+  const file = files[0]
   if (!file) return
   emit('import-file', file)
-  target.value = ''
+  fileInput.value?.clear()
 }
 </script>
 
 <style scoped>
-.sidebar-shell {
-  --character-studio-sidebar-toolbar-background-start: rgba(79, 136, 240, .12);
-  --character-studio-sidebar-toolbar-background-end: rgba(246, 249, 254, .88);
-  --character-studio-sidebar-primary-action-shadow: rgba(37, 99, 199, .2);
-  --character-studio-sidebar-shell-background: rgba(252, 253, 255, .88);
-  --character-studio-sidebar-search-background: rgba(255, 255, 255, .92);
-  --character-studio-sidebar-primary-action-background-start: #2563c7;
-  --character-studio-sidebar-primary-action-background-end: #4d86ee;
-  --character-studio-sidebar-kicker-text: #6f84a2;
-  --character-studio-sidebar-title-text: #102741;
-  --ui-input-padding: 12px 14px;
-  --ui-input-border: 1px solid var(--studio-border-strong);
-  --ui-input-radius: 14px;
-  --ui-input-background: var(--character-studio-sidebar-search-background);
-  --ui-input-color: var(--studio-text-strong);
-  --ui-input-font-size: 13px;
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
+.character-studio-sidebar {
+  --character-studio-sidebar-toolbar-background-start: color-mix(in srgb, var(--color-action-brand) 12%, transparent);
+  --character-studio-sidebar-toolbar-background-end: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
+  --character-studio-sidebar-shell-background: color-mix(in srgb, var(--color-surface-card) 88%, transparent);
+  --character-studio-sidebar-kicker-text: var(--color-text-muted);
+  --character-studio-sidebar-title-text: var(--color-text-primary);
 
   display: flex;
   flex-direction: column;
@@ -124,7 +126,7 @@ function handleFileSelect(event: Event) {
   box-shadow: 0 24px 40px var(--studio-shadow-floating);
 }
 
-.sidebar-toolbar {
+.character-studio-sidebar__toolbar {
   flex-shrink: 0;
   padding: 18px 18px 16px;
   border-bottom: 1px solid var(--studio-border-default);
@@ -132,70 +134,41 @@ function handleFileSelect(event: Event) {
     linear-gradient(180deg, var(--character-studio-sidebar-toolbar-background-start), var(--character-studio-sidebar-toolbar-background-end));
 }
 
-.kicker {
+.character-studio-sidebar__kicker {
   font-size: 11px;
   letter-spacing: 0;
   text-transform: uppercase;
   color: var(--character-studio-sidebar-kicker-text);
 }
 
-.toolbar-copy h2 {
+.character-studio-sidebar__title {
   margin: 8px 0 0;
   font-size: 22px;
   line-height: 1.24;
   color: var(--character-studio-sidebar-title-text);
 }
 
-.toolbar-copy p {
-  margin: 10px 0 0;
-  color: var(--studio-text-muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.toolbar-actions {
+.character-studio-sidebar__actions {
   margin-top: 16px;
 }
 
-.search-input {
+.character-studio-sidebar__search {
   width: 100%;
 }
 
-.action-row {
-  display: flex;
-  gap: 10px;
+.character-studio-sidebar__action-row {
   margin-top: 12px;
 }
 
-.action-primary,
-.action-ghost {
-  border: none;
-  border-radius: 14px;
-  cursor: pointer;
+.character-studio-sidebar__create-action {
+  flex: 1 1 150px;
 }
 
-.action-primary {
-  flex: 1;
-  padding: 11px 16px;
-  background: linear-gradient(135deg, var(--character-studio-sidebar-primary-action-background-start), var(--character-studio-sidebar-primary-action-background-end));
-  color: var(--color-text-inverse);
-  box-shadow: 0 12px 24px var(--character-studio-sidebar-primary-action-shadow);
+.character-studio-sidebar__import-action {
+  flex: 0 0 auto;
 }
 
-.action-ghost {
-  padding: 11px 14px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.action-primary:disabled,
-.action-ghost:disabled {
-  opacity: 0.68;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.sidebar-content {
+.character-studio-sidebar__content {
   flex: 1;
   min-height: 0;
   display: flex;

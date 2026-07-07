@@ -1,168 +1,151 @@
-/**
- * 网页导入相关类型定义
- */
+export type WebImportAgentProvider = string
 
-export type WebImportAgentProvider =
-    | 'openai'
-    | 'siliconflow'
-    | 'deepseek'
-    | 'volcano'
-    | 'gemini'
-    | 'ollama'
-    | 'custom'
-
-/** 导入引擎类型 */
 export type WebImportEngine = 'auto' | 'gallery-dl' | 'ai-agent'
 
-/** 图片预处理设置 */
+export type WebImportImageFormat = 'jpeg' | 'png' | 'webp' | 'original'
+
+export interface WebImportCompressionSettings {
+  enabled: boolean
+  quality: number
+  maxWidth: number
+  maxHeight: number
+}
+
+export interface WebImportFormatConvertSettings {
+  enabled: boolean
+  targetFormat: WebImportImageFormat
+}
+
 export interface ImagePreprocessSettings {
-    enabled: boolean
-    autoRotate: boolean
-    compression: {
-        enabled: boolean
-        quality: number
-        maxWidth: number
-        maxHeight: number
-    }
-    formatConvert: {
-        enabled: boolean
-        targetFormat: 'jpeg' | 'png' | 'webp' | 'original'
-    }
+  enabled: boolean
+  autoRotate: boolean
+  compression: WebImportCompressionSettings
+  formatConvert: WebImportFormatConvertSettings
 }
 
-/** 网页导入完整设置 */
+export interface WebImportFirecrawlSettings {
+  apiKey: string
+}
+
+export interface WebImportAgentSettings {
+  provider: WebImportAgentProvider
+  apiKey: string
+  customBaseUrl: string
+  modelName: string
+  useStream: boolean
+  forceJsonOutput: boolean
+  maxRetries: number
+  timeout: number
+}
+
+export interface WebImportExtractionSettings {
+  prompt: string
+  maxIterations: number
+}
+
+export interface WebImportDownloadSettings {
+  concurrency: number
+  timeout: number
+  retries: number
+  delay: number
+  useReferer: boolean
+}
+
+export interface WebImportAdvancedSettings {
+  customCookie: string
+  customHeaders: string
+  bypassProxy: boolean
+}
+
+export interface WebImportUiSettings {
+  showAgentLogs: boolean
+  autoImport: boolean
+}
+
 export interface WebImportSettings {
-    /** Firecrawl 配置 */
-    firecrawl: {
-        apiKey: string
-    }
-
-    /** AI Agent 配置 */
-    agent: {
-        provider: WebImportAgentProvider
-        apiKey: string
-        customBaseUrl: string
-        modelName: string
-        useStream: boolean
-        forceJsonOutput: boolean
-        maxRetries: number
-        timeout: number
-    }
-
-    /** 提取设置 */
-    extraction: {
-        prompt: string
-        maxIterations: number
-    }
-
-    /** 下载设置 */
-    download: {
-        concurrency: number
-        timeout: number
-        retries: number
-        delay: number
-        useReferer: boolean
-    }
-
-    /** 图片预处理 */
-    imagePreprocess: ImagePreprocessSettings
-
-    /** 高级设置 */
-    advanced: {
-        customCookie: string
-        customHeaders: string
-        bypassProxy: boolean
-    }
-
-    /** 界面设置 */
-    ui: {
-        showAgentLogs: boolean
-        autoImport: boolean
-    }
+  firecrawl: WebImportFirecrawlSettings
+  agent: WebImportAgentSettings
+  extraction: WebImportExtractionSettings
+  download: WebImportDownloadSettings
+  imagePreprocess: ImagePreprocessSettings
+  advanced: WebImportAdvancedSettings
+  ui: WebImportUiSettings
 }
 
-/** Agent 服务商独立配置 */
 export interface WebImportAgentProviderConfig {
-    apiKey: string
-    modelName: string
-    customBaseUrl: string
+  apiKey: string
+  modelName: string
+  customBaseUrl: string
 }
 
-/** 网页导入服务商配置缓存 */
 export interface WebImportProviderConfigs {
-    agent: Record<string, WebImportAgentProviderConfig>
+  agent: Record<string, WebImportAgentProviderConfig>
 }
 
-/** 网页导入设置持久化载荷 */
 export interface WebImportSettingsPayload {
-    webImportSettingsSchemaVersion: number
-    settings: WebImportSettings
-    providerConfigs: WebImportProviderConfigs
+  webImportSettingsSchemaVersion: number
+  settings: WebImportSettings
+  providerConfigs: WebImportProviderConfigs
 }
 
-/** 漫画页面 */
 export interface ComicPage {
-    pageNumber: number
-    imageUrl: string
+  pageNumber: number
+  imageUrl: string
 }
 
-/** 提取结果 */
 export interface ExtractResult {
-    success: boolean
-    comicTitle: string
-    chapterTitle: string
-    pages: ComicPage[]
-    totalPages: number
-    sourceUrl: string
-    referer?: string
-    engine?: WebImportEngine
-    error?: string
+  success: boolean
+  comicTitle: string
+  chapterTitle: string
+  pages: ComicPage[]
+  totalPages: number
+  sourceUrl: string
+  referer?: string
+  engine?: WebImportEngine
+  error?: string
 }
 
-/** Gallery-DL 支持检查结果 */
 export interface GalleryDLSupportResult {
-    available: boolean
-    supported: boolean
-    error?: string
+  available: boolean
+  supported: boolean
+  error?: string
 }
 
-/** 下载的图片 */
 export interface DownloadedImage {
-    index: number
-    filename: string
-    dataUrl: string
-    size: number
+  index: number
+  filename: string
+  dataUrl: string
+  size: number
 }
 
-/** 下载结果 */
 export interface DownloadResult {
-    success: boolean
-    images: DownloadedImage[]
-    failedCount: number
-    error?: string
+  success: boolean
+  images: DownloadedImage[]
+  failedCount: number
+  error?: string
 }
 
-/** Agent 日志 */
 export interface AgentLog {
-    timestamp: string
-    type: 'info' | 'tool_call' | 'tool_result' | 'thinking' | 'error'
-    message: string
+  timestamp: string
+  type: 'info' | 'tool_call' | 'tool_result' | 'thinking' | 'error'
+  message: string
 }
 
-/** 网页导入运行时状态 */
+export interface WebImportDownloadProgress {
+  current: number
+  total: number
+}
+
 export interface WebImportState {
-    status: 'idle' | 'extracting' | 'extracted' | 'downloading' | 'completed' | 'error'
-    url: string
-    engine: WebImportEngine
-    currentEngine: WebImportEngine | null
-    referer: string
-    logs: AgentLog[]
-    extractResult: ExtractResult | null
-    selectedPages: Set<number>
-    downloadProgress: {
-        current: number
-        total: number
-    }
-    downloadedImages: DownloadedImage[]
-    error: string | null
+  status: 'idle' | 'extracting' | 'extracted' | 'downloading' | 'completed' | 'error'
+  url: string
+  engine: WebImportEngine
+  currentEngine: WebImportEngine | null
+  referer: string
+  logs: AgentLog[]
+  extractResult: ExtractResult | null
+  selectedPages: Set<number>
+  downloadProgress: WebImportDownloadProgress
+  downloadedImages: DownloadedImage[]
+  error: string | null
 }

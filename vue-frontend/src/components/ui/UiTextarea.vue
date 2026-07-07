@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   readonly?: boolean
   error?: boolean | string
   size?: 'lg' | 'md' | 'sm' | 'xs'
+  variant?: 'default' | 'panel' | 'studio'
 }>(), {
   modelValue: undefined,
   value: undefined,
@@ -21,6 +22,7 @@ const props = withDefaults(defineProps<{
   readonly: false,
   error: false,
   size: 'md',
+  variant: 'default',
 })
 
 const emit = defineEmits<{
@@ -81,7 +83,11 @@ defineExpose({
     ref="textareaRef"
     v-bind="attrs"
     class="ui-textarea"
-    :class="[`ui-textarea--${size}`, { 'ui-textarea--error': Boolean(error) }]"
+    :class="[
+      `ui-textarea--${size}`,
+      `ui-textarea--${variant}`,
+      { 'ui-textarea--error': Boolean(error) },
+    ]"
     :value="textareaValue"
     :placeholder="placeholder"
     :rows="rows"
@@ -133,6 +139,45 @@ defineExpose({
   min-height: 56px;
   padding: 6px 8px;
   font-size: 0.78rem;
+}
+
+:where(.ui-textarea--panel) {
+  padding: 12px;
+  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  border-radius: 8px;
+  background: var(--color-surface-input, var(--color-surface-base));
+  color: var(--color-text-default);
+  line-height: 1.6;
+}
+
+:where(.ui-textarea--panel.ui-textarea--lg) {
+  padding: 16px;
+  font-size: 14px;
+}
+
+:where(.ui-textarea--panel):focus {
+  border-color: var(--color-border-brand);
+  box-shadow: 0 0 0 3px var(--color-focus-brand-soft);
+}
+
+:where(.ui-textarea--studio) {
+  padding: var(--ui-textarea-studio-padding, 10px 12px);
+  border: var(--ui-textarea-studio-border, 1px solid var(--color-border-muted));
+  border-radius: var(--ui-textarea-studio-radius, 14px);
+  background: var(--ui-textarea-studio-background, var(--color-surface-input, var(--color-surface-card)));
+  color: var(--ui-textarea-studio-color, var(--color-text-default));
+  font-size: var(--ui-textarea-studio-font-size, 13px);
+  line-height: var(--ui-textarea-studio-line-height, 1.7);
+}
+
+:where(.ui-textarea--studio.ui-textarea--lg) {
+  padding: var(--ui-textarea-studio-lg-padding, 12px 14px);
+  border-radius: var(--ui-textarea-studio-lg-radius, 16px);
+}
+
+:where(.ui-textarea--studio):focus {
+  border-color: var(--ui-textarea-studio-focus-border, var(--color-border-brand));
+  box-shadow: 0 0 0 3px var(--ui-textarea-studio-focus-shadow, var(--color-focus-brand-soft));
 }
 
 :where(.ui-textarea--error) {

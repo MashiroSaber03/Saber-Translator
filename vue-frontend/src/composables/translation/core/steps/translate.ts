@@ -1,7 +1,3 @@
-/**
- * 翻译步骤（普通翻译）
- * 包含逐气泡翻译和整页批量翻译两种请求模式。
- */
 import { parallelTranslate, type ParallelTranslateResponse } from '@/api/parallelTranslate'
 import { translateSingleText } from '@/api/translate'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
@@ -72,7 +68,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
     })
 
     if (requestMode === 'single') {
-        // ==================== 逐气泡翻译模式 ====================
         const translatedTexts: string[] = []
         const textboxTexts: string[] = []
         const warnings: TranslationWarning[] = []
@@ -80,7 +75,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         for (let i = 0; i < originalTexts.length; i++) {
             const originalText = originalTexts[i]
 
-            // 跳过空文本
             if (!originalText || originalText.trim() === '') {
                 translatedTexts.push('')
                 if (settings.useTextboxPrompt) {
@@ -90,7 +84,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
             }
 
             try {
-                // 固定使用逐气泡翻译的提示词
                 const promptContent = settings.translation.openaiOptions.request.forceJsonOutput
                     ? settings.translation.singleJsonPrompt
                     : settings.translation.singleNormalPrompt
@@ -115,7 +108,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
                     translatedTexts.push(`【翻译失败】${response.error || '请检查翻译设置或稍后重试'}`)
                 }
 
-                // 文本框提示词（如果启用）
                 if (settings.useTextboxPrompt && settings.textboxPrompt) {
                     const textboxResponse = await translateSingleText({
                         original_text: originalText,
@@ -180,7 +172,6 @@ export async function executeTranslate(input: TranslateInput): Promise<Translate
         return { translatedTexts, textboxTexts, warnings }
 
     } else {
-        // ==================== 整页批量翻译模式 ====================
         const response: ParallelTranslateResponse = await parallelTranslate({
             original_texts: originalTexts,
             translation_mode: pluginMode,

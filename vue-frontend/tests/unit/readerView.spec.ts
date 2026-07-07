@@ -1,5 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReaderView from '@/views/ReaderView.vue'
 
@@ -29,6 +31,23 @@ const AppShellStub = defineComponent({
   template: '<section><slot name="header" /><slot /></section>',
 })
 
+const ProductPageHeaderStub = defineComponent({
+  props: {
+    variant: {
+      type: String,
+      default: 'default',
+    },
+  },
+  template: `
+    <header class="product-page-header" :class="'product-page-header--' + variant">
+      <slot name="brand" />
+      <slot name="meta" />
+      <slot name="nav" />
+      <slot name="actions" />
+    </header>
+  `,
+})
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -47,6 +66,11 @@ const ReaderCanvasStub = defineComponent({
     },
   },
   template: '<div class="reader-canvas-stub">{{ images.map(image => image.original).join(",") }}</div>',
+})
+
+const ReaderControlsContractStub = defineComponent({
+  inheritAttrs: false,
+  template: '<div class="reader-controls-contract-stub" />',
 })
 
 describe('ReaderView', () => {
@@ -82,13 +106,32 @@ describe('ReaderView', () => {
       global: {
         stubs: {
           AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
           ReaderCanvas: true,
           ReaderControls: true,
         },
       },
     })
 
-    expect(wrapper.get('#settingsBtn').attributes('aria-label')).toBe('阅读设置')
+    expect(wrapper.get('.product-page-header--reader').exists()).toBe(true)
+    expect(wrapper.get('[aria-label="阅读设置"]').exists()).toBe(true)
+  })
+
+  it('keeps the reader header free of legacy DOM id hooks', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
+
+    for (const id of [
+      'backBtn',
+      'bookTitle',
+      'chapterTitle',
+      'pageInfo',
+      'viewOriginalBtn',
+      'viewTranslatedBtn',
+      'settingsBtn',
+      'translateBtn',
+    ]) {
+      expect(source).not.toContain(`id="${id}"`)
+    }
   })
 
   it('cancels the delayed failure redirect when the view unmounts', async () => {
@@ -103,6 +146,7 @@ describe('ReaderView', () => {
       global: {
         stubs: {
           AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
           ReaderCanvas: true,
           ReaderControls: true,
         },
@@ -147,6 +191,7 @@ describe('ReaderView', () => {
       global: {
         stubs: {
           AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
           ReaderCanvas: ReaderCanvasStub,
           ReaderControls: true,
         },
@@ -173,5 +218,73 @@ describe('ReaderView', () => {
 
     expect(wrapper.text()).toContain('chapter-2-page')
     expect(wrapper.text()).not.toContain('chapter-1-page')
+  })
+
+  it('does not wire no-op reader settings events back to the page owner', () => {
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: true,
+          ReaderControls: ReaderControlsContractStub,
+        },
+      },
+    })
+
+    const controls = wrapper.getComponent(ReaderControlsContractStub)
+    expect(controls.vm.$attrs).not.toHaveProperty('onSettingsChange')
+  })
+
+  it('keeps page-count state out of the ReaderControls contract', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
+
+    expect(source).not.toContain(':current-page=')
+    expect(source).not.toContain(':total-pages=')
+  })
+
+  it('uses ProductHeaderAction public props for responsive labels', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
+
+    expect(source).not.toContain('.product-header-action__label')
+    expect(source).toContain('collapse-label-on-mobile')
+  })
+
+  it('exposes pressed state for original and translated mode header actions', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
+
+    expect(source).toContain(':active="currentViewMode === \'original\'"')
+    expect(source).toContain(':pressed="currentViewMode === \'original\'"')
+    expect(source).toContain(':active="currentViewMode === \'translated\'"')
+    expect(source).toContain(':pressed="currentViewMode === \'translated\'"')
+  })
+
+  it('keeps reader header helper hooks under the reader-header owner', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
+
+    for (const currentHook of [
+      'reader-header__book-info',
+      'reader-header__separator',
+      'reader-header__chapter-title',
+      'reader-header__page-info',
+      'reader-header__view-mode-toggle',
+    ]) {
+      expect(source).toContain(currentHook)
+    }
+
+    for (const oldHook of [
+      'book-info',
+      'separator',
+      'chapter-title',
+      'page-info',
+      'view-mode-toggle',
+    ]) {
+      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldHook}\\b`))
+      expect(source).not.toMatch(new RegExp(`\\.${oldHook}\\b`))
+    }
   })
 })

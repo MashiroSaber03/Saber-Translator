@@ -1,13 +1,18 @@
 <script setup lang="ts">
-
-import UiButton from '@/components/ui/UiButton.vue'
-
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore, type OverviewTemplateType } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { UiIconName } from '@/components/ui/iconRegistry'
 import { marked } from 'marked'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { triggerBlobDownload } from '@/utils/browserDownload'
 import { showToast } from '@/utils/toast'
 
 const insightStore = useInsightStore()
@@ -28,24 +33,31 @@ const recentAnalyzedPages = ref<Array<{
   analyzed_at?: string
 }>>([])
 
-const templateOptions: Array<{ value: OverviewTemplateType; label: string; icon: string; description: string }> = [
-  { value: 'no_spoiler', label: '无剧透简介', icon: '🎁', description: '不含剧透的简短介绍，适合推荐给他人' },
-  { value: 'story_summary', label: '故事概要', icon: '📖', description: '完整的剧情回顾，包含所有剧透' },
-  { value: 'recap', label: '前情回顾', icon: '⏪', description: '之前发生的重要事件回顾' },
-  { value: 'character_guide', label: '角色图鉴', icon: '👥', description: '主要角色介绍和关系' },
-  { value: 'world_setting', label: '世界观设定', icon: '🌍', description: '故事背景和世界观设定' },
-  { value: 'highlights', label: '名场面盘点', icon: '✨', description: '精彩片段和经典场景回顾' },
-  { value: 'reading_notes', label: '阅读笔记', icon: '📝', description: '阅读过程中的重点笔记' }
+interface OverviewTemplateOption {
+  value: OverviewTemplateType
+  label: string
+  iconName: UiIconName
+  description: string
+}
+
+const templateOptions: OverviewTemplateOption[] = [
+  { value: 'no_spoiler', label: '无剧透简介', iconName: 'sparkles', description: '不含剧透的简短介绍，适合推荐给他人' },
+  { value: 'story_summary', label: '故事概要', iconName: 'book-open', description: '完整的剧情回顾，包含所有剧透' },
+  { value: 'recap', label: '前情回顾', iconName: 'clock', description: '之前发生的重要事件回顾' },
+  { value: 'character_guide', label: '角色图鉴', iconName: 'users', description: '主要角色介绍和关系' },
+  { value: 'world_setting', label: '世界观设定', iconName: 'globe', description: '故事背景和世界观设定' },
+  { value: 'highlights', label: '名场面盘点', iconName: 'sparkles', description: '精彩片段和经典场景回顾' },
+  { value: 'reading_notes', label: '阅读笔记', iconName: 'file-text', description: '阅读过程中的重点笔记' }
 ]
 
 const templateSelectOptions = templateOptions.map(t => ({
-  label: `${t.icon} ${t.label}`,
+  label: t.label,
   value: t.value
 }))
 
-const currentTemplateIcon = computed(() => {
+const currentTemplateIcon = computed<UiIconName>(() => {
   const template = templateOptions.find(t => t.value === currentTemplate.value)
-  return template?.icon || '📊'
+  return template?.iconName || 'bar-chart'
 })
 
 const currentTemplateDescription = computed(() => {
@@ -205,15 +217,7 @@ async function exportAnalysisData(): Promise<void> {
 
     if (response.success && response.markdown) {
       const blob = new Blob([response.markdown], { type: 'text/markdown' })
-      const url = URL.createObjectURL(blob)
-      try {
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${insightStore.currentBookId}_analysis.md`
-        a.click()
-      } finally {
-        URL.revokeObjectURL(url)
-      }
+      triggerBlobDownload(blob, `${insightStore.currentBookId}_analysis.md`)
 
       showToast('导出成功', 'success')
     } else {
@@ -238,15 +242,7 @@ function exportCurrentOverview(): void {
   const content = `# ${template?.label || currentTemplate.value}\n\n${overviewContent.value}`
 
   const blob = new Blob([content], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  try {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName
-    a.click()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  triggerBlobDownload(blob, fileName)
   showToast('导出成功', 'success')
 }
 
@@ -332,376 +328,344 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="overview-grid">
-    <div class="overview-card summary-card">
-      <div class="card-header">
-        <div class="card-title-with-selector">
-          <span class="card-title-icon">{{ currentTemplateIcon }}</span>
-          <CustomSelect
+  <div class="overview-panel">
+    <div class="overview-panel__card overview-panel__card--summary">
+      <div class="overview-panel__card-header">
+        <div class="overview-panel__template-heading">
+          <UiIcon class="overview-panel__title-icon" :name="currentTemplateIcon" size="20" />
+          <UiSelect
             v-model="currentTemplate"
+            aria-label="选择概览模板"
             :options="templateSelectOptions"
             @change="onTemplateChange"
           />
         </div>
-        <div class="card-header-actions">
-          <span class="template-status">{{ templateStatus }}</span>
-          <UiButton
-            variant="toolbar"
-            class="button-icon"
-            title="生成/加载"
+        <div class="overview-panel__card-actions">
+          <span class="overview-panel__template-status">{{ templateStatus }}</span>
+          <UiIconButton
+            label="生成/加载"
+            size="sm"
             @click="generateOverview(false)"
           >
-            📄
-          </UiButton>
-          <UiButton
-            variant="toolbar"
-            class="button-icon"
-            title="重新生成"
+            <UiIcon name="file-text" size="16" />
+          </UiIconButton>
+          <UiIconButton
+            label="重新生成"
+            size="sm"
             @click="generateOverview(true)"
           >
-            🔄
-          </UiButton>
+            <UiIcon name="refresh" size="16" />
+          </UiIconButton>
         </div>
       </div>
-      <p class="template-description">{{ currentTemplateDescription }}</p>
-      <div class="card-content markdown-content">
-        <div v-if="isLoading" class="loading-text">加载中...</div>
+      <p class="overview-panel__template-description">{{ currentTemplateDescription }}</p>
+      <div class="overview-panel__card-content overview-panel__markdown">
+        <ProductStatusBanner
+          v-if="isLoading"
+          tone="neutral"
+          icon-name="refresh"
+          title="正在加载概览"
+          aria-live="polite"
+        >
+          正在读取当前模板的概览内容。
+        </ProductStatusBanner>
         <div v-else-if="overviewContent" v-html="renderedContent"></div>
-        <div v-else class="placeholder-text">选择模板类型，点击生成按钮</div>
+        <ProductStatusBanner
+          v-else
+          tone="neutral"
+          icon-name="file-text"
+          title="尚未生成概览"
+        >
+          选择模板类型，点击生成按钮。
+        </ProductStatusBanner>
       </div>
     </div>
 
-    <div class="overview-card stats-card">
-      <h3 class="card-title">📊 分析统计</h3>
-      <div class="stats-grid">
-        <div class="stat-item">
-          <span class="stat-value">{{ insightStore.analyzedPageCount }}</span>
-          <span class="stat-label">已分析页面</span>
+    <div class="overview-panel__card overview-panel__card--stats">
+      <h3 class="overview-panel__card-title">
+        <UiIcon name="bar-chart" size="18" />
+        <span>分析统计</span>
+      </h3>
+      <div class="overview-panel__stats-grid">
+        <div class="overview-panel__stat-item">
+          <span class="overview-panel__stat-value">{{ insightStore.analyzedPageCount }}</span>
+          <span class="overview-panel__stat-label">已分析页面</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ insightStore.chapters.length }}</span>
-          <span class="stat-label">章节数</span>
+        <div class="overview-panel__stat-item">
+          <span class="overview-panel__stat-value">{{ insightStore.chapters.length }}</span>
+          <span class="overview-panel__stat-label">章节数</span>
         </div>
       </div>
 
-      <div class="export-actions">
+      <ProductActionRow
+        aria-label="概览导出操作"
+        class="overview-panel__export-actions"
+        justify="start"
+        variant="toolbar"
+      >
         <UiButton
           variant="secondary"
-          class="overview-action-button overview-action-button--secondary"
           :disabled="isExporting || !overviewContent"
           title="导出当前概览"
           @click="exportCurrentOverview" size="sm"
         >
-          📄 导出当前
+          <UiIcon name="file-text" size="14" />
+          <span>导出当前</span>
         </UiButton>
         <UiButton
           variant="primary"
-          class="overview-action-button overview-action-button--primary"
           :disabled="isExporting"
           title="导出完整分析数据"
           @click="exportAnalysisData" size="sm"
         >
-          {{ isExporting ? '导出中...' : '📤 导出全部' }}
+          <UiIcon v-if="!isExporting" name="download" size="14" />
+          <span>{{ isExporting ? '导出中...' : '导出全部' }}</span>
         </UiButton>
-      </div>
+      </ProductActionRow>
     </div>
 
-    <div class="overview-card recent-card">
-      <h3 class="card-title">🕐 最近分析</h3>
-      <div class="recent-pages">
-        <div v-if="recentAnalyzedPages.length === 0" class="placeholder-text">暂无分析记录</div>
-        <UiButton
+    <div class="overview-panel__card overview-panel__card--recent">
+      <h3 class="overview-panel__card-title">
+        <UiIcon name="clock" size="18" />
+        <span>最近分析</span>
+      </h3>
+      <div class="overview-panel__recent-pages">
+        <ProductStatusBanner
+          v-if="recentAnalyzedPages.length === 0"
+          tone="neutral"
+          icon-name="clock"
+          title="暂无分析记录"
+        >
+          完成页面分析后会在这里显示最近记录。
+        </ProductStatusBanner>
+        <ProductRecordCard
           v-for="page in recentAnalyzedPages"
           :key="page.page_num"
-          variant="toolbar"
-          class="recent-page-item"
+          as="button"
+          class="overview-panel__recent-page-card"
           :aria-label="`查看第 ${page.page_num} 页分析详情`"
           @click="goToPage(page.page_num)"
         >
-          <span class="page-number">第 {{ page.page_num }} 页</span>
-          <span v-if="page.summary" class="page-summary">{{ page.summary }}</span>
-        </UiButton>
+          <span class="overview-panel__recent-page-content">
+            <span class="overview-panel__page-number">第 {{ page.page_num }} 页</span>
+            <span v-if="page.summary" class="overview-panel__page-summary">{{ page.summary }}</span>
+          </span>
+        </ProductRecordCard>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.overview-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
+.overview-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 20px;
 }
 
-.overview-grid .overview-card {
-    background: var(--insight-surface-secondary);
-    border-radius: 12px;
-    padding: 20px;
-    border: 1px solid var(--color-border-muted);
+.overview-panel__card {
+  padding: 20px;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 12px;
+  background: var(--insight-surface-secondary);
 }
 
-.overview-grid .overview-card.summary-card {
-    grid-column: span 2;
+.overview-panel__card--summary {
+  grid-column: 1 / -1;
 }
 
-.overview-grid .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.overview-grid .card-title-with-selector {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.overview-grid .card-title-icon {
-    font-size: 20px;
-    line-height: 1;
-}
-
-.overview-grid .card-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.overview-grid .template-status {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    white-space: nowrap;
-}
-
-.overview-grid .template-description {
-    font-size: 12px;
-    color: var(--insight-text-muted);
-    margin: 0 0 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--color-border-muted);
-}
-
-.overview-grid .placeholder-text {
-    padding: 0;
-    text-align: left;
-}
-
-.overview-grid .card-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    color: var(--insight-text-primary);
-}
-
-.overview-grid .card-header .card-title {
-    margin-bottom: 0;
-}
-
-.overview-grid .button-icon {
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: var(--insight-surface-tertiary);
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-}
-
-.overview-grid .button-icon:hover {
-    background: var(--insight-action-primary);
-    color: var(--color-text-inverse);
-}
-
-.overview-grid .card-content {
-    color: var(--insight-text-secondary);
-    line-height: 1.6;
-}
-
-.overview-grid .markdown-content {
-    font-size: 14px;
-    line-height: 1.8;
-}
-
-.overview-grid .markdown-content h2 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--insight-text-primary);
-    margin: 16px 0 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--color-border-muted);
-}
-
-.overview-grid .markdown-content h2:first-child {
-    margin-top: 0;
-}
-
-.overview-grid .markdown-content h3 {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--insight-text-primary);
-    margin: 12px 0 6px;
-}
-
-.overview-grid .markdown-content p {
-    margin: 8px 0;
-    color: var(--insight-text-secondary);
-}
-
-.overview-grid .markdown-content ul, .overview-grid .markdown-content ol {
-    margin: 8px 0;
-    padding-left: 20px;
-}
-
-.overview-grid .markdown-content li {
-    margin: 4px 0;
-    color: var(--insight-text-secondary);
-}
-
-.overview-grid .markdown-content strong {
-    color: var(--insight-text-primary);
-    font-weight: 600;
-}
-
-.overview-grid .markdown-content em {
-    font-style: italic;
-    color: var(--insight-text-secondary);
-}
-
-.overview-grid .markdown-content blockquote {
-    margin: 12px 0;
-    padding: 8px 12px;
-    border-left: 3px solid var(--insight-action-primary);
-    background: var(--insight-surface-tertiary);
-    border-radius: 0 6px 6px 0;
-}
-
-.overview-grid .markdown-content blockquote p {
-    margin: 0;
-}
-
-.overview-grid .markdown-content hr {
-    border: none;
-    border-top: 1px solid var(--color-border-muted);
-    margin: 16px 0;
-}
-
-.overview-grid .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-}
-
-.overview-grid .stat-item {
-    text-align: center;
-    padding: 12px;
-    background: var(--insight-surface-tertiary);
-    border-radius: 8px;
-}
-
-.overview-grid .stat-value {
-    display: block;
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--insight-action-primary);
-}
-
-.overview-grid .stat-label {
-    font-size: 12px;
-    color: var(--insight-text-secondary);
-}
-
-.overview-grid .loading-text {
-  color: var(--insight-text-secondary);
-  text-align: center;
-  padding: 40px;
-}
-
-.overview-grid .export-actions {
+.overview-panel__card-header {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.overview-panel__template-heading {
+  display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.overview-panel__title-icon {
+  color: var(--insight-action-primary);
+}
+
+.overview-panel__card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.overview-panel__template-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.overview-panel__template-description {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-muted);
+  color: var(--insight-text-muted);
+  font-size: 12px;
+}
+
+.overview-panel__card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--insight-text-primary);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.overview-panel__card-header .overview-panel__card-title {
+  margin-bottom: 0;
+}
+
+.overview-panel__card-content {
+  color: var(--insight-text-secondary);
+  line-height: 1.6;
+}
+
+.overview-panel__markdown {
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.overview-panel__markdown h2 {
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-muted);
+  color: var(--insight-text-primary);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.overview-panel__markdown h2:first-child {
+  margin-top: 0;
+}
+
+.overview-panel__markdown h3 {
+  margin: 12px 0 6px;
+  color: var(--insight-text-primary);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.overview-panel__markdown p {
+  margin: 8px 0;
+  color: var(--insight-text-secondary);
+}
+
+.overview-panel__markdown ul,
+.overview-panel__markdown ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.overview-panel__markdown li {
+  margin: 4px 0;
+  color: var(--insight-text-secondary);
+}
+
+.overview-panel__markdown strong {
+  color: var(--insight-text-primary);
+  font-weight: 600;
+}
+
+.overview-panel__markdown em {
+  color: var(--insight-text-secondary);
+  font-style: italic;
+}
+
+.overview-panel__markdown blockquote {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--insight-action-primary);
+  border-radius: 0 6px 6px 0;
+  background: var(--insight-surface-tertiary);
+}
+
+.overview-panel__markdown blockquote p {
+  margin: 0;
+}
+
+.overview-panel__markdown hr {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--color-border-muted);
+}
+
+.overview-panel__stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.overview-panel__stat-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--insight-surface-tertiary);
+  text-align: center;
+}
+
+.overview-panel__stat-value {
+  display: block;
+  color: var(--insight-action-primary);
+  font-weight: 700;
+  font-size: 28px;
+}
+
+.overview-panel__stat-label {
+  color: var(--insight-text-secondary);
+  font-size: 12px;
+}
+
+.overview-panel__export-actions {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border-muted);
 }
 
-.overview-grid .overview-action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: none;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.overview-grid .overview-action-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.overview-grid .overview-card .overview-action-button--primary {
-  background: var(--insight-action-primary);
-  color: var(--color-text-inverse);
-}
-
-.overview-grid .overview-card .overview-action-button--primary:hover:not(:disabled) {
-  background: var(--insight-action-primary-strong);
-}
-
-.overview-grid .overview-card .overview-action-button--secondary {
-  background: var(--insight-surface-tertiary);
-  color: var(--insight-text-primary);
-  border: 1px solid var(--color-border-muted);
-}
-
-.overview-grid .overview-card .overview-action-button--secondary:hover:not(:disabled) {
-  background: var(--color-border-muted);
-}
-
-.overview-grid .recent-pages {
+.overview-panel__recent-pages {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.overview-grid .recent-page-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 10px 12px;
-  border: 0;
-  background: var(--insight-surface-tertiary);
-  border-radius: 6px;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  transition: all 0.2s;
+.overview-panel__recent-page-card {
+  --product-record-card-background: var(--insight-surface-tertiary);
+  --product-record-card-border: transparent;
+  --product-record-card-padding: 10px 12px;
+  --product-record-card-radius: 6px;
+  --product-record-card-shadow-hover: none;
 }
 
-.overview-grid .recent-page-item:hover {
-  background: var(--color-focus-brand-soft);
+.overview-panel__recent-page-card:hover {
+  --product-record-card-background: var(--color-focus-brand-soft);
+
   transform: translateX(4px);
 }
 
-.overview-grid .recent-page-item .page-number {
+.overview-panel__recent-page-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.overview-panel__page-number {
   font-size: 13px;
   font-weight: 500;
   color: var(--insight-action-primary);
 }
 
-.overview-grid .recent-page-item .page-summary {
+.overview-panel__page-summary {
   font-size: 12px;
   color: var(--insight-text-secondary);
   overflow: hidden;

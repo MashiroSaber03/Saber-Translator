@@ -1,7 +1,3 @@
-/**
- * OCR 步骤
- * 负责按当前 OCR 配置识别气泡文本。
- */
 import { parallelOcr, type ParallelOcrResponse } from '@/api/parallelTranslate'
 import { normalizeProviderId } from '@/config/aiProviders'
 import type { BubbleCoords, BubbleState, BubbleTextline } from '@/types/bubble'
@@ -9,6 +5,7 @@ import type { ImageData as AppImageData } from '@/types/image'
 import type { OcrResult } from '@/types/ocr'
 import type { TranslationSettings } from '@/types/settings'
 import { getTextlinesPerBubbleFromStates } from '@/utils/bubbleFactory'
+import { extractBase64Payload } from '@/utils/dataUrl'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 
 export interface OcrInput {
@@ -34,7 +31,7 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
     }
 
     const settings = settingsSnapshot
-    const base64 = extractBase64(image.originalDataURL)
+    const base64 = extractBase64Payload(image.originalDataURL)
 
     // PaddleOCR-VL 使用独立的源语言设置
     const ocrSourceLanguage = settings.ocrEngine === 'paddleocr_vl'
@@ -84,11 +81,4 @@ export async function executeOcr(input: OcrInput): Promise<OcrOutput> {
         originalTexts: response.original_texts || [],
         ocrResults: response.ocr_results || []
     }
-}
-
-function extractBase64(dataUrl: string): string {
-    if (dataUrl.includes('base64,')) {
-        return dataUrl.split('base64,')[1] || ''
-    }
-    return dataUrl
 }

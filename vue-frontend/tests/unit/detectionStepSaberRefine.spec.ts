@@ -1,58 +1,99 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { createDefaultSettings } from '@/stores/settings/defaults'
+import { createBubbleState } from '@/utils/bubbleFactory'
+import type { ImageData } from '@/types/image'
 
 const { parallelDetectMock } = vi.hoisted(() => ({
   parallelDetectMock: vi.fn()
 }))
 
-const detectionSettingsSnapshot = {
-  textDetector: 'ctd',
-  minTextBlockAreaPercent: 1,
-  enableSaberYoloRefine: true,
-  saberYoloRefineOverlapThreshold: 35,
-  enableAuxYoloDetection: true,
-  auxYoloConfThreshold: 0.55,
-  auxYoloOverlapThreshold: 0.2,
-  boxExpand: {
-    ratio: 3,
-    top: 1,
-    bottom: 2,
-    left: 4,
-    right: 5
-  },
-  textStyle: {
-    fontSize: 16,
-    fontFamily: 'fonts/STSONG.TTF',
-    layoutDirection: 'auto',
-    textColor: '#000000',
-    fillColor: '#ffffff',
-    strokeEnabled: false,
-    strokeColor: '#000000',
-    strokeWidth: 1,
-    lineSpacing: 1,
-    textAlign: 'start',
-    inpaintMethod: 'solid',
-  }
-} as any
+const detectionSettingsSnapshot = createDefaultSettings()
+detectionSettingsSnapshot.textDetector = 'ctd'
+detectionSettingsSnapshot.minTextBlockAreaPercent = 1
+detectionSettingsSnapshot.enableSaberYoloRefine = true
+detectionSettingsSnapshot.saberYoloRefineOverlapThreshold = 35
+detectionSettingsSnapshot.enableAuxYoloDetection = true
+detectionSettingsSnapshot.auxYoloConfThreshold = 0.55
+detectionSettingsSnapshot.auxYoloOverlapThreshold = 0.2
+detectionSettingsSnapshot.boxExpand = {
+  ratio: 3,
+  top: 1,
+  bottom: 2,
+  left: 4,
+  right: 5
+}
+detectionSettingsSnapshot.textStyle = {
+  ...detectionSettingsSnapshot.textStyle,
+  fontSize: 16,
+  fontFamily: 'fonts/STSONG.TTF',
+  layoutDirection: 'auto',
+  textColor: '#000000',
+  fillColor: '#ffffff',
+  strokeEnabled: false,
+  strokeColor: '#000000',
+  strokeWidth: 1,
+  lineSpacing: 1,
+  textAlign: 'start',
+  inpaintMethod: 'solid',
+}
 
 vi.mock('@/api/parallelTranslate', () => ({
   parallelDetect: parallelDetectMock
 }))
 
-vi.mock('@/stores/settings', () => ({
-  useSettingsStore: () => ({
-    settings: detectionSettingsSnapshot
-  })
-}))
-
-vi.mock('@/stores/imageStore', () => ({
-  useImageStore: () => ({
-    updateImageByIndex: vi.fn()
-  })
-}))
+function createTestImage(overrides: Partial<ImageData> = {}): ImageData {
+  return {
+    id: 'image-1',
+    fileName: 'page.png',
+    originalDataURL: 'data:image/png;base64,ZmFrZQ==',
+    translatedDataURL: null,
+    cleanImageData: null,
+    bubbleStates: null,
+    translationStatus: 'pending',
+    translationFailed: false,
+    fontSize: 18,
+    autoFontSize: false,
+    fontFamily: 'fonts/STSONG.TTF',
+    layoutDirection: 'vertical',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    inpaintMethod: 'solid',
+    strokeEnabled: false,
+    strokeColor: '#000000',
+    strokeWidth: 1,
+    lineSpacing: 1,
+    textAlign: 'start',
+    useAutoTextColor: false,
+    hasUnsavedChanges: false,
+    ...overrides,
+  }
+}
 
 describe('executeDetection saber yolo refine flags', () => {
   beforeEach(() => {
     parallelDetectMock.mockReset()
+  })
+
+  it('builds detection bubble states through the shared bubble factory', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/composables/translation/core/steps/detection.ts'),
+      'utf8',
+    )
+
+    expect(source).toContain('createBubbleStatesFromResponse')
+    expect(source).not.toContain('function createBubbleStates' + 'FromDetection')
+    expect(source).not.toContain('createBubble' + 'State({')
+  })
+
+  it('keeps detection fixtures typed to the current image and settings schema', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/detectionStepSaberRefine.spec.ts'),
+      'utf8',
+    )
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('passes the current toggle for main detection and disables refinement for mask detection', async () => {
@@ -76,10 +117,7 @@ describe('executeDetection saber yolo refine flags', () => {
     try {
       await executeDetection({
         imageIndex: 0,
-        image: {
-          originalDataURL: 'data:image/png;base64,ZmFrZQ==',
-          bubbleStates: undefined
-        } as any,
+        image: createTestImage({ bubbleStates: null }),
         settingsSnapshot: detectionSettingsSnapshot,
       })
       expect(logSpy).not.toHaveBeenCalled()
@@ -112,28 +150,24 @@ describe('executeDetection saber yolo refine flags', () => {
     try {
       await executeDetection({
         imageIndex: 0,
-        image: {
-          originalDataURL: 'data:image/png;base64,ZmFrZQ==',
+        image: createTestImage({
           bubbleStates: [
-            {
+            createBubbleState({
               coords: [0, 0, 10, 10],
               rotationAngle: 0,
               autoTextDirection: 'vertical',
               textDirection: 'vertical',
               originalText: '原文',
               textlines: [],
-            }
+            })
           ]
-        } as any,
+        }),
         settingsSnapshot: detectionSettingsSnapshot,
       })
 
       await executeDetection({
         imageIndex: 1,
-        image: {
-          originalDataURL: 'data:image/png;base64,ZmFrZQ==',
-          bubbleStates: []
-        } as any,
+        image: createTestImage({ bubbleStates: [] }),
         settingsSnapshot: detectionSettingsSnapshot,
       })
 

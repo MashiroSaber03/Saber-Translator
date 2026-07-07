@@ -1,26 +1,26 @@
-/**
- * 响应式布局 - 断点常量验证
- * 
- * **Feature: frontend-behavior, Property 43: 视口尺寸计算一致性**
- * **Validates: Requirements 25.1, 25.4**
- */
-
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { BREAKPOINTS } from '@/composables/useResponsive'
 
-describe('响应式布局 - 断点常量验证', () => {
-  it('断点值应该递增', () => {
-    expect(BREAKPOINTS.XS).toBeLessThan(BREAKPOINTS.SM)
-    expect(BREAKPOINTS.SM).toBeLessThan(BREAKPOINTS.MD)
-    expect(BREAKPOINTS.MD).toBeLessThan(BREAKPOINTS.LG)
-    expect(BREAKPOINTS.LG).toBeLessThan(BREAKPOINTS.XL)
-    expect(BREAKPOINTS.XL).toBeLessThan(BREAKPOINTS.XXL)
+const orderedBreakpoints = [
+  BREAKPOINTS.XS,
+  BREAKPOINTS.SM,
+  BREAKPOINTS.MD,
+  BREAKPOINTS.LG,
+  BREAKPOINTS.XL,
+  BREAKPOINTS.XXL,
+]
+
+describe('responsive breakpoint contracts', () => {
+  it('keeps breakpoint values ordered from small to large', () => {
+    for (let index = 1; index < orderedBreakpoints.length; index++) {
+      expect(orderedBreakpoints[index]).toBeGreaterThan(orderedBreakpoints[index - 1]!)
+    }
   })
-  
-  it('断点值应该为正整数', () => {
-    Object.values(BREAKPOINTS).forEach(value => {
+
+  it('keeps breakpoint values as positive integers', () => {
+    for (const value of orderedBreakpoints) {
       expect(value).toBeGreaterThan(0)
       expect(Number.isInteger(value)).toBe(true)
-    })
+    }
   })
 })

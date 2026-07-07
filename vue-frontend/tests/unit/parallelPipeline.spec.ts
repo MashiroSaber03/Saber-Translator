@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import type { TaskContext } from '@/composables/translation/core/runtime'
+import type { ImageData } from '@/types/image'
 
 const {
   executeAtomicStepMock,
@@ -32,7 +36,7 @@ const {
     },
   },
   imageStoreMock: {
-    images: [] as any[],
+    images: [] as Array<Pick<ImageData, 'translationStatus'>>,
     setTranslationStatus: vi.fn(),
     updateImageByIndex: vi.fn(),
     currentImageIndex: 0,
@@ -52,6 +56,35 @@ vi.mock('@/stores/imageStore', () => ({
   useImageStore: () => imageStoreMock,
 }))
 
+function createParallelImage(overrides: Partial<ImageData> = {}): ImageData {
+  return {
+    id: 'img-1',
+    fileName: 'page.png',
+    originalDataURL: 'data:image/png;base64,abc',
+    translatedDataURL: null,
+    cleanImageData: null,
+    bubbleStates: null,
+    translationStatus: 'pending',
+    translationFailed: false,
+    hasUnsavedChanges: false,
+    fontSize: 16,
+    autoFontSize: false,
+    fontFamily: 'fonts/STSONG.TTF',
+    layoutDirection: 'auto',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    inpaintMethod: 'solid',
+    strokeEnabled: false,
+    strokeColor: '#000000',
+    strokeWidth: 1,
+    lineSpacing: 1,
+    textAlign: 'start',
+    useAutoTextColor: false,
+    userMask: null,
+    ...overrides,
+  }
+}
+
 describe('ParallelPipeline failure handling', () => {
   beforeEach(() => {
     executeAtomicStepMock.mockReset()
@@ -66,6 +99,12 @@ describe('ParallelPipeline failure handling', () => {
     vi.restoreAllMocks()
   })
 
+  it('keeps parallel pipeline fixtures typed to current image and task contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/parallelPipeline.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+  })
+
   it('resolves with a failed result when an early pool throws instead of hanging forever', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     executeAtomicStepMock.mockRejectedValueOnce(new Error('detect exploded'))
@@ -76,13 +115,7 @@ describe('ParallelPipeline failure handling', () => {
       deepLearningLockSize: 1,
     })
 
-    const image = {
-      originalDataURL: 'data:image/png;base64,abc',
-      translatedDataURL: null,
-      cleanImageData: null,
-      bubbleStates: null,
-      userMask: null,
-    } as any
+    const image = createParallelImage()
     imageStoreMock.images = [{ translationStatus: 'pending' }]
 
     const result = await Promise.race([
@@ -109,13 +142,7 @@ describe('ParallelPipeline failure handling', () => {
       deepLearningLockSize: 1,
     })
 
-    const image = {
-      originalDataURL: 'data:image/png;base64,abc',
-      translatedDataURL: null,
-      cleanImageData: null,
-      bubbleStates: null,
-      userMask: null,
-    } as any
+    const image = createParallelImage()
     imageStoreMock.images = [{ translationStatus: 'processing' }]
 
     const execution = pipeline.execute([image], 'standard')
@@ -140,7 +167,7 @@ describe('ParallelPipeline failure handling', () => {
   it('resolves all buffered HQ tasks as failed when the batch translation step throws', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     settingsStoreMock.settings.hqTranslation.batchSize = 2
-    executeAtomicStepMock.mockImplementation(async (_step: string, task: any) => ({
+    executeAtomicStepMock.mockImplementation(async (_step: string, task: TaskContext) => ({
       ...task,
       bubbleCoords: [[0, 0, 10, 10]],
       bubbleAngles: [0],
@@ -160,21 +187,17 @@ describe('ParallelPipeline failure handling', () => {
     })
 
     const images = [
-      {
+      createParallelImage({
+        id: 'img-1',
+        fileName: 'page-1.png',
         originalDataURL: 'data:image/png;base64,abc1',
-        translatedDataURL: null,
-        cleanImageData: null,
-        bubbleStates: null,
-        userMask: null,
-      },
-      {
+      }),
+      createParallelImage({
+        id: 'img-2',
+        fileName: 'page-2.png',
         originalDataURL: 'data:image/png;base64,abc2',
-        translatedDataURL: null,
-        cleanImageData: null,
-        bubbleStates: null,
-        userMask: null,
-      },
-    ] as any[]
+      }),
+    ]
     imageStoreMock.images = [
       { translationStatus: 'pending' },
       { translationStatus: 'pending' },

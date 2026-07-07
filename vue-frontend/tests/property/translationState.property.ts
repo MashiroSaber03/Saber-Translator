@@ -1,300 +1,217 @@
-/**
- * 翻译状态管理属性测试
- * 使用 fast-check 进行属性基测试，验证翻译状态流转的一致性
- *
- * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
- * Validates: Requirements 4.4, 4.5
- */
-import { describe, it, beforeEach, afterEach, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
 import type { TranslationStatus } from '@/types/image'
 
-describe('翻译状态管理属性测试', () => {
-  // 模拟 localStorage
-  let localStorageMock: Record<string, string> = {}
+type ImageInput = {
+  fileName: string
+  originalDataURL: string
+}
 
-  beforeEach(() => {
-    // 重置 localStorage 模拟
-    localStorageMock = {}
+type ImageStore = ReturnType<typeof useImageStore>
 
-    // 模拟 localStorage
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
-      return localStorageMock[key] || null
-    })
+function createStore(): ImageStore {
+  setActivePinia(createPinia())
+  return useImageStore()
+}
 
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
-      localStorageMock[key] = value
-    })
+function addImage(store: ImageStore, imageInput: ImageInput) {
+  return store.addImage(imageInput.fileName, imageInput.originalDataURL)
+}
 
-    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation((key: string) => {
-      delete localStorageMock[key]
-    })
-
-    // 重置 Pinia
-    setActivePinia(createPinia())
+const fileNameArbitrary = fc
+  .stringOf(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789_-'.split('')), {
+    minLength: 1,
+    maxLength: 48,
   })
+  .map(name => `${name}.png`)
 
-  afterEach(() => {
-    vi.restoreAllMocks()
+const base64DataUrlArbitrary = fc
+  .stringOf(fc.constantFrom(...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.split('')), {
+    minLength: 10,
+    maxLength: 100,
   })
+  .map(data => `data:image/png;base64,${data}`)
 
-  /**
-   * 生成有效的翻译状态
-   */
-  const validTranslationStatusArb = fc.constantFrom<TranslationStatus>(
-    'pending',
-    'processing',
-    'completed',
-    'failed'
-  )
+const imageInputArbitrary: fc.Arbitrary<ImageInput> = fc.record({
+  fileName: fileNameArbitrary,
+  originalDataURL: base64DataUrlArbitrary,
+})
 
-  /**
-   * 生成有效的图片数据
-   */
-  const validImageDataArb = fc.record({
-    originalDataURL: fc.string({ minLength: 10, maxLength: 100 }).map((s) => `data:image/png;base64,${s}`),
-    fileName: fc.string({ minLength: 1, maxLength: 50 }).map((s) => `${s}.png`)
-  })
+const translationStatusArbitrary = fc.constantFrom<TranslationStatus>(
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+)
 
-  /**
-   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 对于任意图片，状态从 pending → processing → completed/failed 流转应正确
-   */
-  it('翻译状态流转一致性 - pending → processing', () => {
+const activeStatusArbitrary = fc.constantFrom<TranslationStatus>(
+  'pending',
+  'processing',
+  'completed',
+)
+
+describe('translation state properties', () => {
+  it('adds images in the pending state and can move them into processing', () => {
     fc.assert(
-      fc.property(validImageDataArb, (imageData) => {
-        // 每次迭代重新创建 Pinia 实例
-        setActivePinia(createPinia())
+      fc.property(imageInputArbitrary, imageInput => {
+        const store = createStore()
+        const image = addImage(store, imageInput)
 
-        const store = useImageStore()
+        expect(image.fileName).toBe(imageInput.fileName)
+        expect(image.originalDataURL).toBe(imageInput.originalDataURL)
+        expect(image.translationStatus).toBe('pending')
+        expect(image.translationFailed).toBe(false)
+        expect(store.pendingImageCount).toBe(1)
 
-        // 添加图片
-        store.addImage(imageData.originalDataURL, imageData.fileName)
-
-        // 验证初始状态为 pending
-        const image = store.images[0]
-        if (!image || image.translationStatus !== 'pending') return false
-
-        // 设置状态为 processing
         store.setTranslationStatus(0, 'processing')
 
-        // 验证状态已更新
-        return store.images[0]?.translationStatus === 'processing'
+        expect(store.images[0]?.translationStatus).toBe('processing')
+        expect(store.images[0]?.translationFailed).toBe(false)
+        expect(store.pendingImageCount).toBe(0)
       }),
-      { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 对于任意图片，状态从 processing → completed 流转应正确
-   */
-  it('翻译状态流转一致性 - processing → completed', () => {
-    fc.assert(
-      fc.property(validImageDataArb, (imageData) => {
-        // 每次迭代重新创建 Pinia 实例
-        setActivePinia(createPinia())
-
-        const store = useImageStore()
-
-        // 添加图片并设置为 processing
-        store.addImage(imageData.originalDataURL, imageData.fileName)
-        store.setTranslationStatus(0, 'processing')
-
-        // 设置状态为 completed
-        store.setTranslationStatus(0, 'completed')
-
-        // 验证状态已更新
-        const image = store.images[0]
-        return image?.translationStatus === 'completed' && image?.translationFailed === false
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  /**
-   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 对于任意图片，状态从 processing → failed 流转应正确，并记录错误信息
-   */
-  it('翻译状态流转一致性 - processing → failed', () => {
+  it('records failure messages and clears stale errors when work resumes', () => {
     fc.assert(
       fc.property(
-        validImageDataArb,
+        imageInputArbitrary,
         fc.string({ minLength: 1, maxLength: 100 }),
-        (imageData, errorMessage) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
+        activeStatusArbitrary,
+        (imageInput, errorMessage, recoveryStatus) => {
+          const store = createStore()
+          addImage(store, imageInput)
 
-          const store = useImageStore()
-
-          // 添加图片并设置为 processing
-          store.addImage(imageData.originalDataURL, imageData.fileName)
-          store.setTranslationStatus(0, 'processing')
-
-          // 设置状态为 failed，带错误信息
           store.setTranslationStatus(0, 'failed', errorMessage)
 
-          // 验证状态已更新
-          const image = store.images[0]
-          return (
-            image?.translationStatus === 'failed' &&
-            image?.translationFailed === true &&
-            image?.errorMessage === errorMessage
-          )
-        }
+          expect(store.images[0]?.translationStatus).toBe('failed')
+          expect(store.images[0]?.translationFailed).toBe(true)
+          expect(store.images[0]?.errorMessage).toBe(errorMessage)
+          expect(store.failedImageCount).toBe(1)
+
+          store.setTranslationStatus(0, recoveryStatus)
+
+          expect(store.images[0]?.translationStatus).toBe(recoveryStatus)
+          expect(store.images[0]?.translationFailed).toBe(false)
+          expect(store.images[0]?.errorMessage).toBeUndefined()
+          expect(store.failedImageCount).toBe(0)
+        },
       ),
-      { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 获取失败图片索引应正确返回所有失败的图片
-   */
-  it('获取失败图片索引一致性', () => {
+  it('returns failed image indexes in list order', () => {
     fc.assert(
-      fc.property(
-        fc.array(fc.boolean(), { minLength: 1, maxLength: 10 }),
-        (failedFlags) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
+      fc.property(fc.array(fc.boolean(), { minLength: 1, maxLength: 10 }), failedFlags => {
+        const store = createStore()
 
-          const store = useImageStore()
+        failedFlags.forEach((shouldFail, index) => {
+          store.addImage(`image${index}.png`, `data:image/png;base64,test${index}`)
+          store.setTranslationStatus(index, shouldFail ? 'failed' : 'completed', `error-${index}`)
+        })
 
-          // 添加图片并设置状态
-          failedFlags.forEach((shouldFail, index) => {
-            store.addImage(`data:image/png;base64,test${index}`, `image${index}.png`)
-            if (shouldFail) {
-              store.setTranslationStatus(index, 'failed', '测试错误')
-            } else {
-              store.setTranslationStatus(index, 'completed')
-            }
-          })
+        const expectedFailedIndices = failedFlags
+          .map((shouldFail, index) => (shouldFail ? index : -1))
+          .filter(index => index >= 0)
 
-          // 获取失败图片索引
-          const failedIndices = store.getFailedImageIndices()
-
-          // 验证失败图片索引正确
-          const expectedFailedIndices = failedFlags
-            .map((failed, index) => (failed ? index : -1))
-            .filter((index) => index !== -1)
-
-          // 验证数量一致
-          if (failedIndices.length !== expectedFailedIndices.length) return false
-
-          // 验证每个索引都正确
-          return expectedFailedIndices.every((index) => failedIndices.includes(index))
-        }
-      ),
-      { numRuns: 100 }
+        expect(store.getFailedImageIndices()).toEqual(expectedFailedIndices)
+        expect(store.failedImageCount).toBe(expectedFailedIndices.length)
+        expect(store.completedImageCount).toBe(failedFlags.length - expectedFailedIndices.length)
+      }),
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 标记当前图片为失败应正确更新状态
-   */
-  it('标记当前图片为失败一致性', () => {
+  it('marks the selected image as failed without changing the selection', () => {
     fc.assert(
       fc.property(
-        validImageDataArb,
+        fc.array(imageInputArbitrary, { minLength: 1, maxLength: 6 }),
+        fc.nat(),
         fc.string({ minLength: 1, maxLength: 100 }),
-        fc.integer({ min: 0, max: 5 }),
-        (imageData, errorMessage, imageCount) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
+        (imageInputs, targetSeed, errorMessage) => {
+          const store = createStore()
+          imageInputs.forEach(imageInput => addImage(store, imageInput))
+          const targetIndex = targetSeed % store.imageCount
 
-          const store = useImageStore()
-
-          // 添加多张图片
-          for (let i = 0; i <= imageCount; i++) {
-            store.addImage(`${imageData.originalDataURL}${i}`, `${imageData.fileName}${i}`)
-          }
-
-          // 设置当前图片索引
-          const targetIndex = Math.min(imageCount, store.images.length - 1)
           store.setCurrentImageIndex(targetIndex)
-
-          // 标记当前图片为失败
           store.markCurrentAsFailed(errorMessage)
 
-          // 验证状态已更新
-          const currentImage = store.images[targetIndex]
-          return (
-            currentImage?.translationStatus === 'failed' &&
-            currentImage?.translationFailed === true &&
-            currentImage?.errorMessage === errorMessage
-          )
-        }
+          expect(store.currentImageIndex).toBe(targetIndex)
+          expect(store.currentImage?.translationStatus).toBe('failed')
+          expect(store.currentImage?.translationFailed).toBe(true)
+          expect(store.currentImage?.errorMessage).toBe(errorMessage)
+          expect(store.getFailedImageIndices()).toEqual([targetIndex])
+        },
       ),
-      { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 20: 翻译状态流转一致性
-   * Validates: Requirements 4.4, 4.5
-   *
-   * 翻译状态更新应保持其他图片数据不变
-   */
-  it('翻译状态更新不影响其他图片数据', () => {
+  it('updates one image status without mutating neighboring image data', () => {
     fc.assert(
       fc.property(
-        fc.array(validImageDataArb, { minLength: 2, maxLength: 5 }),
-        validTranslationStatusArb,
-        fc.integer({ min: 0, max: 4 }),
-        (imagesData, newStatus, targetIndexRaw) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
+        fc.array(imageInputArbitrary, { minLength: 2, maxLength: 6 }),
+        translationStatusArbitrary,
+        fc.nat(),
+        fc.string({ minLength: 1, maxLength: 100 }),
+        (imageInputs, nextStatus, targetSeed, errorMessage) => {
+          const store = createStore()
+          imageInputs.forEach(imageInput => addImage(store, imageInput))
+          const targetIndex = targetSeed % store.imageCount
+          const snapshots = store.images.map(image => ({
+            fileName: image.fileName,
+            originalDataURL: image.originalDataURL,
+            translationStatus: image.translationStatus,
+            translationFailed: image.translationFailed,
+          }))
 
-          const store = useImageStore()
+          store.setTranslationStatus(targetIndex, nextStatus, errorMessage)
 
-          // 添加多张图片
-          imagesData.forEach((img) => {
-            store.addImage(img.originalDataURL, img.fileName)
+          store.images.forEach((image, index) => {
+            const snapshot = snapshots[index]
+            expect(image.fileName).toBe(snapshot?.fileName)
+            expect(image.originalDataURL).toBe(snapshot?.originalDataURL)
+
+            if (index === targetIndex) {
+              expect(image.translationStatus).toBe(nextStatus)
+              expect(image.translationFailed).toBe(nextStatus === 'failed')
+              if (nextStatus === 'failed') {
+                expect(image.errorMessage).toBe(errorMessage)
+              } else {
+                expect(image.errorMessage).toBeUndefined()
+              }
+            } else {
+              expect(image.translationStatus).toBe(snapshot?.translationStatus)
+              expect(image.translationFailed).toBe(snapshot?.translationFailed)
+              expect(image.errorMessage).toBeUndefined()
+            }
           })
-
-          // 确保目标索引有效
-          const targetIndex = targetIndexRaw % store.images.length
-
-          // 记录其他图片的原始数据
-          const otherImagesData = store.images
-            .filter((_, index) => index !== targetIndex)
-            .map((img) => ({
-              originalDataURL: img.originalDataURL,
-              fileName: img.fileName,
-              translationStatus: img.translationStatus
-            }))
-
-          // 更新目标图片状态
-          store.setTranslationStatus(targetIndex, newStatus)
-
-          // 验证其他图片数据未变
-          const currentOtherImages = store.images.filter((_, index) => index !== targetIndex)
-
-          return otherImagesData.every((original, index) => {
-            const current = currentOtherImages[index]
-            return (
-              current?.originalDataURL === original.originalDataURL &&
-              current?.fileName === original.fileName &&
-              current?.translationStatus === original.translationStatus
-            )
-          })
-        }
+        },
       ),
-      { numRuns: 100 }
+    )
+  })
+
+  it('resets every translation state back to pending', () => {
+    fc.assert(
+      fc.property(fc.array(fc.boolean(), { minLength: 1, maxLength: 10 }), failedFlags => {
+        const store = createStore()
+
+        failedFlags.forEach((shouldFail, index) => {
+          store.addImage(`image${index}.png`, `data:image/png;base64,test${index}`)
+          store.setTranslationStatus(index, shouldFail ? 'failed' : 'completed', `error-${index}`)
+        })
+
+        store.resetAllTranslationStatus()
+
+        expect(store.pendingImageCount).toBe(failedFlags.length)
+        expect(store.failedImageCount).toBe(0)
+        expect(store.completedImageCount).toBe(0)
+        store.images.forEach(image => {
+          expect(image.translationStatus).toBe('pending')
+          expect(image.translationFailed).toBe(false)
+          expect(image.errorMessage).toBeUndefined()
+        })
+      }),
     )
   })
 })

@@ -1,9 +1,3 @@
-/**
- * OCR池
- * 
- * 负责调用后端OCR API，识别气泡中的文字
- */
-
 import { TaskPool } from '../TaskPool'
 import type { PipelineTask } from '../types'
 import type { DeepLearningLock } from '../DeepLearningLock'
@@ -17,7 +11,7 @@ export class OcrPool extends TaskPool {
     progressTracker: ParallelProgressTracker,
     onTaskComplete?: (task: PipelineTask) => void
   ) {
-    super('OCR', '📖', nextPool, lock, progressTracker, onTaskComplete)
+    super('OCR', 'book-open', nextPool, lock, progressTracker, onTaskComplete)
   }
 
   protected async process(task: PipelineTask): Promise<PipelineTask> {

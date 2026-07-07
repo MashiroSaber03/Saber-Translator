@@ -10,15 +10,17 @@
         >
           <span v-if="toast.isHTML" v-html="toast.message"></span>
           <span v-else>{{ toast.message }}</span>
-          <UiButton
-            variant="toolbar"
+          <UiIconButton
             class="vue-toast-close"
-            aria-label="关闭通知"
+            label="关闭通知"
             title="关闭通知"
+            variant="plain"
+            size="xs"
+            shape="circle"
             @click.stop="removeToast(toast.id)"
           >
-            ×
-          </UiButton>
+            <UiIcon name="x" size="14" />
+          </UiIconButton>
         </div>
       </TransitionGroup>
     </div>
@@ -26,52 +28,23 @@
 </template>
 
 <script setup lang="ts">
-import UiButton from '@/components/ui/UiButton.vue'
-/**
- * Toast 通知组件
- * 使用全局 toastService 显示消息提示
- * 样式与业务契约完全一致：底部居中、彩色背景、白色文字
- */
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { onUnmounted } from 'vue'
 import { toastService } from '@/utils/toast'
 
-// 使用全局 toast 服务的消息队列
 const toasts = toastService.toasts
 
-/**
- * 移除指定 ID 的 Toast
- * @param id - Toast ID
- */
 const removeToast = (id: number): void => {
   toastService.removeToast(id)
 }
 
-// 组件卸载时清除所有定时器
 onUnmounted(() => {
   toastService.clearAll()
-})
-
-// 暴露 toast service 方法供测试和宿主调用。
-defineExpose({
-  toasts,
-  addToast: toastService.addToast,
-  removeToast: toastService.removeToast,
-  clearAll: toastService.clearAll,
-  success: toastService.success,
-  error: toastService.error,
-  info: toastService.info,
-  warning: toastService.warning,
-  showGeneralMessage: toastService.showGeneralMessage,
-  clearGeneralMessageById: toastService.clearGeneralMessageById,
-  clearAllGeneralMessages: toastService.clearAllGeneralMessages
 })
 </script>
 
 <style scoped>
-/* ============ Vue Toast 组件样式 ============ */
-
-/* 使用独特前缀避免与全局 CSS 冲突 */
-
 .vue-toast-container {
   position: fixed;
   bottom: 80px;
@@ -120,28 +93,15 @@ defineExpose({
 
 .vue-toast-close {
   position: absolute;
-  top: 50%;
+  top: calc(50% - 12px);
   right: 10px;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
   color: var(--toast-notification-close-text);
-  line-height: 1;
-  padding: 0;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .vue-toast-close:hover {
   color: white;
 }
 
-/* Toast 从下往上滑入动画 */
 .toast-slide-enter-active {
   animation: vueToastSlideUp 0.3s ease-out forwards;
 }
@@ -171,7 +131,6 @@ defineExpose({
   }
 }
 
-/* 响应式适配 */
 @media (--breakpoint-md-down) {
   .vue-toast-container {
     bottom: 60px;

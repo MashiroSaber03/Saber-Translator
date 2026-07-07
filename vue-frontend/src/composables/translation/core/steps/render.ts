@@ -1,7 +1,3 @@
-/**
- * 渲染步骤
- * 负责将清理后的图片、译文、方向、颜色和保存的文字样式投影为最终图像。
- */
 import { parallelRender, type ParallelRenderResponse } from '@/api/parallelTranslate'
 import type { BubbleState, BubbleCoords, BubbleTextline } from '@/types/bubble'
 import type { SavedTextStyles } from '../types'
@@ -61,19 +57,18 @@ function mergeRenderedBubbleStates(
             return renderedState
         }
 
-        const renderedStateRecord = renderedState as unknown as Record<string, unknown>
         const mergedState: BubbleState = {
             ...localState,
             ...renderedState
         }
 
-        if (!hasOwn(renderedStateRecord, 'textlines')) {
+        if (!hasOwn(renderedState, 'textlines')) {
             mergedState.textlines = localState.textlines
         }
-        if (!hasOwn(renderedStateRecord, 'ocrResult')) {
+        if (!hasOwn(renderedState, 'ocrResult')) {
             mergedState.ocrResult = localState.ocrResult ?? null
         }
-        if (!hasOwn(renderedStateRecord, 'colorConfidence')) {
+        if (!hasOwn(renderedState, 'colorConfidence')) {
             mergedState.colorConfidence = localState.colorConfidence
         }
 
@@ -101,7 +96,6 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     } = input
 
     if (!cleanImage) {
-        // 校对模式下，如果没有干净背景图，说明图片没有被翻译过
         if (currentMode === 'proofread') {
             throw new Error('此图片尚未翻译，请先翻译后再进行校对')
         }
@@ -114,27 +108,21 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
     const shouldInitializeAutoFontSize = renderStylePolicy.fontSize === 'initialize_auto' && autoFontSizeEnabled
     const shouldInitializeAutoColor = renderStylePolicy.color === 'initialize_auto' && autoTextColorEnabled
 
-    // 计算每个气泡最终用于渲染的 textDirection：
-    // - 如果全局设置是 'auto'，使用检测结果
-    // - 否则使用全局设置的值
     const globalTextDir = savedTextStyles?.autoTextDirection
-        ? 'auto'  // autoTextDirection 为 true 表示用户选择了 'auto'
+        ? 'auto'
         : (savedTextStyles?.textDirection || textStyle.layoutDirection)
 
-    // 构建 bubbleStates
     const bubbleStatesSource = existingBubbleStates && existingBubbleStates.length === bubbleCoords.length
         ? cloneBubbleStates(existingBubbleStates)
         : null
 
     const bubbleStates: BubbleState[] = bubbleCoords.map((coords, idx) => {
         const autoDir = autoDirections[idx] || 'vertical'
-        // 将后端返回的 'v'/'h' 格式转换为 'vertical'/'horizontal'
         const mappedAutoDir: 'vertical' | 'horizontal' = autoDir === 'v' ? 'vertical'
             : autoDir === 'h' ? 'horizontal'
                 : (autoDir === 'vertical' || autoDir === 'horizontal') ? autoDir : 'vertical'
         const baseState = bubbleStatesSource?.[idx]
 
-        // textDirection 直接使用具体方向值，异常时回退到检测方向。
         const textDirection =
             (baseState?.textDirection === 'vertical' || baseState?.textDirection === 'horizontal')
                 ? baseState.textDirection
@@ -142,7 +130,6 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
                     ? globalTextDir
                     : mappedAutoDir
 
-        // 只有显式初始化自动颜色时，才把 autoFgColor/autoBgColor 物化为当前渲染颜色。
         let finalTextColor = baseState?.textColor ?? savedTextStyles?.textColor ?? textStyle.textColor
         let finalFillColor = baseState?.fillColor ?? savedTextStyles?.fillColor ?? textStyle.fillColor
         const colorInfo = colors[idx]
@@ -163,8 +150,8 @@ export async function executeRender(input: RenderInput): Promise<RenderOutput> {
             ocrResult: ocrResults?.[idx] || null,
             translatedText: translatedTexts[idx] || '',
             textboxText: textboxTexts[idx] || '',
-            textDirection: textDirection as 'vertical' | 'horizontal',  // 渲染用的具体方向
-            autoTextDirection: mappedAutoDir as 'vertical' | 'horizontal',  // 备份检测结果
+            textDirection: textDirection as 'vertical' | 'horizontal',
+            autoTextDirection: mappedAutoDir as 'vertical' | 'horizontal',
             fontSize: baseState?.fontSize ?? savedTextStyles?.fontSize ?? textStyle.fontSize,
             fontFamily: baseState?.fontFamily ?? savedTextStyles?.fontFamily ?? textStyle.fontFamily,
             textColor: finalTextColor,

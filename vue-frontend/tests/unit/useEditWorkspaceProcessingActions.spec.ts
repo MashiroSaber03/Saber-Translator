@@ -14,12 +14,14 @@ const {
   executeDetectionMock,
   saveDetectionResultToImageMock,
   translateWithCurrentBubblesMock,
+  confirmProductActionMock,
   showToastMock,
 } = vi.hoisted(() => ({
   translateSingleTextMock: vi.fn(),
   executeDetectionMock: vi.fn(),
   saveDetectionResultToImageMock: vi.fn(),
   translateWithCurrentBubblesMock: vi.fn(),
+  confirmProductActionMock: vi.fn(),
   showToastMock: vi.fn(),
 }))
 
@@ -41,6 +43,10 @@ vi.mock('@/composables/useTranslationPipeline', () => ({
   }),
 }))
 
+vi.mock('@/composables/useProductConfirm', () => ({
+  confirmProductAction: confirmProductActionMock,
+}))
+
 vi.mock('@/utils/toast', () => ({
   showToast: showToastMock,
 }))
@@ -55,6 +61,8 @@ describe('useEditWorkspaceProcessingActions', () => {
         warnings: [],
       },
     })
+    confirmProductActionMock.mockReset()
+    confirmProductActionMock.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -107,7 +115,7 @@ describe('useEditWorkspaceProcessingActions', () => {
 
   it('clears the batch detection completion timer when the owner unmounts', async () => {
     vi.useFakeTimers()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const windowConfirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     executeDetectionMock.mockResolvedValue({
       bubbleCoords: [],
       bubbleStates: [],
@@ -139,6 +147,15 @@ describe('useEditWorkspaceProcessingActions', () => {
     const wrapper = mount(Harness)
 
     await actions.detectAllImages()
+
+    expect(confirmProductActionMock).toHaveBeenCalledWith({
+      title: '批量检测文本框',
+      message: '此操作将对所有图片进行文本框检测，可能会覆盖已有的检测结果。确定继续吗？',
+      confirmText: '开始检测',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    expect(windowConfirm).not.toHaveBeenCalled()
     expect(actions.isProcessing.value).toBe(true)
 
     wrapper.unmount()

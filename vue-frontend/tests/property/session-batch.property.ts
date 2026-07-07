@@ -1,49 +1,40 @@
-/**
- * 会话分批保存属性测试
- * 
- * **Feature: frontend-behavior, Property 34: 会话保存加载往返一致性**
- * **Validates: Requirements 14.4**
- */
-
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
-import { setActivePinia, createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '@/stores/sessionStore'
 
-describe('会话分批保存属性测试', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
+function createSessionStore() {
+  setActivePinia(createPinia())
+  return useSessionStore()
+}
 
-  /**
-   * Property 34.3: 分批保存状态管理一致性
-   */
-  it('Property 34.3: 分批保存状态管理一致性', () => {
+describe('session batch save properties', () => {
+  it('tracks batch progress from start through completion', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 100 }),
         fc.uuid(),
         (totalCount, sessionId) => {
-          const sessionStore = useSessionStore()
-          
+          const sessionStore = createSessionStore()
+
           expect(sessionStore.batchSaveState.isInProgress).toBe(false)
           expect(sessionStore.batchSaveProgress).toBe(0)
-          
+
           sessionStore.startBatchSave(totalCount, sessionId)
           expect(sessionStore.batchSaveState.isInProgress).toBe(true)
           expect(sessionStore.batchSaveState.totalCount).toBe(totalCount)
           expect(sessionStore.batchSaveState.sessionId).toBe(sessionId)
-          
+
           const midProgress = Math.floor(totalCount / 2)
           sessionStore.updateBatchSaveProgress(midProgress)
+
           expect(sessionStore.batchSaveState.currentIndex).toBe(midProgress)
-          
-          const expectedProgress = Math.round((midProgress / totalCount) * 100)
-          expect(sessionStore.batchSaveProgress).toBe(expectedProgress)
-          
+          expect(sessionStore.batchSaveProgress).toBe(Math.round((midProgress / totalCount) * 100))
+
           sessionStore.completeBatchSave()
           expect(sessionStore.batchSaveState.isInProgress).toBe(false)
           expect(sessionStore.batchSaveState.sessionId).toBeNull()
+          expect(sessionStore.batchSaveProgress).toBe(0)
         }
       ),
       { numRuns: 20 }

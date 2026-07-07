@@ -2,150 +2,154 @@
   <div class="more-settings">
     <ParallelSettings />
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>自动保存设置</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，在书架模式下翻译时会自动保存进度（翻译一张保存一张），防止意外关闭导致数据丢失。注意：此功能仅在书架模式下生效，快速翻译模式不支持。"
+      >
         <UiCheckbox v-model="localSettings.autoSaveInBookshelfMode" label="书架模式自动保存" />
-        <div class="ui-form-hint">
-          开启后，在书架模式下翻译时会自动保存进度（翻译一张保存一张），防止意外关闭导致数据丢失。
-          <br />
-          <span class="hint-note">注意：此功能仅在书架模式下生效，快速翻译模式不支持。</span>
-        </div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>消除文字模式</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，消除文字模式会同时执行OCR识别，获取带有原文的干净背景图。适用于需要保留原文信息以便后续翻译或参考的场景。"
+      >
         <UiCheckbox v-model="localSettings.removeTextWithOcr" label="同时执行OCR识别" />
-        <div class="ui-form-hint">
-          开启后，消除文字模式会同时执行OCR识别，获取带有原文的干净背景图。
-          <br />
-          <span class="hint-note">适用于需要保留原文信息以便后续翻译或参考的场景。</span>
-        </div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>LAMA 修复设置</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。适用于两种LAMA修复方法（速度优化和通用）。"
+      >
         <UiCheckbox v-model="localSettings.lamaDisableResize" label="禁用自动缩放" />
-        <div class="ui-form-hint">
-          开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。
-          <br />
-          <span class="hint-note">⚠️ 需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。</span>
-          <br />
-          <span class="hint-note">适用于两种LAMA修复方法（速度优化和通用）。</span>
-        </div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>调试选项</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。影响所有翻译模式，默认关闭以保持日志简洁。"
+      >
         <UiCheckbox v-model="localSettings.enableVerboseLogs" label="详细日志" />
-        <div class="ui-form-hint">
-          开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。
-          <br />
-          <span class="hint-note">影响所有翻译模式，默认关闭以保持日志简洁。</span>
-        </div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>PDF处理设置</template>
-      <UiField class="ui-settings-field">
-        <label for="settingsPdfProcessingMethod">PDF处理方式:</label>
-        <CustomSelect
+      <UiField
+        variant="settings"
+        label="PDF处理方式"
+        control-id="settingsPdfProcessingMethod"
+        hint="前端处理速度更快，后端处理适配性更好"
+      >
+        <UiSelect
+          id="settingsPdfProcessingMethod"
           v-model="localSettings.pdfProcessingMethod"
           :options="pdfMethodOptions"
         />
-        <div class="ui-form-hint">前端处理速度更快，后端处理适配性更好</div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>字体设置</template>
-      <UiField class="ui-settings-field">
-        <label>系统字体列表:</label>
+      <UiField variant="settings" label="系统字体列表">
         <UiButton variant="secondary" @click="refreshFontList" :disabled="isLoadingFonts">
-          {{ isLoadingFonts ? '加载中...' : '🔄 刷新字体列表' }}
+          {{ isLoadingFonts ? '加载中...' : '刷新字体列表' }}
         </UiButton>
-        <div v-if="fontList.length > 0" class="font-count">共 {{ fontList.length }} 个字体</div>
+        <div v-if="fontList.length > 0" class="more-settings__font-count">共 {{ fontList.length }} 个字体</div>
       </UiField>
-      <UiField class="ui-settings-field">
-        <label>上传自定义字体:</label>
-        <div class="font-upload-row">
+      <UiField
+        variant="settings"
+        label="上传自定义字体"
+        hint="支持 .ttf, .ttc, .otf 格式"
+      >
+        <div class="more-settings__font-upload-row">
           <UiFileInput
             ref="fontInput"
             data-testid="font-upload-input"
-            class="visually-hidden-file-input"
+            class="more-settings__hidden-file-input"
             accept=".ttf,.ttc,.otf"
-            @change="handleFontUpload"
+            @files-change="handleFontUpload"
           />
           <UiButton
             variant="secondary"
             type="button"
-           
             data-testid="font-upload-trigger"
             @click="triggerFontUpload"
           >
             选择字体文件
           </UiButton>
-          <span class="font-upload-filename" data-testid="font-upload-filename">
+          <span class="more-settings__font-upload-filename" data-testid="font-upload-filename">
             {{ selectedFontFileName || '未选择文件' }}
           </span>
         </div>
-        <div class="ui-form-hint">支持 .ttf, .ttc, .otf 格式</div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>缓存清理</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
+        <UiField
+          variant="settings"
+          label="清理调试文件"
+          hint="清理调试过程中生成的临时文件"
+        >
           <UiButton variant="secondary" @click="cleanDebugFiles" :disabled="isCleaning">
-            {{ isCleaning ? '清理中...' : '🗑️ 清理调试文件' }}
+            {{ isCleaning ? '清理中...' : '清理调试文件' }}
           </UiButton>
-          <div class="ui-form-hint">清理调试过程中生成的临时文件</div>
         </UiField>
-        <UiField class="ui-settings-field">
+        <UiField
+          variant="settings"
+          label="清理临时文件"
+          hint="清理下载和处理过程中的临时文件"
+        >
           <UiButton variant="secondary" @click="cleanTempFiles" :disabled="isCleaning">
-            {{ isCleaning ? '清理中...' : '🗑️ 清理临时文件' }}
+            {{ isCleaning ? '清理中...' : '清理临时文件' }}
           </UiButton>
-          <div class="ui-form-hint">清理下载和处理过程中的临时文件</div>
         </UiField>
       </UiFormGrid>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>关于</template>
-      <div class="about-info">
-        <p><strong>Saber-Translator</strong></p>
-        <p>AI驱动的漫画翻译工具</p>
-        <p class="links">
-          <a href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer">📖 使用教程</a>
-          <a href="https://github.com/MashiroSaber/saber-translator" target="_blank" rel="noopener noreferrer">🐙 GitHub</a>
+      <div class="more-settings__about">
+        <p class="more-settings__about-title"><strong>Saber-Translator</strong></p>
+        <p class="more-settings__about-description">AI驱动的漫画翻译工具</p>
+        <p class="more-settings__about-links">
+          <a class="more-settings__about-link" href="http://www.mashirosaber.top" target="_blank" rel="noopener noreferrer">使用教程</a>
+          <a class="more-settings__about-link" href="https://github.com/MashiroSaber/saber-translator" target="_blank" rel="noopener noreferrer">GitHub</a>
         </p>
-        <p class="disclaimer">本项目完全开源免费，请勿上当受骗</p>
+        <p class="more-settings__about-disclaimer">本项目完全开源免费，请勿上当受骗</p>
       </div>
-    </UiPanel>
+    </ProductFormSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
 import * as systemApi from '@/api/system'
 import { useToast } from '@/utils/toast'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 import ParallelSettings from './ParallelSettings.vue'
 
 const pdfMethodOptions = [
@@ -159,7 +163,7 @@ const toast = useToast()
 const isLoadingFonts = ref(false)
 const fontList = ref<import('@/types').FontInfo[]>([])
 const isCleaning = ref(false)
-const fontInput = ref<HTMLInputElement | null>(null)
+const fontInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const selectedFontFileName = ref('')
 
 const localSettings = ref({
@@ -208,9 +212,8 @@ function triggerFontUpload() {
   fontInput.value?.click()
 }
 
-async function handleFontUpload(event: Event) {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
+async function handleFontUpload(files: File[]) {
+  const file = files[0]
   if (!file) return
   selectedFontFileName.value = file.name
 
@@ -218,7 +221,7 @@ async function handleFontUpload(event: Event) {
   const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
   if (!validExtensions.includes(ext)) {
     toast.error('不支持的字体格式，请上传 .ttf, .ttc 或 .otf 文件')
-    target.value = ''
+    fontInput.value?.clear()
     return
   }
 
@@ -234,9 +237,7 @@ async function handleFontUpload(event: Event) {
     const errorMessage = error instanceof Error ? error.message : '字体上传失败'
     toast.error(errorMessage)
   } finally {
-    if (fontInput.value) {
-      fontInput.value.value = ''
-    }
+    fontInput.value?.clear()
   }
 }
 
@@ -276,14 +277,14 @@ async function cleanTempFiles() {
 </script>
 
 <style scoped>
-.font-upload-row {
+.more-settings__font-upload-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.visually-hidden-file-input {
+.more-settings__hidden-file-input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -295,48 +296,46 @@ async function cleanTempFiles() {
   border: 0;
 }
 
-.font-upload-filename {
+.more-settings__font-upload-filename {
   color: var(--color-text-supporting);
   font-size: 0.95em;
 }
 
-.font-count {
+.more-settings__font-count {
   margin-top: 8px;
   font-size: 13px;
   color: var(--color-text-supporting);
 }
 
-.about-info {
+.more-settings__about {
   padding: 15px;
   background: var(--color-surface-subtle);
   border-radius: 8px;
 }
 
-.about-info p {
+.more-settings__about-title,
+.more-settings__about-description,
+.more-settings__about-links,
+.more-settings__about-disclaimer {
   margin: 8px 0;
 }
 
-.about-info .links {
+.more-settings__about-links {
   display: flex;
   gap: 20px;
 }
 
-.about-info .links a {
+.more-settings__about-link {
   color: var(--color-action-primary);
   text-decoration: none;
 }
 
-.about-info .links a:hover {
+.more-settings__about-link:hover {
   text-decoration: underline;
 }
 
-.about-info .disclaimer {
+.more-settings__about-disclaimer {
   color: var(--color-status-warning);
   font-weight: 500;
-}
-
-.hint-note {
-  color: var(--color-status-warning);
-  font-size: 12px;
 }
 </style>

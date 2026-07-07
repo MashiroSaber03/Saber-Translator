@@ -1,10 +1,9 @@
 :root {
-  /* Shared Insight theme tokens used across the page shell and child panels. */
-  --insight-surface-page: #fff;
-  --insight-surface-secondary: rgba(248, 250, 252, .52);
-  --insight-surface-tertiary: #f4f7fb;
-  --insight-surface-hover: rgba(245, 249, 255, .82);
-  --insight-surface-warning-soft: #f6f8fb;
+  --insight-surface-page: var(--color-surface-panel);
+  --insight-surface-secondary: color-mix(in srgb, var(--color-surface-muted) 52%, transparent);
+  --insight-surface-tertiary: var(--color-surface-quiet);
+  --insight-surface-hover: color-mix(in srgb, var(--color-surface-interactive-hover) 82%, transparent);
+  --insight-surface-warning-soft: var(--color-status-warning-surface-soft);
 
   --insight-text-primary: var(--color-text-default);
   --insight-text-secondary: var(--color-text-secondary);
@@ -15,7 +14,7 @@
   --insight-action-primary-strong: var(--color-surface-brand-strong);
 
   --insight-status-success: var(--color-status-success);
-  --insight-status-warning: #f59e0b;
-  --insight-status-error: #ef4444;
-  --insight-status-danger: #f14c4c;
+  --insight-status-warning: var(--color-status-warning);
+  --insight-status-error: var(--color-status-error);
+  --insight-status-danger: var(--color-status-error-bright);
 }

@@ -1,0 +1,37 @@
+export const DISMISS_SETUP_REMINDER_KEY = 'saber_translator_dismiss_setup_reminder'
+
+function resolveStorage(storage?: Storage): Storage | null {
+  if (storage) {
+    return storage
+  }
+
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+export function shouldShowFirstTimeGuide(storage?: Storage): boolean {
+  try {
+    return resolveStorage(storage)?.getItem(DISMISS_SETUP_REMINDER_KEY) !== 'true'
+  } catch {
+    return true
+  }
+}
+
+export function dismissFirstTimeGuide(storage?: Storage): void {
+  try {
+    resolveStorage(storage)?.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
+  } catch {
+    // Storage can be unavailable in restricted browser contexts; dismissal still works for this session.
+  }
+}
+
+export function resetFirstTimeGuideDismissal(storage?: Storage): void {
+  try {
+    resolveStorage(storage)?.removeItem(DISMISS_SETUP_REMINDER_KEY)
+  } catch {
+    // Storage can be unavailable in restricted browser contexts; callers already fall back to showing the guide.
+  }
+}

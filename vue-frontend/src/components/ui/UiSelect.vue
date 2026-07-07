@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { useAttrs } from 'vue'
+import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 
 defineOptions({ inheritAttrs: false })
 
-type OptionValue = string | number
-
 const props = defineProps<{
-  modelValue?: OptionValue
-  options?: Array<{ label: string; value: OptionValue; disabled?: boolean }>
+  modelValue?: UiSelectValue
+  options?: UiSelectOption[]
   disabled?: boolean
   error?: boolean | string
   size?: 'lg' | 'md' | 'sm' | 'xs'
+  variant?: 'default' | 'studio'
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: OptionValue]
-  change: [value: OptionValue]
+  'update:modelValue': [value: UiSelectValue]
+  change: [value: UiSelectValue]
 }>()
 
 const attrs = useAttrs()
@@ -32,7 +32,7 @@ function handleChange(event: Event) {
   <select
     v-bind="attrs"
     class="ui-select"
-    :class="[`ui-select--${size || 'md'}`, { 'ui-select--error': Boolean(error) }]"
+    :class="[`ui-select--${size || 'md'}`, `ui-select--${variant || 'default'}`, { 'ui-select--error': Boolean(error) }]"
     :value="modelValue"
     :disabled="disabled"
     :aria-invalid="Boolean(error) ? 'true' : undefined"
@@ -89,6 +89,27 @@ function handleChange(event: Event) {
   min-height: 28px;
   padding: 4px 8px;
   font-size: 0.78rem;
+}
+
+:where(.ui-select--studio) {
+  min-height: 38px;
+  padding: var(--ui-select-studio-padding, 10px 12px);
+  border: var(--ui-select-studio-border, 1px solid var(--color-border-muted));
+  border-radius: var(--ui-select-studio-radius, 14px);
+  background: var(--ui-select-studio-background, var(--color-surface-input, var(--color-surface-card)));
+  color: var(--ui-select-studio-color, var(--color-text-default));
+  font-size: var(--ui-select-studio-font-size, 13px);
+}
+
+:where(.ui-select--studio.ui-select--lg) {
+  min-height: 44px;
+  padding: var(--ui-select-studio-lg-padding, 12px 14px);
+  border-radius: var(--ui-select-studio-lg-radius, 16px);
+}
+
+:where(.ui-select--studio):focus {
+  border-color: var(--ui-select-studio-focus-border, var(--color-border-brand));
+  box-shadow: 0 0 0 3px var(--ui-select-studio-focus-shadow, var(--color-focus-brand-soft));
 }
 
 :where(.ui-select--error) {

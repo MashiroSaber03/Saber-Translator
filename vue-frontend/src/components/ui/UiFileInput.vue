@@ -18,8 +18,26 @@ withDefaults(defineProps<{
 const attrs = useAttrs()
 const inputRef = ref<HTMLInputElement | null>(null)
 
+const emit = defineEmits<{
+  (event: 'files-change', files: File[]): void
+}>()
+
+function handleChange(event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) {
+    emit('files-change', [])
+    return
+  }
+  emit('files-change', Array.from(target.files ?? []))
+}
+
 defineExpose({
   click: () => inputRef.value?.click(),
+  clear: () => {
+    if (inputRef.value) {
+      inputRef.value.value = ''
+    }
+  },
   get value() {
     return inputRef.value?.value ?? ''
   },
@@ -44,6 +62,7 @@ defineExpose({
     :multiple="multiple"
     :hidden="hidden"
     :disabled="disabled"
+    @change="handleChange"
   >
 </template>
 

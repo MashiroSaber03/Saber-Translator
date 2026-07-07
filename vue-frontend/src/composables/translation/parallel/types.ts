@@ -1,22 +1,13 @@
-/**
- * 并行翻译模块类型定义
- */
-
 import type { TaskContext } from '@/composables/translation/core/runtime'
+import type { UiIconName } from '@/components/ui/iconRegistry'
 
-/**
- * 翻译模式
- */
 export type ParallelTranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
 export type PipelineTask = TaskContext
 
-/**
- * 池子状态
- */
 export interface PoolStatus {
   name: string
-  icon: string
+  icon: UiIconName
   waiting: number
   processing: boolean
   currentPage?: number
@@ -24,39 +15,28 @@ export interface PoolStatus {
   isWaitingLock: boolean
 }
 
-/**
- * 并行进度
- */
 export interface ParallelProgress {
   pools: PoolStatus[]
   totalCompleted: number
   totalFailed: number
   totalPages: number
   estimatedTimeRemaining: number
-  // 预保存进度
   preSave?: {
     isRunning: boolean
     current: number
     total: number
   }
-  // 保存进度（翻译过程中的保存）
   save?: {
     completed: number
     total: number
   }
 }
 
-/**
- * 并行配置
- */
 export interface ParallelConfig {
   enabled: boolean
-  deepLearningLockSize: number  // 深度学习锁大小（并发数）
+  deepLearningLockSize: number
 }
 
-/**
- * 池子进度更新
- */
 export interface PoolProgressUpdate {
   waiting?: number
   isProcessing?: boolean
@@ -65,9 +45,6 @@ export interface PoolProgressUpdate {
   isWaitingLock?: boolean
 }
 
-/**
- * 并行执行结果
- */
 export interface ParallelExecutionResult {
   success: number
   failed: number

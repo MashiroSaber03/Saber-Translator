@@ -1,298 +1,139 @@
-/**
- * 图片下载功能属性测试
- * 
- * **Feature: frontend-behavior, Property 30: 图片下载格式一致性**
- * **Validates: Requirements 18.3, 18.4**
- * 
- * 测试内容：
- * - 单张下载文件名格式正确
- * - 批量下载信息包含所有有效图片
- * - 下载格式枚举和图片索引顺序正确
- */
-
-import { describe, it, expect, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { describe, expect, it, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import * as fc from 'fast-check'
 import { useImageStore } from '@/stores/imageStore'
+import {
+  collectDownloadImageEntries,
+  DOWNLOAD_FORMATS,
+  resolveDownloadFileName,
+} from '@/composables/useExportImport'
 
-describe('图片下载功能属性测试', () => {
+describe('download export property contracts', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  /**
-   * 生成有效的文件名
-   */
-  const validFileNameArb = fc.stringOf(
-    fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'),
-    { minLength: 1, maxLength: 20 }
-  ).map(name => `${name}.png`)
+  const validFileNameArb = fc
+    .stringOf(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'), {
+      minLength: 1,
+      maxLength: 20,
+    })
+    .map(name => `${name}.png`)
 
-  /**
-   * 生成模拟的 Base64 图片数据
-   */
-  const mockDataURLArb = fc.constant('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+  const mockDataURLArb = fc.constant(
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  )
 
-  /**
-   * 生成下载文件名的函数
-   * 与 useExportImport 中的逻辑一致
-   */
-  function generateDownloadFileName(
-    originalFileName: string,
-    imageIndex: number,
-    hasTranslated: boolean
-  ): string {
-    let fileName = originalFileName || `image_${imageIndex}.png`
-    const prefix = hasTranslated ? 'translated' : 'original'
-    fileName = `${prefix}_${fileName.replace(/\.[^/.]+$/, '')}.png`
-    return fileName
-  }
+  it('uses the production helpers instead of copied download logic', () => {
+    const source = readFileSync('tests/property/download.property.ts', 'utf8')
+    const shadowFilenameHelper = 'function generateDownload' + 'FileName'
+    const shadowImageList = 'const imageInfo' + 'List'
+    const shadowStoreLoop = 'for (let i = 0; i < store.images.' + 'length; i++)'
 
-  /**
-   * Property 30.1: 单张下载文件名格式正确
-   * 对于任意图片，下载文件名应当包含正确的前缀和扩展名
-   */
-  it('单张下载文件名格式正确', () => {
+    expect(source).toContain("from '@/composables/useExportImport'")
+    expect(source).not.toContain(shadowFilenameHelper)
+    expect(source).not.toContain(shadowImageList)
+    expect(source).not.toContain(shadowStoreLoop)
+  })
+
+  it('resolves current-image filenames through the production helper', () => {
     fc.assert(
-      fc.property(
-        validFileNameArb,
-        fc.boolean(),
-        fc.nat(100),
-        (fileName, hasTranslated, imageIndex) => {
-          const downloadFileName = generateDownloadFileName(fileName, imageIndex, hasTranslated)
-          
-          // 验证文件名格式
-          expect(downloadFileName).toMatch(/\.(png)$/)
-          
-          // 验证前缀
-          if (hasTranslated) {
-            expect(downloadFileName.startsWith('translated_')).toBe(true)
-          } else {
-            expect(downloadFileName.startsWith('original_')).toBe(true)
-          }
-          
-          // 验证原始文件名被包含（去除扩展名后）
-          const baseFileName = fileName.replace(/\.[^/.]+$/, '')
-          expect(downloadFileName).toContain(baseFileName)
-        }
-      ),
-      { numRuns: 100 }
+      fc.property(validFileNameArb, fc.nat(100), fc.constantFrom('translated', 'original'), (
+        fileName,
+        imageIndex,
+        type,
+      ) => {
+        const downloadFileName = resolveDownloadFileName(fileName, imageIndex, type)
+
+        expect(downloadFileName).toMatch(/\.png$/)
+        expect(downloadFileName.startsWith(`${type}_`)).toBe(true)
+        expect(downloadFileName).toContain(fileName.replace(/\.[^/.]+$/, ''))
+      }),
+      { numRuns: 100 },
     )
   })
 
-  /**
-   * Property 30.2: 默认文件名生成正确
-   * 当原始文件名为空时，应当使用默认文件名格式
-   */
-  it('默认文件名生成正确', () => {
+  it('uses the current fallback filename when the image has no name', () => {
     fc.assert(
-      fc.property(
-        fc.nat(100),
-        fc.boolean(),
-        (imageIndex, hasTranslated) => {
-          const downloadFileName = generateDownloadFileName('', imageIndex, hasTranslated)
-          
-          // 验证默认文件名格式
-          const prefix = hasTranslated ? 'translated' : 'original'
-          expect(downloadFileName).toBe(`${prefix}_image_${imageIndex}.png`)
-        }
-      ),
-      { numRuns: 100 }
+      fc.property(fc.nat(100), fc.constantFrom('translated', 'original'), (imageIndex, type) => {
+        expect(resolveDownloadFileName('', imageIndex, type)).toBe(
+          `${type}_image_${imageIndex}.png`,
+        )
+      }),
+      { numRuns: 100 },
     )
   })
 
-  /**
-   * Property 30.3: 批量下载图片信息收集正确
-   * 对于任意图片列表，收集的下载信息应当包含所有有效图片
-   */
-  it('批量下载图片信息收集正确', () => {
+  it('collects every downloadable image through the production helper', () => {
     fc.assert(
       fc.property(
         fc.array(
           fc.record({
             fileName: validFileNameArb,
             hasOriginal: fc.boolean(),
-            hasTranslated: fc.boolean()
+            hasTranslated: fc.boolean(),
           }),
-          { minLength: 1, maxLength: 10 }
+          { minLength: 1, maxLength: 10 },
         ),
         mockDataURLArb,
         (imageConfigs, dataURL) => {
-          // 每次测试重新创建 Pinia 实例
           setActivePinia(createPinia())
           const store = useImageStore()
-          
-          // 添加图片
+
           for (const config of imageConfigs) {
             store.addImage(config.fileName, config.hasOriginal ? dataURL : '')
-            const image = store.images[store.images.length - 1]
+            const image = store.images.at(-1)
             if (image && config.hasTranslated) {
               image.translatedDataURL = dataURL
             }
           }
-          
-          // 收集下载信息
-          const imageInfoList: Array<{ index: number; type: 'translated' | 'original' }> = []
-          
-          for (let i = 0; i < store.images.length; i++) {
-            const imgData = store.images[i]
-            if (!imgData) continue
-            
-            if (imgData.translatedDataURL) {
-              imageInfoList.push({ index: i, type: 'translated' })
-            } else if (imgData.originalDataURL) {
-              imageInfoList.push({ index: i, type: 'original' })
-            }
-          }
-          
-          // 验证收集的信息
-          // 有效图片数量应当等于有原图或翻译图的图片数量
+
+          const entries = collectDownloadImageEntries(store.images)
           const validImageCount = imageConfigs.filter(
-            config => config.hasOriginal || config.hasTranslated
+            config => config.hasOriginal || config.hasTranslated,
           ).length
-          expect(imageInfoList.length).toBe(validImageCount)
-          
-          // 验证每个收集的信息都有有效的索引
-          for (const info of imageInfoList) {
-            expect(info.index).toBeGreaterThanOrEqual(0)
-            expect(info.index).toBeLessThan(store.images.length)
+
+          expect(entries).toHaveLength(validImageCount)
+          expect(entries.map(entry => entry.index)).toEqual(
+            entries.map(entry => entry.index).toSorted((left, right) => left - right),
+          )
+          for (const entry of entries) {
+            expect(entry.index).toBeGreaterThanOrEqual(0)
+            expect(entry.index).toBeLessThan(store.images.length)
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     )
   })
 
-  /**
-   * Property 30.4: 翻译图优先于原图
-   * 当图片同时有翻译图和原图时，应当优先使用翻译图
-   */
-  it('翻译图优先于原图', () => {
+  it('prefers translated data when both image variants exist', () => {
     fc.assert(
-      fc.property(
-        validFileNameArb,
-        mockDataURLArb,
-        (fileName, dataURL) => {
-          // 每次测试重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          const store = useImageStore()
-          
-          // 添加同时有原图和翻译图的图片
-          store.addImage(fileName, dataURL)
-          const image = store.images[0]
-          if (image) {
-            image.translatedDataURL = dataURL
-          }
-          
-          // 收集下载信息
-          const imageInfoList: Array<{ index: number; type: 'translated' | 'original' }> = []
-          
-          for (let i = 0; i < store.images.length; i++) {
-            const imgData = store.images[i]
-            if (!imgData) continue
-            
-            if (imgData.translatedDataURL) {
-              imageInfoList.push({ index: i, type: 'translated' })
-            } else if (imgData.originalDataURL) {
-              imageInfoList.push({ index: i, type: 'original' })
-            }
-          }
-          
-          // 验证优先使用翻译图
-          expect(imageInfoList.length).toBe(1)
-          expect(imageInfoList[0]?.type).toBe('translated')
+      fc.property(validFileNameArb, mockDataURLArb, (fileName, dataURL) => {
+        setActivePinia(createPinia())
+        const store = useImageStore()
+        store.addImage(fileName, dataURL)
+        const image = store.images[0]
+        if (image) {
+          image.translatedDataURL = dataURL
         }
-      ),
-      { numRuns: 100 }
+
+        expect(collectDownloadImageEntries(store.images)).toEqual([
+          { index: 0, type: 'translated' },
+        ])
+      }),
+      { numRuns: 100 },
     )
   })
 
-  /**
-   * Property 30.5: 下载格式验证
-   * 支持的下载格式应当为 zip、pdf、cbz
-   */
-  it('下载格式验证', () => {
-    const validFormats = ['zip', 'pdf', 'cbz'] as const
-    
-    for (const format of validFormats) {
-      expect(validFormats).toContain(format)
-    }
-    
-    // 验证格式类型
-    type DownloadFormat = 'zip' | 'pdf' | 'cbz'
-    const testFormat: DownloadFormat = 'zip'
-    expect(['zip', 'pdf', 'cbz']).toContain(testFormat)
+  it('keeps the product download formats as the source of truth', () => {
+    expect(DOWNLOAD_FORMATS).toEqual(['zip', 'pdf', 'cbz'])
   })
 
-  /**
-   * Property 30.6: 图片索引顺序保持一致
-   * 批量下载时，图片索引应当按顺序排列
-   */
-  it('图片索引顺序保持一致', () => {
-    fc.assert(
-      fc.property(
-        fc.array(validFileNameArb, { minLength: 2, maxLength: 10 }),
-        mockDataURLArb,
-        (fileNames, dataURL) => {
-          // 每次测试重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          const store = useImageStore()
-          
-          // 添加图片
-          for (const fileName of fileNames) {
-            store.addImage(fileName, dataURL)
-          }
-          
-          // 收集下载信息
-          const imageInfoList: Array<{ index: number; type: 'translated' | 'original' }> = []
-          
-          for (let i = 0; i < store.images.length; i++) {
-            const imgData = store.images[i]
-            if (!imgData) continue
-            
-            if (imgData.translatedDataURL) {
-              imageInfoList.push({ index: i, type: 'translated' })
-            } else if (imgData.originalDataURL) {
-              imageInfoList.push({ index: i, type: 'original' })
-            }
-          }
-          
-          // 验证索引顺序
-          for (let i = 0; i < imageInfoList.length - 1; i++) {
-            const current = imageInfoList[i]
-            const next = imageInfoList[i + 1]
-            if (current && next) {
-              expect(current.index).toBeLessThan(next.index)
-            }
-          }
-        }
-      ),
-      { numRuns: 100 }
-    )
-  })
-
-  /**
-   * Property 30.7: 空图片列表处理
-   * 当没有图片时，下载信息列表应当为空
-   */
-  it('空图片列表处理', () => {
-    setActivePinia(createPinia())
+  it('returns no batch entries for an empty image list', () => {
     const store = useImageStore()
-    
-    // 收集下载信息
-    const imageInfoList: Array<{ index: number; type: 'translated' | 'original' }> = []
-    
-    for (let i = 0; i < store.images.length; i++) {
-      const imgData = store.images[i]
-      if (!imgData) continue
-      
-      if (imgData.translatedDataURL) {
-        imageInfoList.push({ index: i, type: 'translated' })
-      } else if (imgData.originalDataURL) {
-        imageInfoList.push({ index: i, type: 'original' })
-      }
-    }
-    
-    expect(imageInfoList.length).toBe(0)
+
+    expect(collectDownloadImageEntries(store.images)).toEqual([])
   })
 })

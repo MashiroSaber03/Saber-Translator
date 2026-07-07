@@ -7,7 +7,9 @@ import {
 import { apiClient } from '@/api/client'
 import type { BubbleState, BubbleTextline } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
+import { extractBase64Payload, readBlobAsDataUrl } from '@/utils/dataUrl'
 import type { PipelineRuntime, TaskContext } from './runtime'
+import { resolveTaskStyleFields } from './taskStyleFields'
 
 interface PersistPageOptions {
   includeOriginal?: boolean
@@ -34,12 +36,7 @@ async function dataUrlFromApiUrl(url: string): Promise<string | null> {
     }
 
     const blob = await response.blob()
-    return await new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve((reader.result as string) || null)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
+    return await readBlobAsDataUrl(blob)
   } catch {
     return null
   }
@@ -61,8 +58,7 @@ async function resolvePersistableBase64(
     return resolvePersistableBase64(dataUrl, false)
   }
   if (source.startsWith('data:')) {
-    const parts = source.split(',')
-    return parts.length > 1 ? (parts[1] ?? null) : null
+    return extractBase64Payload(source) || null
   }
   return source
 }
@@ -83,28 +79,6 @@ function buildUiSettings(runtime: PipelineRuntime): Record<string, unknown> {
     lineSpacing: textStyle.lineSpacing,
     textAlign: textStyle.textAlign,
     useAutoTextColor: textStyle.useAutoTextColor,
-  }
-}
-
-function buildResolvedStyleFields(context: TaskContext, runtime: PipelineRuntime): Record<string, unknown> {
-  const image = context.sourceImage
-  const saved = runtime.savedTextStyles
-  const { textStyle } = runtime.settingsSnapshot
-
-  return {
-    fontSize: image.fontSize ?? saved?.fontSize ?? textStyle.fontSize,
-    autoFontSize: image.autoFontSize ?? saved?.autoFontSize ?? textStyle.autoFontSize,
-    fontFamily: image.fontFamily ?? saved?.fontFamily ?? textStyle.fontFamily,
-    layoutDirection: image.layoutDirection ?? saved?.layoutDirection ?? textStyle.layoutDirection,
-    useAutoTextColor: image.useAutoTextColor ?? saved?.useAutoTextColor ?? textStyle.useAutoTextColor,
-    textColor: image.textColor ?? saved?.textColor ?? textStyle.textColor,
-    fillColor: image.fillColor ?? saved?.fillColor ?? textStyle.fillColor,
-    inpaintMethod: image.inpaintMethod ?? saved?.inpaintMethod ?? textStyle.inpaintMethod,
-    strokeEnabled: image.strokeEnabled ?? saved?.strokeEnabled ?? textStyle.strokeEnabled,
-    strokeColor: image.strokeColor ?? saved?.strokeColor ?? textStyle.strokeColor,
-    strokeWidth: image.strokeWidth ?? saved?.strokeWidth ?? textStyle.strokeWidth,
-    lineSpacing: image.lineSpacing ?? saved?.lineSpacing ?? textStyle.lineSpacing,
-    textAlign: image.textAlign ?? saved?.textAlign ?? textStyle.textAlign,
   }
 }
 
@@ -186,7 +160,7 @@ function buildPageMeta(context: TaskContext, runtime: PipelineRuntime): Record<s
     hasUnsavedChanges: false,
     textMask: context.textMask ?? image.textMask ?? null,
     userMask: image.userMask ?? null,
-    ...buildResolvedStyleFields(context, runtime),
+    ...resolveTaskStyleFields(context, runtime),
   }
 }
 

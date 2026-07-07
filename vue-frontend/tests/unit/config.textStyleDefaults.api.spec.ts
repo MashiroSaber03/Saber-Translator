@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const { getMock, postMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
@@ -18,11 +20,18 @@ import {
   resetTextStyleDefaults,
   saveTextStyleDefaults,
 } from '@/api/config'
+import { getTextStyleDefaults as createTextStyleDefaultsPayload } from '@/defaults/textStyleDefaults'
 
 describe('config text style defaults api', () => {
   beforeEach(() => {
     getMock.mockReset()
     postMock.mockReset()
+  })
+
+  it('keeps text style defaults payload fixtures typed to the current schema', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/config.textStyleDefaults.api.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('getTextStyleDefaults should call the text defaults route', async () => {
@@ -49,10 +58,14 @@ describe('config text style defaults api', () => {
   })
 
   it('saveTextStyleDefaults should post defaults payload', async () => {
-    const defaults = { fontSize: 26, textColor: '#000000' }
+    const defaults = {
+      ...createTextStyleDefaultsPayload(),
+      fontSize: 26,
+      textColor: '#000000',
+    }
     postMock.mockResolvedValue({ success: true, defaults })
 
-    await saveTextStyleDefaults(defaults as any)
+    await saveTextStyleDefaults(defaults)
 
     expect(postMock).toHaveBeenCalledWith('/api/config/text-style-defaults', { defaults })
   })

@@ -29,7 +29,7 @@ export const aiVisionProviderOptions = getProviderOptionsForCapability('visionOc
 
 export const paddleOcrVlSourceLanguageGroups = [
   {
-    label: '🎌 东亚语言',
+    label: '东亚语言',
     options: [
       { label: '日语', value: 'japanese' },
       { label: '简体中文', value: 'chinese' },
@@ -38,7 +38,7 @@ export const paddleOcrVlSourceLanguageGroups = [
     ]
   },
   {
-    label: '🌍 拉丁语系',
+    label: '拉丁语系',
     options: [
       { label: '英语', value: 'english' },
       { label: '法语', value: 'french' },
@@ -51,7 +51,7 @@ export const paddleOcrVlSourceLanguageGroups = [
     ]
   },
   {
-    label: '🌏 东南亚语言',
+    label: '东南亚语言',
     options: [
       { label: '泰语', value: 'thai' },
       { label: '越南语', value: 'vietnamese' },
@@ -60,7 +60,7 @@ export const paddleOcrVlSourceLanguageGroups = [
     ]
   },
   {
-    label: '🌐 其他语系',
+    label: '其他语系',
     options: [
       { label: '俄语', value: 'russian' },
       { label: '阿拉伯语', value: 'arabic' },
@@ -80,7 +80,7 @@ export const promptModeOptions = [
 
 export const sourceLanguageGroups = [
   {
-    label: '🚀 常用语言',
+    label: '常用语言',
     options: [
       { label: '日语', value: 'japanese' },
       { label: '英语', value: 'en' },
@@ -90,7 +90,7 @@ export const sourceLanguageGroups = [
     ]
   },
   {
-    label: '🌍 拉丁语系',
+    label: '拉丁语系',
     options: [
       { label: '法语', value: 'french' },
       { label: '德语', value: 'german' },
@@ -100,7 +100,7 @@ export const sourceLanguageGroups = [
     ]
   },
   {
-    label: '🌏 其他语系',
+    label: '其他语系',
     options: [
       { label: '俄语', value: 'russian' }
     ]

@@ -8,6 +8,14 @@ import type { ContinuationState } from './useContinuationState'
 
 type GeneratePageImageArgs = Parameters<typeof ContinuationApi.generatePageImage>
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 const {
   getAvailableImagesMock,
   generatePageImageMock,
@@ -169,5 +177,55 @@ describe('useImageGeneration', () => {
     expect(generatePageImageMock).toHaveBeenCalledTimes(2)
     expect(generatePageImageMock.mock.calls[0]?.[1]).toBe(1)
     expect(pages.value[1].image_url).toBe('/tmp/generated-page.png')
+  })
+
+  it('does not apply or save stale batch image results after the selected book changes', async () => {
+    getAvailableImagesMock.mockResolvedValue({
+      success: true,
+      original_images: [
+        { page_number: 10, path: '/tmp/original-10.png', has_image: true, token: 'original:10' },
+      ],
+      continuation_images: [],
+      character_forms: [],
+      total_original_pages: 10,
+    })
+    const pendingGeneration = deferred<{ success: boolean; image_path: string }>()
+    generatePageImageMock.mockReturnValueOnce(pendingGeneration.promise)
+    savePagesMock.mockResolvedValue({ success: true })
+
+    const pages = ref<PageContent[]>([
+      {
+        page_number: 1,
+        continuity_text: '原作末页摘要',
+        story_text: '第1页剧情',
+        dialogue_text: '对白1',
+        characters: [],
+        final_prompt: 'prompt-1',
+        image_url: '',
+        previous_url: '',
+        status: 'pending' as const,
+      },
+    ])
+    const bookId = ref('book-1')
+    const state = createState(pages)
+
+    const composable = useImageGeneration(bookId, state)
+    const generation = composable.batchGenerateImages(pages.value)
+    await vi.waitFor(() => {
+      expect(generatePageImageMock).toHaveBeenCalled()
+    })
+
+    bookId.value = 'book-2'
+    pendingGeneration.resolve({
+      success: true,
+      image_path: '/tmp/stale-generated-page.png',
+    })
+    await generation
+
+    expect(pages.value[0].image_url).toBe('')
+    expect(pages.value[0].status).toBe('pending')
+    expect(savePagesMock).not.toHaveBeenCalled()
+    expect(state.showMessage).not.toHaveBeenCalledWith(expect.stringContaining('图片生成完成'), 'success')
+    expect(composable.isGenerating.value).toBe(false)
   })
 })

@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import type { ChapterData } from '@/types/api'
 
-defineProps<{
+const props = defineProps<{
   chapter: ChapterData
   index: number
   isDragging: boolean
@@ -20,15 +24,19 @@ defineEmits<{
   (event: 'edit', chapterId: string): void
   (event: 'delete', chapterId: string): void
 }>()
+
+const imageCount = computed(() => props.chapter.imageCount ?? 0)
 </script>
 
 <template>
-  <div
-    class="chapter-item"
+  <ProductRecordCard
+    class="chapter-row"
     :class="{
-      dragging: isDragging,
-      'drag-over': isDragOver
+      'chapter-row--dragging': isDragging,
+      'chapter-row--drag-over': isDragOver
     }"
+    :aria-label="`章节 ${chapter.title}，拖拽可调整排序`"
+    :aria-grabbed="isDragging ? 'true' : 'false'"
     draggable="true"
     @dragstart="$emit('dragStart', $event, index)"
     @dragover="$emit('dragOver', $event, index)"
@@ -36,144 +44,114 @@ defineEmits<{
     @drop="$emit('drop', $event, index)"
     @dragend="$emit('dragEnd')"
   >
-    <div class="chapter-drag-handle" title="拖拽排序">⋮⋮</div>
-    <div class="chapter-info">
-      <span class="chapter-order">#{{ index + 1 }}</span>
-      <span class="chapter-title">{{ chapter.title }}</span>
-      <span class="chapter-meta">{{ chapter.image_count || chapter.imageCount || 0 }} 张图片</span>
+    <div class="chapter-row__content">
+      <div class="chapter-row__drag-handle" title="拖拽排序" aria-hidden="true">
+        <UiIcon name="grip-vertical" size="18" />
+      </div>
+      <div class="chapter-row__info">
+        <span class="chapter-row__order">#{{ index + 1 }}</span>
+        <span class="chapter-row__title">{{ chapter.title }}</span>
+        <span class="chapter-row__meta">{{ imageCount }} 张图片</span>
+      </div>
+      <ProductActionRow
+        class="chapter-row__actions"
+        :aria-label="`${chapter.title} 章节操作`"
+        justify="end"
+      >
+        <UiButton
+          variant="primary"
+          size="xs"
+          @click="$emit('translate', chapter.id)"
+        >
+          进入翻译
+        </UiButton>
+        <UiButton
+          variant="secondary"
+          size="xs"
+          :disabled="imageCount === 0"
+          @click="$emit('read', chapter.id)"
+        >
+          进入阅读
+        </UiButton>
+        <UiButton
+          variant="secondary"
+          size="xs"
+          @click="$emit('edit', chapter.id)"
+        >
+          编辑
+        </UiButton>
+        <UiButton
+          variant="danger"
+          size="xs"
+          @click="$emit('delete', chapter.id)"
+        >
+          删除
+        </UiButton>
+      </ProductActionRow>
     </div>
-    <div class="chapter-actions">
-      <UiButton
-        variant="toolbar"
-        class="chapter-action-btn chapter-enter-btn"
-        @click="$emit('translate', chapter.id)"
-      >
-        进入翻译
-      </UiButton>
-      <UiButton
-        variant="toolbar"
-        class="chapter-action-btn chapter-read-btn"
-        :disabled="(chapter.image_count || chapter.imageCount || 0) === 0"
-        @click="$emit('read', chapter.id)"
-      >
-        进入阅读
-      </UiButton>
-      <UiButton
-        variant="toolbar"
-        class="chapter-action-btn"
-        @click="$emit('edit', chapter.id)"
-      >
-        编辑
-      </UiButton>
-      <UiButton
-        variant="danger"
-        class="chapter-action-btn"
-        @click="$emit('delete', chapter.id)"
-      >
-        删除
-      </UiButton>
-    </div>
-  </div>
+  </ProductRecordCard>
 </template>
 
 <style scoped>
-.chapter-item {
+.chapter-row {
+  --product-record-card-background: var(--color-surface-interactive-hover);
+  --product-record-card-border: transparent;
+  --product-record-card-accent: var(--color-border-brand-gradient);
+  --product-record-card-padding: 12px 16px;
+  --product-record-card-shadow-hover: none;
+}
+
+.chapter-row--dragging {
+  opacity: 0.6;
+}
+
+.chapter-row--drag-over {
+  --product-record-card-border: var(--color-border-brand-gradient);
+  --product-record-card-background: var(--color-surface-card);
+}
+
+.chapter-row__content {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--color-surface-interactive-hover);
-  transition: all 0.2s ease;
+  width: 100%;
+  min-width: 0;
 }
 
-.chapter-item:hover {
-  background: var(--color-border-muted);
-}
-
-.chapter-info {
+.chapter-row__info {
   display: flex;
-  flex: 1;
+  flex: 1 1 260px;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
-.chapter-order {
+.chapter-row__order {
   flex-shrink: 0;
   min-width: 32px;
   color: var(--color-text-supporting);
   font-size: 0.8rem;
 }
 
-.chapter-title {
+.chapter-row__title {
   overflow: hidden;
   color: var(--color-text-default);
   font-weight: 500;
   font-size: 0.9rem;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
-.chapter-meta {
+.chapter-row__meta {
   color: var(--color-text-supporting);
   font-size: 0.75rem;
 }
 
-.chapter-actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 6px;
-  opacity: 1;
-}
-
-.chapter-action-btn {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--color-text-supporting);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.chapter-action-btn:hover {
-  background: var(--color-surface-card);
-  color: var(--color-text-default);
-}
-
-.chapter-enter-btn {
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
-  color: var(--color-text-inverse);
-  font-weight: 500;
-}
-
-.chapter-enter-btn:hover {
-  background: linear-gradient(135deg, var(--book-detail-primary-action-hover-start) 0%, var(--book-detail-primary-action-hover-end) 100%);
-  color: var(--color-text-inverse);
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px var(--book-detail-primary-action-shadow);
-}
-
-.chapter-read-btn {
-  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%);
-  color: var(--color-text-inverse);
-  font-weight: 500;
-}
-
-.chapter-read-btn:disabled {
-  background: var(--color-border-muted);
-  color: var(--color-text-supporting);
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.chapter-read-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--book-detail-success-action-hover-start) 0%, var(--book-detail-success-action-hover-end) 100%);
-  color: var(--color-text-inverse);
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px var(--book-detail-success-action-shadow);
+.chapter-row__actions {
+  flex: 1 1 280px;
+  min-width: 0;
 }
 </style>

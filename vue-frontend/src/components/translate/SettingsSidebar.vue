@@ -76,8 +76,8 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 
 <template>
   <aside class="settings-sidebar">
-    <div class="settings-card">
-      <h2 class="sidebar-title">翻译设置</h2>
+    <div class="settings-sidebar__card">
+      <h2 class="settings-sidebar__title">翻译设置</h2>
 
       <TextStyleSection
         :apply-options="applyOptions"
@@ -108,11 +108,10 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
       />
 
       <UiFileInput
-        id="fontUpload"
         ref="fontUploadInput"
         accept=".ttf,.ttc,.otf"
         hidden
-        @change="handleFontUpload"
+        @files-change="handleFontUpload"
       />
 
       <PageSelectionSection
@@ -166,12 +165,12 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 
 <style scoped>
 .settings-sidebar {
-  --settings-sidebar-card-border: #dbe4ef;
-  --settings-sidebar-card-shadow: rgba(28, 45, 72, .07);
-  --settings-sidebar-scrollbar-track: #eef3f9;
-  --settings-sidebar-scrollbar-thumb: #c7d5e7;
-  --settings-sidebar-title-divider: #e2e9f2;
-  --settings-sidebar-title-text: #20314f;
+  --settings-sidebar-card-border: var(--color-border-muted);
+  --settings-sidebar-card-shadow: var(--shadow-soft);
+  --settings-sidebar-scrollbar-track: var(--color-surface-muted);
+  --settings-sidebar-scrollbar-thumb: var(--color-border-default);
+  --settings-sidebar-title-divider: var(--color-border-muted);
+  --settings-sidebar-title-text: var(--color-text-heading);
 
   display: flex;
   flex-direction: column;
@@ -203,7 +202,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
   background: var(--settings-sidebar-scrollbar-thumb);
 }
 
-.settings-card {
+.settings-sidebar__card {
   margin-bottom: 14px;
   padding: 18px;
   border: 1px solid var(--settings-sidebar-card-border);
@@ -212,7 +211,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
   box-shadow: 0 8px 20px var(--settings-sidebar-card-shadow);
 }
 
-.sidebar-title {
+.settings-sidebar__title {
   margin: 0 0 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--settings-sidebar-title-divider);
@@ -223,7 +222,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 }
 
 @media (--breakpoint-sidebar-height-compact) {
-  .sidebar-title {
+  .settings-sidebar__title {
     font-size: 22px;
   }
 }
@@ -241,12 +240,12 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
     direction: ltr;
   }
 
-  .settings-card {
+  .settings-sidebar__card {
     margin-bottom: 0;
     padding: 14px 16px 30px;
   }
 
-  .sidebar-title {
+  .settings-sidebar__title {
     font-size: 20px;
   }
 }

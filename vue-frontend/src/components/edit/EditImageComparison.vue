@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import BubbleEditor from './BubbleEditor.vue'
@@ -49,7 +50,7 @@ const emit = defineEmits<{
   bubbleRotateEnd: [index: number, angle: number]
   drawBubble: [rect: [number, number, number, number]]
   bubbleUpdate: [updates: Partial<BubbleState>]
-  reRender: []
+  applyToAllStyle: [updates: Partial<BubbleState>]
   ocrRecognize: [index: number]
   reTranslate: [index: number]
   resetCurrent: [index: number]
@@ -57,8 +58,12 @@ const emit = defineEmits<{
 
 const originalViewportRef = ref<HTMLElement | null>(null)
 const originalWrapperRef = ref<HTMLElement | null>(null)
+const originalImageRef = ref<HTMLImageElement | null>(null)
+const originalPanelRef = ref<HTMLElement | null>(null)
 const translatedViewportRef = ref<HTMLElement | null>(null)
 const translatedWrapperRef = ref<HTMLElement | null>(null)
+const translatedImageRef = ref<HTMLImageElement | null>(null)
+const translatedPanelRef = ref<HTMLElement | null>(null)
 const editPanelRef = ref<HTMLElement | null>(null)
 const originalPanelCollapsed = ref(false)
 const translatedPanelCollapsed = ref(false)
@@ -66,53 +71,65 @@ const translatedPanelCollapsed = ref(false)
 defineExpose({
   originalViewportRef,
   originalWrapperRef,
+  originalImageRef,
+  originalPanelRef,
   translatedViewportRef,
   translatedWrapperRef,
+  translatedImageRef,
+  translatedPanelRef,
   editPanelRef,
 })
 </script>
 
 <template>
   <div
-    class="edit-main-layout"
+    class="edit-image-comparison"
     :class="[
-      `layout-${layoutMode}`,
-      { 'drawing-mode': isDrawingMode },
-      { 'brush-mode-active': !!brushMode },
+      `edit-image-comparison--layout-${layoutMode}`,
+      { 'edit-image-comparison--drawing': isDrawingMode },
+      { 'edit-image-comparison--brush-active': !!brushMode },
     ]"
     :data-brush-mode="brushMode || undefined"
   >
-    <div class="image-comparison-container">
+    <div class="edit-image-comparison__canvas-region">
       <div
+        ref="originalPanelRef"
         v-show="viewMode !== 'translated'"
-        class="image-panel original-panel"
-        :class="{ collapsed: viewMode === 'translated' || originalPanelCollapsed }"
+        class="edit-image-comparison__image-panel edit-image-comparison__image-panel--original"
+        :class="{ 'edit-image-comparison__image-panel--collapsed': viewMode === 'translated' || originalPanelCollapsed }"
       >
-        <div class="panel-header">
-          <span class="panel-title">📖 原图 (日文)</span>
-          <UiButton
-            variant="toolbar"
-            class="panel-toggle"
+        <div class="edit-image-comparison__panel-header">
+          <span class="edit-image-comparison__panel-title">
+            <UiIcon name="book-open" size="14" />
+            <span>原图 (日文)</span>
+          </span>
+          <UiIconButton
+            class="edit-image-comparison__panel-toggle"
+            :label="originalPanelCollapsed ? '展开原图面板' : '折叠原图面板'"
             title="折叠/展开"
+            variant="inverse"
+            size="xs"
             @click="originalPanelCollapsed = !originalPanelCollapsed"
           >
-            {{ originalPanelCollapsed ? '+' : '−' }}
-          </UiButton>
+            <UiIcon :name="originalPanelCollapsed ? 'plus' : 'minus'" size="14" />
+          </UiIconButton>
         </div>
         <div
           ref="originalViewportRef"
-          class="image-viewport"
+          class="edit-image-comparison__viewport"
           @wheel.prevent="emit('wheelPanel', $event, 'original')"
           @mousedown="emit('mouseDownPanel', $event, 'original')"
           @dblclick="emit('fitToScreen')"
         >
           <div
             ref="originalWrapperRef"
-            class="image-canvas-wrapper"
+            class="edit-image-comparison__canvas-wrapper"
             :style="originalTransformStyle"
           >
             <img
               v-if="currentImage?.originalDataURL"
+              ref="originalImageRef"
+              class="edit-image-comparison__image"
               :src="currentImage.originalDataURL"
               alt="原图"
               @load="emit('imageLoad', 'original')"
@@ -139,7 +156,7 @@ defineExpose({
             />
             <div
               v-if="currentDrawingRect"
-              class="drawing-rect-edit"
+              class="edit-image-comparison__drawing-rect"
               :style="drawingRectStyle"
             ></div>
           </div>
@@ -148,43 +165,51 @@ defineExpose({
 
       <div
         v-if="viewMode === 'dual'"
-        class="panel-divider"
-        :class="{ 'vertical-divider': layoutMode === 'vertical' }"
+        class="edit-image-comparison__divider"
+        :class="{ 'edit-image-comparison__divider--vertical': layoutMode === 'vertical' }"
         @mousedown="emit('startDividerDrag', $event)"
       >
-        <span class="divider-handle">⋮</span>
+        <span class="edit-image-comparison__divider-handle">⋮</span>
       </div>
 
       <div
+        ref="translatedPanelRef"
         v-show="viewMode !== 'original'"
-        class="image-panel translated-panel"
-        :class="{ collapsed: viewMode === 'original' || translatedPanelCollapsed }"
+        class="edit-image-comparison__image-panel edit-image-comparison__image-panel--translated"
+        :class="{ 'edit-image-comparison__image-panel--collapsed': viewMode === 'original' || translatedPanelCollapsed }"
       >
-        <div class="panel-header">
-          <span class="panel-title">📝 翻译图 (中文)</span>
-          <UiButton
-            variant="toolbar"
-            class="panel-toggle"
+        <div class="edit-image-comparison__panel-header">
+          <span class="edit-image-comparison__panel-title">
+            <UiIcon name="file-text" size="14" />
+            <span>翻译图 (中文)</span>
+          </span>
+          <UiIconButton
+            class="edit-image-comparison__panel-toggle"
+            :label="translatedPanelCollapsed ? '展开翻译图面板' : '折叠翻译图面板'"
             title="折叠/展开"
+            variant="inverse"
+            size="xs"
             @click="translatedPanelCollapsed = !translatedPanelCollapsed"
           >
-            {{ translatedPanelCollapsed ? '+' : '−' }}
-          </UiButton>
+            <UiIcon :name="translatedPanelCollapsed ? 'plus' : 'minus'" size="14" />
+          </UiIconButton>
         </div>
         <div
           ref="translatedViewportRef"
-          class="image-viewport"
+          class="edit-image-comparison__viewport"
           @wheel.prevent="emit('wheelPanel', $event, 'translated')"
           @mousedown="emit('mouseDownPanel', $event, 'translated')"
           @dblclick="emit('fitToScreen')"
         >
           <div
             ref="translatedWrapperRef"
-            class="image-canvas-wrapper"
+            class="edit-image-comparison__canvas-wrapper"
             :style="translatedTransformStyle"
           >
             <img
               v-if="currentImage?.translatedDataURL || currentImage?.originalDataURL"
+              ref="translatedImageRef"
+              class="edit-image-comparison__image"
               :src="currentImage?.translatedDataURL || currentImage?.originalDataURL"
               alt="翻译图"
               @load="emit('imageLoad', 'translated')"
@@ -211,7 +236,7 @@ defineExpose({
             />
             <div
               v-if="currentDrawingRect"
-              class="drawing-rect-edit translated-drawing-rect"
+              class="edit-image-comparison__drawing-rect edit-image-comparison__drawing-rect--translated"
               :style="drawingRectStyle"
             ></div>
           </div>
@@ -219,9 +244,9 @@ defineExpose({
       </div>
     </div>
 
-    <div ref="editPanelRef" class="edit-panel-container">
+    <div ref="editPanelRef" class="edit-image-comparison__editor-panel">
       <div
-        class="panel-resize-handle vertical"
+        class="edit-image-comparison__editor-resize-handle edit-image-comparison__editor-resize-handle--vertical"
         @mousedown="emit('startPanelResize', $event)"
       >
         ⋮⋮⋮
@@ -232,7 +257,7 @@ defineExpose({
         :is-ocr-loading="isOcrLoading"
         :is-translate-loading="isTranslateLoading"
         @update="emit('bubbleUpdate', $event)"
-        @re-render="emit('reRender')"
+        @apply-to-all-style="emit('applyToAllStyle', $event)"
         @ocr-recognize="emit('ocrRecognize', $event)"
         @re-translate="emit('reTranslate', $event)"
         @reset-current="emit('resetCurrent', $event)"
@@ -242,22 +267,19 @@ defineExpose({
 </template>
 
 <style scoped>
-/* ============ 双图对照区域 ============ */
-.edit-main-layout {
-  /* owner tokens: edit-image-comparison */
-  --edit-image-comparison-panel-background: #16213e;
-  --edit-image-comparison-panel-header-background: rgba(0, 0, 0, .3);
-  --edit-image-comparison-panel-divider-border: rgba(255, 255, 255, .1);
-  --edit-image-comparison-original-title-text: #ff6b6b;
-  --edit-image-comparison-translated-title-text: #0f8;
-  --edit-image-comparison-viewport-background: #0d1b2a;
-  --edit-image-comparison-divider-background: #0f0f23;
-  --edit-image-comparison-divider-handle-text: #444;
-  --edit-image-comparison-resize-handle-background: #f0f0f0;
-  --edit-image-comparison-drawing-rect-border: #00d4ff;
-  --edit-image-comparison-drawing-rect-background: rgba(0, 212, 255, .1);
-  --edit-image-comparison-repair-mode-background: rgba(76, 175, 80, .05);
-  --edit-image-comparison-restore-mode-background: rgba(33, 150, 243, .05);
+.edit-image-comparison {
+  --edit-image-comparison-panel-background: var(--color-surface-inverse-panel);
+  --edit-image-comparison-panel-header-background: var(--color-overlay-scrim-subtle);
+  --edit-image-comparison-panel-divider-border: var(--color-overlay-inverse-subtle);
+  --edit-image-comparison-original-title-text: var(--color-status-error-bright);
+  --edit-image-comparison-translated-title-text: var(--color-action-success-bright);
+  --edit-image-comparison-viewport-background: var(--color-surface-inverse-canvas);
+  --edit-image-comparison-divider-background: var(--color-surface-inverse-depth);
+  --edit-image-comparison-divider-handle-text: var(--color-text-muted);
+  --edit-image-comparison-drawing-rect-border: var(--color-status-info-bright);
+  --edit-image-comparison-drawing-rect-background: color-mix(in srgb, var(--color-status-info-bright) 10%, transparent);
+  --edit-image-comparison-repair-mode-background: color-mix(in srgb, var(--color-status-success) 5%, transparent);
+  --edit-image-comparison-restore-mode-background: color-mix(in srgb, var(--color-status-info) 5%, transparent);
 
   display: flex;
   flex: 1;
@@ -267,7 +289,7 @@ defineExpose({
   transition: flex-direction 0.3s ease;
 }
 
-.image-comparison-container {
+.edit-image-comparison__canvas-region {
   display: flex;
   flex: 1 1 auto;
   gap: 0;
@@ -277,7 +299,7 @@ defineExpose({
   padding: 8px;
 }
 
-.image-panel {
+.edit-image-comparison__image-panel {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -288,12 +310,12 @@ defineExpose({
   transition: flex 0.3s ease;
 }
 
-.image-panel.collapsed {
+.edit-image-comparison__image-panel--collapsed {
   flex: 0 0 40px;
   min-width: 40px;
 }
 
-.panel-header {
+.edit-image-comparison__panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -302,37 +324,28 @@ defineExpose({
   background: var(--edit-image-comparison-panel-header-background);
 }
 
-.panel-title {
+.edit-image-comparison__panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-text-inverse);
   font-size: 13px;
   font-weight: 500;
 }
 
-.original-panel .panel-title {
+.edit-image-comparison__image-panel--original .edit-image-comparison__panel-title {
   color: var(--edit-image-comparison-original-title-text);
 }
 
-.translated-panel .panel-title {
+.edit-image-comparison__image-panel--translated .edit-image-comparison__panel-title {
   color: var(--edit-image-comparison-translated-title-text);
 }
 
-.panel-toggle {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 4px;
-  background: var(--color-overlay-inverse-subtle);
+.edit-image-comparison__panel-toggle {
   color: var(--color-text-inverse);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.panel-toggle:hover {
-  background: var(--color-overlay-inverse-muted);
-}
-
-.image-viewport {
+.edit-image-comparison__viewport {
   position: relative;
   flex: 1;
   overflow: hidden;
@@ -342,16 +355,16 @@ defineExpose({
   transform: translateZ(0);
 }
 
-.image-viewport:active {
+.edit-image-comparison__viewport:active {
   cursor: grabbing;
 }
 
-.image-viewport:focus {
+.edit-image-comparison__viewport:focus {
   outline: 2px solid var(--color-border-accent);
   outline-offset: -2px;
 }
 
-.image-canvas-wrapper {
+.edit-image-comparison__canvas-wrapper {
   position: absolute;
   top: 0;
   left: 0;
@@ -361,7 +374,7 @@ defineExpose({
   will-change: transform;
 }
 
-.image-canvas-wrapper img {
+.edit-image-comparison__image {
   display: block;
   max-width: none;
   backface-visibility: hidden;
@@ -372,7 +385,7 @@ defineExpose({
   -webkit-user-drag: none;
 }
 
-.panel-divider {
+.edit-image-comparison__divider {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -383,22 +396,32 @@ defineExpose({
   transition: background 0.2s;
 }
 
-.panel-divider:hover {
+.edit-image-comparison__divider:hover {
   background: var(--color-surface-accent);
 }
 
-.divider-handle {
+.edit-image-comparison__divider-handle {
   color: var(--edit-image-comparison-divider-handle-text);
   font-size: 12px;
   writing-mode: vertical-lr;
   user-select: none;
 }
 
-.panel-divider:hover .divider-handle {
+.edit-image-comparison__divider:hover .edit-image-comparison__divider-handle {
   color: var(--color-text-inverse);
 }
 
-.edit-panel-container {
+.edit-image-comparison__divider--vertical {
+  width: 100%;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.edit-image-comparison__divider--vertical .edit-image-comparison__divider-handle {
+  writing-mode: horizontal-tb;
+}
+
+.edit-image-comparison__editor-panel {
   display: flex;
   flex: 0 0 600px;
   flex-direction: row;
@@ -406,40 +429,40 @@ defineExpose({
   min-height: 0;
   max-width: 65%;
   overflow: hidden;
-  border-left: 1px solid var(--color-border-muted, var(--color-border-default));
-  background: var(--color-surface-card, var(--color-surface-base));
+  border-left: 1px solid var(--color-border-muted);
+  background: var(--color-surface-card);
   transition: flex 0.3s ease, max-height 0.3s ease, border 0.3s ease;
 }
 
-.panel-resize-handle {
+.edit-image-comparison__editor-resize-handle {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: var(--color-surface-app, var(--edit-image-comparison-resize-handle-background));
+  background: var(--color-surface-app);
   color: var(--color-text-muted);
   font-size: 10px;
   letter-spacing: 0;
   transition: background 0.2s;
 }
 
-.panel-resize-handle.vertical {
+.edit-image-comparison__editor-resize-handle--vertical {
   width: 10px;
   cursor: ew-resize;
   writing-mode: vertical-rl;
 }
 
-.panel-resize-handle:hover {
+.edit-image-comparison__editor-resize-handle:hover {
   background: var(--color-surface-accent);
   color: var(--color-text-inverse);
 }
 
-.drawing-mode .image-viewport,
-.drawing-mode .image-canvas-wrapper {
+.edit-image-comparison--drawing .edit-image-comparison__viewport,
+.edit-image-comparison--drawing .edit-image-comparison__canvas-wrapper {
   cursor: crosshair;
 }
 
-.drawing-rect-edit {
+.edit-image-comparison__drawing-rect {
   position: absolute;
   z-index: var(--z-local-popover);
   border: 2px dashed var(--edit-image-comparison-drawing-rect-border);
@@ -447,36 +470,48 @@ defineExpose({
   pointer-events: none;
 }
 
-.brush-mode-active .image-viewport {
+.edit-image-comparison--brush-active .edit-image-comparison__viewport {
   cursor: none;
 }
 
-.brush-mode-active[data-brush-mode="repair"] .image-viewport {
+.edit-image-comparison--brush-active[data-brush-mode="repair"] .edit-image-comparison__viewport {
   background: var(--edit-image-comparison-repair-mode-background);
 }
 
-.brush-mode-active[data-brush-mode="restore"] .image-viewport {
+.edit-image-comparison--brush-active[data-brush-mode="restore"] .edit-image-comparison__viewport {
   background: var(--edit-image-comparison-restore-mode-background);
 }
 
-.brush-mode-active .image-canvas-wrapper {
+.edit-image-comparison--brush-active .edit-image-comparison__canvas-wrapper {
   pointer-events: auto;
 }
 
-.image-panel.collapsed .image-viewport {
+.edit-image-comparison__image-panel--collapsed .edit-image-comparison__viewport {
   display: none;
 }
 
-.layout-vertical.edit-main-layout {
+.edit-image-comparison--layout-vertical {
   flex-direction: column;
 }
 
-.layout-vertical .image-comparison-container {
+.edit-image-comparison--layout-vertical .edit-image-comparison__canvas-region {
+  flex-direction: column;
   flex: 1;
   min-height: 0;
 }
 
-.layout-vertical .edit-panel-container {
+.edit-image-comparison--layout-vertical .edit-image-comparison__image-panel {
+  min-width: 0;
+  min-height: 150px;
+}
+
+.edit-image-comparison--layout-vertical .edit-image-comparison__image-panel--collapsed {
+  flex: 0 0 40px;
+  min-width: 0;
+  min-height: 40px;
+}
+
+.edit-image-comparison--layout-vertical .edit-image-comparison__editor-panel {
   flex: 0 0 auto;
   flex-direction: column;
   width: 100%;
@@ -484,11 +519,11 @@ defineExpose({
   min-height: 200px;
   max-width: 100%;
   max-height: 45%;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-top: 1px solid var(--color-border-muted);
   border-left: none;
 }
 
-.layout-vertical .panel-resize-handle.vertical {
+.edit-image-comparison--layout-vertical .edit-image-comparison__editor-resize-handle--vertical {
   width: 100%;
   height: 10px;
   cursor: ns-resize;
@@ -496,17 +531,17 @@ defineExpose({
 }
 
 @media (--breakpoint-md-down) {
-  .image-comparison-container {
+  .edit-image-comparison__canvas-region {
     flex-direction: column;
   }
 
-  .panel-divider {
+  .edit-image-comparison__divider {
     width: 100%;
     height: 8px;
     cursor: ns-resize;
   }
 
-  .divider-handle {
+  .edit-image-comparison__divider-handle {
     writing-mode: horizontal-tb;
   }
 }

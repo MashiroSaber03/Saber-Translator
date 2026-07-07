@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import type { PlotThread } from './timelineTypes'
 
 defineProps<{
@@ -8,25 +11,56 @@ defineProps<{
 function isResolved(thread: PlotThread): boolean {
   return thread.status === '已解决'
 }
+
+function threadStatus(thread: PlotThread): string {
+  return thread.status || '进行中'
+}
+
+function threadName(thread: PlotThread): string {
+  return thread.name || '未命名线索'
+}
+
+function threadChips(thread: PlotThread): ProductChipItem[] {
+  const items: ProductChipItem[] = [
+    {
+      id: `${thread.id}-status`,
+      label: threadStatus(thread),
+      tone: isResolved(thread) ? 'success' : 'warning',
+    },
+  ]
+
+  if (thread.introduced_at) {
+    items.push({
+      id: `${thread.id}-introduced`,
+      label: `第 ${thread.introduced_at} 页引入`,
+      tone: 'neutral',
+    })
+  }
+
+  return items
+}
 </script>
 
 <template>
   <div class="plot-threads-list">
-    <div
+    <ProductRecordCard
       v-for="thread in threads"
       :key="thread.id"
-      class="plot-thread-item"
-      :class="{ resolved: isResolved(thread) }"
+      accent
+      class="plot-threads-list__card"
+      :class="{ 'plot-threads-list__card--resolved': isResolved(thread) }"
+      :aria-label="`线索：${threadName(thread)}`"
     >
-      <div class="thread-header">
-        <span class="thread-name">{{ thread.name || '未命名线索' }}</span>
-        <span class="thread-status" :class="{ resolved: isResolved(thread) }">
-          {{ thread.status || '进行中' }}
-        </span>
-      </div>
-      <p v-if="thread.description" class="thread-desc">{{ thread.description }}</p>
-      <span v-if="thread.introduced_at" class="thread-intro">第 {{ thread.introduced_at }} 页引入</span>
-    </div>
+      <template #meta>
+        <span class="plot-threads-list__thread-name">{{ threadName(thread) }}</span>
+      </template>
+
+      <p v-if="thread.description" class="plot-threads-list__thread-description">{{ thread.description }}</p>
+
+      <template #footer>
+        <ProductChipList aria-label="线索状态" :items="threadChips(thread)" />
+      </template>
+    </ProductRecordCard>
   </div>
 </template>
 
@@ -37,54 +71,29 @@ function isResolved(thread: PlotThread): boolean {
   gap: 12px;
 }
 
-.plot-thread-item {
-  padding: 14px;
-  border-left: 3px solid var(--color-status-warning);
-  border-radius: 10px;
-  background: var(--insight-surface-secondary);
+.plot-threads-list__card {
+  --product-record-card-background: var(--insight-surface-secondary);
+  --product-record-card-accent: var(--color-status-warning);
+  --product-record-card-radius: 10px;
+  --product-record-card-padding: 14px;
 }
 
-.plot-thread-item.resolved {
-  border-left-color: var(--color-status-success);
+.plot-threads-list__card--resolved {
+  --product-record-card-accent: var(--color-status-success);
+
   opacity: 0.8;
 }
 
-.thread-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.thread-name {
+.plot-threads-list__thread-name {
   color: var(--insight-text-primary);
-  font-weight: 600;
   font-size: 14px;
+  font-weight: 600;
 }
 
-.thread-status {
-  flex-shrink: 0;
-  padding: 3px 10px;
-  border-radius: 10px;
-  background: var(--color-status-warning);
-  color: var(--color-text-inverse);
-  font-size: 11px;
-}
-
-.thread-status.resolved {
-  background: var(--color-status-success);
-}
-
-.thread-desc {
+.plot-threads-list__thread-description {
   margin: 0 0 8px;
   color: var(--insight-text-secondary);
   font-size: 13px;
   line-height: 1.5;
-}
-
-.thread-intro {
-  color: var(--insight-text-muted);
-  font-size: 12px;
 }
 </style>

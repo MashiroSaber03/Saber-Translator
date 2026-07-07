@@ -1,24 +1,31 @@
 <template>
   <div class="image-generation-panel">
-    <h3>🎨 图片生成与导出</h3>
+    <ProductSectionHeader title="图片生成与导出" icon-name="palette" />
 
-    <div class="generation-controls">
-      <div class="batch-config">
-        <div class="config-row">
-          <label for="continuation-style-reference-count">画风参考图数量:</label>
-          <UiInput
-            id="continuation-style-reference-count"
-            type="number"
-            v-model.number="refCount"
-            min="1"
-            max="10"
-            class="ref-count-input"
-          />
+    <div class="image-generation-panel__controls">
+      <div class="image-generation-panel__reference-config">
+        <div class="image-generation-panel__reference-row">
+          <UiField
+            class="image-generation-panel__reference-count-field"
+            variant="settings"
+            label="画风参考图数量"
+            control-id="continuation-style-reference-count"
+          >
+            <UiNumberField
+              input-id="continuation-style-reference-count"
+              v-model="refCount"
+              :min="1"
+              :max="10"
+              size="xs"
+              aria-label="画风参考图数量"
+            />
+          </UiField>
           <UiButton
             variant="secondary"
             @click="openBatchReferenceSelector"
           >
-            📷 选择初始参考图 ({{ getInitialRefCount() }})
+            <UiIcon name="camera" size="15" />
+            <span>选择初始参考图 ({{ getInitialRefCount() }})</span>
           </UiButton>
         </div>
       </div>
@@ -30,136 +37,157 @@
         size="lg"
         @click="handleBatchGenerate"
       >
-        {{ isGenerating ? '生成中...' : '🚀 批量生成图片' }}
+        <UiIcon v-if="!isGenerating" name="sparkles" size="18" />
+        <span>{{ isGenerating ? '生成中...' : '批量生成图片' }}</span>
       </UiButton>
 
-      <div
+      <UiProgressBar
         v-if="isGenerating"
-        class="progress-bar"
-        role="progressbar"
-        aria-label="图片生成进度"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        :aria-valuenow="boundedProgress"
+        class="image-generation-panel__generation-progress"
+        :value="boundedProgress"
+        label="图片生成进度"
       >
-        <div class="progress-fill" :style="{ width: `${boundedProgress}%` }"></div>
-        <span class="progress-text">{{ boundedProgress }}%</span>
-      </div>
+        <span class="image-generation-panel__progress-text">{{ boundedProgress }}%</span>
+      </UiProgressBar>
     </div>
 
-    <div class="generated-images">
-      <div v-for="page in pages" :key="page.page_number" class="image-card">
-        <div class="image-header">
-          <h4>页面 {{ page.page_number }}</h4>
-          <span class="image-status" :class="page.status">{{ getStatusText(page.status) }}</span>
+    <div class="image-generation-panel__images">
+      <ProductRecordCard v-for="page in pages" :key="page.page_number" class="image-generation-panel__image-card">
+        <div class="image-generation-panel__image-header">
+          <h4 class="image-generation-panel__image-title">页面 {{ page.page_number }}</h4>
+          <ProductChipList
+            class="image-generation-panel__status"
+            :aria-label="`页面 ${page.page_number} 生成状态`"
+            :items="[getStatusChipItem(page.status)]"
+          />
         </div>
 
-        <div class="image-preview">
+        <div class="image-generation-panel__preview">
           <img
             v-if="page.image_url"
+            class="image-generation-panel__image"
             :src="getImageUrl(page.image_url)"
             :alt="`页面 ${page.page_number}`"
           >
-          <div v-else class="no-image">
-            <span>{{ page.status === 'generating' ? '⏳' : '📷' }}</span>
-            <p>{{ page.status === 'generating' ? '生成中...' : '未生成' }}</p>
+          <div v-else class="image-generation-panel__empty-preview">
+            <UiIcon
+              class="image-generation-panel__empty-preview-icon"
+              :class="{ 'image-generation-panel__empty-preview-icon--loading': page.status === 'generating' }"
+              :name="page.status === 'generating' ? 'loading' : 'camera'"
+              size="40"
+              stroke-width="1.5"
+            />
+            <p class="image-generation-panel__empty-preview-text">{{ page.status === 'generating' ? '生成中...' : '未生成' }}</p>
           </div>
         </div>
 
-        <div class="story-context">
-          <div class="context-block">
-            <div class="context-header">
-              <label>上一页剧情</label>
+        <div class="image-generation-panel__story-context">
+          <ProductDetailSection label="上一页剧情">
+            <template #label-actions>
               <UiButton
-                variant="toolbar"
+                variant="link"
+                size="xs"
                 v-if="shouldShowStoryToggle(page.page_number, 'continuity')"
-                class="context-toggle"
                 @click="toggleStorySection(page.page_number, 'continuity')"
               >
                 {{ isStorySectionExpanded(page.page_number, 'continuity') ? '收起' : '展开' }}
               </UiButton>
-            </div>
+            </template>
             <p
-              class="context-text"
+              class="image-generation-panel__context-text"
               :class="getStoryTextClass(page.page_number, 'continuity', 3)"
             >
               {{ page.continuity_text || '（无）' }}
             </p>
-          </div>
-          <div class="context-block">
-            <div class="context-header">
-              <label>本页剧情</label>
+          </ProductDetailSection>
+          <ProductDetailSection label="本页剧情">
+            <template #label-actions>
               <UiButton
-                variant="toolbar"
+                variant="link"
+                size="xs"
                 v-if="shouldShowStoryToggle(page.page_number, 'story')"
-                class="context-toggle"
                 @click="toggleStorySection(page.page_number, 'story')"
               >
                 {{ isStorySectionExpanded(page.page_number, 'story') ? '收起' : '展开' }}
               </UiButton>
-            </div>
+            </template>
             <p
-              class="context-text"
+              class="image-generation-panel__context-text"
               :class="getStoryTextClass(page.page_number, 'story', 3)"
             >
               {{ page.story_text || '（无）' }}
             </p>
-          </div>
-          <div class="context-block">
-            <div class="context-header">
-              <label>关键对白</label>
+          </ProductDetailSection>
+          <ProductDetailSection label="关键对白">
+            <template #label-actions>
               <UiButton
-                variant="toolbar"
+                variant="link"
+                size="xs"
                 v-if="shouldShowStoryToggle(page.page_number, 'dialogue')"
-                class="context-toggle"
                 @click="toggleStorySection(page.page_number, 'dialogue')"
               >
                 {{ isStorySectionExpanded(page.page_number, 'dialogue') ? '收起' : '展开' }}
               </UiButton>
-            </div>
+            </template>
             <p
-              class="context-text"
+              class="image-generation-panel__context-text"
               :class="getStoryTextClass(page.page_number, 'dialogue', 2)"
             >
               {{ page.dialogue_text || '（无）' }}
             </p>
-          </div>
+          </ProductDetailSection>
         </div>
 
-        <div class="prompt-section">
-          <div class="prompt-header">
-            <label>📝 最终生图提示词</label>
-            <UiButton
-              variant="toolbar"
-              class="btn-mini"
-              @click="togglePromptEdit(page.page_number)"
-            >
-              {{ editingPromptPage === page.page_number ? '收起' : '编辑' }}
-            </UiButton>
-          </div>
-          <div v-if="editingPromptPage === page.page_number" class="prompt-edit">
-            <UiTextarea
-              v-model="page.final_prompt"
-              rows="8"
-              class="prompt-input"
-              placeholder="输入最终生图提示词..."
-              @input="$emit('prompt-change', page.page_number)"
-            />
-          </div>
-          <div v-else class="prompt-collapsed">
-            <p v-if="page.final_prompt" class="prompt-collapsed-hint">默认已折叠，点击“编辑”查看或修改</p>
-            <p v-else class="prompt-empty">暂无最终提示词</p>
-          </div>
+        <div class="image-generation-panel__prompt-section">
+          <ProductDetailSection label="最终生图提示词">
+            <template #label-actions>
+              <UiButton
+                variant="secondary"
+                size="xs"
+                @click="togglePromptEdit(page.page_number)"
+              >
+                {{ editingPromptPage === page.page_number ? '收起' : '编辑' }}
+              </UiButton>
+            </template>
+            <div v-if="editingPromptPage === page.page_number" class="image-generation-panel__prompt-edit">
+              <UiTextarea
+                :model-value="page.final_prompt"
+                rows="8"
+                class="image-generation-panel__prompt-input"
+                variant="panel"
+                size="md"
+                placeholder="输入最终生图提示词..."
+                @update:model-value="handlePromptInput(page.page_number, $event)"
+              />
+            </div>
+            <template v-else>
+              <p v-if="page.final_prompt" class="image-generation-panel__prompt-collapsed-hint">默认已折叠，点击“编辑”查看或修改</p>
+              <ProductStatusBanner
+                v-else
+                icon-name="message"
+                role="note"
+                tone="neutral"
+                title="暂无最终提示词"
+              >
+                生成图片前会在这里显示最终生图提示词。
+              </ProductStatusBanner>
+            </template>
+          </ProductDetailSection>
         </div>
 
-        <div class="image-actions">
+        <ProductActionRow
+          class="image-generation-panel__image-actions"
+          justify="between"
+          :aria-label="`页面 ${page.page_number} 图片操作`"
+        >
           <UiButton
             variant="secondary"
             :disabled="page.status === 'generating'"
             size="sm"
             @click="$emit('regenerate', page.page_number)"
           >
-            ↺ 重新生成
+            <UiIcon name="refresh" size="14" />
+            <span>重新生成</span>
           </UiButton>
           <UiButton
             variant="secondary"
@@ -167,10 +195,11 @@
             size="sm"
             @click="$emit('use-previous', page.page_number)"
           >
-            ◀ 上一版本
+            <UiIcon class="image-generation-panel__previous-icon" name="chevron-right" size="14" />
+            <span>上一版本</span>
           </UiButton>
-        </div>
-      </div>
+        </ProductActionRow>
+      </ProductRecordCard>
     </div>
 
     <ReferenceImageSelector
@@ -188,10 +217,20 @@
 </template>
 
 <script setup lang="ts">
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductDetailSection from '@/components/product/ProductDetailSection.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import UiProgressBar from '@/components/ui/UiProgressBar.vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import { getAvailableImages } from '@/api/continuation'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
@@ -211,7 +250,7 @@ const emit = defineEmits<{
   'batch-generate': [initialStyleReferenceTokens: string[] | null]
   'regenerate': [pageNumber: number]
   'use-previous': [pageNumber: number]
-  'prompt-change': [pageNumber: number]
+  'prompt-change': [pageNumber: number, prompt: string]
 }>()
 
 const state = props.state
@@ -224,6 +263,8 @@ const availableOriginalImages = ref<MangaImageInfo[]>([])
 const availableContinuationImages = ref<MangaImageInfo[]>([])
 const availableCharacterForms = ref<CharacterFormInfo[]>([])
 const boundedProgress = computed(() => Math.min(100, Math.max(0, Number(props.progress) || 0)))
+let imageRequestSeq = 0
+let isMounted = true
 
 function togglePromptEdit(pageNumber: number) {
   if (editingPromptPage.value === pageNumber) {
@@ -231,6 +272,10 @@ function togglePromptEdit(pageNumber: number) {
   } else {
     editingPromptPage.value = pageNumber
   }
+}
+
+function handlePromptInput(pageNumber: number, prompt: string): void {
+  emit('prompt-change', pageNumber, prompt)
 }
 
 function getImageUrl(imagePath: string): string {
@@ -245,6 +290,25 @@ function getStatusText(status: string): string {
     'failed': '失败'
   }
   return map[status] || status
+}
+
+function getStatusTone(status: string): ProductChipItem['tone'] {
+  const map: Record<string, ProductChipItem['tone']> = {
+    pending: 'warning',
+    generating: 'primary',
+    generated: 'success',
+    failed: 'danger',
+  }
+
+  return map[status] || 'neutral'
+}
+
+function getStatusChipItem(status: string): ProductChipItem {
+  return {
+    id: status,
+    label: getStatusText(status),
+    tone: getStatusTone(status),
+  }
 }
 
 function getStorySectionStateKey(pageNumber: number, section: StorySectionKey): string {
@@ -285,10 +349,13 @@ function shouldShowStoryToggle(pageNumber: number, section: StorySectionKey): bo
 
 function getStoryTextClass(pageNumber: number, section: StorySectionKey, maxLines: number): string[] {
   if (isStorySectionExpanded(pageNumber, section)) {
-    return ['is-expanded']
+    return ['image-generation-panel__context-text--expanded']
   }
 
-  return ['is-clamped', `lines-${maxLines}`]
+  return [
+    'image-generation-panel__context-text--clamped',
+    `image-generation-panel__context-text--lines-${maxLines}`,
+  ]
 }
 
 function getInitialRefCount(): number {
@@ -298,18 +365,27 @@ function getInitialRefCount(): number {
   return refCount.value
 }
 
+function invalidateAvailableImages(): void {
+  imageRequestSeq += 1
+}
+
 async function openBatchReferenceSelector() {
+  const bookId = props.bookId
+  const requestId = ++imageRequestSeq
+
   try {
     const response = await getAvailableImages(
-      props.bookId,
+      bookId,
       'image'
     )
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     if (response.success) {
       availableOriginalImages.value = response.original_images || []
       availableContinuationImages.value = response.continuation_images || []
       availableCharacterForms.value = response.character_forms || []
     }
   } catch {
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []
     availableContinuationImages.value = []
     availableCharacterForms.value = []
@@ -347,6 +423,7 @@ watch(() => state.styleRefPages?.value, (newValue) => {
 })
 
 watch(() => props.bookId, () => {
+  invalidateAvailableImages()
   batchInitialReferenceTokens.value = []
   availableOriginalImages.value = []
   availableContinuationImages.value = []
@@ -359,100 +436,77 @@ watch(() => props.pages.length, (pageCount) => {
     expandedStorySections.value = {}
   }
 })
+
+onBeforeUnmount(() => {
+  isMounted = false
+  invalidateAvailableImages()
+})
 </script>
 
 <style scoped>
 .image-generation-panel {
-  --image-generation-panel-empty-preview-background: #f7f7f7;
-  --image-generation-panel-focus-ring: rgba(99, 102, 241, .25);
-  --image-generation-panel-status-failed-text: #991b1b;
-  --image-generation-panel-status-generated-text: #065f46;
-  --image-generation-panel-status-generating-text: #1e40af;
-  --image-generation-panel-status-pending-text: #92400e;
-  --ui-input-padding: 8px 10px;
-  --ui-input-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-input-radius: 6px;
-  --ui-input-font-size: 14px;
-  --ui-input-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-input-color: var(--color-text-default);
-  --ui-input-focus-border: var(--color-border-brand);
-  --ui-input-focus-shadow: var(--color-focus-brand-soft);
-  --ui-textarea-padding: 12px;
-  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  --ui-textarea-radius: 8px;
-  --ui-textarea-background: var(--color-surface-input, var(--color-surface-base));
-  --ui-textarea-color: var(--color-text-default);
-  --ui-textarea-line-height: 1.6;
-  --ui-textarea-focus-border: var(--color-border-brand);
-  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
+  --image-generation-panel-empty-preview-background: var(--color-surface-muted);
 
-  padding: 24px;
+  min-width: 0;
+  container: continuation-image-generation / inline-size;
 }
 
-.image-generation-panel h3 {
-  margin: 0 0 20px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.image-generation-panel .generation-controls {
+.image-generation-panel__controls {
   margin-bottom: 24px;
 }
 
-.image-generation-panel .batch-config {
+.image-generation-panel__reference-config {
   margin-bottom: 16px;
   padding: 16px;
   background: var(--color-surface-subtle);
   border-radius: 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border: 1px solid var(--color-border-muted);
 }
 
-.image-generation-panel .config-row {
+.image-generation-panel__reference-row {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.image-generation-panel .config-row label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-default);
+.image-generation-panel__reference-count-field {
+  width: min(100%, 150px);
+  margin-bottom: 0;
 }
 
-.image-generation-panel .ref-count-input {
-  width: 60px;
-  text-align: center;
-}
-
-.image-generation-panel .generated-images {
+.image-generation-panel__images {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   gap: 20px;
 }
 
-.image-generation-panel .image-card {
-  background: var(--color-surface-subtle);
-  border-radius: 12px;
+.image-generation-panel__image-card {
+  --product-record-card-background: var(--color-surface-subtle);
+  --product-record-card-border: var(--color-border-muted);
+  --product-record-card-radius: 12px;
+  --product-record-card-padding: 0;
+  --product-record-card-gap: 0;
+  --product-record-card-shadow-hover: none;
+
   overflow: hidden;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
 }
 
-.image-generation-panel .image-header {
+.image-generation-panel__image-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
   background: var(--color-surface-base);
-  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
-.image-generation-panel .image-header h4 {
+.image-generation-panel__image-title {
   margin: 0;
   font-size: 15px;
 }
 
-.image-generation-panel .image-preview {
+.image-generation-panel__preview {
   min-height: 320px;
   padding: 16px;
   background: var(--color-surface-base);
@@ -461,221 +515,122 @@ watch(() => props.pages.length, (pageCount) => {
   justify-content: center;
 }
 
-.image-generation-panel .image-preview img {
+.image-generation-panel__image {
   display: block;
   width: 100%;
   max-width: 100%;
   max-height: 720px;
   object-fit: contain;
   border-radius: 8px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
+  border: 1px solid var(--color-border-muted);
 }
 
-.image-generation-panel .no-image {
+.image-generation-panel__empty-preview {
   min-height: 280px;
   width: 100%;
-  border: 1px dashed var(--color-border-muted, var(--color-border-subtle));
+  border: 1px dashed var(--color-border-muted);
   border-radius: 8px;
   background: var(--image-generation-panel-empty-preview-background);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
 }
 
-.image-generation-panel .no-image span {
-  font-size: 40px;
+.image-generation-panel__empty-preview-icon {
   margin-bottom: 10px;
 }
 
-.image-generation-panel .no-image p {
+.image-generation-panel__empty-preview-icon--loading {
+  animation: spin 1s linear infinite;
+}
+
+.image-generation-panel__empty-preview-text {
   margin: 0;
 }
 
-.image-generation-panel .story-context {
+.image-generation-panel__story-context {
   display: grid;
   gap: 12px;
   margin: 0;
   padding: 16px;
 }
 
-.image-generation-panel .context-block {
-  background: var(--color-surface-base);
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-
-.image-generation-panel .context-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.image-generation-panel .context-block label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.image-generation-panel .context-text {
+.image-generation-panel__context-text {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.55;
   color: var(--color-text-default);
   font-size: 13px;
 }
 
-.image-generation-panel .context-text.is-clamped {
+.image-generation-panel__context-text--clamped {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
 }
 
-.image-generation-panel .context-text.lines-2 {
+.image-generation-panel__context-text--lines-2 {
   -webkit-line-clamp: 2;
 }
 
-.image-generation-panel .context-text.lines-3 {
+.image-generation-panel__context-text--lines-3 {
   -webkit-line-clamp: 3;
 }
 
-.image-generation-panel .context-text.is-expanded {
+.image-generation-panel__context-text--expanded {
   display: block;
 }
 
-.image-generation-panel .context-toggle {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--color-text-brand);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.image-generation-panel .prompt-section {
+.image-generation-panel__prompt-section {
   padding: 0 16px 16px;
 }
 
-.image-generation-panel .prompt-input {
+.image-generation-panel__prompt-input {
   width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.image-generation-panel .btn-mini {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 6px;
-  background: var(--color-surface-base);
-  color: var(--color-text-brand);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-}
-
-.image-generation-panel .btn-mini:hover {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-border-brand);
-}
-
-.image-generation-panel .btn-mini:focus-visible {
-  outline: 2px solid var(--image-generation-panel-focus-ring);
-  outline-offset: 1px;
-}
-
-.image-generation-panel .prompt-collapsed {
-  background: var(--color-surface-base);
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-
-.image-generation-panel .prompt-empty {
+.image-generation-panel__prompt-collapsed-hint {
   margin: 0;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.image-generation-panel .prompt-collapsed-hint {
-  margin: 0;
-  color: var(--color-text-supporting, var(--color-text-secondary));
+  color: var(--color-text-supporting);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 
-.image-generation-panel .image-actions {
-  display: flex;
-  gap: 8px;
+.image-generation-panel__image-actions {
   padding: 0 16px 16px;
 }
 
-.image-generation-panel .image-actions > * {
+.image-generation-panel__image-actions > * {
   flex: 1;
 }
 
+.image-generation-panel__previous-icon {
+  transform: rotate(180deg);
+}
 
-.image-generation-panel .progress-bar {
-  height: 10px;
-  background: var(--color-surface-hover);
-  border-radius: 999px;
-  overflow: hidden;
+.image-generation-panel__generation-progress {
   margin-top: 16px;
-  position: relative;
 }
 
-.image-generation-panel .progress-fill {
-  height: 100%;
-  background: var(--color-surface-brand);
-}
-
-.image-generation-panel .progress-text {
-  position: absolute;
-  right: 10px;
-  top: -24px;
+.image-generation-panel__progress-text {
   font-size: 12px;
 }
 
-.image-generation-panel .image-status.pending {
-  color: var(--image-generation-panel-status-pending-text);
-}
-
-.image-generation-panel .image-status.generating {
-  color: var(--image-generation-panel-status-generating-text);
-}
-
-.image-generation-panel .image-status.generated {
-  color: var(--image-generation-panel-status-generated-text);
-}
-
-.image-generation-panel .image-status.failed {
-  color: var(--image-generation-panel-status-failed-text);
-}
-
-@media (--breakpoint-xl-down) {
-  .image-generation-panel .generated-images {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (--breakpoint-sm-down) {
-  .image-generation-panel {
-    padding: 16px;
-  }
-
-  .image-generation-panel .image-preview {
+@container continuation-image-generation (max-width: 520px) {
+  .image-generation-panel__preview {
     min-height: 240px;
     padding: 12px;
   }
 
-  .image-generation-panel .story-context,
-  .image-generation-panel .prompt-section,
-  .image-generation-panel .image-actions {
+  .image-generation-panel__story-context,
+  .image-generation-panel__prompt-section,
+  .image-generation-panel__image-actions {
     padding-left: 12px;
     padding-right: 12px;
   }

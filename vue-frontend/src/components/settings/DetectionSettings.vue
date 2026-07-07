@@ -1,144 +1,156 @@
 <template>
   <div class="detection-settings">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>文字检测器</template>
-      <UiField class="ui-settings-field">
-        <label for="settingsTextDetector">检测器类型:</label>
-        <CustomSelect
+      <UiField variant="settings" label="检测器类型" control-id="settingsTextDetector">
+        <UiSelect
+          id="settingsTextDetector"
           v-model="settings.textDetector"
           :options="detectorOptions"
         />
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsMinTextBlockAreaPercent">最小文本框面积占比 (%):</label>
-        <UiInput
-          type="number"
-          id="settingsMinTextBlockAreaPercent"
-          v-model.number="settings.minTextBlockAreaPercent"
-          min="0"
-          max="100"
-          step="0.01"
+      <UiField
+        variant="settings"
+        label="最小文本框面积占比 (%)"
+        control-id="settingsMinTextBlockAreaPercent"
+        hint="检测完成后自动删除面积低于原图该百分比的极小文本框，0 表示不过滤"
+      >
+        <UiNumberField
+          input-id="settingsMinTextBlockAreaPercent"
+          v-model="settings.minTextBlockAreaPercent"
+          :min="0"
+          :max="100"
+          :step="0.01"
         />
-        <div class="ui-form-hint">检测完成后自动删除面积低于原图该百分比的极小文本框，0 表示不过滤</div>
       </UiField>
-      <UiField class="ui-settings-field">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量"
+      >
         <UiCheckbox v-model="settings.enableAuxYoloDetection" label="启用辅助 YSGYolo 检测" />
-        <div class="ui-form-hint">使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量</div>
       </UiField>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsAuxYoloConfThreshold">辅助 YSGYolo 置信度:</label>
-          <UiInput
-            type="number"
-            id="settingsAuxYoloConfThreshold"
-            v-model.number="settings.auxYoloConfThreshold"
-            min="0"
-            max="1"
-            step="0.05"
+        <UiField variant="settings" label="辅助 YSGYolo 置信度" control-id="settingsAuxYoloConfThreshold">
+          <UiNumberField
+            input-id="settingsAuxYoloConfThreshold"
+            v-model="settings.auxYoloConfThreshold"
+            :min="0"
+            :max="1"
+            :step="0.05"
           />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsAuxYoloOverlapThreshold">辅助 YSGYolo 重叠阈值:</label>
-          <UiInput
-            type="number"
-            id="settingsAuxYoloOverlapThreshold"
-            v-model.number="settings.auxYoloOverlapThreshold"
-            min="0"
-            max="1"
-            step="0.05"
+        <UiField variant="settings" label="辅助 YSGYolo 重叠阈值" control-id="settingsAuxYoloOverlapThreshold">
+          <UiNumberField
+            input-id="settingsAuxYoloOverlapThreshold"
+            v-model="settings.auxYoloOverlapThreshold"
+            :min="0"
+            :max="1"
+            :step="0.05"
           />
         </UiField>
       </UiFormGrid>
-      <UiField class="ui-settings-field">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="使用 SaberYOLO 对误合并的大文本块进行二次拆分修正"
+      >
         <UiCheckbox v-model="settings.enableSaberYoloRefine" label="启用 SaberYOLO 二阶段纠错" />
-        <div class="ui-form-hint">使用 SaberYOLO 对误合并的大文本块进行二次拆分修正</div>
       </UiField>
-      <UiField class="ui-settings-field">
-        <label for="settingsSaberYoloRefineOverlapThreshold">SaberYOLO 拆分阈值 (%):</label>
-        <UiInput
-          type="number"
-          id="settingsSaberYoloRefineOverlapThreshold"
-          v-model.number="settings.saberYoloRefineOverlapThreshold"
-          min="0"
-          max="100"
-          step="1"
+      <UiField
+        variant="settings"
+        label="SaberYOLO 拆分阈值 (%)"
+        control-id="settingsSaberYoloRefineOverlapThreshold"
+        hint="参考块与当前 block 的重叠面积占参考块面积的最小百分比，默认 50%"
+      >
+        <UiNumberField
+          input-id="settingsSaberYoloRefineOverlapThreshold"
+          v-model="settings.saberYoloRefineOverlapThreshold"
+          :min="0"
+          :max="100"
+          :step="1"
         />
-        <div class="ui-form-hint">参考块与当前 block 的重叠面积占参考块面积的最小百分比，默认 50%</div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>文本框扩展参数</template>
-      <UiField class="ui-settings-field">
-        <label for="settingsBoxExpandRatio">整体扩展 (%):</label>
-        <UiInput type="number" id="settingsBoxExpandRatio" v-model.number="settings.boxExpandRatio" min="0" max="50" step="1" />
-        <div class="ui-form-hint">向四周均匀扩展的百分比 (0-50%)</div>
+      <UiField
+        variant="settings"
+        label="整体扩展 (%)"
+        control-id="settingsBoxExpandRatio"
+        hint="向四周均匀扩展的百分比 (0-50%)"
+      >
+        <UiNumberField input-id="settingsBoxExpandRatio" v-model="settings.boxExpandRatio" :min="0" :max="50" :step="1" />
       </UiField>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsBoxExpandTop">上方扩展 (%):</label>
-          <UiInput type="number" id="settingsBoxExpandTop" v-model.number="settings.boxExpandTop" min="0" max="50" step="1" />
+        <UiField variant="settings" label="上方扩展 (%)" control-id="settingsBoxExpandTop">
+          <UiNumberField input-id="settingsBoxExpandTop" v-model="settings.boxExpandTop" :min="0" :max="50" :step="1" />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsBoxExpandBottom">下方扩展 (%):</label>
-          <UiInput type="number" id="settingsBoxExpandBottom" v-model.number="settings.boxExpandBottom" min="0" max="50" step="1" />
+        <UiField variant="settings" label="下方扩展 (%)" control-id="settingsBoxExpandBottom">
+          <UiNumberField input-id="settingsBoxExpandBottom" v-model="settings.boxExpandBottom" :min="0" :max="50" :step="1" />
         </UiField>
       </UiFormGrid>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsBoxExpandLeft">左侧扩展 (%):</label>
-          <UiInput type="number" id="settingsBoxExpandLeft" v-model.number="settings.boxExpandLeft" min="0" max="50" step="1" />
+        <UiField variant="settings" label="左侧扩展 (%)" control-id="settingsBoxExpandLeft">
+          <UiNumberField input-id="settingsBoxExpandLeft" v-model="settings.boxExpandLeft" :min="0" :max="50" :step="1" />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsBoxExpandRight">右侧扩展 (%):</label>
-          <UiInput type="number" id="settingsBoxExpandRight" v-model.number="settings.boxExpandRight" min="0" max="50" step="1" />
+        <UiField variant="settings" label="右侧扩展 (%)" control-id="settingsBoxExpandRight">
+          <UiNumberField input-id="settingsBoxExpandRight" v-model="settings.boxExpandRight" :min="0" :max="50" :step="1" />
         </UiField>
       </UiFormGrid>
-    </UiPanel>
+    </ProductFormSection>
 
-
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>精确文字掩膜</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="settingsMaskDilateSize">膨胀大小:</label>
-          <UiInput type="number" id="settingsMaskDilateSize" v-model.number="settings.maskDilateSize" min="0" step="1" />
-          <div class="ui-form-hint">掩膜膨胀像素数</div>
+        <UiField
+          variant="settings"
+          label="掩膜膨胀大小"
+          control-id="settingsMaskDilateSize"
+          hint="掩膜膨胀像素数"
+        >
+          <UiNumberField input-id="settingsMaskDilateSize" v-model="settings.maskDilateSize" :min="0" :step="1" />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="settingsMaskBoxExpandRatio">标注框扩大比例 (%):</label>
-          <UiInput
-            type="number"
-            id="settingsMaskBoxExpandRatio"
-            v-model.number="settings.maskBoxExpandRatio"
-            min="0"
-            max="100"
-            step="1"
+        <UiField
+          variant="settings"
+          label="标注框扩大比例 (%)"
+          control-id="settingsMaskBoxExpandRatio"
+          hint="标注框区域扩大百分比"
+        >
+          <UiNumberField
+            input-id="settingsMaskBoxExpandRatio"
+            v-model="settings.maskBoxExpandRatio"
+            :min="0"
+            :max="100"
+            :step="1"
           />
-          <div class="ui-form-hint">标注框区域扩大百分比</div>
         </UiField>
       </UiFormGrid>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>调试选项</template>
-      <UiField class="ui-settings-field">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="在翻译结果中显示气泡检测框，用于调试"
+      >
         <UiCheckbox v-model="settings.showDetectionDebug" label="显示检测框调试信息" />
-        <div class="ui-form-hint">在翻译结果中显示气泡检测框，用于调试</div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { reactive, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import CustomSelect from '@/components/common/CustomSelect.vue'
 
 const detectorOptions = [
   { label: 'CTD (Comic Text Detector)', value: 'ctd' },

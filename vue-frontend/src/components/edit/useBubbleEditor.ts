@@ -1,5 +1,4 @@
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { useBubbleStore } from '@/stores/bubbleStore'
 import {
   FONT_SIZE_PRESETS,
   FONT_SIZE_MIN,
@@ -9,6 +8,7 @@ import {
 import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import { getFontList } from '@/api/config'
 import { createBubbleState } from '@/utils/bubbleFactory'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 export interface BubbleEditorProps {
@@ -20,7 +20,7 @@ export interface BubbleEditorProps {
 
 export type BubbleEditorEmit = {
   (e: 'update', updates: Partial<BubbleState>): void
-  (e: 'reRender'): void
+  (e: 'applyToAllStyle', updates: Partial<BubbleState>): void
   (e: 'ocrRecognize', index: number): void
   (e: 'reTranslate', index: number): void
   (e: 'resetCurrent', index: number): void
@@ -32,9 +32,11 @@ type TextareaFieldRef = {
   selectionEnd: number | null
 }
 
-export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
-  const bubbleStore = useBubbleStore()
+type ColorInputRef = {
+  click: () => void
+}
 
+export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
   const defaultBubble: BubbleState = createBubbleState({
     coords: [0, 0, 0, 0],
     polygon: [],
@@ -60,9 +62,9 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const originalTextInput = ref<TextareaFieldRef | null>(null)
   const translatedTextInput = ref<TextareaFieldRef | null>(null)
 
-  const textColorInput = ref<HTMLInputElement | null>(null)
-  const fillColorInput = ref<HTMLInputElement | null>(null)
-  const strokeColorInput = ref<HTMLInputElement | null>(null)
+  const textColorInput = ref<ColorInputRef | null>(null)
+  const fillColorInput = ref<ColorInputRef | null>(null)
+  const strokeColorInput = ref<ColorInputRef | null>(null)
 
   const showJpKeyboard = ref(false)
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
@@ -137,16 +139,18 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     { deep: true, immediate: true }
   )
 
-  function handleOriginalTextChange(): void {
+  function handleOriginalTextChange(value: string): void {
+    localOriginalText.value = value
     emit('update', { originalText: localOriginalText.value })
   }
 
-  function handleTextChange(): void {
+  function handleTextChange(value: string): void {
+    localTranslatedText.value = value
     emit('update', { translatedText: localTranslatedText.value })
   }
 
   function copyText(text: string): void {
-    void navigator.clipboard.writeText(text).catch(() => undefined)
+    void copyTextToClipboard(text)
   }
 
   function copyOriginalText(): void {
@@ -166,16 +170,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     emit('update', { fontSize: size })
   }
 
-  function increaseFontSize(): void {
-    localFontSize.value = Math.min(FONT_SIZE_MAX, localFontSize.value + FONT_SIZE_STEP)
-    emit('update', { fontSize: localFontSize.value })
-  }
-
-  function decreaseFontSize(): void {
-    localFontSize.value = Math.max(FONT_SIZE_MIN, localFontSize.value - FONT_SIZE_STEP)
-    emit('update', { fontSize: localFontSize.value })
-  }
-
   function handleFontFamilyChange(): void {
     emit('update', { fontFamily: localFontFamily.value })
   }
@@ -189,7 +183,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     textColorInput.value?.click()
   }
 
-  function handleTextColorChange(): void {
+  function handleTextColorChange(value: string): void {
+    localTextColor.value = value
     emit('update', { textColor: localTextColor.value })
   }
 
@@ -197,7 +192,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     fillColorInput.value?.click()
   }
 
-  function handleFillColorChange(): void {
+  function handleFillColorChange(value: string): void {
+    localFillColor.value = value
     emit('update', { fillColor: localFillColor.value })
   }
 
@@ -205,7 +201,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     strokeColorInput.value?.click()
   }
 
-  function handleStrokeColorChange(): void {
+  function handleStrokeColorChange(value: string): void {
+    localStrokeColor.value = value
     emit('update', { strokeColor: localStrokeColor.value })
   }
 
@@ -283,7 +280,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   }
 
   function applyToAll(): void {
-    bubbleStore.updateAllBubbles({
+    emit('applyToAllStyle', {
       fontSize: localFontSize.value,
       fontFamily: localFontFamily.value,
       textDirection: localTextDirection.value,
@@ -296,7 +293,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
       lineSpacing: localLineSpacing.value,
       textAlign: localTextAlign.value,
     })
-    emit('reRender')
   }
 
   function resetBubbleEdit(): void {
@@ -480,8 +476,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     copyTranslatedText,
     handleFontSizeChange,
     setFontSize,
-    increaseFontSize,
-    decreaseFontSize,
     handleFontFamilyChange,
     setTextDirection,
     triggerTextColorPicker,

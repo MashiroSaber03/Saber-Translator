@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
+import { createDefaultSettings } from '@/stores/settings/defaults'
+import { createBubbleState } from '@/utils/bubbleFactory'
 import type { TranslationSettings } from '@/types/settings'
+import type { ImageData } from '@/types/image'
 import type { SavedTextStyles } from '@/composables/translation/core/types'
 import type { TaskContext, PipelineRuntime } from '@/composables/translation/core/runtime'
 
@@ -60,101 +65,36 @@ describe('persistenceService', () => {
     vi.restoreAllMocks()
   })
 
+  it('keeps persistence fixtures on current typed settings, image, and bubble contracts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/persistenceService.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+    expect(source).not.toContain('settingsSchemaVersion: ' + '1')
+  })
+
   function createSettings(): TranslationSettings {
-    return {
-      settingsSchemaVersion: 1,
-      textStyle: {
-        fontSize: 24,
-        autoFontSize: true,
-        fontFamily: 'fonts/SourceHanSans.ttf',
-        layoutDirection: 'auto',
-        textColor: '#000000',
-        fillColor: '#ffffff',
-        strokeEnabled: true,
-        strokeColor: '#ffffff',
-        strokeWidth: 3,
-        inpaintMethod: 'litelama',
-        useAutoTextColor: false,
-        lineSpacing: 1,
-        textAlign: 'start',
-      },
-      ocrEngine: 'manga_ocr',
-      sourceLanguage: 'japanese',
-      textDetector: 'default',
-      minTextBlockAreaPercent: 1,
-      enableAuxYoloDetection: false,
-      auxYoloConfThreshold: 0.3,
-      auxYoloOverlapThreshold: 0.3,
-      enableSaberYoloRefine: true,
-      saberYoloRefineOverlapThreshold: 0.5,
-      baiduOcr: { apiKey: '', secretKey: '', version: 'accurate', sourceLanguage: 'JAP' },
-      paddleOcrVl: { sourceLanguage: 'japanese' },
-      aiVisionOcr: {
-        provider: 'custom',
-        apiKey: '',
-        modelName: '',
-        prompt: '',
-        promptMode: 'normal',
-        customBaseUrl: '',
-        openaiOptions: {
-          request: { forceJsonOutput: false },
-          execution: { useStream: false, rpmLimit: 0, transportRetries: 0, businessRetries: 0 },
-        },
-        minImageSize: 28,
-      },
-      hybridOcr: { enabled: false, secondaryEngine: '48px_ocr', confidenceThreshold: 0.6 },
-      translation: {
-        provider: 'custom',
-        apiKey: '',
-        modelName: '',
-        customBaseUrl: '',
-        openaiOptions: {
-          request: { forceJsonOutput: false },
-          execution: { useStream: false, rpmLimit: 0, transportRetries: 0, businessRetries: 0 },
-        },
-        translationMode: 'batch',
-        batchNormalPrompt: '',
-        batchJsonPrompt: '',
-        singleNormalPrompt: '',
-        singleJsonPrompt: '',
-      },
-      targetLanguage: 'zh-CN',
-      translatePrompt: '',
-      useTextboxPrompt: false,
-      textboxPrompt: '',
-      hqTranslation: {
-        provider: 'custom',
-        apiKey: '',
-        modelName: '',
-        customBaseUrl: '',
-        openaiOptions: {
-          request: { forceJsonOutput: false },
-          execution: { useStream: false, rpmLimit: 0, transportRetries: 0, businessRetries: 0 },
-        },
-        batchSize: 3,
-        prompt: '',
-      },
-      pluginAgent: {
-        provider: 'custom',
-        apiKey: '',
-        modelName: '',
-        customBaseUrl: '',
-        openaiOptions: {
-          request: { forceJsonOutput: false },
-          execution: { useStream: false, rpmLimit: 0, transportRetries: 0, businessRetries: 0 },
-        },
-      },
-      proofreading: { enabled: false, rounds: [], maxRetries: 0 },
-      boxExpand: { ratio: 0, top: 0, bottom: 0, left: 0, right: 0 },
-      preciseMask: { dilateSize: 0, boxExpandRatio: 0 },
-      pdfProcessingMethod: 'backend',
-      showDetectionDebug: false,
-      parallel: { enabled: true, deepLearningLockSize: 1 },
-      autoSaveInBookshelfMode: true,
-      removeTextWithOcr: false,
-      enableVerboseLogs: false,
-      lamaDisableResize: false,
-    }
+    const settings = createDefaultSettings()
+    Object.assign(settings.textStyle, {
+      fontSize: 24,
+      autoFontSize: true,
+      fontFamily: 'fonts/SourceHanSans.ttf',
+      layoutDirection: 'auto',
+      textColor: '#000000',
+      fillColor: '#ffffff',
+      strokeEnabled: true,
+      strokeColor: '#ffffff',
+      strokeWidth: 3,
+      inpaintMethod: 'litelama',
+      useAutoTextColor: false,
+      lineSpacing: 1,
+      textAlign: 'start',
+    })
+    settings.hqTranslation.batchSize = 3
+    settings.parallel.enabled = true
+    settings.parallel.deepLearningLockSize = 1
+    settings.autoSaveInBookshelfMode = true
+    settings.removeTextWithOcr = false
+    return settings
   }
 
   function createSavedTextStyles(): SavedTextStyles {
@@ -193,25 +133,43 @@ describe('persistenceService', () => {
     }
   }
 
+  function createSourceImage(overrides: Partial<ImageData> = {}): ImageData {
+    return {
+      id: 'img-1',
+      fileName: 'page-1.png',
+      width: 100,
+      height: 100,
+      originalDataURL: 'data:image/png;base64,original-image',
+      translatedDataURL: 'data:image/png;base64,stale-store-image',
+      cleanImageData: 'stale-clean',
+      bubbleStates: null,
+      translationStatus: 'completed',
+      translationFailed: false,
+      hasUnsavedChanges: true,
+      fontSize: 24,
+      autoFontSize: true,
+      fontFamily: 'fonts/SourceHanSans.ttf',
+      layoutDirection: 'auto',
+      textColor: '#000000',
+      fillColor: '#ffffff',
+      inpaintMethod: 'litelama',
+      strokeEnabled: true,
+      strokeColor: '#ffffff',
+      strokeWidth: 3,
+      lineSpacing: 1,
+      textAlign: 'start',
+      useAutoTextColor: false,
+      ...overrides,
+    }
+  }
+
   function createContext(overrides: Partial<TaskContext> = {}): TaskContext {
     return {
       id: 'task-1',
       imageIndex: 0,
       translationMode: 'standard',
       status: 'processing',
-      sourceImage: {
-        id: 'img-1',
-        fileName: 'page-1.png',
-        width: 100,
-        height: 100,
-        originalDataURL: 'data:image/png;base64,original-image',
-        translatedDataURL: 'data:image/png;base64,stale-store-image',
-        cleanImageData: 'stale-clean',
-        bubbleStates: null,
-        translationStatus: 'completed',
-        translationFailed: false,
-        hasUnsavedChanges: true,
-      } as any,
+      sourceImage: createSourceImage(),
       bubbleCoords: [],
       bubbleAngles: [],
       bubblePolygons: [],
@@ -224,6 +182,11 @@ describe('persistenceService', () => {
       translatedTexts: [],
       textboxTexts: [],
       warnings: [],
+      autoGlossaryStats: {
+        added: 0,
+        duplicates: 0,
+        failedPages: 0,
+      },
       cleanImage: 'latest-clean-image',
       finalImage: 'latest-rendered-image',
       bubbleStates: [],
@@ -236,18 +199,10 @@ describe('persistenceService', () => {
     const { persistPage } = await import('@/composables/translation/core/persistenceService')
 
     const context = createContext({
-      sourceImage: {
-        id: 'img-1',
-        fileName: 'page-1.png',
-        originalDataURL: 'data:image/png;base64,original-image',
-        translatedDataURL: 'data:image/png;base64,stale-store-image',
-        cleanImageData: 'stale-clean',
-        bubbleStates: [{ translatedText: '旧译文' }],
-        translationStatus: 'completed',
-        translationFailed: false,
-        hasUnsavedChanges: true,
-      } as any,
-      bubbleStates: [{ translatedText: '新译文' }] as any,
+      sourceImage: createSourceImage({
+        bubbleStates: [createBubbleState({ translatedText: '旧译文' })],
+      }),
+      bubbleStates: [createBubbleState({ translatedText: '新译文' })],
       translatedTexts: ['新译文'],
       finalImage: 'latest-rendered-image',
       cleanImage: 'latest-clean-image',
@@ -264,7 +219,7 @@ describe('persistenceService', () => {
       0,
       expect.objectContaining({
         fileName: 'page-1.png',
-        bubbleStates: [{ translatedText: '新译文' }],
+        bubbleStates: [expect.objectContaining({ translatedText: '新译文' })],
         hasUnsavedChanges: false,
       }),
     )
@@ -279,7 +234,7 @@ describe('persistenceService', () => {
       createContext({
         id: 'task-2',
         imageIndex: 1,
-        sourceImage: {
+        sourceImage: createSourceImage({
           id: 'img-2',
           fileName: 'page-2.png',
           originalDataURL: 'data:image/png;base64,original-image-2',
@@ -287,9 +242,8 @@ describe('persistenceService', () => {
           cleanImageData: null,
           bubbleStates: null,
           translationStatus: 'pending',
-          translationFailed: false,
           hasUnsavedChanges: false,
-        } as any,
+        }),
         finalImage: undefined,
         cleanImage: undefined,
       }),
@@ -320,17 +274,13 @@ describe('persistenceService', () => {
 
     const runtime = createRuntime()
     const context = createContext({
-      sourceImage: {
-        id: 'img-1',
-        fileName: 'page-1.png',
+      sourceImage: createSourceImage({
         originalDataURL: '/api/sessions/page/bookshelf/book-1/chapters/chapter-1/session/0/original',
         translatedDataURL: '/api/sessions/page/bookshelf/book-1/chapters/chapter-1/session/0/translated',
         cleanImageData: '/api/sessions/page/bookshelf/book-1/chapters/chapter-1/session/0/clean',
         bubbleStates: [],
-        translationStatus: 'completed',
-        translationFailed: false,
         hasUnsavedChanges: false,
-      } as any,
+      }),
       finalImage: undefined,
       cleanImage: undefined,
     })
@@ -346,21 +296,24 @@ describe('persistenceService', () => {
   it('hydrates task context from cloned image state so task mutations do not leak into the store image', async () => {
     const { hydrateTaskContextFromImage } = await import('@/composables/translation/core/runtime')
 
-    const sourceImage = {
-      id: 'img-1',
-      fileName: 'page-1.png',
-      originalDataURL: 'data:image/png;base64,original-image',
+    const sourceImage = createSourceImage({
       translatedDataURL: 'data:image/png;base64,translated-image',
       cleanImageData: 'clean-image',
-      bubbleStates: [{ translatedText: '原始值', originalText: '原文', textboxText: '', coords: [0, 0, 10, 10] }],
+      bubbleStates: [createBubbleState({
+        translatedText: '原始值',
+        originalText: '原文',
+        textboxText: '',
+        coords: [0, 0, 10, 10],
+      })],
       translationWarnings: [{ imageIndex: 0, bubbleIndex: 0, source: 'a', expectedTarget: 'b', actualTranslation: 'c' }],
-    } as any
+    })
 
     const runtime = createRuntime()
     const context = hydrateTaskContextFromImage(0, sourceImage, 'standard', runtime)
-    ;(context.bubbleStates as any[])[0].translatedText = '任务内修改'
+    expect(context.bubbleStates?.[0]).toBeDefined()
+    context.bubbleStates![0]!.translatedText = '任务内修改'
 
     expect(sourceImage.bubbleStates[0].translatedText).toBe('原始值')
-    expect((context.sourceImage.bubbleStates as any[])[0].translatedText).toBe('任务内修改')
+    expect(context.sourceImage.bubbleStates?.[0]?.translatedText).toBe('任务内修改')
   })
 })

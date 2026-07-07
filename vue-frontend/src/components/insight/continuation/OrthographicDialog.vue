@@ -1,54 +1,72 @@
 <template>
   <ContinuationDialogShell
     :title="dialogTitle"
-    custom-class="continuation-dialog-modal--wide"
+    width-variant="wide"
     @close="close"
   >
-    <div class="orthographic-dialog-body">
-      <div class="ortho-upload-section">
-        <label
-          class="upload-area"
-          :class="{ 'drag-over': isDragging }"
-          @dragenter="handleDragEnter"
-          @dragover="handleDragOver"
-          @dragleave="handleDragLeave"
-          @drop="handleDrop"
+    <div class="orthographic-dialog__body">
+      <div class="orthographic-dialog__upload-section">
+        <ProductFileDropzone
+          input-id="orthographicSourceImages"
+          class="orthographic-dialog__dropzone"
+          :label="`上传 ${characterName} ${formName} 三视图源图`"
+          accept="image/*"
+          multiple
+          @select="selectImages"
         >
-          <UiFileInput
-            accept="image/*"
-            multiple
-            hidden
-            :aria-label="`上传 ${characterName} ${formName} 三视图源图`"
-            @change="selectImages"
-          />
-          <div class="upload-placeholder">
-            <span class="upload-icon">{{ isDragging ? '📥' : '📁' }}</span>
-            <p v-if="isDragging">释放以上传图片</p>
-            <p v-else>点击选择或拖拽角色图片（1-5张）</p>
-            <p class="hint">可上传多张图片帮助AI理解角色特征</p>
-          </div>
-        </label>
+          <template #default="{ isDragging }">
+            <div class="orthographic-dialog__upload-placeholder">
+              <UiIcon
+                class="orthographic-dialog__upload-icon"
+                :name="isDragging ? 'upload' : 'folder-open'"
+                size="48"
+                stroke-width="1.5"
+              />
+              <p v-if="isDragging" class="orthographic-dialog__upload-placeholder-message">释放以上传图片</p>
+              <p v-else class="orthographic-dialog__upload-placeholder-message">点击选择或拖拽角色图片（1-5张）</p>
+              <p class="orthographic-dialog__upload-hint">可上传多张图片帮助AI理解角色特征</p>
+            </div>
+          </template>
+        </ProductFileDropzone>
 
-        <div v-if="sourceImagePreviews.length > 0" class="source-images">
-          <div v-for="(preview, index) in sourceImagePreviews" :key="preview.url" class="source-image">
-            <img :src="preview.url" :alt="`源图${index + 1}`">
-            <span class="image-index">{{ index + 1 }}</span>
-          </div>
+        <ProductThumbnailGrid
+          v-if="sourceImagePreviewItems.length > 0"
+          class="orthographic-dialog__source-grid"
+          aria-label="三视图源图预览"
+          :items="sourceImagePreviewItems"
+        />
+      </div>
+
+      <ProductStatusBanner
+        v-if="isGenerating"
+        class="orthographic-dialog__generating-state"
+        tone="info"
+        aria-live="polite"
+        title="生成中"
+        icon-name="palette"
+      >
+        <div class="orthographic-dialog__generating-content">
+          <UiSpinner :decorative="false" label="三视图生成中" size="32" />
+          <p class="orthographic-dialog__progress-message">{{ progressMessage }}</p>
         </div>
-      </div>
+        <p class="orthographic-dialog__progress-tip">
+          <UiIcon name="clock" size="14" />
+          <span>AI 生成通常需要 30-60 秒</span>
+        </p>
+      </ProductStatusBanner>
 
-      <div v-if="isGenerating" class="generating-state">
-        <div class="spinner"></div>
-        <p class="progress-message">{{ progressMessage }}</p>
-        <p class="progress-tip">⏱️ AI 生成通常需要 30-60 秒</p>
-      </div>
-
-      <div v-else-if="resultImagePath" class="ortho-result">
-        <h4>生成结果：</h4>
-        <div class="result-preview">
-          <img :src="getResultUrl()" alt="三视图">
+      <ProductRecordCard v-else-if="resultImagePath" class="orthographic-dialog__result">
+        <template #meta>
+          <strong>生成结果</strong>
+        </template>
+        <div class="orthographic-dialog__result-preview">
+          <img
+            class="orthographic-dialog__result-image"
+            :src="getResultUrl()"
+            :alt="resultImageAlt"
+          >
         </div>
-      </div>
+      </ProductRecordCard>
     </div>
 
     <template #footer>
@@ -60,11 +78,15 @@
           :disabled="sourceImages.length === 0 || isGenerating"
           @click="generate"
         >
-          {{ isGenerating ? '生成中...' : '🎨 生成三视图' }}
+          <UiIcon v-if="!isGenerating" name="palette" size="15" />
+          <span>{{ isGenerating ? '生成中...' : '生成三视图' }}</span>
         </UiButton>
         <template v-else>
           <UiButton variant="secondary" @click="generate">重新生成</UiButton>
-          <UiButton variant="primary" @click="useResult">✓ 使用三视图</UiButton>
+          <UiButton variant="primary" @click="useResult">
+            <UiIcon name="check" size="15" />
+            <span>使用三视图</span>
+          </UiButton>
         </template>
       </ContinuationDialogActions>
     </template>
@@ -72,9 +94,15 @@
 </template>
 
 <script setup lang="ts">
-import UiFileInput from '@/components/ui/UiFileInput.vue'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
+import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
 import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
@@ -83,6 +111,8 @@ const props = defineProps<{
   formId: string
   formName: string
   bookId: string
+  isGenerating: boolean
+  resultImagePath: string | null
 }>()
 
 const emit = defineEmits<{
@@ -93,15 +123,30 @@ const emit = defineEmits<{
 
 const sourceImages = ref<File[]>([])
 const sourceImagePreviews = ref<Array<{ url: string }>>([])
-const isDragging = ref(false)
-const isGenerating = ref(false)
 const progressMessage = ref('')
-const resultImagePath = ref<string | null>(null)
 let progressTimers: Array<ReturnType<typeof setTimeout>> = []
 const close = () => emit('close')
 const dialogTitle = computed(() => {
   const suffix = props.formName && props.formName !== '默认' ? ` (${props.formName})` : ''
-  return `🎨 生成三视图 - ${props.characterName}${suffix}`
+  return `生成三视图 - ${props.characterName}${suffix}`
+})
+const resultImageAlt = computed(() => {
+  const formSuffix = props.formName && props.formName !== '默认' ? `（${props.formName}）` : ''
+  return `${props.characterName}${formSuffix}三视图生成结果`
+})
+const sourceImagePreviewItems = computed<ProductThumbnailGridItem[]>(() => {
+  return sourceImagePreviews.value.map((preview, index) => {
+    const number = index + 1
+
+    return {
+      id: preview.url,
+      alt: `源图${number}`,
+      cornerLabel: String(number),
+      interactive: false,
+      label: `源图 ${number}`,
+      src: preview.url,
+    }
+  })
 })
 
 function revokeSourceImagePreviews(): void {
@@ -127,60 +172,23 @@ function clearProgressTimers(): void {
 function scheduleProgressMessage(delay: number, message: string): void {
   const timer = setTimeout(() => {
     progressTimers = progressTimers.filter(item => item !== timer)
-    if (isGenerating.value) {
+    if (props.isGenerating) {
       progressMessage.value = message
     }
   }, delay)
   progressTimers.push(timer)
 }
 
-function selectImages(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (!input.files) return
-
-  const files = Array.from(input.files).slice(0, 5)
-  setSourceImages(files)
-}
-
-function handleDragEnter(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-  isDragging.value = true
-}
-
-function handleDragOver(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-  isDragging.value = true
-}
-
-function handleDragLeave(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-  isDragging.value = false
-}
-
-function handleDrop(event: DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-  isDragging.value = false
-
-  const files = event.dataTransfer?.files
-  if (!files || files.length === 0) return
-
-  const imageFiles = Array.from(files)
+function selectImages(selectedFiles: File[]) {
+  const files = selectedFiles
     .filter(file => file.type.startsWith('image/'))
     .slice(0, 5)
-
-  if (imageFiles.length > 0) {
-    setSourceImages(imageFiles)
-  }
+  setSourceImages(files)
 }
 
 async function generate() {
   if (sourceImages.value.length === 0) return
 
-  isGenerating.value = true
   progressMessage.value = `正在上传 ${sourceImages.value.length} 张图片...`
 
   clearProgressTimers()
@@ -191,32 +199,30 @@ async function generate() {
 }
 
 function useResult() {
-  if (resultImagePath.value) {
-    emit('use-result', resultImagePath.value)
+  if (props.resultImagePath) {
+    emit('use-result', props.resultImagePath)
   }
 }
 
 function getResultUrl(): string {
-  if (!props.bookId || !resultImagePath.value) return ''
-  return `/api/manga-insight/${props.bookId}/continuation/generated-image?path=${encodeURIComponent(resultImagePath.value)}`
+  if (!props.bookId || !props.resultImagePath) return ''
+  return `/api/manga-insight/${props.bookId}/continuation/generated-image?path=${encodeURIComponent(props.resultImagePath)}`
 }
 
-function setResult(imagePath: string) {
-  clearProgressTimers()
-  resultImagePath.value = imagePath
-  isGenerating.value = false
-}
-
-function setGenerating(generating: boolean) {
+watch(() => props.isGenerating, (generating) => {
   if (!generating) {
     clearProgressTimers()
+    return
   }
-  isGenerating.value = generating
-}
+  if (!progressMessage.value) {
+    progressMessage.value = '正在准备生成三视图...'
+  }
+})
 
-defineExpose({
-  setResult,
-  setGenerating,
+watch(() => props.resultImagePath, (imagePath) => {
+  if (imagePath) {
+    clearProgressTimers()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -226,121 +232,90 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.orthographic-dialog-body {
-  --orthographic-dialog-badge-background: rgba(0, 0, 0, .7);
-  --orthographic-dialog-upload-hover-background: rgba(99, 102, 241, .05);
-
+.orthographic-dialog__body {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.upload-area {
-  display: block;
-  padding: 40px 20px;
-  border: 2px dashed var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 12px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.3s;
+.orthographic-dialog__upload-section {
+  min-width: 0;
 }
 
-.upload-area:hover,
-.upload-area.drag-over {
-  border-color: var(--color-border-brand);
-  background: var(--orthographic-dialog-upload-hover-background);
+.orthographic-dialog__dropzone {
+  --product-file-dropzone-padding: 40px 20px;
+  --product-file-dropzone-radius: 12px;
+  --product-file-dropzone-background-hover: var(--color-focus-brand-soft);
 }
 
-.upload-placeholder {
+.orthographic-dialog__upload-placeholder {
   pointer-events: none;
 }
 
-.upload-icon {
+.orthographic-dialog__upload-icon {
   display: block;
+  margin-right: auto;
+  margin-left: auto;
   margin-bottom: 12px;
-  font-size: 48px;
 }
 
-.upload-placeholder p {
+.orthographic-dialog__upload-placeholder-message {
   margin: 8px 0;
   font-size: 14px;
 }
 
-.hint {
-  color: var(--color-text-supporting, var(--color-text-secondary));
+.orthographic-dialog__upload-hint {
+  margin: 8px 0;
+  color: var(--color-text-supporting);
   font-size: 12px;
 }
 
-.source-images {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 12px;
+.orthographic-dialog__source-grid {
+  --product-thumbnail-grid-min-size: 100px;
+  --product-thumbnail-grid-aspect-ratio: 1;
+
   margin-top: 16px;
 }
 
-.source-image {
-  position: relative;
-  overflow: hidden;
-  aspect-ratio: 1;
-  border: 2px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 8px;
+.orthographic-dialog__generating-state {
+  align-items: center;
 }
 
-.source-image img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.image-index {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+.orthographic-dialog__generating-content {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--orthographic-dialog-badge-background);
-  color: var(--color-text-inverse);
-  font-size: 12px;
-  font-weight: bold;
+  gap: 12px;
+  min-width: 0;
 }
 
-.generating-state {
-  padding: 40px 20px;
-  text-align: center;
+.orthographic-dialog__progress-message {
+  margin: 0;
 }
 
-.spinner {
-  width: 48px;
-  height: 48px;
-  margin: 0 auto 16px;
-  border: 4px solid var(--color-border-muted, var(--color-border-default));
-  border-top-color: var(--color-border-brand);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.progress-tip {
-  color: var(--color-text-supporting, var(--color-text-secondary));
+.orthographic-dialog__progress-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--color-text-supporting);
   font-size: 14px;
 }
 
-.ortho-result h4 {
-  margin: 0 0 16px;
-  font-size: 16px;
+.orthographic-dialog__result {
+  --product-record-card-background: var(--color-surface-subtle);
+  --product-record-card-border: var(--color-border-muted);
+  --product-record-card-padding: 16px;
+  --product-record-card-gap: 12px;
+  --product-record-card-shadow-hover: none;
 }
 
-.result-preview {
+.orthographic-dialog__result-preview {
   overflow: hidden;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
+  border: 1px solid var(--color-border-muted);
   border-radius: 8px;
 }
 
-.result-preview img {
+.orthographic-dialog__result-image {
   display: block;
   width: 100%;
 }

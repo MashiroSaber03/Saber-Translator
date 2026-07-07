@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 
 interface Chapter {
   id: string
@@ -27,6 +32,18 @@ function selectChapter(chapterId: string): void {
   selectedChapterId.value = chapterId
 }
 
+function chapterPageItems(chapter: Chapter): ProductChipItem[] {
+  if (!chapter.startPage || !chapter.endPage) return []
+
+  return [
+    {
+      id: `${chapter.id}-pages`,
+      label: `第 ${chapter.startPage}-${chapter.endPage} 页`,
+      tone: 'neutral',
+    },
+  ]
+}
+
 function confirmSelection(): void {
   if (selectedChapterId.value) {
     emit('select', selectedChapterId.value)
@@ -40,115 +57,102 @@ function close(): void {
 
 <template>
   <BaseModal
-    title="📖 选择章节"
+    :model-value="true"
+    title="选择章节"
     size="small"
     custom-class="chapter-select-modal"
     body-padding="spacious"
-    footer-gap="12px"
     :close-on-overlay="true"
     :close-on-esc="true"
     @close="close"
   >
-    <div class="chapter-select-body">
-      <p class="hint-text">请选择要翻译的章节：</p>
-      <div class="chapters-list">
-        <UiButton
+    <div class="chapter-select-modal__body">
+      <p class="chapter-select-modal__hint">请选择要翻译的章节：</p>
+      <div class="chapter-select-modal__list">
+        <ProductRecordCard
           v-for="chapter in chapters"
           :key="chapter.id"
-          variant="toolbar"
-          type="button"
-          class="chapter-item"
-          :class="{ selected: selectedChapterId === chapter.id }"
+          as="button"
+          class="chapter-select-modal__choice-card"
+          :class="{ 'chapter-select-modal__choice-card--selected': selectedChapterId === chapter.id }"
+          :accent="selectedChapterId === chapter.id"
+          :aria-label="`选择章节：${chapter.title}`"
+          :aria-pressed="String(selectedChapterId === chapter.id)"
           @click="selectChapter(chapter.id)"
         >
-          <div class="chapter-info">
-            <span class="chapter-title">{{ chapter.title }}</span>
-            <span v-if="chapter.startPage && chapter.endPage" class="chapter-pages">
-              第 {{ chapter.startPage }}-{{ chapter.endPage }} 页
-            </span>
-          </div>
-          <span v-if="selectedChapterId === chapter.id" class="check-icon">✓</span>
-        </UiButton>
+          <template #meta>
+            <span class="chapter-select-modal__chapter-title">{{ chapter.title }}</span>
+          </template>
+
+          <template #actions>
+            <UiIcon
+              v-if="selectedChapterId === chapter.id"
+              name="check"
+              class="chapter-select-modal__check-icon"
+              size="18"
+            />
+          </template>
+
+          <ProductChipList
+            v-if="chapterPageItems(chapter).length"
+            aria-label="章节页码"
+            :items="chapterPageItems(chapter)"
+          />
+        </ProductRecordCard>
       </div>
     </div>
 
     <template #footer>
-      <UiButton variant="secondary" @click="close">取消</UiButton>
-      <UiButton
-        variant="primary"
-        :disabled="!selectedChapterId"
-        @click="confirmSelection"
+      <ProductActionRow
+        aria-label="章节选择操作"
+        variant="dialog"
       >
-        确定
-      </UiButton>
+        <UiButton variant="secondary" @click="close">取消</UiButton>
+        <UiButton
+          variant="primary"
+          :disabled="!selectedChapterId"
+          @click="confirmSelection"
+        >
+          确定
+        </UiButton>
+      </ProductActionRow>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
-.chapter-select-body {
-  --chapter-select-modal-row-background: #f1f5f9;
-  --chapter-select-modal-row-hover-border: #818cf8;
-  --chapter-select-modal-title-text: #1a202c;
-  --chapter-select-modal-page-text: #64748b;
-}
-
-.chapter-select-body .hint-text {
+.chapter-select-modal__hint {
   font-size: 14px;
   color: var(--insight-text-secondary);
   margin: 0 0 16px;
 }
 
-.chapter-select-body .chapters-list {
+.chapter-select-modal__list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.chapter-select-body .chapter-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  width: 100%;
-  background: var(--chapter-select-modal-row-background);
-  border: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
+.chapter-select-modal__choice-card {
+  --product-record-card-background: var(--color-surface-muted);
+  --product-record-card-border: transparent;
+  --product-record-card-radius: 8px;
+  --product-record-card-padding: 12px 16px;
+  --product-record-card-accent: var(--insight-action-primary);
 }
 
-.chapter-select-body .chapter-item:hover {
-  background: var(--color-surface-quiet);
-  border-color: var(--chapter-select-modal-row-hover-border);
+.chapter-select-modal__choice-card--selected {
+  --product-record-card-background: var(--color-focus-brand-soft);
+  --product-record-card-border: var(--insight-action-primary);
 }
 
-.chapter-select-body .chapter-item.selected {
-  background: var(--color-focus-brand-soft);
-  border-color: var(--insight-action-primary);
-}
-
-.chapter-select-body .chapter-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-}
-
-.chapter-select-body .chapter-title {
+.chapter-select-modal__chapter-title {
+  color: var(--insight-text-primary);
   font-size: 14px;
   font-weight: 500;
-  color: var(--chapter-select-modal-title-text);
 }
 
-.chapter-select-body .chapter-pages {
-  font-size: 12px;
-  color: var(--chapter-select-modal-page-text);
-}
-
-.chapter-select-body .check-icon {
-  font-size: 18px;
+.chapter-select-modal__check-icon {
   color: var(--insight-action-primary);
-  font-weight: bold;
 }
 </style>

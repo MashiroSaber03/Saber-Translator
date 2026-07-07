@@ -4,15 +4,32 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductChipList, { type ProductChipItem } from '@/components/product/ProductChipList.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { ref, watch, onMounted } from 'vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiField from '@/components/ui/UiField.vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { PromptType, SavedPromptItem } from '@/api/insight'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import { requestProductTextInput } from '@/composables/useProductTextInput'
+import { triggerBlobDownload } from '@/utils/browserDownload'
+import { copyTextToClipboard } from '@/utils/clipboard'
+import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { PROMPT_TYPE_OPTIONS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
+  (e: 'update:prompts', prompts: Record<string, string>): void
+}>()
+
+const props = defineProps<{
+  syncRequestId?: number
 }>()
 
 const insightStore = useInsightStore()
@@ -22,6 +39,7 @@ const currentPromptContent = ref('')
 const customPrompts = ref<Record<string, string>>({})
 const savedPromptsLibrary = ref<SavedPromptItem[]>([])
 const isLoadingPrompts = ref(false)
+const promptsImportInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const defaultPrompts = ref<Record<PromptType, string>>({
   batch_analysis: '',
   segment_summary: '',
@@ -54,21 +72,23 @@ async function loadPromptsLibrary(): Promise<void> {
   }
 }
 
-function resetCurrentPrompt(): void {
-  if (confirm('确定要重置为默认提示词吗？当前编辑的内容将丢失。')) {
-    currentPromptContent.value = defaultPrompts.value[currentPromptType.value] || ''
-    delete customPrompts.value[currentPromptType.value]
-    emit('showMessage', '已重置为默认提示词', 'success')
-  }
+async function resetCurrentPrompt(): Promise<void> {
+  const confirmed = await confirmProductAction({
+    title: '重置提示词',
+    message: '确定要重置为默认提示词吗？当前编辑的内容将丢失。',
+    confirmText: '重置',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  currentPromptContent.value = defaultPrompts.value[currentPromptType.value] || ''
+  delete customPrompts.value[currentPromptType.value]
+  emit('showMessage', '已重置为默认提示词', 'success')
 }
 
 async function copyPromptToClipboard(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(currentPromptContent.value)
-    emit('showMessage', '已复制到剪贴板', 'success')
-  } catch {
-    emit('showMessage', '复制失败', 'error')
-  }
+  const copied = await copyTextToClipboard(currentPromptContent.value)
+  emit('showMessage', copied ? '已复制到剪贴板' : '复制失败', copied ? 'success' : 'error')
 }
 
 async function savePromptToLibrary(): Promise<void> {
@@ -78,7 +98,13 @@ async function savePromptToLibrary(): Promise<void> {
     return
   }
 
-  const name = prompt('请输入提示词名称：')
+  const name = await requestProductTextInput({
+    title: '保存提示词',
+    message: '请输入提示词名称：',
+    placeholder: '提示词名称',
+    confirmText: '保存',
+    cancelText: '取消',
+  })
   if (!name?.trim()) return
 
   const newPrompt: SavedPromptItem = {
@@ -106,11 +132,29 @@ function loadPromptFromLibrary(promptItem: SavedPromptItem): void {
   currentPromptType.value = promptItem.type
   currentPromptContent.value = promptItem.content
   customPrompts.value[promptItem.type] = promptItem.content
+  emitPrompts()
   emit('showMessage', `已加载提示词: ${promptItem.name}`, 'success')
 }
 
+function promptTypeChip(promptItem: SavedPromptItem): ProductChipItem[] {
+  return [
+    {
+      id: promptItem.id,
+      label: insightApi.PROMPT_METADATA[promptItem.type]?.label || promptItem.type,
+      tone: 'primary',
+    },
+  ]
+}
+
 async function deletePromptFromLibrary(promptId: string): Promise<void> {
-  if (!confirm('确定要删除这个提示词吗？')) return
+  const confirmed = await confirmProductAction({
+    title: '删除提示词',
+    message: '确定要删除这个提示词吗？',
+    confirmText: '删除',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
 
   try {
     const response = await insightApi.deletePromptFromLibrary(promptId)
@@ -138,26 +182,17 @@ function exportAllPrompts(): void {
   }
 
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  try {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `manga-insight-prompts-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  triggerBlobDownload(blob, `manga-insight-prompts-${new Date().toISOString().slice(0, 10)}.json`)
 
   emit('showMessage', '提示词已导出', 'success')
 }
 
 function triggerImportPrompts(): void {
-  document.getElementById('promptsFileInput')?.click()
+  promptsImportInput.value?.click()
 }
 
-async function handlePromptsFileImport(event: Event): Promise<void> {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
+async function handlePromptsFileImport(files: File[]): Promise<void> {
+  const file = files[0]
   if (!file) return
 
   try {
@@ -166,6 +201,7 @@ async function handlePromptsFileImport(event: Event): Promise<void> {
 
     if (importData.prompts) {
       customPrompts.value = { ...customPrompts.value, ...importData.prompts }
+      emitPrompts()
     }
 
     if (importData.library && Array.isArray(importData.library)) {
@@ -183,7 +219,7 @@ async function handlePromptsFileImport(event: Event): Promise<void> {
     emit('showMessage', '导入失败，请检查文件格式', 'error')
   }
 
-  target.value = ''
+  promptsImportInput.value?.clear()
 }
 
 watch(currentPromptType, (newType, previousType) => {
@@ -195,21 +231,34 @@ watch(currentPromptType, (newType, previousType) => {
   }
 })
 
-function getCustomPrompts() {
+watch([currentPromptType, currentPromptContent], () => {
+  emitPrompts()
+}, { immediate: true })
+
+function collectDraftPrompts(): Record<string, string> {
   if (currentPromptContent.value) {
     customPrompts.value[currentPromptType.value] = currentPromptContent.value
   }
   return customPrompts.value
 }
 
-function syncFromStore(): void {
+function emitPrompts(): void {
+  emit('update:prompts', { ...collectDraftPrompts() })
+}
+
+function refreshDraftFromStore(): void {
   if (insightStore.config.prompts) {
     customPrompts.value = { ...insightStore.config.prompts }
   } else {
     customPrompts.value = {}
   }
   currentPromptContent.value = customPrompts.value[currentPromptType.value] || defaultPrompts.value[currentPromptType.value] || ''
+  emitPrompts()
 }
+
+watch(() => props.syncRequestId, () => {
+  refreshDraftFromStore()
+})
 
 async function initialize(): Promise<void> {
   await loadDefaultPrompts()
@@ -217,251 +266,188 @@ async function initialize(): Promise<void> {
 }
 
 onMounted(initialize)
-
-defineExpose({ getCustomPrompts, syncFromStore, initialize })
 </script>
 
 <template>
-  <div class="insight-settings-content prompts-settings">
-    <p class="settings-hint">自定义分析过程中使用的提示词模板。</p>
+  <InsightSettingsPanel class="prompts-settings-tab" description="自定义分析过程中使用的提示词模板。">
+    <UiField variant="settings" label="提示词类型" :hint="insightApi.PROMPT_METADATA[currentPromptType]?.hint">
+      <UiSelect v-model="currentPromptType" :options="PROMPT_TYPE_OPTIONS" />
+    </UiField>
 
-    <div class="insight-settings-field">
-      <label>提示词类型</label>
-      <CustomSelect v-model="currentPromptType" :options="PROMPT_TYPE_OPTIONS" />
-      <p class="form-hint">{{ insightApi.PROMPT_METADATA[currentPromptType]?.hint }}</p>
-    </div>
+    <UiField variant="settings" label="提示词内容">
+      <UiTextarea v-model="currentPromptContent" class="prompts-settings-tab__editor" variant="panel" size="lg" rows="12" placeholder="输入提示词内容..." />
+    </UiField>
 
-    <div class="insight-settings-field">
-      <label>提示词内容</label>
-      <UiTextarea v-model="currentPromptContent" class="prompt-editor" rows="12" placeholder="输入提示词内容..." />
-    </div>
+    <ProductActionRow aria-label="提示词编辑操作">
+      <UiButton variant="secondary" @click="resetCurrentPrompt" title="重置为默认" size="sm">
+        <UiIcon name="refresh" size="14" />
+        <span>重置</span>
+      </UiButton>
+      <UiButton variant="secondary" @click="copyPromptToClipboard" title="复制到剪贴板" size="sm">
+        <UiIcon name="copy" size="14" />
+        <span>复制</span>
+      </UiButton>
+      <UiButton variant="primary" @click="savePromptToLibrary" title="保存到库" size="sm">
+        <UiIcon name="save" size="14" />
+        <span>保存到库</span>
+      </UiButton>
+    </ProductActionRow>
 
-    <div class="prompt-actions-bar">
-      <UiButton variant="secondary" @click="resetCurrentPrompt" title="重置为默认" size="sm">🔄 重置</UiButton>
-      <UiButton variant="secondary" @click="copyPromptToClipboard" title="复制到剪贴板" size="sm">📋 复制</UiButton>
-      <UiButton variant="primary" @click="savePromptToLibrary" title="保存到库" size="sm">💾 保存到库</UiButton>
-    </div>
+    <hr class="prompts-settings-tab__divider">
 
-    <hr class="section-divider">
-
-    <div class="prompts-library-section">
-      <div class="library-header">
-        <h4>📚 提示词库</h4>
-        <div class="library-actions">
-          <UiButton variant="secondary" @click="exportAllPrompts" title="导出所有提示词" size="sm">📤 导出</UiButton>
-          <UiButton variant="secondary" @click="triggerImportPrompts" title="导入提示词" size="sm">📥 导入</UiButton>
-          <UiFileInput id="promptsFileInput" accept=".json" hidden @change="handlePromptsFileImport" />
-        </div>
+    <div class="prompts-settings-tab__library">
+      <div class="prompts-settings-tab__library-header">
+        <h4 class="prompts-settings-tab__library-title">
+          <UiIcon name="book-open" size="15" />
+          <span>提示词库</span>
+        </h4>
+        <ProductActionRow aria-label="提示词库导入导出操作">
+          <UiButton variant="secondary" @click="exportAllPrompts" title="导出所有提示词" size="sm">
+            <UiIcon name="download" size="14" />
+            <span>导出</span>
+          </UiButton>
+          <UiButton variant="secondary" @click="triggerImportPrompts" title="导入提示词" size="sm">
+            <UiIcon name="upload" size="14" />
+            <span>导入</span>
+          </UiButton>
+          <UiFileInput
+            ref="promptsImportInput"
+            accept=".json"
+            hidden
+            @files-change="handlePromptsFileImport"
+          />
+        </ProductActionRow>
       </div>
 
-      <div class="saved-prompts-list">
-        <div v-if="isLoadingPrompts" class="loading-text">加载中...</div>
-        <div v-else-if="savedPromptsLibrary.length === 0" class="placeholder-text">暂无保存的提示词</div>
-        <div v-else v-for="promptItem in savedPromptsLibrary" :key="promptItem.id" class="saved-prompt-item">
-          <UiButton
-            variant="toolbar"
-            type="button"
-            class="saved-prompt-load"
-            :aria-label="`加载提示词：${promptItem.name}`"
-            @click="loadPromptFromLibrary(promptItem)"
-          >
-            <span class="prompt-name">{{ promptItem.name }}</span>
-            <span class="prompt-type-badge">{{ insightApi.PROMPT_METADATA[promptItem.type]?.label || promptItem.type }}</span>
-          </UiButton>
-          <UiButton
-            variant="toolbar"
-            type="button"
-            class="button-icon-sm saved-prompt-delete"
-            :aria-label="`删除提示词：${promptItem.name}`"
-            title="删除"
-            @click="deletePromptFromLibrary(promptItem.id)"
-          >
-            🗑️
-          </UiButton>
+      <div class="prompts-settings-tab__saved-list">
+        <ProductStatusBanner
+          v-if="isLoadingPrompts"
+          tone="neutral"
+          icon-name="refresh"
+          title="正在加载提示词库"
+          aria-live="polite"
+        >
+          正在同步已保存的 Insight 提示词。
+        </ProductStatusBanner>
+        <ProductStatusBanner
+          v-else-if="savedPromptsLibrary.length === 0"
+          tone="neutral"
+          icon-name="file-text"
+          title="暂无保存的提示词"
+        >
+          保存后的提示词会显示在这里。
+        </ProductStatusBanner>
+        <div v-else v-for="promptItem in savedPromptsLibrary" :key="promptItem.id" class="prompts-settings-tab__saved-item">
+          <ProductRecordCard class="prompts-settings-tab__saved-card">
+            <template #actions>
+              <UiIconButton
+                type="button"
+                variant="danger"
+                size="sm"
+                :label="`删除提示词：${promptItem.name}`"
+                @click="deletePromptFromLibrary(promptItem.id)"
+              >
+                <UiIcon name="trash" size="14" />
+              </UiIconButton>
+            </template>
+
+            <UiButton
+              variant="toolbar"
+              type="button"
+              class="prompts-settings-tab__saved-load"
+              :aria-label="`加载提示词：${promptItem.name}`"
+              @click="loadPromptFromLibrary(promptItem)"
+            >
+              <span class="prompts-settings-tab__prompt-name">{{ promptItem.name }}</span>
+              <ProductChipList :items="promptTypeChip(promptItem)" />
+            </UiButton>
+          </ProductRecordCard>
         </div>
       </div>
     </div>
-  </div>
+  </InsightSettingsPanel>
 </template>
 
 <style scoped>
-.insight-settings-content {
-  --ui-textarea-min-height: 200px;
-  --ui-textarea-padding: 12px;
-  --ui-textarea-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-textarea-radius: 4px;
-  --ui-textarea-background: var(--color-surface-muted);
-  --ui-textarea-color: var(--color-text-default);
-  --ui-textarea-font-size: 13px;
-  --ui-textarea-line-height: 1.5;
-  --ui-textarea-focus-border: var(--color-border-brand);
-  --ui-textarea-focus-shadow: var(--color-focus-brand-soft);
-  --ui-button-padding: 10px 16px;
-  --ui-button-radius: 6px;
-  --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
-  --ui-button-secondary-background: var(--color-surface-muted);
-  --ui-button-secondary-color: var(--color-text-default);
-  --ui-button-secondary-border: 1px solid var(--color-border-muted, var(--color-border-default));
-  --ui-button-secondary-hover-background: var(--color-surface-hover);
-  --ui-button-sm-padding: 6px 12px;
-  --ui-button-sm-font-size: 13px;
-  --ui-button-disabled-opacity: 0.6;
-
-  padding: 16px 0;
-  min-height: 300px;
-}
-
-.insight-settings-content .settings-hint {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 13px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: var(--color-surface-muted);
-  border-radius: 4px;
-}
-
-.insight-settings-content .insight-settings-field {
-  margin-bottom: 16px;
-}
-
-.insight-settings-content .insight-settings-field label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--color-text-default);
-}
-
-.insight-settings-content .form-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-}
-
-.insight-settings-content .placeholder-text {
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  text-align: center;
-  padding: 40px;
-}
-
-.insight-settings-content.prompts-settings {
+.prompts-settings-tab {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.insight-settings-content .prompt-editor {
+.prompts-settings-tab__editor {
   width: 100%;
   font-family: var(--font-mono);
 }
 
-.insight-settings-content .prompt-actions-bar {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-
-.insight-settings-content .section-divider {
+.prompts-settings-tab__divider {
   border: none;
-  border-top: 1px solid var(--color-border-muted, var(--color-border-default));
+  border-top: 1px solid var(--color-border-muted);
   margin: 16px 0;
 }
 
-.insight-settings-content .prompts-library-section {
+.prompts-settings-tab__library {
   margin-top: 8px;
 }
 
-.insight-settings-content .library-header {
+.prompts-settings-tab__library-header {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
   margin-bottom: 12px;
+  min-width: 0;
 }
 
-.insight-settings-content .library-header h4 {
+.prompts-settings-tab__library-title {
+  display: inline-flex;
+  flex: 1 1 180px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   margin: 0;
   font-size: 14px;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
-.insight-settings-content .library-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.insight-settings-content .saved-prompts-list {
+.prompts-settings-tab__saved-list {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid var(--color-border-muted, var(--color-border-default));
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-}
-
-.insight-settings-content .saved-prompt-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 0 12px 0 0;
-  border-bottom: 1px solid var(--color-border-muted, var(--color-border-default));
-  transition: background 0.2s;
 }
 
-.insight-settings-content .saved-prompt-item:last-child {
-  border-bottom: none;
+.prompts-settings-tab__saved-item {
+  min-width: 0;
 }
 
-.insight-settings-content .saved-prompt-item:hover {
-  background: var(--color-surface-hover);
+.prompts-settings-tab__saved-card {
+  --product-record-card-padding: 8px 10px;
+  --product-record-card-background: var(--color-surface-card);
+  --product-record-card-shadow-hover: none;
 }
 
-.insight-settings-content .saved-prompt-load {
+.prompts-settings-tab__saved-load {
   display: flex;
-  flex: 1;
+  width: 100%;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
-  padding: 8px 0 8px 12px;
+  padding: 0;
   color: inherit;
   text-align: left;
 }
 
-.insight-settings-content .prompt-name {
+.prompts-settings-tab__prompt-name {
   flex: 1;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.insight-settings-content .prompt-type-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: var(--color-focus-brand-soft);
-  color: var(--color-text-brand);
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.insight-settings-content .button-icon-sm {
-  padding: 2px 6px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.insight-settings-content .button-icon-sm:hover {
-  opacity: 1;
-}
-
-.insight-settings-content .loading-text {
-  text-align: center;
-  padding: 20px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
 }
 
 </style>

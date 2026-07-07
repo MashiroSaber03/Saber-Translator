@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import './EditExitSaveModal.global.styles.css'
 import { computed } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
 type ExitDialogState = 'closed' | 'confirm' | 'saving' | 'error'
@@ -41,19 +41,14 @@ function requestClose(): void {
     :model-value="true"
     :title="title"
     size="small"
-    custom-class="edit-exit-save-modal"
-    overlay-class="edit-exit-save-modal-overlay"
+    placement="top-end"
+    backdrop="strong"
+    chrome-variant="inverse"
+    divider-variant="none"
     width="min(360px, calc(100vw - 32px))"
     header-padding="16px 16px 0"
-    header-border="0"
-    title-color="var(--color-text-inverse)"
-    title-font-size="15px"
-    title-font-weight="600"
     body-padding-value="8px 16px 0"
     footer-padding="14px 16px 16px"
-    footer-border="0"
-    footer-gap="8px"
-    footer-justify="flex-start"
     footer-wrap="wrap"
     :show-close-button="false"
     :close-on-overlay="!isSaving"
@@ -92,53 +87,49 @@ function requestClose(): void {
     </template>
 
     <template v-if="state !== 'saving'" #footer>
-      <UiButton
-        v-if="state === 'confirm'"
-        class="exit-save-dialog-btn exit-save-dialog-btn--secondary"
-        variant="secondary"
-        data-testid="exit-without-save-button"
-        @click="emit('exitWithoutSaving')"
+      <ProductActionRow
+        class="exit-save-dialog-actions"
+        variant="dialog"
+        justify="start"
+        aria-label="退出编辑保存操作"
       >
-        直接退出
-      </UiButton>
-      <UiButton
-        class="exit-save-dialog-btn exit-save-dialog-btn--primary"
-        variant="primary"
-        :data-testid="state === 'confirm' ? 'save-and-exit-button' : 'retry-save-and-exit-button'"
-        @click="emit('saveAndExit')"
-      >
-        {{ state === 'confirm' ? '保存后退出' : '重试保存' }}
-      </UiButton>
-      <UiButton
-        class="exit-save-dialog-btn exit-save-dialog-btn--ghost"
-        variant="toolbar"
-        :data-testid="state === 'confirm' ? 'cancel-exit-save-button' : 'return-to-editing-button'"
-        @click="emit('cancel')"
-      >
-        {{ state === 'confirm' ? '取消' : '返回编辑' }}
-      </UiButton>
+        <UiButton
+          v-if="state === 'confirm'"
+          variant="secondary"
+          data-testid="exit-without-save-button"
+          @click="emit('exitWithoutSaving')"
+        >
+          直接退出
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :data-testid="state === 'confirm' ? 'save-and-exit-button' : 'retry-save-and-exit-button'"
+          @click="emit('saveAndExit')"
+        >
+          {{ state === 'confirm' ? '保存后退出' : '重试保存' }}
+        </UiButton>
+        <UiButton
+          variant="secondary"
+          :data-testid="state === 'confirm' ? 'cancel-exit-save-button' : 'return-to-editing-button'"
+          @click="emit('cancel')"
+        >
+          {{ state === 'confirm' ? '取消' : '返回编辑' }}
+        </UiButton>
+      </ProductActionRow>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
 .exit-save-dialog-text,
-.exit-save-dialog-btn,
 .exit-save-dialog-progress,
 .exit-save-dialog-progress-bar,
 .exit-save-dialog-progress-fill,
 .exit-save-dialog-progress-meta {
-  --edit-exit-save-modal-dialog-text: rgba(255, 255, 255, .82);
-  --edit-exit-save-modal-primary-background-start: #0f8;
-  --edit-exit-save-modal-primary-background-end: #00cc6a;
-  --edit-exit-save-modal-primary-text: #11212f;
-  --edit-exit-save-modal-primary-hover-shadow: rgba(0, 255, 136, .18);
-  --edit-exit-save-modal-secondary-border: rgba(255, 255, 255, .16);
-  --edit-exit-save-modal-secondary-hover-border: rgba(255, 255, 255, .24);
-  --edit-exit-save-modal-secondary-background: rgba(255, 255, 255, .08);
-  --edit-exit-save-modal-progress-fill-start: #0f8;
-  --edit-exit-save-modal-progress-fill-end: #00d4ff;
-  --edit-exit-save-modal-progress-meta-text: #0f8;
+  --edit-exit-save-modal-dialog-text: color-mix(in srgb, var(--color-text-inverse) 82%, transparent);
+  --edit-exit-save-modal-progress-fill-start: var(--color-action-success-strong);
+  --edit-exit-save-modal-progress-fill-end: var(--color-status-info);
+  --edit-exit-save-modal-progress-meta-text: var(--color-action-success-strong);
 }
 
 .exit-save-dialog-text {
@@ -146,40 +137,6 @@ function requestClose(): void {
   color: var(--edit-exit-save-modal-dialog-text);
   font-size: 13px;
   line-height: 1.6;
-}
-
-.exit-save-dialog-btn {
-  min-width: 88px;
-  padding: 8px 14px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.exit-save-dialog-btn--primary {
-  background: linear-gradient(135deg, var(--edit-exit-save-modal-primary-background-start) 0%, var(--edit-exit-save-modal-primary-background-end) 100%);
-  color: var(--edit-exit-save-modal-primary-text);
-  font-weight: 600;
-}
-
-.exit-save-dialog-btn--primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px var(--edit-exit-save-modal-primary-hover-shadow);
-}
-
-.exit-save-dialog-btn--secondary,
-.exit-save-dialog-btn--ghost {
-  border-color: var(--edit-exit-save-modal-secondary-border);
-  background: var(--edit-exit-save-modal-secondary-background);
-  color: var(--color-text-inverse);
-}
-
-.exit-save-dialog-btn--secondary:hover,
-.exit-save-dialog-btn--ghost:hover {
-  border-color: var(--edit-exit-save-modal-secondary-hover-border);
-  background: var(--color-overlay-inverse-prominent);
 }
 
 .exit-save-dialog-progress {

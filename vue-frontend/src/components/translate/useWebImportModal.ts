@@ -7,12 +7,15 @@ import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
 import { getProviderDisplayName, normalizeProviderId, providerRequiresApiKey, providerRequiresBaseUrl, providerSupportsCapability } from '@/config/aiProviders'
 import { showToast } from '@/utils/toast'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import type { WebImportSettingsActions } from './web-import/webImportSettingsActions'
 
 export function useWebImportModal() {
   const webImportStore = useWebImportStore()
   const imageStore = useImageStore()
 
-  // 本地状态
+  const focusSourceUrlRequestId = ref(0)
   const urlInput = ref('')
   const logsExpanded = ref(true)
   const selectedEngine = ref<WebImportEngine>('auto')
@@ -20,17 +23,42 @@ export function useWebImportModal() {
   const galleryDLSupported = ref(false)
   const checkingSupport = ref(false)
 
-  // 设置相关状态
   const settingsExpanded = ref(false)
   const activeSettingsTab = ref<'basic' | 'preprocess' | 'advanced'>('basic')
   const testingFirecrawl = ref(false)
   const testingAgent = ref(false)
   const isFetchingModels = ref(false)
-  const showFirecrawlKey = ref(false)
-  const showAgentKey = ref(false)
   const modelList = ref<string[]>([])
+  const settingsActions: WebImportSettingsActions = {
+    setAgentApiKey: webImportStore.setAgentApiKey,
+    setAgentBaseUrl: webImportStore.setAgentBaseUrl,
+    setAgentForceJsonOutput: webImportStore.setAgentForceJsonOutput,
+    setAgentModelName: webImportStore.setAgentModelName,
+    setAgentProvider: webImportStore.setAgentProvider,
+    setAgentUseStream: webImportStore.setAgentUseStream,
+    setAutoImport: webImportStore.setAutoImport,
+    setBypassProxy: webImportStore.setBypassProxy,
+    setCustomCookie: webImportStore.setCustomCookie,
+    setCustomHeaders: webImportStore.setCustomHeaders,
+    setDownloadConcurrency: webImportStore.setDownloadConcurrency,
+    setDownloadDelay: webImportStore.setDownloadDelay,
+    setDownloadRetries: webImportStore.setDownloadRetries,
+    setDownloadTimeout: webImportStore.setDownloadTimeout,
+    setDownloadUseReferer: webImportStore.setDownloadUseReferer,
+    setExtractionMaxIterations: webImportStore.setExtractionMaxIterations,
+    setExtractionPrompt: webImportStore.setExtractionPrompt,
+    setFirecrawlApiKey: webImportStore.setFirecrawlApiKey,
+    setImageAutoRotate: webImportStore.setImageAutoRotate,
+    setImageCompressionEnabled: webImportStore.setImageCompressionEnabled,
+    setImageCompressionQuality: webImportStore.setImageCompressionQuality,
+    setImageFormatConvertEnabled: webImportStore.setImageFormatConvertEnabled,
+    setImageMaxHeight: webImportStore.setImageMaxHeight,
+    setImageMaxWidth: webImportStore.setImageMaxWidth,
+    setImagePreprocessEnabled: webImportStore.setImagePreprocessEnabled,
+    setImageTargetFormat: webImportStore.setImageTargetFormat,
+    setShowAgentLogs: webImportStore.setShowAgentLogs,
+  }
 
-  // 计算属性
   const isVisible = computed(() => webImportStore.modalVisible)
   const status = computed(() => webImportStore.status)
   const logs = computed(() => webImportStore.logs)
@@ -38,7 +66,6 @@ export function useWebImportModal() {
   const selectedPages = computed(() => webImportStore.selectedPages)
   const selectedCount = computed(() => webImportStore.selectedCount)
   const downloadProgress = computed(() => webImportStore.downloadProgress)
-  const downloadProgressPercent = computed(() => webImportStore.downloadProgressPercent)
   const error = computed(() => webImportStore.error)
   const isProcessing = computed(() => webImportStore.isProcessing)
   const draftSettings = computed(() => webImportStore.draftSettings)
@@ -49,10 +76,8 @@ export function useWebImportModal() {
   const supportsFetchModels = computed(() => providerSupportsCapability(draftSettings.value.agent.provider, 'modelFetch'))
   const modelListOptions = computed(() => modelList.value.map(model => ({ label: model, value: model })))
 
-  // 当前使用的引擎
   const currentEngine = computed(() => extractResult.value?.engine || null)
 
-  // 引擎显示名称
   const engineDisplayName = computed(() => {
     switch (currentEngine.value) {
       case 'gallery-dl': return 'Gallery-DL'
@@ -61,58 +86,70 @@ export function useWebImportModal() {
     }
   })
 
-  // 是否全选
   const isAllSelected = computed(() => {
     if (!extractResult.value?.pages) return false
     return selectedCount.value === extractResult.value.pages.length
   })
 
-  // 获取预览图 URL（gallery-dl 引擎直接使用静态文件服务）
   function getPreviewUrl(originalUrl: string): string {
-    // gallery-dl 引擎的图片已在本地，直接使用静态服务路径
-    if (currentEngine.value === 'gallery-dl') {
-      // imageUrl 格式: /api/web-import/static/temp/gallery_dl/xxx.webp
-      // 直接返回，不需要代理
-      return originalUrl
-    }
     return originalUrl
   }
 
-  // 检查 URL 支持（防抖）
   let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
   let focusInputTimeout: ReturnType<typeof setTimeout> | null = null
+  const urlSupportGuard = useLatestRequestGuard()
+  const modelFetchGuard = useLatestRequestGuard()
+
+  function isCurrentUrlSupport(requestId: number, url: string): boolean {
+    return urlSupportGuard.isCurrent(requestId, () => urlInput.value.trim() === url)
+  }
+
   async function checkUrlSupport(url: string) {
+    urlSupportGuard.invalidate()
     if (checkSupportTimeout) {
       clearTimeout(checkSupportTimeout)
       checkSupportTimeout = null
     }
-    
-    if (!url.trim()) {
+
+    const trimmedUrl = url.trim()
+    if (!trimmedUrl) {
       galleryDLAvailable.value = false
       galleryDLSupported.value = false
+      checkingSupport.value = false
       return
     }
-    
+
+    const requestId = urlSupportGuard.next()
     checkSupportTimeout = setTimeout(async () => {
       checkSupportTimeout = null
       checkingSupport.value = true
       try {
-        const result = await checkGalleryDLSupport(url)
+        const result = await checkGalleryDLSupport(trimmedUrl)
+        if (!isCurrentUrlSupport(requestId, trimmedUrl)) return
         galleryDLAvailable.value = result.available
         galleryDLSupported.value = result.supported
       } catch {
+        if (!isCurrentUrlSupport(requestId, trimmedUrl)) return
         galleryDLAvailable.value = false
         galleryDLSupported.value = false
       } finally {
-        checkingSupport.value = false
+        if (isCurrentUrlSupport(requestId, trimmedUrl)) {
+          checkingSupport.value = false
+        }
       }
     }, 500)
   }
 
-  // 关闭模态框
-  function handleClose() {
+  async function handleClose() {
     if (isProcessing.value) {
-      if (!confirm('正在处理中，确定要关闭吗？')) return
+      const confirmed = await confirmProductAction({
+        title: '关闭网页导入',
+        message: '正在处理中，确定要关闭吗？',
+        confirmText: '关闭',
+        cancelText: '继续处理',
+        tone: 'danger',
+      })
+      if (!confirmed) return
     }
     webImportStore.discardSettingsChanges()
     webImportStore.closeModal()
@@ -138,9 +175,12 @@ export function useWebImportModal() {
       return true
     }
 
-    const shouldSave = confirm(
-      `网页导入设置有未保存修改。\n点击“确定”先保存设置后再${actionLabel}；点击“取消”则进入放弃修改确认。`
-    )
+    const shouldSave = await confirmProductAction({
+      title: '保存网页导入设置',
+      message: `网页导入设置有未保存修改。要先保存设置后再${actionLabel}吗？`,
+      confirmText: '保存并继续',
+      cancelText: '不保存',
+    })
 
     if (shouldSave) {
       const success = await handleSaveSettings(false)
@@ -150,7 +190,13 @@ export function useWebImportModal() {
       return success
     }
 
-    const shouldDiscard = confirm(`要继续${actionLabel}并放弃未保存修改吗？`)
+    const shouldDiscard = await confirmProductAction({
+      title: '放弃网页导入设置修改',
+      message: `要继续${actionLabel}并放弃未保存修改吗？`,
+      confirmText: '放弃修改',
+      cancelText: '返回设置',
+      tone: 'danger',
+    })
     if (!shouldDiscard) {
       return false
     }
@@ -159,7 +205,6 @@ export function useWebImportModal() {
     return true
   }
 
-  // 开始提取
   async function handleExtract() {
     if (!(await ensureSettingsReady('开始提取'))) {
       return
@@ -171,7 +216,6 @@ export function useWebImportModal() {
       return
     }
 
-    // 验证 URL
     try {
       new URL(url)
     } catch {
@@ -179,7 +223,6 @@ export function useWebImportModal() {
       return
     }
 
-    // 重置状态
     webImportStore.resetState()
     webImportStore.setUrl(url)
     webImportStore.setStatus('extracting')
@@ -203,7 +246,6 @@ export function useWebImportModal() {
           webImportStore.setError(errorMsg)
         },
         selectedEngine.value,
-        // 每收到一张图片就增量添加。
         (page) => {
           webImportStore.addPageIncremental(page)
         }
@@ -221,17 +263,14 @@ export function useWebImportModal() {
     }
   }
 
-  // 切换页面选择
   function togglePage(pageNumber: number) {
     webImportStore.togglePageSelection(pageNumber)
   }
 
-  // 全选/取消全选
   function toggleAll() {
     webImportStore.toggleSelectAll()
   }
 
-  // 开始下载并导入
   async function handleImport() {
     if (!(await ensureSettingsReady('导入图片'))) {
       return
@@ -242,7 +281,6 @@ export function useWebImportModal() {
       return
     }
 
-    // 获取选中的页面
     const selectedPagesList = extractResult.value.pages.filter((p) =>
       selectedPages.value.has(p.pageNumber)
     )
@@ -250,14 +288,12 @@ export function useWebImportModal() {
     webImportStore.setStatus('downloading')
     webImportStore.updateDownloadProgress(0, selectedPagesList.length)
 
-    // 使用提取时使用的引擎
     const engineToUse = currentEngine.value || 'ai-agent'
 
     try {
-      // gallery-dl 引擎：图片已下载到临时目录，直接获取
       if (engineToUse === 'gallery-dl') {
         const galleryResult = await getGalleryDLImages()
-        
+
         if (galleryResult.success && galleryResult.images.length > 0) {
           let importedCount = 0
           let processedCount = 0
@@ -278,14 +314,13 @@ export function useWebImportModal() {
 
           webImportStore.setStatus('completed')
           showToast(`成功导入 ${importedCount} 张图片`, 'success')
-          handleClose()
+          await handleClose()
           return
         } else {
           throw new Error(galleryResult.error || '获取图片失败')
         }
       }
-      
-      // AI Agent 引擎：调用下载接口
+
       const result = await downloadImages(
         selectedPagesList,
         extractResult.value.sourceUrl,
@@ -297,19 +332,16 @@ export function useWebImportModal() {
         webImportStore.setDownloadedImages(result.images)
         webImportStore.updateDownloadProgress(result.images.length, selectedPagesList.length)
 
-        // 导入到 imageStore (参数顺序: fileName, dataUrl)
         for (const img of result.images) {
           imageStore.addImage(img.filename, img.dataUrl)
         }
 
         webImportStore.setStatus('completed')
 
-        // 提示成功
         const failedMsg = result.failedCount > 0 ? `，${result.failedCount} 张失败` : ''
         showToast(`成功导入 ${result.images.length} 张图片${failedMsg}`, result.failedCount > 0 ? 'warning' : 'success')
 
-        // 关闭模态框
-        handleClose()
+        await handleClose()
       } else {
         webImportStore.setError(result.error || '下载失败')
       }
@@ -318,7 +350,6 @@ export function useWebImportModal() {
     }
   }
 
-  // 监听模态框打开时聚焦输入框
   watch(isVisible, (visible) => {
     if (focusInputTimeout) {
       clearTimeout(focusInputTimeout)
@@ -327,13 +358,11 @@ export function useWebImportModal() {
     if (visible) {
       focusInputTimeout = setTimeout(() => {
         focusInputTimeout = null
-        const input = document.querySelector('.url-input') as HTMLInputElement
-        input?.focus()
+        focusSourceUrlRequestId.value += 1
       }, 100)
     }
   })
 
-  // 监听 URL 输入变化，检查 gallery-dl 支持
   watch(urlInput, (newUrl) => {
     checkUrlSupport(newUrl)
   })
@@ -341,13 +370,14 @@ export function useWebImportModal() {
   watch(
     () => draftSettings.value.agent.provider,
     () => {
+      modelFetchGuard.invalidate()
+      isFetchingModels.value = false
       modelList.value = []
     }
   )
 
   const showCustomUrl = computed(() => normalizeProviderId(draftSettings.value.agent.provider) === 'custom')
 
-  // 测试 Firecrawl 连接
   async function handleTestFirecrawl() {
     if (!draftSettings.value.firecrawl.apiKey) {
       showToast('请输入 Firecrawl API Key', 'warning')
@@ -369,7 +399,6 @@ export function useWebImportModal() {
     }
   }
 
-  // 测试 Agent 连接
   async function handleTestAgent() {
     if (providerRequiresApiKey(draftSettings.value.agent.provider) && !draftSettings.value.agent.apiKey) {
       showToast('请输入 AI Agent API Key', 'warning')
@@ -416,9 +445,11 @@ export function useWebImportModal() {
       return
     }
 
+    const requestId = modelFetchGuard.next()
     isFetchingModels.value = true
     try {
       const result = await configApi.fetchModels(provider, apiKey, baseUrl || '')
+      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
       if (result.success && result.models && result.models.length > 0) {
         modelList.value = result.models.map(model => model.id)
         showToast(`获取到 ${result.models.length} 个模型`, 'success')
@@ -427,18 +458,34 @@ export function useWebImportModal() {
         showToast(result.message || '未获取到可用模型', 'warning')
       }
     } catch (error: unknown) {
+      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
       modelList.value = []
       showToast(error instanceof Error ? error.message : '获取模型列表失败', 'error')
     } finally {
-      isFetchingModels.value = false
+      if (modelFetchGuard.isCurrent(requestId)) {
+        isFetchingModels.value = false
+      }
     }
   }
 
-  // 重置提示词
-  function handleResetPrompt() {
-    if (confirm('确定要重置为默认提示词吗？')) {
-      webImportStore.resetExtractionPrompt()
-    }
+  function isCurrentModelFetch(requestId: number, provider: string, apiKey: string | undefined, baseUrl: string | undefined): boolean {
+    return modelFetchGuard.isCurrent(requestId, () => (
+      draftSettings.value.agent.provider === provider &&
+      draftSettings.value.agent.apiKey?.trim() === apiKey &&
+      draftSettings.value.agent.customBaseUrl?.trim() === baseUrl
+    ))
+  }
+
+  async function handleResetPrompt() {
+    const confirmed = await confirmProductAction({
+      title: '重置提取提示词',
+      message: '确定要重置为默认提示词吗？',
+      confirmText: '重置',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    webImportStore.resetExtractionPrompt()
   }
 
   onUnmounted(() => {
@@ -446,6 +493,10 @@ export function useWebImportModal() {
       clearTimeout(checkSupportTimeout)
       checkSupportTimeout = null
     }
+    urlSupportGuard.invalidate()
+    checkingSupport.value = false
+    modelFetchGuard.invalidate()
+    isFetchingModels.value = false
     if (focusInputTimeout) {
       clearTimeout(focusInputTimeout)
       focusInputTimeout = null
@@ -453,7 +504,7 @@ export function useWebImportModal() {
   })
 
   return {
-    webImportStore,
+    focusSourceUrlRequestId,
     urlInput,
     logsExpanded,
     selectedEngine,
@@ -461,12 +512,11 @@ export function useWebImportModal() {
     galleryDLSupported,
     checkingSupport,
     settingsExpanded,
+    settingsActions,
     activeSettingsTab,
     testingFirecrawl,
     testingAgent,
     isFetchingModels,
-    showFirecrawlKey,
-    showAgentKey,
     modelList,
     isVisible,
     status,
@@ -475,7 +525,6 @@ export function useWebImportModal() {
     selectedPages,
     selectedCount,
     downloadProgress,
-    downloadProgressPercent,
     error,
     isProcessing,
     draftSettings,
@@ -485,14 +534,12 @@ export function useWebImportModal() {
     agentProviderOptions,
     supportsFetchModels,
     modelListOptions,
-    currentEngine,
     engineDisplayName,
     isAllSelected,
     getPreviewUrl,
     handleClose,
     handleSaveSettings,
     handleDiscardSettings,
-    ensureSettingsReady,
     handleExtract,
     togglePage,
     toggleAll,
@@ -502,8 +549,6 @@ export function useWebImportModal() {
     handleTestAgent,
     handleFetchModels,
     handleResetPrompt,
-    getProviderDisplayName,
     providerRequiresApiKey,
-    providerRequiresBaseUrl,
   }
 }

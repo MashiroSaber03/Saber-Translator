@@ -1,12 +1,151 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { mount } from '@vue/test-utils'
 
+import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiTextarea from '@/components/ui/UiTextarea.vue'
 import {
+  applyOpenAiOptionsPatch,
+  cloneOpenAiOptions,
   deserializeOpenAICompatibleOptionsFromApi,
   normalizeOpenAiOptions,
   serializeOpenAICompatibleOptionsForApi,
 } from '@/utils/openaiOptions'
 
+function source(file: string): string {
+  return readFileSync(resolve(process.cwd(), file), 'utf8')
+}
+
+const uiFieldRootSelector = '.ui' + '-field'
+
 describe('openai options schema boundaries', () => {
+  it('uses the shared clone helper inside the OpenAI option owner', () => {
+    const content = source('src/utils/openaiOptions.ts')
+
+    expect(content).toContain("import { deepClone } from './deepClone'")
+    expect(content).not.toContain('JSON.parse(JSON.stringify')
+  })
+
+  it('keeps the shared extra body editor on the shared clone helper', () => {
+    const content = source('src/components/common/OpenAIExtraBodyEditor.vue')
+
+    expect(content).toContain("import { deepClone } from '@/utils/deepClone'")
+    expect(content).not.toContain('function cloneRecord')
+    expect(content).not.toContain('JSON.parse(JSON.stringify')
+  })
+
+  it('updates the shared extra body editor through typed textarea model events', () => {
+    const content = source('src/components/common/OpenAIExtraBodyEditor.vue')
+
+    expect(content).not.toContain('@input="handleInput"')
+    expect(content).not.toContain('event.target as HTMLTextAreaElement')
+    expect(content).toContain('@update:model-value="handleInput"')
+
+    const wrapper = mount(OpenAIExtraBodyEditor)
+    expect(wrapper.getComponent(UiTextarea).props('variant')).toBe('panel')
+    wrapper.getComponent(UiTextarea).vm.$emit('update:modelValue', '{"top_p":0.9}')
+
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([{ top_p: 0.9 }])
+  })
+
+  it('routes the shared extra body editor label and feedback through UiField', async () => {
+    const content = source('src/components/common/OpenAIExtraBodyEditor.vue')
+
+    expect(content).toContain("import UiField from '@/components/ui/UiField.vue'")
+    expect(content).not.toMatch(/<label\b/)
+    expect(content).not.toContain('class="ui-form-hint"')
+    expect(content).not.toContain('class="input-error"')
+    expect(content).not.toContain('.editor-header label')
+    expect(content).not.toContain(`.openai-extra-body-editor${uiFieldRootSelector}`)
+
+    const wrapper = mount(OpenAIExtraBodyEditor, {
+      props: {
+        label: '附加请求字段',
+        hint: '只允许 JSON 对象',
+      },
+    })
+
+    const field = wrapper.getComponent(UiField)
+    expect(field.props('variant')).toBe('settings')
+    expect(field.props('label')).toBe('附加请求字段')
+    expect(field.props('controlId')).toBe('openAiExtraBody')
+    expect(field.props('hint')).toBe('只允许 JSON 对象')
+    expect(field.findComponent(UiButton).text()).toBe('格式化')
+
+    wrapper.getComponent(UiTextarea).vm.$emit('update:modelValue', '[]')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.getComponent(UiField).props('error')).toBe('必须输入 JSON 对象，不能是数组、字符串或数字')
+  })
+
+  it('clones option payloads without sharing nested extra body references', () => {
+    const options = {
+      request: {
+        forceJsonOutput: true,
+        extraBody: { response_format: { type: 'json_object' } },
+      },
+      execution: {
+        useStream: true,
+        rpmLimit: 12,
+        transportRetries: 2,
+        businessRetries: 3,
+      },
+    }
+
+    const cloned = cloneOpenAiOptions(options)
+    const serialized = serializeOpenAICompatibleOptionsForApi(options)
+
+    expect(cloned).toEqual(options)
+    expect(cloned.request.extraBody).not.toBe(options.request.extraBody)
+    expect(serialized.request.extra_body).not.toBe(options.request.extraBody)
+  })
+
+  it('applies UI patch fields to the nested OpenAI option shape', () => {
+    const options = normalizeOpenAiOptions({
+      request: {
+        forceJsonOutput: false,
+        extraBody: { previous: true },
+      },
+      execution: {
+        useStream: false,
+        rpmLimit: 0,
+        transportRetries: 1,
+        businessRetries: 0,
+      },
+    })
+
+    const patched = applyOpenAiOptionsPatch(options, {
+      provider: 'siliconflow',
+      rpmLimit: 12,
+      transportRetries: 3,
+      businessRetries: 2,
+      forceJsonOutput: true,
+      useStream: true,
+      extraBody: { top_p: 0.9 },
+    })
+
+    expect(patched).toBe(options)
+    expect(patched).toEqual({
+      request: {
+        forceJsonOutput: true,
+        extraBody: { top_p: 0.9 },
+      },
+      execution: {
+        useStream: true,
+        rpmLimit: 12,
+        transportRetries: 3,
+        businessRetries: 2,
+      },
+    })
+
+    applyOpenAiOptionsPatch(options, { extraBody: undefined })
+
+    expect(options.request.extraBody).toBeUndefined()
+  })
+
   it('normalizes only the current frontend option shape', () => {
     const options = normalizeOpenAiOptions({
       request: {

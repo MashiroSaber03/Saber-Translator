@@ -1,71 +1,97 @@
-/**
- * 响应式布局 - 侧边栏属性测试
- * 
- * **Feature: frontend-behavior, Property 43: 视口尺寸计算一致性**
- * **Validates: Requirements 25.1, 25.4**
- */
-
-import { describe, it, expect } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
-import { BREAKPOINTS } from '@/composables/useResponsive'
+import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 
-function shouldShowSidebar(width: number, sidebarVisible: boolean): boolean {
-  if (width >= BREAKPOINTS.LG) return true
-  return sidebarVisible
-}
+const modeArb = fc.constantFrom('flow' as const, 'fixed' as const, 'overlay' as const)
+const collapsedArb = fc.constantFrom('none' as const, 'left' as const, 'right' as const, 'both' as const)
+const scrollModeArb = fc.constantFrom('page' as const, 'main' as const, 'panes' as const)
+const sidebarsArb = fc.constantFrom('flow' as const, 'sticky' as const, 'fixed' as const, 'overlay' as const)
+const mobileModeArb = fc.constantFrom('stack' as const, 'drawer' as const)
 
-function calculateSidebarWidth(width: number): string {
-  if (width < BREAKPOINTS.SM) return '100%'
-  if (width < BREAKPOINTS.MD) return '280px'
-  if (width < BREAKPOINTS.LG) return '240px'
-  return '280px'
-}
-
-describe('响应式布局 - 侧边栏', () => {
-  const screenWidthArb = fc.integer({ min: 1, max: 3000 })
-  
-  it('桌面端应该始终显示侧边栏', () => {
+describe('responsive sidebar shell contracts', () => {
+  it('routes layout options through the shared SidebarLayout class contract', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: BREAKPOINTS.LG, max: 3000 }),
+        modeArb,
+        collapsedArb,
+        scrollModeArb,
+        sidebarsArb,
+        mobileModeArb,
         fc.boolean(),
-        (width, sidebarVisible) => {
-          expect(shouldShowSidebar(width, sidebarVisible)).toBe(true)
-        }
+        (mode, collapsed, scrollMode, sidebars, mobileMode, paneScroll) => {
+          const wrapper = mount(SidebarLayout, {
+            props: {
+              mode,
+              collapsed,
+              scrollMode,
+              sidebars,
+              mobileMode,
+              paneScroll,
+            },
+            slots: {
+              left: '<aside>left</aside>',
+              default: '<main>main</main>',
+              right: '<aside>right</aside>',
+            },
+          })
+
+          const layout = wrapper.get('.ui-sidebar-layout')
+          expect(layout.classes()).toContain(`ui-sidebar-layout--${mode}`)
+          expect(layout.classes()).toContain(`ui-sidebar-layout--${collapsed}-collapsed`)
+          expect(layout.classes()).toContain(`ui-sidebar-layout--scroll-${scrollMode}`)
+          expect(layout.classes()).toContain(`ui-sidebar-layout--sidebars-${sidebars}`)
+          expect(layout.classes()).toContain(`ui-sidebar-layout--mobile-${mobileMode}`)
+          expect(layout.classes().includes('ui-sidebar-layout--pane-scroll')).toBe(paneScroll)
+
+          wrapper.unmount()
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     )
   })
-  
-  it('移动端/平板侧边栏显示应该取决于状态', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: BREAKPOINTS.LG - 1 }),
-        fc.boolean(),
-        (width, sidebarVisible) => {
-          expect(shouldShowSidebar(width, sidebarVisible)).toBe(sidebarVisible)
-        }
-      ),
-      { numRuns: 100 }
-    )
+
+  it('routes responsive sizing through SidebarLayout CSS variables', () => {
+    const wrapper = mount(SidebarLayout, {
+      props: {
+        leftWidth: '320px',
+        rightWidth: '240px',
+        gap: '16px',
+        height: 'calc(100dvh - 80px)',
+        sidebarTop: '80px',
+        leftInset: '320px',
+        rightInset: '240px',
+        contentInset: '20px',
+      },
+      slots: {
+        left: '<aside>left</aside>',
+        default: '<main>main</main>',
+        right: '<aside>right</aside>',
+      },
+    })
+
+    const style = wrapper.get('.ui-sidebar-layout').attributes('style') ?? ''
+
+    for (const token of [
+      '--ui-sidebar-left-width: 320px;',
+      '--ui-sidebar-right-width: 240px;',
+      '--ui-sidebar-gap: 16px;',
+      '--ui-sidebar-height: calc(100dvh - 80px);',
+      '--ui-sidebar-top: 80px;',
+      '--ui-sidebar-left-inset: 320px;',
+      '--ui-sidebar-right-inset: 240px;',
+      '--ui-sidebar-content-inset: 20px;',
+    ]) {
+      expect(style).toContain(token)
+    }
   })
-  
-  it('侧边栏宽度应该根据屏幕尺寸正确计算', () => {
-    fc.assert(
-      fc.property(screenWidthArb, (width) => {
-        const sidebarWidth = calculateSidebarWidth(width)
-        
-        if (width < BREAKPOINTS.SM) {
-          expect(sidebarWidth).toBe('100%')
-        } else if (width < BREAKPOINTS.MD) {
-          expect(sidebarWidth).toBe('280px')
-        } else if (width < BREAKPOINTS.LG) {
-          expect(sidebarWidth).toBe('240px')
-        } else {
-          expect(sidebarWidth).toBe('280px')
-        }
-      }),
-      { numRuns: 100 }
-    )
+
+  it('does not expose a dead custom mobile breakpoint API', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/ui/SidebarLayout.vue'), 'utf8')
+
+    expect(source).not.toContain('mobileBreakpoint')
+    expect(source).not.toContain('--ui-sidebar-mobile-breakpoint')
   })
 })

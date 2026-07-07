@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import type { RenderInput } from '@/composables/translation/core/steps'
+import { buildSavedTextStylesFromSettings } from '@/composables/translation/core/runtime'
+import { buildEditRenderInput } from '@/composables/edit/editRenderRequest'
+import type { BubbleState } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 const { executeRenderMock } = vi.hoisted(() => ({
@@ -16,6 +23,115 @@ vi.mock('@/composables/translation/core/steps', () => ({
 }))
 
 describe('useEditRender', () => {
+  it('keeps lifecycle orchestration separate from edit render request projection', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/useEditRender.ts'), 'utf8')
+
+    expect(source).not.toContain('/**\n * 编辑模式渲染组合式函数')
+    expect(source).not.toContain('// ============================================================')
+    expect(source).not.toContain('bubbleCoords: bubbleStates.map')
+    expect(source).toContain('buildEditRenderInput(')
+  })
+
+  it('builds edit render input from bubbles and current settings in a pure helper', async () => {
+    const settings = createDefaultSettings()
+    settings.textStyle.textColor = '#112233'
+    settings.textStyle.fillColor = '#ddeeff'
+
+    const textline = {
+      polygon: [[0, 0], [40, 0], [40, 12], [0, 12]],
+      direction: 'h' as const,
+      confidence: 0.98,
+    }
+    const ocrResult = {
+      text: 'OCR text',
+      confidence: 0.87,
+      confidenceSupported: true,
+      engine: 'manga_ocr',
+      primaryEngine: 'manga_ocr',
+      fallbackUsed: false,
+    }
+    const bubbleStates = [
+      createBubbleState({
+        coords: [1.2, 2.6, 20.4, 30.8],
+        originalText: '原文一',
+        translatedText: '译文一',
+        textboxText: '框一',
+        rotationAngle: 7,
+        textDirection: 'horizontal',
+        autoTextDirection: 'vertical',
+        textlines: [textline],
+        textColor: '',
+        fillColor: '',
+        ocrResult: null,
+      }),
+      createBubbleState({
+        coords: [50, 60, 100, 130],
+        originalText: '原文二',
+        translatedText: '译文二',
+        textboxText: '框二',
+        rotationAngle: 0,
+        autoTextDirection: 'horizontal',
+        textColor: '#445566',
+        fillColor: '#abcdef',
+        autoFgColor: [1, 2, 3],
+        autoBgColor: [9, 8, 7],
+        ocrResult,
+      }),
+    ]
+
+    const input: RenderInput = buildEditRenderInput({
+      imageIndex: 3,
+      cleanImage: 'clean-image',
+      bubbleStates,
+      settings,
+    })
+
+    expect(input).toMatchObject({
+      imageIndex: 3,
+      cleanImage: 'clean-image',
+      bubbleCoords: [[1, 3, 20, 31], [50, 60, 100, 130]],
+      bubbleAngles: [7, 0],
+      autoDirections: ['vertical', 'horizontal'],
+      textlinesPerBubble: [[textline], []],
+      existingBubbleStates: bubbleStates,
+      originalTexts: ['原文一', '原文二'],
+      translatedTexts: ['译文一', '译文二'],
+      textboxTexts: ['框一', '框二'],
+      colors: [
+        {
+          textColor: '#112233',
+          bgColor: '#ddeeff',
+          autoFgColor: null,
+          autoBgColor: null,
+        },
+        {
+          textColor: '#445566',
+          bgColor: '#abcdef',
+          autoFgColor: [1, 2, 3],
+          autoBgColor: [9, 8, 7],
+        },
+      ],
+      currentMode: 'standard',
+      renderStylePolicy: {
+        fontSize: 'preserve',
+        color: 'preserve',
+      },
+    })
+    expect(input.settingsSnapshot).toBe(settings)
+    expect(input.savedTextStyles).toEqual(buildSavedTextStylesFromSettings(settings))
+    expect(input.ocrResults).toEqual([
+      {
+        text: '原文一',
+        confidence: null,
+        confidenceSupported: false,
+        engine: '',
+        primaryEngine: '',
+        fallbackUsed: false,
+      },
+      ocrResult,
+    ])
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     executeRenderMock.mockReset()
@@ -26,8 +142,8 @@ describe('useEditRender', () => {
   })
 
   it('ignores render results when the user switches to another image before the request completes', async () => {
-    let resolveRender!: (value: { finalImage: string; bubbleStates: any[] }) => void
-    const pendingRender = new Promise<{ finalImage: string; bubbleStates: any[] }>((resolve) => {
+    let resolveRender!: (value: { finalImage: string; bubbleStates: BubbleState[] }) => void
+    const pendingRender = new Promise<{ finalImage: string; bubbleStates: BubbleState[] }>((resolve) => {
       resolveRender = resolve
     })
     executeRenderMock.mockReturnValueOnce(pendingRender)
@@ -116,8 +232,8 @@ describe('useEditRender', () => {
   })
 
   it('does not write render results after the owning component unmounts', async () => {
-    let resolveRender!: (value: { finalImage: string; bubbleStates: any[] }) => void
-    const pendingRender = new Promise<{ finalImage: string; bubbleStates: any[] }>((resolve) => {
+    let resolveRender!: (value: { finalImage: string; bubbleStates: BubbleState[] }) => void
+    const pendingRender = new Promise<{ finalImage: string; bubbleStates: BubbleState[] }>((resolve) => {
       resolveRender = resolve
     })
     executeRenderMock.mockReturnValueOnce(pendingRender)

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const { parallelTranslateMock, translateSingleTextMock } = vi.hoisted(() => ({
   parallelTranslateMock: vi.fn(),
@@ -17,6 +19,42 @@ vi.mock('@/api/translate', () => ({
 import { executeTranslate } from '@/composables/translation/core/steps/translate'
 import { useSettingsStore } from '@/stores/settings'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
+import type { GlossaryEntry, NonTranslateEntry } from '@/types/translationConstraints'
+
+function createGlossaryEntry(note = ''): GlossaryEntry {
+  return {
+    source: 'Alice',
+    target: '爱丽丝',
+    note,
+    matchMode: 'text',
+  }
+}
+
+function createNonTranslateEntry(note = ''): NonTranslateEntry {
+  return {
+    pattern: '<keep>',
+    note,
+    matchMode: 'text',
+  }
+}
+
+function createEnabledConstraints(options: {
+  glossaryNote?: string
+  nonTranslateNote?: string
+  includeNonTranslate?: boolean
+} = {}): BookTranslationConstraints {
+  const constraints = createEmptyBookTranslationConstraints()
+  constraints.glossary.enabled = true
+  constraints.glossary.entries = [createGlossaryEntry(options.glossaryNote)]
+
+  if (options.includeNonTranslate ?? true) {
+    constraints.non_translate.enabled = true
+    constraints.non_translate.entries = [createNonTranslateEntry(options.nonTranslateNote)]
+  }
+
+  return constraints
+}
 
 describe('executeTranslate', () => {
   beforeEach(() => {
@@ -25,18 +63,19 @@ describe('executeTranslate', () => {
     translateSingleTextMock.mockReset()
   })
 
+  it('keeps translation constraint fixtures typed to the current schema', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/translateStep.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+  })
+
   it('forwards glossary and non-translate settings in batch mode and returns warnings', async () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings.translation.translationMode = 'batch'
-    const constraints = createEmptyBookTranslationConstraints()
-    constraints.glossary.enabled = true
-    constraints.glossary.entries = [
-      { source: 'Alice', target: '爱丽丝', note: '主角', matchMode: 'text' } as any,
-    ]
-    constraints.non_translate.enabled = true
-    constraints.non_translate.entries = [
-      { pattern: '<keep>', note: '占位符', matchMode: 'text' } as any,
-    ]
+    const constraints = createEnabledConstraints({
+      glossaryNote: '主角',
+      nonTranslateNote: '占位符',
+    })
 
     parallelTranslateMock.mockResolvedValue({
       success: true,
@@ -74,15 +113,7 @@ describe('executeTranslate', () => {
   it('forwards glossary and non-translate settings in single mode', async () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings.translation.translationMode = 'single'
-    const constraints = createEmptyBookTranslationConstraints()
-    constraints.glossary.enabled = true
-    constraints.glossary.entries = [
-      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
-    ]
-    constraints.non_translate.enabled = true
-    constraints.non_translate.entries = [
-      { pattern: '<keep>', note: '', matchMode: 'text' } as any,
-    ]
+    const constraints = createEnabledConstraints()
 
     translateSingleTextMock.mockResolvedValue({
       success: true,
@@ -119,15 +150,7 @@ describe('executeTranslate', () => {
     settingsStore.settings.translation.translationMode = 'single'
     settingsStore.settings.useTextboxPrompt = true
     settingsStore.settings.textboxPrompt = 'textbox prompt'
-    const constraints = createEmptyBookTranslationConstraints()
-    constraints.glossary.enabled = true
-    constraints.glossary.entries = [
-      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
-    ]
-    constraints.non_translate.enabled = true
-    constraints.non_translate.entries = [
-      { pattern: '<keep>', note: '', matchMode: 'text' } as any,
-    ]
+    const constraints = createEnabledConstraints()
 
     translateSingleTextMock
       .mockResolvedValueOnce({
@@ -169,11 +192,7 @@ describe('executeTranslate', () => {
     settingsStore.settings.translation.translationMode = 'single'
     settingsStore.settings.useTextboxPrompt = true
     settingsStore.settings.textboxPrompt = 'textbox prompt'
-    const constraints = createEmptyBookTranslationConstraints()
-    constraints.glossary.enabled = true
-    constraints.glossary.entries = [
-      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
-    ]
+    const constraints = createEnabledConstraints({ includeNonTranslate: false })
 
     translateSingleTextMock
       .mockResolvedValueOnce({
@@ -214,11 +233,7 @@ describe('executeTranslate', () => {
     settingsStore.settings.translation.translationMode = 'single'
     settingsStore.settings.useTextboxPrompt = true
     settingsStore.settings.textboxPrompt = 'textbox prompt'
-    const constraints = createEmptyBookTranslationConstraints()
-    constraints.glossary.enabled = true
-    constraints.glossary.entries = [
-      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' } as any,
-    ]
+    const constraints = createEnabledConstraints({ includeNonTranslate: false })
 
     translateSingleTextMock
       .mockResolvedValueOnce({

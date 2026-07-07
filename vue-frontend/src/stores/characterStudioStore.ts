@@ -5,9 +5,6 @@ import {
   createCharacterStudioDocument,
   deleteCharacterStudioChatMessage,
   deleteCharacterStudioDocument,
-  downloadCharacterStudioExport,
-  exportCharacterStudioChatSession,
-  downloadCharacterStudioWorldbook,
   editCharacterStudioChatMessage,
   generateCharacterStudioSection,
   getCharacterStudioChatPromptPreview,
@@ -25,6 +22,20 @@ import {
   switchCharacterStudioChatSession,
   validateCharacterStudioDocument,
 } from '@/api/characterStudio'
+import {
+  downloadStudioChatTranscript,
+  downloadStudioDocumentExport,
+} from '@/stores/characterStudioExports'
+import {
+  getCharacterStudioActionLabel,
+  hasCharacterStudioBusyAction,
+} from '@/stores/characterStudioActivity'
+import { parseCharacterStudioAgentOutput } from '@/stores/characterStudioAgentOutput'
+import {
+  applyAssistantRuntimeState,
+  applyAssistantStreamContent,
+  findRegenerationUserMessageIndex,
+} from '@/stores/characterStudioChatSession'
 import { applyCharacterStudioAgentPatch } from '@/stores/characterStudioPatch'
 import type {
   CharacterStudioAgentPatchV2,
@@ -38,22 +49,7 @@ import type {
   CharacterStudioSummary,
   ExportDiagnostic,
 } from '@/types/characterStudio'
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  try {
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-  } finally {
-    if (link.isConnected) {
-      document.body.removeChild(link)
-    }
-    URL.revokeObjectURL(url)
-  }
-}
+import { deepClone } from '@/utils/deepClone'
 
 export const useCharacterStudioStore = defineStore('character-studio', () => {
   const bookId = ref('')
@@ -118,70 +114,30 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     downloadingFormat: downloadingFormat.value,
   }))
 
-  const hasBusyAction = computed(() => [
-    isWorkspaceLoading.value,
-    isDocumentLoading.value,
-    isSaving.value,
-    isChatLoading.value,
-    isChatStreaming.value,
-    isChatMutating.value,
-    isChatSummarizing.value,
-    isChatImporting.value,
-    isChatExporting.value,
-    isChatPromptLoading.value,
-    isAgentBusy.value,
-    isCreatingManual.value,
-    isImportingFile.value,
-    isImportingWorldbook.value,
-    isDeleting.value,
-    isValidating.value,
-    !!openingDocumentId.value,
-    !!creatingCandidateName.value,
-    !!generatingSection.value,
-    !!downloadingFormat.value,
-  ].some(Boolean))
-
-  const activeActionLabel = computed(() => {
-    if (isDocumentLoading.value) return '正在打开角色文档'
-    if (openingDocumentId.value) return '正在切换角色文档'
-    if (isWorkspaceLoading.value) return '正在加载角色工坊'
-    if (isCreatingManual.value) return '正在新建角色文档'
-    if (creatingCandidateName.value) return `正在从候选创建「${creatingCandidateName.value}」`
-    if (isImportingFile.value) return '正在导入角色卡'
-    if (isImportingWorldbook.value) return '正在导入世界书'
-    if (isChatLoading.value) return '正在加载聊天会话'
-    if (isChatStreaming.value) return '正在生成聊天回复'
-    if (isChatMutating.value) return '正在处理聊天记录'
-    if (isChatSummarizing.value) return '正在总结聊天'
-    if (isChatImporting.value) return '正在导入聊天记录'
-    if (isChatExporting.value) return '正在导出聊天记录'
-    if (isChatPromptLoading.value) return '正在加载提示词预览'
-    if (generatingSection.value) {
-      return {
-        full: '正在补全整张角色卡',
-        identity: '正在补全角色设定',
-        review: '正在审查当前角色',
-        translate: '正在翻译整卡',
-        greetings: '正在生成问候语',
-        lorebook: '正在生成世界书',
-        regex: '正在生成正则脚本',
-        'state-tasks': '正在生成状态任务',
-      }[generatingSection.value] || '正在生成内容'
-    }
-    if (isValidating.value) return '正在执行角色诊断'
-    if (isSaving.value) return '正在保存角色文档'
-    if (downloadingFormat.value) {
-      return {
-        v3: '正在导出 V3 JSON',
-        v2: '正在导出 V2 JSON',
-        png: '正在导出 PNG',
-        worldbook: '正在导出世界书',
-      }[downloadingFormat.value] || '正在导出文件'
-    }
-    if (isDeleting.value) return '正在删除角色文档'
-    if (isAgentBusy.value) return '正在请求卡片助手'
-    return ''
-  })
+  const activityState = computed(() => ({
+    isWorkspaceLoading: isWorkspaceLoading.value,
+    isDocumentLoading: isDocumentLoading.value,
+    isSaving: isSaving.value,
+    isChatLoading: isChatLoading.value,
+    isChatStreaming: isChatStreaming.value,
+    isChatMutating: isChatMutating.value,
+    isChatSummarizing: isChatSummarizing.value,
+    isChatImporting: isChatImporting.value,
+    isChatExporting: isChatExporting.value,
+    isChatPromptLoading: isChatPromptLoading.value,
+    isAgentBusy: isAgentBusy.value,
+    isCreatingManual: isCreatingManual.value,
+    isImportingFile: isImportingFile.value,
+    isImportingWorldbook: isImportingWorldbook.value,
+    isDeleting: isDeleting.value,
+    isValidating: isValidating.value,
+    openingDocumentId: openingDocumentId.value,
+    creatingCandidateName: creatingCandidateName.value,
+    generatingSection: generatingSection.value,
+    downloadingFormat: downloadingFormat.value,
+  }))
+  const hasBusyAction = computed(() => hasCharacterStudioBusyAction(activityState.value))
+  const activeActionLabel = computed(() => getCharacterStudioActionLabel(activityState.value))
 
   const filteredDocuments = computed(() => {
     const keyword = selectedLibrarySearch.value.trim().toLowerCase()
@@ -252,6 +208,22 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   ) {
     return (
       requestId === chatPromptPreviewRequestId &&
+      bookId.value === requestedBookId &&
+      currentDocument.value?.id === requestedDocId &&
+      activeChatSession.value?.session_id === requestedSessionId
+    )
+  }
+
+  function isActiveChatStream(
+    streamRunId: number,
+    controller: AbortController,
+    requestedBookId: string,
+    requestedDocId: string,
+    requestedSessionId: string,
+  ) {
+    return (
+      streamRunId === chatStreamRunId &&
+      chatAbortController === controller &&
       bookId.value === requestedBookId &&
       currentDocument.value?.id === requestedDocId &&
       activeChatSession.value?.session_id === requestedSessionId
@@ -440,7 +412,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isSaving.value = true
     clearErrorMessage()
     try {
-      const response = await saveCharacterStudioDocument(bookId.value, currentDocument.value.id, currentDocument.value as unknown as Record<string, unknown>)
+      const response = await saveCharacterStudioDocument(bookId.value, currentDocument.value.id, currentDocument.value)
       if (!response.success || !response.document) {
         throw new Error(response.error || '保存失败')
       }
@@ -470,7 +442,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function buildAutosaveFingerprint(document: CharacterStudioDocument | null) {
     if (!document) return ''
-    const snapshot = JSON.parse(JSON.stringify(document)) as CharacterStudioDocument
+    const snapshot = deepClone(document)
     snapshot.meta.updated_at = ''
     snapshot.status.last_validated_at = null
     return JSON.stringify(snapshot)
@@ -583,25 +555,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  function extractPatch(content: string): CharacterStudioAgentPatchV2 | null {
-    const match = content.match(/```json:patch\s*([\s\S]*?)```/i)
-    if (!match) return null
-    try {
-      return JSON.parse(match[1]!.trim()) as CharacterStudioAgentPatchV2
-    } catch {
-      return null
-    }
-  }
-
-  function extractHtmlPreview(content: string): string {
-    const match = content.match(/```html\s*([\s\S]*?)```/i)
-    return match?.[1]?.trim() || ''
-  }
-
-  function cloneDocument(document: CharacterStudioDocument): CharacterStudioDocument {
-    return JSON.parse(JSON.stringify(document)) as CharacterStudioDocument
-  }
-
   function applyPendingPatch() {
     if (!currentDocument.value || !pendingAgentPatch.value) return
     clearErrorMessage()
@@ -611,7 +564,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         pendingAgentPatch.value = null
         return
       }
-      patchSnapshot.value = cloneDocument(currentDocument.value)
+      patchSnapshot.value = deepClone(currentDocument.value)
       currentDocument.value = nextDocument
       pendingAgentPatch.value = null
       invalidateDocumentDerivedCaches()
@@ -641,9 +594,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         throw new Error(response.error || 'Agent 调用失败')
       }
       const content = response.content || ''
+      const output = parseCharacterStudioAgentOutput(content)
       agentMessages.value.push({ role: 'assistant', content })
-      pendingAgentPatch.value = extractPatch(content)
-      agentHtmlPreview.value = extractHtmlPreview(content)
+      pendingAgentPatch.value = output.patch
+      agentHtmlPreview.value = output.htmlPreview
     } catch (error) {
       throw createActionError(error, 'Agent 调用失败')
     } finally {
@@ -768,7 +722,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       content,
       attachments,
       runtime_log: [],
-      variables_snapshot: activeChatSession.value?.variables || {},
+      variables_snapshot: deepClone(activeChatSession.value?.variables || {}),
       generation_meta: {},
       created_at: now,
       updated_at: now,
@@ -787,32 +741,29 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatStreaming.value = true
     clearErrorMessage()
     activeWorkspaceTab.value = 'chat'
-    const previousSession = JSON.parse(JSON.stringify(activeChatSession.value)) as CharacterStudioChatSession
+    const requestedBookId = bookId.value
+    const requestedDocId = currentDocument.value.id
+    const previousSession = deepClone(activeChatSession.value)
+    const requestedSessionId = previousSession.session_id
     chatStreamRollbackSession = previousSession
-    const optimisticSession = JSON.parse(JSON.stringify(activeChatSession.value)) as CharacterStudioChatSession
+    const optimisticSession = deepClone(activeChatSession.value)
     optimisticSession.messages.push(
       createOptimisticMessage('user', content, attachments.map(createOptimisticAttachment)),
       createOptimisticMessage('assistant', ''),
     )
     activeChatSession.value = optimisticSession
     try {
-      await streamCharacterStudioChatMessage(bookId.value, currentDocument.value.id, {
-        sessionId: previousSession.session_id,
+      await streamCharacterStudioChatMessage(requestedBookId, requestedDocId, {
+        sessionId: requestedSessionId,
         content,
         attachments,
         signal: controller.signal,
         onEvent: event => {
+          if (!isActiveChatStream(streamRunId, controller, requestedBookId, requestedDocId, requestedSessionId)) return
           if (event.type === 'assistant_delta' && activeChatSession.value) {
-            const lastMessage = activeChatSession.value.messages[activeChatSession.value.messages.length - 1]
-            if (lastMessage && lastMessage.role === 'assistant') {
-              lastMessage.content = event.content
-            }
+            applyAssistantStreamContent(activeChatSession.value, event.content)
           } else if (event.type === 'runtime' && activeChatSession.value) {
-            const lastMessage = activeChatSession.value.messages[activeChatSession.value.messages.length - 1]
-            if (lastMessage && lastMessage.role === 'assistant') {
-              lastMessage.runtime_log = event.runtime_log
-              lastMessage.variables_snapshot = event.variables
-            }
+            applyAssistantRuntimeState(activeChatSession.value, event.runtime_log, event.variables)
           } else if (event.type === 'state') {
             revokeOptimisticSessionAssets(activeChatSession.value)
             chatStreamRollbackSession = null
@@ -909,42 +860,30 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     const streamRunId = ++chatStreamRunId
     isChatStreaming.value = true
     clearErrorMessage()
-    const previousSession = JSON.parse(JSON.stringify(activeChatSession.value)) as CharacterStudioChatSession
+    const requestedBookId = bookId.value
+    const requestedDocId = currentDocument.value.id
+    const previousSession = deepClone(activeChatSession.value)
+    const requestedSessionId = previousSession.session_id
     chatStreamRollbackSession = previousSession
-    const anchorIndex = previousSession.messages.findIndex(item => item.message_id === messageId)
-    if (anchorIndex >= 0) {
-      let userIndex = anchorIndex
-      if (previousSession.messages[anchorIndex]?.role === 'assistant') {
-        userIndex = previousSession.messages
-          .slice(0, anchorIndex)
-          .map((item, index) => ({ item, index }))
-          .reverse()
-          .find(({ item }) => item.role === 'user')?.index ?? anchorIndex
-      }
-      const optimisticSession = JSON.parse(JSON.stringify(previousSession)) as CharacterStudioChatSession
+    const userIndex = findRegenerationUserMessageIndex(previousSession.messages, messageId)
+    if (userIndex >= 0) {
+      const optimisticSession = deepClone(previousSession)
       optimisticSession.messages = optimisticSession.messages.slice(0, userIndex + 1)
       optimisticSession.messages.push(createOptimisticMessage('assistant', ''))
       activeChatSession.value = optimisticSession
     }
     try {
       await regenerateCharacterStudioChatMessage(
-        bookId.value,
-        currentDocument.value.id,
-        activeChatSession.value.session_id,
+        requestedBookId,
+        requestedDocId,
+        requestedSessionId,
         messageId,
         event => {
+          if (!isActiveChatStream(streamRunId, controller, requestedBookId, requestedDocId, requestedSessionId)) return
           if (event.type === 'assistant_delta') {
-            if (!activeChatSession.value) return
-            const lastMessage = activeChatSession.value.messages[activeChatSession.value.messages.length - 1]
-            if (lastMessage && lastMessage.role === 'assistant') {
-              lastMessage.content = event.content
-            }
+            if (activeChatSession.value) applyAssistantStreamContent(activeChatSession.value, event.content)
           } else if (event.type === 'runtime' && activeChatSession.value) {
-            const lastMessage = activeChatSession.value.messages[activeChatSession.value.messages.length - 1]
-            if (lastMessage && lastMessage.role === 'assistant') {
-              lastMessage.runtime_log = event.runtime_log
-              lastMessage.variables_snapshot = event.variables
-            }
+            applyAssistantRuntimeState(activeChatSession.value, event.runtime_log, event.variables)
           } else if (event.type === 'state') {
             revokeOptimisticSessionAssets(activeChatSession.value)
             chatStreamRollbackSession = null
@@ -1000,12 +939,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatExporting.value = true
     clearErrorMessage()
     try {
-      const { blob, filename } = await exportCharacterStudioChatSession(
+      await downloadStudioChatTranscript(
         bookId.value,
         currentDocument.value.id,
         activeChatSession.value.session_id,
       )
-      downloadBlob(blob, filename)
     } catch (error) {
       throw createActionError(error, '导出聊天记录失败')
     } finally {
@@ -1113,10 +1051,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     downloadingFormat.value = format
     clearErrorMessage()
     try {
-      const { blob, filename } = format === 'worldbook'
-        ? await downloadCharacterStudioWorldbook(bookId.value, currentDocument.value.id)
-        : await downloadCharacterStudioExport(bookId.value, currentDocument.value.id, format)
-      downloadBlob(blob, filename)
+      await downloadStudioDocumentExport(bookId.value, currentDocument.value.id, format)
     } catch (error) {
       throw createActionError(error, '导出失败')
     } finally {

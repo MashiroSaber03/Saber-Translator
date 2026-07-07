@@ -1,6 +1,15 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
+import ProductMessageBubble from '@/components/product/ProductMessageBubble.vue'
+import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
 
 enableAutoUnmount(afterEach)
@@ -195,6 +204,24 @@ const conversationSessionStub: CharacterStudioChatSession = {
   ],
 }
 
+const attachmentSessionStub: CharacterStudioChatSession = {
+  ...conversationSessionStub,
+  messages: [
+    {
+      ...conversationSessionStub.messages[1]!,
+      attachments: [
+        {
+          attachment_id: 'attachment-preview',
+          filename: 'scene.png',
+          mime_type: 'image/png',
+          asset_path: 'attachments/scene.png',
+          created_at: '2026-05-15T00:01:00',
+        },
+      ],
+    },
+  ],
+}
+
 function mountPreview(overrides: Record<string, unknown> = {}) {
   return mount(CharacterStudioPreview, {
     props: {
@@ -264,6 +291,68 @@ const summaryPatch: CharacterStudioAgentPatchV2 = {
 }
 
 describe('CharacterStudioPreview workspace', () => {
+  it('maps preview owner colors through semantic tokens', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreview.vue'),
+      'utf8',
+    )
+
+    expect(source).not.toMatch(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/)
+    expect(source).not.toContain('--character-studio-preview-card-background')
+    expect(source).not.toContain('--character-studio-preview-primary-action-background')
+    expect(source).not.toContain('--character-studio-preview-primary-action-shadow')
+  })
+
+  it('keeps Studio preview visual styling local without parent token warehouses', () => {
+    const previewSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreview.vue'),
+      'utf8',
+    )
+    const sessionToolbarSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/SessionToolbar.vue'),
+      'utf8',
+    )
+    const composerSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/ChatComposer.vue'),
+      'utf8',
+    )
+    const messageSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/MessageList.vue'),
+      'utf8',
+    )
+    const agentSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/AgentWorkspace.vue'),
+      'utf8',
+    )
+    const runtimeSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/RuntimeWorkspace.vue'),
+      'utf8',
+    )
+    const modalsSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreviewModals.vue'),
+      'utf8',
+    )
+
+    expect(previewSource).not.toMatch(/--character-studio-preview-/)
+    expect(sessionToolbarSource).not.toMatch(/--character-studio-preview-/)
+    expect(composerSource).not.toMatch(/--character-studio-preview-/)
+    expect(messageSource).not.toMatch(/--character-studio-preview-/)
+    expect(agentSource).not.toMatch(/--character-studio-preview-/)
+    expect(runtimeSource).not.toMatch(/--character-studio-preview-/)
+    expect(modalsSource).not.toMatch(/--character-studio-preview-/)
+
+    const childTokenWarehousePattern = /--(?:agent-workspace|runtime-workspace|session-toolbar|studio-chat-composer|studio-message-list|studio-preview-workspace-header)-/
+    for (const [file, source] of [
+      ['AgentWorkspace.vue', agentSource],
+      ['ChatComposer.vue', composerSource],
+      ['MessageList.vue', messageSource],
+      ['RuntimeWorkspace.vue', runtimeSource],
+      ['SessionToolbar.vue', sessionToolbarSource],
+    ] as const) {
+      expect(source, file).not.toMatch(childTokenWarehousePattern)
+    }
+  })
+
   it('renders the chat tab with the compact toolbar contract', () => {
     const wrapper = mountPreview()
 
@@ -275,12 +364,133 @@ describe('CharacterStudioPreview workspace', () => {
     expect(wrapper.text()).toContain('查看提示词')
   })
 
+  it('uses a product action row for session toolbar actions', () => {
+    const wrapper = mountPreview()
+
+    const actionRow = wrapper.getComponent(ProductActionRow)
+    expect(actionRow.props('ariaLabel')).toBe('聊天会话操作')
+    expect(actionRow.props('justify')).toBe('start')
+    expect(actionRow.props('variant')).toBe('toolbar')
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/SessionToolbar.vue'),
+      'utf8',
+    )
+    expect(source).not.toContain('toolbar-buttons')
+    expect(source).not.toContain('action-ghost')
+    expect(source).not.toContain('document.querySelector')
+    expect(source).not.toMatch(/\.session-actions\s*\{[\s\S]*--ui-button-/)
+  })
+
+  it('keeps SessionToolbar internal hooks owned by the session toolbar owner', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/SessionToolbar.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('class="session-toolbar"')
+    expect(source).toContain('session-toolbar__triggers')
+    expect(source).toContain('session-toolbar__trigger')
+    expect(source).toContain('session-toolbar__session-list')
+    expect(source).toContain('session-toolbar__session-item')
+    expect(source).toContain('session-toolbar__trigger-title')
+    expect(source).toContain('session-toolbar__session-title')
+    expect(source).toContain('session-toolbar__session-excerpt')
+    expect(source).toContain('session-toolbar__actions')
+    const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
+      .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+    for (const legacyClass of [
+      'session-triggers',
+      'trigger-stack',
+      'trigger-stack-wide',
+      'session-trigger',
+      'session-trigger-inline',
+      'trigger-copy',
+      'trigger-copy-inline',
+      'trigger-tag',
+      'trigger-meta',
+      'trigger-arrow',
+      'session-list-panel',
+      'session-list-item',
+      'item-main',
+      'item-meta',
+      'item-badge',
+      'session-actions',
+    ]) {
+      expect(classTokens).not.toContain(legacyClass)
+    }
+    expect(source).not.toMatch(/\.(?:session-triggers|trigger-stack|trigger-stack-wide|session-trigger|trigger-copy|trigger-tag|trigger-meta|trigger-arrow|session-list-panel|session-list-item|item-main|item-meta|item-badge|session-actions)\b/)
+    expect(source).not.toContain('.session-toolbar__trigger-copy strong')
+    expect(source).not.toContain('.session-toolbar__session-item-main strong')
+    expect(source).not.toContain('.session-toolbar__session-item-main p')
+  })
+
+  it('exposes the session selector popup relationship to assistive technology', async () => {
+    const wrapper = mountPreview()
+    const trigger = wrapper.get('[data-testid="session-list-trigger"]')
+
+    expect(trigger.attributes('aria-haspopup')).toBe('menu')
+    expect(trigger.attributes('aria-controls')).toBe('studio-session-list-panel')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+
+    await trigger.trigger('click')
+
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    const panel = wrapper.get('#studio-session-list-panel')
+    expect(panel.attributes('role')).toBe('menu')
+    expect(panel.attributes('aria-label')).toBe('聊天会话列表')
+    expect(panel.findAll('[role="menuitem"]').length).toBeGreaterThan(0)
+  })
+
+  it('sizes the session selector popup from the toolbar container instead of the viewport', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/SessionToolbar.vue'),
+      'utf8',
+    )
+    const sessionListStyle = source.match(/\.session-toolbar__session-list \{(?<body>[\s\S]*?)\n\}/)
+      ?.groups?.body ?? ''
+
+    expect(sessionListStyle).toContain('width: min(460px, 100%)')
+    expect(sessionListStyle).toContain('max-width: 100%')
+    expect(sessionListStyle).not.toContain('100vw')
+  })
+
+  it('renders Studio chat messages through product message bubbles and action rows', () => {
+    const wrapper = mountPreview({
+      session: conversationSessionStub,
+    })
+
+    const messageBubbles = wrapper.findAllComponents(ProductMessageBubble)
+    expect(messageBubbles).toHaveLength(conversationSessionStub.messages.length)
+    expect(messageBubbles.map(bubble => bubble.props('role'))).toEqual(
+      conversationSessionStub.messages.map(message => message.role),
+    )
+    expect(wrapper.findAllComponents(ProductActionRow).length).toBeGreaterThanOrEqual(3)
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/MessageList.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('ProductMessageBubble')
+    expect(source).toContain('ProductActionRow')
+    expect(source).toContain('variant="toolbar"')
+    expect(source).not.toContain('message-card')
+    expect(source).not.toContain('action-ghost')
+    expect(source).not.toContain('action-primary')
+    expect(source).not.toMatch(/<UiButton\b(?=[^>]*variant="toolbar")/)
+    expect(source).not.toMatch(/\.(?:message-actions|editor-actions)\s*\{[\s\S]*--ui-button-/)
+  })
+
   it('renders chat / assistant / runtime tabs through public tab controls', () => {
     const wrapper = mountPreview()
 
     expect(wrapper.text()).toContain('聊天')
     expect(wrapper.text()).toContain('卡片助手')
     expect(wrapper.text()).toContain('运行日志')
+    const tabs = wrapper.findAll('[role="tab"]')
+    expect(tabs).toHaveLength(3)
+    expect(tabs[0]?.attributes('aria-selected')).toBe('true')
     expect(wrapper.find('select').exists()).toBe(false)
   })
 
@@ -300,8 +510,36 @@ describe('CharacterStudioPreview workspace', () => {
       activeTab: 'assistant',
     })
 
-    expect(wrapper.find('.assistant-main').exists()).toBe(true)
-    expect(wrapper.find('.messages-panel.compact').exists()).toBe(false)
+    expect(wrapper.find('.agent-workspace__main').exists()).toBe(true)
+    expect(wrapper.find('.agent-workspace__messages--compact').exists()).toBe(false)
+  })
+
+  it('renders assistant workspace messages and actions through product primitives', () => {
+    const wrapper = mountPreview({
+      activeTab: 'assistant',
+      agentMessages: [
+        { role: 'user', content: '帮我检查角色卡。' },
+        { role: 'assistant', content: '可以，建议补充世界书。' },
+      ],
+    })
+
+    const bubbles = wrapper.findAllComponents(ProductMessageBubble)
+    expect(bubbles).toHaveLength(2)
+    expect(bubbles.map(bubble => bubble.props('role'))).toEqual(['user', 'assistant'])
+    expect(wrapper.findAllComponents(ProductActionRow).length).toBeGreaterThanOrEqual(2)
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/AgentWorkspace.vue'),
+      'utf8',
+    )
+    expect(source).toContain('ProductMessageBubble')
+    expect(source).toContain('ProductActionRow')
+    expect(source).toContain('variant="toolbar"')
+    expect(source).not.toContain('message-card')
+    expect(source).not.toContain('action-ghost')
+    expect(source).not.toContain('action-primary')
+    expect(source).not.toMatch(/<UiButton\b(?=[^>]*variant="toolbar")/)
+    expect(source).not.toMatch(/\.assistant-actions\s*\{[\s\S]*--ui-button-/)
   })
 
   it('renders the assistant composer in the same compact style as the chat composer', () => {
@@ -309,12 +547,13 @@ describe('CharacterStudioPreview workspace', () => {
       activeTab: 'assistant',
     })
 
-    expect(wrapper.find('.assistant-composer .composer-main').exists()).toBe(true)
-    expect(wrapper.get('.assistant-composer textarea').attributes('rows')).toBe('1')
+    expect(wrapper.find('.agent-workspace__composer .agent-workspace__composer-main').exists()).toBe(true)
+    expect(wrapper.get('.agent-workspace__composer textarea').attributes('rows')).toBe('1')
 
     const sendButton = wrapper.get('[data-testid="assistant-send-trigger"]')
     expect(sendButton.attributes('aria-label')).toBe('发送给助手')
-    expect(sendButton.text()).toBe('↗')
+    expect(sendButton.getComponent(UiIcon).props('name')).toBe('send')
+    expect(sendButton.text()).not.toContain('↗')
     expect(wrapper.text()).not.toContain('发送给助手')
   })
 
@@ -323,8 +562,231 @@ describe('CharacterStudioPreview workspace', () => {
       activeTab: 'runtime',
     })
 
-    expect(wrapper.find('.runtime-main').exists()).toBe(true)
-    expect(wrapper.find('.runtime-empty-panel').exists()).toBe(true)
+    expect(wrapper.find('.runtime-workspace__main').exists()).toBe(true)
+    expect(wrapper.find('.runtime-workspace__empty-panel').exists()).toBe(true)
+  })
+
+  it('keeps preview grids responsive inside resizable panes', () => {
+    const runtimeSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/RuntimeWorkspace.vue'),
+      'utf8',
+    )
+    const composerSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/ChatComposer.vue'),
+      'utf8',
+    )
+    const messageSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/MessageList.vue'),
+      'utf8',
+    )
+
+    expect(runtimeSource).toContain('repeat(auto-fit, minmax(min(100%, 280px), 1fr))')
+    expect(runtimeSource).not.toContain('repeat(2, minmax(0, 1fr))')
+    expect(composerSource).toContain('repeat(auto-fill, minmax(min(100%, 180px), 1fr))')
+    expect(composerSource).not.toContain('repeat(auto-fill, minmax(180px, 1fr))')
+    expect(messageSource).toContain('repeat(auto-fill, minmax(min(100%, 110px), 1fr))')
+    expect(messageSource).not.toContain('repeat(auto-fill, minmax(110px, 1fr))')
+  })
+
+  it('keeps preview text and layout contracts safe for narrow split panes', () => {
+    const agentSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/AgentWorkspace.vue'),
+      'utf8',
+    )
+    const composerSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/ChatComposer.vue'),
+      'utf8',
+    )
+    const messageSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/MessageList.vue'),
+      'utf8',
+    )
+
+    expect(agentSource).toContain('(event: \'update:agentInput\', value: string): void')
+    expect(agentSource).toMatch(/\.agent-workspace__message-text \{[\s\S]*overflow-wrap: anywhere/)
+    expect(agentSource).toMatch(/\.agent-workspace__patch-summary-list \{[\s\S]*overflow-wrap: anywhere/)
+    expect(messageSource).toMatch(/\.studio-message-list__body \{[\s\S]*overflow-wrap: anywhere/)
+    expect(composerSource).not.toMatch(/\.studio-chat-composer__pending-files \{[\s\S]*flex-wrap:/)
+  })
+
+  it('uses a shared Studio preview workspace panel shell', () => {
+    const workspaceFiles = [
+      'ChatWorkspace.vue',
+      'AgentWorkspace.vue',
+      'RuntimeWorkspace.vue',
+    ]
+
+    for (const file of workspaceFiles) {
+      const source = readFileSync(
+        resolve(process.cwd(), `src/components/insight/studio/preview/${file}`),
+        'utf8',
+      )
+
+      expect(source).toContain('StudioPreviewWorkspacePanel')
+      expect(source).not.toMatch(/<section class="workspace-card/)
+      expect(source).not.toMatch(/\.workspace-card\s*\{/)
+    }
+  })
+
+  it('uses Studio-owned preview shell and workspace headers', () => {
+    const previewSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreview.vue'),
+      'utf8',
+    )
+    const agentSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/AgentWorkspace.vue'),
+      'utf8',
+    )
+    const runtimeSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/RuntimeWorkspace.vue'),
+      'utf8',
+    )
+
+    expect(previewSource).toContain('class="character-studio-preview"')
+    expect(previewSource).not.toContain('chat-shell')
+    expect(agentSource).toContain('StudioPreviewWorkspaceHeader')
+    expect(runtimeSource).toContain('StudioPreviewWorkspaceHeader')
+    expect(agentSource).not.toContain('assistant-head')
+    expect(runtimeSource).not.toContain('assistant-head')
+  })
+
+  it('keeps Studio preview child hooks owner-prefixed', () => {
+    const previewChildFiles = [
+      'AgentWorkspace.vue',
+      'ChatComposer.vue',
+      'MessageList.vue',
+      'RuntimeWorkspace.vue',
+    ]
+    const legacyHookPattern = /\.(?:messages-panel|composer-card|composer-main|composer-actions|compact-actions|message-role|message-body|editor-row|editor-actions|attachment-grid|attachment-card|attachment-frame|attachment-info|pending-files|pending-image-card|pending-image-thumb|pending-image-copy|pending-remove|prompt-preview-card|html-preview-card|patch-summary|patch-summary-section|patch-summary-head|patch-summary-list|patch-raw-details|preview-frame|log-list|log-item)\b/
+
+    for (const file of previewChildFiles) {
+      const source = readFileSync(
+        resolve(process.cwd(), `src/components/insight/studio/preview/${file}`),
+        'utf8',
+      )
+
+      expect(source, file).not.toMatch(legacyHookPattern)
+    }
+
+    const agentSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/AgentWorkspace.vue'),
+      'utf8',
+    )
+    const composerSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/ChatComposer.vue'),
+      'utf8',
+    )
+    const messageSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/MessageList.vue'),
+      'utf8',
+    )
+    const runtimeSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/RuntimeWorkspace.vue'),
+      'utf8',
+    )
+    const modalSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreviewModals.vue'),
+      'utf8',
+    )
+
+    expect(agentSource).toContain('agent-workspace__messages')
+    expect(agentSource).toContain('agent-workspace__patch-card-title')
+    expect(agentSource).toContain('agent-workspace__patch-summary-title')
+    expect(agentSource).toContain('agent-workspace__patch-summary-count')
+    expect(agentSource).toContain('agent-workspace__patch-raw-summary')
+    expect(agentSource).toContain('agent-workspace__patch-raw-json')
+    expect(agentSource).not.toContain('.agent-workspace__patch-card h4')
+    expect(agentSource).not.toContain('.agent-workspace__html-preview-card h4')
+    expect(agentSource).not.toContain('.agent-workspace__patch-summary-head strong')
+    expect(agentSource).not.toContain('.agent-workspace__patch-summary-head span')
+    expect(agentSource).not.toContain('.agent-workspace__patch-raw-details summary')
+    expect(agentSource).not.toContain('.agent-workspace__patch-card pre')
+    expect(composerSource).toContain('studio-chat-composer__pending-files')
+    expect(composerSource).toContain('studio-chat-composer__pending-image')
+    expect(composerSource).toContain('studio-chat-composer__pending-name')
+    expect(composerSource).toContain('studio-chat-composer__pending-type')
+    expect(composerSource).not.toContain('.studio-chat-composer__pending-thumb img')
+    expect(composerSource).not.toContain('.studio-chat-composer__pending-copy strong')
+    expect(composerSource).not.toContain('.studio-chat-composer__pending-copy span')
+    expect(messageSource).toContain('studio-message-list__attachment-card')
+    expect(messageSource).toContain('studio-message-list__attachment-image')
+    expect(messageSource).toContain('studio-message-list__attachment-name')
+    expect(messageSource).toContain('studio-message-list__attachment-type')
+    expect(messageSource).not.toContain('.studio-message-list__attachment-card img')
+    expect(messageSource).not.toContain('.studio-message-list__attachment-info strong')
+    expect(messageSource).not.toContain('.studio-message-list__attachment-info span')
+    expect(runtimeSource).toContain('runtime-workspace__log-list')
+    expect(runtimeSource).toContain('runtime-workspace__card-title')
+    expect(runtimeSource).toContain('runtime-workspace__card-code')
+    expect(runtimeSource).not.toContain('.runtime-workspace__card h5')
+    expect(runtimeSource).not.toContain('.runtime-workspace__card pre')
+    expect(modalSource).toContain('character-studio-preview-modals__copy-text')
+    expect(modalSource).toContain('character-studio-preview-modals__prompt-preview')
+    expect(modalSource).toContain('character-studio-preview-modals__image-preview')
+    expect(modalSource).toContain('character-studio-preview-modals__image')
+    expect(modalSource).not.toContain('.character-studio-preview-modals__copy p')
+    expect(modalSource).not.toContain('.character-studio-preview-modals__prompt-body pre')
+    expect(modalSource).not.toContain('.character-studio-preview-modals__image-body img')
+  })
+
+  it('renders preview empty states through compact product empty states', () => {
+    for (const file of [
+      'src/components/insight/studio/preview/ChatWorkspace.vue',
+      'src/components/insight/studio/preview/MessageList.vue',
+      'src/components/insight/studio/preview/AgentWorkspace.vue',
+      'src/components/insight/studio/preview/RuntimeWorkspace.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+      expect(source, file).toContain('ProductEmptyState')
+      expect(source, file).not.toContain('empty-copy')
+    }
+
+    const noDocument = mountPreview({
+      document: null,
+      session: null,
+    })
+    expect(noDocument.getComponent(ProductEmptyState).props()).toMatchObject({
+      iconName: 'users',
+      role: 'note',
+      size: 'compact',
+      title: '选择角色文档后可开始聊天',
+    })
+
+    const noSession = mountPreview({
+      session: null,
+    })
+    expect(noSession.getComponent(ProductEmptyState).props('title')).toBe('当前还没有聊天会话')
+
+    const emptySession = mountPreview({
+      session: {
+        ...sessionStub,
+        messages: [],
+      },
+    })
+    expect(emptySession.getComponent(ProductEmptyState).props()).toMatchObject({
+      iconName: 'message',
+      size: 'compact',
+      title: '当前会话还没有消息',
+    })
+
+    const assistant = mountPreview({
+      activeTab: 'assistant',
+      agentMessages: [],
+    })
+    expect(assistant.getComponent(ProductEmptyState).props()).toMatchObject({
+      iconName: 'sparkles',
+      size: 'compact',
+      title: '还没有与卡片助手对话',
+    })
+
+    const runtime = mountPreview({
+      activeTab: 'runtime',
+    })
+    expect(runtime.getComponent(ProductEmptyState).props()).toMatchObject({
+      iconName: 'bar-chart',
+      size: 'compact',
+      title: '发送消息后查看运行结果',
+    })
   })
 
   it('disables send button while a chat reply is still being generated', () => {
@@ -334,11 +796,23 @@ describe('CharacterStudioPreview workspace', () => {
 
     const sendButton = wrapper.get('[data-testid="chat-send-trigger"]')
     expect(sendButton.attributes('aria-label')).toBe('回复生成中...')
+    expect(sendButton.getComponent(UiIcon).props('name')).toBe('loading')
+    expect(sendButton.text()).not.toContain('…')
     expect((sendButton.element as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('opens session list panel from the current session button', async () => {
     const wrapper = mountPreview()
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/SessionToolbar.vue'),
+      'utf8',
+    )
+
+    expect(source).not.toContain('>▾<')
+    expect(wrapper.findAll('.session-toolbar__trigger-arrow').map(arrow => arrow.getComponent(UiIcon).props('name'))).toEqual([
+      'chevron-down',
+      'chevron-down',
+    ])
 
     await wrapper.get('[data-testid="session-list-trigger"]').trigger('click')
 
@@ -346,21 +820,156 @@ describe('CharacterStudioPreview workspace', () => {
     expect(wrapper.text()).toContain('上一次聊到这里')
   })
 
+  it('renders the empty archived-session list through product status feedback', async () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/SessionToolbar.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('ProductStatusBanner')
+    expect(source).not.toContain('session-list-empty')
+
+    const wrapper = mountPreview({ archivedSessions: [] })
+
+    await wrapper.get('[data-testid="session-list-trigger"]').trigger('click')
+
+    const banner = wrapper.getComponent(ProductStatusBanner)
+    expect(banner.props()).toMatchObject({
+      iconName: 'message',
+      role: 'note',
+      tone: 'neutral',
+      title: '暂无归档会话',
+    })
+    expect(wrapper.text()).toContain('还没有归档会话')
+  })
+
   it('renders a compact chat composer with icon-only upload and send buttons', () => {
     const wrapper = mountPreview()
 
-    expect(wrapper.find('.composer-main').exists()).toBe(true)
-    expect(wrapper.get('.chat-composer-input').attributes('rows')).toBe('1')
+    expect(wrapper.find('.studio-chat-composer__main').exists()).toBe(true)
+    expect(wrapper.get('.studio-chat-composer__input').attributes('rows')).toBe('1')
 
     const uploadButton = wrapper.get('[data-testid="chat-upload-trigger"]')
     const sendButton = wrapper.get('[data-testid="chat-send-trigger"]')
 
     expect(uploadButton.attributes('aria-label')).toBe('添加图片')
     expect(sendButton.attributes('aria-label')).toBe('发送消息')
-    expect(uploadButton.text()).toBe('+')
-    expect(sendButton.text()).toBe('↗')
+    expect(uploadButton.getComponent(UiIcon).props('name')).toBe('plus')
+    expect(sendButton.getComponent(UiIcon).props('name')).toBe('send')
+    expect(uploadButton.text()).not.toContain('+')
+    expect(sendButton.text()).not.toContain('↗')
     expect(wrapper.text()).not.toContain('添加图片')
     expect(wrapper.text()).not.toContain('发送消息')
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/preview/ChatComposer.vue'),
+      'utf8',
+    )
+    expect(source).not.toContain('variant="toolbar"')
+    expect(source).not.toContain('action-ghost')
+    expect(source).not.toContain('action-primary')
+  })
+
+  it('labels preview textareas when no visible field label is present', async () => {
+    const chatWrapper = mountPreview()
+    expect(chatWrapper.get('.studio-chat-composer__input').attributes('aria-label')).toBe('聊天消息内容')
+
+    const assistantWrapper = mountPreview({
+      activeTab: 'assistant',
+    })
+    expect(assistantWrapper.get('.agent-workspace__composer-input').attributes('aria-label')).toBe('卡片助手消息内容')
+
+    const messageWrapper = mountPreview({
+      session: conversationSessionStub,
+    })
+    const userCard = messageWrapper.findAll('[data-testid="studio-chat-message"]').find(card => card.text().includes('今天情况怎么样？'))
+    expect(userCard).toBeDefined()
+
+    await userCard!.find('button').trigger('click')
+
+    expect(userCard!.get('textarea').attributes('aria-label')).toBe('编辑聊天消息内容')
+  })
+
+  it('does not assert shared icon-button primitives through internal class names', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/characterStudioPreview.spec.ts'),
+      'utf8',
+    )
+    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
+
+    expect(source).not.toContain(iconButtonClassPrefix)
+  })
+
+  it('keeps preview composer and attachment actions on product primitives', () => {
+    const chatWrapper = mountPreview({
+      session: attachmentSessionStub,
+    })
+
+    const uploadButton = chatWrapper.get('[data-testid="chat-upload-trigger"]')
+    const sendButton = chatWrapper.get('[data-testid="chat-send-trigger"]')
+
+    expect(uploadButton.getComponent(UiIconButton).props()).toMatchObject({
+      label: '添加图片',
+      size: 'lg',
+      variant: 'soft',
+    })
+    expect(sendButton.getComponent(UiIconButton).props()).toMatchObject({
+      label: '发送消息',
+      size: 'lg',
+      variant: 'primary',
+    })
+    expect(chatWrapper.findAllComponents(UiIconButton).length).toBeGreaterThanOrEqual(2)
+    expect(chatWrapper.findAllComponents(ProductRecordCard).length).toBeGreaterThanOrEqual(1)
+
+    const assistantWrapper = mountPreview({
+      activeTab: 'assistant',
+      document: documentStub,
+      agentInput: '帮我检查角色卡',
+    })
+    const assistantSendButton = assistantWrapper.get('[data-testid="assistant-send-trigger"]')
+    expect(assistantSendButton.getComponent(UiIconButton).props()).toMatchObject({
+      label: '发送给助手',
+      size: 'lg',
+      variant: 'primary',
+    })
+
+    for (const file of [
+      'src/components/insight/studio/preview/ChatComposer.vue',
+      'src/components/insight/studio/preview/AgentWorkspace.vue',
+      'src/components/insight/studio/preview/MessageList.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+
+      expect(source, file).not.toContain('--ui-button-')
+    }
+  })
+
+  it('uses the studio textarea variant instead of preview-local primitive skins', () => {
+    for (const file of [
+      'src/components/insight/studio/preview/ChatComposer.vue',
+      'src/components/insight/studio/preview/AgentWorkspace.vue',
+      'src/components/insight/studio/preview/MessageList.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+
+      expect(source, file).toContain('variant="studio"')
+      expect(source, file).not.toMatch(/--ui-textarea-/)
+    }
+  })
+
+  it('uses the typed file-input primitive boundary for chat attachments and session imports', () => {
+    for (const file of [
+      'src/components/insight/studio/preview/ChatComposer.vue',
+      'src/components/insight/studio/preview/SessionToolbar.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+
+      expect(source, file).toContain('@files-change=')
+      expect(source, file).not.toContain('ref<HTMLInputElement')
+      expect(source, file).not.toContain('event.target as HTMLInputElement')
+      expect(source, file).not.toContain('target.files')
+      expect(source, file).not.toContain("target.value = ''")
+    }
   })
 
   it('shows user-message editing as an edit-and-regenerate action and uses clearer rollback labels', async () => {
@@ -368,7 +977,7 @@ describe('CharacterStudioPreview workspace', () => {
       session: conversationSessionStub,
     })
 
-    const userCard = wrapper.findAll('.message-card').find(card => card.text().includes('今天情况怎么样？'))
+    const userCard = wrapper.findAll('[data-testid="studio-chat-message"]').find(card => card.text().includes('今天情况怎么样？'))
     expect(userCard).toBeDefined()
     expect(userCard!.text()).toContain('编辑')
     expect(userCard!.text()).toContain('从这里回退')
@@ -386,7 +995,7 @@ describe('CharacterStudioPreview workspace', () => {
       session: conversationSessionStub,
     })
 
-    const assistantCard = wrapper.findAll('.message-card').find(card => card.text().includes('局势暂时稳定'))
+    const assistantCard = wrapper.findAll('[data-testid="studio-chat-message"]').find(card => card.text().includes('局势暂时稳定'))
     expect(assistantCard).toBeDefined()
     expect(assistantCard!.text()).toContain('重新生成')
     expect(assistantCard!.text()).toContain('从这里回退')
@@ -409,6 +1018,63 @@ describe('CharacterStudioPreview workspace', () => {
 
     expect(document.body.textContent).toContain('重选开场白')
     expect(document.body.textContent).toContain('今天也一起推进计划吧。')
+  })
+
+  it('uses product action and choice primitives for preview modals', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreviewModals.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('ProductActionRow')
+    expect(source).toContain('ProductChoiceCardGrid')
+    expect(source).not.toContain('variant="toolbar"')
+    expect(source).not.toContain('action-ghost')
+    expect(source).not.toContain('action-primary')
+
+    for (const oldClass of [
+      'modal-copy',
+      'greeting-grid',
+      'modal-actions',
+      'prompt-preview-body',
+      'prompt-tools',
+      'image-preview-body',
+    ]) {
+      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldClass}\\b`))
+      expect(source).not.toMatch(new RegExp(`\\.${oldClass}\\b`))
+    }
+
+    for (const ownerClass of [
+      'character-studio-preview-modals__copy',
+      'character-studio-preview-modals__greeting-grid',
+      'character-studio-preview-modals__actions',
+      'character-studio-preview-modals__prompt-body',
+      'character-studio-preview-modals__prompt-tools',
+      'character-studio-preview-modals__image-preview',
+      'character-studio-preview-modals__image',
+    ]) {
+      expect(source).toContain(ownerClass)
+    }
+  })
+
+  it('renders preview modal feedback through product status banners', async () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreviewModals.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('ProductStatusBanner')
+    expect(source).not.toContain('modal-empty')
+    expect(source).not.toContain('modal-loading')
+
+    const wrapper = mountPreview()
+
+    await wrapper.get('[data-testid="prompt-preview-trigger"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('.product-status-banner')).not.toBeNull()
+    expect(document.body.textContent).toContain('请先发送至少一条消息后再查看本轮提示词')
+    expect(wrapper.findComponent(ProductStatusBanner).exists()).toBe(true)
   })
 
   it('falls back to document-derived greetings when chat-state greetings are still empty', () => {
@@ -463,7 +1129,7 @@ describe('CharacterStudioPreview workspace', () => {
     expect(wrapper.text()).toContain('新增「战斗提示」')
     expect(wrapper.text()).toContain('更新「隐藏状态块」')
     expect(wrapper.text()).toContain('删除「初始化状态」')
-    expect(wrapper.find('.patch-summary').text()).not.toContain('"worldbook_update"')
+    expect(wrapper.find('.agent-workspace__patch-summary').text()).not.toContain('"worldbook_update"')
   })
 
   it('keeps raw patch json available in a collapsible details block', () => {
@@ -473,7 +1139,7 @@ describe('CharacterStudioPreview workspace', () => {
       pendingPatch: summaryPatch,
     })
 
-    const details = wrapper.find('details.patch-raw-details')
+    const details = wrapper.find('details.agent-workspace__patch-raw-details')
     expect(details.exists()).toBe(true)
     expect(details.text()).toContain('查看原始 JSON')
     expect(details.text()).toContain('"worldbook_update"')

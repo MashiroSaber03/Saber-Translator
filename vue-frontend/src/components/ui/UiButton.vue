@@ -2,7 +2,7 @@
 import { computed, unref } from 'vue'
 
 const props = withDefaults(defineProps<{
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'link' | 'toolbar' | 'card-action' | 'tab' | 'plain-danger'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'inverse' | 'link' | 'toolbar' | 'card-action' | 'tab' | 'plain-danger'
   tone?: 'neutral' | 'primary' | 'danger' | 'success' | 'warning'
   size?: 'lg' | 'md' | 'sm' | 'xs'
   type?: 'button' | 'submit' | 'reset'
@@ -69,7 +69,12 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button:not(:where(.ui-button--bare)):disabled {
-  opacity: var(--ui-button-disabled-opacity, 0.6);
+  border: var(--ui-button-disabled-border, 1px solid var(--color-border-default));
+  background: var(--ui-button-disabled-background, var(--color-surface-muted));
+  color: var(--ui-button-disabled-color, var(--color-text-supporting));
+  box-shadow: none;
+  opacity: var(--ui-button-disabled-opacity, 1);
+  transform: none;
   cursor: var(--ui-button-disabled-cursor, not-allowed);
 }
 
@@ -79,7 +84,7 @@ const buttonClasses = computed(() => {
 
 .ui-button--primary {
   background: var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%));
-  color: var(--ui-button-primary-color, white);
+  color: var(--ui-button-primary-color, var(--color-text-inverse));
   box-shadow: var(--ui-button-primary-shadow, 0 2px 8px var(--ui-button-primary-shadow-color));
 }
 
@@ -87,6 +92,24 @@ const buttonClasses = computed(() => {
   background: var(--ui-button-primary-hover-background, var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%)));
   transform: var(--ui-button-primary-hover-transform, translateY(-2px));
   box-shadow: var(--ui-button-primary-hover-shadow, 0 6px 20px var(--ui-button-primary-hover-shadow-color));
+}
+
+.ui-button--primary.ui-button--tone-success {
+  background: linear-gradient(135deg, var(--color-action-success-bright) 0%, var(--color-action-success-bright-active) 100%);
+  color: var(--color-surface-inverse);
+  box-shadow: none;
+}
+
+.ui-button--primary.ui-button--tone-success:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--color-action-success-bright) 0%, var(--color-action-success-bright-active) 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-action-success-bright) 30%, transparent);
+}
+
+.ui-button--primary.ui-button--tone-success.ui-button--sm {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 .ui-button--secondary {
@@ -99,6 +122,31 @@ const buttonClasses = computed(() => {
   background: var(--ui-button-secondary-hover-background, var(--color-surface-interactive-hover));
   border-color: var(--ui-button-secondary-hover-border-color, var(--color-text-supporting));
   color: var(--ui-button-secondary-hover-color, var(--ui-button-secondary-color, var(--color-text-default)));
+}
+
+.ui-button--inverse {
+  border: 1px solid color-mix(in srgb, var(--color-text-inverse) 30%, transparent);
+  background: transparent;
+  color: var(--color-text-inverse);
+}
+
+.ui-button--inverse:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-text-inverse) 50%, transparent);
+  background: var(--color-overlay-inverse-subtle);
+  color: var(--color-text-inverse);
+}
+
+.ui-button--inverse:disabled {
+  border: 1px solid var(--color-overlay-inverse-muted);
+  background: var(--color-overlay-inverse-subtle);
+  color: var(--color-text-inverse);
+  opacity: 0.4;
+}
+
+.ui-button--inverse.ui-button--sm {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 :where(.ui-button--bare) {
@@ -115,6 +163,28 @@ const buttonClasses = computed(() => {
   cursor: not-allowed;
 }
 
+.ui-button--link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-button-link-gap, 4px);
+  color: var(--ui-button-link-color, var(--color-action-primary));
+  font-size: var(--ui-button-link-font-size, 0.78rem);
+  font-weight: var(--ui-button-link-font-weight, 500);
+  text-decoration: none;
+  border-radius: var(--ui-button-link-radius, 4px);
+}
+
+.ui-button--link:hover:not(:disabled) {
+  color: var(--ui-button-link-hover-color, var(--color-action-primary-hover));
+  text-decoration: underline;
+}
+
+.ui-button--link:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .ui-button--ghost {
   border: var(--ui-button-ghost-border, 1px solid var(--color-border-muted));
   background: var(--ui-button-ghost-background, var(--color-surface-raised));
@@ -129,7 +199,7 @@ const buttonClasses = computed(() => {
 
 .ui-button--danger {
   background: var(--ui-button-danger-background, linear-gradient(135deg, var(--ui-button-danger-background-start) 0%, var(--ui-button-danger-background-end) 100%));
-  color: var(--ui-button-danger-color, white);
+  color: var(--ui-button-danger-color, var(--color-text-inverse));
   border: var(--ui-button-danger-border, var(--ui-button-border, none));
   box-shadow: var(--ui-button-danger-shadow, 0 2px 8px var(--ui-button-danger-shadow-color));
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -49,6 +49,9 @@ const oldStripMirrorHelper = 'strip' + 'LegacyOpenAiMirrorFields'
 const oldSyncMirrorHelper = 'sync' + 'LegacyOpenAiMirrorFields'
 const oldCoerceRetryHelper = 'coerce' + 'LegacyRetryValue'
 const oldSchemaMergeHelper = 'deep' + 'Merge'
+const staleTestFeatureLabel = 'Feature' + ': frontend-behavior'
+const staleTestPropertyLabel = 'Property ' + '42'
+const staleTestRequirementLabel = 'Validates' + ': Requirements'
 const threshold48pxField = 'threshold' + '48px'
 const thresholdMangaOcrField = 'threshold' + 'MangaOcr'
 const thresholdPaddleOcrField = 'threshold' + 'PaddleOcr'
@@ -61,6 +64,8 @@ const partialWebImportProviderConfigs = 'Partial<' + 'WebImportProviderConfigs>'
 const partialWebImportSettingsPayload = 'Partial<' + 'WebImportSettingsPayload>'
 const primitiveButtonInternalSelector = '.ui-button' + '--primary'
 const primitiveModalBodySelector = '.ui-modal' + '__body'
+const primitiveFieldVariantSelector = '.ui-field' + '--settings'
+const primitiveFieldLabelActionSelector = '.ui-field' + '__label-actions'
 const componentPrivateDomainToken = '--character-studio-preview-shell-surface-base'
 const genericComponentDomainToken = '--book-card-surface-base'
 const generatedInsightVariantToken = '--insight-view-accent-variant-012'
@@ -76,8 +81,8 @@ const semanticAccentPurpleToken = '--color-accent-purple'
 const semanticGradientStartToken = '--color-surface-brand-gradient-start'
 const semanticSurfacePlainToken = '--color-surface-plain'
 const semanticWarningTintToken = '--color-surface-warning-tint'
-const vagueComponentToken = '--app-header-surface-base'
-const roleComponentToken = '--app-header-background'
+const vagueComponentToken = '--base-modal-surface-base'
+const roleComponentToken = '--base-modal-overlay-background'
 const domainTokenLimit = 50
 const studioOwnerToken = '--studio-border-default'
 const unusedOwnerToken = '--settings-sidebar-panel-background'
@@ -447,6 +452,45 @@ describe('UI architecture CSS variable ownership lint', () => {
     expect(result.stdout).toContain('UI architecture check passed')
   })
 
+  it('ignores test-only token references when checking production owner token usage', () => {
+    const token = '--translate-architecture-unused-owner-token'
+    const componentPath = join(
+      frontendRoot,
+      'src/components/translate/__UiArchitectureUnusedOwnerTokenFixture.vue'
+    )
+    const testPath = join(frontendRoot, 'tests/unit/__uiArchitectureUnusedOwnerTokenFixture.spec.ts')
+
+    writeFileSync(componentPath, `
+      <template><aside class="ui-architecture-unused-owner-token-fixture"></aside></template>
+      <style scoped>
+      .ui-architecture-unused-owner-token-fixture {
+        ${token}: #fff;
+      }
+      </style>
+    `)
+    writeFileSync(testPath, `
+      export const testOnlyReference = 'var(${token})'
+    `)
+
+    try {
+      const result = spawnSync(
+        process.execPath,
+        ['scripts/check-ui-architecture.mjs'],
+        {
+          cwd: frontendRoot,
+          encoding: 'utf8',
+        }
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('unused owner CSS variable definition(s)')
+      expect(result.stderr).toContain(token)
+    } finally {
+      rmSync(componentPath, { force: true })
+      rmSync(testPath, { force: true })
+    }
+  })
+
   it('allows page owners to set public UI primitive variables', () => {
     const result = runUiArchitectureSourceFixture('src/views/CharacterStudioView.vue', `
       <template><main class="studio-page"></main></template>
@@ -454,6 +498,21 @@ describe('UI architecture CSS variable ownership lint', () => {
       .studio-page {
         --studio-border-default: rgba(28, 55, 94, 0.08);
         --ui-button-ghost-border: 1px solid var(--studio-border-default);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('allows page owners to set public product primitive variables', () => {
+    const result = runUiArchitectureSourceFixture('src/views/InsightView.vue', `
+      <template><main class="insight-page"></main></template>
+      <style scoped>
+      .insight-page {
+        --insight-view-sidebar-divider: var(--color-border-muted);
+        --product-tabbed-workspace-border: var(--insight-view-sidebar-divider);
       }
       </style>
     `)
@@ -651,6 +710,37 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('.ui-input')
   })
 
+  it('rejects business CSS that targets current UiField internals', () => {
+    const result = runUiArchitectureSourceFixture('OpenAIExtraBodyEditor.vue', `
+      <template><UiField class="openai-extra-body-editor" /></template>
+      <style scoped>
+      .openai-extra-body-editor ${primitiveFieldVariantSelector} {
+        margin-bottom: 0;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UI primitive selector(s)')
+    expect(result.stderr).toContain('.ui-field')
+    expect(result.stderr).toContain(primitiveFieldVariantSelector)
+  })
+
+  it('rejects business CSS that chains owner classes to current UiField roots', () => {
+    const result = runUiArchitectureSourceFixture('OpenAIExtraBodyEditor.vue', `
+      <template><UiField class="openai-extra-body-editor" /></template>
+      <style scoped>
+      .openai-extra-body-editor.ui-field {
+        margin-bottom: 0;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UI primitive selector(s)')
+    expect(result.stderr).toContain('.ui-field')
+  })
+
   it('rejects business CSS that styles primitives through relational element selectors', () => {
     const result = runUiArchitectureSourceFixture('SettingsPanel.vue', `
       <template><section class="settings-panel"></section></template>
@@ -708,6 +798,41 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('type="radio"')
   })
 
+  it('rejects generic UiInput usage for numeric controls in business Vue components', () => {
+    const result = runUiArchitectureSourceFixture('TaskWorkbench.vue', `
+      <script setup lang="ts">
+      import UiInput from '@/components/ui/UiInput.vue'
+      </script>
+
+      <template>
+        <section class="task-workbench">
+          <UiInput :value="String(interval)" type="number" min="0" />
+        </section>
+      </template>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('generic UiInput numeric control(s)')
+    expect(result.stderr).toContain('type="number"')
+  })
+
+  it('allows the shared color input primitive to own native color controls', () => {
+    const result = runUiArchitectureSourceFixture('src/components/ui/UiColorInput.vue', `
+      <template>
+        <${'input'} class="ui-color-input" type="color" />
+      </template>
+
+      <style scoped>
+      .ui-color-input {
+        border: var(--ui-colorpicker-border, 1px solid var(--color-border-input));
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
   it('rejects domain owner token references from UI primitives', () => {
     const result = runUiArchitectureSourceFixture('src/components/ui/UiButton.vue', `
       <template><button class="ui-button">Button</button></template>
@@ -721,6 +846,22 @@ describe('UI architecture style ownership lint', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('business owner token reference(s)')
     expect(result.stderr).toContain(studioOwnerToken)
+  })
+
+  it('rejects domain owner token references from product primitives', () => {
+    const result = runUiArchitectureSourceFixture('src/components/product/ProductTabbedWorkspace.vue', `
+      <template><section class="product-tabbed-workspace">Tabs</section></template>
+      <style scoped>
+      .product-tabbed-workspace {
+        --product-tabbed-workspace-tab-background-active: var(${insightActionPrimaryToken});
+        background: var(--product-tabbed-workspace-tab-background-active);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('business owner token reference(s)')
+    expect(result.stderr).toContain(insightActionPrimaryToken)
   })
 
   it('allows explicit global style imports for Teleport or slot reach-through owners', () => {
@@ -812,6 +953,28 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('BaseModal customStyle is not allowed in business UI')
   })
 
+  it('rejects business BaseModal visual props', () => {
+    const result = runUiArchitectureSourceFixture('src/components/translate/WebImportModal.vue', `
+      <template>
+        <BaseModal
+          custom-class="web-import-modal"
+          border="1px solid var(--color-border-default)"
+          box-shadow="0 24px 64px var(--shadow-medium)"
+          footer-background="var(--color-surface-muted)"
+        />
+      </template>
+      <style scoped>
+      .web-import-modal-owner { display: block; }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('BaseModal visual prop(s)')
+    expect(result.stderr).toContain('border')
+    expect(result.stderr).toContain('box-shadow')
+    expect(result.stderr).toContain('footer-background')
+  })
+
   it('rejects scoped BaseModal internals styling in business components', () => {
     const result = runUiArchitectureSourceFixture('Panel.vue', `
       <template>
@@ -829,10 +992,57 @@ describe('UI architecture style ownership lint', () => {
     expect(result.stderr).toContain('scoped styles must not target BaseModal .ui-modal__* internals')
   })
 
+  it('rejects local dark-mode media queries in business styles', () => {
+    const result = runUiArchitectureSourceFixture('src/components/translate/WebImportDisclaimer.vue', `
+      <style scoped>
+      .disclaimer-panel {
+        color: var(--color-text-default);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .disclaimer-panel {
+          color: var(--color-text-inverse);
+        }
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('local prefers-color-scheme dark-mode overrides are not allowed')
+  })
+
   it('rejects tests that locate business UI through primitive internal classes', () => {
     const result = runUiArchitectureSourceFixture('Panel.test.ts', `
       const generateButton = wrapper.find('button${primitiveButtonInternalSelector}')
       await generateButton.trigger('click')
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('primitive internal class selector(s)')
+    expect(result.stderr).toContain(primitiveButtonInternalSelector)
+  })
+
+  it('rejects tests that locate business UI through current UiField internals', () => {
+    const result = runUiArchitectureSourceFixture('Panel.test.ts', `
+      const field = wrapper.find('${primitiveFieldVariantSelector}')
+      const action = wrapper.find('${primitiveFieldLabelActionSelector} button')
+      expect(field.exists()).toBe(true)
+      expect(action.exists()).toBe(true)
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('primitive internal class selector(s)')
+    expect(result.stderr).toContain(primitiveFieldVariantSelector)
+    expect(result.stderr).toContain(primitiveFieldLabelActionSelector)
+  })
+
+  it('rejects visual specs that locate business UI through primitive internal classes', () => {
+    const result = runUiArchitectureSourceFixture('tests/visual/panel.spec.ts', `
+      await page.route('**/*', async route => route.continue())
+      const exportActions = page.getByRole('group', { name: '概览导出操作' })
+      const generateButton = exportActions.locator('${primitiveButtonInternalSelector}')
+      await expect(generateButton).toHaveCSS('border-radius', '8px')
+      await page.unroute('**/*')
     `)
 
     expect(result.status).toBe(1)
@@ -852,7 +1062,76 @@ describe('UI architecture style ownership lint', () => {
   })
 })
 
+describe('UI architecture icon ownership lint', () => {
+  it('rejects direct lucide imports outside the UI icon registry', () => {
+    const result = runUiArchitectureSourceFixture('src/components/settings/LocalIconButton.vue', `
+      <script setup lang="ts">
+      import { Search } from '@lucide/vue'
+      </script>
+      <template>
+        <Search />
+      </template>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('direct @lucide/vue imports are only allowed in the UI icon registry')
+  })
+
+  it('rejects product-level string icon fallback props', () => {
+    const result = runUiArchitectureSourceFixture('src/components/product/ProductTabbedWorkspace.vue', `
+      <script setup lang="ts">
+      export type ProductWorkspaceTab = {
+        id: string
+        label: string
+        iconName?: UiIconName
+        icon?: string
+      }
+      </script>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('product icon props must use typed iconName values instead of string icon fallbacks')
+  })
+
+  it('rejects translation progress pool icons typed as raw strings', () => {
+    const result = runUiArchitectureSourceFixture('src/composables/translation/parallel/types.ts', `
+      export interface PoolStatus {
+        name: string
+        icon: string
+      }
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('translation progress pool icons must use UiIconName, not raw string')
+  })
+
+  it('allows the UI icon registry to own lucide imports', () => {
+    const result = runUiArchitectureSourceFixture('src/components/ui/iconRegistry.ts', `
+      import { Search } from '@lucide/vue'
+      export const icons = { search: Search }
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+})
+
 describe('UI architecture layout shell lint', () => {
+  it('allows UiCombobox to own Teleport dropdown positioning', () => {
+    const result = runUiArchitectureSourceFixture('src/components/ui/UiCombobox.vue', `
+      <template><div class="ui-combobox-dropdown"></div></template>
+      <style scoped>
+      .ui-combobox-dropdown {
+        position: fixed;
+        inset: auto;
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
   it('rejects page-owned viewport height algorithms', () => {
     const result = runUiArchitectureSourceFixture('TranslateView.vue', `
       <template><main class="translate-page"></main></template>
@@ -954,6 +1233,25 @@ describe('UI architecture old implementation mindset lint', () => {
 })
 
 describe('UI architecture source hygiene lint', () => {
+  it('rejects stale requirement and property narration inside frontend tests', () => {
+    const result = runUiArchitectureSourceFixture('tests/property/example.property.ts', `
+      /**
+       * ${staleTestFeatureLabel}, ${staleTestPropertyLabel}: scaffold-era behavior contract
+       * ${staleTestRequirementLabel} 1.1, 1.2
+       */
+      import { describe, it } from 'vitest'
+
+      describe('example property', () => {
+        it('keeps the current product contract', () => {})
+      })
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('stale test requirement/property narration')
+    expect(result.stderr).toContain(staleTestFeatureLabel)
+    expect(result.stderr).toContain(staleTestRequirementLabel)
+  })
+
   it('rejects implementation-history wording inside production composables', () => {
     const result = runUiArchitectureSourceFixture('src/composables/useExtractedState.ts', `
       // ${composableHistoryExtracted}的逻辑。

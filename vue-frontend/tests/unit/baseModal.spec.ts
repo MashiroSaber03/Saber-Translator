@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import BaseModal from '@/components/common/BaseModal.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 
 const mountedWrappers: VueWrapper[] = []
 
@@ -158,6 +160,13 @@ describe('BaseModal', () => {
     const wrapper = mountModal()
     const closeButton = getCloseButton()
 
+    expect(closeButton.getAttribute('aria-label')).toBe('关闭')
+    expect(closeButton.textContent).not.toContain('✕')
+    expect(wrapper.getComponent(UiIcon).props('name')).toBe('x')
+    const closeAction = wrapper.getComponent(UiIconButton)
+    expect(closeAction.props('label')).toBe('关闭')
+    expect(closeAction.props('title')).toBe('关闭')
+
     dispatchMouseEvent(closeButton, 'click')
 
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -189,5 +198,63 @@ describe('BaseModal', () => {
     expect(body?.classList.contains('ui-modal__body--scroll-contained')).toBe(true)
     const footer = document.body.querySelector('[data-testid="base-dialog-footer"]')
     expect(footer?.classList.contains('custom-footer')).toBe(true)
+  })
+
+  it('exposes typed placement backdrop and inverse chrome variants for product modal shells', () => {
+    mountModal({
+      placement: 'top-end',
+      backdrop: 'strong',
+      overlayLayer: 'popover',
+      backdropEffect: 'blur-sm',
+      chromeVariant: 'inverse',
+    })
+
+    const overlay = getOverlay()
+    expect(overlay.classList.contains('ui-modal__overlay--placement-top-end')).toBe(true)
+    expect(overlay.classList.contains('ui-modal__overlay--backdrop-strong')).toBe(true)
+    expect(overlay.classList.contains('ui-modal__overlay--layer-popover')).toBe(true)
+    expect(overlay.classList.contains('ui-modal__overlay--effect-blur-sm')).toBe(true)
+    expect(getContainer().classList.contains('ui-modal__container--chrome-inverse')).toBe(true)
+  })
+
+  it('exposes a typed brand header variant for product settings-style modals', () => {
+    mountModal({
+      headerVariant: 'brand',
+    })
+
+    const header = document.body.querySelector('.ui-modal__header')
+    expect(header?.classList.contains('ui-modal__header--brand')).toBe(true)
+  })
+
+  it('exposes a typed mobile fullscreen presentation class', () => {
+    mountModal({
+      mobilePresentation: 'fullscreen',
+    })
+
+    expect(getContainer().classList.contains('ui-modal__container--mobile-fullscreen')).toBe(true)
+  })
+
+  it('exposes typed frame divider and footer tone variants for product modal styling', () => {
+    mount(BaseModal, {
+      attachTo: document.body,
+      props: {
+        modelValue: true,
+        title: 'Variant Modal',
+        frameVariant: 'warning',
+        dividerVariant: 'none',
+        footerTone: 'muted',
+      },
+      slots: {
+        default: '<div>Body</div>',
+        footer: '<div>Footer</div>',
+      },
+    })
+
+    expect(getContainer().classList.contains('ui-modal__container--frame-warning')).toBe(true)
+    const header = document.body.querySelector('.ui-modal__header')
+    expect(header?.classList.contains('ui-modal__header--divider-none')).toBe(true)
+    const footer = document.body.querySelector('[data-testid="base-dialog-footer"]')
+    expect(footer?.classList.contains('ui-modal__footer--divider-none')).toBe(true)
+    expect(footer?.classList.contains('ui-modal__footer--tone-muted')).toBe(true)
   })
 })

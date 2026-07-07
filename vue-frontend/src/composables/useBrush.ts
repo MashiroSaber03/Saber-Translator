@@ -1,8 +1,3 @@
-/**
- * 笔刷工具组合式函数
- * 管理笔刷模式的状态和操作，包括修复笔刷和还原笔刷
- */
-
 import { ref, computed, onUnmounted } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -14,21 +9,20 @@ import type { ImageData } from '@/types/image'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import { addErasureToUserMask, addRestorationToUserMask } from '@/utils/maskMerger'
 
-// ============================================================
-// 类型定义
-// ============================================================
-
-/** 笔刷模式类型 */
 export type BrushMode = 'repair' | 'restore' | null
 
-/** 笔刷位置 */
 export interface BrushPosition {
   x: number
   y: number
   scale: number
 }
 
-/** 笔刷边界 */
+export interface BrushSurface {
+  viewport: HTMLElement
+  wrapper: HTMLElement
+  image: HTMLImageElement
+}
+
 export interface BrushBounds {
   x1: number
   y1: number
@@ -38,60 +32,28 @@ export interface BrushBounds {
   radius: number
 }
 
-// ============================================================
-// 类型定义 - 回调
-// ============================================================
-
-/** 当前修复设置 */
 export interface CurrentRepairSettings {
-  /** 修复方式 */
   inpaintMethod: InpaintMethod
-  /** 填充颜色 */
   fillColor: string
 }
 
 export interface BrushCallbacks {
-  /** 笔刷操作完成后触发重新渲染 */
   onBrushComplete?: () => void
-  /** 获取编辑面板当前修复方式、填充色等设置 */
   getCurrentRepairSettings?: () => CurrentRepairSettings
 }
-
-// ============================================================
-// 组合式函数
-// ============================================================
 
 export function useBrush(callbacks?: BrushCallbacks) {
   const imageStore = useImageStore()
   const settingsStore = useSettingsStore()
 
-  // ============================================================
-  // 状态定义
-  // ============================================================
-
-  /** 当前笔刷模式 */
   const brushMode = ref<BrushMode>(null)
-
-  /** 笔刷大小 */
   const brushSize = ref(BRUSH_DEFAULT_SIZE)
-
-  /** 笔刷快捷键是否按下 */
   const isBrushKeyDown = ref(false)
-
-  /** 是否正在涂抹 */
   const isBrushPainting = ref(false)
-
-  /** 笔刷路径 */
   const brushPath = ref<BrushPosition[]>([])
-
-  /** 鼠标位置 */
   const mouseX = ref(0)
   const mouseY = ref(0)
-
-  /** 当前操作的视口元素 */
-  let activeViewport: HTMLElement | null = null
-
-  /** 笔刷临时画布 */
+  let activeSurface: BrushSurface | null = null
   let brushCanvas: HTMLCanvasElement | null = null
   let brushCtx: CanvasRenderingContext2D | null = null
   let isOwnerDisposed = false
@@ -115,14 +77,8 @@ export function useBrush(callbacks?: BrushCallbacks) {
     return true
   }
 
-  // ============================================================
-  // 计算属性
-  // ============================================================
-
-  /** 笔刷是否激活 */
   const isActive = computed(() => brushMode.value !== null)
 
-  /** 笔刷颜色配置 */
   const brushColor = computed(() => {
     if (brushMode.value === 'repair') {
       return {
@@ -138,14 +94,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     return { fill: 'transparent', border: 'transparent' }
   })
 
-  // ============================================================
-  // 笔刷模式控制
-  // ============================================================
-
-  /**
-   * 进入笔刷模式
-   * @param mode - 笔刷模式: 'repair' 修复笔刷 | 'restore' 还原笔刷
-   */
   function enterBrushMode(mode: 'repair' | 'restore'): void {
     if (brushMode.value === mode) return
 
@@ -154,28 +102,20 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushPath.value = []
   }
 
-  /**
-   * 退出笔刷模式
-   */
   function exitBrushMode(): void {
-    // 如果正在涂抹，先完成涂抹
     if (isBrushPainting.value) {
       finishBrushPainting()
     }
 
-    // 重置所有笔刷相关变量
     brushMode.value = null
     isBrushKeyDown.value = false
     isBrushPainting.value = false
     brushPath.value = []
+    activeSurface = null
 
-    // 清理画布
     removeBrushCanvas()
   }
 
-  /**
-   * 切换笔刷模式
-   */
   function toggleBrushMode(mode: 'repair' | 'restore'): void {
     if (brushMode.value === mode) {
       exitBrushMode()
@@ -184,72 +124,45 @@ export function useBrush(callbacks?: BrushCallbacks) {
     }
   }
 
-  // ============================================================
-  // 笔刷大小控制
-  // ============================================================
-
-  /**
-   * 设置笔刷大小
-   */
   function setBrushSize(size: number): void {
     brushSize.value = Math.max(BRUSH_MIN_SIZE, Math.min(BRUSH_MAX_SIZE, size))
   }
 
-  /**
-   * 调整笔刷大小
-   * @param delta - 调整量（正数增大，负数减小）
-   */
   function adjustBrushSize(delta: number): void {
     setBrushSize(brushSize.value + delta)
   }
 
-  // ============================================================
-  // 笔刷涂抹操作
-  // ============================================================
-
-  /**
-   * 开始涂抹
-   */
-  function startBrushPainting(event: MouseEvent, viewport: HTMLElement): void {
+  function startBrushPainting(event: MouseEvent, surface: BrushSurface): void {
     if (!isActive.value || event.button !== 0) return
 
     event.preventDefault()
     event.stopPropagation()
 
     isBrushPainting.value = true
-    activeViewport = viewport
+    activeSurface = surface
     brushPath.value = []
 
-    // 获取相对于图片的坐标
-    const pos = getBrushPositionInImage(event, viewport)
+    const pos = getBrushPositionInImage(event, surface)
     if (pos) {
       brushPath.value.push(pos)
-      // 创建临时画布
-      createBrushCanvas(viewport)
+      createBrushCanvas(surface)
       drawBrushStroke(pos)
     }
   }
 
-  /**
-   * 继续涂抹
-   */
   function continueBrushPainting(event: MouseEvent): void {
-    // 更新鼠标位置（用于光标显示）
     mouseX.value = event.clientX
     mouseY.value = event.clientY
 
     if (!isBrushPainting.value || !isActive.value) return
 
-    const pos = getBrushPositionInImage(event, activeViewport)
+    const pos = getBrushPositionInImage(event, activeSurface)
     if (pos) {
       brushPath.value.push(pos)
       drawBrushStroke(pos)
     }
   }
 
-  /**
-   * 结束涂抹
-   */
   function finishBrushPainting(): void {
     if (!isBrushPainting.value) return
 
@@ -259,21 +172,21 @@ export function useBrush(callbacks?: BrushCallbacks) {
     if (!currentImage || brushPath.value.length === 0) {
       removeBrushCanvas()
       brushPath.value = []
+      activeSurface = null
       return
     }
     const expectedImageId = currentImage.id
 
-    // 获取涂抹区域边界
     const bounds = getBrushPathBounds()
     if (!bounds) {
       removeBrushCanvas()
       brushPath.value = []
+      activeSurface = null
       return
     }
 
     const mode = brushMode.value
 
-    // 执行笔刷操作（异步）
     const executeAndRender = async () => {
       if (mode === 'restore') {
         await restoreBrushArea(currentImage, bounds, expectedImageId)
@@ -281,35 +194,27 @@ export function useBrush(callbacks?: BrushCallbacks) {
         await repairBrushArea(currentImage, bounds, expectedImageId)
       }
 
-      // 触发重新渲染回调
       if (isOwnerActiveForImage(expectedImageId)) {
         callbacks?.onBrushComplete?.()
       }
     }
 
-    executeAndRender()
+    void executeAndRender().catch(() => {
+      if (isOwnerActiveForImage(expectedImageId)) {
+        showToast('画笔修复失败', 'error')
+      }
+    })
 
     removeBrushCanvas()
     brushPath.value = []
+    activeSurface = null
   }
 
-  // ============================================================
-  // 坐标计算
-  // ============================================================
+  function getBrushPositionInImage(event: MouseEvent, surface: BrushSurface | null): BrushPosition | null {
+    if (!surface || !surface.image.naturalWidth) return null
 
-  /**
-   * 获取笔刷在图片中的位置
-   */
-  function getBrushPositionInImage(event: MouseEvent, viewport: HTMLElement | null): BrushPosition | null {
-    if (!viewport) return null
-
-    const wrapper = viewport.querySelector('.image-canvas-wrapper') as HTMLElement
-    const img = wrapper?.querySelector('img') as HTMLImageElement
-
-    if (!img || !img.naturalWidth) return null
-
-    const rect = wrapper.getBoundingClientRect()
-    const transform = window.getComputedStyle(wrapper).transform
+    const rect = surface.wrapper.getBoundingClientRect()
+    const transform = window.getComputedStyle(surface.wrapper).transform
     let scale = 1
 
     if (transform && transform !== 'none') {
@@ -317,13 +222,11 @@ export function useBrush(callbacks?: BrushCallbacks) {
       scale = matrix.a
     }
 
-    // 计算相对于图片的坐标
     const imgX = (event.clientX - rect.left) / scale
     const imgY = (event.clientY - rect.top) / scale
 
-    // 确保坐标在图片范围内
-    const imgWidth = img.naturalWidth
-    const imgHeight = img.naturalHeight
+    const imgWidth = surface.image.naturalWidth
+    const imgHeight = surface.image.naturalHeight
 
     if (imgX < 0 || imgY < 0 || imgX > imgWidth || imgY > imgHeight) {
       return null
@@ -332,9 +235,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     return { x: imgX, y: imgY, scale }
   }
 
-  /**
-   * 获取笔刷路径边界
-   */
   function getBrushPathBounds(): BrushBounds | null {
     if (brushPath.value.length === 0) return null
 
@@ -364,36 +264,32 @@ export function useBrush(callbacks?: BrushCallbacks) {
     }
   }
 
-  // ============================================================
-  // 画布操作
-  // ============================================================
-
-  /**
-   * 创建笔刷临时画布
-   */
-  function createBrushCanvas(viewport: HTMLElement): void {
-    // 重建前清理上一轮临时画布
+  function createBrushCanvas(surface: BrushSurface): void {
     removeBrushCanvas()
 
-    const wrapper = viewport.querySelector('.image-canvas-wrapper') as HTMLElement
-    const img = wrapper?.querySelector('img') as HTMLImageElement
-
-    if (!img) return
-
     const canvas = document.createElement('canvas')
-    canvas.id = 'brushOverlayCanvas'
-    canvas.width = img.naturalWidth
-    canvas.height = img.naturalHeight
-    canvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: var(--z-canvas);'
+    canvas.width = surface.image.naturalWidth
+    canvas.height = surface.image.naturalHeight
+    applyBrushCanvasContract(canvas)
 
-    wrapper.appendChild(canvas)
+    surface.wrapper.appendChild(canvas)
     brushCanvas = canvas
     brushCtx = canvas.getContext('2d')
   }
 
-  /**
-   * 移除笔刷画布
-   */
+  function applyBrushCanvasContract(canvas: HTMLCanvasElement): void {
+    canvas.setAttribute('aria-hidden', 'true')
+    Object.assign(canvas.style, {
+      position: 'absolute',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none',
+      zIndex: 'var(--z-canvas)',
+    })
+  }
+
   function removeBrushCanvas(): void {
     if (brushCanvas && brushCanvas.parentNode) {
       brushCanvas.parentNode.removeChild(brushCanvas)
@@ -402,9 +298,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushCtx = null
   }
 
-  /**
-   * 绘制笔刷笔画
-   */
   function drawBrushStroke(pos: BrushPosition): void {
     if (!brushCtx || !pos) return
 
@@ -417,17 +310,9 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushCtx.fill()
   }
 
-  // ============================================================
-  // 笔刷效果应用
-  // ============================================================
-
-  /**
-   * 还原笔刷区域（恢复为原图）
-   */
   async function restoreBrushArea(currentImage: ImageData, bounds: BrushBounds, expectedImageId: string): Promise<void> {
     if (!currentImage.originalDataURL) return
 
-    // 获取当前干净背景
     let cleanSrc: string
     if (currentImage.cleanImageData) {
       cleanSrc = 'data:image/png;base64,' + currentImage.cleanImageData
@@ -435,7 +320,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       cleanSrc = currentImage.originalDataURL
     }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const cleanImg = new Image()
       const originalImg = new Image()
       let loadedCount = 0
@@ -444,59 +329,57 @@ export function useBrush(callbacks?: BrushCallbacks) {
         loadedCount++
         if (loadedCount < 2) return
 
-        const canvas = document.createElement('canvas')
-        canvas.width = cleanImg.naturalWidth
-        canvas.height = cleanImg.naturalHeight
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = cleanImg.naturalWidth
+          canvas.height = cleanImg.naturalHeight
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            resolve()
+            return
+          }
+
+          ctx.drawImage(cleanImg, 0, 0)
+
+          const maskCanvas = document.createElement('canvas')
+          maskCanvas.width = canvas.width
+          maskCanvas.height = canvas.height
+          const maskCtx = maskCanvas.getContext('2d')
+          if (!maskCtx) {
+            resolve()
+            return
+          }
+
+          maskCtx.fillStyle = 'white'
+          for (const pos of bounds.path) {
+            maskCtx.beginPath()
+            maskCtx.arc(pos.x, pos.y, bounds.radius, 0, Math.PI * 2)
+            maskCtx.fill()
+          }
+
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.drawImage(maskCanvas, 0, 0)
+          ctx.globalCompositeOperation = 'destination-over'
+          ctx.drawImage(originalImg, 0, 0)
+          ctx.globalCompositeOperation = 'source-over'
+
+          const newUserMask = await addRestorationToUserMask(
+            currentImage.userMask,
+            canvas.width,
+            canvas.height,
+            bounds.path,
+            bounds.radius
+          )
+
+          const newCleanImageData = canvas.toDataURL('image/png').split(',')[1]
+          updateCurrentImageIfStillCurrent(expectedImageId, {
+            cleanImageData: newCleanImageData,
+            userMask: newUserMask
+          })
           resolve()
-          return
+        } catch (error) {
+          reject(error)
         }
-
-        // 先绘制当前干净背景
-        ctx.drawImage(cleanImg, 0, 0)
-
-        // 创建笔刷蒙版
-        const maskCanvas = document.createElement('canvas')
-        maskCanvas.width = canvas.width
-        maskCanvas.height = canvas.height
-        const maskCtx = maskCanvas.getContext('2d')
-        if (!maskCtx) {
-          resolve()
-          return
-        }
-
-        // 绘制笔刷路径作为蒙版
-        maskCtx.fillStyle = 'white'
-        for (const pos of bounds.path) {
-          maskCtx.beginPath()
-          maskCtx.arc(pos.x, pos.y, bounds.radius, 0, Math.PI * 2)
-          maskCtx.fill()
-        }
-
-        // 使用蒙版从原图恢复
-        ctx.globalCompositeOperation = 'destination-out'
-        ctx.drawImage(maskCanvas, 0, 0)
-        ctx.globalCompositeOperation = 'destination-over'
-        ctx.drawImage(originalImg, 0, 0)
-        ctx.globalCompositeOperation = 'source-over'
-
-        // ✅ 更新 userMask（记录用户还原意图）
-        const newUserMask = await addRestorationToUserMask(
-          currentImage.userMask,
-          canvas.width,
-          canvas.height,
-          bounds.path,
-          bounds.radius
-        )
-
-        // 更新 cleanImageData 和 userMask
-        const newCleanImageData = canvas.toDataURL('image/png').split(',')[1]
-        updateCurrentImageIfStillCurrent(expectedImageId, {
-          cleanImageData: newCleanImageData,
-          userMask: newUserMask
-        })
-        resolve()
       }
 
       cleanImg.onload = onLoad
@@ -509,40 +392,27 @@ export function useBrush(callbacks?: BrushCallbacks) {
     })
   }
 
-  /**
-   * 修复笔刷区域（使用填充色或LAMA）
-   * 从编辑面板读取修复方式，不依赖气泡选中状态
-   */
   async function repairBrushArea(currentImage: ImageData, bounds: BrushBounds, expectedImageId: string): Promise<void> {
-    // 通过回调读取编辑面板当前修复方式，不依赖气泡选中状态。
     const settings = callbacks?.getCurrentRepairSettings?.() || {
       inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod as InpaintMethod,
       fillColor: TEXT_STYLE_DEFAULTS.fillColor
     }
     const inpaintMethod = settings.inpaintMethod
 
-    // 判断是否使用 LAMA（lama_mpe 或 litelama）
     const isLamaMethod = inpaintMethod === 'lama_mpe' || inpaintMethod === 'litelama'
     if (isLamaMethod) {
-      // 使用 LAMA 修复
       await repairBrushAreaWithLama(currentImage, bounds, expectedImageId, inpaintMethod)
     } else {
-      // 使用纯色填充
       await repairBrushAreaWithColor(currentImage, bounds, expectedImageId, settings.fillColor)
     }
   }
 
-  /**
-   * 使用 LAMA 修复笔刷区域
-   * 支持精确掩膜：根据用户的笔刷路径生成掩膜，而非使用外接矩形
-   */
   async function repairBrushAreaWithLama(
     currentImage: ImageData,
     bounds: BrushBounds,
     expectedImageId: string,
     inpaintMethod: 'lama_mpe' | 'litelama' = 'lama_mpe'
   ): Promise<void> {
-    // 获取当前干净背景或原图
     let baseImageData: string
     let baseImageSrc: string
     if (currentImage.cleanImageData) {
@@ -556,8 +426,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       return
     }
 
-    // 通过加载图像获取实际尺寸。
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = async () => {
         if (!isOwnerActiveForImage(expectedImageId)) {
@@ -568,7 +437,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
         const imgWidth = img.naturalWidth
         const imgHeight = img.naturalHeight
 
-        // 生成精确的笔刷掩膜（白色=需要修复的区域，黑色=保留的区域）
         const maskCanvas = document.createElement('canvas')
         maskCanvas.width = imgWidth
         maskCanvas.height = imgHeight
@@ -580,11 +448,9 @@ export function useBrush(callbacks?: BrushCallbacks) {
           return
         }
 
-        // 填充黑色背景（保留区域）
         maskCtx.fillStyle = 'black'
         maskCtx.fillRect(0, 0, imgWidth, imgHeight)
 
-        // 用白色绘制笔刷路径（需要修复的区域）
         maskCtx.fillStyle = 'white'
         for (const pos of bounds.path) {
           maskCtx.beginPath()
@@ -592,14 +458,11 @@ export function useBrush(callbacks?: BrushCallbacks) {
           maskCtx.fill()
         }
 
-        // 将掩膜转换为 base64
         const maskDataUrl = maskCanvas.toDataURL('image/png')
         const maskBase64 = maskDataUrl.split(',')[1]
 
-        // 将笔刷路径边界转换为矩形坐标（用于边界检查）
         const coords: BubbleCoords = [bounds.x1, bounds.y1, bounds.x2, bounds.y2]
 
-        // 确定 LAMA 模型类型
         const lamaModel = inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe'
 
         try {
@@ -617,7 +480,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
           }
 
           if (response.success && response.inpainted_image) {
-            // ✅ 更新 userMask（记录用户消除意图）
             const newUserMask = await addErasureToUserMask(
               currentImage.userMask,
               imgWidth,
@@ -626,7 +488,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
               bounds.radius
             )
 
-            // 更新 cleanImageData 和 userMask
             if (!updateCurrentImageIfStillCurrent(expectedImageId, {
               cleanImageData: response.inpainted_image,
               userMask: newUserMask
@@ -644,9 +505,13 @@ export function useBrush(callbacks?: BrushCallbacks) {
             return
           }
           showToast('LAMA 修复失败，使用纯色填充', 'warning')
-          // 回退到纯色填充时重新读取当前填充颜色。
           const fallbackSettings = callbacks?.getCurrentRepairSettings?.()
-          await repairBrushAreaWithColor(currentImage, bounds, expectedImageId, fallbackSettings?.fillColor)
+          try {
+            await repairBrushAreaWithColor(currentImage, bounds, expectedImageId, fallbackSettings?.fillColor)
+          } catch (fallbackError) {
+            reject(fallbackError)
+            return
+          }
         }
         resolve()
       }
@@ -660,20 +525,14 @@ export function useBrush(callbacks?: BrushCallbacks) {
     })
   }
 
-  /**
-   * 使用纯色填充修复笔刷区域
-   * 从编辑面板读取填充颜色，不依赖气泡选中状态
-   */
   async function repairBrushAreaWithColor(
     currentImage: ImageData,
     bounds: BrushBounds,
     expectedImageId: string,
     fillColor?: string
   ): Promise<void> {
-    // 优先使用编辑面板传入的当前填充色。
     const color = fillColor || settingsStore.settings.textStyle.fillColor || '#FFFFFF'
 
-    // 获取当前干净背景
     let cleanSrc: string
     if (currentImage.cleanImageData) {
       cleanSrc = 'data:image/png;base64,' + currentImage.cleanImageData
@@ -683,67 +542,57 @@ export function useBrush(callbacks?: BrushCallbacks) {
       return
     }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = async () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = img.naturalWidth
-        canvas.height = img.naturalHeight
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = img.naturalWidth
+          canvas.height = img.naturalHeight
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            resolve()
+            return
+          }
+
+          ctx.drawImage(img, 0, 0)
+
+          ctx.fillStyle = color
+          for (const pos of bounds.path) {
+            ctx.beginPath()
+            ctx.arc(pos.x, pos.y, bounds.radius, 0, Math.PI * 2)
+            ctx.fill()
+          }
+
+          const newUserMask = await addErasureToUserMask(
+            currentImage.userMask,
+            img.naturalWidth,
+            img.naturalHeight,
+            bounds.path,
+            bounds.radius
+          )
+
+          const newCleanImageData = canvas.toDataURL('image/png').split(',')[1]
+          updateCurrentImageIfStillCurrent(expectedImageId, {
+            cleanImageData: newCleanImageData,
+            userMask: newUserMask
+          })
           resolve()
-          return
+        } catch (error) {
+          reject(error)
         }
-
-        // 绘制当前背景
-        ctx.drawImage(img, 0, 0)
-
-        // 用填充色绘制笔刷路径
-        ctx.fillStyle = color
-        for (const pos of bounds.path) {
-          ctx.beginPath()
-          ctx.arc(pos.x, pos.y, bounds.radius, 0, Math.PI * 2)
-          ctx.fill()
-        }
-
-
-        // ✅ 更新 userMask（记录用户消除意图）
-        const newUserMask = await addErasureToUserMask(
-          currentImage.userMask,
-          img.naturalWidth,
-          img.naturalHeight,
-          bounds.path,
-          bounds.radius
-        )
-
-        // 更新 cleanImageData 和 userMask
-        const newCleanImageData = canvas.toDataURL('image/png').split(',')[1]
-        updateCurrentImageIfStillCurrent(expectedImageId, {
-          cleanImageData: newCleanImageData,
-          userMask: newUserMask
-        })
-        resolve()
       }
       img.onerror = () => resolve()
       img.src = cleanSrc
     })
   }
 
-  // ============================================================
-  // 清理
-  // ============================================================
-
   onUnmounted(() => {
     isOwnerDisposed = true
     exitBrushMode()
   })
 
-  // ============================================================
-  // 返回接口
-  // ============================================================
-
   return {
-    // 状态
     brushMode,
     brushSize,
     isBrushKeyDown,
@@ -751,29 +600,23 @@ export function useBrush(callbacks?: BrushCallbacks) {
     mouseX,
     mouseY,
 
-    // 计算属性
     isActive,
     brushColor,
 
-    // 常量
     BRUSH_MIN_SIZE,
     BRUSH_MAX_SIZE,
 
-    // 笔刷模式控制
     enterBrushMode,
     exitBrushMode,
     toggleBrushMode,
 
-    // 笔刷大小控制
     setBrushSize,
     adjustBrushSize,
 
-    // 笔刷涂抹操作
     startBrushPainting,
     continueBrushPainting,
     finishBrushPainting,
 
-    // 坐标计算
     getBrushPositionInImage,
     getBrushPathBounds
   }

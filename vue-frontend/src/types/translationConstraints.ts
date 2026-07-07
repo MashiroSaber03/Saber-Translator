@@ -1,7 +1,3 @@
-/**
- * 术语表 / 禁翻表相关类型
- */
-
 export type TranslationConstraintMatchMode = 'text' | 'regex'
 
 export interface GlossaryEntry {

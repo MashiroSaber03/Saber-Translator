@@ -3,9 +3,9 @@
     v-if="isEditModeActive"
     class="edit-workspace"
     :class="[
-      `layout-${layoutMode}`,
-      { 'drawing-mode': isDrawingMode },
-      { 'brush-mode-active': !!brushMode }
+      `edit-workspace--layout-${layoutMode}`,
+      { 'edit-workspace--drawing-mode': isDrawingMode },
+      { 'edit-workspace--brush-mode-active': !!brushMode }
     ]"
     :data-brush-mode="brushMode || undefined"
     tabindex="0"
@@ -116,7 +116,7 @@
       @bubble-rotate-end="handleBubbleRotateEnd"
       @draw-bubble="handleDrawBubble"
       @bubble-update="handleBubbleUpdateWithSync"
-      @re-render="handleReRender"
+      @apply-to-all-style="handleApplyStyleToAllBubbles"
       @ocr-recognize="handleOcrRecognize"
       @re-translate="handleReTranslateBubble"
       @reset-current="handleResetCurrentBubble"
@@ -214,7 +214,7 @@ const {
   handleWheel,
   handleMouseDown,
   handleImageLoad,
-  handleReRender,
+  handleApplyStyleToAllBubbles,
   handleExitToolbarAction,
   handleBubbleUpdateWithSync,
   handleResetCurrentBubble,
@@ -232,7 +232,7 @@ const {
 
 <style scoped>
 .edit-workspace {
-  --edit-workspace-shell-background: #1a1a2e;
+  --edit-workspace-shell-background: var(--color-surface-inverse);
 
   display: flex;
   flex-direction: column;

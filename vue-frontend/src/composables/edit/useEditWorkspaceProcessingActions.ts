@@ -10,6 +10,7 @@ import { saveDetectionResultToImage } from '@/composables/translation/core/detec
 import { translateSingleText } from '@/api/translate'
 import { resolveConstraintPayloadForTranslation } from '@/utils/bookTranslationConstraints'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
+import { confirmProductAction } from '@/composables/useProductConfirm'
 import { showToast } from '@/utils/toast'
 import type { BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
@@ -163,7 +164,14 @@ export function useEditWorkspaceProcessingActions(options: UseEditWorkspaceProce
       return
     }
 
-    if (!confirm('此操作将对所有图片进行文本框检测，可能会覆盖已有的检测结果。确定继续吗？')) {
+    const confirmed = await confirmProductAction({
+      title: '批量检测文本框',
+      message: '此操作将对所有图片进行文本框检测，可能会覆盖已有的检测结果。确定继续吗？',
+      confirmText: '开始检测',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

@@ -1,39 +1,38 @@
-/**
- * API 请求参数构建属性测试
- * Property 19: API 请求参数构建一致性
- * 测试翻译请求参数完整性和会话数据序列化正确性
- */
-
 import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
 import type { BubbleState, BubbleCoords, TextDirection } from '@/types'
-import type { TranslateImageParams, ReRenderParams } from '@/api/translate'
+import type { ReRenderParams } from '@/api/translate'
+import type { ParallelTranslateParams } from '@/api/parallelTranslate'
+import { AI_PROVIDER_MANIFEST } from '@/config/aiProviders'
 
-// ==================== 辅助函数 ====================
+const TRANSLATION_PROVIDER_IDS = AI_PROVIDER_MANIFEST.filter(provider =>
+  provider.capabilities.includes('translation')
+).map(provider => provider.id) as [string, ...string[]]
 
-/**
- * 生成有效的气泡坐标
- */
 function generateBubbleCoords(): fc.Arbitrary<BubbleCoords> {
-  return fc.record({
-    x1: fc.integer({ min: 0, max: 1000 }),
-    y1: fc.integer({ min: 0, max: 1000 }),
-    width: fc.integer({ min: 10, max: 500 }),
-    height: fc.integer({ min: 10, max: 500 }),
-  }).map(({ x1, y1, width, height }) => [x1, y1, x1 + width, y1 + height])
+  return fc
+    .record({
+      x1: fc.integer({ min: 0, max: 1000 }),
+      y1: fc.integer({ min: 0, max: 1000 }),
+      width: fc.integer({ min: 10, max: 500 }),
+      height: fc.integer({ min: 10, max: 500 }),
+    })
+    .map(({ x1, y1, width, height }) => [x1, y1, x1 + width, y1 + height])
 }
 
-/**
- * 生成有效的气泡状态
- */
 function generateBubbleState(): fc.Arbitrary<BubbleState> {
-  const textDirection = fc.constantFrom('auto', 'vertical', 'horizontal') as fc.Arbitrary<TextDirection>
+  const textDirection = fc.constantFrom(
+    'auto',
+    'vertical',
+    'horizontal'
+  ) as fc.Arbitrary<TextDirection>
 
   return fc.record({
     coords: generateBubbleCoords(),
-    polygon: fc.array(fc.tuple(fc.integer(), fc.integer()).map(([x, y]) => [x, y]), {
-      maxLength: 10,
-    }),
+    polygon: fc.array(
+      fc.tuple(fc.integer(), fc.integer()).map(([x, y]) => [x, y]),
+      { maxLength: 10 }
+    ),
     originalText: fc.string({ minLength: 0, maxLength: 200 }),
     translatedText: fc.string({ minLength: 0, maxLength: 200 }),
     textboxText: fc.string({ minLength: 0, maxLength: 200 }),
@@ -41,15 +40,15 @@ function generateBubbleState(): fc.Arbitrary<BubbleState> {
     fontFamily: fc.constantFrom('Arial', 'SimHei', 'Microsoft YaHei'),
     textDirection,
     autoTextDirection: textDirection,
-    textColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
-    fillColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
+    textColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(value => `#${value}`),
+    fillColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(value => `#${value}`),
     rotationAngle: fc.integer({ min: 0, max: 360 }),
     position: fc.record({
       x: fc.integer({ min: -100, max: 100 }),
       y: fc.integer({ min: -100, max: 100 }),
     }),
     strokeEnabled: fc.boolean(),
-    strokeColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(s => `#${s}`),
+    strokeColor: fc.hexaString({ minLength: 6, maxLength: 6 }).map(value => `#${value}`),
     strokeWidth: fc.integer({ min: 1, max: 10 }),
     lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
     textAlign: fc.constantFrom('start', 'center', 'end'),
@@ -58,276 +57,197 @@ function generateBubbleState(): fc.Arbitrary<BubbleState> {
   })
 }
 
-/**
- * 生成翻译请求参数
- */
-function generateTranslateParams(): fc.Arbitrary<TranslateImageParams> {
+function generateParallelTranslateParams(): fc.Arbitrary<ParallelTranslateParams> {
   return fc.record({
-    image: fc.string({ minLength: 10, maxLength: 100 }), // 模拟 Base64
-    ocr_engine: fc.constantFrom('manga_ocr', 'paddle_ocr', 'baidu_ocr', 'ai_vision'),
-    translate_provider: fc.constantFrom('siliconflow', 'deepseek', 'gemini', 'ollama'),
+    original_texts: fc.array(fc.string({ minLength: 1, maxLength: 200 }), {
+      minLength: 1,
+      maxLength: 10,
+    }),
     target_language: fc.constantFrom('zh-CN', 'en', 'ja', 'ko'),
-    font_size: fc.integer({ min: 8, max: 72 }),
-    auto_font_size: fc.boolean(),
-    text_direction: fc.constantFrom('auto', 'vertical', 'horizontal'),
-    inpaint_method: fc.constantFrom('solid', 'lama_mpe', 'litelama'),
+    source_language: fc.option(fc.constantFrom('japanese', 'english', 'korean'), {
+      nil: undefined,
+    }),
+    model_provider: fc.constantFrom(...TRANSLATION_PROVIDER_IDS),
+    model_name: fc.option(fc.string({ minLength: 1, maxLength: 80 }), { nil: undefined }),
+    api_key: fc.option(fc.string({ minLength: 1, maxLength: 80 }), { nil: undefined }),
+    custom_base_url: fc.option(fc.webUrl(), { nil: undefined }),
+    prompt_content: fc.option(fc.string({ minLength: 0, maxLength: 200 }), { nil: undefined }),
+    use_textbox_prompt: fc.boolean(),
   })
 }
 
-// ==================== 属性测试 ====================
+describe('API parameter invariants', () => {
+  it('parallel translation params include current required fields', () => {
+    fc.assert(
+      fc.property(generateParallelTranslateParams(), params => {
+        expect(params.original_texts.length).toBeGreaterThan(0)
+        expect(params.original_texts.every(text => typeof text === 'string')).toBe(true)
+        expect(params.target_language).toMatch(/^\S+$/)
+        expect(TRANSLATION_PROVIDER_IDS).toContain(params.model_provider)
+      }),
+      { numRuns: 100 }
+    )
+  })
 
-describe('API 请求参数构建属性测试', () => {
-  describe('Property 19: API 请求参数构建一致性', () => {
-    it('翻译请求参数应包含所有必需字段', () => {
-      fc.assert(
-        fc.property(generateTranslateParams(), params => {
-          // 必需字段检查
-          expect(params.image).toBeDefined()
-          expect(typeof params.image).toBe('string')
-          expect(params.image.length).toBeGreaterThan(0)
+  it('bubble state JSON serialization preserves render-critical fields', () => {
+    fc.assert(
+      fc.property(generateBubbleState(), bubbleState => {
+        const deserialized = JSON.parse(JSON.stringify(bubbleState)) as BubbleState
 
-          expect(params.ocr_engine).toBeDefined()
-          expect(['manga_ocr', 'paddle_ocr', 'baidu_ocr', 'ai_vision']).toContain(
-            params.ocr_engine
-          )
+        expect(deserialized.coords).toEqual(bubbleState.coords)
+        expect(deserialized.originalText).toBe(bubbleState.originalText)
+        expect(deserialized.translatedText).toBe(bubbleState.translatedText)
+        expect(deserialized.fontSize).toBe(bubbleState.fontSize)
+        expect(deserialized.fontFamily).toBe(bubbleState.fontFamily)
+        expect(deserialized.textDirection).toBe(bubbleState.textDirection)
+        expect(deserialized.textColor).toBe(bubbleState.textColor)
+        expect(deserialized.fillColor).toBe(bubbleState.fillColor)
+        expect(deserialized.strokeEnabled).toBe(bubbleState.strokeEnabled)
+        expect(deserialized.strokeColor).toBe(bubbleState.strokeColor)
+        expect(deserialized.strokeWidth).toBe(bubbleState.strokeWidth)
+        expect(deserialized.inpaintMethod).toBe(bubbleState.inpaintMethod)
+      }),
+      { numRuns: 100 }
+    )
+  })
 
-          expect(params.translate_provider).toBeDefined()
-          expect(['siliconflow', 'deepseek', 'gemini', 'ollama']).toContain(
-            params.translate_provider
-          )
+  it('bubble coords form positive rectangles', () => {
+    fc.assert(
+      fc.property(generateBubbleCoords(), coords => {
+        const [x1, y1, x2, y2] = coords
 
-          expect(params.target_language).toBeDefined()
-          expect(['zh-CN', 'en', 'ja', 'ko']).toContain(params.target_language)
-        }),
-        { numRuns: 100 }
-      )
-    })
+        expect(x1).toBeGreaterThanOrEqual(0)
+        expect(y1).toBeGreaterThanOrEqual(0)
+        expect(x2).toBeGreaterThan(x1)
+        expect(y2).toBeGreaterThan(y1)
+        expect(Number.isInteger(x1)).toBe(true)
+        expect(Number.isInteger(y1)).toBe(true)
+        expect(Number.isInteger(x2)).toBe(true)
+        expect(Number.isInteger(y2)).toBe(true)
+      }),
+      { numRuns: 100 }
+    )
+  })
 
-    it('气泡状态序列化后应保持数据完整性', () => {
-      fc.assert(
-        fc.property(generateBubbleState(), bubbleState => {
-          // 序列化
-          const serialized = JSON.stringify(bubbleState)
-
-          // 反序列化
-          const deserialized = JSON.parse(serialized) as BubbleState
-
-          // 验证关键字段
-          expect(deserialized.coords).toEqual(bubbleState.coords)
-          expect(deserialized.originalText).toBe(bubbleState.originalText)
-          expect(deserialized.translatedText).toBe(bubbleState.translatedText)
-          expect(deserialized.fontSize).toBe(bubbleState.fontSize)
-          expect(deserialized.fontFamily).toBe(bubbleState.fontFamily)
-          expect(deserialized.textDirection).toBe(bubbleState.textDirection)
-          expect(deserialized.textColor).toBe(bubbleState.textColor)
-          expect(deserialized.fillColor).toBe(bubbleState.fillColor)
-          expect(deserialized.strokeEnabled).toBe(bubbleState.strokeEnabled)
-          expect(deserialized.strokeColor).toBe(bubbleState.strokeColor)
-          expect(deserialized.strokeWidth).toBe(bubbleState.strokeWidth)
-          expect(deserialized.inpaintMethod).toBe(bubbleState.inpaintMethod)
-        }),
-        { numRuns: 100 }
-      )
-    })
-
-    it('气泡坐标应为有效的矩形区域', () => {
-      fc.assert(
-        fc.property(generateBubbleCoords(), coords => {
-          const [x1, y1, x2, y2] = coords
-
-          // 坐标应为非负整数
-          expect(x1).toBeGreaterThanOrEqual(0)
-          expect(y1).toBeGreaterThanOrEqual(0)
-
-          // 尺寸应为正整数
-          expect(x2).toBeGreaterThan(x1)
-          expect(y2).toBeGreaterThan(y1)
-
-          // 坐标应为整数
-          expect(Number.isInteger(x1)).toBe(true)
-          expect(Number.isInteger(y1)).toBe(true)
-          expect(Number.isInteger(x2)).toBe(true)
-          expect(Number.isInteger(y2)).toBe(true)
-        }),
-        { numRuns: 100 }
-      )
-    })
-
-    it('重新渲染参数应包含完整的气泡状态数组', () => {
-      fc.assert(
-        fc.property(
-          fc.array(generateBubbleState(), { minLength: 1, maxLength: 10 }),
-          bubbleStates => {
-            const params: ReRenderParams = {
-              clean_image: 'base64_clean',
-              bubble_texts: bubbleStates.map(state => state.translatedText),
-              bubble_coords: bubbleStates.map(state => state.coords),
-              bubble_states: bubbleStates.map(state => ({
-                translatedText: state.translatedText,
-                coords: state.coords,
-                fontSize: state.fontSize,
-                fontFamily: state.fontFamily,
-                textDirection: state.textDirection,
-                textColor: state.textColor,
-                rotationAngle: state.rotationAngle,
-                position: state.position,
-                strokeEnabled: state.strokeEnabled,
-                strokeColor: state.strokeColor,
-                strokeWidth: state.strokeWidth,
-                lineSpacing: state.lineSpacing,
-                textAlign: state.textAlign,
-              })),
-            }
-
-            // 验证参数结构
-            expect(params.clean_image).toBeDefined()
-            expect(params.bubble_texts).toHaveLength(bubbleStates.length)
-            expect(params.bubble_coords).toHaveLength(bubbleStates.length)
-            expect(Array.isArray(params.bubble_states)).toBe(true)
-            expect(params.bubble_states).toHaveLength(bubbleStates.length)
-
-            // 验证每个气泡状态
-            params.bubble_states?.forEach((state, index) => {
-              expect(params.bubble_texts[index]).toBe(bubbleStates[index].translatedText)
-              expect(params.bubble_coords[index]).toEqual(bubbleStates[index].coords)
-              expect(state.coords).toEqual(bubbleStates[index].coords)
-              expect(state.fontSize).toBe(bubbleStates[index].fontSize)
-            })
+  it('rerender params keep bubble text, coords, and state arrays aligned', () => {
+    fc.assert(
+      fc.property(
+        fc.array(generateBubbleState(), { minLength: 1, maxLength: 10 }),
+        bubbleStates => {
+          const params: ReRenderParams = {
+            clean_image: 'base64_clean',
+            bubble_texts: bubbleStates.map(state => state.translatedText),
+            bubble_coords: bubbleStates.map(state => state.coords),
+            bubble_states: bubbleStates.map(state => ({
+              translatedText: state.translatedText,
+              coords: state.coords,
+              fontSize: state.fontSize,
+              fontFamily: state.fontFamily,
+              textDirection: state.textDirection,
+              textColor: state.textColor,
+              rotationAngle: state.rotationAngle,
+              position: state.position,
+              strokeEnabled: state.strokeEnabled,
+              strokeColor: state.strokeColor,
+              strokeWidth: state.strokeWidth,
+              lineSpacing: state.lineSpacing,
+              textAlign: state.textAlign,
+            })),
           }
-        ),
-        { numRuns: 50 }
-      )
-    })
 
-    it('会话数据序列化应保持图片数组顺序', () => {
-      fc.assert(
-        fc.property(
-          fc.array(
-            fc.record({
-              originalDataURL: fc.string({ minLength: 10, maxLength: 50 }),
-              translatedDataURL: fc.option(fc.string({ minLength: 10, maxLength: 50 })),
-              fileName: fc.string({ minLength: 1, maxLength: 50 }),
-              bubbleStates: fc.array(generateBubbleState(), { minLength: 0, maxLength: 5 }),
-            }),
-            { minLength: 1, maxLength: 10 }
-          ),
-          images => {
-            const sessionData = {
-              name: 'test_session',
-              version: '1.0',
-              savedAt: new Date().toISOString(),
-              imageCount: images.length,
-              ui_settings: {},
-              images,
-              currentImageIndex: 0,
-            }
+          expect(params.clean_image).toBeDefined()
+          expect(params.bubble_texts).toHaveLength(bubbleStates.length)
+          expect(params.bubble_coords).toHaveLength(bubbleStates.length)
+          expect(params.bubble_states).toHaveLength(bubbleStates.length)
 
-            // 序列化
-            const serialized = JSON.stringify(sessionData)
+          params.bubble_states?.forEach((state, index) => {
+            expect(params.bubble_texts[index]).toBe(bubbleStates[index].translatedText)
+            expect(params.bubble_coords[index]).toEqual(bubbleStates[index].coords)
+            expect(state.coords).toEqual(bubbleStates[index].coords)
+            expect(state.fontSize).toBe(bubbleStates[index].fontSize)
+          })
+        }
+      ),
+      { numRuns: 50 }
+    )
+  })
 
-            // 反序列化
-            const deserialized = JSON.parse(serialized)
-
-            // 验证图片数组顺序和内容
-            expect(deserialized.images.length).toBe(images.length)
-            images.forEach((img, index) => {
-              expect(deserialized.images[index].originalDataURL).toBe(img.originalDataURL)
-              expect(deserialized.images[index].fileName).toBe(img.fileName)
-              expect(deserialized.images[index].bubbleStates.length).toBe(img.bubbleStates.length)
-            })
-          }
-        ),
-        { numRuns: 50 }
-      )
-    })
-
-    it('OCR 引擎参数应与服务商配置匹配', () => {
-      const ocrEngineConfigs = {
-        manga_ocr: { requiresApiKey: false, requiresModel: false },
-        paddle_ocr: { requiresApiKey: false, requiresModel: false },
-        baidu_ocr: { requiresApiKey: true, requiresModel: false },
-        ai_vision: { requiresApiKey: true, requiresModel: true },
-      }
-
-      fc.assert(
-        fc.property(
-          fc.constantFrom('manga_ocr', 'paddle_ocr', 'baidu_ocr', 'ai_vision'),
-          ocrEngine => {
-            const config = ocrEngineConfigs[ocrEngine as keyof typeof ocrEngineConfigs]
-            expect(config).toBeDefined()
-
-            // 验证配置属性存在
-            expect(typeof config.requiresApiKey).toBe('boolean')
-            expect(typeof config.requiresModel).toBe('boolean')
-          }
-        ),
-        { numRuns: 20 }
-      )
-    })
-
-    it('翻译服务商参数应与服务商配置匹配', () => {
-      const providerConfigs = {
-        siliconflow: { requiresApiKey: true, supportsCustomBaseUrl: false },
-        deepseek: { requiresApiKey: true, supportsCustomBaseUrl: false },
-        gemini: { requiresApiKey: true, supportsCustomBaseUrl: false },
-        ollama: { requiresApiKey: false, supportsCustomBaseUrl: true },
-        sakura: { requiresApiKey: false, supportsCustomBaseUrl: true },
-        custom: { requiresApiKey: true, supportsCustomBaseUrl: true },
-      }
-
-      fc.assert(
-        fc.property(
-          fc.constantFrom(
-            'siliconflow',
-            'deepseek',
-            'gemini',
-            'ollama',
-            'sakura',
-            'custom'
-          ),
-          provider => {
-            const config = providerConfigs[provider as keyof typeof providerConfigs]
-            expect(config).toBeDefined()
-
-            // 验证配置属性存在
-            expect(typeof config.requiresApiKey).toBe('boolean')
-            expect(typeof config.supportsCustomBaseUrl).toBe('boolean')
-          }
-        ),
-        { numRuns: 30 }
-      )
-    })
-
-    it('文本框扩展参数应在有效范围内', () => {
-      fc.assert(
-        fc.property(
+  it('session data serialization preserves image order', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
           fc.record({
-            box_expand_ratio: fc.float({ min: 0, max: 0.5, noNaN: true }),
-            box_expand_top: fc.float({ min: 0, max: 0.5, noNaN: true }),
-            box_expand_bottom: fc.float({ min: 0, max: 0.5, noNaN: true }),
-            box_expand_left: fc.float({ min: 0, max: 0.5, noNaN: true }),
-            box_expand_right: fc.float({ min: 0, max: 0.5, noNaN: true }),
+            originalDataURL: fc.string({ minLength: 10, maxLength: 50 }),
+            translatedDataURL: fc.option(fc.string({ minLength: 10, maxLength: 50 })),
+            fileName: fc.string({ minLength: 1, maxLength: 50 }),
+            bubbleStates: fc.array(generateBubbleState(), { minLength: 0, maxLength: 5 }),
           }),
-          expandParams => {
-            // 所有扩展参数应在 0-0.5 范围内
-            expect(expandParams.box_expand_ratio).toBeGreaterThanOrEqual(0)
-            expect(expandParams.box_expand_ratio).toBeLessThanOrEqual(0.5)
-
-            expect(expandParams.box_expand_top).toBeGreaterThanOrEqual(0)
-            expect(expandParams.box_expand_top).toBeLessThanOrEqual(0.5)
-
-            expect(expandParams.box_expand_bottom).toBeGreaterThanOrEqual(0)
-            expect(expandParams.box_expand_bottom).toBeLessThanOrEqual(0.5)
-
-            expect(expandParams.box_expand_left).toBeGreaterThanOrEqual(0)
-            expect(expandParams.box_expand_left).toBeLessThanOrEqual(0.5)
-
-            expect(expandParams.box_expand_right).toBeGreaterThanOrEqual(0)
-            expect(expandParams.box_expand_right).toBeLessThanOrEqual(0.5)
-          }
+          { minLength: 1, maxLength: 10 }
         ),
-        { numRuns: 100 }
-      )
-    })
+        images => {
+          const sessionData = {
+            name: 'test_session',
+            version: '2.0',
+            savedAt: new Date().toISOString(),
+            imageCount: images.length,
+            ui_settings: {},
+            images,
+            currentImageIndex: 0,
+          }
+
+          const deserialized = JSON.parse(JSON.stringify(sessionData)) as typeof sessionData
+
+          expect(deserialized.images.length).toBe(images.length)
+          images.forEach((image, index) => {
+            expect(deserialized.images[index].originalDataURL).toBe(image.originalDataURL)
+            expect(deserialized.images[index].fileName).toBe(image.fileName)
+            expect(deserialized.images[index].bubbleStates.length).toBe(image.bubbleStates.length)
+          })
+        }
+      ),
+      { numRuns: 50 }
+    )
+  })
+
+  it('translation providers come from the current provider manifest', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...TRANSLATION_PROVIDER_IDS), providerId => {
+        const manifest = AI_PROVIDER_MANIFEST.find(provider => provider.id === providerId)
+
+        expect(manifest).toBeDefined()
+        expect(manifest?.capabilities).toContain('translation')
+        expect(typeof manifest?.requiresApiKey).toBe('boolean')
+        expect(typeof manifest?.requiresModel).toBe('boolean')
+        expect(typeof manifest?.requiresBaseUrl).toBe('boolean')
+      }),
+      { numRuns: 30 }
+    )
+  })
+
+  it('text box expansion params stay in the backend-supported range', () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          box_expand_ratio: fc.float({ min: 0, max: 0.5, noNaN: true }),
+          box_expand_top: fc.float({ min: 0, max: 0.5, noNaN: true }),
+          box_expand_bottom: fc.float({ min: 0, max: 0.5, noNaN: true }),
+          box_expand_left: fc.float({ min: 0, max: 0.5, noNaN: true }),
+          box_expand_right: fc.float({ min: 0, max: 0.5, noNaN: true }),
+        }),
+        expandParams => {
+          expect(expandParams.box_expand_ratio).toBeGreaterThanOrEqual(0)
+          expect(expandParams.box_expand_ratio).toBeLessThanOrEqual(0.5)
+          expect(expandParams.box_expand_top).toBeGreaterThanOrEqual(0)
+          expect(expandParams.box_expand_top).toBeLessThanOrEqual(0.5)
+          expect(expandParams.box_expand_bottom).toBeGreaterThanOrEqual(0)
+          expect(expandParams.box_expand_bottom).toBeLessThanOrEqual(0.5)
+          expect(expandParams.box_expand_left).toBeGreaterThanOrEqual(0)
+          expect(expandParams.box_expand_left).toBeLessThanOrEqual(0.5)
+          expect(expandParams.box_expand_right).toBeGreaterThanOrEqual(0)
+          expect(expandParams.box_expand_right).toBeLessThanOrEqual(0.5)
+        }
+      ),
+      { numRuns: 100 }
+    )
   })
 })

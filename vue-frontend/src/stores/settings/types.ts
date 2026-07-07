@@ -1,98 +1,44 @@
-/**
- * Settings Store 类型定义
- * 包含所有设置模块共享的类型定义
- */
+import type { OpenAICompatibleOptions } from '@/types/settings'
 
-// ============================================================
-// 服务商配置缓存类型定义
-// ============================================================
+export type ProviderOpenAICompatibleOptions = {
+  request?: Partial<OpenAICompatibleOptions['request']>
+  execution?: Partial<OpenAICompatibleOptions['execution']>
+}
 
-/** 翻译服务配置缓存项 */
 export interface TranslationProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
-  openaiOptions?: {
-    request?: {
-      forceJsonOutput?: boolean
-      extraBody?: Record<string, unknown>
-    }
-    execution?: {
-      useStream?: boolean
-      rpmLimit?: number
-      transportRetries?: number
-      businessRetries?: number
-    }
-  }
+  openaiOptions?: ProviderOpenAICompatibleOptions
   translationMode?: 'batch' | 'single'
 }
 
-/** 高质量翻译服务配置缓存项 */
 export interface HqTranslationProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
   batchSize?: number
-  openaiOptions?: {
-    request?: {
-      forceJsonOutput?: boolean
-      temperature?: number
-      extraBody?: Record<string, unknown>
-    }
-    execution?: {
-      useStream?: boolean
-      rpmLimit?: number
-      transportRetries?: number
-      businessRetries?: number
-    }
-  }
+  openaiOptions?: ProviderOpenAICompatibleOptions
   prompt?: string
 }
 
-/** 插件 Agent 服务配置缓存项 */
 export interface PluginAgentProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
-  openaiOptions?: {
-    request?: {
-      forceJsonOutput?: boolean
-      temperature?: number
-      extraBody?: Record<string, unknown>
-    }
-    execution?: {
-      useStream?: boolean
-      rpmLimit?: number
-      transportRetries?: number
-      businessRetries?: number
-    }
-  }
+  openaiOptions?: ProviderOpenAICompatibleOptions
 }
 
-/** AI视觉OCR服务配置缓存项 */
 export interface AiVisionOcrProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
   prompt?: string
   promptMode?: 'normal' | 'json' | 'paddleocr_vl'
-  openaiOptions?: {
-    request?: {
-      forceJsonOutput?: boolean
-      extraBody?: Record<string, unknown>
-    }
-    execution?: {
-      useStream?: boolean
-      rpmLimit?: number
-      transportRetries?: number
-      businessRetries?: number
-    }
-  }
-  /** 最小图片尺寸 */
+  openaiOptions?: ProviderOpenAICompatibleOptions
   minImageSize?: number
 }
 
-/** 服务商配置缓存结构 */
 export interface ProviderConfigsCache {
   translation: Record<string, TranslationProviderConfig>
   hqTranslation: Record<string, HqTranslationProviderConfig>

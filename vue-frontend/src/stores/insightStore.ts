@@ -1,43 +1,35 @@
-/**
- * 漫画分析状态管理 Store
- * 管理漫画分析状态、进度跟踪、问答和笔记
- *
- * 使用拆分的 composables:
- * - useInsightNotes: 笔记管理
- * - useInsightQA: 问答管理
- * - useInsightConfigManager: 服务商配置管理
- */
-
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-// 导入拆分的 composables
 import { useInsightNotes } from './insight/useInsightNotes'
 import { useInsightQA } from './insight/useInsightQA'
 import { useInsightConfigManager, type ProviderConfigsCache } from './insight/useInsightConfigManager'
+import { buildInsightConfigApiPayload } from './insight/insightConfigApiPayload'
+import {
+  normalizeInsightImageGenConfig,
+  normalizeInsightRerankerConfig,
+} from './insight/insightConfigDefaults'
+import {
+  INSIGHT_CONFIG_STORAGE_KEY,
+  buildInsightConfigStoragePayload,
+  parseInsightConfigStorage,
+} from './insight/insightConfigStorage'
+import { applyInsightProviderSettingsFromApi } from './insight/insightProviderSettingsHydration'
+import { applyActiveInsightConfigFromApi } from './insight/insightConfigApiHydration'
 
-// 从统一类型导入
 import type {
   AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
   StoreAnalysisProgress, PageData, ChapterInfo, OverviewData, TimelineEvent,
   QAMessage, NoteData, StoreVlmConfig, StoreLlmConfig, StoreEmbeddingConfig,
-  StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig,
-  StoreOpenAICompatibleOptions
+  StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig
 } from '@/types/insight'
-import {
-  deserializeOpenAICompatibleOptionsFromApi,
-  serializeOpenAICompatibleOptionsForApi
-} from '@/utils/openaiOptions'
-import { getProviderBaseUrl, getProviderDefaultModel, normalizeProviderId } from '@/config/aiProviders'
 
-// 公开 Store 相关类型
 export type {
   AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
   PageData, ChapterInfo, OverviewData, TimelineEvent,
   QAMessage, NoteData, BatchConfig
 }
 
-// Store 内部使用的类型别名
 export type AnalysisProgress = StoreAnalysisProgress
 export type VlmConfig = StoreVlmConfig
 export type LlmConfig = StoreLlmConfig
@@ -46,213 +38,7 @@ export type RerankerConfig = StoreRerankerConfig
 export type ImageGenConfig = StoreImageGenConfig
 export type InsightConfig = StoreInsightConfig
 
-const INSIGHT_CONFIG_SCHEMA_VERSION = 1
-
-type InsightConfigStoragePayload = {
-  insightConfigSchemaVersion: typeof INSIGHT_CONFIG_SCHEMA_VERSION
-  config: InsightConfig
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasStringField(value: Record<string, unknown>, key: string): boolean {
-  return typeof value[key] === 'string'
-}
-
-function hasOptionalStringField(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || typeof value[key] === 'string'
-}
-
-function hasNumberField(value: Record<string, unknown>, key: string): boolean {
-  const field = value[key]
-  return typeof field === 'number' && Number.isFinite(field)
-}
-
-function hasOptionalNumberField(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || hasNumberField(value, key)
-}
-
-function hasBooleanField(value: Record<string, unknown>, key: string): boolean {
-  return typeof value[key] === 'boolean'
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return isRecord(value) && Object.values(value).every(entry => typeof entry === 'string')
-}
-
-function serializeInsightOpenAiOptions(options: StoreOpenAICompatibleOptions): ReturnType<typeof serializeOpenAICompatibleOptionsForApi> {
-  return serializeOpenAICompatibleOptionsForApi(options)
-}
-
-function isOpenAiOptions(value: unknown): boolean {
-  if (!isRecord(value) || !isRecord(value.request) || !isRecord(value.execution)) return false
-  if (!hasBooleanField(value.request, 'forceJsonOutput')) return false
-  if (!hasOptionalNumberField(value.request, 'temperature')) return false
-  if (value.request.extraBody !== undefined && !isRecord(value.request.extraBody)) return false
-  return (
-    hasBooleanField(value.execution, 'useStream') &&
-    hasNumberField(value.execution, 'rpmLimit') &&
-    hasNumberField(value.execution, 'transportRetries') &&
-    hasNumberField(value.execution, 'businessRetries')
-  )
-}
-
-function isStoreVlmConfig(value: unknown): value is StoreVlmConfig {
-  return (
-    isRecord(value) &&
-    hasStringField(value, 'provider') &&
-    hasStringField(value, 'apiKey') &&
-    hasStringField(value, 'model') &&
-    hasOptionalStringField(value, 'baseUrl') &&
-    isOpenAiOptions(value.openaiOptions) &&
-    hasOptionalNumberField(value, 'imageMaxSize')
-  )
-}
-
-function isStoreLlmConfig(value: unknown): value is StoreLlmConfig {
-  return (
-    isRecord(value) &&
-    hasBooleanField(value, 'useSameAsVlm') &&
-    hasStringField(value, 'provider') &&
-    hasStringField(value, 'apiKey') &&
-    hasStringField(value, 'model') &&
-    hasStringField(value, 'baseUrl') &&
-    isOpenAiOptions(value.openaiOptions)
-  )
-}
-
-function isStoreEmbeddingConfig(value: unknown): value is StoreEmbeddingConfig {
-  return (
-    isRecord(value) &&
-    hasStringField(value, 'provider') &&
-    hasStringField(value, 'apiKey') &&
-    hasStringField(value, 'model') &&
-    hasOptionalStringField(value, 'baseUrl') &&
-    hasOptionalNumberField(value, 'rpmLimit') &&
-    hasOptionalNumberField(value, 'transportRetries') &&
-    hasOptionalNumberField(value, 'businessRetries') &&
-    hasOptionalNumberField(value, 'timeoutSeconds')
-  )
-}
-
-function isStoreRerankerConfig(value: unknown): value is StoreRerankerConfig {
-  return (
-    isRecord(value) &&
-    hasStringField(value, 'provider') &&
-    hasStringField(value, 'apiKey') &&
-    hasStringField(value, 'model') &&
-    hasOptionalStringField(value, 'baseUrl') &&
-    hasOptionalNumberField(value, 'topK') &&
-    hasOptionalNumberField(value, 'transportRetries') &&
-    hasOptionalNumberField(value, 'businessRetries') &&
-    hasOptionalNumberField(value, 'timeoutSeconds')
-  )
-}
-
-function isStoreImageGenConfig(value: unknown): value is StoreImageGenConfig {
-  return (
-    isRecord(value) &&
-    hasStringField(value, 'provider') &&
-    hasStringField(value, 'apiKey') &&
-    hasStringField(value, 'model') &&
-    hasOptionalStringField(value, 'baseUrl') &&
-    hasOptionalNumberField(value, 'transportRetries') &&
-    hasOptionalNumberField(value, 'businessRetries') &&
-    hasOptionalNumberField(value, 'timeoutSeconds')
-  )
-}
-
-function isBatchConfig(value: unknown): value is BatchConfig {
-  return (
-    isRecord(value) &&
-    hasNumberField(value, 'pagesPerBatch') &&
-    hasNumberField(value, 'contextBatchCount') &&
-    hasStringField(value, 'architecturePreset') &&
-    Array.isArray(value.customLayers) &&
-    value.customLayers.every(layer => (
-      isRecord(layer) &&
-      hasStringField(layer, 'name') &&
-      hasNumberField(layer, 'units') &&
-      hasBooleanField(layer, 'align')
-    ))
-  )
-}
-
-function parseInsightConfigStorage(value: unknown): InsightConfig | null {
-  if (!isRecord(value)) return null
-  if (value.insightConfigSchemaVersion !== INSIGHT_CONFIG_SCHEMA_VERSION) return null
-  if (!isRecord(value.config)) return null
-
-  const config = value.config
-  if (!isStoreVlmConfig(config.vlm)) return null
-  if (!isStoreLlmConfig(config.llm)) return null
-  if (!isStoreEmbeddingConfig(config.embedding)) return null
-  if (!isStoreRerankerConfig(config.reranker)) return null
-  if (!isStoreImageGenConfig(config.imageGen)) return null
-  if (!isBatchConfig(config.batch)) return null
-  if (!isStringRecord(config.prompts)) return null
-
-  return (value as InsightConfigStoragePayload).config
-}
-
 export const useInsightStore = defineStore('insight', () => {
-  function normalizeRerankerConfig(
-    source?: Partial<StoreRerankerConfig> | null,
-    previous?: StoreRerankerConfig
-  ): StoreRerankerConfig {
-    const provider = normalizeProviderId(source?.provider || previous?.provider || 'jina') || 'jina'
-    return {
-      provider,
-      apiKey: source?.apiKey ?? previous?.apiKey ?? '',
-      model: source?.model ?? previous?.model ?? 'jina-reranker-v2-base-multilingual',
-      baseUrl: source?.baseUrl ?? previous?.baseUrl ?? '',
-      topK: source?.topK ?? previous?.topK ?? 5,
-      transportRetries: source?.transportRetries ?? previous?.transportRetries ?? 10,
-      businessRetries: source?.businessRetries ?? previous?.businessRetries ?? 10,
-      timeoutSeconds: source?.timeoutSeconds ?? previous?.timeoutSeconds ?? 0,
-    }
-  }
-
-  function normalizeImageGenConfig(
-    source?: Partial<StoreImageGenConfig> | null,
-    previous?: StoreImageGenConfig
-  ): StoreImageGenConfig {
-    const normalizedProvider = normalizeProviderId(source?.provider || previous?.provider || 'gpt2api') || 'gpt2api'
-    const previousProvider = normalizeProviderId(previous?.provider || '') || 'gpt2api'
-    const providerChanged = normalizedProvider !== previousProvider
-    const providerDefaultModel = getProviderDefaultModel(normalizedProvider, 'imageGen')
-    const defaultModel = providerDefaultModel || (normalizedProvider === 'gpt2api' ? 'gpt-image-2' : '')
-    const defaultBaseUrl = getProviderBaseUrl(normalizedProvider, 'imageGen')
-    const base = previous ?? {
-      provider: normalizedProvider,
-      apiKey: '',
-      model: defaultModel,
-      baseUrl: defaultBaseUrl,
-      transportRetries: 10,
-      businessRetries: 10,
-      timeoutSeconds: 0,
-    }
-    const model = source?.model ?? (providerChanged ? providerDefaultModel : base.model || defaultModel)
-    const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
-    const businessRetries = source?.businessRetries ?? base.businessRetries ?? 10
-
-    return {
-      provider: normalizedProvider,
-      apiKey: source?.apiKey ?? base.apiKey,
-      model,
-      baseUrl,
-      transportRetries: source?.transportRetries ?? base.transportRetries ?? 10,
-      businessRetries,
-      timeoutSeconds: source?.timeoutSeconds ?? base.timeoutSeconds ?? 0
-    }
-  }
-
-  // ============================================================
-  // 核心状态
-  // ============================================================
-
   const currentBookId = ref<string | null>(null)
   const currentTaskId = ref<string | null>(null)
   const analysisStatus = ref<AnalysisStatus>('idle')
@@ -271,16 +57,8 @@ export const useInsightStore = defineStore('insight', () => {
   const error = ref<string | null>(null)
   const dataRefreshKey = ref(0)
 
-  // ============================================================
-  // Composables 初始化
-  // ============================================================
-
   const notesComposable = useInsightNotes({ currentBookId })
-  const qaComposable = useInsightQA({ currentBookId })
-
-  // ============================================================
-  // 配置管理
-  // ============================================================
+  const qaComposable = useInsightQA()
 
   const config = ref<InsightConfig>({
     vlm: {
@@ -315,18 +93,14 @@ export const useInsightStore = defineStore('insight', () => {
       businessRetries: 10,
       timeoutSeconds: 0
     },
-    reranker: normalizeRerankerConfig(),
-    imageGen: normalizeImageGenConfig(),
+    reranker: normalizeInsightRerankerConfig(),
+    imageGen: normalizeInsightImageGenConfig(),
     batch: { pagesPerBatch: 5, contextBatchCount: 3, architecturePreset: 'standard', customLayers: [] },
     prompts: {}
   })
 
   const providerConfigs = ref<ProviderConfigsCache>({ vlm: {}, llm: {}, embedding: {}, reranker: {}, imageGen: {} })
   const configManager = useInsightConfigManager(providerConfigs)
-
-  // ============================================================
-  // 计算属性
-  // ============================================================
 
   const progressPercent = computed(() => progress.value.total === 0 ? 0 : Math.round((progress.value.current / progress.value.total) * 100))
   const isAnalyzing = computed(() => analysisStatus.value === 'running')
@@ -339,10 +113,6 @@ export const useInsightStore = defineStore('insight', () => {
   })
   const totalPageCount = computed(() => bookTotalPages.value || pages.value.size)
   const selectedPage = computed(() => selectedPageNum.value === null ? null : pages.value.get(selectedPageNum.value) || null)
-
-  // ============================================================
-  // 状态管理方法
-  // ============================================================
 
   function setCurrentBook(bookId: string | null): void {
     const previousBookId = currentBookId.value
@@ -372,7 +142,6 @@ export const useInsightStore = defineStore('insight', () => {
   function setTimeline(events: TimelineEvent[]): void { timeline.value = events }
   function triggerDataRefresh(): void { dataRefreshKey.value = Date.now() }
 
-  // 问答管理
   function addQAMessage(message: QAMessage): void { qaComposable.qaHistory.value.push(message) }
   function updateLastAssistantMessage(content: string): void { const h = qaComposable.qaHistory.value; const m = h[h.length - 1]; if (m?.role === 'assistant') m.content = content }
   function clearQAHistory(): void { qaComposable.clearHistory() }
@@ -380,7 +149,6 @@ export const useInsightStore = defineStore('insight', () => {
   function setStreaming(streaming: boolean): void { qaComposable.setStreaming(streaming) }
   function setCurrentPage(pageNum: number): void { selectedPageNum.value = pageNum }
 
-  // 笔记管理
   function addNote(note: NoteData): Promise<void> {
     return notesComposable.addNote(note).then(result => {
       if (!result) throw new Error('保存笔记失败')
@@ -394,10 +162,6 @@ export const useInsightStore = defineStore('insight', () => {
 
   function setLoading(loading: boolean): void { isLoading.value = loading }
   function setError(message: string | null): void { error.value = message }
-
-  // ============================================================
-  // 配置管理 (使用 configManager)
-  // ============================================================
 
   function updateVlmConfig(c: Partial<VlmConfig>): void {
     config.value.vlm = {
@@ -424,8 +188,8 @@ export const useInsightStore = defineStore('insight', () => {
     saveConfigToStorage()
   }
   function updateEmbeddingConfig(c: Partial<EmbeddingConfig>): void { config.value.embedding = { ...config.value.embedding, ...c }; configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding); saveConfigToStorage() }
-  function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = normalizeRerankerConfig(c, config.value.reranker); configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker); saveConfigToStorage() }
-  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeImageGenConfig(c, config.value.imageGen); configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen); saveConfigToStorage() }
+  function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = normalizeInsightRerankerConfig(c, config.value.reranker); configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker); saveConfigToStorage() }
+  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeInsightImageGenConfig(c, config.value.imageGen); configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen); saveConfigToStorage() }
   function updateBatchConfig(c: Partial<BatchConfig>): void { config.value.batch = { ...config.value.batch, ...c }; saveConfigToStorage() }
   function updatePrompts(prompts: Record<string, string>): void { config.value.prompts = { ...config.value.prompts, ...prompts }; saveConfigToStorage() }
 
@@ -435,20 +199,79 @@ export const useInsightStore = defineStore('insight', () => {
   function setRerankerProvider(p: string): void { if (config.value.reranker.provider === p) return; configManager.rerankerManager.switch(config.value.reranker.provider, p, config.value.reranker); config.value.reranker.provider = p; saveConfigToStorage() }
   function setImageGenProvider(p: string): void { if (config.value.imageGen.provider === p) return; configManager.imageGenManager.switch(config.value.imageGen.provider, p, config.value.imageGen); config.value.imageGen.provider = p; saveConfigToStorage() }
 
+  function switchVlmProviderDraft(draft: VlmConfig): VlmConfig {
+    const previousProvider = config.value.vlm.provider
+    const nextProvider = draft.provider
+    if (previousProvider === nextProvider) return config.value.vlm
+
+    config.value.vlm = { ...draft, provider: previousProvider }
+    configManager.vlmManager.switch(previousProvider, nextProvider, config.value.vlm)
+    config.value.vlm.provider = nextProvider
+    saveConfigToStorage()
+    return config.value.vlm
+  }
+
+  function switchLlmProviderDraft(draft: LlmConfig): LlmConfig {
+    const previousProvider = config.value.llm.provider
+    const nextProvider = draft.provider
+    if (previousProvider === nextProvider) return config.value.llm
+
+    config.value.llm = { ...draft, provider: previousProvider }
+    configManager.llmManager.switch(previousProvider, nextProvider, config.value.llm)
+    config.value.llm.provider = nextProvider
+    saveConfigToStorage()
+    return config.value.llm
+  }
+
+  function switchEmbeddingProviderDraft(draft: EmbeddingConfig): EmbeddingConfig {
+    const previousProvider = config.value.embedding.provider
+    const nextProvider = draft.provider
+    if (previousProvider === nextProvider) return config.value.embedding
+
+    config.value.embedding = { ...draft, provider: previousProvider }
+    configManager.embeddingManager.switch(previousProvider, nextProvider, config.value.embedding)
+    config.value.embedding.provider = nextProvider
+    saveConfigToStorage()
+    return config.value.embedding
+  }
+
+  function switchRerankerProviderDraft(draft: RerankerConfig): RerankerConfig {
+    const previousProvider = config.value.reranker.provider
+    const nextProvider = draft.provider
+    if (previousProvider === nextProvider) return config.value.reranker
+
+    config.value.reranker = normalizeInsightRerankerConfig({ ...draft, provider: previousProvider }, config.value.reranker)
+    configManager.rerankerManager.switch(previousProvider, nextProvider, config.value.reranker)
+    config.value.reranker.provider = nextProvider
+    saveConfigToStorage()
+    return config.value.reranker
+  }
+
+  function switchImageGenProviderDraft(draft: ImageGenConfig): ImageGenConfig {
+    const previousProvider = config.value.imageGen.provider
+    const nextProvider = draft.provider
+    if (previousProvider === nextProvider) return config.value.imageGen
+
+    config.value.imageGen = normalizeInsightImageGenConfig({ ...draft, provider: previousProvider }, config.value.imageGen)
+    configManager.imageGenManager.switch(previousProvider, nextProvider, config.value.imageGen)
+    config.value.imageGen.provider = nextProvider
+    saveConfigToStorage()
+    return config.value.imageGen
+  }
+
   function setConfig(newConfig: InsightConfig): void {
     config.value = {
       ...newConfig,
-      reranker: normalizeRerankerConfig(newConfig.reranker, config.value.reranker),
-      imageGen: normalizeImageGenConfig(newConfig.imageGen, config.value.imageGen),
+      reranker: normalizeInsightRerankerConfig(newConfig.reranker, config.value.reranker),
+      imageGen: normalizeInsightImageGenConfig(newConfig.imageGen, config.value.imageGen),
     }
     saveConfigToStorage()
   }
   function saveConfigToStorage(): void {
     try {
-      localStorage.setItem('manga_insight_config', JSON.stringify({
-        insightConfigSchemaVersion: INSIGHT_CONFIG_SCHEMA_VERSION,
-        config: config.value,
-      }))
+      localStorage.setItem(INSIGHT_CONFIG_STORAGE_KEY, JSON.stringify(
+        buildInsightConfigStoragePayload(config.value),
+      ))
     } catch {
       return
     }
@@ -456,7 +279,7 @@ export const useInsightStore = defineStore('insight', () => {
   function loadConfigFromStorage(): void {
     try {
       configManager.loadFromStorage()
-      const stored = localStorage.getItem('manga_insight_config')
+      const stored = localStorage.getItem(INSIGHT_CONFIG_STORAGE_KEY)
       if (stored) {
         const parsed = parseInsightConfigStorage(JSON.parse(stored) as unknown)
         if (parsed) config.value = parsed
@@ -467,126 +290,12 @@ export const useInsightStore = defineStore('insight', () => {
   }
 
   function getConfigForApi(): Record<string, unknown> {
-    const mapProvider = <T>(cache: Record<string, T>, mapper: (c: T) => Record<string, unknown>) => Object.fromEntries(Object.entries(cache).map(([p, c]) => [p, mapper(c)]))
-    return {
-      vlm: { provider: config.value.vlm.provider, api_key: config.value.vlm.apiKey, model: config.value.vlm.model, base_url: config.value.vlm.baseUrl || null, openai_options: { request: { force_json_output: config.value.vlm.openaiOptions.request.forceJsonOutput, temperature: config.value.vlm.openaiOptions.request.temperature, ...(config.value.vlm.openaiOptions.request.extraBody !== undefined ? { extra_body: config.value.vlm.openaiOptions.request.extraBody } : {}) }, execution: { use_stream: config.value.vlm.openaiOptions.execution.useStream, rpm_limit: config.value.vlm.openaiOptions.execution.rpmLimit, transport_retries: config.value.vlm.openaiOptions.execution.transportRetries, business_retries: config.value.vlm.openaiOptions.execution.businessRetries } }, image_max_size: config.value.vlm.imageMaxSize },
-      chat_llm: { use_same_as_vlm: config.value.llm.useSameAsVlm, provider: config.value.llm.provider, api_key: config.value.llm.apiKey, model: config.value.llm.model, base_url: config.value.llm.baseUrl || null, openai_options: { request: { force_json_output: config.value.llm.openaiOptions.request.forceJsonOutput, temperature: config.value.llm.openaiOptions.request.temperature, ...(config.value.llm.openaiOptions.request.extraBody !== undefined ? { extra_body: config.value.llm.openaiOptions.request.extraBody } : {}) }, execution: { use_stream: config.value.llm.openaiOptions.execution.useStream, rpm_limit: config.value.llm.openaiOptions.execution.rpmLimit, transport_retries: config.value.llm.openaiOptions.execution.transportRetries, business_retries: config.value.llm.openaiOptions.execution.businessRetries } } },
-      embedding: {
-        provider: config.value.embedding.provider,
-        api_key: config.value.embedding.apiKey,
-        model: config.value.embedding.model,
-        base_url: config.value.embedding.baseUrl || null,
-        rpm_limit: config.value.embedding.rpmLimit,
-        transport_retries: config.value.embedding.transportRetries ?? 10,
-        business_retries: config.value.embedding.businessRetries ?? 10,
-        timeout_seconds: config.value.embedding.timeoutSeconds ?? 0
-      },
-      reranker: {
-        provider: config.value.reranker.provider,
-        api_key: config.value.reranker.apiKey,
-        model: config.value.reranker.model,
-        base_url: config.value.reranker.baseUrl || null,
-        top_k: config.value.reranker.topK,
-        transport_retries: config.value.reranker.transportRetries ?? 10,
-        business_retries: config.value.reranker.businessRetries ?? 10,
-        timeout_seconds: config.value.reranker.timeoutSeconds ?? 0,
-      },
-      image_gen: {
-        provider: config.value.imageGen.provider,
-        api_key: config.value.imageGen.apiKey,
-        model: config.value.imageGen.model,
-        base_url: config.value.imageGen.baseUrl || null,
-        transport_retries: config.value.imageGen.transportRetries ?? 10,
-        business_retries: config.value.imageGen.businessRetries ?? 10,
-        timeout_seconds: config.value.imageGen.timeoutSeconds ?? 0,
-      },
-      analysis: { batch: { pages_per_batch: config.value.batch.pagesPerBatch, context_batch_count: config.value.batch.contextBatchCount, architecture_preset: config.value.batch.architecturePreset, custom_layers: config.value.batch.customLayers.map(l => ({ name: l.name, units_per_group: l.units, align_to_chapter: l.align })) } },
-      prompts: config.value.prompts,
-      provider_settings: {
-        vlmProvider: mapProvider(providerConfigs.value.vlm, c => ({
-          api_key: c.apiKey || '',
-          model: c.model || '',
-          base_url: c.baseUrl || '',
-          openai_options: serializeInsightOpenAiOptions(c.openaiOptions),
-          image_max_size: c.imageMaxSize ?? 1280
-        })),
-        llmProvider: mapProvider(providerConfigs.value.llm, c => ({
-          api_key: c.apiKey || '',
-          model: c.model || '',
-          base_url: c.baseUrl || '',
-          openai_options: serializeInsightOpenAiOptions(c.openaiOptions)
-        })),
-        embeddingProvider: mapProvider(providerConfigs.value.embedding, c => ({
-          api_key: c.apiKey || '',
-          model: c.model || '',
-          base_url: c.baseUrl || '',
-          rpm_limit: c.rpmLimit ?? 0,
-          transport_retries: c.transportRetries ?? 10,
-          business_retries: c.businessRetries ?? 10,
-          timeout_seconds: c.timeoutSeconds ?? 0
-        })),
-        rerankerProvider: mapProvider(providerConfigs.value.reranker, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', top_k: c.topK ?? 5, transport_retries: c.transportRetries ?? 10, business_retries: c.businessRetries ?? 10, timeout_seconds: c.timeoutSeconds ?? 0 })),
-        imageGenProvider: mapProvider(providerConfigs.value.imageGen, c => ({ api_key: c.apiKey || '', model: c.model || '', base_url: c.baseUrl || '', transport_retries: c.transportRetries ?? 10, business_retries: c.businessRetries ?? 10, timeout_seconds: c.timeoutSeconds ?? 0 }))
-      }
-    }
+    return buildInsightConfigApiPayload(config.value, providerConfigs.value)
   }
 
   function setConfigFromApi(apiConfig: Record<string, unknown>): void {
-    const vlm = apiConfig.vlm as Record<string, unknown> | undefined
-    const chatLlm = apiConfig.chat_llm as Record<string, unknown> | undefined
-    const embedding = apiConfig.embedding as Record<string, unknown> | undefined
-    const reranker = apiConfig.reranker as Record<string, unknown> | undefined
-    const batch = (apiConfig.analysis as Record<string, unknown> | undefined)?.batch as Record<string, unknown> | undefined
-    const imageGen = apiConfig.image_gen as Record<string, unknown> | undefined
-
-    if (vlm) config.value.vlm = { provider: (vlm.provider as string) || 'gemini', apiKey: (vlm.api_key as string) || '', model: (vlm.model as string) || '', baseUrl: (vlm.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(vlm.openai_options, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: vlm.image_max_size !== undefined && vlm.image_max_size !== null ? Number(vlm.image_max_size) : 1280 }
-    if (chatLlm) config.value.llm = { useSameAsVlm: chatLlm.use_same_as_vlm === true ? true : false, provider: (chatLlm.provider as string) || config.value.vlm.provider, apiKey: (chatLlm.api_key as string) || config.value.vlm.apiKey, model: (chatLlm.model as string) || config.value.vlm.model, baseUrl: (chatLlm.base_url as string) || config.value.vlm.baseUrl || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(chatLlm.openai_options, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
-    if (embedding) config.value.embedding = {
-      provider: (embedding.provider as string) || 'openai',
-      apiKey: (embedding.api_key as string) || '',
-      model: (embedding.model as string) || '',
-      baseUrl: (embedding.base_url as string) || '',
-      rpmLimit: (embedding.rpm_limit as number) ?? 0,
-      transportRetries: (embedding.transport_retries as number) ?? 10,
-      businessRetries: (embedding.business_retries as number) ?? 10,
-      timeoutSeconds: (embedding.timeout_seconds as number) ?? 0
-    }
-    if (reranker) config.value.reranker = normalizeRerankerConfig({
-      provider: (reranker.provider as string) || 'jina',
-      apiKey: (reranker.api_key as string) || '',
-      model: (reranker.model as string) || '',
-      baseUrl: (reranker.base_url as string) || '',
-      topK: (reranker.top_k as number) || 5,
-      transportRetries: (reranker.transport_retries as number) ?? 10,
-      businessRetries: (reranker.business_retries as number) ?? 10,
-      timeoutSeconds: (reranker.timeout_seconds as number) ?? 0,
-    }, config.value.reranker)
-    if (batch) { const cl = batch.custom_layers as Array<Record<string, unknown>> | undefined; config.value.batch = { pagesPerBatch: (batch.pages_per_batch as number) || 5, contextBatchCount: (batch.context_batch_count as number) ?? 3, architecturePreset: (batch.architecture_preset as string) || 'standard', customLayers: cl?.map(l => ({ name: (l.name as string) || '', units: (l.units_per_group as number) || 1, align: (l.align_to_chapter as boolean) || false })) || [] } }
-    if (imageGen) config.value.imageGen = normalizeImageGenConfig({
-      provider: imageGen.provider as string | undefined,
-      apiKey: (imageGen.api_key as string) || '',
-      model: imageGen.model as string | undefined,
-      baseUrl: (imageGen.base_url as string) || '',
-      transportRetries: (imageGen.transport_retries as number) ?? 10,
-      businessRetries: (imageGen.business_retries as number) ?? 10,
-      timeoutSeconds: (imageGen.timeout_seconds as number) ?? 0,
-    }, config.value.imageGen)
-
-    const ps = apiConfig.provider_settings as Record<string, Record<string, Record<string, unknown>>> | undefined
-    if (ps) {
-      if (ps.vlmProvider) for (const [p, c] of Object.entries(ps.vlmProvider)) providerConfigs.value.vlm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(c.openai_options, { request: { forceJsonOutput: false, temperature: 0.3 }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }), imageMaxSize: (c.image_max_size as number) ?? 1280 }
-      if (ps.llmProvider) for (const [p, c] of Object.entries(ps.llmProvider)) providerConfigs.value.llm[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', openaiOptions: deserializeOpenAICompatibleOptionsFromApi(c.openai_options, { request: { forceJsonOutput: false }, execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 } }) }
-      if (ps.embeddingProvider) for (const [p, c] of Object.entries(ps.embeddingProvider)) providerConfigs.value.embedding[p] = {
-        apiKey: (c.api_key as string) || '',
-        model: (c.model as string) || '',
-        baseUrl: (c.base_url as string) || '',
-        rpmLimit: (c.rpm_limit as number) ?? 0,
-        transportRetries: (c.transport_retries as number) ?? 10,
-        businessRetries: (c.business_retries as number) ?? 10,
-        timeoutSeconds: (c.timeout_seconds as number) ?? 0
-      }
-      if (ps.rerankerProvider) for (const [p, c] of Object.entries(ps.rerankerProvider)) providerConfigs.value.reranker[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', topK: (c.top_k as number) ?? 5, transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? 10, timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
-      if (ps.imageGenProvider) for (const [p, c] of Object.entries(ps.imageGenProvider)) providerConfigs.value.imageGen[p] = { apiKey: (c.api_key as string) || '', model: (c.model as string) || '', baseUrl: (c.base_url as string) || '', transportRetries: (c.transport_retries as number) ?? 10, businessRetries: (c.business_retries as number) ?? 10, timeoutSeconds: (c.timeout_seconds as number) ?? 0 }
+    applyActiveInsightConfigFromApi(config.value, apiConfig)
+    if (applyInsightProviderSettingsFromApi(providerConfigs.value, apiConfig.provider_settings)) {
       configManager.saveToStorage()
     }
     if (apiConfig.prompts) config.value.prompts = apiConfig.prompts as Record<string, string>
@@ -607,6 +316,7 @@ export const useInsightStore = defineStore('insight', () => {
     setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setAnalysisMode, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, setPageData, setPages, selectPage, setOverview, setGeneratedTemplates, setTimeline, dataRefreshKey, triggerDataRefresh,
     addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, loadNotesFromStorage, setLoading, setError,
     updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, saveConfigToStorage, loadConfigFromStorage, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
+    switchVlmProviderDraft, switchLlmProviderDraft, switchEmbeddingProviderDraft, switchRerankerProviderDraft, switchImageGenProviderDraft,
     resetAnalysis, reset
   }
 })

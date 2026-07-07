@@ -1,20 +1,34 @@
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineComponent, h, ref } from 'vue'
 import { describe, expect, it } from 'vitest'
 
 import { useEditWorkspaceResizeActions } from '@/composables/edit/useEditWorkspaceResizeActions'
 
 describe('useEditWorkspaceResizeActions', () => {
+  it('uses explicit panel refs instead of querying layout classes', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/composables/edit/useEditWorkspaceResizeActions.ts'),
+      'utf8',
+    )
+
+    expect(source).not.toContain("querySelector('.original-panel')")
+    expect(source).not.toContain("querySelector('.translated-panel')")
+  })
+
   it('restores document body resize styles when the owner unmounts during divider drag', () => {
     let actions: ReturnType<typeof useEditWorkspaceResizeActions> | null = null
-    const originalViewport = document.createElement('div')
+    const originalPanel = document.createElement('div')
+    const translatedPanel = document.createElement('div')
     const editPanel = document.createElement('div')
 
     const Host = defineComponent({
       setup() {
         actions = useEditWorkspaceResizeActions({
           layoutMode: ref('horizontal'),
-          originalViewportRef: ref(originalViewport),
+          originalPanelRef: ref(originalPanel),
+          translatedPanelRef: ref(translatedPanel),
           editPanelRef: ref(editPanel),
         })
         return () => h('div')

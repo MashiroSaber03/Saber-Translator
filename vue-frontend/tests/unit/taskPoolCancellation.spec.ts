@@ -1,4 +1,6 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { DeepLearningLock } from '@/composables/translation/parallel/DeepLearningLock'
 import { ParallelProgressTracker } from '@/composables/translation/parallel/ParallelProgressTracker'
@@ -71,6 +73,34 @@ function createTask(): PipelineTask {
 }
 
 describe('TaskPool cancellation', () => {
+  it('keeps parallel foundation files free of scaffold narration', () => {
+    const files = [
+      'src/composables/translation/parallel/index.ts',
+      'src/composables/translation/parallel/types.ts',
+      'src/composables/translation/parallel/DeepLearningLock.ts',
+      'src/composables/translation/parallel/TaskPool.ts',
+      'src/composables/translation/parallel/ResultCollector.ts',
+      'src/composables/translation/parallel/ParallelProgressTracker.ts',
+      'src/composables/translation/parallel/ParallelPipeline.ts',
+    ]
+
+    for (const file of files) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+
+      expect(source, file).not.toContain('/**')
+      expect(source, file).not.toContain('@param')
+      expect(source, file).not.toContain('并行翻译模块')
+      expect(source, file).not.toContain('类型定义')
+      expect(source, file).not.toContain('任务池基类')
+      expect(source, file).not.toContain('深度学习模型互斥锁')
+      expect(source, file).not.toContain('池子状态')
+      expect(source, file).not.toContain('结果收集器')
+      expect(source, file).not.toContain('并行进度追踪器')
+      expect(source, file).not.toContain('并行翻译管线主控制器')
+      expect(source, file).not.toContain('  //')
+    }
+  })
+
   it('does not process a task that was cancelled while waiting for the deep-learning lock', async () => {
     const lock = new DeepLearningLock(1)
     const tracker = new ParallelProgressTracker()

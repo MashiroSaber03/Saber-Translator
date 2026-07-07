@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import * as continuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
+import { runContinuationMutation, toContinuationActionError } from './continuationActionRunner'
 
 export interface CharacterManagementComposable {
     addCharacter: (name: string, aliases: string[], description: string) => Promise<void>
@@ -19,65 +20,54 @@ export interface CharacterManagementComposable {
 
 export function useCharacterManagement(bookId: Ref<string | undefined>, state: ContinuationState): CharacterManagementComposable {
     async function addCharacter(name: string, aliases: string[], description: string) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const result = await continuationApi.addCharacter(bookId.value, {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '添加失败',
+            successMessage: '角色添加成功',
+            run: () => continuationApi.addCharacter(activeBookId, {
                 name,
                 aliases,
                 description
-            })
-
-            if (result.success) {
-                await state.initializeData()
-                state.showMessage('角色添加成功', 'success')
-            } else {
-                state.showMessage('添加失败: ' + result.error, 'error')
-            }
-        } catch (error) {
-            state.showMessage('添加失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+            }),
+            afterSuccess: () => state.initializeData()
+        })
     }
 
     async function deleteCharacter(name: string) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const result = await continuationApi.deleteCharacter(bookId.value, name)
-
-            if (result.success) {
-                await state.initializeData()
-                state.showMessage('角色删除成功', 'success')
-            } else {
-                state.showMessage('删除失败: ' + result.error, 'error')
-            }
-        } catch (error) {
-            state.showMessage('删除失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+        await runContinuationMutation({
+            state,
+            failurePrefix: '删除失败',
+            successMessage: '角色删除成功',
+            run: () => continuationApi.deleteCharacter(activeBookId, name),
+            afterSuccess: () => state.initializeData()
+        })
     }
 
     async function updateCharacterInfo(name: string, newName: string, aliases: string[]) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const result = await continuationApi.updateCharacterInfo(bookId.value, name, {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '更新失败',
+            successMessage: '角色信息更新成功',
+            run: () => continuationApi.updateCharacterInfo(activeBookId, name, {
                 name: newName,
                 aliases
-            })
-
-            if (result.success) {
-                await state.initializeData()
-                state.showMessage('角色信息更新成功', 'success')
-            } else {
-                state.showMessage('更新失败: ' + result.error, 'error')
-            }
-        } catch (error) {
-            state.showMessage('更新失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+            }),
+            afterSuccess: () => state.initializeData()
+        })
     }
 
     async function toggleCharacterEnabled(name: string, enabled: boolean) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
         const char = state.characters.value.find(c => c.name === name)
         if (!char) return
@@ -85,130 +75,112 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         const previousEnabled = char.enabled
         char.enabled = enabled
 
-        try {
-            const result = await continuationApi.updateCharacterInfo(bookId.value, name, {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '操作失败',
+            run: () => continuationApi.updateCharacterInfo(activeBookId, name, {
                 name: char.name,
                 aliases: char.aliases || [],
                 enabled
-            })
-
-            if (!result.success) {
+            }),
+            onFailure: () => {
                 char.enabled = previousEnabled
-                state.showMessage('操作失败: ' + result.error, 'error')
             }
-        } catch (error) {
-            char.enabled = previousEnabled
-            state.showMessage('操作失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+        })
     }
 
     async function addForm(charName: string, formName: string, description: string) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const char = state.characters.value.find(c => c.name === charName)
-            const existingForms = new Set((char?.forms || []).map(form => form.form_id))
-            let nextIndex = 1
-            while (existingForms.has(`form_${nextIndex}`)) {
-                nextIndex += 1
-            }
-            const formId = `form_${nextIndex}`
+        const char = state.characters.value.find(c => c.name === charName)
+        const existingForms = new Set((char?.forms || []).map(form => form.form_id))
+        let nextIndex = 1
+        while (existingForms.has(`form_${nextIndex}`)) {
+            nextIndex += 1
+        }
+        const formId = `form_${nextIndex}`
 
-            const result = await continuationApi.addCharacterForm(bookId.value, charName, {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '添加失败',
+            successMessage: '形态添加成功',
+            run: () => continuationApi.addCharacterForm(activeBookId, charName, {
                 form_id: formId,
                 form_name: formName,
                 description
-            })
-
-            if (result.success) {
-                await state.initializeData()
-                state.showMessage('形态添加成功', 'success')
-            } else {
-                state.showMessage('添加失败: ' + result.error, 'error')
-            }
-        } catch (error) {
-            state.showMessage('添加失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+            }),
+            afterSuccess: () => state.initializeData()
+        })
     }
 
     async function updateForm(charName: string, formId: string, formName: string, description: string) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const result = await continuationApi.updateCharacterForm(bookId.value, charName, formId, {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '更新失败',
+            successMessage: '形态更新成功',
+            run: () => continuationApi.updateCharacterForm(activeBookId, charName, formId, {
                 form_name: formName,
                 description
-            })
-
-            if (result.success) {
-                await state.initializeData()
-                state.showMessage('形态更新成功', 'success')
-            } else {
-                state.showMessage('更新失败: ' + result.error, 'error')
-            }
-        } catch (error) {
-            state.showMessage('更新失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+            }),
+            afterSuccess: () => state.initializeData()
+        })
     }
 
     async function deleteForm(charName: string, formId: string) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const result = await continuationApi.deleteCharacterForm(bookId.value, charName, formId)
-
-            if (result.success) {
-                await state.initializeData()
-                state.showMessage('形态删除成功', 'success')
-            } else {
-                state.showMessage('删除失败: ' + result.error, 'error')
-            }
-        } catch (error) {
-            state.showMessage('删除失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+        await runContinuationMutation({
+            state,
+            failurePrefix: '删除失败',
+            successMessage: '形态删除成功',
+            run: () => continuationApi.deleteCharacterForm(activeBookId, charName, formId),
+            afterSuccess: () => state.initializeData()
+        })
     }
 
     async function uploadFormImage(charName: string, formId: string, file: File) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const formData = new FormData()
-            formData.append('image', file)
+        const formData = new FormData()
+        formData.append('image', file)
 
-            const result = await continuationApi.uploadFormImage(bookId.value, charName, formId, formData)
-
-            if (result.success) {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '上传失败',
+            successMessage: '图片上传成功',
+            run: () => continuationApi.uploadFormImage(activeBookId, charName, formId, formData),
+            afterSuccess: async () => {
                 state.imageRefreshKey.value = Date.now()
                 await state.initializeData()
-                state.showMessage('图片上传成功', 'success')
-            } else {
-                state.showMessage('上传失败: ' + result.error, 'error')
             }
-        } catch (error) {
-            state.showMessage('上传失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+        })
     }
 
     async function deleteFormImage(charName: string, formId: string) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
-        try {
-            const result = await continuationApi.deleteFormImage(bookId.value, charName, formId)
-
-            if (result.success) {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '删除失败',
+            successMessage: '图片删除成功',
+            run: () => continuationApi.deleteFormImage(activeBookId, charName, formId),
+            afterSuccess: async () => {
                 state.imageRefreshKey.value = Date.now()
                 await state.initializeData()
-                state.showMessage('图片删除成功', 'success')
-            } else {
-                state.showMessage('删除失败: ' + result.error, 'error')
             }
-        } catch (error) {
-            state.showMessage('删除失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+        })
     }
 
     async function toggleFormEnabled(charName: string, formId: string, enabled: boolean) {
-        if (!bookId.value) return
+        const activeBookId = bookId.value
+        if (!activeBookId) return
 
         const char = state.characters.value.find(c => c.name === charName)
         if (!char) return
@@ -219,17 +191,14 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         const previousEnabled = form.enabled
         form.enabled = enabled
 
-        try {
-            const result = await continuationApi.toggleFormEnabled(bookId.value, charName, formId, enabled)
-
-            if (!result.success) {
+        await runContinuationMutation({
+            state,
+            failurePrefix: '操作失败',
+            run: () => continuationApi.toggleFormEnabled(activeBookId, charName, formId, enabled),
+            onFailure: () => {
                 form.enabled = previousEnabled
-                state.showMessage('操作失败: ' + result.error, 'error')
             }
-        } catch (error) {
-            form.enabled = previousEnabled
-            state.showMessage('操作失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-        }
+        })
     }
 
     async function generateOrtho(charName: string, formId: string, sourceImages: File[]) {
@@ -241,7 +210,7 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error.message : '网络错误'
+                error: toContinuationActionError(error)
             }
         }
     }

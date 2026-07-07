@@ -1,31 +1,45 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
+import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import type { PlotThread } from './timelineTypes'
 
-defineProps<{
+const props = defineProps<{
   plotThreads: PlotThread[]
   storySummary: string
 }>()
+
+const themeItems = computed<ProductChipItem[]>(() => {
+  return props.plotThreads.slice(0, 5).map((thread) => ({
+    id: thread.id,
+    label: thread.name,
+    tone: 'inverse',
+  }))
+})
 </script>
 
 <template>
   <div class="timeline-summary-card">
-    <h4>📖 故事概要</h4>
-    <p class="one-sentence">{{ storySummary }}</p>
-    <div v-if="plotThreads.length" class="themes">
-      <span>主题：</span>
-      <span
-        v-for="thread in plotThreads.slice(0, 5)"
-        :key="thread.id"
-        class="theme-tag"
-      >
-        {{ thread.name }}
-      </span>
-    </div>
+    <h4 class="timeline-summary-card__title">
+      <UiIcon name="book-open" size="16" />
+      <span>故事概要</span>
+    </h4>
+    <p class="timeline-summary-card__summary">{{ storySummary }}</p>
+    <ProductChipList
+      v-if="themeItems.length"
+      aria-label="故事主题"
+      label="主题："
+      :items="themeItems"
+    />
   </div>
 </template>
 
 <style scoped>
 .timeline-summary-card {
+  --product-chip-list-text: var(--color-text-inverse);
+  --product-chip-list-label-text: var(--color-text-inverse);
+
   background: linear-gradient(135deg, var(--insight-action-primary) 0%, var(--insight-action-primary-strong) 100%);
   color: var(--color-text-inverse);
   border-radius: 12px;
@@ -33,30 +47,18 @@ defineProps<{
   margin-bottom: 24px;
 }
 
-.timeline-summary-card h4 {
+.timeline-summary-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 12px;
   font-size: 16px;
   font-weight: 600;
 }
 
-.one-sentence {
+.timeline-summary-card__summary {
   font-size: 15px;
   line-height: 1.6;
   margin-bottom: 12px;
-}
-
-.themes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.theme-tag {
-  background: var(--timeline-panel-summary-tag-surface);
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 12px;
 }
 </style>

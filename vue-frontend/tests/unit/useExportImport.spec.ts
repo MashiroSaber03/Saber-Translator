@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { useImageStore } from '@/stores/imageStore'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import type { useExportImport as useExportImportFn } from '@/composables/useExportImport'
@@ -63,6 +65,29 @@ describe('useExportImport', () => {
   afterEach(() => {
     vi.useRealTimers()
     document.body.innerHTML = ''
+  })
+
+  it('keeps export/import property tests on the production composable boundary', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/property/exportImport.property.ts'),
+      'utf8',
+    )
+    const shadowExportHelper = 'function exportText' + 'ToJson'
+    const shadowLogicComment = '与 useExportImport 中的 exportText' + 'ToJson 逻辑一致'
+
+    expect(source).toContain("from '@/composables/useExportImport'")
+    expect(source).toContain('useExportImport()')
+    expect(source).not.toContain(shadowExportHelper)
+    expect(source).not.toContain(shadowLogicComment)
+  })
+
+  it('reuses the edit render request projection for import rerenders', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/useExportImport.ts'), 'utf8')
+
+    expect(source).toContain('buildEditRenderInput(')
+    expect(source).not.toContain('buildSavedTextStylesFromSettings')
+    expect(source).not.toContain('bubbleCoords: img.bubbleStates.map')
+    expect(source).not.toContain('colors: img.bubbleStates.map')
   })
 
   it('imports translated text and rerenders without routine console output', async () => {

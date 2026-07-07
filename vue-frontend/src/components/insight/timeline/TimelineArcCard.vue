@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import TimelineEventCardShell from './TimelineEventCardShell.vue'
 import type { TimelineArc } from './timelineTypes'
 
 const props = defineProps<{
@@ -17,153 +18,43 @@ defineEmits<{
 
 const startPage = computed(() => props.arc.page_range?.start || props.arc.start_page || 1)
 const endPage = computed(() => props.arc.page_range?.end || props.arc.end_page || '?')
-
-function hideFailedImage(event: Event): void {
-  const image = event.target as HTMLImageElement
-  image.style.display = 'none'
-}
 </script>
 
 <template>
-  <div class="timeline-card">
-    <div class="timeline-card-header">
-      <UiButton
-        variant="toolbar"
-        type="button"
-        class="timeline-thumbnail-action"
-        :aria-label="`查看第 ${startPage} 页`"
-        @click="$emit('showPage', startPage)"
-      >
-        <img
-          class="timeline-thumbnail"
-          :src="thumbnailUrl"
-          :alt="`第${startPage}页`"
-          loading="lazy"
-          @error="hideFailedImage"
-        >
-      </UiButton>
-      <UiButton
-        variant="toolbar"
-        type="button"
-        class="timeline-card-toggle"
-        :aria-expanded="String(expanded)"
-        @click="$emit('toggle', arcId)"
-      >
-        <span class="timeline-card-title">
-          <span class="timeline-page-range">第 {{ startPage }}-{{ endPage }} 页</span>
-          <span class="timeline-event-count">{{ arc.name }}</span>
-        </span>
-        <span class="expand-icon">{{ expanded ? '▼' : '▶' }}</span>
-      </UiButton>
-    </div>
+  <TimelineEventCardShell
+    :badge-label="arc.name"
+    :expanded="expanded"
+    :page-range-label="`第 ${startPage}-${endPage} 页`"
+    :thumbnail-page="startPage"
+    :thumbnail-url="thumbnailUrl"
+    :toggle-aria-label="`切换剧情弧 ${arc.name}`"
+    @show-page="$emit('showPage', $event)"
+    @toggle="$emit('toggle', arcId)"
+  >
+    <template v-if="arc.description" #summary>
+      {{ arc.description }}
+    </template>
 
-    <div v-if="arc.description" class="timeline-summary">{{ arc.description }}</div>
-
-    <div v-if="arc.mood" class="timeline-mood">
-      <span class="label">🎨 氛围：</span>{{ arc.mood }}
+    <div v-if="arc.mood" class="timeline-arc-card__mood">
+      <span class="timeline-arc-card__mood-label">
+        <UiIcon name="palette" size="13" />
+        氛围：
+      </span>{{ arc.mood }}
     </div>
-  </div>
+  </TimelineEventCardShell>
 </template>
 
 <style scoped>
-.timeline-card {
-  flex: 1;
-  background: var(--insight-surface-secondary);
-  border-radius: 12px;
-  border: 1px solid var(--color-border-muted);
-  overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.timeline-card:hover {
-  transform: translateX(4px);
-  box-shadow: 0 4px 12px var(--timeline-panel-card-shadow);
-}
-
-.timeline-card-header {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  background: var(--insight-surface-tertiary);
-  border-bottom: 1px solid var(--color-border-muted);
-}
-
-.timeline-thumbnail-action {
-  flex-shrink: 0;
-  border-radius: 6px;
-}
-
-.timeline-card-toggle {
-  display: flex;
-  flex: 1;
-  align-items: stretch;
-  justify-content: space-between;
-  min-width: 0;
-  text-align: left;
-}
-
-.timeline-thumbnail {
-  width: 60px;
-  height: 80px;
-  object-fit: cover;
-  border-radius: 6px;
-  transition: transform 0.2s;
-  background: var(--insight-surface-page);
-}
-
-.timeline-thumbnail-action:hover .timeline-thumbnail {
-  transform: scale(1.05);
-}
-
-.timeline-card-title {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.timeline-page-range {
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--insight-text-primary);
-}
-
-.timeline-event-count {
-  width: fit-content;
-  max-width: 100%;
-  padding: 2px 8px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--insight-surface-page);
-  color: var(--insight-text-secondary);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.expand-icon {
-  align-self: center;
-  color: var(--insight-text-secondary);
-  font-size: 10px;
-}
-
-.timeline-summary {
-  padding: 12px;
-  border-bottom: 1px solid var(--color-border-muted);
-  color: var(--insight-text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.timeline-mood {
+.timeline-arc-card__mood {
   padding: 0 12px 12px;
   color: var(--insight-text-secondary);
   font-size: 12px;
 }
 
-.label {
+.timeline-arc-card__mood-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--insight-text-secondary);
 }
 </style>

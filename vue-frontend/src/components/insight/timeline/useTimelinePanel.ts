@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as insightApi from '@/api/insight'
 import { useInsightStore } from '@/stores/insightStore'
 import type { TimelineData } from './timelineTypes'
-import type { InsightTimelineResponse } from '@/types'
+import type { InsightTimelineResponse } from '@/types/insight'
 
 type TimelinePayload = Partial<TimelineData> & {
   summary?: string | { one_sentence?: string }

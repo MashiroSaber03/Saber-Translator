@@ -1,38 +1,36 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import UiInput from '@/components/ui/UiInput.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
-import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import ProductCollapsibleSection from '@/components/product/ProductCollapsibleSection.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import WebImportPreprocessSettings from '../WebImportPreprocessSettings.vue'
-import type { useWebImportStore } from '@/stores/webImportStore'
+import WebImportBasicSettingsPanel from './WebImportBasicSettingsPanel.vue'
+import WebImportAdvancedSettingsPanel from './WebImportAdvancedSettingsPanel.vue'
+import type { UiSelectOption } from '@/components/ui/selectTypes'
 import type { WebImportSettings } from '@/types/webImport'
+import type { WebImportSettingsActions } from './webImportSettingsActions'
 
 type SettingsTab = 'basic' | 'preprocess' | 'advanced'
-type SelectOption = { label: string; value: string | number }
 
 defineProps<{
   activeSettingsTab: SettingsTab
-  agentProviderOptions: SelectOption[]
+  agentProviderOptions: UiSelectOption[]
   draftSettings: WebImportSettings
   hasUnsavedSettings: boolean
   isFetchingModels: boolean
   isSavingSettings: boolean
   modelList: string[]
-  modelListOptions: SelectOption[]
+  modelListOptions: UiSelectOption[]
   providerRequiresApiKey: (provider: string) => boolean
+  settingsActions: WebImportSettingsActions
   settingsExpanded: boolean
-  showAgentKey: boolean
   showCustomUrl: boolean
-  showFirecrawlKey: boolean
   supportsFetchModels: boolean
   testingAgent: boolean
   testingFirecrawl: boolean
-  webImportStore: ReturnType<typeof useWebImportStore>
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'discard-settings'): void
   (event: 'fetch-models'): void
   (event: 'reset-prompt'): void
@@ -41,596 +39,125 @@ defineEmits<{
   (event: 'test-firecrawl'): void
   (event: 'update:activeSettingsTab', value: SettingsTab): void
   (event: 'update:settingsExpanded', value: boolean): void
-  (event: 'update:showAgentKey', value: boolean): void
-  (event: 'update:showFirecrawlKey', value: boolean): void
 }>()
+
+const settingsTabs = [
+  { id: 'basic', label: '基本设置', iconName: 'settings' },
+  { id: 'preprocess', label: '图片预处理', iconName: 'image' },
+  { id: 'advanced', label: '高级设置', iconName: 'list' },
+] satisfies Array<{ id: SettingsTab; label: string; iconName: 'settings' | 'image' | 'list' }>
+
+const settingsTabIds = settingsTabs.map(tab => tab.id)
+
+function isSettingsTab(tabId: string): tabId is SettingsTab {
+  return settingsTabIds.some(id => id === tabId)
+}
+
+function updateSettingsTab(tabId: string): void {
+  if (!isSettingsTab(tabId)) return
+  emit('update:activeSettingsTab', tabId)
+}
 </script>
 
 <template>
-  <div class="web-import-modal__settings-section">
-    <UiButton
-      variant="toolbar"
-      type="button"
-      class="web-import-modal__settings-header"
-      :aria-expanded="settingsExpanded ? 'true' : 'false'"
-      @click="$emit('update:settingsExpanded', !settingsExpanded)"
+  <ProductCollapsibleSection
+    class="web-import-settings-section"
+    title="设置"
+    hint="点击展开配置"
+    icon-name="settings"
+    aria-label="网页导入设置"
+    :expanded="settingsExpanded"
+    @update:expanded="$emit('update:settingsExpanded', $event)"
+  >
+    <ProductSegmentedTabs
+      :tabs="settingsTabs"
+      :active-tab="activeSettingsTab"
+      aria-label="网页导入设置分类"
+      class="web-import-settings__tabs"
+      @update:active-tab="updateSettingsTab"
+    />
+
+    <ProductStatusBanner
+      class="web-import-settings__sync-status"
+      :tone="hasUnsavedSettings ? 'warning' : 'success'"
+      role="status"
+      aria-live="polite"
     >
-      <span class="web-import-modal__settings-toggle">{{ settingsExpanded ? '▼' : '▶' }}</span>
-      <span class="web-import-modal__settings-title">⚙️ 设置</span>
-      <span class="web-import-modal__settings-hint">点击展开配置</span>
-    </UiButton>
-
-    <div v-if="settingsExpanded" class="web-import-modal__settings-content">
-      <div class="web-import-modal__settings-tabs">
+      {{ hasUnsavedSettings ? '有未保存的修改' : '设置已同步' }}
+      <template #actions>
         <UiButton
-          variant="toolbar"
-          class="web-import-modal__settings-tab"
-          :class="{ active: activeSettingsTab === 'basic' }"
-          @click="$emit('update:activeSettingsTab', 'basic')"
+          variant="secondary"
+          size="sm"
+          :disabled="!hasUnsavedSettings || isSavingSettings"
+          @click="$emit('discard-settings')"
         >
-          基本设置
+          取消修改
         </UiButton>
         <UiButton
-          variant="toolbar"
-          class="web-import-modal__settings-tab"
-          :class="{ active: activeSettingsTab === 'preprocess' }"
-          @click="$emit('update:activeSettingsTab', 'preprocess')"
+          variant="primary"
+          size="sm"
+          :disabled="!hasUnsavedSettings || isSavingSettings"
+          @click="$emit('save-settings')"
         >
-          图片预处理
+          {{ isSavingSettings ? '保存中...' : '保存设置' }}
         </UiButton>
-        <UiButton
-          variant="toolbar"
-          class="web-import-modal__settings-tab"
-          :class="{ active: activeSettingsTab === 'advanced' }"
-          @click="$emit('update:activeSettingsTab', 'advanced')"
-        >
-          高级设置
-        </UiButton>
-      </div>
+      </template>
+    </ProductStatusBanner>
 
-      <div class="web-import-modal__settings-actions">
-        <span v-if="hasUnsavedSettings" class="web-import-modal__settings-dirty">有未保存的修改</span>
-        <span v-else class="web-import-modal__settings-clean">设置已同步</span>
-        <div class="web-import-modal__settings-action-buttons">
-          <UiButton
-            variant="toolbar"
-            class="web-import-modal__settings-action-secondary"
-            :disabled="!hasUnsavedSettings || isSavingSettings"
-            @click="$emit('discard-settings')"
-          >
-            取消修改
-          </UiButton>
-          <UiButton
-            variant="toolbar"
-            class="web-import-modal__settings-action-primary"
-            :disabled="!hasUnsavedSettings || isSavingSettings"
-            @click="$emit('save-settings')"
-          >
-            {{ isSavingSettings ? '保存中...' : '保存设置' }}
-          </UiButton>
-        </div>
-      </div>
-
-      <div v-show="activeSettingsTab === 'basic'" class="web-import-modal__settings-tab-content">
-        <UiPanel variant="settings">
-          <h4 class="web-import-modal__group-title">Firecrawl 配置</h4>
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">API Key</label>
-            <div class="password-input-wrapper">
-              <UiInput
-                :type="showFirecrawlKey ? 'text' : 'password'"
-                class="web-import-modal__form-input"
-                :value="draftSettings.firecrawl.apiKey"
-                placeholder="fc-xxxxxxxxxxxxxxxx"
-                @input="webImportStore.setFirecrawlApiKey(($event.target as HTMLInputElement).value)"
-              />
-              <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="$emit('update:showFirecrawlKey', !showFirecrawlKey)">
-                {{ showFirecrawlKey ? '👁' : '👁‍🗨' }}
-              </UiButton>
-            </div>
-            <div class="web-import-modal__form-row web-import-modal__test-action-row">
-              <UiButton
-                variant="toolbar"
-                class="web-import-modal__settings-test-button"
-                :disabled="testingFirecrawl || !draftSettings.firecrawl.apiKey"
-                @click="$emit('test-firecrawl')"
-              >
-                {{ testingFirecrawl ? '测试中...' : '测试连接' }}
-              </UiButton>
-            </div>
-          </div>
-        </UiPanel>
-
-        <UiPanel variant="settings">
-          <h4 class="web-import-modal__group-title">AI Agent 配置</h4>
-
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">服务商</label>
-            <CustomSelect
-              :model-value="draftSettings.agent.provider"
-              :options="agentProviderOptions"
-              @change="(value) => webImportStore.setAgentProvider(String(value))"
-            />
-          </div>
-
-          <div v-if="providerRequiresApiKey(draftSettings.agent.provider)" class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">API Key</label>
-            <div class="password-input-wrapper">
-              <UiInput
-                :type="showAgentKey ? 'text' : 'password'"
-                class="web-import-modal__form-input"
-                :value="draftSettings.agent.apiKey"
-                placeholder="sk-xxxxxxxxxxxxxxxx"
-                @input="webImportStore.setAgentApiKey(($event.target as HTMLInputElement).value)"
-              />
-              <UiButton variant="toolbar" type="button" class="password-toggle-btn" tabindex="-1" @click="$emit('update:showAgentKey', !showAgentKey)">
-                {{ showAgentKey ? '👁' : '👁‍🗨' }}
-              </UiButton>
-            </div>
-          </div>
-
-          <div v-if="showCustomUrl" class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">自定义 API 地址</label>
-            <UiInput
-              type="url"
-              class="web-import-modal__form-input"
-              :value="draftSettings.agent.customBaseUrl"
-              placeholder="https://api.example.com/v1"
-              @input="webImportStore.setAgentBaseUrl(($event.target as HTMLInputElement).value)"
-            />
-          </div>
-
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">模型名称</label>
-            <div class="model-input-with-fetch">
-              <UiInput
-                type="text"
-                class="web-import-modal__form-input"
-                :value="draftSettings.agent.modelName"
-                placeholder="gpt-4o-mini"
-                @input="webImportStore.setAgentModelName(($event.target as HTMLInputElement).value)"
-              />
-              <UiButton
-                v-if="supportsFetchModels"
-                variant="toolbar"
-                type="button"
-                class="fetch-models-btn"
-                title="获取可用模型列表"
-                :disabled="isFetchingModels"
-                @click="$emit('fetch-models')"
-              >
-                <span class="fetch-icon">🔍</span>
-                <span class="fetch-text">{{ isFetchingModels ? '获取中...' : '获取模型' }}</span>
-              </UiButton>
-            </div>
-            <div v-if="modelList.length > 0" class="model-select-container">
-              <CustomSelect
-                :model-value="draftSettings.agent.modelName"
-                :options="modelListOptions"
-                @change="(value) => webImportStore.setAgentModelName(String(value))"
-              />
-              <span class="model-count">共 {{ modelList.length }} 个模型</span>
-            </div>
-          </div>
-
-          <div class="web-import-modal__form-row web-import-modal__form-row--inline">
-            <UiCheckbox
-              :model-value="draftSettings.agent.forceJsonOutput"
-              label="强制 JSON 格式"
-              @change="webImportStore.setAgentForceJsonOutput"
-            />
-            <UiCheckbox
-              :model-value="draftSettings.agent.useStream"
-              label="流式调用"
-              @change="webImportStore.setAgentUseStream"
-            />
-          </div>
-
-          <div class="web-import-modal__form-row">
-            <UiButton
-              variant="toolbar"
-              class="web-import-modal__settings-test-button web-import-modal__settings-test-button--full"
-              :disabled="testingAgent || (providerRequiresApiKey(draftSettings.agent.provider) && !draftSettings.agent.apiKey)"
-              @click="$emit('test-agent')"
-            >
-              {{ testingAgent ? '测试中...' : '测试 Agent 连接' }}
-            </UiButton>
-          </div>
-        </UiPanel>
-
-        <UiPanel variant="settings">
-          <h4 class="web-import-modal__group-title">
-            提取设置
-            <UiButton variant="toolbar" class="reset-btn" @click="$emit('reset-prompt')">重置为默认</UiButton>
-          </h4>
-
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">提取提示词</label>
-            <UiTextarea
-              class="web-import-modal__form-textarea"
-              :value="draftSettings.extraction.prompt"
-              rows="6"
-              placeholder="输入提取提示词..."
-              @input="webImportStore.setExtractionPrompt(($event.target as HTMLTextAreaElement).value)"
-            />
-          </div>
-
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">最大迭代次数</label>
-            <UiInput
-              type="number"
-              class="web-import-modal__form-input web-import-modal__form-input--small"
-              :value="draftSettings.extraction.maxIterations"
-              min="1"
-              max="20"
-              @input="webImportStore.setExtractionMaxIterations(Number(($event.target as HTMLInputElement).value))"
-            />
-          </div>
-        </UiPanel>
-
-        <UiPanel variant="settings">
-          <h4 class="web-import-modal__group-title">下载设置</h4>
-
-          <div class="web-import-modal__form-grid">
-            <div class="web-import-modal__form-row">
-              <label class="web-import-modal__form-label">并发数</label>
-              <UiInput
-                type="number"
-                class="web-import-modal__form-input web-import-modal__form-input--small"
-                :value="draftSettings.download.concurrency"
-                min="1"
-                max="10"
-                @input="webImportStore.setDownloadConcurrency(Number(($event.target as HTMLInputElement).value))"
-              />
-            </div>
-
-            <div class="web-import-modal__form-row">
-              <label class="web-import-modal__form-label">超时 (秒)</label>
-              <UiInput
-                type="number"
-                class="web-import-modal__form-input web-import-modal__form-input--small"
-                :value="draftSettings.download.timeout"
-                min="5"
-                max="120"
-                @input="webImportStore.setDownloadTimeout(Number(($event.target as HTMLInputElement).value))"
-              />
-            </div>
-
-            <div class="web-import-modal__form-row">
-              <label class="web-import-modal__form-label">重试次数</label>
-              <UiInput
-                type="number"
-                class="web-import-modal__form-input web-import-modal__form-input--small"
-                :value="draftSettings.download.retries"
-                min="0"
-                max="5"
-                @input="webImportStore.setDownloadRetries(Number(($event.target as HTMLInputElement).value))"
-              />
-            </div>
-
-            <div class="web-import-modal__form-row">
-              <label class="web-import-modal__form-label">下载间隔 (ms)</label>
-              <UiInput
-                type="number"
-                class="web-import-modal__form-input web-import-modal__form-input--small"
-                :value="draftSettings.download.delay"
-                min="0"
-                max="2000"
-                step="100"
-                @input="webImportStore.setDownloadDelay(Number(($event.target as HTMLInputElement).value))"
-              />
-            </div>
-          </div>
-
-          <div class="web-import-modal__form-row">
-            <UiCheckbox
-              :model-value="draftSettings.download.useReferer"
-              label="自动添加 Referer"
-              @change="webImportStore.setDownloadUseReferer"
-            />
-          </div>
-        </UiPanel>
-
-        <UiPanel variant="settings">
-          <h4 class="web-import-modal__group-title">界面设置</h4>
-          <div class="web-import-modal__form-row web-import-modal__form-row--inline">
-            <UiCheckbox
-              :model-value="draftSettings.ui.showAgentLogs"
-              label="显示 AI 工作日志"
-              @change="webImportStore.setShowAgentLogs"
-            />
-            <UiCheckbox
-              :model-value="draftSettings.ui.autoImport"
-              label="提取后自动导入"
-              @change="webImportStore.setAutoImport"
-            />
-          </div>
-        </UiPanel>
-      </div>
-
-      <div v-show="activeSettingsTab === 'preprocess'" class="web-import-modal__settings-tab-content">
-        <WebImportPreprocessSettings :draft-settings="draftSettings" />
-      </div>
-
-      <div v-show="activeSettingsTab === 'advanced'" class="web-import-modal__settings-tab-content">
-        <UiPanel variant="settings">
-          <h4 class="web-import-modal__group-title">自定义请求头</h4>
-
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">Cookie</label>
-            <UiInput
-              type="text"
-              class="web-import-modal__form-input"
-              :value="draftSettings.advanced.customCookie"
-              placeholder="name=value; name2=value2"
-              @input="webImportStore.setCustomCookie(($event.target as HTMLInputElement).value)"
-            />
-          </div>
-
-          <div class="web-import-modal__form-row">
-            <label class="web-import-modal__form-label">Headers (JSON)</label>
-            <UiTextarea
-              class="web-import-modal__form-textarea"
-              :value="draftSettings.advanced.customHeaders"
-              rows="3"
-              placeholder="{&quot;X-Custom-Header&quot;: &quot;value&quot;}"
-              @input="webImportStore.setCustomHeaders(($event.target as HTMLTextAreaElement).value)"
-            />
-          </div>
-
-          <div class="web-import-modal__form-row">
-            <UiCheckbox
-              :model-value="draftSettings.advanced.bypassProxy"
-              label="绕过系统代理 (连接本地服务时使用)"
-              @change="webImportStore.setBypassProxy"
-            />
-          </div>
-        </UiPanel>
-      </div>
+    <div v-show="activeSettingsTab === 'basic'" class="web-import-settings__tab-content">
+      <WebImportBasicSettingsPanel
+        :agent-provider-options="agentProviderOptions"
+        :draft-settings="draftSettings"
+        :is-fetching-models="isFetchingModels"
+        :model-list="modelList"
+        :model-list-options="modelListOptions"
+        :provider-requires-api-key="providerRequiresApiKey"
+        :settings-actions="settingsActions"
+        :show-custom-url="showCustomUrl"
+        :supports-fetch-models="supportsFetchModels"
+        :testing-agent="testingAgent"
+        :testing-firecrawl="testingFirecrawl"
+        @fetch-models="$emit('fetch-models')"
+        @reset-prompt="$emit('reset-prompt')"
+        @test-agent="$emit('test-agent')"
+        @test-firecrawl="$emit('test-firecrawl')"
+      />
     </div>
-  </div>
+
+    <div v-show="activeSettingsTab === 'preprocess'" class="web-import-settings__tab-content">
+      <WebImportPreprocessSettings
+        :draft-settings="draftSettings"
+        :settings-actions="settingsActions"
+      />
+    </div>
+
+    <div v-show="activeSettingsTab === 'advanced'" class="web-import-settings__tab-content">
+      <WebImportAdvancedSettingsPanel
+        :draft-settings="draftSettings"
+        :settings-actions="settingsActions"
+      />
+    </div>
+  </ProductCollapsibleSection>
 </template>
 
 <style scoped>
-.web-import-modal__settings-section {
-  --web-import-settings-header-background: #f9f9f9;
-  --web-import-settings-header-hover-background: #efefef;
-  --web-import-settings-actions-border: #e6e6e6;
-  --web-import-settings-actions-background: #fafafa;
-  --web-import-settings-dirty-text: #b26a00;
-  --web-import-settings-clean-text: #2f7d32;
-  --web-import-settings-action-primary-background: #4a90d9;
-  --web-import-settings-action-primary-hover-background: #3a7fc8;
-  --web-import-settings-action-secondary-hover-background: #efefef;
-
+.web-import-settings-section {
   margin-bottom: 16px;
-  overflow: hidden;
-  border: 1px solid var(--color-border-muted, var(--color-border-soft));
-  border-radius: 8px;
 }
 
-.web-import-modal__settings-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px 14px;
-  border: 0;
-  background: var(--web-import-settings-header-background);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-  user-select: none;
-  transition: background 0.2s;
-}
-
-.web-import-modal__settings-header:hover {
-  background: var(--web-import-settings-header-hover-background);
-}
-
-.web-import-modal__settings-toggle {
-  color: var(--color-text-supporting, var(--color-text-subtle));
-  font-size: 10px;
-}
-
-.web-import-modal__settings-title {
-  color: var(--color-text-default);
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.web-import-modal__settings-hint {
-  margin-left: auto;
-  color: var(--color-text-supporting, var(--color-text-muted));
-  font-size: 12px;
-}
-
-.web-import-modal__settings-content {
-  padding: 16px;
-  background: var(--color-surface-base);
-}
-
-.web-import-modal__settings-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.web-import-settings__sync-status {
   margin-bottom: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border-muted, var(--web-import-settings-actions-border));
-  border-radius: 10px;
-  background: var(--web-import-settings-actions-background);
 }
 
-.web-import-modal__settings-dirty,
-.web-import-modal__settings-clean {
-  font-weight: 500;
-  font-size: 13px;
-}
-
-.web-import-modal__settings-dirty {
-  color: var(--web-import-settings-dirty-text);
-}
-
-.web-import-modal__settings-clean {
-  color: var(--web-import-settings-clean-text);
-}
-
-.web-import-modal__settings-action-buttons {
-  display: flex;
-  gap: 10px;
-}
-
-.web-import-modal__settings-action-primary,
-.web-import-modal__settings-action-secondary {
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.web-import-modal__settings-action-primary {
-  border: none;
-  background: var(--web-import-settings-action-primary-background);
-  color: var(--color-text-inverse);
-}
-
-.web-import-modal__settings-action-primary:hover:not(:disabled) {
-  background: var(--web-import-settings-action-primary-hover-background);
-}
-
-.web-import-modal__settings-action-secondary {
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  background: var(--color-surface-base);
-  color: var(--color-text-default);
-}
-
-.web-import-modal__settings-action-secondary:hover:not(:disabled) {
-  background: var(--web-import-settings-action-secondary-hover-background);
-}
-
-.web-import-modal__settings-action-primary:disabled,
-.web-import-modal__settings-action-secondary:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.web-import-modal__settings-tabs {
-  display: flex;
-  gap: 4px;
+.web-import-settings__tabs {
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border-muted, var(--color-border-soft));
 }
 
-.web-import-modal__settings-tab {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.web-import-modal__settings-tab:hover,
-.web-import-modal__settings-tab.active {
-  background: var(--color-surface-subtle);
-}
-
-.web-import-modal__settings-tab.active {
-  color: var(--color-text-default);
-  font-weight: 500;
-}
-
-.web-import-modal__settings-tab-content {
-  max-height: 400px;
+.web-import-settings__tab-content {
+  min-height: 0;
+  max-block-size: min(52dvh, 480px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
-
-.web-import-modal__group-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 12px;
-  color: var(--color-text-default);
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.web-import-modal__form-row {
-  margin-bottom: 12px;
-}
-
-.web-import-modal__form-row--inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.web-import-modal__form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.web-import-modal__form-label {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 13px;
-}
-
-.web-import-modal__form-input,
-.web-import-modal__form-textarea {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 6px;
-  outline: none;
-  background: var(--color-surface-base);
-  color: var(--color-text-default);
-  font-size: 14px;
-  transition: border-color 0.2s;
-}
-
-.web-import-modal__form-input:focus,
-.web-import-modal__form-textarea:focus {
-  border-color: var(--color-action-primary, var(--color-border-info));
-}
-
-.web-import-modal__form-input--small {
-  width: 100px;
-}
-
-.web-import-modal__form-textarea {
-  min-height: 80px;
-  resize: vertical;
-}
-
-.web-import-modal__test-action-row {
-  margin-top: 10px;
-}
-
-.web-import-modal__settings-test-button--full {
-  width: 100%;
-}
-
-.reset-btn {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border-muted, var(--color-border-subtle));
-  border-radius: 4px;
-  background: transparent;
-  color: var(--color-text-supporting, var(--color-text-secondary));
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.reset-btn:hover {
-  background: var(--color-surface-subtle);
-}
-
 </style>

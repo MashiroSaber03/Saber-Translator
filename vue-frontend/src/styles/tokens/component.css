@@ -1,33 +1,18 @@
 :root {
-  --app-header-panel-border: #dcdfe6;
-  --app-header-shadow: rgba(0, 0, 0, .1);
-  --app-header-bookshelf-shadow: rgba(102, 126, 234, .3);
-  --app-header-logo-shadow: rgba(0, 0, 0, .2);
-  --app-header-background: rgba(255, 255, 255, .9);
-  --app-header-link-background: rgba(0, 0, 0, .05);
-  --app-header-link-hover-background: rgba(0, 0, 0, .1);
-  --app-header-donate-background: rgba(255, 105, 180, .15);
-  --app-header-donate-hover-background: rgba(255, 105, 180, .25);
-  --app-header-settings-background: rgba(0, 0, 0, .05);
-  --app-header-settings-hover-background: rgba(0, 0, 0, .1);
-  --app-header-theme-background: #f0f2f5;
-  --app-header-theme-hover-background: #e6e8eb;
-  --app-header-donate-text: #e91e63;
-
   --base-modal-container-shadow-color: rgba(0, 0, 0, .15);
   --base-modal-overlay-background: rgba(0, 0, 0, .5);
   --base-modal-close-hover-background: rgba(0, 0, 0, .1);
 
-  --custom-select-trigger-text: #1f2430;
-  --custom-select-trigger-border: #cfd6e4;
-  --custom-select-workflow-border: #b8c6dd;
-  --custom-select-trigger-hover-border: #8aa0f6;
-  --custom-select-trigger-focus-border: #5b73f2;
-  --custom-select-trigger-focus-shadow: rgba(88, 125, 255, .18);
-  --custom-select-dropdown-shadow: rgba(19, 36, 70, .18);
-  --custom-select-option-hover-background: #e3f2fd;
-  --custom-select-option-selected-background: #e8edff;
-  --custom-select-option-selected-text: #3040c2;
+  --ui-combobox-trigger-text: #1f2430;
+  --ui-combobox-trigger-border: #cfd6e4;
+  --ui-combobox-workflow-border: #b8c6dd;
+  --ui-combobox-trigger-hover-border: #8aa0f6;
+  --ui-combobox-trigger-focus-border: #5b73f2;
+  --ui-combobox-trigger-focus-shadow: rgba(88, 125, 255, .18);
+  --ui-combobox-dropdown-shadow: rgba(19, 36, 70, .18);
+  --ui-combobox-option-hover-background: #e3f2fd;
+  --ui-combobox-option-selected-background: #e8edff;
+  --ui-combobox-option-selected-text: #3040c2;
 
   --toast-notification-default-background: rgba(0, 0, 0, .75);
   --toast-notification-shadow-color: rgba(0, 0, 0, .3);

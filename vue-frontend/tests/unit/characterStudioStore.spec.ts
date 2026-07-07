@@ -1,11 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import type { CharacterStudioChatStreamEvent } from '@/api/characterStudio'
 import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
-
-function cloneDocument<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
-}
+import { deepClone } from '@/utils/deepClone'
 
 const demoDocument = {
   id: 'doc_alpha',
@@ -33,7 +33,7 @@ const demoDocument = {
 }
 
 const structuredDocument: CharacterStudioDocument = {
-  ...cloneDocument(demoDocument),
+  ...deepClone(demoDocument),
   lorebook: {
     name: '阿尔法世界书',
     entries: [
@@ -215,10 +215,10 @@ const demoChatSession: CharacterStudioChatSession = {
 }
 
 const conversationChatSession: CharacterStudioChatSession = {
-  ...cloneDocument(demoChatSession),
+  ...deepClone(demoChatSession),
   messages: [
     {
-      ...cloneDocument(demoChatSession.messages[0]!),
+      ...deepClone(demoChatSession.messages[0]!),
       message_id: 'msg_opening',
       content: '我是阿尔法。',
       generation_meta: { kind: 'opening' },
@@ -330,6 +330,123 @@ describe('characterStudioStore', () => {
     })
   })
 
+  it('keeps agent patch cloning on the shared clone helper', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'), 'utf8')
+
+    expect(source).toContain("import { deepClone } from '@/utils/deepClone'")
+    expect(source).not.toContain('function cloneDocument')
+    expect(source).not.toContain('function cloneValue')
+    expect(source).not.toContain('JSON.parse(JSON.stringify')
+  })
+
+  it('keeps agent patch dynamic writes behind a named document boundary', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'), 'utf8')
+
+    expect(source).not.toContain('setByPath(nextDocument as unknown as Record<string, unknown>, path, value)')
+    expect(source).toContain('type MutableCharacterStudioDocument')
+  })
+
+  it('keeps dynamic patch path traversal behind a named record helper', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'), 'utf8')
+
+    expect(source).toContain('function ensurePathRecord')
+    expect(source).not.toContain('current = current[key] as Record<string, unknown>')
+  })
+
+  it('keeps store snapshots on the shared clone helper', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+
+    expect(source).toContain("import { deepClone } from '@/utils/deepClone'")
+    expect(source).not.toContain('function cloneDocument')
+    expect(source).not.toContain('JSON.parse(JSON.stringify')
+  })
+
+  it('saves current documents without generic record payload casts', () => {
+    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const apiSource = readFileSync(resolve(process.cwd(), 'src/api/characterStudio.ts'), 'utf8')
+
+    expect(storeSource).not.toContain('currentDocument.value as unknown as Record<string, unknown>')
+    expect(apiSource).toContain('payload: CharacterStudioDocument')
+  })
+
+  it('keeps export download transport behind a Studio export helper', () => {
+    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const exportSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioExports.ts'), 'utf8')
+
+    expect(storeSource).toContain("from '@/stores/characterStudioExports'")
+    expect(storeSource).not.toContain('downloadCharacterStudioExport')
+    expect(storeSource).not.toContain('downloadCharacterStudioWorldbook')
+    expect(storeSource).not.toContain('exportCharacterStudioChatSession')
+    expect(storeSource).not.toContain("from '@/utils/browserDownload'")
+    expect(exportSource).toContain("import { triggerBlobDownload } from '@/utils/browserDownload'")
+  })
+
+  it('keeps busy action copy behind a Studio activity helper', () => {
+    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const activitySource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioActivity.ts'), 'utf8')
+
+    expect(storeSource).toContain("from '@/stores/characterStudioActivity'")
+    expect(storeSource).toContain('getCharacterStudioActionLabel')
+    expect(storeSource).toContain('hasCharacterStudioBusyAction')
+    expect(storeSource).not.toContain('正在加载角色工坊')
+    expect(storeSource).not.toContain('正在生成聊天回复')
+    expect(storeSource).not.toContain('正在导出 V3 JSON')
+    expect(activitySource).toContain('export function getCharacterStudioActionLabel')
+  })
+
+  it('keeps agent output parsing behind a Studio agent output helper', () => {
+    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const outputSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioAgentOutput.ts'), 'utf8')
+
+    expect(storeSource).toContain("from '@/stores/characterStudioAgentOutput'")
+    expect(storeSource).toContain('parseCharacterStudioAgentOutput')
+    expect(storeSource).not.toContain('```json:patch')
+    expect(storeSource).not.toContain('```html')
+    expect(storeSource).not.toContain('content.match')
+    expect(outputSource).toContain('export function parseCharacterStudioAgentOutput')
+  })
+
+  it('keeps chat stream message mutations behind a Studio chat session helper', () => {
+    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const chatSessionSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioChatSession.ts'), 'utf8')
+
+    expect(storeSource).toContain("from '@/stores/characterStudioChatSession'")
+    expect(storeSource).toContain('applyAssistantStreamContent')
+    expect(storeSource).toContain('applyAssistantRuntimeState')
+    expect(storeSource).toContain('findRegenerationUserMessageIndex')
+    expect(storeSource).not.toContain('lastMessage.content = event.content')
+    expect(storeSource).not.toContain('lastMessage.runtime_log = event.runtime_log')
+    expect(storeSource).not.toContain('messages.findIndex(item => item.message_id === messageId)')
+    expect(chatSessionSource).toContain('export function applyAssistantStreamContent')
+    expect(chatSessionSource).toContain('export function applyAssistantRuntimeState')
+    expect(chatSessionSource).toContain('export function findRegenerationUserMessageIndex')
+  })
+
+  it('updates assistant stream messages through the Studio chat session helper', async () => {
+    const {
+      applyAssistantRuntimeState,
+      applyAssistantStreamContent,
+      findRegenerationUserMessageIndex,
+    } = await import('@/stores/characterStudioChatSession')
+    const session = deepClone(conversationChatSession)
+
+    expect(applyAssistantStreamContent(session, '新的流式内容')).toBe(true)
+    expect(session.messages.at(-1)?.content).toBe('新的流式内容')
+
+    const runtimeLog = [{ stage: '变量更新' }]
+    const variables = { trust_score: 35 }
+    expect(applyAssistantRuntimeState(session, runtimeLog, variables)).toBe(true)
+    expect(session.messages.at(-1)?.runtime_log).toEqual([{ stage: '变量更新' }])
+    expect(session.messages.at(-1)?.variables_snapshot).toEqual({ trust_score: 35 })
+    runtimeLog[0]!.stage = '外部复用'
+    variables.trust_score = 99
+    expect(session.messages.at(-1)?.runtime_log).toEqual([{ stage: '变量更新' }])
+    expect(session.messages.at(-1)?.variables_snapshot).toEqual({ trust_score: 35 })
+    expect(findRegenerationUserMessageIndex(session.messages, 'msg_assistant_1')).toBe(1)
+    expect(findRegenerationUserMessageIndex(session.messages, 'msg_user_1')).toBe(1)
+    expect(findRegenerationUserMessageIndex(session.messages, 'missing')).toBe(-1)
+  })
+
   it('loads index payload for a book', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
@@ -411,7 +528,7 @@ describe('characterStudioStore', () => {
     const store = useCharacterStudioStore()
     let resolveFirst!: (value: Awaited<ReturnType<typeof getCharacterStudioDocumentMock>>) => void
     const betaDocument: CharacterStudioDocument = {
-      ...cloneDocument(demoDocument),
+      ...deepClone(demoDocument),
       id: 'doc_beta',
       meta: { ...demoDocument.meta, title: '贝塔' },
       identity: { ...demoDocument.identity, name: '贝塔' },
@@ -433,7 +550,7 @@ describe('characterStudioStore', () => {
 
     resolveFirst({
       success: true,
-      document: cloneDocument(demoDocument),
+      document: deepClone(demoDocument),
     })
     await firstOpen
 
@@ -658,7 +775,7 @@ describe('characterStudioStore', () => {
     getCharacterStudioChatStateMock.mockResolvedValueOnce({
       success: true,
       doc_id: 'doc_alpha',
-      active_session: cloneDocument(conversationChatSession),
+      active_session: deepClone(conversationChatSession),
       archived_sessions: [],
       available_greetings: [],
     })
@@ -666,8 +783,8 @@ describe('characterStudioStore', () => {
     editCharacterStudioChatMessageMock.mockResolvedValueOnce({
       success: true,
       session: {
-        ...cloneDocument(conversationChatSession),
-        messages: cloneDocument(conversationChatSession.messages.slice(0, 2)).map((item, index) => {
+        ...deepClone(conversationChatSession),
+        messages: deepClone(conversationChatSession.messages.slice(0, 2)).map((item, index) => {
           if (index === 1) {
             return {
               ...item,
@@ -695,18 +812,18 @@ describe('characterStudioStore', () => {
       onEvent({
         type: 'state',
         session: {
-          ...cloneDocument(conversationChatSession),
+          ...deepClone(conversationChatSession),
           messages: [
             {
-              ...cloneDocument(conversationChatSession.messages[0]!),
+              ...deepClone(conversationChatSession.messages[0]!),
             },
             {
-              ...cloneDocument(conversationChatSession.messages[1]!),
+              ...deepClone(conversationChatSession.messages[1]!),
               content: '编辑后的用户消息',
               generation_meta: { original_content: '编辑后的用户消息' },
             },
             {
-              ...cloneDocument(conversationChatSession.messages[2]!),
+              ...deepClone(conversationChatSession.messages[2]!),
               message_id: 'msg_assistant_regenerated',
               content: '新的回答',
             },
@@ -775,9 +892,9 @@ describe('characterStudioStore', () => {
     generateCharacterStudioSectionMock.mockResolvedValueOnce({
       success: true,
       document: {
-        ...cloneDocument(demoDocument),
+        ...deepClone(demoDocument),
         coreMessages: {
-          ...cloneDocument(demoDocument.coreMessages),
+          ...deepClone(demoDocument.coreMessages),
           first_message: '新的默认开场白',
           alternate_greetings: ['备用问候'],
         },
@@ -806,7 +923,7 @@ describe('characterStudioStore', () => {
       .mockResolvedValueOnce({
         success: true,
         doc_id: 'doc_alpha',
-        active_session: cloneDocument(demoChatSession),
+        active_session: deepClone(demoChatSession),
         archived_sessions: [],
         available_greetings: [
           {
@@ -821,10 +938,10 @@ describe('characterStudioStore', () => {
         success: true,
         doc_id: 'doc_alpha',
         active_session: {
-          ...cloneDocument(demoChatSession),
+          ...deepClone(demoChatSession),
           messages: [
             {
-              ...cloneDocument(demoChatSession.messages[0]!),
+              ...deepClone(demoChatSession.messages[0]!),
               content: '保存后同步的新开场',
             },
           ],
@@ -843,9 +960,9 @@ describe('characterStudioStore', () => {
     saveCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
       document: {
-        ...cloneDocument(demoDocument),
+        ...deepClone(demoDocument),
         coreMessages: {
-          ...cloneDocument(demoDocument.coreMessages),
+          ...deepClone(demoDocument.coreMessages),
           first_message: '保存后同步的新开场',
         },
       },
@@ -870,6 +987,54 @@ describe('characterStudioStore', () => {
 
     expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(2)
     expect(store.activeChatSession?.messages[0]?.content).toBe('保存后同步的新开场')
+  })
+
+  it('freezes optimistic chat message variable snapshots while sending', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    const loadedSession = deepClone(demoChatSession)
+    loadedSession.variables = {
+      trust_score: 20,
+      mood: { intensity: 1 },
+    }
+    let resolveStream: (() => void) | null = null
+
+    getCharacterStudioChatStateMock.mockResolvedValueOnce({
+      success: true,
+      doc_id: 'doc_alpha',
+      active_session: loadedSession,
+      archived_sessions: [],
+      available_greetings: [],
+    })
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(async () => new Promise<void>(resolve => {
+      resolveStream = resolve
+    }))
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    const sourceVariables = store.activeChatSession?.variables as {
+      trust_score: number
+      mood: { intensity: number }
+    }
+    const sendPromise = store.sendChatMessage('记录当前变量')
+    await Promise.resolve()
+
+    sourceVariables.trust_score = 77
+    sourceVariables.mood.intensity = 9
+
+    const optimisticMessages = store.activeChatSession?.messages.slice(-2) || []
+    expect(optimisticMessages[0]?.variables_snapshot).toEqual({
+      trust_score: 20,
+      mood: { intensity: 1 },
+    })
+    expect(optimisticMessages[1]?.variables_snapshot).toEqual({
+      trust_score: 20,
+      mood: { intensity: 1 },
+    })
+
+    resolveStream?.()
+    await sendPromise
   })
 
   it('releases optimistic attachment URLs when workspace reset aborts streaming chat', async () => {
@@ -974,6 +1139,63 @@ describe('characterStudioStore', () => {
     }
   })
 
+  it('ignores late chat stream state events after the workspace changes', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    let emitStaleEvent: ((event: CharacterStudioChatStreamEvent) => void) | null = null
+    let resolveStream: (() => void) | null = null
+
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
+      _bookId: string,
+      _docId: string,
+      options: {
+        onEvent: (event: CharacterStudioChatStreamEvent) => void
+        signal: AbortSignal
+      },
+    ) => new Promise<void>(resolve => {
+      emitStaleEvent = options.onEvent
+      resolveStream = resolve
+      options.signal.addEventListener('abort', () => {})
+    }))
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    const sendPromise = store.sendChatMessage('这条流会过期')
+    await Promise.resolve()
+
+    getCharacterStudioIndexMock.mockResolvedValueOnce({
+      success: true,
+      book_id: 'book-other',
+      documents: [],
+      candidates: [],
+      count: 0,
+    })
+
+    await store.loadWorkspace('book-other')
+
+    expect(store.bookId).toBe('book-other')
+    expect(store.activeChatSession).toBeNull()
+
+    emitStaleEvent?.({
+      type: 'state',
+      session: {
+        ...deepClone(demoChatSession),
+        messages: [
+          {
+            ...deepClone(demoChatSession.messages[0]!),
+            content: '不应该写回的新状态',
+          },
+        ],
+      },
+    })
+    resolveStream?.()
+    await sendPromise
+
+    expect(store.bookId).toBe('book-other')
+    expect(store.activeChatSession).toBeNull()
+  })
+
   it('updates locally derived greeting options and clears stale diagnostics/prompt preview on document edits', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
@@ -1037,7 +1259,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1066,7 +1288,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1104,7 +1326,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1151,13 +1373,13 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    const before = cloneDocument(store.currentDocument)
+    const before = deepClone(store.currentDocument)
 
     const missingPatch: CharacterStudioAgentPatchV2 = {
       regex_update: {
@@ -1182,7 +1404,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1194,7 +1416,7 @@ describe('characterStudioStore', () => {
       },
     }
 
-    const before = cloneDocument(store.currentDocument)
+    const before = deepClone(store.currentDocument)
     store.pendingAgentPatch = unsupportedPatch as unknown as CharacterStudioAgentPatchV2
     store.applyPendingPatch()
 
@@ -1209,13 +1431,13 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    const before = cloneDocument(store.currentDocument)
+    const before = deepClone(store.currentDocument)
     const invalidSetPatch: CharacterStudioAgentPatchV2 = {
       set: {
         'regexScripts.0.disabled': true,
@@ -1236,7 +1458,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1251,7 +1473,7 @@ describe('characterStudioStore', () => {
       },
     }
 
-    const before = cloneDocument(store.currentDocument)
+    const before = deepClone(store.currentDocument)
     store.pendingAgentPatch = invalidRegexPatch
     store.applyPendingPatch()
 
@@ -1266,7 +1488,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1281,7 +1503,7 @@ describe('characterStudioStore', () => {
       },
     }
 
-    const before = cloneDocument(store.currentDocument)
+    const before = deepClone(store.currentDocument)
     store.pendingAgentPatch = invalidWorldbookPatch
     store.applyPendingPatch()
 
@@ -1294,7 +1516,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    const frozenDocument = cloneDocument(structuredDocument)
+    const frozenDocument = deepClone(structuredDocument)
     frozenDocument.status.frozen_sections = ['lorebook']
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
@@ -1332,7 +1554,7 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({
       success: true,
-      document: cloneDocument(structuredDocument),
+      document: deepClone(structuredDocument),
     })
 
     await store.loadWorkspace('book-demo')
@@ -1368,7 +1590,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    const frozenDocument = cloneDocument(structuredDocument)
+    const frozenDocument = deepClone(structuredDocument)
     frozenDocument.status.frozen_sections = ['lorebook']
 
     getCharacterStudioDocumentMock.mockResolvedValueOnce({

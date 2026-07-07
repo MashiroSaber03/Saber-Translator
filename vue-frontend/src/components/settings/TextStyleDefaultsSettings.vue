@@ -1,15 +1,13 @@
 <template>
   <div class="text-style-defaults-settings">
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>文本默认值</template>
-      <UiField class="ui-settings-field">
-        <div class="ui-form-hint">
-          这里修改的是全局默认文字设置，会写入 <code>config/text_style_defaults.json</code>。
-          <br />
-          保存成功后会在下次启动时作为新的初始默认值使用。
-        </div>
-      </UiField>
-      <UiField class="ui-settings-field action-row">
+      <ProductStatusBanner tone="info" role="note">
+        这里修改的是全局默认文字设置，会写入 <code class="text-style-defaults-settings__config-path">config/text_style_defaults.json</code>。
+        <br />
+        保存成功后会在下次启动时作为新的初始默认值使用。
+      </ProductStatusBanner>
+      <ProductActionRow aria-label="文本默认值操作" justify="start">
         <UiButton
           variant="secondary"
           type="button"
@@ -19,38 +17,43 @@
         >
           恢复出厂默认
         </UiButton>
-      </UiField>
-      <UiField v-if="errorMessage" class="ui-settings-field">
-        <div class="ui-form-hint ui-form-hint--error">{{ errorMessage }}</div>
-      </UiField>
-    </UiPanel>
+      </ProductActionRow>
+      <ProductStatusBanner v-if="errorMessage" tone="danger" role="alert">
+        {{ errorMessage }}
+      </ProductStatusBanner>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>字体排版</template>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsFontSize">字号</label>
-          <UiInput
-            id="textDefaultsFontSize"
-            type="number"
-            :value="draftDefaults.fontSize"
-            min="10"
+        <UiField variant="settings" label="字号" control-id="textDefaultsFontSize">
+          <UiNumberField
+            input-id="textDefaultsFontSize"
+            :model-value="draftDefaults.fontSize"
+            :min="10"
             :disabled="draftDefaults.autoFontSize"
-            @input="updateFontSize"
+            size="sm"
+            @change="updateFontSize"
           />
         </UiField>
-        <UiField class="ui-settings-field ui-settings-field--checkbox">
+        <UiField
+          variant="settings"
+          control="checkbox"
+          label="自动计算初始字号"
+          control-id="textDefaultsAutoFontSize"
+        >
           <UiCheckbox
+            input-id="textDefaultsAutoFontSize"
             :model-value="draftDefaults.autoFontSize"
-            label="自动计算初始字号"
             @change="updateAutoFontSize"
           />
         </UiField>
       </UiFormGrid>
 
-      <UiField class="ui-settings-field">
-        <label for="textDefaultsFontFamily">文本字体</label>
-        <CustomSelect
+      <UiField variant="settings" label="文本字体" control-id="textDefaultsFontFamily">
+        <UiCombobox
+          input-id="textDefaultsFontFamily"
+          aria-label="文本字体"
           :model-value="draftDefaults.fontFamily"
           :options="fontSelectOptions"
           @change="handleFontSelectChange"
@@ -58,23 +61,23 @@
         <UiFileInput
           ref="fontUploadInput"
           accept=".ttf,.ttc,.otf"
-          style="display: none"
-          @change="handleFontUpload"
+          hidden
+          @files-change="handleFontUpload"
         />
       </UiField>
 
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsLayoutDirection">排版方向</label>
-          <CustomSelect
+        <UiField variant="settings" label="排版方向" control-id="textDefaultsLayoutDirection">
+          <UiSelect
+            id="textDefaultsLayoutDirection"
             :model-value="draftDefaults.layoutDirection"
             :options="layoutDirectionOptions"
             @change="handleLayoutDirectionChange"
           />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsTextAlign">对齐方式</label>
-          <CustomSelect
+        <UiField variant="settings" label="对齐方式" control-id="textDefaultsTextAlign">
+          <UiSelect
+            id="textDefaultsTextAlign"
             :model-value="draftDefaults.textAlign"
             :options="textAlignOptions"
             @change="handleTextAlignChange"
@@ -82,113 +85,136 @@
         </UiField>
       </UiFormGrid>
 
-      <UiField class="ui-settings-field">
-        <label for="textDefaultsLineSpacing">行间距</label>
-        <UiInput
-          id="textDefaultsLineSpacing"
-          type="number"
-          :value="draftDefaults.lineSpacing"
-          min="0.5"
-          max="3"
-          step="0.1"
+      <UiField
+        variant="settings"
+        label="行间距"
+        control-id="textDefaultsLineSpacing"
+        hint="行间距倍数（0.5 - 3.0）"
+      >
+        <UiNumberField
+          input-id="textDefaultsLineSpacing"
+          :model-value="draftDefaults.lineSpacing"
+          :min="0.5"
+          :max="3"
+          :step="0.1"
+          size="sm"
           @change="updateLineSpacing"
         />
-        <div class="ui-form-hint">行间距倍数（0.5 - 3.0）</div>
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>颜色与填充</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        label="自动识别文字颜色"
+        control-id="textDefaultsUseAutoTextColor"
+      >
         <UiCheckbox
+          input-id="textDefaultsUseAutoTextColor"
           :model-value="draftDefaults.useAutoTextColor"
-          label="自动识别文字颜色"
           @change="updateUseAutoTextColor"
         />
       </UiField>
       <UiFormGrid>
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsTextColor">文字颜色</label>
-          <UiInput
-            id="textDefaultsTextColor"
-            type="color"
-            :value="draftDefaults.textColor"
+        <UiField variant="settings" label="文字颜色" control-id="textDefaultsTextColor">
+          <UiColorInput
+            input-id="textDefaultsTextColor"
+            :model-value="draftDefaults.textColor"
             :disabled="draftDefaults.useAutoTextColor"
-            @input="updateTextColor"
+            aria-label="文字颜色"
+            size="sm"
+            @update:model-value="updateTextColor"
           />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsInpaintMethod">气泡填充方式</label>
-          <CustomSelect
+        <UiField variant="settings" label="气泡填充方式" control-id="textDefaultsInpaintMethod">
+          <UiSelect
+            id="textDefaultsInpaintMethod"
             :model-value="draftDefaults.inpaintMethod"
             :options="inpaintMethodOptions"
             @change="handleInpaintMethodChange"
           />
         </UiField>
       </UiFormGrid>
-      <UiField v-if="draftDefaults.inpaintMethod === 'solid'" class="ui-settings-field">
-        <label for="textDefaultsFillColor">填充颜色</label>
-        <UiInput
-          id="textDefaultsFillColor"
-          type="color"
-          :value="draftDefaults.fillColor"
-          @input="updateFillColor"
+      <UiField
+        v-if="draftDefaults.inpaintMethod === 'solid'"
+        variant="settings"
+        label="填充颜色"
+        control-id="textDefaultsFillColor"
+      >
+        <UiColorInput
+          input-id="textDefaultsFillColor"
+          :model-value="draftDefaults.fillColor"
+          aria-label="填充颜色"
+          @update:model-value="updateFillColor"
         />
       </UiField>
-    </UiPanel>
+    </ProductFormSection>
 
-    <UiPanel variant="settings">
+    <ProductFormSection>
       <template #title>描边</template>
-      <UiField class="ui-settings-field ui-settings-field--checkbox">
+      <UiField
+        variant="settings"
+        control="checkbox"
+        label="启用描边"
+        control-id="textDefaultsStrokeEnabled"
+      >
         <UiCheckbox
+          input-id="textDefaultsStrokeEnabled"
           :model-value="draftDefaults.strokeEnabled"
-          label="启用描边"
           @change="updateStrokeEnabled"
         />
       </UiField>
       <UiFormGrid v-if="draftDefaults.strokeEnabled">
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsStrokeColor">描边颜色</label>
-          <UiInput
-            id="textDefaultsStrokeColor"
-            type="color"
-            :value="draftDefaults.strokeColor"
-            @input="updateStrokeColor"
+        <UiField variant="settings" label="描边颜色" control-id="textDefaultsStrokeColor">
+          <UiColorInput
+            input-id="textDefaultsStrokeColor"
+            :model-value="draftDefaults.strokeColor"
+            aria-label="描边颜色"
+            @update:model-value="updateStrokeColor"
           />
         </UiField>
-        <UiField class="ui-settings-field">
-          <label for="textDefaultsStrokeWidth">描边宽度 (px)</label>
-          <UiInput
-            id="textDefaultsStrokeWidth"
-            type="number"
-            :value="draftDefaults.strokeWidth"
-            min="0"
-            max="10"
-            @input="updateStrokeWidth"
+        <UiField
+          variant="settings"
+          label="描边宽度 (px)"
+          control-id="textDefaultsStrokeWidth"
+          hint="0 表示无描边。"
+        >
+          <UiNumberField
+            input-id="textDefaultsStrokeWidth"
+            :model-value="draftDefaults.strokeWidth"
+            :min="0"
+            :max="10"
+            size="sm"
+            @change="updateStrokeWidth"
           />
-          <div class="ui-form-hint">0 表示无描边。</div>
         </UiField>
       </UiFormGrid>
-    </UiPanel>
+    </ProductFormSection>
   </div>
 </template>
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import ProductFormSection from '@/components/product/ProductFormSection.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
-import UiInput from '@/components/ui/UiInput.vue'
+import UiColorInput from '@/components/ui/UiColorInput.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import { computed, ref, watch } from 'vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import { computed, ref, watch, watchEffect } from 'vue'
 import type { InpaintMethod, TextAlign, TextDirection } from '@/types/bubble'
 import type { TextStyleSettings } from '@/types/settings'
 import { getFactoryTextStyleDefaults } from '@/defaults/textStyleFactoryDefaults'
 import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
 import { configApi } from '@/api/config'
 import { useToast } from '@/utils/toast'
-import CustomSelect from '@/components/common/CustomSelect.vue'
+import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
   BUILTIN_FONTS,
   clampLineSpacing,
@@ -198,8 +224,21 @@ import {
   textAlignOptions,
 } from '@/utils/textStyleForm'
 
-const props = defineProps<{
+interface TextDefaultsSaveResult {
+  success: boolean
+  changed: boolean
+  error?: string
+}
+
+const props = withDefaults(defineProps<{
   isOpen: boolean
+  saveRequestId?: number
+}>(), {
+  saveRequestId: 0,
+})
+
+const emit = defineEmits<{
+  (e: 'save-complete', result: TextDefaultsSaveResult): void
 }>()
 
 const toast = useToast()
@@ -210,7 +249,8 @@ const userTouched = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
 const fontList = ref<string[]>([])
-const fontUploadInput = ref<HTMLInputElement | null>(null)
+const fontUploadInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+const handledSaveRequestId = ref(0)
 
 const fontSelectOptions = computed(() => {
   const options = Array.from(new Set([...BUILTIN_FONTS, ...fontList.value])).map(font => ({
@@ -273,6 +313,13 @@ watch(
   { immediate: true }
 )
 
+watchEffect(async () => {
+  const requestId = props.saveRequestId
+  if (requestId === 0 || requestId === handledSaveRequestId.value) return
+  handledSaveRequestId.value = requestId
+  emit('save-complete', await saveDefaults())
+})
+
 function updateDraft(updates: Partial<TextStyleSettings>): void {
   draftDefaults.value = {
     ...draftDefaults.value,
@@ -282,9 +329,8 @@ function updateDraft(updates: Partial<TextStyleSettings>): void {
   userTouched.value = true
 }
 
-function updateFontSize(event: Event): void {
-  const value = parseInt((event.target as HTMLInputElement).value, 10)
-  if (!Number.isNaN(value) && value > 0) {
+function updateFontSize(value: number | null): void {
+  if (value !== null && value > 0) {
     updateDraft({ fontSize: value })
   }
 }
@@ -305,34 +351,35 @@ function handleInpaintMethodChange(value: string | number): void {
   updateDraft({ inpaintMethod: String(value) as InpaintMethod })
 }
 
-function updateLineSpacing(event: Event): void {
-  const value = clampLineSpacing(Number((event.target as HTMLInputElement).value), draftDefaults.value.lineSpacing)
-  updateDraft({ lineSpacing: value })
+function updateLineSpacing(value: number | null): void {
+  const lineSpacing = value === null
+    ? draftDefaults.value.lineSpacing
+    : clampLineSpacing(value, draftDefaults.value.lineSpacing)
+  updateDraft({ lineSpacing })
 }
 
-function updateTextColor(event: Event): void {
-  updateDraft({ textColor: (event.target as HTMLInputElement).value })
+function updateTextColor(value: string): void {
+  updateDraft({ textColor: value })
 }
 
 function updateUseAutoTextColor(value: boolean): void {
   updateDraft({ useAutoTextColor: value })
 }
 
-function updateFillColor(event: Event): void {
-  updateDraft({ fillColor: (event.target as HTMLInputElement).value })
+function updateFillColor(value: string): void {
+  updateDraft({ fillColor: value })
 }
 
 function updateStrokeEnabled(value: boolean): void {
   updateDraft({ strokeEnabled: value })
 }
 
-function updateStrokeColor(event: Event): void {
-  updateDraft({ strokeColor: (event.target as HTMLInputElement).value })
+function updateStrokeColor(value: string): void {
+  updateDraft({ strokeColor: value })
 }
 
-function updateStrokeWidth(event: Event): void {
-  const value = parseInt((event.target as HTMLInputElement).value, 10)
-  if (!Number.isNaN(value) && value >= 0) {
+function updateStrokeWidth(value: number | null): void {
+  if (value !== null && value >= 0) {
     updateDraft({ strokeWidth: value })
   }
 }
@@ -344,9 +391,8 @@ function resetDraftToFactory(): void {
   errorMessage.value = ''
 }
 
-async function handleFontUpload(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+async function handleFontUpload(files: File[]): Promise<void> {
+  const file = files[0]
   if (!file) return
 
   const validExtensions = ['.ttf', '.ttc', '.otf']
@@ -354,7 +400,7 @@ async function handleFontUpload(event: Event): Promise<void> {
   const isValidType = validExtensions.some(ext => fileName.endsWith(ext))
   if (!isValidType) {
     toast.error('请选择 .ttf、.ttc 或 .otf 格式的字体文件')
-    input.value = ''
+    fontUploadInput.value?.clear()
     return
   }
 
@@ -370,7 +416,7 @@ async function handleFontUpload(event: Event): Promise<void> {
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '字体上传失败')
   } finally {
-    input.value = ''
+    fontUploadInput.value?.clear()
   }
 }
 
@@ -383,7 +429,7 @@ function handleFontSelectChange(value: string | number): void {
   updateDraft({ fontFamily: nextValue })
 }
 
-async function saveDefaults(): Promise<{ success: boolean; changed: boolean; error?: string }> {
+async function saveDefaults(): Promise<TextDefaultsSaveResult> {
   if (resetRequested.value) {
     try {
       const response = await configApi.resetTextStyleDefaults()
@@ -442,18 +488,10 @@ async function saveDefaults(): Promise<{ success: boolean; changed: boolean; err
   }
 }
 
-defineExpose({
-  saveDefaults,
-})
 </script>
 
 <style scoped>
-.action-row {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.text-style-defaults-settings code {
+.text-style-defaults-settings__config-path {
   font-family: var(--font-mono);
 }
 </style>

@@ -1,16 +1,10 @@
-/**
- * 章节拖拽排序属性测试
- * Property 13: 章节排序一致性
- * Validates: Requirements 21.2
- */
-
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import type { BookData, ChapterData } from '@/types/api'
 
-describe('Property 13: 章节排序一致性', () => {
+describe('bookshelf chapter reorder properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
@@ -20,9 +14,6 @@ describe('Property 13: 章节排序一致性', () => {
     { minLength: 1, maxLength: 20 }
   ).map((value) => `tag-${value}`)
 
-  /**
-   * 生成章节数据的 Arbitrary
-   */
   const chapterArbitrary = fc.record({
     id: fc.uuid(),
     title: fc.string({ minLength: 1, maxLength: 50 }),
@@ -33,134 +24,101 @@ describe('Property 13: 章节排序一致性', () => {
     updatedAt: fc.date().map(d => d.toISOString()),
   }) as fc.Arbitrary<ChapterData>
 
-  /**
-   * 生成书籍数据的 Arbitrary
-   */
+  const chapterListArbitrary = fc.uniqueArray(chapterArbitrary, {
+    minLength: 1,
+    maxLength: 20,
+    selector: chapter => chapter.id,
+  })
+
   const bookWithChaptersArbitrary = fc.record({
     id: fc.uuid(),
     title: fc.string({ minLength: 1, maxLength: 100 }),
     description: fc.option(fc.string({ maxLength: 200 }), { nil: undefined }),
     cover: fc.option(fc.string(), { nil: undefined }),
     tags: fc.array(tagNameArbitrary, { maxLength: 5 }),
-    chapters: fc.array(chapterArbitrary, { minLength: 1, maxLength: 20 }),
+    chapters: chapterListArbitrary,
     createdAt: fc.date().map(d => d.toISOString()),
     updatedAt: fc.date().map(d => d.toISOString()),
   }) as fc.Arbitrary<BookData>
 
-  it('拖拽后章节顺序正确更新', () => {
+  it('reorders chapters to match the requested id order', () => {
     fc.assert(
-      fc.property(
-        bookWithChaptersArbitrary,
-        fc.nat({ max: 100 }),
-        (book, seed) => {
-          const store = useBookshelfStore()
-          store.setBooks([book])
+      fc.property(bookWithChaptersArbitrary, fc.nat({ max: 100 }), (book, seed) => {
+        const store = useBookshelfStore()
+        store.setBooks([book])
 
-          // 获取原始章节ID列表
-          const originalIds = book.chapters!.map(c => c.id)
-          if (originalIds.length < 2) return true // 至少需要2个章节才能测试排序
-
-          // 生成新的随机顺序
-          const shuffledIds = [...originalIds]
-          // 使用 Fisher-Yates 洗牌算法
-          for (let i = shuffledIds.length - 1; i > 0; i--) {
-            const j = (seed + i) % (i + 1)
-            ;[shuffledIds[i], shuffledIds[j]] = [shuffledIds[j], shuffledIds[i]]
-          }
-
-          // 执行重新排序
-          store.reorderChapters(book.id, shuffledIds)
-
-          // 验证：章节顺序应该与新顺序一致
-          const reorderedBook = store.getBookById(book.id)
-          const reorderedIds = reorderedBook?.chapters?.map(c => c.id) || []
-          
-          expect(reorderedIds).toEqual(shuffledIds)
-          return true
+        const originalIds = book.chapters!.map(chapter => chapter.id)
+        if (originalIds.length < 2) {
+          return
         }
-      ),
+
+        const shuffledIds = [...originalIds]
+        for (let index = shuffledIds.length - 1; index > 0; index -= 1) {
+          const swapIndex = (seed + index) % (index + 1)
+          ;[shuffledIds[index], shuffledIds[swapIndex]] = [shuffledIds[swapIndex], shuffledIds[index]]
+        }
+
+        store.reorderChapters(book.id, shuffledIds)
+
+        const reorderedIds = store.getBookById(book.id)?.chapters?.map(chapter => chapter.id) ?? []
+        expect(reorderedIds).toEqual(shuffledIds)
+      }),
       { numRuns: 50 }
     )
   })
 
-  it('排序后 order 字段连续性', () => {
+  it('normalizes chapter order fields after reorder', () => {
     fc.assert(
-      fc.property(
-        bookWithChaptersArbitrary,
-        (book) => {
-          const store = useBookshelfStore()
-          store.setBooks([book])
+      fc.property(bookWithChaptersArbitrary, (book) => {
+        const store = useBookshelfStore()
+        store.setBooks([book])
 
-          // 获取章节ID列表并反转顺序
-          const originalIds = book.chapters!.map(c => c.id)
-          if (originalIds.length < 2) return true
-
-          const reversedIds = [...originalIds].reverse()
-
-          // 执行重新排序
-          store.reorderChapters(book.id, reversedIds)
-
-          // 验证：order 字段应该是连续的 0, 1, 2, ...
-          const reorderedBook = store.getBookById(book.id)
-          const orders = reorderedBook?.chapters?.map(c => c.order) || []
-          
-          for (let i = 0; i < orders.length; i++) {
-            expect(orders[i]).toBe(i)
-          }
-          return true
+        const originalIds = book.chapters!.map(chapter => chapter.id)
+        if (originalIds.length < 2) {
+          return
         }
-      ),
+
+        store.reorderChapters(book.id, [...originalIds].reverse())
+
+        const orders = store.getBookById(book.id)?.chapters?.map(chapter => chapter.order) ?? []
+        for (let index = 0; index < orders.length; index += 1) {
+          expect(orders[index]).toBe(index)
+        }
+      }),
       { numRuns: 50 }
     )
   })
 
-  it('排序不改变章节数量', () => {
+  it('keeps the same chapter count after reorder', () => {
     fc.assert(
-      fc.property(
-        bookWithChaptersArbitrary,
-        (book) => {
-          const store = useBookshelfStore()
-          store.setBooks([book])
+      fc.property(bookWithChaptersArbitrary, (book) => {
+        const store = useBookshelfStore()
+        store.setBooks([book])
 
-          const originalCount = book.chapters!.length
-          const originalIds = book.chapters!.map(c => c.id)
+        const originalIds = book.chapters!.map(chapter => chapter.id)
+        store.reorderChapters(book.id, [...originalIds].reverse())
 
-          // 执行重新排序（反转顺序）
-          store.reorderChapters(book.id, [...originalIds].reverse())
-
-          // 验证：章节数量不变
-          const reorderedBook = store.getBookById(book.id)
-          expect(reorderedBook?.chapters?.length).toBe(originalCount)
-          return true
-        }
-      ),
+        expect(store.getBookById(book.id)?.chapters?.length).toBe(book.chapters!.length)
+      }),
       { numRuns: 50 }
     )
   })
 
-  it('排序保留所有章节内容', () => {
+  it('keeps chapter content attached to every chapter id', () => {
     fc.assert(
-      fc.property(
-        bookWithChaptersArbitrary,
-        (book) => {
-          const store = useBookshelfStore()
-          store.setBooks([book])
+      fc.property(bookWithChaptersArbitrary, (book) => {
+        const store = useBookshelfStore()
+        store.setBooks([book])
 
-          // 记录原始章节标题
-          const originalTitles = new Set(book.chapters!.map(c => c.title))
-          const originalIds = book.chapters!.map(c => c.id)
+        const originalTitles = new Set(book.chapters!.map(chapter => chapter.title))
+        const originalIds = book.chapters!.map(chapter => chapter.id)
+        store.reorderChapters(book.id, [...originalIds].reverse())
 
-          // 执行重新排序
-          store.reorderChapters(book.id, [...originalIds].reverse())
-
-          // 验证：所有章节标题都保留
-          const reorderedBook = store.getBookById(book.id)
-          const reorderedTitles = new Set(reorderedBook?.chapters?.map(c => c.title) || [])
-          
-          expect(reorderedTitles).toEqual(originalTitles)
-          return true
-        }
-      ),
+        const reorderedTitles = new Set(
+          store.getBookById(book.id)?.chapters?.map(chapter => chapter.title) ?? []
+        )
+        expect(reorderedTitles).toEqual(originalTitles)
+      }),
       { numRuns: 50 }
     )
   })

@@ -7,7 +7,6 @@ const props = withDefaults(defineProps<{
   rightWidth?: string
   gap?: string
   mode?: 'flow' | 'fixed' | 'overlay'
-  mobileBreakpoint?: string
   collapsed?: 'none' | 'left' | 'right' | 'both'
   height?: string
   scrollMode?: 'page' | 'main' | 'panes'
@@ -33,7 +32,6 @@ const props = withDefaults(defineProps<{
   rightWidth: '',
   gap: '',
   mode: 'flow',
-  mobileBreakpoint: '',
   collapsed: 'none',
   height: '',
   scrollMode: 'page',
@@ -59,7 +57,6 @@ const layoutStyle = computed(() => ({
   ...(props.leftWidth ? { '--ui-sidebar-left-width': props.leftWidth } : {}),
   ...(props.rightWidth ? { '--ui-sidebar-right-width': props.rightWidth } : {}),
   ...(props.gap ? { '--ui-sidebar-gap': props.gap } : {}),
-  ...(props.mobileBreakpoint ? { '--ui-sidebar-mobile-breakpoint': props.mobileBreakpoint } : {}),
   ...(props.height ? { '--ui-sidebar-height': props.height } : {}),
   ...(props.sidebarTop ? { '--ui-sidebar-top': props.sidebarTop } : {}),
   ...(props.leftInset ? { '--ui-sidebar-left-inset': props.leftInset } : {}),

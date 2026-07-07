@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const { parallelRenderMock, settingsStoreMock } = vi.hoisted(() => ({
   parallelRenderMock: vi.fn(),
@@ -34,6 +37,39 @@ vi.mock('@/stores/settings', () => ({
 describe('executeRender', () => {
   beforeEach(() => {
     parallelRenderMock.mockReset()
+  })
+
+  function createRenderSettings() {
+    const settings = createDefaultSettings()
+    Object.assign(settings.textStyle, {
+      fontSize: 18,
+      autoFontSize: false,
+      fontFamily: 'fonts/STSONG.TTF',
+      layoutDirection: 'auto',
+      textColor: '#111111',
+      fillColor: '#ffffff',
+      strokeEnabled: false,
+      strokeColor: '#000000',
+      strokeWidth: 1,
+      lineSpacing: 1.1,
+      textAlign: 'start',
+      inpaintMethod: 'solid',
+      useAutoTextColor: false,
+    })
+    return settings
+  }
+
+  it('checks backend bubble-state ownership without type escape casts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/composables/translation/core/steps/render.ts'), 'utf8')
+
+    expect(source).not.toContain('renderedState as unknown as Record<string, unknown>')
+    expect(source).toContain("hasOwn(renderedState, 'textlines')")
+  })
+
+  it('keeps render step fixtures typed to the current render input contract', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/renderStep.spec.ts'), 'utf8')
+
+    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('preserves local textlines and ocrResult when backend returns bubble states', async () => {
@@ -130,7 +166,7 @@ describe('executeRender', () => {
       }],
       savedTextStyles: null,
       currentMode: 'standard',
-      settingsSnapshot: settingsStoreMock.settings as any,
+settingsSnapshot: createRenderSettings(),
       renderStylePolicy: {
         fontSize: 'preserve',
         color: 'preserve',
@@ -213,7 +249,7 @@ describe('executeRender', () => {
       }],
       savedTextStyles: null,
       currentMode: 'standard',
-      settingsSnapshot: settingsStoreMock.settings as any,
+settingsSnapshot: createRenderSettings(),
       renderStylePolicy: {
         fontSize: 'preserve',
         color: 'preserve',
@@ -299,7 +335,7 @@ describe('executeRender', () => {
         textAlign: 'start'
       },
       currentMode: 'standard',
-      settingsSnapshot: settingsStoreMock.settings as any,
+settingsSnapshot: createRenderSettings(),
       renderStylePolicy: {
         fontSize: 'preserve',
         color: 'preserve',
@@ -379,12 +415,12 @@ describe('executeRender', () => {
         textAlign: 'start'
       },
       currentMode: 'standard',
-      settingsSnapshot: settingsStoreMock.settings as any,
+settingsSnapshot: createRenderSettings(),
       renderStylePolicy: {
         fontSize: 'preserve',
         color: 'preserve',
       },
-    } as any)
+    })
 
     expect(parallelRenderMock).toHaveBeenCalledWith(expect.objectContaining({
       autoFontSize: false,
@@ -488,12 +524,12 @@ describe('executeRender', () => {
         textAlign: 'start'
       },
       currentMode: 'standard',
-      settingsSnapshot: settingsStoreMock.settings as any,
+settingsSnapshot: createRenderSettings(),
       renderStylePolicy: {
         fontSize: 'initialize_auto',
         color: 'initialize_auto',
       },
-    } as any)
+    })
 
     expect(parallelRenderMock).toHaveBeenCalledWith(expect.objectContaining({
       autoFontSize: true,
@@ -573,12 +609,12 @@ describe('executeRender', () => {
         textAlign: 'start'
       },
       currentMode: 'proofread',
-      settingsSnapshot: settingsStoreMock.settings as any,
+settingsSnapshot: createRenderSettings(),
       renderStylePolicy: {
         fontSize: 'preserve',
         color: 'preserve',
       },
-    } as any)
+    })
 
     expect(result.bubbleStates[0]?.autoFgColor).toEqual([1, 2, 3])
     expect(result.bubbleStates[0]?.autoBgColor).toEqual([10, 11, 12])

@@ -1,84 +1,91 @@
-/**
- * 设置状态管理属性测试
- * 使用 fast-check 进行属性基测试，验证设置持久化和主题切换的一致性
- *
- * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
- * Feature: frontend-behavior, Property 5: 主题切换状态一致性
- * Validates: Requirements 7.2, 7.3, 10.1, 10.2
- */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as fc from 'fast-check'
-import { setActivePinia, createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
+import { STORAGE_KEY_THEME, STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
 import { useSettingsStore } from '@/stores/settings'
-import { STORAGE_KEY_TRANSLATION_SETTINGS, STORAGE_KEY_THEME } from '@/constants'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
-describe('设置状态管理属性测试', () => {
-  // 模拟 localStorage
-  let localStorageMock: Record<string, string> = {}
+type ThemePreference = 'light' | 'dark' | 'system'
 
-  beforeEach(() => {
-    // 重置 localStorage 模拟
-    localStorageMock = {}
+const themePreferenceArb = fc.constantFrom<ThemePreference>('light', 'dark', 'system')
+const nextThemePreference: Record<ThemePreference, ThemePreference> = {
+  light: 'dark',
+  dark: 'system',
+  system: 'light',
+}
+const validFontSizeArb = fc.integer({ min: 10, max: 100 })
+const validColorArb = fc.hexaString({ minLength: 6, maxLength: 6 }).map(hex => `#${hex}`)
+const validFontFamilyArb = fc.constantFrom(
+  'fonts/STSONG.TTF',
+  'fonts/SimHei.ttf',
+  'fonts/msyh.ttc',
+  'Arial',
+  'sans-serif'
+)
+const validLayoutDirectionArb = fc.constantFrom<'auto' | 'vertical' | 'horizontal'>('auto', 'vertical', 'horizontal')
+const validInpaintMethodArb = fc.constantFrom<'solid' | 'lama_mpe' | 'litelama'>('solid', 'lama_mpe', 'litelama')
+const ocrEngineArb = fc.constantFrom<'manga_ocr' | 'paddle_ocr' | 'baidu_ocr' | 'ai_vision'>(
+  'manga_ocr',
+  'paddle_ocr',
+  'baidu_ocr',
+  'ai_vision'
+)
+const textDetectorArb = fc.constantFrom<'ctd' | 'yolo' | 'default'>('ctd', 'yolo', 'default')
+const translationProviderArb = fc.constantFrom<'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'ollama'>(
+  'siliconflow',
+  'deepseek',
+  'volcano',
+  'gemini',
+  'ollama'
+)
+const hqProviderArb = fc.constantFrom<'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom'>(
+  'siliconflow',
+  'deepseek',
+  'volcano',
+  'gemini',
+  'custom'
+)
 
-    // 模拟 localStorage
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
-      return localStorageMock[key] || null
-    })
+function installLocalStorageMock() {
+  const storage: Record<string, string> = {}
 
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
-      localStorageMock[key] = value
-    })
-
-    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation((key: string) => {
-      delete localStorageMock[key]
-    })
-
-    // 重置 Pinia
-    setActivePinia(createPinia())
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => storage[key] ?? null)
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
+    storage[key] = value
+  })
+  vi.spyOn(Storage.prototype, 'removeItem').mockImplementation((key: string) => {
+    delete storage[key]
   })
 
+  return storage
+}
+
+function clearStorage(storage: Record<string, string>): void {
+  for (const key of Object.keys(storage)) {
+    delete storage[key]
+  }
+}
+
+function createSettingsStore() {
+  setActivePinia(createPinia())
+  return useSettingsStore()
+}
+
+function reloadPersistedSettings(storage: Record<string, string>) {
+  expect(storage[STORAGE_KEY_TRANSLATION_SETTINGS]).toBeDefined()
+  const newStore = createSettingsStore()
+  newStore.loadFromStorage()
+  return newStore
+}
+
+describe('settings store properties', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * 生成有效的字号
-   */
-  const validFontSizeArb = fc.integer({ min: 10, max: 100 })
+  it('persists text style updates through the current settings schema', () => {
+    const storage = installLocalStorageMock()
 
-  /**
-   * 生成有效的颜色值
-   */
-  const validColorArb = fc.hexaString({ minLength: 6, maxLength: 6 }).map((hex) => `#${hex}`)
-
-  /**
-   * 生成有效的字体名称
-   */
-  const validFontFamilyArb = fc.constantFrom(
-    'fonts/STSONG.TTF',
-    'fonts/SimHei.ttf',
-    'fonts/msyh.ttc',
-    'Arial',
-    'sans-serif'
-  )
-
-  /**
-   * 生成有效的排版方向
-   */
-  const validLayoutDirectionArb = fc.constantFrom('auto', 'vertical', 'horizontal')
-
-  /**
-   * 生成有效的修复方式
-   */
-  const validInpaintMethodArb = fc.constantFrom('solid', 'lama_mpe', 'litelama')
-
-  /**
-   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
-   * Validates: Requirements 7.2, 7.3
-   *
-   * 对于任意有效的文字样式设置，保存到 localStorage 后再读取应当得到等价的设置
-   */
-  it('文字样式设置持久化往返一致性', () => {
     fc.assert(
       fc.property(
         validFontSizeArb,
@@ -90,321 +97,197 @@ describe('设置状态管理属性测试', () => {
         fc.boolean(),
         fc.integer({ min: 1, max: 10 }),
         (fontSize, textColor, fillColor, fontFamily, layoutDirection, inpaintMethod, strokeEnabled, strokeWidth) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          localStorageMock = {}
+          clearStorage(storage)
+          const store = createSettingsStore()
 
-          const store = useSettingsStore()
-
-          // 更新文字样式设置
           store.updateTextStyle({
             fontSize,
             textColor,
             fillColor,
             fontFamily,
-            layoutDirection: layoutDirection as 'auto' | 'vertical' | 'horizontal',
-            inpaintMethod: inpaintMethod as 'solid' | 'lama_mpe' | 'litelama',
+            layoutDirection,
+            inpaintMethod,
             strokeEnabled,
-            strokeWidth
+            strokeWidth,
           })
 
-          // 验证设置已保存到 localStorage
-          const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
-          if (!savedData) return false
-
-          // 创建新的 store 实例并加载设置
-          setActivePinia(createPinia())
-          const newStore = useSettingsStore()
-          newStore.loadFromStorage()
-
-          // 验证设置已正确恢复
-          return (
-            newStore.settings.textStyle.fontSize === fontSize &&
-            newStore.settings.textStyle.textColor === textColor &&
-            newStore.settings.textStyle.fillColor === fillColor &&
-            newStore.settings.textStyle.fontFamily === fontFamily &&
-            newStore.settings.textStyle.layoutDirection === layoutDirection &&
-            newStore.settings.textStyle.inpaintMethod === inpaintMethod &&
-            newStore.settings.textStyle.strokeEnabled === strokeEnabled &&
-            newStore.settings.textStyle.strokeWidth === strokeWidth
-          )
+          const newStore = reloadPersistedSettings(storage)
+          expect(newStore.settings.textStyle.fontSize).toBe(fontSize)
+          expect(newStore.settings.textStyle.textColor).toBe(textColor)
+          expect(newStore.settings.textStyle.fillColor).toBe(fillColor)
+          expect(newStore.settings.textStyle.fontFamily).toBe(fontFamily)
+          expect(newStore.settings.textStyle.layoutDirection).toBe(layoutDirection)
+          expect(newStore.settings.textStyle.inpaintMethod).toBe(inpaintMethod)
+          expect(newStore.settings.textStyle.strokeEnabled).toBe(strokeEnabled)
+          expect(newStore.settings.textStyle.strokeWidth).toBe(strokeWidth)
         }
       ),
       { numRuns: 100 }
     )
   })
 
+  it('persists OCR engine, language, and detector settings', () => {
+    const storage = installLocalStorageMock()
 
-  /**
-   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
-   * Validates: Requirements 7.2, 7.3
-   *
-   * 对于任意有效的OCR设置，保存到 localStorage 后再读取应当得到等价的设置
-   */
-  it('OCR设置持久化往返一致性', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('manga_ocr', 'paddle_ocr', 'baidu_ocr', 'ai_vision'),
+        ocrEngineArb,
         fc.constantFrom('ja', 'zh', 'en', 'ko'),
-        fc.constantFrom('ctd', 'yolo', 'default'),
+        textDetectorArb,
         (ocrEngine, sourceLanguage, textDetector) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          localStorageMock = {}
+          clearStorage(storage)
+          const store = createSettingsStore()
 
-          const store = useSettingsStore()
-
-          // 更新OCR设置
-          store.setOcrEngine(ocrEngine as 'manga_ocr' | 'paddle_ocr' | 'baidu_ocr' | 'ai_vision')
+          store.setOcrEngine(ocrEngine)
           store.updateSettings({ sourceLanguage })
-          store.setTextDetector(textDetector as 'ctd' | 'yolo' | 'default')
+          store.setTextDetector(textDetector)
 
-          // 验证设置已保存到 localStorage
-          const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
-          if (!savedData) return false
-
-          // 创建新的 store 实例并加载设置
-          setActivePinia(createPinia())
-          const newStore = useSettingsStore()
-          newStore.loadFromStorage()
-
-          // 验证设置已正确恢复
-          return (
-            newStore.settings.ocrEngine === ocrEngine &&
-            newStore.settings.sourceLanguage === sourceLanguage &&
-            newStore.settings.textDetector === textDetector
-          )
+          const newStore = reloadPersistedSettings(storage)
+          expect(newStore.settings.ocrEngine).toBe(ocrEngine)
+          expect(newStore.settings.sourceLanguage).toBe(sourceLanguage)
+          expect(newStore.settings.textDetector).toBe(textDetector)
         }
       ),
       { numRuns: 100 }
     )
   })
 
-  it('从 localStorage 加载无效检测器设置时应回退为 default', () => {
-    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
-      textDetector: 'invalid-detector'
-    })
+  it('normalizes invalid current-schema detector settings to the default detector', () => {
+    const storage = installLocalStorageMock()
+    const invalidSettings = createDefaultSettings()
+    ;(invalidSettings as Record<string, unknown>).textDetector = 'invalid-detector'
+    storage[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(invalidSettings)
 
-    const store = useSettingsStore()
+    const store = createSettingsStore()
     store.loadFromStorage()
 
     expect(store.settings.textDetector).toBe('default')
   })
 
-  /**
-   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
-   * Validates: Requirements 7.2, 7.3
-   *
-   * 对于任意有效的翻译服务设置，保存到 localStorage 后再读取应当得到等价的设置
-   */
-  it('翻译服务设置持久化往返一致性', () => {
+  it('persists translation provider execution settings', () => {
+    const storage = installLocalStorageMock()
+
     fc.assert(
       fc.property(
-        fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'ollama'),
+        translationProviderArb,
         fc.string({ minLength: 0, maxLength: 50 }),
         fc.string({ minLength: 0, maxLength: 50 }),
         fc.integer({ min: 0, max: 100 }),
         fc.integer({ min: 1, max: 10 }),
         (provider, apiKey, modelName, rpmLimit, businessRetries) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          localStorageMock = {}
+          clearStorage(storage)
+          const store = createSettingsStore()
 
-          const store = useSettingsStore()
-
-          // 更新翻译服务设置
           store.updateTranslationService({
-            provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'ollama',
+            provider,
             apiKey,
             modelName,
             rpmLimit,
-            businessRetries
+            businessRetries,
           })
 
-          // 验证设置已保存到 localStorage
-          const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
-          if (!savedData) return false
-
-          // 创建新的 store 实例并加载设置
-          setActivePinia(createPinia())
-          const newStore = useSettingsStore()
-          newStore.loadFromStorage()
-
-          // 验证设置已正确恢复
-          return (
-            newStore.settings.translation.provider === provider &&
-            newStore.settings.translation.apiKey === apiKey &&
-            newStore.settings.translation.modelName === modelName &&
-            newStore.settings.translation.openaiOptions.execution.rpmLimit === rpmLimit &&
-            newStore.settings.translation.openaiOptions.execution.businessRetries === businessRetries
-          )
+          const newStore = reloadPersistedSettings(storage)
+          expect(newStore.settings.translation.provider).toBe(provider)
+          expect(newStore.settings.translation.apiKey).toBe(apiKey)
+          expect(newStore.settings.translation.modelName).toBe(modelName)
+          expect(newStore.settings.translation.openaiOptions.execution.rpmLimit).toBe(rpmLimit)
+          expect(newStore.settings.translation.openaiOptions.execution.businessRetries).toBe(businessRetries)
         }
       ),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 5: 主题切换状态一致性
-   * Validates: Requirements 10.1, 10.2
-   *
-   * 对于任意初始主题状态，切换主题后状态应当正确更新
-   */
-  it('主题切换状态一致性', () => {
+  it('cycles theme preference and persists each selected theme', () => {
+    const storage = installLocalStorageMock()
+
     fc.assert(
-      fc.property(fc.constantFrom('light', 'dark'), (initialTheme) => {
-        // 每次迭代重新创建 Pinia 实例
-        setActivePinia(createPinia())
-        localStorageMock = {}
+      fc.property(themePreferenceArb, initialTheme => {
+        clearStorage(storage)
+        const store = createSettingsStore()
 
-        const store = useSettingsStore()
+        store.setTheme(initialTheme)
+        expect(store.theme).toBe(initialTheme)
 
-        // 设置初始主题
-        store.setTheme(initialTheme as 'light' | 'dark')
-
-        // 验证初始主题
-        if (store.theme !== initialTheme) return false
-
-        // 切换主题
         store.toggleTheme()
+        const expectedTheme = nextThemePreference[initialTheme]
+        expect(store.theme).toBe(expectedTheme)
+        expect(storage[STORAGE_KEY_THEME]).toBe(expectedTheme)
 
-        // 验证主题已切换
-        const expectedTheme = initialTheme === 'light' ? 'dark' : 'light'
-        if (store.theme !== expectedTheme) return false
-
-        // 验证主题已保存到 localStorage
-        const savedTheme = localStorageMock[STORAGE_KEY_THEME]
-        if (savedTheme !== expectedTheme) return false
-
-        // 再次切换，应该回到初始主题
         store.toggleTheme()
-        return store.theme === initialTheme
+        store.toggleTheme()
+        expect(store.theme).toBe(initialTheme)
       }),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 5: 主题切换状态一致性
-   * Validates: Requirements 10.1, 10.2
-   *
-   * 主题持久化往返一致性
-   */
-  it('主题持久化往返一致性', () => {
+  it('loads persisted theme preference into a new settings store', () => {
+    const storage = installLocalStorageMock()
+
     fc.assert(
-      fc.property(fc.constantFrom('light', 'dark'), (theme) => {
-        // 每次迭代重新创建 Pinia 实例
-        setActivePinia(createPinia())
-        localStorageMock = {}
+      fc.property(themePreferenceArb, theme => {
+        clearStorage(storage)
+        const store = createSettingsStore()
 
-        const store = useSettingsStore()
+        store.setTheme(theme)
+        expect(storage[STORAGE_KEY_THEME]).toBe(theme)
 
-        // 设置主题
-        store.setTheme(theme as 'light' | 'dark')
-
-        // 验证主题已保存到 localStorage
-        const savedTheme = localStorageMock[STORAGE_KEY_THEME]
-        if (savedTheme !== theme) return false
-
-        // 创建新的 store 实例并加载主题
-        setActivePinia(createPinia())
-        const newStore = useSettingsStore()
+        const newStore = createSettingsStore()
         newStore.loadThemeFromStorage()
-
-        // 验证主题已正确恢复
-        return newStore.theme === theme
+        expect(newStore.theme).toBe(theme)
       }),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
-   * Validates: Requirements 7.2, 7.3
-   *
-   * 重置设置后应该恢复为默认值
-   */
-  it('重置设置后应该恢复为默认值', () => {
+  it('resets edited text style fields to their defaults', () => {
+    const storage = installLocalStorageMock()
+
     fc.assert(
-      fc.property(
-        validFontSizeArb,
-        validColorArb,
-        (fontSize, textColor) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          localStorageMock = {}
+      fc.property(validFontSizeArb, validColorArb, (fontSize, textColor) => {
+        clearStorage(storage)
+        const store = createSettingsStore()
+        const defaultFontSize = store.settings.textStyle.fontSize
+        const defaultTextColor = store.settings.textStyle.textColor
 
-          const store = useSettingsStore()
+        store.updateTextStyle({ fontSize, textColor })
+        expect(store.settings.textStyle.fontSize).toBe(fontSize)
+        expect(store.settings.textStyle.textColor).toBe(textColor)
 
-          // 记录默认值
-          const defaultFontSize = store.settings.textStyle.fontSize
-          const defaultTextColor = store.settings.textStyle.textColor
-
-          // 修改设置
-          store.updateTextStyle({ fontSize, textColor })
-
-          // 验证设置已修改
-          if (store.settings.textStyle.fontSize !== fontSize) return false
-          if (store.settings.textStyle.textColor !== textColor) return false
-
-          // 重置设置
-          store.resetToDefaults()
-
-          // 验证设置已恢复为默认值
-          return (
-            store.settings.textStyle.fontSize === defaultFontSize &&
-            store.settings.textStyle.textColor === defaultTextColor
-          )
-        }
-      ),
+        store.resetToDefaults()
+        expect(store.settings.textStyle.fontSize).toBe(defaultFontSize)
+        expect(store.settings.textStyle.textColor).toBe(defaultTextColor)
+      }),
       { numRuns: 100 }
     )
   })
 
-  /**
-   * Feature: frontend-behavior, Property 4: 设置持久化往返一致性
-   * Validates: Requirements 7.2, 7.3
-   *
-   * 高质量翻译设置持久化往返一致性
-   */
-  it('高质量翻译设置持久化往返一致性', () => {
+  it('persists high-quality translation provider settings', () => {
+    const storage = installLocalStorageMock()
+
     fc.assert(
       fc.property(
-        fc.constantFrom('siliconflow', 'deepseek', 'volcano', 'gemini', 'custom'),
+        hqProviderArb,
         fc.integer({ min: 1, max: 10 }),
         fc.integer({ min: 1, max: 20 }),
         fc.boolean(),
         (provider, batchSize, rpmLimit, forceJsonOutput) => {
-          // 每次迭代重新创建 Pinia 实例
-          setActivePinia(createPinia())
-          localStorageMock = {}
+          clearStorage(storage)
+          const store = createSettingsStore()
 
-          const store = useSettingsStore()
-
-          // 更新高质量翻译设置
           store.updateHqTranslation({
-            provider: provider as 'siliconflow' | 'deepseek' | 'volcano' | 'gemini' | 'custom',
+            provider,
             batchSize,
             rpmLimit,
-            forceJsonOutput
+            forceJsonOutput,
           })
 
-          // 验证设置已保存到 localStorage
-          const savedData = localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS]
-          if (!savedData) return false
-
-          // 创建新的 store 实例并加载设置
-          setActivePinia(createPinia())
-          const newStore = useSettingsStore()
-          newStore.loadFromStorage()
-
-          // 验证设置已正确恢复
-          return (
-            newStore.settings.hqTranslation.provider === provider &&
-            newStore.settings.hqTranslation.batchSize === batchSize &&
-            newStore.settings.hqTranslation.openaiOptions.execution.rpmLimit === rpmLimit &&
-            newStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput === forceJsonOutput
-          )
+          const newStore = reloadPersistedSettings(storage)
+          expect(newStore.settings.hqTranslation.provider).toBe(provider)
+          expect(newStore.settings.hqTranslation.batchSize).toBe(batchSize)
+          expect(newStore.settings.hqTranslation.openaiOptions.execution.rpmLimit).toBe(rpmLimit)
+          expect(newStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput).toBe(forceJsonOutput)
         }
       ),
       { numRuns: 100 }

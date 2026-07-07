@@ -1,5 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import ProductChipList from '@/components/product/ProductChipList.vue'
 
 const {
   getPromptsMock,
@@ -77,11 +81,76 @@ describe('SavedPromptsPicker', () => {
     })
     await flushPromises()
 
-    await wrapper.get('.prompt-chip').trigger('click')
+    const chips = wrapper.getComponent(ProductChipList)
+    expect(chips.props('label')).toBe('快速选择')
+    expect(chips.props('items')).toEqual([
+      expect.objectContaining({
+        id: 'translate-prompt',
+        interactive: true,
+        label: 'translate-prompt',
+      }),
+    ])
+
+    chips.vm.$emit('select', 'translate-prompt')
     await wrapper.setProps({ promptType: 'textbox' })
     translateContent.resolve({ prompt_content: 'stale translate content' })
     await flushPromises()
 
     expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('renders loading and empty prompt states as product chip status items', async () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SavedPromptsPicker.vue'),
+      'utf8'
+    )
+    expect(source).not.toContain('empty-hint')
+
+    const pendingPrompts = deferred<{ prompt_names: string[] }>()
+    getPromptsMock.mockReturnValueOnce(pendingPrompts.promise)
+
+    const wrapper = mount(SavedPromptsPicker, {
+      props: { promptType: 'translate' },
+    })
+    await nextTick()
+
+    let chipList = wrapper.getComponent(ProductChipList)
+    expect(chipList.props('items')).toEqual([
+      expect.objectContaining({
+        iconName: 'refresh',
+        id: 'loading',
+        interactive: false,
+        label: '加载中...',
+        tone: 'neutral',
+      }),
+    ])
+    expect(wrapper.find('.empty-hint').exists()).toBe(false)
+
+    pendingPrompts.resolve({ prompt_names: [] })
+    await flushPromises()
+
+    chipList = wrapper.getComponent(ProductChipList)
+    expect(chipList.props('items')).toEqual([
+      expect.objectContaining({
+        iconName: 'file-text',
+        id: 'empty',
+        interactive: false,
+        label: '暂无保存的提示词',
+        tone: 'neutral',
+      }),
+    ])
+    expect(wrapper.find('.empty-hint').exists()).toBe(false)
+  })
+
+  it('keeps refresh behavior on lifecycle and props instead of an exposed instance method', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SavedPromptsPicker.vue'),
+      'utf8'
+    )
+
+    expect(source).not.toContain('defineExpose')
+    expect(source).toContain('watch(() => props.promptType')
+    expect(source).toContain('onMounted')
+    expect(source).not.toMatch(/var\(--color-[a-z0-9-]+,\s*var\(--color-[a-z0-9-]+\)\)/)
   })
 })

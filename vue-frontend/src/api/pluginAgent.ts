@@ -1,4 +1,6 @@
 import { apiClient } from './client'
+import { readApiErrorMessage } from './download'
+import { readSseStream } from './sse'
 import type { PluginData } from '@/types'
 import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import type { OpenAICompatibleOptions } from '@/types/settings'
@@ -185,6 +187,10 @@ function serializeAgentConfig(config: PluginAgentAgentConfig) {
   }
 }
 
+function pluginAgentSessionEndpoint(sessionId: string, suffix = ''): string {
+  return `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}${suffix}`
+}
+
 export async function getPluginAgentSettings(): Promise<PluginAgentSettingsResponse> {
   return apiClient.get<PluginAgentSettingsResponse>('/api/plugins/agent/settings')
 }
@@ -197,11 +203,11 @@ export async function createPluginAgentSession(payload: {
 }
 
 export async function getPluginAgentSession(sessionId: string): Promise<PluginAgentSessionResponse> {
-  return apiClient.get<PluginAgentSessionResponse>(`/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}`)
+  return apiClient.get<PluginAgentSessionResponse>(pluginAgentSessionEndpoint(sessionId))
 }
 
 export async function deletePluginAgentSession(sessionId: string): Promise<{ success: boolean; deleted: boolean }> {
-  return apiClient.delete<{ success: boolean; deleted: boolean }>(`/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}`)
+  return apiClient.delete<{ success: boolean; deleted: boolean }>(pluginAgentSessionEndpoint(sessionId))
 }
 
 export async function sendPluginAgentMessage(
@@ -212,7 +218,7 @@ export async function sendPluginAgentMessage(
   },
 ): Promise<PluginAgentSessionResponse> {
   return apiClient.post<PluginAgentSessionResponse>(
-    `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/messages`,
+    pluginAgentSessionEndpoint(sessionId, '/messages'),
     {
       content: payload.content,
       agent_config: serializeAgentConfig(payload.agentConfig),
@@ -225,7 +231,7 @@ export async function lockPluginAgentTarget(
   proposal: PluginAgentTargetProposal,
 ): Promise<PluginAgentSessionResponse> {
   return apiClient.post<PluginAgentSessionResponse>(
-    `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/lock-target`,
+    pluginAgentSessionEndpoint(sessionId, '/lock-target'),
     { proposal },
   )
 }
@@ -235,7 +241,7 @@ export async function startPluginAgentExecution(
   agentConfig: PluginAgentAgentConfig,
 ): Promise<PluginAgentSessionResponse> {
   return apiClient.post<PluginAgentSessionResponse>(
-    `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/start`,
+    pluginAgentSessionEndpoint(sessionId, '/start'),
     { agent_config: serializeAgentConfig(agentConfig) },
   )
 }
@@ -244,7 +250,7 @@ export async function cancelPluginAgentExecution(
   sessionId: string,
 ): Promise<{ success: boolean; cancelled: boolean }> {
   return apiClient.post<{ success: boolean; cancelled: boolean }>(
-    `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/cancel`,
+    pluginAgentSessionEndpoint(sessionId, '/cancel'),
   )
 }
 
@@ -260,7 +266,7 @@ export async function subscribePluginAgentEvents(
   let response: Response
   try {
     response = await fetch(
-      `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}/events?after_id=${options.afterId || 0}`,
+      `${pluginAgentSessionEndpoint(sessionId, '/events')}?after_id=${options.afterId || 0}`,
       {
         method: 'GET',
         signal: options.signal,
@@ -277,54 +283,21 @@ export async function subscribePluginAgentEvents(
   }
 
   if (!response.ok) {
-    const text = await response.text()
-    options.onError(text || `HTTP ${response.status}`)
+    options.onError(await readApiErrorMessage(response, `HTTP ${response.status}`))
     return
   }
-
-  const reader = response.body?.getReader()
-  if (!reader) {
-    options.onError('无法读取响应流')
-    return
-  }
-
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let eventType = ''
-  let eventData = ''
 
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const rawLine of lines) {
-        const line = rawLine.trimEnd()
-        if (line.startsWith('event:')) {
-          eventType = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          eventData = line.slice(5).trim()
-        } else if (line === '' && eventType && eventData) {
-          try {
-            const parsed = JSON.parse(eventData) as PluginAgentEvent
-            options.onEvent({ ...parsed, type: eventType })
-          } catch {
-            options.onError('解析插件 Agent 事件失败')
-          }
-          eventType = ''
-          eventData = ''
-        }
-      }
-    }
+    await readSseStream<PluginAgentEvent>(response, {
+      missingBodyMessage: '无法读取响应流',
+      parseErrorMessage: '解析插件 Agent 事件失败',
+      onMessage(message) {
+        options.onEvent({ ...message.data, type: message.event })
+      },
+    })
   } catch (error) {
     if (!options.signal?.aborted) {
       options.onError(error instanceof Error ? error.message : '事件流订阅失败')
     }
-  } finally {
-    reader.releaseLock()
   }
 }

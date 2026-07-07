@@ -1,9 +1,3 @@
-/**
- * 并行翻译 API
- * 
- * 为并行流水线提供独立的步骤API调用
- */
-
 import { apiClient } from './client'
 import type { BubbleState, BubbleTextline } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
@@ -12,8 +6,7 @@ import type {
   NonTranslateSettings,
   TranslationWarning,
 } from '@/types/translationConstraints'
-
-// ==================== 检测 API ====================
+import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'
 
 export interface ParallelDetectParams {
   image: string
@@ -44,12 +37,6 @@ export interface ParallelDetectResponse {
   error?: string
 }
 
-export async function parallelDetect(params: ParallelDetectParams): Promise<ParallelDetectResponse> {
-  return apiClient.post<ParallelDetectResponse>('/api/parallel/detect', params)
-}
-
-// ==================== OCR API ====================
-
 export interface ParallelOcrParams {
   image: string
   bubble_coords: number[][]
@@ -67,19 +54,7 @@ export interface ParallelOcrParams {
   ai_vision_ocr_prompt?: string
   ai_vision_prompt_mode?: 'normal' | 'json' | 'paddleocr_vl'
   custom_ai_vision_base_url?: string
-  openai_options?: {
-    request: {
-      force_json_output: boolean
-      temperature?: number
-      extra_body?: Record<string, unknown>
-    }
-    execution: {
-      use_stream: boolean
-      rpm_limit: number
-      transport_retries: number
-      business_retries: number
-    }
-  }
+  openai_options?: OpenAICompatibleOptionsWire
   ai_vision_min_image_size?: number
   enable_hybrid_ocr?: boolean
   secondary_ocr_engine?: string
@@ -94,12 +69,6 @@ export interface ParallelOcrResponse {
   textlines_per_bubble?: BubbleTextline[][]
   error?: string
 }
-
-export async function parallelOcr(params: ParallelOcrParams): Promise<ParallelOcrResponse> {
-  return apiClient.post<ParallelOcrResponse>('/api/parallel/ocr', params)
-}
-
-// ==================== 颜色提取 API ====================
 
 export interface ParallelColorParams {
   image: string
@@ -120,12 +89,6 @@ export interface ParallelColorResponse {
   error?: string
 }
 
-export async function parallelColor(params: ParallelColorParams): Promise<ParallelColorResponse> {
-  return apiClient.post<ParallelColorResponse>('/api/parallel/color', params)
-}
-
-// ==================== 翻译 API ====================
-
 export interface ParallelTranslateParams {
   original_texts: string[]
   translation_mode?: string
@@ -141,19 +104,7 @@ export interface ParallelTranslateParams {
   use_textbox_prompt?: boolean
   glossary_settings?: GlossarySettings
   non_translate_settings?: NonTranslateSettings
-  openai_options?: {
-    request: {
-      force_json_output: boolean
-      temperature?: number
-      extra_body?: Record<string, unknown>
-    }
-    execution: {
-      use_stream: boolean
-      rpm_limit: number
-      transport_retries: number
-      business_retries: number
-    }
-  }
+  openai_options?: OpenAICompatibleOptionsWire
 }
 
 export interface ParallelTranslateResponse {
@@ -164,20 +115,14 @@ export interface ParallelTranslateResponse {
   error?: string
 }
 
-export async function parallelTranslate(params: ParallelTranslateParams): Promise<ParallelTranslateResponse> {
-  return apiClient.post<ParallelTranslateResponse>('/api/parallel/translate', params)
-}
-
-// ==================== 修复 API ====================
-
 export interface ParallelInpaintParams {
   image: string
   bubble_coords: number[][]
   translation_mode?: string
   translation_scope?: string
   bubble_polygons?: number[][][]
-  raw_mask?: string       // 文字检测掩膜
-  user_mask?: string      // 用户笔刷掩膜
+  raw_mask?: string
+  user_mask?: string
   method?: string
   lama_model?: string
   fill_color?: string
@@ -190,12 +135,6 @@ export interface ParallelInpaintResponse {
   clean_image?: string
   error?: string
 }
-
-export async function parallelInpaint(params: ParallelInpaintParams): Promise<ParallelInpaintResponse> {
-  return apiClient.post<ParallelInpaintResponse>('/api/parallel/inpaint', params)
-}
-
-// ==================== 渲染 API ====================
 
 export interface ParallelRenderParams {
   clean_image: string
@@ -222,6 +161,38 @@ export interface ParallelRenderResponse {
   error?: string
 }
 
-export async function parallelRender(params: ParallelRenderParams): Promise<ParallelRenderResponse> {
-  return apiClient.post<ParallelRenderResponse>('/api/parallel/render', params)
+function parallelEndpoint(step: string): string {
+  return `/api/parallel/${step}`
+}
+
+export async function parallelDetect(
+  params: ParallelDetectParams,
+): Promise<ParallelDetectResponse> {
+  return apiClient.post<ParallelDetectResponse>(parallelEndpoint('detect'), params)
+}
+
+export async function parallelOcr(params: ParallelOcrParams): Promise<ParallelOcrResponse> {
+  return apiClient.post<ParallelOcrResponse>(parallelEndpoint('ocr'), params)
+}
+
+export async function parallelColor(params: ParallelColorParams): Promise<ParallelColorResponse> {
+  return apiClient.post<ParallelColorResponse>(parallelEndpoint('color'), params)
+}
+
+export async function parallelTranslate(
+  params: ParallelTranslateParams,
+): Promise<ParallelTranslateResponse> {
+  return apiClient.post<ParallelTranslateResponse>(parallelEndpoint('translate'), params)
+}
+
+export async function parallelInpaint(
+  params: ParallelInpaintParams,
+): Promise<ParallelInpaintResponse> {
+  return apiClient.post<ParallelInpaintResponse>(parallelEndpoint('inpaint'), params)
+}
+
+export async function parallelRender(
+  params: ParallelRenderParams,
+): Promise<ParallelRenderResponse> {
+  return apiClient.post<ParallelRenderResponse>(parallelEndpoint('render'), params)
 }

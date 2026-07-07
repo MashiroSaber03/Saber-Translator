@@ -1,37 +1,54 @@
 <template>
   <header class="studio-topbar">
-    <div class="topbar-left">
-      <UiButton variant="toolbar" class="back-btn" @click="$emit('back')">返回分析</UiButton>
-      <UiButton variant="toolbar" class="action-ghost" @click="$emit('open-resource')">角色资源</UiButton>
-      <div class="title-block">
-        <div class="title-row">
-          <h1>角色工坊 2.0</h1>
-          <span v-if="busy && busyLabel" class="status-pill busy-pill">{{ busyLabel }}</span>
+    <div class="studio-topbar__left">
+      <ProductHeaderAction class="studio-topbar__action" icon-name="chevron-left" label="返回分析" @click="$emit('back')" />
+      <ProductHeaderAction class="studio-topbar__action" icon-name="users" label="角色资源" @click="$emit('open-resource')" />
+      <div class="studio-topbar__title-block">
+        <div class="studio-topbar__title-row">
+          <h1 class="studio-topbar__title">角色工坊 2.0</h1>
+          <span
+            v-if="busy && busyLabel"
+            class="studio-topbar__status-pill studio-topbar__status-pill--busy"
+          >
+            {{ busyLabel }}
+          </span>
         </div>
-        <div class="meta-row">
-          <span v-if="bookTitle" class="status-pill">当前书籍：{{ bookTitle }}</span>
-          <span class="status-pill" :class="{ empty: !documentTitle }">
+        <div class="studio-topbar__meta-row">
+          <span v-if="bookTitle" class="studio-topbar__status-pill">当前书籍：{{ bookTitle }}</span>
+          <span
+            class="studio-topbar__status-pill"
+            :class="{ 'studio-topbar__status-pill--empty': !documentTitle }"
+          >
             {{ documentTitle ? `当前角色：${documentTitle}` : '当前角色：未选择' }}
           </span>
-          <span v-if="documentOrigin" class="status-pill">{{ documentOrigin }}</span>
+          <span v-if="documentOrigin" class="studio-topbar__status-pill">{{ documentOrigin }}</span>
         </div>
       </div>
     </div>
 
-    <div class="topbar-right">
-      <UiButton variant="toolbar" class="action-ghost" @click="$emit('open-export')">导出区</UiButton>
-      <UiButton variant="toolbar" class="action-ghost" :disabled="!hasDocument || validatePending" @click="$emit('validate')">
-        {{ validatePending ? '诊断中...' : '诊断' }}
-      </UiButton>
-      <UiButton variant="toolbar" class="action-primary" :disabled="!hasDocument || savePending" @click="$emit('save')">
-        {{ savePending ? '保存中...' : '保存' }}
-      </UiButton>
+    <div class="studio-topbar__right">
+      <ProductHeaderAction class="studio-topbar__action" icon-name="download" label="导出区" @click="$emit('open-export')" />
+      <ProductHeaderAction
+        class="studio-topbar__action"
+        icon-name="target"
+        :disabled="!hasDocument || validatePending"
+        :label="validatePending ? '诊断中...' : '诊断'"
+        @click="$emit('validate')"
+      />
+      <ProductHeaderAction
+        variant="solid"
+        class="studio-topbar__action studio-topbar__action--primary"
+        icon-name="save"
+        :disabled="!hasDocument || savePending"
+        :label="savePending ? '保存中...' : '保存'"
+        @click="$emit('save')"
+      />
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import UiButton from '@/components/ui/UiButton.vue'
+import ProductHeaderAction from '@/components/product/ProductHeaderAction.vue'
 defineProps<{
   bookTitle: string
   documentTitle: string
@@ -54,12 +71,18 @@ defineEmits<{
 
 <style scoped>
 .studio-topbar {
-  --studio-topbar-backdrop-background: rgba(248, 251, 255, .9);
-  --studio-topbar-primary-action-end: #4d86ee;
-  --studio-topbar-primary-action-shadow: rgba(37, 99, 199, .22);
-  --studio-topbar-primary-action-start: #2563c7;
-  --studio-topbar-status-background: rgba(20, 56, 106, .06);
-  --studio-topbar-title-text: #102741;
+  --studio-topbar-backdrop-background: color-mix(in srgb, var(--color-surface-card) 90%, transparent);
+  --studio-topbar-primary-action-end: var(--color-action-brand-strong);
+  --studio-topbar-primary-action-shadow: var(--shadow-action-brand);
+  --studio-topbar-primary-action-start: var(--color-action-brand);
+  --studio-topbar-status-background: color-mix(in srgb, var(--color-action-brand) 6%, transparent);
+  --studio-topbar-title-text: var(--color-text-heading);
+  --product-header-action-context-surface: var(--studio-surface-muted);
+  --product-header-action-context-text: var(--studio-text-default);
+  --product-header-action-context-hover-surface: var(--studio-surface-tint-muted);
+  --product-header-action-context-solid-surface: linear-gradient(135deg, var(--studio-topbar-primary-action-start), var(--studio-topbar-primary-action-end));
+  --product-header-action-context-solid-shadow: var(--studio-topbar-primary-action-shadow);
+  --product-header-action-context-solid-text: var(--color-text-inverse);
 
   display: flex;
   justify-content: space-between;
@@ -74,25 +97,25 @@ defineEmits<{
   backdrop-filter: blur(18px);
 }
 
-.topbar-left,
-.topbar-right {
+.studio-topbar__left,
+.studio-topbar__right {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.topbar-left {
+.studio-topbar__left {
   min-width: 0;
   flex: 1;
 }
 
-.topbar-right {
+.studio-topbar__right {
   flex-shrink: 0;
   justify-content: flex-end;
   flex-wrap: wrap;
 }
 
-.title-block {
+.studio-topbar__title-block {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -105,14 +128,14 @@ defineEmits<{
   border: 1px solid var(--studio-border-default);
 }
 
-.title-row {
+.studio-topbar__title-row {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.title-row h1 {
+.studio-topbar__title {
   margin: 0;
   font-size: 20px;
   line-height: 1.1;
@@ -120,14 +143,14 @@ defineEmits<{
   white-space: nowrap;
 }
 
-.meta-row {
+.studio-topbar__meta-row {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.status-pill {
+.studio-topbar__status-pill {
   border-radius: 999px;
   padding: 4px 9px;
   background: var(--studio-topbar-status-background);
@@ -136,11 +159,11 @@ defineEmits<{
   line-height: 1.2;
 }
 
-.status-pill.empty {
+.studio-topbar__status-pill--empty {
   color: var(--studio-text-subtle);
 }
 
-.busy-pill {
+.studio-topbar__status-pill--busy {
   background: var(--studio-surface-tint-muted);
   color: var(--color-text-primary-strong);
   overflow: hidden;
@@ -150,67 +173,42 @@ defineEmits<{
   flex-shrink: 1;
 }
 
-.back-btn,
-.action-ghost,
-.action-primary {
-  border: none;
+.studio-topbar__action {
   border-radius: 14px;
   font-size: 14px;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-  white-space: nowrap;
 }
 
-.back-btn,
-.action-ghost {
-  padding: 11px 15px;
-  background: var(--studio-surface-muted);
-  color: var(--studio-text-default);
-}
-
-.back-btn:hover,
-.action-ghost:hover {
-  transform: translateY(-1px);
-}
-
-.action-primary {
-  padding: 11px 18px;
-  background: linear-gradient(135deg, var(--studio-topbar-primary-action-start), var(--studio-topbar-primary-action-end));
-  color: var(--color-text-inverse);
-  box-shadow: 0 12px 24px var(--studio-topbar-primary-action-shadow);
-}
-
-.back-btn:disabled,
-.action-ghost:disabled,
-.action-primary:disabled {
-  opacity: 0.68;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
+.studio-topbar__action--primary {
+  padding-inline: 18px;
 }
 
 @media (--breakpoint-lg-down) {
   .studio-topbar {
+    flex-wrap: wrap;
     padding: 12px 16px;
   }
 
-  .topbar-left,
-  .topbar-right {
+  .studio-topbar__left,
+  .studio-topbar__right {
     width: 100%;
+    min-width: 0;
     flex-wrap: wrap;
   }
 
-  .title-block {
+  .studio-topbar__right {
+    justify-content: flex-start;
+  }
+
+  .studio-topbar__title-block {
     flex: 1 1 100%;
     max-width: none;
   }
 
-  .title-row {
+  .studio-topbar__title-row {
     flex-wrap: wrap;
   }
 
-  .busy-pill {
+  .studio-topbar__status-pill--busy {
     max-width: none;
   }
 }
