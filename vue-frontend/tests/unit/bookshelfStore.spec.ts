@@ -79,6 +79,32 @@ describe('bookshelfStore', () => {
     })
   })
 
+  it('normalizes malformed bookshelf text fields before list sorting reaches the UI', () => {
+    const store = useBookshelfStore()
+
+    store.setBooks([{
+      id: 'book-malformed-title',
+      title: { text: 'Broken Title Shape' },
+      description: ['unexpected', 'description'],
+      created_at: 1700000000000,
+      updated_at: { value: '2026-02-02T00:00:00.000Z' },
+    } as unknown as BookData, {
+      id: 'book-valid-title',
+      title: 'Valid Title',
+      createdAt: '2026-02-01T00:00:00.000Z',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+    }])
+
+    expect(() => store.filteredBooks).not.toThrow()
+    expect(store.books[0]).toMatchObject({
+      id: 'book-malformed-title',
+      title: '',
+      description: '',
+      createdAt: '1700000000000',
+      updatedAt: '',
+    })
+  })
+
   it('preserves omitted chapters when applying a partial local reorder', () => {
     const store = useBookshelfStore()
 
