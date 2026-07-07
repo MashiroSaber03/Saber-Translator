@@ -62,16 +62,17 @@ describe('ImageResultDisplay', () => {
     expect(wrapper.find('.progress').exists()).toBe(false)
   })
 
-  it('uses the native product select for fixed download formats', async () => {
+  it('uses the product select primitive for fixed download formats', async () => {
     exportImportMock.state.isDownloading = false
     const imageStore = useImageStore()
     imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
 
     const wrapper = mount(ImageResultDisplay)
 
-    expect(wrapper.getComponent(UiSelect).exists()).toBe(true)
+    const formatSelect = wrapper.getComponent(UiSelect)
+    expect(formatSelect.exists()).toBe(true)
 
-    await wrapper.get('.result-export-actions__format select').setValue('pdf')
+    formatSelect.vm.$emit('update:modelValue', 'pdf')
     const downloadAllButton = wrapper
       .findAllComponents(UiButton)
       .find(button => button.text().includes('下载所有图片'))

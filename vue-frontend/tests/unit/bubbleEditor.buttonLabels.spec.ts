@@ -415,7 +415,7 @@ describe('BubbleEditor button labels', () => {
       expect.objectContaining({ value: 'lama_mpe' }),
       expect.objectContaining({ value: 'litelama' }),
     ]))
-    expect(wrapper.get('select').attributes('aria-label')).toBe('背景修复方式')
+    expect(inpaintSelect.attributes('aria-label')).toBe('背景修复方式')
   })
 
   it('gives icon-only editing toolbar buttons explicit accessible names', () => {

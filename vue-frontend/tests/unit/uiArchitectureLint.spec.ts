@@ -1117,8 +1117,8 @@ describe('UI architecture icon ownership lint', () => {
 })
 
 describe('UI architecture layout shell lint', () => {
-  it('allows UiCombobox to own Teleport dropdown positioning', () => {
-    const result = runUiArchitectureSourceFixture('src/components/ui/UiCombobox.vue', `
+  it('allows select primitives to own Teleport dropdown positioning', () => {
+    const comboboxResult = runUiArchitectureSourceFixture('src/components/ui/UiCombobox.vue', `
       <template><div class="ui-combobox-dropdown"></div></template>
       <style scoped>
       .ui-combobox-dropdown {
@@ -1127,9 +1127,20 @@ describe('UI architecture layout shell lint', () => {
       }
       </style>
     `)
+    const selectResult = runUiArchitectureSourceFixture('src/components/ui/UiSelect.vue', `
+      <template><div class="ui-select-dropdown"></div></template>
+      <style scoped>
+      .ui-select-dropdown {
+        position: fixed;
+        inset: auto;
+      }
+      </style>
+    `)
 
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain('UI architecture check passed')
+    expect(comboboxResult.status).toBe(0)
+    expect(comboboxResult.stdout).toContain('UI architecture check passed')
+    expect(selectResult.status).toBe(0)
+    expect(selectResult.stdout).toContain('UI architecture check passed')
   })
 
   it('rejects page-owned viewport height algorithms', () => {

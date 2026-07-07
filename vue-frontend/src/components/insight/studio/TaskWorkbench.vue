@@ -37,11 +37,13 @@
         </div>
         <UiFormGrid class="task-workbench__grid">
           <UiField variant="settings" label="触发时机" :control-id="`task-${task.id}-trigger`">
-            <UiSelect :id="`task-${task.id}-trigger`" :model-value="task.triggerTiming" variant="studio" @change="$emit('update:field', index, 'triggerTiming', $event)">
-              <option value="initialization">初始化</option>
-              <option value="message_received">收到消息</option>
-              <option value="message_sent">发送消息</option>
-            </UiSelect>
+            <UiSelect
+              :id="`task-${task.id}-trigger`"
+              :model-value="task.triggerTiming"
+              :options="TASK_TRIGGER_OPTIONS"
+              variant="studio"
+              @change="$emit('update:field', index, 'triggerTiming', String($event))"
+            />
           </UiField>
           <UiField variant="settings" label="间隔（事件次数）" :control-id="`task-${task.id}-interval`">
             <UiNumberField
@@ -84,10 +86,17 @@ import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import type { StateTask } from '@/types/characterStudio'
+import type { UiSelectOption } from '@/components/ui/selectTypes'
 
 type StateTaskTextField = 'name' | 'triggerTiming' | 'commands'
 type StateTaskNumberField = 'interval'
 type StateTaskToggleField = 'disabled'
+
+const TASK_TRIGGER_OPTIONS: UiSelectOption[] = [
+  { label: '初始化', value: 'initialization' },
+  { label: '收到消息', value: 'message_received' },
+  { label: '发送消息', value: 'message_sent' },
+]
 
 defineProps<{
   tasks: StateTask[]

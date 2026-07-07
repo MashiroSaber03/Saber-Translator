@@ -45,6 +45,22 @@ async function expectDarkThemeSurface(page: Page, selector: string) {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark')
 
+  await expect.poll(async () => {
+    const colors = await page.evaluate(() => {
+      const bodyStyle = window.getComputedStyle(document.body)
+      return {
+        background: bodyStyle.backgroundColor,
+        text: bodyStyle.color,
+      }
+    })
+    const background = parseCssColorToRgb(colors.background)
+    const text = parseCssColorToRgb(colors.text)
+    return {
+      ...colors,
+      isDarkStable: Math.max(...background) < 80 && Math.min(...text) > 180,
+    }
+  }).toMatchObject({ isDarkStable: true })
+
   const bodyColors = await page.evaluate(() => {
     const bodyStyle = window.getComputedStyle(document.body)
     return {

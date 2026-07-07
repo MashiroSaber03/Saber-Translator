@@ -92,6 +92,7 @@ import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 import PageSelectionSection from '@/components/translate/settings-sidebar/PageSelectionSection.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { useImageStore } from '@/stores/imageStore'
 
@@ -117,11 +118,10 @@ describe('SettingsSidebar page selection workflow', () => {
   it('opens page selection modal and emits selected pages for batch workflow', async () => {
     const wrapper = mount(SettingsSidebar)
 
-    const selects = wrapper.findAll('select')
-    const workflowModeSelect = selects[selects.length - 1]
+    const workflowModeSelect = wrapper.findAllComponents(UiSelect)
+      .find(select => select.attributes('id') === 'workflowModeSelect')
     expect(workflowModeSelect).toBeTruthy()
-    await workflowModeSelect!.setValue('translate-batch')
-    await workflowModeSelect!.trigger('change')
+    workflowModeSelect!.vm.$emit('change', 'translate-batch')
 
     const enableSwitch = wrapper.getComponent(UiSwitch)
     expect(enableSwitch.props('ariaLabel')).toBe('启用指定翻译页码')

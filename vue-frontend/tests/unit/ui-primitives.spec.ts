@@ -869,6 +869,7 @@ describe('UI primitives architecture contracts', () => {
 
   it('provides select checkbox and file input primitives for current forms', async () => {
     const select = mount(UiSelect, {
+      attachTo: document.body,
       props: {
         modelValue: 'b',
         options: [
@@ -879,9 +880,15 @@ describe('UI primitives architecture contracts', () => {
         error: true,
       },
     })
-    expect(select.get('select').classes()).toContain('ui-select--sm')
-    expect(select.get('select').classes()).toContain('ui-select--error')
-    await select.get('select').setValue('a')
+    expect(select.find('select').exists()).toBe(false)
+    const selectTrigger = select.get('[role="combobox"]')
+    expect(selectTrigger.classes()).toContain('ui-select--sm')
+    expect(selectTrigger.classes()).toContain('ui-select--error')
+    await selectTrigger.trigger('click')
+    expect(document.body.querySelector('.ui-select-dropdown')?.getAttribute('role')).toBe('listbox')
+    const firstOption = document.body.querySelector('[role="option"]') as HTMLElement
+    expect(firstOption?.textContent).toContain('Option A')
+    firstOption.click()
     expect(select.emitted('update:modelValue')?.at(-1)).toEqual(['a'])
 
     const studioSelect = mount(UiSelect, {
@@ -891,12 +898,13 @@ describe('UI primitives architecture contracts', () => {
         options: [{ label: 'Before', value: 'before_char' }],
       },
     })
-    expect(studioSelect.get('select').classes()).toEqual(expect.arrayContaining([
+    expect(studioSelect.get('[role="combobox"]').classes()).toEqual(expect.arrayContaining([
       'ui-select--studio',
       'ui-select--md',
     ]))
 
     const numericSelect = mount(UiSelect, {
+      attachTo: document.body,
       props: {
         modelValue: 2,
         options: [
@@ -905,7 +913,8 @@ describe('UI primitives architecture contracts', () => {
         ],
       },
     })
-    await numericSelect.get('select').setValue('1')
+    await numericSelect.get('[role="combobox"]').trigger('click')
+    ;(document.body.querySelector('[data-ui-select-value="1"]') as HTMLElement).click()
     expect(numericSelect.emitted('update:modelValue')?.at(-1)).toEqual([1])
     expect(numericSelect.emitted('change')?.at(-1)).toEqual([1])
 

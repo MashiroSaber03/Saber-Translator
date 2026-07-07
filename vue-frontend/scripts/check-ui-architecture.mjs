@@ -358,6 +358,7 @@ const LAYOUT_OWNER_ALLOWED_FILES = new Set([
   'src/components/common/ToastNotification.vue',
   'src/components/ui/AppShell.vue',
   'src/components/ui/UiCombobox.vue',
+  'src/components/ui/UiSelect.vue',
   'src/components/ui/OverlayLayer.vue',
   'src/components/ui/SidebarLayout.vue',
   'src/components/edit/EditWorkspace.vue',

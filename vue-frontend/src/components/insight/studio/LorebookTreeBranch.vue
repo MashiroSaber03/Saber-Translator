@@ -52,11 +52,12 @@
             />
           </UiField>
           <UiField variant="settings" label="注入位置" :control-id="entryControlId('position')">
-            <UiSelect :id="entryControlId('position')" v-model="localEntry.position" variant="studio">
-              <option value="before_char">before_char</option>
-              <option value="after_char">after_char</option>
-              <option value="at_depth">at_depth</option>
-            </UiSelect>
+            <UiSelect
+              :id="entryControlId('position')"
+              v-model="localEntry.position"
+              :options="LOREBOOK_POSITION_OPTIONS"
+              variant="studio"
+            />
           </UiField>
           <UiField variant="settings" label="深度" :control-id="entryControlId('depth')">
             <UiNumberField
@@ -116,7 +117,14 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
+import type { UiSelectOption } from '@/components/ui/selectTypes'
 import { deepClone } from '@/utils/deepClone'
+
+const LOREBOOK_POSITION_OPTIONS: UiSelectOption[] = [
+  { label: 'before_char', value: 'before_char' },
+  { label: 'after_char', value: 'after_char' },
+  { label: 'at_depth', value: 'at_depth' },
+]
 
 const props = defineProps<{
   entry: LorebookEntryNode

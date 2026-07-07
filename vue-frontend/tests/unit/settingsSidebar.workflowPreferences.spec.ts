@@ -94,6 +94,19 @@ function getRememberWorkflowToggle(wrapper: ReturnType<typeof mount>) {
   return toggle
 }
 
+function getWorkflowModeSelect(wrapper: ReturnType<typeof mount>) {
+  const select = wrapper.findAllComponents(UiSelect)
+    .find(item => item.attributes('id') === 'workflowModeSelect')
+  if (!select) {
+    throw new Error('Workflow mode select not found')
+  }
+  return select
+}
+
+function selectWorkflowMode(wrapper: ReturnType<typeof mount>, mode: string) {
+  getWorkflowModeSelect(wrapper).vm.$emit('change', mode)
+}
+
 describe('SettingsSidebar workflow preferences', () => {
   enableAutoUnmount(afterEach)
 
@@ -123,7 +136,7 @@ describe('SettingsSidebar workflow preferences', () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
-    expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
+    expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('translate-current')
     expect(wrapper.getComponent(UiSelect).exists()).toBe(true)
     expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(false)
   })
@@ -140,7 +153,7 @@ describe('SettingsSidebar workflow preferences', () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
-    expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('clear-all')
+    expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('clear-all')
     expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(true)
   })
 
@@ -148,7 +161,7 @@ describe('SettingsSidebar workflow preferences', () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
-    await wrapper.find('#workflowModeSelect').setValue('hq-batch')
+    selectWorkflowMode(wrapper, 'hq-batch')
 
     expect(savePreferencesMock).toHaveBeenCalledWith({
       rememberWorkflowModeEnabled: false,
@@ -176,10 +189,10 @@ describe('SettingsSidebar workflow preferences', () => {
       const wrapper = mount(SettingsSidebar)
       await flushPromises()
 
-      await wrapper.find('#workflowModeSelect').setValue('hq-batch')
+      selectWorkflowMode(wrapper, 'hq-batch')
       await flushPromises()
 
-      expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('hq-batch')
+      expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('hq-batch')
     } finally {
       warnSpy.mockRestore()
     }
@@ -196,8 +209,8 @@ describe('SettingsSidebar workflow preferences', () => {
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
 
-    await wrapper.find('#workflowModeSelect').setValue('hq-batch')
-    await wrapper.find('#workflowModeSelect').setValue('clear-all')
+    selectWorkflowMode(wrapper, 'hq-batch')
+    selectWorkflowMode(wrapper, 'clear-all')
 
     expect(savePreferencesMock).toHaveBeenCalledTimes(1)
     expect(savePreferencesMock).toHaveBeenNthCalledWith(1, {
@@ -223,7 +236,7 @@ describe('SettingsSidebar workflow preferences', () => {
 
     const wrapper = mount(SettingsSidebar)
 
-    await wrapper.find('#workflowModeSelect').setValue('proofread-batch')
+    selectWorkflowMode(wrapper, 'proofread-batch')
     resolvePreferences({
       success: true,
       preferences: {
@@ -233,7 +246,7 @@ describe('SettingsSidebar workflow preferences', () => {
     })
     await flushPromises()
 
-    expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('proofread-batch')
+    expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('proofread-batch')
   })
 
   it('does not let late preference loading overwrite after the remember switch changes', async () => {
@@ -254,7 +267,7 @@ describe('SettingsSidebar workflow preferences', () => {
     })
     await flushPromises()
 
-    expect((wrapper.find('#workflowModeSelect').element as HTMLSelectElement).value).toBe('translate-current')
+    expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('translate-current')
     expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(true)
   })
 

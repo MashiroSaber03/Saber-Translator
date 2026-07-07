@@ -142,20 +142,20 @@ describe('PromptLibrary', () => {
     const wrapper = mount(PromptLibrary)
     await flushPromises()
 
-    const selects = wrapper.findAll('select')
+    const selects = wrapper.findAllComponents(UiSelect)
     expect(selects.length).toBeGreaterThanOrEqual(1)
 
-    const typeSelect = selects[0]
-    await typeSelect.setValue('ai_vision_ocr')
+    const typeSelect = selects[0]!
+    typeSelect.vm.$emit('change', 'ai_vision_ocr')
     await flushPromises()
 
-    const refreshedSelects = wrapper.findAll('select')
+    const refreshedSelects = wrapper.findAllComponents(UiSelect)
     expect(refreshedSelects.length).toBeGreaterThanOrEqual(2)
 
-    const modeSelect = refreshedSelects[1]
-    expect(modeSelect.element.value).toBe('paddleocr_vl')
+    const modeSelect = refreshedSelects[1]!
+    expect(modeSelect.props('modelValue')).toBe('paddleocr_vl')
 
-    await modeSelect.setValue('paddleocr_vl')
+    modeSelect.vm.$emit('change', 'paddleocr_vl')
 
     expect(updateAiVisionOcrMock).toHaveBeenLastCalledWith({
       forceJsonOutput: false,
@@ -299,8 +299,8 @@ describe('PromptLibrary', () => {
 
     const wrapper = mount(PromptLibrary)
 
-    const typeSelect = wrapper.find('select')
-    await typeSelect.setValue('ai_vision_ocr')
+    const typeSelect = wrapper.findAllComponents(UiSelect)[0]!
+    typeSelect.vm.$emit('change', 'ai_vision_ocr')
 
     visionPrompts.resolve({ prompt_names: ['vision-current'] })
     await flushPromises()
