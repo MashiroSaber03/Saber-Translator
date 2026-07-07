@@ -44,7 +44,7 @@ withDefaults(defineProps<{
   --product-workspace-panel-background: var(--color-surface-base);
   --product-workspace-panel-border: var(--color-border-muted, var(--color-border-default));
   --product-workspace-panel-radius: 12px;
-  --product-workspace-panel-shadow: var(--shadow-card);
+  --product-workspace-panel-shadow: var(--card-shadow);
   --product-workspace-panel-padding: 20px;
   --product-workspace-panel-header-padding: 16px 20px;
   --product-workspace-panel-footer-padding: 16px 20px;

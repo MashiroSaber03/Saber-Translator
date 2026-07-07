@@ -89,7 +89,7 @@ defineEmits<{
 
 .studio-hero-section__avatar {
   --product-avatar-background: linear-gradient(180deg, var(--studio-surface-tint-strong), color-mix(in srgb, var(--color-text-heading) 4%, transparent));
-  --product-avatar-color: var(--color-text-primary-strong);
+  --product-avatar-color: var(--color-text-link-strong);
 }
 
 .studio-hero-section__copy {

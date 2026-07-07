@@ -181,7 +181,7 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--link:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
+  outline: 2px solid var(--color-border-brand);
   outline-offset: 2px;
 }
 

@@ -113,7 +113,7 @@ const workspaceStyle = computed(() => ({
     bottom: 0;
     z-index: var(--product-three-pane-drawer-z-index);
     max-width: 85%;
-    box-shadow: var(--shadow-card);
+    box-shadow: var(--card-shadow);
   }
 
   .product-three-pane-workspace--mobile-drawer .product-three-pane-workspace__pane--left {

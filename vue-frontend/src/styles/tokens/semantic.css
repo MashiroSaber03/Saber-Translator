@@ -76,8 +76,8 @@
   --color-text-heading: #2c3e50;
   --color-text-inverse: #fff;
   --color-text-brand: #6366f1;
-  --color-text-primary-strong: #1f5fc3;
   --color-text-link: #3498db;
+  --color-text-link-strong: #1f5fc3;
   --color-text-danger: #dc3545;
   --color-text-danger-strong: #e74c3c;
 
@@ -159,8 +159,8 @@
   --color-text-subtle: #9ca3af;
   --color-text-heading: #f8fafc;
   --color-text-brand: #a5b4fc;
-  --color-text-primary-strong: #93c5fd;
   --color-text-link: #93c5fd;
+  --color-text-link-strong: #93c5fd;
   --color-text-danger: #fca5a5;
   --color-text-danger-strong: #f87171;
 

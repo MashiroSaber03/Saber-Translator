@@ -72,6 +72,6 @@ button.ui-color-swatch-group__swatch {
 
 .ui-color-swatch-group__swatch--selected {
   border-color: var(--color-border-brand-gradient);
-  box-shadow: 0 0 0 2px var(--color-focus-ring-soft);
+  box-shadow: 0 0 0 2px var(--color-focus-brand-subtle);
 }
 </style>

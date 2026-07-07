@@ -50,7 +50,7 @@ function openStudio() {
 .character-studio-entry-panel__title {
   margin: 0;
   font-size: 24px;
-  color: var(--color-text-primary);
+  color: var(--color-text-brand);
 }
 
 .character-studio-entry-panel__description {

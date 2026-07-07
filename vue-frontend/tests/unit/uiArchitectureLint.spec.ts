@@ -80,6 +80,7 @@ const semanticEditorSurfaceToken = '--color-surface-editor-original'
 const semanticAccentPurpleToken = '--color-accent-purple'
 const semanticGradientStartToken = '--color-surface-brand-gradient-start'
 const semanticSurfacePlainToken = '--color-surface-plain'
+const semanticTextPrimaryStrongToken = '--color-text-primary-strong'
 const semanticWarningTintToken = '--color-surface-warning-tint'
 const vagueComponentToken = '--base-modal-surface-base'
 const roleComponentToken = '--base-modal-overlay-background'
@@ -296,6 +297,7 @@ describe('UI architecture token dependency lint', () => {
         ${semanticAccentPurpleToken}: #9b59b6;
         ${semanticGradientStartToken}: #667eea;
         ${semanticSurfacePlainToken}: #fff;
+        ${semanticTextPrimaryStrongToken}: #1f5fc3;
         ${semanticWarningTintToken}: #fff3cd;
       }
     `, 'src/styles/tokens/semantic.css')
@@ -307,6 +309,7 @@ describe('UI architecture token dependency lint', () => {
     expect(result.stderr).toContain(semanticAccentPurpleToken)
     expect(result.stderr).toContain(semanticGradientStartToken)
     expect(result.stderr).toContain(semanticSurfacePlainToken)
+    expect(result.stderr).toContain(semanticTextPrimaryStrongToken)
     expect(result.stderr).toContain(semanticWarningTintToken)
   })
 
@@ -413,6 +416,20 @@ describe('UI architecture CSS variable ownership lint', () => {
 
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('rejects undefined semantic CSS variables without fallbacks in component styles', () => {
+    const result = runUiArchitectureSourceFixture('src/components/product/ProductFocusFixture.vue', `
+      <template><div class="product-focus-fixture">Focus</div></template>
+      <style scoped>
+      .product-focus-fixture {
+        outline: 2px solid var(--color-focus-ring);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('undefined semantic CSS variable reference(s) --color-focus-ring')
   })
 
   it('rejects owner-scoped CSS variables that are never referenced', () => {

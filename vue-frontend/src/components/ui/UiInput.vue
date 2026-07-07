@@ -117,7 +117,7 @@ defineExpose({ focus })
 
 :where(.ui-input):focus {
   outline: none;
-  border-color: var(--ui-input-focus-border, var(--color-action-primary));
+  border-color: var(--ui-input-focus-border, var(--color-border-brand));
   box-shadow: 0 0 0 3px var(--ui-input-focus-shadow);
 }
 

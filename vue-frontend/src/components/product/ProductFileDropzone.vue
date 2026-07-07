@@ -109,7 +109,7 @@ function handleDragLeave(event: DragEvent): void {
 }
 
 .product-file-dropzone:focus-within {
-  box-shadow: 0 0 0 3px var(--color-focus-ring);
+  box-shadow: 0 0 0 3px var(--color-focus-brand-subtle);
 }
 
 .product-file-dropzone--disabled {

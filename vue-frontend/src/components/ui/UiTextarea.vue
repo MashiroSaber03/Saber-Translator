@@ -119,7 +119,7 @@ defineExpose({
 
 :where(.ui-textarea):focus {
   outline: none;
-  border-color: var(--ui-textarea-focus-border, var(--color-action-primary));
+  border-color: var(--ui-textarea-focus-border, var(--color-border-brand));
   box-shadow: 0 0 0 3px var(--ui-textarea-focus-shadow);
 }
 

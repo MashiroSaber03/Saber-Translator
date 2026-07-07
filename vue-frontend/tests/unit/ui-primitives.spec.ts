@@ -936,7 +936,8 @@ describe('UI primitives architecture contracts', () => {
 
     const selectSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiSelect.vue'), 'utf8')
     expect(selectSource).toContain(':where(.ui-select--studio)')
-    expect(selectSource).toContain('var(--ui-select-studio-border')
+    expect(selectSource).toContain('var(--ui-selector-control-border')
+    expect(selectSource).not.toContain('var(--ui-select-studio-')
     expect(selectSource).not.toMatch(/var\(--studio-/)
 
     const fileInput = mount(UiFileInput, {
@@ -958,6 +959,7 @@ describe('UI primitives architecture contracts', () => {
     const fieldSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiField.vue'), 'utf8')
 
     expect(componentTokenSource).toContain('--ui-selector-control-text: var(--color-text-default);')
+    expect(componentTokenSource).toContain('--ui-selector-control-font-size: 14px;')
     expect(componentTokenSource).toContain('--ui-selector-control-background: var(--color-surface-base);')
     expect(componentTokenSource).toContain('--ui-selector-dropdown-background: var(--color-surface-base);')
     expect(componentTokenSource).toContain('--ui-selector-option-selected-text: var(--color-text-brand);')

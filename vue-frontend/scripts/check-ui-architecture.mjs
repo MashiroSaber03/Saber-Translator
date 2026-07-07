@@ -184,7 +184,7 @@ const DOMAIN_SPECIFIC_GLOBAL_TOKEN_RE = /^--(?:color-edit-|color-(?:surface|text
 const LEGACY_INSIGHT_DOMAIN_ALIAS_RE = /^--insight-(?:bg-[a-z0-9-]+|color-(?:primary|warning|error|danger)|primary(?:-[a-z0-9-]+)?|(?:success|warning|error|danger)(?:-color)?)$/
 const VAGUE_COMPONENT_TOKEN_RE = /^--(?:base-modal|ui-combobox|toast-notification|ui-button|ui-icon-button|ui-input|ui-panel|ui-select|ui-textarea)-(?:(?:surface|text|border|shadow)-(?:base|primary|secondary|default|raised|muted|subtle|hover|floating|strong|inverse|selected|overlay)|(?:border|shadow)-(?:muted|subtle|strong))$/
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
-const IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE = /^--(?:color-gray-\d+|color-accent-purple(?:-hover)?|color-surface-[a-z0-9-]+-gradient-(?:start|end)|color-surface-editor-[a-z0-9-]+|color-surface-overlay-(?:light|medium)(?:-[a-z0-9-]+)?|color-surface-(?:plain|slate-soft|warning-tint|warning-warm)|shadow-(?:brand|success)-soft)$/
+const IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE = /^--(?:color-gray-\d+|color-accent-purple(?:-hover)?|color-text-primary(?:-[a-z0-9-]+)?|color-surface-[a-z0-9-]+-gradient-(?:start|end)|color-surface-editor-[a-z0-9-]+|color-surface-overlay-(?:light|medium)(?:-[a-z0-9-]+)?|color-surface-(?:plain|slate-soft|warning-tint|warning-warm)|shadow-(?:brand|success)-soft)$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
 const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
 const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
@@ -203,6 +203,7 @@ const TYPE_BARREL_REQUIRED_EXPORTS = new Set([
 const CSS_BLOCK_RE = /([^{}]+)\{([^{}]*)\}/g
 const CUSTOM_PROPERTY_RE = /(--[A-Za-z0-9_-]+)\s*:\s*([^;]+);/g
 const VAR_REFERENCE_RE = /var\(\s*(--[A-Za-z0-9_-]+)/g
+const REQUIRED_SEMANTIC_VAR_REFERENCE_RE = /var\(\s*(--(?:color|shadow)-[A-Za-z0-9_-]+)\s*\)/g
 const CUSTOM_PROPERTY_MUTATION_RE = /\.(?:setProperty|removeProperty)\(\s*['"](--[A-Za-z0-9_-]+)['"]/g
 const LEGACY_SHORT_ALIAS_TOKEN_RE = /^--(?:bg-[a-z0-9-]+|btn-[a-z0-9-]+|primary(?:-[a-z0-9-]+)?|danger(?:-[a-z0-9-]+)?|success(?:-[a-z0-9-]+)?|warning(?:-[a-z0-9-]+)?|error(?:-[a-z0-9-]+)?|reader-bg-color)$/
 const LEGACY_COMPATIBILITY_VARIABLES = new Set([
@@ -385,6 +386,7 @@ const architectureDebtUsage = Object.fromEntries(
   Object.keys(ARCHITECTURE_DEBT_BUDGETS).map(key => [key, 0])
 )
 let sourceCustomPropertyReferencesCache = null
+let sourceCustomPropertyDefinitionsCache = null
 
 function scanPath(path) {
   if (!existsSync(path)) {
@@ -567,6 +569,53 @@ function collectSourceCustomPropertyReferencesFromPath(path, refs) {
   }
 }
 
+function collectSourceCustomPropertyDefinitionsFromPath(path, definitions) {
+  if (!existsSync(path)) {
+    return
+  }
+  const stat = statSync(path)
+  if (stat.isDirectory()) {
+    for (const entry of readdirSync(path)) {
+      collectSourceCustomPropertyDefinitionsFromPath(join(path, entry), definitions)
+    }
+    return
+  }
+  if (!/\.(?:vue|css)$/.test(path)) {
+    return
+  }
+  const normalizedPath = normalizePath(path)
+  if (isTestFile(normalizedPath)) {
+    return
+  }
+  for (const token of customPropertyDefinitions(readFileSync(path, 'utf8'), path)) {
+    definitions.add(token)
+  }
+}
+
+function sourceCustomPropertyDefinitions(fixtureContent, fixturePath) {
+  if (SOURCE_FIXTURE) {
+    const definitions = new Set(customPropertyDefinitions(fixtureContent, fixturePath))
+    for (const tokenFile of TOKEN_FILES) {
+      if (!existsSync(tokenFile)) {
+        continue
+      }
+      for (const token of customPropertyDefinitions(readFileSync(tokenFile, 'utf8'), tokenFile)) {
+        definitions.add(token)
+      }
+    }
+    return definitions
+  }
+  if (sourceCustomPropertyDefinitionsCache) {
+    return sourceCustomPropertyDefinitionsCache
+  }
+  const definitions = new Set()
+  for (const root of ROOTS) {
+    collectSourceCustomPropertyDefinitionsFromPath(root, definitions)
+  }
+  sourceCustomPropertyDefinitionsCache = definitions
+  return definitions
+}
+
 function sourceCustomPropertyReferences(fixtureContent) {
   if (SOURCE_FIXTURE) {
     return collectSourceCustomPropertyReferencesFromContent(fixtureContent)
@@ -580,6 +629,24 @@ function sourceCustomPropertyReferences(fixtureContent) {
   }
   sourceCustomPropertyReferencesCache = refs
   return refs
+}
+
+function checkRequiredSemanticCustomProperties(path, contentWithoutComments) {
+  const requiredRefs = new Set(
+    [...contentWithoutComments.matchAll(REQUIRED_SEMANTIC_VAR_REFERENCE_RE)].map(match => match[1])
+  )
+  if (requiredRefs.size === 0) {
+    return
+  }
+
+  const definitions = sourceCustomPropertyDefinitions(contentWithoutComments, path)
+  const unresolvedRefs = [...requiredRefs].filter(token => !definitions.has(token))
+  if (unresolvedRefs.length > 0) {
+    addFailure(
+      path,
+      `undefined semantic CSS variable reference(s) ${unresolvedRefs.join(', ')} are not allowed without a fallback; define the token in src/styles/tokens/* or use an existing semantic token`
+    )
+  }
 }
 
 function referencedOrMutatedLegacyShortAliases(content) {
@@ -1320,6 +1387,7 @@ function checkFile(path) {
   checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
+  checkRequiredSemanticCustomProperties(path, contentWithoutComments)
   checkGlobalFormSkinSelectors(path, content)
   checkBusinessProvideInject(path, normalizedPath, contentWithoutComments)
   checkRawCustomStyleValues(path, content)

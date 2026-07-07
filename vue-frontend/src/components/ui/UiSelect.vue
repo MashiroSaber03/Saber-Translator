@@ -222,9 +222,6 @@ onUnmounted(() => {
 
 <style scoped>
 :where(.ui-select) {
-  --ui-selector-control-background: var(--ui-select-background, var(--color-surface-base));
-  --ui-selector-control-text: var(--ui-select-color, var(--color-text-default));
-
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -234,11 +231,11 @@ onUnmounted(() => {
   padding: var(--ui-select-padding, var(--ui-selector-control-padding));
   border: var(--ui-select-border, 1px solid var(--ui-selector-control-border));
   border-radius: var(--ui-select-radius, var(--ui-selector-control-radius));
-  background: var(--ui-selector-control-background);
-  color: var(--ui-selector-control-text);
+  background: var(--ui-select-background, var(--ui-selector-control-background));
+  color: var(--ui-select-color, var(--ui-selector-control-text));
   font-family: inherit;
-  font-size: var(--ui-select-font-size, 14px);
-  line-height: var(--ui-select-line-height, 1.4);
+  font-size: var(--ui-select-font-size, var(--ui-selector-control-font-size));
+  line-height: var(--ui-select-line-height, var(--ui-selector-control-line-height));
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
@@ -274,24 +271,24 @@ onUnmounted(() => {
 
 :where(.ui-select--studio) {
   min-height: 38px;
-  padding: var(--ui-select-studio-padding, 10px 12px);
-  border: var(--ui-select-studio-border, 1px solid var(--color-border-muted));
-  border-radius: var(--ui-select-studio-radius, 14px);
-  background: var(--ui-select-studio-background, var(--color-surface-input, var(--color-surface-card)));
-  color: var(--ui-select-studio-color, var(--color-text-default));
-  font-size: var(--ui-select-studio-font-size, 13px);
+  padding: var(--ui-select-padding, 10px 12px);
+  border: var(--ui-select-border, 1px solid var(--ui-selector-control-border));
+  border-radius: var(--ui-select-radius, 14px);
+  background: var(--ui-select-background, var(--ui-selector-control-background));
+  color: var(--ui-select-color, var(--ui-selector-control-text));
+  font-size: var(--ui-select-font-size, var(--ui-selector-control-font-size));
 }
 
 :where(.ui-select--studio.ui-select--lg) {
   min-height: 44px;
-  padding: var(--ui-select-studio-lg-padding, 12px 14px);
-  border-radius: var(--ui-select-studio-lg-radius, 16px);
+  padding: var(--ui-select-lg-padding, 12px 14px);
+  border-radius: var(--ui-select-lg-radius, 16px);
 }
 
 :where(.ui-select--studio:focus),
 :where(.ui-select--studio.ui-select--open) {
-  border-color: var(--ui-select-studio-focus-border, var(--color-border-brand));
-  box-shadow: 0 0 0 3px var(--ui-select-studio-focus-shadow, var(--color-focus-brand-soft));
+  border-color: var(--ui-selector-control-focus-border);
+  box-shadow: 0 0 0 3px var(--ui-select-focus-shadow);
 }
 
 :where(.ui-select--error) {

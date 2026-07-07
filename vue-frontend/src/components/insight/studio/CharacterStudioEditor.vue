@@ -665,7 +665,7 @@ function toggleScriptFreeze(checked: boolean) {
   align-items: center;
   justify-content: center;
   background: var(--studio-surface-tint);
-  color: var(--color-text-primary-strong);
+  color: var(--color-text-link-strong);
   font-size: 16px;
 }
 

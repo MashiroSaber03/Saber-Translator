@@ -112,7 +112,7 @@ function handleFileSelect(files: File[]) {
   --character-studio-sidebar-toolbar-background-end: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   --character-studio-sidebar-shell-background: color-mix(in srgb, var(--color-surface-card) 88%, transparent);
   --character-studio-sidebar-kicker-text: var(--color-text-muted);
-  --character-studio-sidebar-title-text: var(--color-text-primary);
+  --character-studio-sidebar-title-text: var(--color-text-brand);
 
   display: flex;
   flex-direction: column;

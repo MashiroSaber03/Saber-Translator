@@ -173,7 +173,7 @@ defineEmits<{
   border-radius: 999px;
   padding: 3px 8px;
   background: var(--studio-surface-tint);
-  color: var(--color-text-primary-strong);
+  color: var(--color-text-link-strong);
   font-size: 11px;
 }
 

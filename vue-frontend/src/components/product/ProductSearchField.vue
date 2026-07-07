@@ -107,7 +107,7 @@ defineExpose({ focus })
   --ui-input-background: var(--product-search-field-background, var(--color-surface-input, var(--color-surface-card)));
   --ui-input-border: var(--product-search-field-border, 1px solid var(--color-border-muted));
   --ui-input-focus-border: var(--product-search-field-focus-border, var(--color-action-primary));
-  --ui-input-focus-shadow: var(--product-search-field-focus-shadow, var(--color-focus-ring));
+  --ui-input-focus-shadow: var(--product-search-field-focus-shadow, var(--color-focus-brand-subtle));
 }
 
 .product-search-field__clear {

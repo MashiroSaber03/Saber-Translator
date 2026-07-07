@@ -165,7 +165,7 @@ defineEmits<{
 
 .studio-topbar__status-pill--busy {
   background: var(--studio-surface-tint-muted);
-  color: var(--color-text-primary-strong);
+  color: var(--color-text-link-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

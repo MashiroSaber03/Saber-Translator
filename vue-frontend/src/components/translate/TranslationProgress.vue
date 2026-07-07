@@ -371,7 +371,7 @@ const progressLabel = computed(() => {
   gap: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-primary-strong);
+  color: var(--color-text-link-strong);
 }
 
 .translation-progress__pool-row--save .translation-progress__pool-name {

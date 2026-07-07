@@ -380,7 +380,7 @@ onUnmounted(() => {
   padding: 4px 8px;
   border-radius: 999px;
   background: var(--studio-surface-tint-muted);
-  color: var(--color-text-primary-strong);
+  color: var(--color-text-link-strong);
 }
 
 .session-toolbar__actions {

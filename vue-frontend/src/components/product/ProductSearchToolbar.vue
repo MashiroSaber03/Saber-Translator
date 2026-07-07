@@ -28,7 +28,7 @@ withDefaults(defineProps<{
   border: 1px solid var(--color-border-muted);
   border-radius: var(--radius-md);
   background: var(--color-surface-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--card-shadow);
 }
 
 .product-search-toolbar__search {

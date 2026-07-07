@@ -62,7 +62,7 @@ function selectItem(item: ProductChoiceCardItem): void {
 .product-choice-card-grid {
   --product-choice-card-grid-gap: 16px;
   --product-choice-card-grid-item-background: var(--color-surface-base);
-  --product-choice-card-grid-item-background-selected: var(--color-surface-brand-soft);
+  --product-choice-card-grid-item-background-selected: var(--color-focus-brand-soft);
   --product-choice-card-grid-item-border: var(--color-border-muted);
   --product-choice-card-grid-item-border-selected: var(--color-border-brand);
   --product-choice-card-grid-item-radius: 8px;
