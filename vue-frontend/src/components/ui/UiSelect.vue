@@ -222,33 +222,36 @@ onUnmounted(() => {
 
 <style scoped>
 :where(.ui-select) {
+  --ui-selector-control-background: var(--ui-select-background, var(--color-surface-base));
+  --ui-selector-control-text: var(--ui-select-color, var(--color-text-default));
+
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: var(--ui-select-min-height, 38px);
-  padding: var(--ui-select-padding, 9px 12px);
-  border: var(--ui-select-border, 1px solid var(--color-border-muted));
-  border-radius: var(--ui-select-radius, 6px);
-  background: var(--ui-select-background, var(--color-surface-input, var(--color-surface-card)));
-  color: var(--ui-select-color, var(--color-text-default));
+  min-height: var(--ui-select-min-height, var(--ui-selector-control-min-height));
+  padding: var(--ui-select-padding, var(--ui-selector-control-padding));
+  border: var(--ui-select-border, 1px solid var(--ui-selector-control-border));
+  border-radius: var(--ui-select-radius, var(--ui-selector-control-radius));
+  background: var(--ui-selector-control-background);
+  color: var(--ui-selector-control-text);
   font-family: inherit;
-  font-size: var(--ui-select-font-size, inherit);
-  line-height: var(--ui-select-line-height, normal);
+  font-size: var(--ui-select-font-size, 14px);
+  line-height: var(--ui-select-line-height, 1.4);
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 :where(.ui-select:hover) {
-  border-color: var(--ui-select-hover-border, var(--color-border-default));
+  border-color: var(--ui-select-hover-border, var(--ui-selector-control-hover-border));
 }
 
 :where(.ui-select:focus),
 :where(.ui-select--open) {
   outline: none;
-  border-color: var(--color-action-primary);
-  box-shadow: 0 0 0 3px var(--ui-select-focus-shadow);
+  border-color: var(--ui-selector-control-focus-border);
+  box-shadow: 0 0 0 2px var(--ui-select-focus-shadow);
 }
 
 :where(.ui-select--lg) {
@@ -319,7 +322,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   margin-left: 8px;
-  color: var(--color-text-secondary);
+  color: var(--ui-selector-arrow-text);
   transition: transform 0.2s ease;
 }
 
@@ -334,11 +337,11 @@ onUnmounted(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px 0;
-  border: 1px solid var(--color-border-default);
-  border-radius: 10px;
-  background: var(--color-surface-base);
-  box-shadow: 0 12px 26px var(--ui-combobox-dropdown-shadow);
-  color: var(--color-text-default);
+  border: 1px solid var(--ui-selector-dropdown-border);
+  border-radius: var(--ui-selector-dropdown-radius);
+  background: var(--ui-selector-dropdown-background);
+  box-shadow: 0 12px 26px var(--ui-selector-dropdown-shadow-color);
+  color: var(--ui-selector-control-text);
   z-index: var(--z-popover);
 }
 
@@ -348,8 +351,8 @@ onUnmounted(() => {
   min-height: 38px;
   padding: 9px 12px;
   border: 0;
-  background: var(--color-surface-base);
-  color: var(--color-text-default);
+  background: var(--ui-selector-dropdown-background);
+  color: var(--ui-selector-control-text);
   font: inherit;
   line-height: 1.4;
   text-align: left;
@@ -360,12 +363,12 @@ onUnmounted(() => {
 .ui-select-option:hover,
 .ui-select-option:focus {
   outline: none;
-  background: var(--ui-combobox-option-hover-background);
+  background: var(--ui-selector-option-hover-background);
 }
 
 .ui-select-option--selected {
-  background: var(--ui-combobox-option-selected-background);
-  color: var(--ui-combobox-option-selected-text);
+  background: var(--ui-selector-option-selected-background);
+  color: var(--ui-selector-option-selected-text);
   font-weight: 500;
 }
 

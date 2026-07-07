@@ -271,7 +271,7 @@ onUnmounted(() => {
   position: relative;
   min-width: 160px;
   font-size: 14px;
-  color: var(--ui-combobox-trigger-text);
+  color: var(--ui-selector-control-text);
 }
 
 .ui-combobox--fit {
@@ -283,12 +283,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--ui-combobox-trigger-border);
-  border-radius: 8px;
-  background: var(--color-surface-base);
-  color: var(--ui-combobox-trigger-text);
+  height: var(--ui-selector-control-min-height);
+  padding: var(--ui-selector-control-padding);
+  border: 1px solid var(--ui-selector-control-border);
+  border-radius: var(--ui-selector-control-radius);
+  background: var(--ui-selector-control-background);
+  color: var(--ui-selector-control-text);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -305,17 +305,17 @@ onUnmounted(() => {
 
 .ui-combobox--workflow .ui-combobox-trigger {
   min-height: 42px;
-  border-color: var(--ui-combobox-workflow-border);
+  border-color: var(--ui-selector-workflow-border);
   border-radius: 10px;
 }
 
 .ui-combobox-trigger:hover {
-  border-color: var(--ui-combobox-trigger-hover-border);
+  border-color: var(--ui-selector-control-hover-border);
 }
 
 .ui-combobox--open .ui-combobox-trigger {
-  border-color: var(--ui-combobox-trigger-focus-border);
-  box-shadow: 0 0 0 2px var(--ui-combobox-trigger-focus-shadow);
+  border-color: var(--ui-selector-control-focus-border);
+  box-shadow: 0 0 0 2px var(--ui-selector-control-focus-shadow);
 }
 
 .ui-combobox--disabled .ui-combobox-trigger {
@@ -328,12 +328,12 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-combobox-trigger-text);
+  color: var(--ui-selector-control-text);
 }
 
 .ui-combobox-arrow {
   margin-left: 8px;
-  color: var(--color-text-secondary);
+  color: var(--ui-selector-arrow-text);
   transition: transform 0.2s;
 }
 
@@ -345,26 +345,26 @@ onUnmounted(() => {
   /* Teleport 下拉层使用视口坐标定位，top/left/width 由 JS 计算。 */
   position: fixed;
   margin-top: 0;
-  background: var(--color-surface-base);
-  border: 1px solid var(--color-border-default);
-  border-radius: 10px;
-  box-shadow: 0 12px 26px var(--ui-combobox-dropdown-shadow);
+  background: var(--ui-selector-dropdown-background);
+  border: 1px solid var(--ui-selector-dropdown-border);
+  border-radius: var(--ui-selector-dropdown-radius);
+  box-shadow: 0 12px 26px var(--ui-selector-dropdown-shadow-color);
   z-index: var(--z-popover);
   max-height: 360px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: var(--ui-combobox-trigger-text);
+  color: var(--ui-selector-control-text);
 }
 
 .ui-combobox-options {
   padding: 6px 0;
-  background: var(--color-surface-base);
-  color: var(--ui-combobox-trigger-text);
+  background: var(--ui-selector-dropdown-background);
+  color: var(--ui-selector-control-text);
 }
 
 .ui-combobox-group {
   margin-bottom: 4px;
-  background: var(--color-surface-base);
+  background: var(--ui-selector-dropdown-background);
 }
 
 .ui-combobox-group:last-child {
@@ -375,8 +375,8 @@ onUnmounted(() => {
   padding: 8px 12px 4px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-secondary);
-  background: var(--color-surface-subtle);
+  color: var(--ui-selector-group-label-text);
+  background: var(--ui-selector-group-label-background);
   text-transform: uppercase;
   letter-spacing: 0;
 }
@@ -384,21 +384,21 @@ onUnmounted(() => {
 .ui-combobox-option {
   padding: 9px 12px;
   cursor: pointer;
-  color: var(--ui-combobox-trigger-text);
-  background: var(--color-surface-base);
+  color: var(--ui-selector-control-text);
+  background: var(--ui-selector-dropdown-background);
   font-size: 14px;
   line-height: 1.4;
   transition: background 0.15s;
 }
 
 .ui-combobox-option:hover {
-  background: var(--ui-combobox-option-hover-background);
-  color: var(--ui-combobox-trigger-text);
+  background: var(--ui-selector-option-hover-background);
+  color: var(--ui-selector-control-text);
 }
 
 .ui-combobox-option--selected {
-  background: var(--ui-combobox-option-selected-background);
-  color: var(--ui-combobox-option-selected-text);
+  background: var(--ui-selector-option-selected-background);
+  color: var(--ui-selector-option-selected-text);
   font-weight: 500;
 }
 

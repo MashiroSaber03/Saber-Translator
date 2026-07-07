@@ -826,6 +826,46 @@ test('dark theme reaches every primary route surface without local overrides', a
   }
 })
 
+test('dark theme keeps selector primitives readable through one visual contract', async ({ page }) => {
+  await enableDarkTheme(page)
+  await page.goto('/translate?book=demo-book&chapter=demo-chapter')
+  await expect(page.locator('.text-style-section')).toBeVisible()
+  const fontSelector = page.locator('.text-style-section__field')
+    .filter({ hasText: '文本字体' })
+    .getByRole('combobox')
+  const layoutSelector = page.locator('.text-style-section__field')
+    .filter({ hasText: '排版方向' })
+    .getByRole('combobox')
+  await expect(fontSelector).toBeVisible()
+  await expect(layoutSelector).toBeVisible()
+
+  const readSelectorStyle = async (locator: typeof fontSelector) =>
+    locator.evaluate((element) => {
+      const style = window.getComputedStyle(element)
+      return {
+        background: style.backgroundColor,
+        text: style.color,
+        borderRadius: style.borderRadius,
+      }
+    })
+
+  const selectorSamples = {
+    combobox: await readSelectorStyle(fontSelector),
+    select: await readSelectorStyle(layoutSelector),
+  }
+
+  for (const sample of [selectorSamples.combobox, selectorSamples.select]) {
+    const background = parseCssColorToRgb(sample.background)
+    const text = parseCssColorToRgb(sample.text)
+    expect(Math.max(...background)).toBeLessThan(80)
+    expect(Math.min(...text)).toBeGreaterThan(180)
+  }
+
+  expect(selectorSamples.select.text).toBe(selectorSamples.combobox.text)
+  expect(selectorSamples.select.background).toBe(selectorSamples.combobox.background)
+  expect(selectorSamples.select.borderRadius).toBe(selectorSamples.combobox.borderRadius)
+})
+
 test('bookshelf empty state keeps its layout contract', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '我的书架' })).toBeVisible()

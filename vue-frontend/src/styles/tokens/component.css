@@ -3,16 +3,26 @@
   --base-modal-overlay-background: rgba(0, 0, 0, .5);
   --base-modal-close-hover-background: rgba(0, 0, 0, .1);
 
-  --ui-combobox-trigger-text: #1f2430;
-  --ui-combobox-trigger-border: #cfd6e4;
-  --ui-combobox-workflow-border: #b8c6dd;
-  --ui-combobox-trigger-hover-border: #8aa0f6;
-  --ui-combobox-trigger-focus-border: #5b73f2;
-  --ui-combobox-trigger-focus-shadow: rgba(88, 125, 255, .18);
-  --ui-combobox-dropdown-shadow: rgba(19, 36, 70, .18);
-  --ui-combobox-option-hover-background: #e3f2fd;
-  --ui-combobox-option-selected-background: #e8edff;
-  --ui-combobox-option-selected-text: #3040c2;
+  --ui-selector-control-min-height: 40px;
+  --ui-selector-control-padding: 0 12px;
+  --ui-selector-control-radius: 8px;
+  --ui-selector-control-background: var(--color-surface-base);
+  --ui-selector-control-text: var(--color-text-default);
+  --ui-selector-control-border: var(--color-border-input);
+  --ui-selector-control-hover-border: var(--color-border-brand);
+  --ui-selector-control-focus-border: var(--color-border-brand);
+  --ui-selector-control-focus-shadow: var(--color-focus-brand-subtle);
+  --ui-selector-arrow-text: var(--color-text-secondary);
+  --ui-selector-dropdown-background: var(--color-surface-base);
+  --ui-selector-dropdown-border: var(--color-border-default);
+  --ui-selector-dropdown-radius: 10px;
+  --ui-selector-dropdown-shadow-color: var(--shadow-medium);
+  --ui-selector-option-hover-background: var(--color-surface-interactive-hover);
+  --ui-selector-option-selected-background: var(--color-focus-brand-soft);
+  --ui-selector-option-selected-text: var(--color-text-brand);
+  --ui-selector-group-label-background: var(--color-surface-subtle);
+  --ui-selector-group-label-text: var(--color-text-secondary);
+  --ui-selector-workflow-border: var(--color-border-input);
 
   --toast-notification-default-background: rgba(0, 0, 0, .75);
   --toast-notification-shadow-color: rgba(0, 0, 0, .3);
@@ -39,7 +49,7 @@
   --ui-panel-subtle-shadow-color: rgba(0, 0, 0, .08);
   --ui-panel-settings-background: #f9fafc;
   --ui-select-error-border: #dc3545;
-  --ui-select-focus-shadow: rgba(102, 126, 234, .16);
+  --ui-select-focus-shadow: var(--ui-selector-control-focus-shadow);
   --ui-textarea-error-border: #dc3545;
   --ui-textarea-focus-shadow: rgba(102, 126, 234, .16);
 }

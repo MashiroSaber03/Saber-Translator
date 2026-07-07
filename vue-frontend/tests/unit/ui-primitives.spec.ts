@@ -948,6 +948,27 @@ describe('UI primitives architecture contracts', () => {
     expect(fileInput.get('input').attributes('hidden')).toBeDefined()
   })
 
+  it('routes fixed and searchable selectors through the shared selector visual contract', () => {
+    const componentTokenSource = readFileSync(
+      resolve(process.cwd(), 'src/styles/tokens/component.css'),
+      'utf8'
+    )
+    const selectSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiSelect.vue'), 'utf8')
+    const comboboxSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiCombobox.vue'), 'utf8')
+    const fieldSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiField.vue'), 'utf8')
+
+    expect(componentTokenSource).toContain('--ui-selector-control-text: var(--color-text-default);')
+    expect(componentTokenSource).toContain('--ui-selector-control-background: var(--color-surface-base);')
+    expect(componentTokenSource).toContain('--ui-selector-dropdown-background: var(--color-surface-base);')
+    expect(componentTokenSource).toContain('--ui-selector-option-selected-text: var(--color-text-brand);')
+    expect(selectSource).toContain('color: var(--ui-selector-control-text);')
+    expect(comboboxSource).toContain('color: var(--ui-selector-control-text);')
+    expect(selectSource).not.toContain('var(--ui-combobox-option-')
+    expect(comboboxSource).not.toContain('var(--ui-combobox-trigger-text')
+    expect(fieldSource).not.toContain('--ui-select-color:')
+    expect(fieldSource).not.toContain('--ui-select-font-size:')
+  })
+
   it('emits typed file arrays while preserving native change listeners', async () => {
     const changeSpy = vi.fn()
     const wrapper = mount(UiFileInput, {
