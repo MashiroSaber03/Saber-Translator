@@ -100,19 +100,14 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 
 <style scoped>
 .product-segmented-tabs {
-  --product-segmented-tabs-background: var(--color-surface-muted);
-  --product-segmented-tabs-border: var(--color-border-muted);
-  --product-segmented-tabs-active-background: var(--color-surface-base);
-  --product-segmented-tabs-active-text: var(--color-text-default);
-  --product-segmented-tabs-text: var(--color-text-supporting);
-
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--product-segmented-tabs-border);
-  border-radius: 8px;
-  background: var(--product-segmented-tabs-background);
+  gap: var(--product-segmented-tabs-gap, 4px);
+  padding: var(--product-segmented-tabs-padding, 4px);
+  border: 1px solid var(--product-segmented-tabs-border, var(--color-border-muted));
+  border-radius: var(--product-segmented-tabs-radius, 8px);
+  background: var(--product-segmented-tabs-background, var(--color-surface-muted));
+  box-shadow: var(--product-segmented-tabs-shadow, none);
 }
 
 .product-segmented-tabs--scroll {
@@ -125,8 +120,9 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
   justify-content: center;
   min-width: max-content;
   gap: 6px;
-  padding: 7px 12px;
-  color: var(--product-segmented-tabs-text);
+  padding: var(--product-segmented-tabs-tab-padding, 7px 12px);
+  border-radius: var(--product-segmented-tabs-tab-radius, var(--radius-control));
+  color: var(--product-segmented-tabs-text, var(--color-text-supporting));
 }
 
 .product-segmented-tabs--scroll .product-segmented-tabs__tab {
@@ -135,9 +131,9 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 
 .product-segmented-tabs__tab--active,
 .product-segmented-tabs__tab--active:hover {
-  background: var(--product-segmented-tabs-active-background);
-  color: var(--product-segmented-tabs-active-text);
-  box-shadow: var(--shadow-soft);
+  background: var(--product-segmented-tabs-active-background, var(--color-surface-base));
+  color: var(--product-segmented-tabs-active-text, var(--color-text-default));
+  box-shadow: var(--product-segmented-tabs-active-shadow, var(--shadow-soft));
 }
 
 .product-segmented-tabs--appearance-underline {

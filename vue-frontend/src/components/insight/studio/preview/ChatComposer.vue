@@ -126,10 +126,11 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 6px;
   margin-top: 2px;
-  padding: 10px 12px;
+  padding: 12px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--color-surface-app) 94%, transparent);
+  background: color-mix(in srgb, var(--studio-surface-soft) 92%, var(--color-surface-card));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-card) 64%, transparent);
 }
 
 .studio-chat-composer__main {
@@ -140,7 +141,7 @@ onUnmounted(() => {
 }
 
 .studio-chat-composer__input {
-  min-height: 64px;
+  min-height: 72px;
   resize: vertical;
 }
 

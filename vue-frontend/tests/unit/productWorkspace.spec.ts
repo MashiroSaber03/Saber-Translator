@@ -218,6 +218,17 @@ describe('ProductWorkspacePanel', () => {
     expect(wrapper.emitted('select')?.[0]).toEqual(['advanced'])
   })
 
+  it('keeps segmented-tab owner tokens externally overridable', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/product/ProductSegmentedTabs.vue'),
+      'utf8',
+    )
+
+    expect(source).not.toMatch(/^\s*--product-segmented-tabs-[\w-]+:/m)
+    expect(source).toContain('var(--product-segmented-tabs-background, var(--color-surface-muted))')
+    expect(source).toContain('var(--product-segmented-tabs-active-background, var(--color-surface-base))')
+  })
+
   it('renders underline product tabs for modal navigation owners without local CSS overrides', async () => {
     const wrapper = mount(ProductSegmentedTabs, {
       props: {

@@ -564,6 +564,7 @@ describe('product feedback components', () => {
     const wrapper = mount(ProductMessageBubble, {
       props: {
         role: 'assistant',
+        appearance: 'reading',
         avatarLabel: '智能助手',
         avatarIconName: 'message',
         ariaLabel: '助手回复',
@@ -575,6 +576,7 @@ describe('product feedback components', () => {
     })
 
     expect(wrapper.get('article').attributes('aria-label')).toBe('助手回复')
+    expect(wrapper.get('article').classes()).toContain('product-message-bubble--appearance-reading')
     expect(wrapper.get('.product-message-bubble__avatar').attributes('aria-label')).toBe('智能助手')
     expect(wrapper.get('.product-message-bubble__body').text()).toContain('回答内容')
     expect(wrapper.get('.product-message-bubble__actions').text()).toContain('保存')

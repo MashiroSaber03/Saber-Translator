@@ -3,12 +3,14 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import type { UiIconName } from '@/components/ui/iconRegistry'
 
 withDefaults(defineProps<{
+  appearance?: 'default' | 'reading'
   ariaLabel?: string
   avatarIconName?: UiIconName
   avatarImageSrc?: string
   avatarLabel: string
   role: 'assistant' | 'user'
 }>(), {
+  appearance: 'default',
   ariaLabel: undefined,
   avatarIconName: undefined,
   avatarImageSrc: undefined,
@@ -18,7 +20,10 @@ withDefaults(defineProps<{
 <template>
   <article
     class="product-message-bubble"
-    :class="`product-message-bubble--${role}`"
+    :class="[
+      `product-message-bubble--${role}`,
+      `product-message-bubble--appearance-${appearance}`,
+    ]"
     :aria-label="ariaLabel"
   >
     <div
@@ -134,9 +139,84 @@ withDefaults(defineProps<{
   margin-top: 12px;
 }
 
+.product-message-bubble--appearance-reading {
+  gap: 0;
+}
+
+.product-message-bubble--appearance-reading .product-message-bubble__avatar {
+  display: none;
+}
+
+.product-message-bubble--appearance-reading .product-message-bubble__body {
+  display: grid;
+  grid-template-areas:
+    "meta actions"
+    "content content"
+    "footer footer";
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 12px;
+  width: min(100%, var(--product-message-bubble-reading-width, 88%));
+  max-width: none;
+  padding: var(--product-message-bubble-reading-padding, 14px 16px);
+  border-color: var(--product-message-bubble-reading-border, var(--color-border-muted));
+  border-radius: var(--product-message-bubble-reading-radius, 18px);
+  background: var(--product-message-bubble-reading-assistant-background, var(--color-surface-card));
+  box-shadow: var(--product-message-bubble-reading-shadow, none);
+  color: var(--product-message-bubble-reading-text, var(--color-text-default));
+}
+
+.product-message-bubble--appearance-reading.product-message-bubble--assistant .product-message-bubble__body {
+  margin-right: auto;
+  border-bottom-left-radius: var(--product-message-bubble-reading-radius, 18px);
+}
+
+.product-message-bubble--appearance-reading.product-message-bubble--user .product-message-bubble__body {
+  margin-left: auto;
+  border-color: var(--product-message-bubble-reading-user-border, var(--product-message-bubble-reading-border, var(--color-border-muted)));
+  border-bottom-right-radius: var(--product-message-bubble-reading-radius, 18px);
+  background: var(--product-message-bubble-reading-user-background, var(--color-surface-muted));
+  color: var(--product-message-bubble-reading-text, var(--color-text-default));
+}
+
+.product-message-bubble--appearance-reading .product-message-bubble__meta {
+  grid-area: meta;
+  margin-bottom: 10px;
+}
+
+.product-message-bubble--appearance-reading .product-message-bubble__content {
+  grid-area: content;
+}
+
+.product-message-bubble--appearance-reading .product-message-bubble__footer {
+  grid-area: footer;
+}
+
+.product-message-bubble--appearance-reading .product-message-bubble__actions {
+  grid-area: actions;
+  align-self: start;
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
 @media (--breakpoint-sm-down) {
   .product-message-bubble__body {
     max-width: calc(100% - 48px);
+  }
+
+  .product-message-bubble--appearance-reading .product-message-bubble__body {
+    grid-template-areas:
+      "meta"
+      "content"
+      "footer"
+      "actions";
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: none;
+  }
+
+  .product-message-bubble--appearance-reading .product-message-bubble__actions {
+    justify-content: flex-start;
+    margin-top: 12px;
   }
 }
 </style>

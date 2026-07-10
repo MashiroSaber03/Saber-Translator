@@ -3,7 +3,6 @@
     <ProductSegmentedTabs
       :active-tab="activeTab"
       aria-label="角色工坊预览工作区"
-      layout="scroll"
       :tabs="tabs"
       @update:active-tab="selectTab"
     />
@@ -225,6 +224,19 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
 
 <style scoped>
 .character-studio-preview {
+  --product-segmented-tabs-background: color-mix(in srgb, var(--color-surface-card) 94%, transparent);
+  --product-segmented-tabs-border: var(--studio-border-default);
+  --product-segmented-tabs-active-background: color-mix(in srgb, var(--color-action-brand) 12%, var(--color-surface-card));
+  --product-segmented-tabs-active-text: var(--studio-text-strong);
+  --product-segmented-tabs-text: var(--studio-text-muted);
+  --product-segmented-tabs-gap: 8px;
+  --product-segmented-tabs-padding: 6px;
+  --product-segmented-tabs-radius: 20px;
+  --product-segmented-tabs-shadow: 0 18px 32px var(--studio-shadow-floating);
+  --product-segmented-tabs-tab-padding: 10px 14px;
+  --product-segmented-tabs-tab-radius: 14px;
+  --product-segmented-tabs-active-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-action-brand) 24%, transparent);
+
   display: flex;
   flex-direction: column;
   gap: 12px;

@@ -7,6 +7,7 @@ import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductMessageBubble from '@/components/product/ProductMessageBubble.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
@@ -465,6 +466,7 @@ describe('CharacterStudioPreview workspace', () => {
     expect(messageBubbles.map(bubble => bubble.props('role'))).toEqual(
       conversationSessionStub.messages.map(message => message.role),
     )
+    expect(messageBubbles.every(bubble => bubble.props('appearance') === 'reading')).toBe(true)
     expect(wrapper.findAllComponents(ProductActionRow).length).toBeGreaterThanOrEqual(3)
 
     const source = readFileSync(
@@ -491,6 +493,7 @@ describe('CharacterStudioPreview workspace', () => {
     const tabs = wrapper.findAll('[role="tab"]')
     expect(tabs).toHaveLength(3)
     expect(tabs[0]?.attributes('aria-selected')).toBe('true')
+    expect(wrapper.getComponent(ProductSegmentedTabs).props('layout')).toBe('wrap')
     expect(wrapper.find('select').exists()).toBe(false)
   })
 

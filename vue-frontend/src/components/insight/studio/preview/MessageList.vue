@@ -65,6 +65,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
       v-for="item in session.messages"
       :key="item.message_id"
       class="studio-message-list__bubble"
+      appearance="reading"
       :role="item.role"
       :avatar-icon-name="item.role === 'assistant' ? 'sparkles' : 'users'"
       :avatar-label="item.role === 'assistant' ? assistantName : '你'"
@@ -155,16 +156,24 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 }
 
 .studio-message-list {
+  --product-message-bubble-reading-assistant-background: color-mix(in srgb, var(--color-action-brand) 9%, var(--color-surface-card));
+  --product-message-bubble-reading-user-background: color-mix(in srgb, var(--color-text-heading) 7%, var(--color-surface-card));
+  --product-message-bubble-reading-border: color-mix(in srgb, var(--color-action-brand) 16%, var(--studio-border-default));
+  --product-message-bubble-reading-user-border: var(--studio-border-default);
+  --product-message-bubble-reading-text: var(--studio-text-strong);
+  --product-message-bubble-reading-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-card) 58%, transparent);
+
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-height: 0;
-  padding: 12px;
+  padding: 16px;
   overflow: auto;
+  scrollbar-gutter: stable;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-app) 95%, transparent), color-mix(in srgb, var(--color-surface-neutral-muted) 90%, transparent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-tint-muted) 74%, var(--color-surface-card)), color-mix(in srgb, var(--studio-surface-soft) 92%, var(--color-surface-card)));
 }
 
 .studio-message-list__role {
@@ -175,7 +184,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 
 .studio-message-list__body {
   color: inherit;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   overflow-wrap: anywhere;
   white-space: pre-wrap;

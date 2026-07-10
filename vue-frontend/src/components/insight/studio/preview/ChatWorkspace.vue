@@ -146,6 +146,9 @@ function switchSession(sessionId: string) {
 
 <style scoped>
 .chat-workspace {
+  --studio-preview-workspace-panel-background: color-mix(in srgb, var(--color-surface-card) 96%, transparent);
+  --studio-preview-workspace-panel-shadow: var(--shadow-soft);
+
   gap: 12px;
   min-height: 0;
 }
