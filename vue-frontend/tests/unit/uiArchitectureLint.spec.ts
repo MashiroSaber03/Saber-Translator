@@ -132,6 +132,34 @@ function runUiArchitectureSourceFixture(relativePath: string, content: string) {
   )
 }
 
+function runUiArchitectureTokenUsageFixture(tokensCss: string, relativePath: string, content: string) {
+  const fixtureDir = mkdtempSync(join(tmpdir(), 'ui-architecture-token-usage-'))
+  const tokenFixturePath = join(fixtureDir, 'tokens.css')
+  const sourceFixturePath = join(fixtureDir, relativePath)
+  mkdirSync(join(sourceFixturePath, '..'), { recursive: true })
+  writeFileSync(tokenFixturePath, tokensCss)
+  writeFileSync(sourceFixturePath, content)
+
+  return spawnSync(
+    process.execPath,
+    [
+      'scripts/check-ui-architecture.mjs',
+      '--tokens-fixture',
+      tokenFixturePath,
+      '--tokens-fixture-path',
+      'src/styles/tokens/semantic.css',
+      '--source-fixture',
+      sourceFixturePath,
+      '--source-fixture-path',
+      relativePath,
+    ],
+    {
+      cwd: frontendRoot,
+      encoding: 'utf8',
+    }
+  )
+}
+
 function runUiArchitectureAudit() {
   return spawnSync(
     process.execPath,
@@ -506,6 +534,49 @@ describe('UI architecture CSS variable ownership lint', () => {
       rmSync(componentPath, { force: true })
       rmSync(testPath, { force: true })
     }
+  })
+
+  it('rejects global tokens without a production consumer', () => {
+    const unusedGlobalToken = '--color-surface-unused-architecture-fixture'
+    const result = runUiArchitectureTokenUsageFixture(
+      `:root { ${unusedGlobalToken}: #fff; }`,
+      'src/components/product/ProductEmptyState.vue',
+      '<template><section class="product-empty-state"></section></template>'
+    )
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('unused global CSS variable definition(s)')
+    expect(result.stderr).toContain(unusedGlobalToken)
+  })
+
+  it('rejects primitive defaults that shadow their public owner override variables', () => {
+    const result = runUiArchitectureSourceFixture('src/components/product/ProductAvatar.vue', `
+      <template><span class="product-avatar"></span></template>
+      <style scoped>
+      .product-avatar {
+        --product-avatar-width: 56px;
+        width: var(--product-avatar-width);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('self-shadowing public primitive CSS variable definition(s)')
+    expect(result.stderr).toContain('--product-avatar-width')
+  })
+
+  it('allows a primitive to provide variables for a descendant primitive', () => {
+    const result = runUiArchitectureSourceFixture('src/components/product/ProductPageHeader.vue', `
+      <template><header class="product-page-header"><slot /></header></template>
+      <style scoped>
+      .product-page-header {
+        --product-header-action-color: var(--color-text-default);
+      }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
   })
 
   it('allows page owners to set public UI primitive variables', () => {

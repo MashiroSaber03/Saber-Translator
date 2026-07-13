@@ -1,6 +1,6 @@
 # Saber-Translator 前端开发说明
 
-> 最后更新：2026-06-24
+> 最后更新：2026-07-11
 
 这是 Saber-Translator 的 Vue 3 + TypeScript + Vite 前端工程说明。
 
@@ -134,4 +134,5 @@ useTranslationPipeline
 
 架构维护策略见：
 
+- [docs/frontend-architecture.md](docs/frontend-architecture.md)
 - [docs/ui-maintenance-decisions.md](docs/ui-maintenance-decisions.md)

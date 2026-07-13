@@ -1,6 +1,6 @@
 # 前端 UI 架构规范
 
-> 最后更新：2026-07-03
+> 最后更新：2026-07-11
 > 目标：新增和重构 UI 默认走统一 token、layout shell、overlay layer 和 primitives。
 
 ## 样式分层
@@ -25,7 +25,7 @@
 
 ## Token 规则
 
-颜色、圆角、阴影、断点、z-index 必须来自 `src/styles/tokens/*`。业务组件禁止新增硬编码颜色、`--ui-color-*`、`--border-radius-*`、裸 `z-index` 数字和裸 `@media (...px)` 断点。
+跨 owner 稳定复用的颜色、圆角、阴影、布局常量、断点和 z-index 来自 `src/styles/tokens/*`。组件私有的间距、尺寸、圆角和阴影几何值可以保留在对应 `<style scoped>` owner 中，不要为了消除字面量把一次性视觉参数提升为全局 token。业务组件仍禁止新增 raw 颜色、`--ui-color-*`、`--border-radius-*`、裸 `z-index` 数字和裸 `@media (...px)` 断点。
 
 业务组件只允许引用语义 token，例如 `--color-action-primary`、`--color-text-default`、`--color-border-muted`、`--color-surface-card`、组件 scoped owner token、`--radius-*`、`--z-*`。`--palette-*` 中间层不再使用；跨 owner 的颜色值归属到 semantic/component/domain token，单组件私有视觉值只归属到该组件 scoped owner 根变量。历史值命名颜色 token 已废弃，全仓库不得出现。
 
@@ -36,6 +36,10 @@ Owner token 不是状态矩阵仓库。组件 scoped 根变量必须同时满足
 业务 CSS 不得重新定义全局/历史通用 token，例如 `--text-primary`、`--text-secondary`、`--text-muted`、`--color-primary`、`--bg-primary`、`--bg-secondary`、`--success-color`、`--error-color`、`--primary`、`--danger`。页面或组件需要局部主题变量时，必须使用 owner 命名空间，例如 `--insight-text-primary`、`--translate-surface-main`、`--reader-control-text`、`--studio-accent`。这条规则避免页面根变量通过 CSS 继承污染子组件，是 `npm run lint:ui` 的强制检查项。
 
 所有 semantic、domain、component、layout token 必须定义在全局 `:root` 中。`body` 不得定义 token 或兼容别名；旧 `--text-color`、`--bg-color`、`--card-bg-color`、`--border-color`、`--input-bg` 等变量的定义和引用都禁止出现。`:root` token 不得引用 body-only token，也不得引用未定义 token 或形成循环依赖；`npm run lint:ui` 会解析所有 token 文件的 `var(...)` 依赖链并在提交前失败。这条规则用于防止编辑模式背景这类“变量存在但作用域无效”的隐性视觉回归。
+
+全局 token 必须有生产源码中的真实消费者。只被另一个未使用 token 间接引用，不能证明该 token 有存在价值；`npm run lint:ui` 会沿依赖链检查最终生产消费并拒绝无效 token 链。
+
+UI/product primitive 对外暴露的 CSS custom property 必须以 fallback 形式消费，例如 `var(--product-avatar-width, var(--internal-product-avatar-width))`。primitive 自身的 variant 只能设置私有 fallback 变量，不能重新定义同名 public property，否则会遮蔽页面 owner 的覆盖值。
 
 `--radius-*-legacy` 和 `--border-radius-*` 不允许继续存在；需要 16px 这类历史尺寸时，先在对应 token 文件增加有语义的 `--radius-*` token，再迁移引用。
 

@@ -48,8 +48,6 @@
   --ui-icon-button-danger-soft-background: var(--color-surface-danger-soft);
   --ui-input-error-border: var(--color-status-error);
   --ui-input-focus-shadow: var(--color-focus-brand-subtle);
-  --ui-panel-subtle-shadow-color: rgba(0, 0, 0, .08);
-  --ui-panel-settings-background: var(--color-surface-input);
   --ui-select-error-border: var(--color-status-error);
   --ui-select-focus-shadow: var(--ui-selector-control-focus-shadow);
   --ui-textarea-error-border: var(--color-status-error);

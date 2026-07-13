@@ -13,44 +13,19 @@
 /* Breakpoint custom media live here so PostCSS can load them before component styles. */
 
 :root {
-  --spacing-xs: 5px;
-  --spacing-sm: 10px;
-  --spacing-md: 15px;
-  --spacing-lg: 20px;
-  --spacing-xl: 25px;
-
-  --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
-  --radius-xl: 20px;
-  --radius-full: 50%;
-
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.12);
-
-  --transition-fast: 0.2s ease;
-  --transition-normal: 0.3s ease;
-  --transition-slow: 0.5s ease;
-
-  --z-base: 1;
   --z-local: 1;
-  --z-local-raised: 8;
-  --z-local-control: 9;
   --z-local-toolbar: 10;
-  --z-local-toolbar-raised: 11;
   --z-local-overlay: 15;
   --z-local-panel: 20;
   --z-local-popover: 25;
-  --z-local-sticky: 30;
   --z-app-header: 40;
   --z-fixed-sidebar: 50;
   --z-mobile-overlay: 60;
   --z-dropdown: 100;
-  --z-sticky: 200;
-  --z-sidebar: 300;
   --z-overlay: 1000;
-  --z-modal: 1100;
   --z-popover: 1200;
   --z-toast: 1300;
 
@@ -58,19 +33,6 @@
   --font-mono: 'Consolas', 'Monaco', monospace;
   --font-jp: 'Noto Sans JP', 'Yu Gothic', 'MS Gothic', sans-serif;
 
-  --header-height: 64px;
-  --header-height-mobile: 56px;
   --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --card-shadow-hover: 0 12px 32px rgba(0, 0, 0, 0.15);
-  --breakpoint-xs: 480px;
-  --breakpoint-sm: 640px;
-  --breakpoint-md: 768px;
-  --breakpoint-lg: 900px;
-  --breakpoint-xl: 1024px;
-  --breakpoint-2xl: 1200px;
   --z-canvas: 10;
-  --z-canvas-control: 20;
-  --z-toolbar: 40;
-  --z-sidebar-overlay: 60;
-  --z-modal-control: 1110;
 }

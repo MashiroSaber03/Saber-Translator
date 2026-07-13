@@ -20,19 +20,15 @@ withDefaults(defineProps<{
 
 <style scoped>
 .product-horizontal-scroll-strip {
-  --product-horizontal-scroll-strip-scrollbar-track: var(--color-overlay-inverse-subtle);
-  --product-horizontal-scroll-strip-scrollbar-thumb: var(--color-overlay-inverse-prominent);
-  --product-horizontal-scroll-strip-padding: 0;
-
   display: flex;
   min-width: 0;
   max-width: 100%;
-  padding: var(--product-horizontal-scroll-strip-padding);
+  padding: var(--product-horizontal-scroll-strip-padding, 0);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-color:
-    var(--product-horizontal-scroll-strip-scrollbar-thumb)
-    var(--product-horizontal-scroll-strip-scrollbar-track);
+    var(--product-horizontal-scroll-strip-scrollbar-thumb, var(--color-overlay-inverse-prominent))
+    var(--product-horizontal-scroll-strip-scrollbar-track, var(--color-overlay-inverse-subtle));
   scrollbar-width: thin;
 }
 
@@ -42,11 +38,11 @@ withDefaults(defineProps<{
 
 .product-horizontal-scroll-strip::-webkit-scrollbar-track {
   border-radius: 999px;
-  background: var(--product-horizontal-scroll-strip-scrollbar-track);
+  background: var(--product-horizontal-scroll-strip-scrollbar-track, var(--color-overlay-inverse-subtle));
 }
 
 .product-horizontal-scroll-strip::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: var(--product-horizontal-scroll-strip-scrollbar-thumb);
+  background: var(--product-horizontal-scroll-strip-scrollbar-thumb, var(--color-overlay-inverse-prominent));
 }
 </style>

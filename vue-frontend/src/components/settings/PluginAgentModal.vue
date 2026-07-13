@@ -42,49 +42,29 @@
 
           <div class="plugin-agent-block">
             <h3 class="plugin-agent-modal__block-title">Agent 设置</h3>
-            <UiField
-              class="plugin-agent-field"
-              label="服务商"
-              control-id="pluginAgentProvider"
-              variant="settings"
-            >
-              <UiSelect
-                id="pluginAgentProvider"
-                :model-value="localAgentSettings.provider"
-                :options="providerOptions"
-                :disabled="unref(isRunning)"
-                @change="handleProviderChange"
-              />
-            </UiField>
-            <UiField
-              class="plugin-agent-field"
-              label="API Key"
-              control-id="pluginAgentApiKey"
-              variant="settings"
-            >
-              <UiPasswordField
-                input-id="pluginAgentApiKey"
-                v-model="localAgentSettings.apiKey"
-                :disabled="unref(isRunning)"
-                placeholder="请输入 API Key"
-                show-label="显示插件 Agent API Key"
-                hide-label="隐藏插件 Agent API Key"
-              />
-            </UiField>
-            <UiField
-              class="plugin-agent-field"
-              label="Base URL"
-              control-id="pluginAgentBaseUrl"
-              variant="settings"
-            >
-              <UiInput
-                id="pluginAgentBaseUrl"
-                v-model="localAgentSettings.customBaseUrl"
-                :disabled="unref(isRunning)"
-                type="text"
-                placeholder="可选，自定义服务填写"
-              />
-            </UiField>
+            <AiProviderSelectField
+              :model-value="localAgentSettings.provider"
+              input-id="pluginAgentProvider"
+              :options="providerOptions"
+              :disabled="unref(isRunning)"
+              field-class="plugin-agent-field"
+              @change="handleProviderChange"
+            />
+            <AiProviderCredentialFields
+              :api-key="localAgentSettings.apiKey"
+              api-key-input-id="pluginAgentApiKey"
+              :base-url="localAgentSettings.customBaseUrl"
+              base-url-input-id="pluginAgentBaseUrl"
+              :disabled="unref(isRunning)"
+              :show-base-url="true"
+              field-class="plugin-agent-field"
+              api-key-placeholder="请输入 API Key"
+              api-key-show-label="显示插件 Agent API Key"
+              api-key-hide-label="隐藏插件 Agent API Key"
+              base-url-placeholder="可选，自定义服务填写"
+              @update:api-key="localAgentSettings.apiKey = $event"
+              @update:base-url="localAgentSettings.customBaseUrl = $event"
+            />
             <UiField
               class="plugin-agent-field"
               label="模型名称"
@@ -402,7 +382,6 @@
 </template>
 
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
@@ -420,9 +399,9 @@ import UiCombobox from '@/components/ui/UiCombobox.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import UiPasswordField from '@/components/ui/UiPasswordField.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import { computed, unref } from 'vue'
 import { usePluginAgentModal, type PluginAgentModalEmit, type PluginAgentModalProps } from './usePluginAgentModal'
 

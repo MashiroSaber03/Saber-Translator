@@ -27,8 +27,9 @@ import { useSettingsStore } from '@/stores/settings'
 import type { PluginAgentProvider } from '@/types/settings'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { useToast } from '@/utils/toast'
-import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
 import { buildTimelineItems, type PluginAgentTimelineItem } from './pluginAgentTimeline'
+import { usePluginAgentDisplayAnimation } from './usePluginAgentDisplayAnimation'
 
 export interface PluginAgentModalProps {
   modelValue: boolean
@@ -75,25 +76,16 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const promptExamples = ref<string[]>([])
   const providerOptions = ref<Array<{ value: string; label: string }>>([])
   const pluginOptions = ref<Array<{ value: string; label: string }>>([])
-  const fetchedModels = ref<Array<{ id: string; name: string }>>([])
   const session = ref<PluginAgentSession | null>(null)
   const messageInput = ref('')
   const eventFeed = ref<PluginAgentEvent[]>([])
   const messagesContainer = ref<HistoryScrollTarget | null>(null)
   const isDebugExpanded = ref(false)
-  const isFetchingModels = ref(false)
   const isTestingConnection = ref(false)
   const isSavingAgentSettings = ref(false)
   const isAwaitingPlanningReply = ref(false)
   const optimisticMessages = ref<PluginAgentConversationMessage[]>([])
-  const assistantMessageDisplayContent = ref<Record<string, string>>({})
-  const assistantMessageDisplayTargets = ref<Record<string, string>>({})
-  const assistantDisplayContent = ref<Record<string, string>>({})
-  const assistantDisplayTargets = ref<Record<string, string>>({})
-  const assistantMessageDisplayTimers = new Map<string, ReturnType<typeof setInterval>>()
-  const assistantDisplayTimers = new Map<string, ReturnType<typeof setInterval>>()
   let streamAbortController: AbortController | null = null
-  const modelFetchGuard = useLatestRequestGuard()
 
   const localAgentSettings = ref({
     provider: settingsStore.settings.pluginAgent.provider,
@@ -107,6 +99,43 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     useStream: settingsStore.settings.pluginAgent.openaiOptions.execution.useStream,
     extraBody: settingsStore.settings.pluginAgent.openaiOptions.request.extraBody,
   })
+  function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
+    toast[tone](message)
+  }
+  const modelDiscovery = useAiModelDiscovery({
+    source: () => ({
+      provider: localAgentSettings.value.provider,
+      apiKey: localAgentSettings.value.apiKey,
+      baseUrl: localAgentSettings.value.customBaseUrl,
+    }),
+    notify: notifyModelDiscovery,
+    requiresApiKey: () => false,
+    emptyBaseUrl: '',
+    errorMessage: error => error instanceof Error ? error.message : '获取模型失败',
+  })
+  const { isFetchingModels } = modelDiscovery
+  const fetchedModels = computed(() => modelDiscovery.models.value.map(model => ({
+    id: model.id,
+    name: model.name || model.id,
+  })))
+  const displayAnimation = usePluginAgentDisplayAnimation({
+    animate: shouldAnimateAssistantStream,
+    onTick: syncHistoryScrollToBottom,
+  })
+  const {
+    assistantMessageDisplayContent,
+    assistantDisplayContent,
+    assistantDisplayTargets,
+  } = displayAnimation
+  const clearAssistantDisplayAnimation = displayAnimation.clear
+  const setAssistantDisplayTarget = displayAnimation.setStreamTarget
+  function setAssistantMessageDisplayTarget(
+    messageId: string,
+    targetContent: string,
+    options: { animate: boolean },
+  ): void {
+    displayAnimation.setMessageTarget(messageId, targetContent, options.animate)
+  }
 
   const messages = computed<PluginAgentConversationMessage[]>(() => {
     const sessionMessages = (session.value?.messages || []).map(message => ({
@@ -250,131 +279,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     }
   }
 
-  function clearAssistantDisplayAnimation(): void {
-    for (const timer of assistantMessageDisplayTimers.values()) {
-      clearInterval(timer)
-    }
-    assistantMessageDisplayTimers.clear()
-    assistantMessageDisplayContent.value = {}
-    assistantMessageDisplayTargets.value = {}
-
-    for (const timer of assistantDisplayTimers.values()) {
-      clearInterval(timer)
-    }
-    assistantDisplayTimers.clear()
-    assistantDisplayContent.value = {}
-    assistantDisplayTargets.value = {}
-  }
-
-  function setAssistantMessageDisplayTarget(
-    messageId: string,
-    targetContent: string,
-    options: { animate: boolean },
-  ): void {
-    assistantMessageDisplayTargets.value = {
-      ...assistantMessageDisplayTargets.value,
-      [messageId]: targetContent,
-    }
-
-    if (!options.animate || !shouldAnimateAssistantStream) {
-      assistantMessageDisplayContent.value = {
-        ...assistantMessageDisplayContent.value,
-        [messageId]: targetContent,
-      }
-      const existingTimer = assistantMessageDisplayTimers.get(messageId)
-      if (existingTimer) {
-        clearInterval(existingTimer)
-        assistantMessageDisplayTimers.delete(messageId)
-      }
-      return
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(assistantMessageDisplayContent.value, messageId)) {
-      assistantMessageDisplayContent.value = {
-        ...assistantMessageDisplayContent.value,
-        [messageId]: '',
-      }
-    }
-
-    if (assistantMessageDisplayTimers.has(messageId)) {
-      return
-    }
-
-    const tick = () => {
-      const current = assistantMessageDisplayContent.value[messageId] || ''
-      const target = assistantMessageDisplayTargets.value[messageId] || ''
-      if (current === target) {
-        const timer = assistantMessageDisplayTimers.get(messageId)
-        if (timer) {
-          clearInterval(timer)
-        }
-        assistantMessageDisplayTimers.delete(messageId)
-        return
-      }
-
-      const step = Math.max(1, Math.ceil((target.length - current.length) / 6))
-      assistantMessageDisplayContent.value = {
-        ...assistantMessageDisplayContent.value,
-        [messageId]: target.slice(0, current.length + step),
-      }
-      void syncHistoryScrollToBottom()
-    }
-
-    tick()
-    const timer = setInterval(tick, 16)
-    assistantMessageDisplayTimers.set(messageId, timer)
-  }
-
-  function setAssistantDisplayTarget(streamId: string, targetContent: string): void {
-    assistantDisplayTargets.value = {
-      ...assistantDisplayTargets.value,
-      [streamId]: targetContent,
-    }
-
-    if (!shouldAnimateAssistantStream) {
-      assistantDisplayContent.value = {
-        ...assistantDisplayContent.value,
-        [streamId]: targetContent,
-      }
-      return
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(assistantDisplayContent.value, streamId)) {
-      assistantDisplayContent.value = {
-        ...assistantDisplayContent.value,
-        [streamId]: '',
-      }
-    }
-
-    if (assistantDisplayTimers.has(streamId)) {
-      return
-    }
-
-    const tick = () => {
-      const current = assistantDisplayContent.value[streamId] || ''
-      const target = assistantDisplayTargets.value[streamId] || ''
-      if (current === target) {
-        const timer = assistantDisplayTimers.get(streamId)
-        if (timer) {
-          clearInterval(timer)
-        }
-        assistantDisplayTimers.delete(streamId)
-        return
-      }
-
-      const step = Math.max(1, Math.ceil((target.length - current.length) / 6))
-      assistantDisplayContent.value = {
-        ...assistantDisplayContent.value,
-        [streamId]: target.slice(0, current.length + step),
-      }
-      void syncHistoryScrollToBottom()
-    }
-
-    tick()
-    const timer = setInterval(tick, 16)
-    assistantDisplayTimers.set(streamId, timer)
-  }
-
   watch(
     () => props.modelValue,
     async (value) => {
@@ -442,6 +346,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   onBeforeUnmount(() => {
     stopStreaming()
     clearAssistantDisplayAnimation()
+    modelDiscovery.invalidate()
   })
 
   function buildAgentConfig(): PluginAgentAgentConfig {
@@ -470,7 +375,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   async function initializeModal(): Promise<void> {
     try {
       syncLocalAgentSettingsFromStore()
-      fetchedModels.value = []
+      modelDiscovery.invalidate()
       const result = await getPluginAgentSettings()
       if (!result.success) {
         toast.error(result.error || '加载插件 Agent 设置失败')
@@ -518,11 +423,9 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   function handleProviderChange(value: string | number): void {
-    modelFetchGuard.invalidate()
-    isFetchingModels.value = false
+    modelDiscovery.invalidate()
     const provider = String(value || '') as PluginAgentProvider
     localAgentSettings.value.provider = provider
-    fetchedModels.value = []
     settingsStore.setPluginAgentProvider(provider)
     localAgentSettings.value.apiKey = settingsStore.settings.pluginAgent.apiKey
     localAgentSettings.value.modelName = settingsStore.settings.pluginAgent.modelName
@@ -541,14 +444,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
 
   function handleModelSelected(value: string | number): void {
     localAgentSettings.value.modelName = String(value || '')
-  }
-
-  function isCurrentModelFetch(requestId: number, provider: string, apiKey: string, baseUrl: string): boolean {
-    return modelFetchGuard.isCurrent(requestId, () => (
-      localAgentSettings.value.provider === provider &&
-      localAgentSettings.value.apiKey === apiKey &&
-      localAgentSettings.value.customBaseUrl === baseUrl
-    ))
   }
 
   function applyExamplePrompt(example: string): void {
@@ -784,39 +679,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     streamAbortController = null
   }
 
-  async function fetchModels(): Promise<void> {
-    const provider = localAgentSettings.value.provider
-    const apiKey = localAgentSettings.value.apiKey
-    const baseUrl = localAgentSettings.value.customBaseUrl
-    const requestId = modelFetchGuard.next()
-    isFetchingModels.value = true
-    try {
-      const result = await configApi.fetchModels(
-        provider,
-        apiKey,
-        baseUrl,
-      )
-      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
-      if (result.success && result.models?.length) {
-        fetchedModels.value = result.models.map(model => ({
-          id: model.id,
-          name: model.name || model.id,
-        }))
-        toast.success(`获取到 ${result.models.length} 个模型`)
-      } else {
-        fetchedModels.value = []
-        toast.warning(result.message || '未获取到可用模型')
-      }
-    } catch (error) {
-      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
-      fetchedModels.value = []
-      toast.error(error instanceof Error ? error.message : '获取模型失败')
-    } finally {
-      if (modelFetchGuard.isCurrent(requestId)) {
-        isFetchingModels.value = false
-      }
-    }
-  }
+  const fetchModels = modelDiscovery.fetchModels
 
   async function testConnection(): Promise<void> {
     isTestingConnection.value = true

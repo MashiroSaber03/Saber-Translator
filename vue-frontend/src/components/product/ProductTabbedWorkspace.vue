@@ -121,13 +121,6 @@ function tabPanelId(tabId: string): string {
 
 <style scoped>
 .product-tabbed-workspace {
-  --product-tabbed-workspace-bar-background: var(--color-surface-muted);
-  --product-tabbed-workspace-border: var(--color-border-muted);
-  --product-tabbed-workspace-tab-text: var(--color-text-secondary);
-  --product-tabbed-workspace-tab-text-active: var(--color-text-inverse);
-  --product-tabbed-workspace-tab-background-hover: var(--color-surface-hover);
-  --product-tabbed-workspace-tab-background-active: var(--color-action-brand);
-
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -143,8 +136,8 @@ function tabPanelId(tabId: string): string {
   gap: 4px;
   min-width: 0;
   padding: 12px 16px;
-  background: var(--product-tabbed-workspace-bar-background);
-  border-bottom: 1px solid var(--product-tabbed-workspace-border);
+  background: var(--product-tabbed-workspace-bar-background, var(--color-surface-muted));
+  border-bottom: 1px solid var(--product-tabbed-workspace-border, var(--color-border-muted));
 }
 
 .product-tabbed-workspace__tabs {
@@ -161,17 +154,17 @@ function tabPanelId(tabId: string): string {
   flex: 0 0 auto;
   gap: 6px;
   padding: 8px 16px;
-  color: var(--product-tabbed-workspace-tab-text);
+  color: var(--product-tabbed-workspace-tab-text, var(--color-text-secondary));
 }
 
 .product-tabbed-workspace__tab:hover {
-  background: var(--product-tabbed-workspace-tab-background-hover);
+  background: var(--product-tabbed-workspace-tab-background-hover, var(--color-surface-hover));
 }
 
 .product-tabbed-workspace__tab--active,
 .product-tabbed-workspace__tab--active:hover {
-  color: var(--product-tabbed-workspace-tab-text-active);
-  background: var(--product-tabbed-workspace-tab-background-active);
+  color: var(--product-tabbed-workspace-tab-text-active, var(--color-text-inverse));
+  background: var(--product-tabbed-workspace-tab-background-active, var(--color-action-brand));
 }
 
 .product-tabbed-workspace__tab-icon {

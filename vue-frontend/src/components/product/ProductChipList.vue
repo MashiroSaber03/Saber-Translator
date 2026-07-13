@@ -105,10 +105,6 @@ function chipPressed(item: ProductChipItem): string | undefined {
 
 <style scoped>
 .product-chip-list {
-  --product-chip-list-inverse-border: var(--color-overlay-inverse-emphasis);
-  --product-chip-list-inverse-background: var(--color-overlay-inverse-muted);
-  --product-chip-list-inverse-text: var(--color-text-inverse);
-
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -172,9 +168,9 @@ function chipPressed(item: ProductChipItem): string | undefined {
 }
 
 .product-chip-list__chip--inverse {
-  border-color: var(--product-chip-list-inverse-border);
-  background: var(--product-chip-list-inverse-background);
-  color: var(--product-chip-list-inverse-text);
+  border-color: var(--product-chip-list-inverse-border, var(--color-overlay-inverse-emphasis));
+  background: var(--product-chip-list-inverse-background, var(--color-overlay-inverse-muted));
+  color: var(--product-chip-list-inverse-text, var(--color-text-inverse));
 }
 
 .product-chip-list__chip--custom {

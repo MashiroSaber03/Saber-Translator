@@ -16,9 +16,19 @@ not a backlog or migration ledger. Daily development should use
   retired short aliases, value-named tokens, generated numbered owner tokens, or
   `--palette-*` internals. Color values belong directly to semantic,
   component, or domain tokens.
+- Global tokens must terminate in at least one production source consumer.
+  Token-to-token references alone do not justify retaining an otherwise dead
+  token chain.
+- Primitive public custom properties are consumed with explicit fallbacks.
+  Primitive variants set private fallback properties and never shadow the
+  public property that an owning product component may override.
 - Large cohesive components are allowed when splitting would mainly add
   prop/event plumbing. Line count is a review signal, not a target or a
   forced split rule.
+- Mixed state owners are extracted by responsibility rather than size. Schema
+  parsing, theme lifecycle, streaming state, display animation, and model
+  discovery may live in focused helpers while the store or component facade
+  retains domain orchestration and its public API.
 - High-risk visual states are protected by visual regression tests instead of
   comments about past implementations.
 

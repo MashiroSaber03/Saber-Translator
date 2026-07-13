@@ -3,42 +3,39 @@
     <ProductFormSection>
       <template #title>翻译服务配置</template>
       <UiFormGrid>
-        <UiField variant="settings" label="翻译服务商" control-id="settingsModelProvider">
-          <UiSelect
-            id="settingsModelProvider"
-            :model-value="localSettings.modelProvider"
-            :options="providerOptions"
-            @change="handleProviderSelect"
-          />
-        </UiField>
-        <UiField
-          v-show="!isLocalProvider"
-          variant="settings"
-          :label="apiKeyLabel"
-          control-id="settingsApiKey"
-        >
-          <UiPasswordField
-            input-id="settingsApiKey"
-            v-model="localSettings.apiKey"
-            :placeholder="apiKeyPlaceholder"
-            show-label="显示翻译 API Key"
-            hide-label="隐藏翻译 API Key"
-          />
-        </UiField>
-      </UiFormGrid>
-      <UiField
-        v-show="providerRequiresBaseUrl(localSettings.modelProvider)"
-        variant="settings"
-        label="Base URL"
-        control-id="settingsCustomBaseUrl"
-      >
-        <UiInput
-          type="text"
-          id="settingsCustomBaseUrl"
-          v-model="localSettings.customBaseUrl"
-          placeholder="例如: https://api.example.com/v1"
+        <AiProviderSelectField
+          :model-value="localSettings.modelProvider"
+          input-id="settingsModelProvider"
+          :options="providerOptions"
+          label="翻译服务商"
+          @change="handleProviderSelect"
         />
-      </UiField>
+        <AiProviderCredentialFields
+          :api-key="localSettings.apiKey"
+          api-key-input-id="settingsApiKey"
+          :base-url="localSettings.customBaseUrl"
+          base-url-input-id="settingsCustomBaseUrl"
+          :show-api-key="!isLocalProvider"
+          :show-base-url="false"
+          :include-base-url="false"
+          :api-key-label="apiKeyLabel"
+          :api-key-placeholder="apiKeyPlaceholder"
+          api-key-show-label="显示翻译 API Key"
+          api-key-hide-label="隐藏翻译 API Key"
+          @update:api-key="localSettings.apiKey = $event"
+        />
+      </UiFormGrid>
+      <AiProviderCredentialFields
+        :api-key="localSettings.apiKey"
+        api-key-input-id="settingsApiKey"
+        :base-url="localSettings.customBaseUrl"
+        base-url-input-id="settingsCustomBaseUrl"
+        :show-api-key="false"
+        :show-base-url="providerRequiresBaseUrl(localSettings.modelProvider)"
+        :include-api-key="false"
+        base-url-placeholder="例如: https://api.example.com/v1"
+        @update:base-url="localSettings.customBaseUrl = $event"
+      />
       <UiField
         v-show="!isLocalProvider"
         variant="settings"
@@ -231,14 +228,14 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import UiPasswordField from '@/components/ui/UiPasswordField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
@@ -265,6 +262,7 @@ import type { TranslationMode, TranslationProvider } from '@/types/settings'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
 import {
   getTranslationApiKeyLabel,
   getTranslationApiKeyPlaceholder,
@@ -312,13 +310,32 @@ const localSettings = ref({
   textboxPromptContent: settingsStore.settings.textboxPrompt,
 })
 const isTesting = ref(false)
-const isFetchingModels = ref(false)
-const modelList = ref<string[]>([])
+const isFetchingLocalModels = ref(false)
 const localModelList = ref<string[]>([])
-const modelFetchGuard = useLatestRequestGuard()
+const localModelFetchGuard = useLatestRequestGuard()
+function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
+  toast[tone](message)
+}
+const remoteModelDiscovery = useAiModelDiscovery({
+  source: () => ({
+    provider: localSettings.value.modelProvider,
+    apiKey: localSettings.value.apiKey,
+    baseUrl: localSettings.value.customBaseUrl,
+  }),
+  notify: notifyModelDiscovery,
+  supportsProvider: provider => (
+    providerSupportsCapability(provider, 'modelFetch') && !isLocalProviderId(provider)
+  ),
+  requiresApiKey: provider => !isLocalProviderId(provider),
+  emptyBaseUrl: '',
+})
+const isFetchingModels = computed(() => (
+  remoteModelDiscovery.isFetchingModels.value || isFetchingLocalModels.value
+))
+const modelList = computed(() => remoteModelDiscovery.models.value.map(model => model.id))
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  modelList.value.forEach(model => options.push({ label: model, value: model }))
+  remoteModelDiscovery.models.value.forEach(model => options.push({ label: model.id, value: model.id }))
   return options
 })
 const localModelListOptions = computed(() => {
@@ -390,9 +407,9 @@ function handleProviderChange() {
 }
 
 function invalidateModelFetchRequests() {
-  modelFetchGuard.invalidate()
-  isFetchingModels.value = false
-  modelList.value = []
+  remoteModelDiscovery.invalidate()
+  localModelFetchGuard.invalidate()
+  isFetchingLocalModels.value = false
   localModelList.value = []
 }
 
@@ -547,55 +564,19 @@ watch(
     settingsStore.setTextboxPrompt(newVal)
   }
 )
-async function fetchModels() {
-  const provider = localSettings.value.modelProvider
-  const apiKey = localSettings.value.apiKey?.trim()
-  const baseUrl = localSettings.value.customBaseUrl?.trim()
-  if (!apiKey) {
-    toast.warning('请先填写 API Key')
-    return
-  }
-  if (!providerSupportsCapability(provider, 'modelFetch') || isLocalProviderId(provider)) {
-    toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
-    return
-  }
-  if (providerRequiresBaseUrl(provider) && !baseUrl) {
-    toast.warning('自定义服务需要先填写 Base URL')
-    return
-  }
-  const requestId = modelFetchGuard.next()
-  isFetchingModels.value = true
-  try {
-    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
-    if (!modelFetchGuard.isCurrent(requestId)) return
-    if (result.success && result.models && result.models.length > 0) {
-      modelList.value = result.models.map(m => m.id)
-      toast.success(`获取到 ${result.models.length} 个模型`)
-    } else {
-      toast.warning(result.message || '未获取到可用模型')
-    }
-  } catch (error: unknown) {
-    if (!modelFetchGuard.isCurrent(requestId)) return
-    const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
-    toast.error(errorMessage)
-  } finally {
-    if (modelFetchGuard.isCurrent(requestId)) {
-      isFetchingModels.value = false
-    }
-  }
-}
+const fetchModels = remoteModelDiscovery.fetchModels
 function getProviderDisplayName(provider: string): string {
   return getProviderDisplayNameFromManifest(provider)
 }
 
 async function fetchLocalModels() {
   const provider = localSettings.value.modelProvider
-  const requestId = modelFetchGuard.next()
-  isFetchingModels.value = true
+  const requestId = localModelFetchGuard.next()
+  isFetchingLocalModels.value = true
   try {
     if (provider === 'sakura') {
       const result = await configApi.testSakuraConnection()
-      if (!modelFetchGuard.isCurrent(requestId)) return
+      if (!localModelFetchGuard.isCurrent(requestId)) return
       if (result.success && result.models) {
         localModelList.value = result.models
         toast.success(`获取到 ${result.models.length} 个Sakura模型`)
@@ -607,7 +588,7 @@ async function fetchLocalModels() {
 
     if (provider === 'ollama') {
       const result = await configApi.fetchModels(provider, '', '')
-      if (!modelFetchGuard.isCurrent(requestId)) return
+      if (!localModelFetchGuard.isCurrent(requestId)) return
       if (result.success && result.models) {
         localModelList.value = result.models.map(model => model.id)
         toast.success(`获取到 ${result.models.length} 个Ollama模型`)
@@ -618,12 +599,12 @@ async function fetchLocalModels() {
       toast.error('未选择本地服务商')
     }
   } catch (error: unknown) {
-    if (!modelFetchGuard.isCurrent(requestId)) return
+    if (!localModelFetchGuard.isCurrent(requestId)) return
     const errorMessage = error instanceof Error ? error.message : '获取本地模型失败'
     toast.error(errorMessage)
   } finally {
-    if (modelFetchGuard.isCurrent(requestId)) {
-      isFetchingModels.value = false
+    if (localModelFetchGuard.isCurrent(requestId)) {
+      isFetchingLocalModels.value = false
     }
   }
 }

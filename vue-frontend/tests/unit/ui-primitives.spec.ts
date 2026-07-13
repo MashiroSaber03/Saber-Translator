@@ -963,12 +963,21 @@ describe('UI primitives architecture contracts', () => {
     expect(componentTokenSource).toContain('--ui-selector-control-background: var(--color-surface-base);')
     expect(componentTokenSource).toContain('--ui-selector-dropdown-background: var(--color-surface-base);')
     expect(componentTokenSource).toContain('--ui-selector-option-selected-text: var(--color-text-brand);')
-    expect(selectSource).toContain('color: var(--ui-selector-control-text);')
-    expect(comboboxSource).toContain('color: var(--ui-selector-control-text);')
+    expect(selectSource).toContain('color: var(--ui-selector-control-text,')
+    expect(comboboxSource).toContain('color: var(--ui-selector-control-text,')
     expect(selectSource).not.toContain('var(--ui-combobox-option-')
     expect(comboboxSource).not.toContain('var(--ui-combobox-trigger-text')
     expect(fieldSource).not.toContain('--ui-select-color:')
     expect(fieldSource).not.toContain('--ui-select-font-size:')
+  })
+
+  it('keeps teleported selector dropdown surfaces opaque when a shared token is unavailable', () => {
+    const selectSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiSelect.vue'), 'utf8')
+    const comboboxSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiCombobox.vue'), 'utf8')
+
+    const opaqueSurface = 'var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas))'
+    expect(selectSource).toContain(`background: ${opaqueSurface};`)
+    expect(comboboxSource).toContain(`background: ${opaqueSurface};`)
   })
 
   it('emits typed file arrays while preserving native change listeners', async () => {

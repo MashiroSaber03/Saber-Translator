@@ -3,43 +3,38 @@
     <ProductFormSection>
       <template #title>高质量翻译服务配置</template>
       <UiFormGrid>
-        <UiField variant="settings" label="服务商" control-id="settingsHqTranslateProvider">
-          <UiSelect
-            id="settingsHqTranslateProvider"
-            :model-value="hqSettings.provider"
-            :options="providerOptions"
-            @change="handleProviderChange"
-          />
-        </UiField>
-        <UiField
-          v-show="providerRequiresApiKey(hqSettings.provider)"
-          variant="settings"
-          label="API Key"
-          control-id="settingsHqApiKey"
-        >
-          <UiPasswordField
-            input-id="settingsHqApiKey"
-            v-model="localHqSettings.apiKey"
-            placeholder="请输入API Key"
-            show-label="显示高质量翻译 API Key"
-            hide-label="隐藏高质量翻译 API Key"
-          />
-        </UiField>
+        <AiProviderSelectField
+          :model-value="hqSettings.provider"
+          input-id="settingsHqTranslateProvider"
+          :options="providerOptions"
+          @change="handleProviderChange"
+        />
+        <AiProviderCredentialFields
+          :api-key="localHqSettings.apiKey"
+          api-key-input-id="settingsHqApiKey"
+          :base-url="localHqSettings.customBaseUrl"
+          base-url-input-id="settingsHqCustomBaseUrl"
+          :show-api-key="providerRequiresApiKey(hqSettings.provider)"
+          :show-base-url="false"
+          :include-base-url="false"
+          api-key-placeholder="请输入API Key"
+          api-key-show-label="显示高质量翻译 API Key"
+          api-key-hide-label="隐藏高质量翻译 API Key"
+          @update:api-key="localHqSettings.apiKey = $event"
+        />
       </UiFormGrid>
 
-      <UiField
-        v-show="providerRequiresBaseUrl(hqSettings.provider)"
-        variant="settings"
-        label="Base URL"
-        control-id="settingsHqCustomBaseUrl"
-      >
-        <UiInput
-          type="text"
-          id="settingsHqCustomBaseUrl"
-          v-model="localHqSettings.customBaseUrl"
-          placeholder="例如: https://api.example.com/v1"
-        />
-      </UiField>
+      <AiProviderCredentialFields
+        :api-key="localHqSettings.apiKey"
+        api-key-input-id="settingsHqApiKey"
+        :base-url="localHqSettings.customBaseUrl"
+        base-url-input-id="settingsHqCustomBaseUrl"
+        :show-api-key="false"
+        :show-base-url="providerRequiresBaseUrl(hqSettings.provider)"
+        :include-api-key="false"
+        base-url-placeholder="例如: https://api.example.com/v1"
+        @update:base-url="localHqSettings.customBaseUrl = $event"
+      />
 
       <UiField variant="settings" label="模型名称" control-id="settingsHqModelName">
         <UiModelPicker
@@ -142,32 +137,30 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import UiPasswordField from '@/components/ui/UiPasswordField.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed, watch } from 'vue'
 import {
-  getProviderDisplayName as getProviderDisplayNameFromManifest,
+  getProviderDisplayName,
   getProviderOptionsForCapability,
   providerRequiresApiKey,
-  providerRequiresBaseUrl,
-  providerSupportsCapability
+  providerRequiresBaseUrl
 } from '@/config/aiProviders'
-import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
+import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
 import type { HqTranslationProvider } from '@/types/settings'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
-import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
 
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
@@ -224,23 +217,33 @@ watch(() => localHqSettings.value.prompt, (val) => {
   settingsStore.updateHqTranslation({ prompt: val })
 })
 
-const isFetchingModels = ref(false)
-const modelList = ref<string[]>([])
-const modelFetchGuard = useLatestRequestGuard()
+function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
+  toast[tone](message)
+}
+
+const modelDiscovery = useAiModelDiscovery({
+  source: () => ({
+    provider: hqSettings.value.provider,
+    apiKey: localHqSettings.value.apiKey,
+    baseUrl: localHqSettings.value.customBaseUrl,
+  }),
+  notify: notifyModelDiscovery,
+  emptyBaseUrl: '',
+})
+const { isFetchingModels } = modelDiscovery
+const modelList = modelDiscovery.models
 
 const isTesting = ref(false)
 
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  modelList.value.forEach(model => options.push({ label: model, value: model }))
+  modelDiscovery.models.value.forEach(model => options.push({ label: model.id, value: model.id }))
   return options
 })
 
 function handleProviderChange(newProvider: UiSelectValue) {
-  modelFetchGuard.invalidate()
-  isFetchingModels.value = false
+  modelDiscovery.invalidate()
   settingsStore.setHqProvider(String(newProvider) as HqTranslationProvider)
-  modelList.value = []
   syncLocalHqSettings()
 }
 
@@ -259,51 +262,7 @@ function syncLocalHqSettings() {
   localHqSettings.value.prompt = hq.prompt
 }
 
-function getProviderDisplayName(provider: string): string {
-  return getProviderDisplayNameFromManifest(provider)
-}
-
-async function fetchModels() {
-  const provider = hqSettings.value.provider
-  const apiKey = localHqSettings.value.apiKey?.trim()
-  const baseUrl = localHqSettings.value.customBaseUrl?.trim()
-
-  if (providerRequiresApiKey(provider) && !apiKey) {
-    toast.warning('请先填写 API Key')
-    return
-  }
-
-  if (!providerSupportsCapability(provider, 'modelFetch')) {
-    toast.warning(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`)
-    return
-  }
-
-  if (providerRequiresBaseUrl(provider) && !baseUrl) {
-    toast.warning('自定义服务需要先填写 Base URL')
-    return
-  }
-
-  const requestId = modelFetchGuard.next()
-  isFetchingModels.value = true
-  try {
-    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
-    if (!modelFetchGuard.isCurrent(requestId)) return
-    if (result.success && result.models && result.models.length > 0) {
-      modelList.value = result.models.map(m => m.id)
-      toast.success(`获取到 ${result.models.length} 个模型`)
-    } else {
-      toast.warning(result.message || '未获取到可用模型')
-    }
-  } catch (error: unknown) {
-    if (!modelFetchGuard.isCurrent(requestId)) return
-    const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
-    toast.error(errorMessage)
-  } finally {
-    if (modelFetchGuard.isCurrent(requestId)) {
-      isFetchingModels.value = false
-    }
-  }
-}
+const fetchModels = modelDiscovery.fetchModels
 
 async function testConnection() {
   const provider = hqSettings.value.provider

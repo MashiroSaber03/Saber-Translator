@@ -14,10 +14,8 @@ import {
   importCharacterStudioFile,
   importCharacterStudioChatSession,
   importWorldbookIntoCharacterStudioDocument,
-  regenerateCharacterStudioChatMessage,
   runCharacterStudioAgent,
   saveCharacterStudioDocument,
-  streamCharacterStudioChatMessage,
   summarizeCharacterStudioChatSession,
   switchCharacterStudioChatSession,
   validateCharacterStudioDocument,
@@ -31,16 +29,10 @@ import {
   hasCharacterStudioBusyAction,
 } from '@/stores/characterStudioActivity'
 import { parseCharacterStudioAgentOutput } from '@/stores/characterStudioAgentOutput'
-import {
-  applyAssistantRuntimeState,
-  applyAssistantStreamContent,
-  findRegenerationUserMessageIndex,
-} from '@/stores/characterStudioChatSession'
 import { applyCharacterStudioAgentPatch } from '@/stores/characterStudioPatch'
+import { useCharacterStudioChat } from './characterStudio/useCharacterStudioChat'
 import type {
   CharacterStudioAgentPatchV2,
-  CharacterStudioChatAttachment,
-  CharacterStudioChatMessage,
   CharacterStudioChatSession,
   CharacterStudioChatSessionSummary,
   CharacterStudioCandidate,
@@ -73,7 +65,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const isDocumentLoading = ref(false)
   const isSaving = ref(false)
   const isChatLoading = ref(false)
-  const isChatStreaming = ref(false)
   const isChatMutating = ref(false)
   const isChatSummarizing = ref(false)
   const isChatImporting = ref(false)
@@ -96,13 +87,25 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const pendingChatRehydrate = ref(false)
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   const patchSnapshot = ref<CharacterStudioDocument | null>(null)
-  let chatAbortController: AbortController | null = null
-  let chatStreamRollbackSession: CharacterStudioChatSession | null = null
-  let chatStreamRunId = 0
   let workspaceLoadRequestId = 0
   let documentLoadRequestId = 0
   let chatStateLoadRequestId = 0
   let chatPromptPreviewRequestId = 0
+  const chat = useCharacterStudioChat({
+    bookId,
+    currentDocument,
+    activeChatSession,
+    activeWorkspaceTab,
+    errorMessage,
+    applySession: session => applyChatStatePayload({ session }),
+    flushPendingRehydrate: flushPendingChatRehydrate,
+  })
+  const {
+    isChatStreaming,
+    abortActiveChatStream,
+    sendChatMessage,
+    regenerateChatMessage,
+  } = chat
 
   const canUndoPatch = computed(() => patchSnapshot.value !== null)
   const editorPendingState = computed<CharacterStudioEditorPendingState>(() => ({
@@ -172,18 +175,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     pendingChatRehydrate.value = false
   }
 
-  function abortActiveChatStream() {
-    if (chatAbortController) {
-      revokeOptimisticSessionAssets(activeChatSession.value)
-      chatAbortController.abort()
-      chatAbortController = null
-      if (chatStreamRollbackSession) {
-        activeChatSession.value = chatStreamRollbackSession
-        chatStreamRollbackSession = null
-      }
-    }
-  }
-
   function isActiveWorkspaceRequest(requestId: number, requestedBookId: string) {
     return requestId === workspaceLoadRequestId && bookId.value === requestedBookId
   }
@@ -208,22 +199,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   ) {
     return (
       requestId === chatPromptPreviewRequestId &&
-      bookId.value === requestedBookId &&
-      currentDocument.value?.id === requestedDocId &&
-      activeChatSession.value?.session_id === requestedSessionId
-    )
-  }
-
-  function isActiveChatStream(
-    streamRunId: number,
-    controller: AbortController,
-    requestedBookId: string,
-    requestedDocId: string,
-    requestedSessionId: string,
-  ) {
-    return (
-      streamRunId === chatStreamRunId &&
-      chatAbortController === controller &&
       bookId.value === requestedBookId &&
       currentDocument.value?.id === requestedDocId &&
       activeChatSession.value?.session_id === requestedSessionId
@@ -687,109 +662,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  function createOptimisticAttachment(file: File): CharacterStudioChatAttachment {
-    return {
-      attachment_id: `temp-att-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
-      filename: file.name,
-      mime_type: file.type || 'application/octet-stream',
-      asset_path: URL.createObjectURL(file),
-      created_at: new Date().toISOString(),
-    }
-  }
-
-  function revokeAttachmentUrls(attachments: CharacterStudioChatAttachment[]) {
-    attachments.forEach(item => {
-      if (item.asset_path?.startsWith('blob:')) {
-        URL.revokeObjectURL(item.asset_path)
-      }
-    })
-  }
-
-  function revokeOptimisticSessionAssets(session: CharacterStudioChatSession | null) {
-    if (!session) return
-    session.messages.forEach(message => revokeAttachmentUrls(message.attachments || []))
-  }
-
-  function createOptimisticMessage(
-    role: 'user' | 'assistant',
-    content: string,
-    attachments: CharacterStudioChatAttachment[] = [],
-  ): CharacterStudioChatMessage {
-    const now = new Date().toISOString()
-    return {
-      message_id: `temp-msg-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
-      role,
-      content,
-      attachments,
-      runtime_log: [],
-      variables_snapshot: deepClone(activeChatSession.value?.variables || {}),
-      generation_meta: {},
-      created_at: now,
-      updated_at: now,
-    }
-  }
-
-  async function sendChatMessage(content: string, attachments: File[] = []) {
-    if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
-    if (!content.trim() && attachments.length === 0) return
-    if (chatAbortController) {
-      abortActiveChatStream()
-    }
-    const controller = new AbortController()
-    chatAbortController = controller
-    const streamRunId = ++chatStreamRunId
-    isChatStreaming.value = true
-    clearErrorMessage()
-    activeWorkspaceTab.value = 'chat'
-    const requestedBookId = bookId.value
-    const requestedDocId = currentDocument.value.id
-    const previousSession = deepClone(activeChatSession.value)
-    const requestedSessionId = previousSession.session_id
-    chatStreamRollbackSession = previousSession
-    const optimisticSession = deepClone(activeChatSession.value)
-    optimisticSession.messages.push(
-      createOptimisticMessage('user', content, attachments.map(createOptimisticAttachment)),
-      createOptimisticMessage('assistant', ''),
-    )
-    activeChatSession.value = optimisticSession
-    try {
-      await streamCharacterStudioChatMessage(requestedBookId, requestedDocId, {
-        sessionId: requestedSessionId,
-        content,
-        attachments,
-        signal: controller.signal,
-        onEvent: event => {
-          if (!isActiveChatStream(streamRunId, controller, requestedBookId, requestedDocId, requestedSessionId)) return
-          if (event.type === 'assistant_delta' && activeChatSession.value) {
-            applyAssistantStreamContent(activeChatSession.value, event.content)
-          } else if (event.type === 'runtime' && activeChatSession.value) {
-            applyAssistantRuntimeState(activeChatSession.value, event.runtime_log, event.variables)
-          } else if (event.type === 'state') {
-            revokeOptimisticSessionAssets(activeChatSession.value)
-            chatStreamRollbackSession = null
-            applyChatStatePayload({ session: event.session as CharacterStudioChatSession })
-          } else if (event.type === 'error') {
-            errorMessage.value = event.message
-          }
-        },
-      })
-    } catch (error) {
-      if (controller.signal.aborted) return
-      revokeOptimisticSessionAssets(activeChatSession.value)
-      activeChatSession.value = previousSession
-      throw createActionError(error, '发送聊天消息失败')
-    } finally {
-      if (chatAbortController === controller) {
-        chatAbortController = null
-        chatStreamRollbackSession = null
-      }
-      if (streamRunId === chatStreamRunId) {
-        isChatStreaming.value = false
-      }
-      void flushPendingChatRehydrate()
-    }
-  }
-
   async function editChatMessage(messageId: string, content: string) {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
     const targetRole = activeChatSession.value.messages.find(item => item.message_id === messageId)?.role
@@ -846,67 +718,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       throw createActionError(error, '删除消息失败')
     } finally {
       isChatMutating.value = false
-      void flushPendingChatRehydrate()
-    }
-  }
-
-  async function regenerateChatMessage(messageId: string) {
-    if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
-    if (chatAbortController) {
-      abortActiveChatStream()
-    }
-    const controller = new AbortController()
-    chatAbortController = controller
-    const streamRunId = ++chatStreamRunId
-    isChatStreaming.value = true
-    clearErrorMessage()
-    const requestedBookId = bookId.value
-    const requestedDocId = currentDocument.value.id
-    const previousSession = deepClone(activeChatSession.value)
-    const requestedSessionId = previousSession.session_id
-    chatStreamRollbackSession = previousSession
-    const userIndex = findRegenerationUserMessageIndex(previousSession.messages, messageId)
-    if (userIndex >= 0) {
-      const optimisticSession = deepClone(previousSession)
-      optimisticSession.messages = optimisticSession.messages.slice(0, userIndex + 1)
-      optimisticSession.messages.push(createOptimisticMessage('assistant', ''))
-      activeChatSession.value = optimisticSession
-    }
-    try {
-      await regenerateCharacterStudioChatMessage(
-        requestedBookId,
-        requestedDocId,
-        requestedSessionId,
-        messageId,
-        event => {
-          if (!isActiveChatStream(streamRunId, controller, requestedBookId, requestedDocId, requestedSessionId)) return
-          if (event.type === 'assistant_delta') {
-            if (activeChatSession.value) applyAssistantStreamContent(activeChatSession.value, event.content)
-          } else if (event.type === 'runtime' && activeChatSession.value) {
-            applyAssistantRuntimeState(activeChatSession.value, event.runtime_log, event.variables)
-          } else if (event.type === 'state') {
-            revokeOptimisticSessionAssets(activeChatSession.value)
-            chatStreamRollbackSession = null
-            applyChatStatePayload({ session: event.session as CharacterStudioChatSession })
-          } else if (event.type === 'error') {
-            errorMessage.value = event.message
-          }
-        },
-        controller.signal,
-      )
-    } catch (error) {
-      if (controller.signal.aborted) return
-      revokeOptimisticSessionAssets(activeChatSession.value)
-      activeChatSession.value = previousSession
-      throw createActionError(error, '消息重生失败')
-    } finally {
-      if (chatAbortController === controller) {
-        chatAbortController = null
-        chatStreamRollbackSession = null
-      }
-      if (streamRunId === chatStreamRunId) {
-        isChatStreaming.value = false
-      }
       void flushPendingChatRehydrate()
     }
   }

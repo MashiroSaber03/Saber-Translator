@@ -132,7 +132,7 @@ function stepBy(direction: -1 | 1): void {
 
 <style scoped>
 .ui-number-field {
-  --ui-number-field-input-width: 120px;
+  --internal-ui-number-field-input-width: 120px;
 
   display: inline-flex;
   align-items: center;
@@ -141,16 +141,16 @@ function stepBy(direction: -1 | 1): void {
 }
 
 .ui-number-field__input {
-  width: var(--ui-number-field-input-width);
+  width: var(--ui-number-field-input-width, var(--internal-ui-number-field-input-width));
   text-align: center;
 }
 
 .ui-number-field--xs {
-  --ui-number-field-input-width: 72px;
+  --internal-ui-number-field-input-width: 72px;
 }
 
 .ui-number-field--sm {
-  --ui-number-field-input-width: 96px;
+  --internal-ui-number-field-input-width: 96px;
 }
 
 .ui-number-field--with-controls {

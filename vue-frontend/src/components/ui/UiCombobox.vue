@@ -271,7 +271,7 @@ onUnmounted(() => {
   position: relative;
   min-width: 160px;
   font-size: 14px;
-  color: var(--ui-selector-control-text);
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
 }
 
 .ui-combobox--fit {
@@ -285,10 +285,10 @@ onUnmounted(() => {
   justify-content: space-between;
   height: var(--ui-selector-control-min-height);
   padding: var(--ui-selector-control-padding);
-  border: 1px solid var(--ui-selector-control-border);
+  border: 1px solid var(--ui-selector-control-border, var(--color-border-input, ButtonBorder));
   border-radius: var(--ui-selector-control-radius);
-  background: var(--ui-selector-control-background);
-  color: var(--ui-selector-control-text);
+  background: var(--ui-selector-control-background, var(--color-surface-base, Canvas));
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -328,7 +328,7 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-selector-control-text);
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
 }
 
 .ui-combobox-arrow {
@@ -342,29 +342,28 @@ onUnmounted(() => {
 }
 
 .ui-combobox-dropdown {
-  /* Teleport 下拉层使用视口坐标定位，top/left/width 由 JS 计算。 */
   position: fixed;
-  margin-top: 0;
-  background: var(--ui-selector-dropdown-background);
-  border: 1px solid var(--ui-selector-dropdown-border);
-  border-radius: var(--ui-selector-dropdown-radius);
-  box-shadow: 0 12px 26px var(--ui-selector-dropdown-shadow-color);
-  z-index: var(--z-popover);
   max-height: 360px;
+  margin-top: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: var(--ui-selector-control-text);
+  border: 1px solid var(--ui-selector-dropdown-border, var(--color-border-default, ButtonBorder));
+  border-radius: var(--ui-selector-dropdown-radius);
+  background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
+  box-shadow: 0 12px 26px var(--ui-selector-dropdown-shadow-color);
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
+  z-index: var(--z-popover);
 }
 
 .ui-combobox-options {
   padding: 6px 0;
-  background: var(--ui-selector-dropdown-background);
-  color: var(--ui-selector-control-text);
+  background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
 }
 
 .ui-combobox-group {
   margin-bottom: 4px;
-  background: var(--ui-selector-dropdown-background);
+  background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
 }
 
 .ui-combobox-group:last-child {
@@ -373,27 +372,27 @@ onUnmounted(() => {
 
 .ui-combobox-group-label {
   padding: 8px 12px 4px;
+  background: var(--ui-selector-group-label-background);
+  color: var(--ui-selector-group-label-text);
   font-size: 11px;
   font-weight: 600;
-  color: var(--ui-selector-group-label-text);
-  background: var(--ui-selector-group-label-background);
-  text-transform: uppercase;
   letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .ui-combobox-option {
   padding: 9px 12px;
-  cursor: pointer;
-  color: var(--ui-selector-control-text);
-  background: var(--ui-selector-dropdown-background);
+  background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
   font-size: 14px;
   line-height: 1.4;
+  cursor: pointer;
   transition: background 0.15s;
 }
 
 .ui-combobox-option:hover {
   background: var(--ui-selector-option-hover-background);
-  color: var(--ui-selector-control-text);
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
 }
 
 .ui-combobox-option--selected {

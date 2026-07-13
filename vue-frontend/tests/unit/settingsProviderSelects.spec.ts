@@ -301,10 +301,16 @@ describe('settings provider select contracts', () => {
 
     for (const file of files) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, `${file} should render credential fields through UiPasswordField`).toContain('UiPasswordField')
+      expect(source, `${file} should render credentials through the shared provider field`).toContain('AiProviderCredentialFields')
       expect(source, `${file} should not keep local password toggle classes`).not.toContain('password-toggle')
       expect(source, `${file} should not keep local secure-input classes`).not.toContain('secure-input')
     }
+
+    const credentialSource = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/AiProviderCredentialFields.vue'),
+      'utf8',
+    )
+    expect(credentialSource).toContain('UiPasswordField')
   })
 
   it('uses product action rows for settings prompt controls instead of local reset and format skins', () => {

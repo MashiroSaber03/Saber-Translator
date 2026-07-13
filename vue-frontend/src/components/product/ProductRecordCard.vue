@@ -85,23 +85,14 @@ function handleClick(event: MouseEvent): void {
 
 <style scoped>
 .product-record-card {
-  --product-record-card-background: var(--color-surface-muted);
-  --product-record-card-border: var(--color-border-muted);
-  --product-record-card-accent: var(--color-action-primary);
-  --product-record-card-shadow-hover: 0 2px 8px var(--color-focus-brand-soft);
-  --product-record-card-shadow: none;
-  --product-record-card-radius: 8px;
-  --product-record-card-padding: 12px;
-  --product-record-card-gap: 8px;
-
   display: flex;
   flex-direction: column;
-  gap: var(--product-record-card-gap);
-  padding: var(--product-record-card-padding);
-  border: 1px solid var(--product-record-card-border);
-  border-radius: var(--product-record-card-radius);
-  background: var(--product-record-card-background);
-  box-shadow: var(--product-record-card-shadow);
+  gap: var(--product-record-card-gap, 8px);
+  padding: var(--product-record-card-padding, 12px);
+  border: 1px solid var(--product-record-card-border, var(--color-border-muted));
+  border-radius: var(--product-record-card-radius, 8px);
+  background: var(--product-record-card-background, var(--color-surface-muted));
+  box-shadow: var(--product-record-card-shadow, none);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -109,12 +100,12 @@ function handleClick(event: MouseEvent): void {
 }
 
 .product-record-card:hover {
-  border-color: var(--product-record-card-accent);
-  box-shadow: var(--product-record-card-shadow-hover);
+  border-color: var(--product-record-card-accent, var(--color-action-primary));
+  box-shadow: var(--product-record-card-shadow-hover, 0 2px 8px var(--color-focus-brand-soft));
 }
 
 .product-record-card--accent {
-  border-left: 3px solid var(--product-record-card-accent);
+  border-left: 3px solid var(--product-record-card-accent, var(--color-action-primary));
 }
 
 .product-record-card--button {
@@ -130,7 +121,7 @@ function handleClick(event: MouseEvent): void {
 .product-record-card__header {
   display: flex;
   align-items: flex-start;
-  gap: var(--product-record-card-gap);
+  gap: var(--product-record-card-gap, 8px);
   min-width: 0;
 }
 

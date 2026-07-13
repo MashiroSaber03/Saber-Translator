@@ -53,49 +53,49 @@ const resolvedRole = computed(() => props.role ?? (props.tone === 'danger' ? 'al
 
 <style scoped>
 .product-status-banner {
-  --product-status-banner-accent: var(--color-status-info);
-  --product-status-banner-background: var(--color-surface-quiet);
+  --internal-product-status-banner-accent: var(--color-status-info);
+  --internal-product-status-banner-background: var(--color-surface-quiet);
 
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
-  border: 1px solid var(--product-status-banner-accent);
+  border: 1px solid var(--product-status-banner-accent, var(--internal-product-status-banner-accent));
   border-radius: 8px;
-  background: var(--product-status-banner-background);
+  background: var(--product-status-banner-background, var(--internal-product-status-banner-background));
   color: var(--color-text-default);
   line-height: 1.5;
 }
 
 .product-status-banner--neutral {
-  --product-status-banner-accent: var(--color-border-muted);
-  --product-status-banner-background: var(--color-surface-card);
+  --internal-product-status-banner-accent: var(--color-border-muted);
+  --internal-product-status-banner-background: var(--color-surface-card);
 }
 
 .product-status-banner--info {
-  --product-status-banner-accent: var(--color-status-info);
-  --product-status-banner-background: var(--color-surface-quiet);
+  --internal-product-status-banner-accent: var(--color-status-info);
+  --internal-product-status-banner-background: var(--color-surface-quiet);
 }
 
 .product-status-banner--success {
-  --product-status-banner-accent: var(--color-status-success);
-  --product-status-banner-background: var(--color-surface-quiet);
+  --internal-product-status-banner-accent: var(--color-status-success);
+  --internal-product-status-banner-background: var(--color-surface-quiet);
 }
 
 .product-status-banner--warning {
-  --product-status-banner-accent: var(--color-status-warning);
-  --product-status-banner-background: var(--color-status-warning-surface-soft);
+  --internal-product-status-banner-accent: var(--color-status-warning);
+  --internal-product-status-banner-background: var(--color-status-warning-surface-soft);
 }
 
 .product-status-banner--danger {
-  --product-status-banner-accent: var(--color-status-error);
-  --product-status-banner-background: var(--color-surface-danger-soft);
+  --internal-product-status-banner-accent: var(--color-status-error);
+  --internal-product-status-banner-background: var(--color-surface-danger-soft);
 }
 
 .product-status-banner__icon {
   flex: 0 0 auto;
   margin-top: 2px;
-  color: var(--product-status-banner-accent);
+  color: var(--product-status-banner-accent, var(--internal-product-status-banner-accent));
 }
 
 .product-status-banner__content {

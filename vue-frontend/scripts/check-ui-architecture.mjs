@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 const ROOTS = [
   '.stylelintignore',
@@ -382,6 +382,8 @@ const tokenArchitectureStats = {
 const visualCoverageEntries = []
 const heavyOwnerReviewSignals = []
 const ownerTokenDensitySignals = []
+const globalRootTokenNames = new Set()
+const globalTokenDependencies = new Map()
 const architectureDebtUsage = Object.fromEntries(
   Object.keys(ARCHITECTURE_DEBT_BUDGETS).map(key => [key, 0])
 )
@@ -922,6 +924,34 @@ function checkCustomPropertyOwnership(path, normalizedPath, content) {
   }
 }
 
+function primitiveTokenPrefix(normalizedPath) {
+  if (!normalizedPath.endsWith('.vue')) {
+    return null
+  }
+  if (!SHARED_PRIMITIVE_STYLE_ALLOWED_PREFIXES.some(prefix => normalizedPath.startsWith(prefix))) {
+    return null
+  }
+  const componentName = basename(normalizedPath, '.vue')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+  return `--${componentName}-`
+}
+
+function checkPrimitivePublicCustomPropertyContract(path, normalizedPath, content) {
+  const prefix = primitiveTokenPrefix(normalizedPath)
+  if (!prefix) {
+    return
+  }
+  const selfShadowingTokens = [...new Set(customPropertyDefinitions(content, path))]
+    .filter(token => token.startsWith(prefix))
+  if (selfShadowingTokens.length > 0) {
+    addFailure(
+      path,
+      `self-shadowing public primitive CSS variable definition(s) ${selfShadowingTokens.join(', ')} are not allowed; consume public variables with var(--token, fallback) and keep variant defaults in private internal variables`
+    )
+  }
+}
+
 function appendTokenScopes(target, source) {
   for (const scopeName of ['root', 'body', 'other']) {
     for (const [token, values] of source[scopeName]) {
@@ -1040,6 +1070,9 @@ function checkTokenDependencyArchitecture(paths) {
 
   tokenArchitectureStats.rootTokens = rootTokens.size
   tokenArchitectureStats.bodyTokens = bodyTokens.size
+  for (const token of rootTokenNames) {
+    globalRootTokenNames.add(token)
+  }
 
   for (const token of bodyTokenNames) {
     addFailure(reportPath, `body defines ${token}; body compatibility aliases are no longer allowed`)
@@ -1062,6 +1095,7 @@ function checkTokenDependencyArchitecture(paths) {
   }
 
   for (const [token, values] of rootTokens) {
+    globalTokenDependencies.set(token, referencedTokens(values))
     for (const referencedToken of referencedTokens(values)) {
       tokenArchitectureStats.rootDependencies += 1
       if (bodyTokenNames.has(referencedToken)) {
@@ -1083,6 +1117,37 @@ function checkTokenDependencyArchitecture(paths) {
   }
 
   checkTokenCycles(reportPath, rootTokens)
+}
+
+function checkUnusedGlobalTokens() {
+  const isFullRepositoryScan = !SOURCE_FIXTURE && TOKENS_FIXTURE_INDEX < 0
+  const isDedicatedUsageFixture = Boolean(SOURCE_FIXTURE && TOKENS_FIXTURE_INDEX >= 0)
+  if (!isFullRepositoryScan && !isDedicatedUsageFixture) {
+    return
+  }
+
+  const sourceContent = SOURCE_FIXTURE ? readFileSync(SOURCE_FIXTURE, 'utf8') : ''
+  const productionReferences = sourceCustomPropertyReferences(sourceContent)
+  const usedTokens = new Set()
+  function markUsed(token) {
+    if (usedTokens.has(token) || !globalRootTokenNames.has(token)) {
+      return
+    }
+    usedTokens.add(token)
+    for (const dependency of globalTokenDependencies.get(token) || []) {
+      markUsed(dependency)
+    }
+  }
+  for (const token of productionReferences) {
+    markUsed(token)
+  }
+  const unusedTokens = [...globalRootTokenNames].filter(token => !usedTokens.has(token))
+  if (unusedTokens.length > 0) {
+    addFailure(
+      TOKEN_FILES[0],
+      `unused global CSS variable definition(s) ${unusedTokens.join(', ')} are not allowed; remove dead tokens or add a real production consumer`
+    )
+  }
 }
 
 function checkCriticalVisualCoverage() {
@@ -1387,6 +1452,7 @@ function checkFile(path) {
   checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
   checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
+  checkPrimitivePublicCustomPropertyContract(path, normalizedPath, content)
   checkRequiredSemanticCustomProperties(path, contentWithoutComments)
   checkGlobalFormSkinSelectors(path, content)
   checkBusinessProvideInject(path, normalizedPath, contentWithoutComments)
@@ -1806,6 +1872,8 @@ if (SOURCE_FIXTURE) {
   }
   checkRepositoryLocalArtifacts()
 }
+
+checkUnusedGlobalTokens()
 
 for (const [key, budget] of Object.entries(ARCHITECTURE_DEBT_BUDGETS)) {
   const usage = architectureDebtUsage[key]

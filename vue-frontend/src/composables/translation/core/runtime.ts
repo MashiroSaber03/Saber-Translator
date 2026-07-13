@@ -1,4 +1,3 @@
-import { useSessionStore } from '@/stores/sessionStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
@@ -104,15 +103,8 @@ export function createPipelineRuntime(
     chapterId?: string | null
   }
 ): PipelineRuntime {
-  let sessionStore: ReturnType<typeof useSessionStore> | null = null
   let settingsStore: ReturnType<typeof useSettingsStore> | null = null
   let bookTranslationConstraintsStore: ReturnType<typeof useBookTranslationConstraintsStore> | null = null
-
-  try {
-    sessionStore = useSessionStore()
-  } catch {
-    sessionStore = null
-  }
 
   try {
     settingsStore = useSettingsStore()
@@ -132,8 +124,8 @@ export function createPipelineRuntime(
   }
 
   const settingsSnapshot = deepClone(sourceSettings)
-  const bookId = options?.bookId ?? sessionStore?.currentBookId ?? null
-  const chapterId = options?.chapterId ?? sessionStore?.currentChapterId ?? null
+  const bookId = options?.bookId ?? null
+  const chapterId = options?.chapterId ?? null
   const sessionPath = options?.sessionPath ?? getBookshelfSessionPath(bookId, chapterId)
   const isBookshelfMode = Boolean(bookId && chapterId)
   const autoSaveEnabled = options?.autoSaveEnabled ?? (

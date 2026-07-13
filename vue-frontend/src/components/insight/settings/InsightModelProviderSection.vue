@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import UiField from '@/components/ui/UiField.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
-import UiPasswordField from '@/components/ui/UiPasswordField.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
 import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 
 withDefaults(defineProps<{
@@ -93,29 +92,24 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
 
 <template>
   <div class="insight-model-provider-section">
-    <UiField variant="settings" label="服务商" :control-id="providerInputId">
-      <UiSelect
-        :id="providerInputId"
-        :model-value="provider"
-        :options="providerOptions"
-        @update:model-value="handleProviderUpdate"
-        @change="handleProviderChange"
-      />
-    </UiField>
+    <AiProviderSelectField
+      :model-value="provider"
+      :input-id="providerInputId"
+      :options="providerOptions"
+      @update:model-value="handleProviderUpdate"
+      @change="handleProviderChange"
+    />
 
-    <UiField
-      v-if="showApiKey"
-      variant="settings"
-      label="API Key"
-      :control-id="credentialId"
-    >
-      <UiPasswordField
-        :model-value="apiKey"
-        :input-id="credentialId"
-        placeholder="输入 API Key"
-        @update:model-value="handleApiKeyUpdate"
-      />
-    </UiField>
+    <AiProviderCredentialFields
+      :api-key="apiKey"
+      :api-key-input-id="credentialId"
+      :base-url="baseUrl"
+      :base-url-input-id="baseUrlInputId"
+      :show-api-key="showApiKey"
+      :show-base-url="false"
+      :include-base-url="false"
+      @update:api-key="handleApiKeyUpdate"
+    />
 
     <UiField
       variant="settings"
@@ -140,15 +134,17 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
       />
     </UiField>
 
-    <UiField v-if="showBaseUrl" variant="settings" label="Base URL" :control-id="baseUrlInputId">
-      <UiInput
-        :id="baseUrlInputId"
-        :model-value="baseUrl"
-        type="text"
-        :placeholder="baseUrlPlaceholder"
-        @update:model-value="handleBaseUrlUpdate"
-      />
-    </UiField>
+    <AiProviderCredentialFields
+      :api-key="apiKey"
+      :api-key-input-id="credentialId"
+      :base-url="baseUrl"
+      :base-url-input-id="baseUrlInputId"
+      :show-api-key="false"
+      :show-base-url="showBaseUrl"
+      :include-api-key="false"
+      :base-url-placeholder="baseUrlPlaceholder"
+      @update:base-url="handleBaseUrlUpdate"
+    />
 
     <UiButton
       v-if="showTest"

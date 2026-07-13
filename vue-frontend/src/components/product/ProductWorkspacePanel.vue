@@ -41,13 +41,9 @@ withDefaults(defineProps<{
 
 <style scoped>
 .product-workspace-panel {
-  --product-workspace-panel-background: var(--color-surface-base);
-  --product-workspace-panel-border: var(--color-border-muted, var(--color-border-default));
-  --product-workspace-panel-radius: 12px;
-  --product-workspace-panel-shadow: var(--card-shadow);
-  --product-workspace-panel-padding: 20px;
-  --product-workspace-panel-header-padding: 16px 20px;
-  --product-workspace-panel-footer-padding: 16px 20px;
+  --internal-product-workspace-panel-radius: 12px;
+  --internal-product-workspace-panel-shadow: var(--card-shadow);
+  --internal-product-workspace-panel-padding: 20px;
 
   display: flex;
   flex-direction: column;
@@ -55,24 +51,24 @@ withDefaults(defineProps<{
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--product-workspace-panel-background);
-  border: 1px solid var(--product-workspace-panel-border);
-  border-radius: var(--product-workspace-panel-radius);
-  box-shadow: var(--product-workspace-panel-shadow);
+  background: var(--product-workspace-panel-background, var(--color-surface-base));
+  border: 1px solid var(--product-workspace-panel-border, var(--color-border-muted, var(--color-border-default)));
+  border-radius: var(--product-workspace-panel-radius, var(--internal-product-workspace-panel-radius));
+  box-shadow: var(--product-workspace-panel-shadow, var(--internal-product-workspace-panel-shadow));
 }
 
 .product-workspace-panel--tab {
-  --product-workspace-panel-radius: 0 0 12px 12px;
-  --product-workspace-panel-shadow: none;
+  --internal-product-workspace-panel-radius: 0 0 12px 12px;
+  --internal-product-workspace-panel-shadow: none;
 }
 
 .product-workspace-panel--wizard {
-  --product-workspace-panel-padding: 20px;
+  --internal-product-workspace-panel-padding: 20px;
 }
 
 .product-workspace-panel--split {
-  --product-workspace-panel-radius: 0;
-  --product-workspace-panel-shadow: none;
+  --internal-product-workspace-panel-radius: 0;
+  --internal-product-workspace-panel-shadow: none;
 }
 
 .product-workspace-panel__header,
@@ -82,8 +78,8 @@ withDefaults(defineProps<{
 }
 
 .product-workspace-panel__header {
-  padding: var(--product-workspace-panel-header-padding);
-  border-bottom: 1px solid var(--product-workspace-panel-border);
+  padding: var(--product-workspace-panel-header-padding, 16px 20px);
+  border-bottom: 1px solid var(--product-workspace-panel-border, var(--color-border-muted, var(--color-border-default)));
 }
 
 .product-workspace-panel__scroll {
@@ -91,7 +87,7 @@ withDefaults(defineProps<{
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: var(--product-workspace-panel-padding);
+  padding: var(--product-workspace-panel-padding, var(--internal-product-workspace-panel-padding));
   scrollbar-gutter: stable;
 }
 
@@ -100,7 +96,7 @@ withDefaults(defineProps<{
 }
 
 .product-workspace-panel__footer {
-  padding: var(--product-workspace-panel-footer-padding);
-  border-top: 1px solid var(--product-workspace-panel-border);
+  padding: var(--product-workspace-panel-footer-padding, 16px 20px);
+  border-top: 1px solid var(--product-workspace-panel-border, var(--color-border-muted, var(--color-border-default)));
 }
 </style>

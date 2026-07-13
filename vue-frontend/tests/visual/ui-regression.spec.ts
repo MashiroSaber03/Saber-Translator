@@ -866,6 +866,45 @@ test('dark theme keeps selector primitives readable through one visual contract'
   expect(selectorSamples.select.borderRadius).toBe(selectorSamples.combobox.borderRadius)
 })
 
+test('selector dropdown layers keep an opaque surface above surrounding fields', async ({ page }) => {
+  const verifyDropdowns = async () => {
+    await page.goto('/translate?book=demo-book&chapter=demo-chapter')
+    await expect(page.locator('.text-style-section')).toBeVisible()
+
+    const selectors = [
+      {
+        trigger: page.locator('.text-style-section__field').filter({ hasText: '文本字体' }).getByRole('combobox'),
+        dropdown: page.locator('.ui-combobox-dropdown'),
+      },
+      {
+        trigger: page.locator('.text-style-section__field').filter({ hasText: '排版方向' }).getByRole('combobox'),
+        dropdown: page.locator('.ui-select-dropdown'),
+      },
+    ]
+
+    for (const selector of selectors) {
+      await selector.trigger.click()
+      await expect(selector.dropdown).toBeVisible()
+      const surface = await selector.dropdown.evaluate((element) => {
+        const style = window.getComputedStyle(element)
+        return {
+          background: style.backgroundColor,
+          borderStyle: style.borderStyle,
+          position: style.position,
+        }
+      })
+      expect(surface.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(surface.borderStyle).toBe('solid')
+      expect(surface.position).toBe('fixed')
+      await page.keyboard.press('Escape')
+    }
+  }
+
+  await verifyDropdowns()
+  await enableDarkTheme(page)
+  await verifyDropdowns()
+})
+
 test('bookshelf empty state keeps its layout contract', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '我的书架' })).toBeVisible()

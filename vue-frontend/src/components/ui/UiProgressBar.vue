@@ -74,7 +74,7 @@ const percent = computed(() => {
 
 .ui-progress-bar__track {
   width: 100%;
-  height: var(--ui-progress-bar-height);
+  height: var(--ui-progress-bar-height, var(--internal-ui-progress-bar-height, 8px));
   overflow: hidden;
   border-radius: 999px;
   background: var(--ui-progress-bar-track, var(--color-surface-muted));
@@ -83,33 +83,33 @@ const percent = computed(() => {
 .ui-progress-bar__fill {
   width: 0;
   height: 100%;
-  background: var(--ui-progress-bar-fill);
+  background: var(--ui-progress-bar-fill, var(--internal-ui-progress-bar-fill, linear-gradient(90deg, var(--color-action-primary-soft), var(--color-action-primary-hover))));
   transition: width 0.3s ease;
   position: relative;
 }
 
 .ui-progress-bar--size-sm {
-  --ui-progress-bar-height: 8px;
+  --internal-ui-progress-bar-height: 8px;
 }
 
 .ui-progress-bar--size-md {
-  --ui-progress-bar-height: 10px;
+  --internal-ui-progress-bar-height: 10px;
 }
 
 .ui-progress-bar--size-lg {
-  --ui-progress-bar-height: 20px;
+  --internal-ui-progress-bar-height: 20px;
 }
 
 .ui-progress-bar--tone-primary {
-  --ui-progress-bar-fill: linear-gradient(90deg, var(--color-action-primary-soft), var(--color-action-primary-hover));
+  --internal-ui-progress-bar-fill: linear-gradient(90deg, var(--color-action-primary-soft), var(--color-action-primary-hover));
 }
 
 .ui-progress-bar--tone-success {
-  --ui-progress-bar-fill: linear-gradient(90deg, var(--color-status-success), var(--color-action-success-strong));
+  --internal-ui-progress-bar-fill: linear-gradient(90deg, var(--color-status-success), var(--color-action-success-strong));
 }
 
 .ui-progress-bar--tone-brand {
-  --ui-progress-bar-fill: linear-gradient(90deg, var(--color-action-brand), var(--color-action-brand-strong));
+  --internal-ui-progress-bar-fill: linear-gradient(90deg, var(--color-action-brand), var(--color-action-brand-strong));
 }
 
 .ui-progress-bar--striped .ui-progress-bar__fill::after {

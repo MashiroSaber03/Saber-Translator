@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { persistAllPages } from '@/composables/translation/core/persistenceService'
+import { createPipelineRuntime, hydrateTaskContextFromImage } from '@/composables/translation/core/runtime'
 import type { SessionListItem } from '@/types/api'
 import type { ImageData } from '@/types/image'
 import { readBlobAsDataUrl } from '@/utils/dataUrl'
@@ -423,8 +424,6 @@ export const useSessionStore = defineStore('session', () => {
     loadingProgress.value = { current: 0, total: totalImages, message: `准备保存 ${totalImages} 张图片...` }
 
     try {
-      const { createPipelineRuntime, hydrateTaskContextFromImage } = await import('@/composables/translation/core/runtime')
-
       const runtime = createPipelineRuntime('standard', {
         settingsSnapshot: settingsStore.settings,
         autoSaveEnabled: true,

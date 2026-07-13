@@ -2,6 +2,7 @@ import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/sessionStore'
 import { useValidation } from '../../useValidation'
 import { useToast } from '@/utils/toast'
 import { createProgressManager } from './progressManager'
@@ -334,9 +335,12 @@ export function useSequentialPipeline() {
     }
 
     const enableAutoSave = shouldEnableAutoSave()
+    const sessionStore = useSessionStore()
     const runtime = createPipelineRuntime(config.mode, {
       savedTextStyles,
       autoSaveEnabled: enableAutoSave,
+      bookId: sessionStore.currentBookId,
+      chapterId: sessionStore.currentChapterId,
     })
 
     const stepChain = resolveSequentialStepChain(config.mode, {

@@ -49,14 +49,15 @@ withDefaults(defineProps<{
 
 <style scoped>
 .product-page-header {
-  --product-page-header-background: var(--color-surface-raised);
-  --product-page-header-shadow: var(--shadow-soft);
-  --product-page-header-brand-text: var(--color-text-heading);
-  --product-page-header-content-padding: 6px 10px;
-  --product-page-header-content-radius: 12px;
-  --product-page-header-logo-size: 40px;
-  --product-page-header-logo-shadow: none;
-  --product-page-header-gap: 15px;
+  --internal-product-page-header-background: var(--color-surface-raised);
+  --internal-product-page-header-shadow: var(--shadow-soft);
+  --internal-product-page-header-brand-text: var(--color-text-heading);
+  --internal-product-page-header-content-padding: 6px 10px;
+  --internal-product-page-header-content-radius: 12px;
+  --internal-product-page-header-logo-size: 40px;
+  --internal-product-page-header-logo-shadow: none;
+  --internal-product-page-header-gap: 15px;
+  --internal-product-page-header-reader-shadow: var(--shadow-medium);
   --product-header-meta-pill-background: var(--color-surface-muted);
   --product-header-meta-pill-text: var(--color-text-default);
 
@@ -79,11 +80,11 @@ withDefaults(defineProps<{
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  gap: var(--product-page-header-gap);
-  padding: var(--product-page-header-content-padding);
-  background: var(--product-page-header-background);
-  border-radius: var(--product-page-header-content-radius);
-  box-shadow: 0 2px 10px var(--product-page-header-shadow);
+  gap: var(--product-page-header-gap, var(--internal-product-page-header-gap));
+  padding: var(--product-page-header-content-padding, var(--internal-product-page-header-content-padding));
+  background: var(--product-page-header-background, var(--internal-product-page-header-background));
+  border-radius: var(--product-page-header-content-radius, var(--internal-product-page-header-content-radius));
+  box-shadow: 0 2px 10px var(--product-page-header-shadow, var(--internal-product-page-header-shadow));
 }
 
 .product-page-header__brand {
@@ -100,15 +101,15 @@ withDefaults(defineProps<{
   align-items: center;
   gap: 15px;
   min-width: 0;
-  color: var(--product-page-header-brand-text);
+  color: var(--product-page-header-brand-text, var(--internal-product-page-header-brand-text));
   text-decoration: none;
 }
 
 .product-page-header__logo {
-  width: var(--product-page-header-logo-size);
-  height: var(--product-page-header-logo-size);
+  width: var(--product-page-header-logo-size, var(--internal-product-page-header-logo-size));
+  height: var(--product-page-header-logo-size, var(--internal-product-page-header-logo-size));
   border-radius: 8px;
-  box-shadow: var(--product-page-header-logo-shadow);
+  box-shadow: var(--product-page-header-logo-shadow, var(--internal-product-page-header-logo-shadow));
   object-fit: cover;
 }
 
@@ -128,7 +129,7 @@ withDefaults(defineProps<{
   flex-wrap: wrap;
   align-items: center;
   min-width: 0;
-  gap: var(--product-page-header-gap);
+  gap: var(--product-page-header-gap, var(--internal-product-page-header-gap));
 }
 
 .product-page-header__nav {
@@ -141,14 +142,14 @@ withDefaults(defineProps<{
 }
 
 .product-page-header--brand {
-  --product-page-header-background: transparent;
-  --product-page-header-brand-text: var(--color-text-inverse);
-  --product-page-header-content-padding: 0;
-  --product-page-header-content-radius: 0;
-  --product-page-header-shadow: transparent;
-  --product-page-header-logo-size: 40px;
-  --product-page-header-logo-shadow: 0 2px 8px var(--shadow-medium);
-  --product-page-header-gap: 16px;
+  --internal-product-page-header-background: transparent;
+  --internal-product-page-header-brand-text: var(--color-text-inverse);
+  --internal-product-page-header-content-padding: 0;
+  --internal-product-page-header-content-radius: 0;
+  --internal-product-page-header-shadow: transparent;
+  --internal-product-page-header-logo-size: 40px;
+  --internal-product-page-header-logo-shadow: 0 2px 8px var(--shadow-medium);
+  --internal-product-page-header-gap: 16px;
   --product-header-action-context-surface: var(--color-overlay-inverse-soft);
   --product-header-action-context-border: var(--color-overlay-inverse-raised);
   --product-header-action-context-text: var(--color-text-inverse);
@@ -188,12 +189,12 @@ withDefaults(defineProps<{
 }
 
 .product-page-header--fixed {
-  --product-page-header-background: transparent;
-  --product-page-header-brand-text: var(--color-text-default);
-  --product-page-header-content-padding: 0;
-  --product-page-header-content-radius: 0;
-  --product-page-header-shadow: transparent;
-  --product-page-header-logo-size: 32px;
+  --internal-product-page-header-background: transparent;
+  --internal-product-page-header-brand-text: var(--color-text-default);
+  --internal-product-page-header-content-padding: 0;
+  --internal-product-page-header-content-radius: 0;
+  --internal-product-page-header-shadow: transparent;
+  --internal-product-page-header-logo-size: 32px;
   --product-header-action-context-surface: transparent;
   --product-header-action-context-hover-surface: var(--color-surface-interactive-hover);
 
@@ -241,13 +242,13 @@ withDefaults(defineProps<{
 }
 
 .product-page-header--reader {
-  --product-page-header-background: transparent;
-  --product-page-header-brand-text: var(--color-text-inverse);
-  --product-page-header-content-padding: 0;
-  --product-page-header-content-radius: 0;
-  --product-page-header-shadow: transparent;
-  --product-page-header-reader-shadow: var(--shadow-medium);
-  --product-page-header-gap: 12px;
+  --internal-product-page-header-background: transparent;
+  --internal-product-page-header-brand-text: var(--color-text-inverse);
+  --internal-product-page-header-content-padding: 0;
+  --internal-product-page-header-content-radius: 0;
+  --internal-product-page-header-shadow: transparent;
+  --internal-product-page-header-reader-shadow: var(--shadow-medium);
+  --internal-product-page-header-gap: 12px;
   --product-header-action-context-surface: var(--color-overlay-inverse-soft);
   --product-header-action-context-border: var(--color-overlay-inverse-raised);
   --product-header-action-context-text: var(--color-text-inverse);
@@ -270,14 +271,14 @@ withDefaults(defineProps<{
   padding: 0 16px;
   color: var(--color-text-inverse);
   background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
-  box-shadow: 0 2px 10px var(--product-page-header-reader-shadow);
+  box-shadow: 0 2px 10px var(--product-page-header-reader-shadow, var(--internal-product-page-header-reader-shadow));
 }
 
 .product-page-header--reader .product-page-header__content {
   position: relative;
   flex-wrap: nowrap;
   width: 100%;
-  gap: var(--product-page-header-gap);
+  gap: var(--product-page-header-gap, var(--internal-product-page-header-gap));
 }
 
 .product-page-header--reader .product-page-header__brand,

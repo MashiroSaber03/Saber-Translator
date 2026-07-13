@@ -59,25 +59,13 @@ function selectStep(index: number): void {
 
 <style scoped>
 .product-wizard-steps {
-  --product-wizard-steps-background: var(--color-surface-subtle);
-  --product-wizard-steps-step-background: var(--color-surface-base);
-  --product-wizard-steps-step-border: var(--color-border-muted, var(--color-border-default));
-  --product-wizard-steps-step-text: var(--color-text-default);
-  --product-wizard-steps-step-active-background: var(--color-surface-brand);
-  --product-wizard-steps-step-active-border: var(--color-border-brand);
-  --product-wizard-steps-step-active-text: var(--color-text-inverse);
-  --product-wizard-steps-step-completed-background: var(--color-status-success);
-  --product-wizard-steps-step-completed-border: var(--color-status-success);
-  --product-wizard-steps-number-background: var(--color-overlay-inverse-muted);
-  --product-wizard-steps-number-idle-background: var(--color-surface-subtle);
-
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
   padding: 16px;
   border-radius: 12px;
-  background: var(--product-wizard-steps-background);
+  background: var(--product-wizard-steps-background, var(--color-surface-subtle));
 }
 
 .product-wizard-steps__step {
@@ -88,10 +76,10 @@ function selectStep(index: number): void {
   gap: 8px;
   min-width: 0;
   padding: 8px 16px;
-  border: 2px solid var(--product-wizard-steps-step-border);
+  border: 2px solid var(--product-wizard-steps-step-border, var(--color-border-muted, var(--color-border-default)));
   border-radius: 20px;
-  background: var(--product-wizard-steps-step-background);
-  color: var(--product-wizard-steps-step-text);
+  background: var(--product-wizard-steps-step-background, var(--color-surface-base));
+  color: var(--product-wizard-steps-step-text, var(--color-text-default));
   transition: border-color 0.3s, background 0.3s, color 0.3s, opacity 0.3s;
 }
 
@@ -109,15 +97,15 @@ function selectStep(index: number): void {
 }
 
 .product-wizard-steps__step--active {
-  border-color: var(--product-wizard-steps-step-active-border);
-  background: var(--product-wizard-steps-step-active-background);
-  color: var(--product-wizard-steps-step-active-text);
+  border-color: var(--product-wizard-steps-step-active-border, var(--color-border-brand));
+  background: var(--product-wizard-steps-step-active-background, var(--color-surface-brand));
+  color: var(--product-wizard-steps-step-active-text, var(--color-text-inverse));
 }
 
 .product-wizard-steps__step--completed {
-  border-color: var(--product-wizard-steps-step-completed-border);
-  background: var(--product-wizard-steps-step-completed-background);
-  color: var(--product-wizard-steps-step-active-text);
+  border-color: var(--product-wizard-steps-step-completed-border, var(--color-status-success));
+  background: var(--product-wizard-steps-step-completed-background, var(--color-status-success));
+  color: var(--product-wizard-steps-step-active-text, var(--color-text-inverse));
 }
 
 .product-wizard-steps__number {
@@ -127,13 +115,13 @@ function selectStep(index: number): void {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--product-wizard-steps-number-background);
+  background: var(--product-wizard-steps-number-background, var(--color-overlay-inverse-muted));
   font-size: 13px;
   font-weight: 700;
 }
 
 .product-wizard-steps__step:not(.product-wizard-steps__step--active, .product-wizard-steps__step--completed) .product-wizard-steps__number {
-  background: var(--product-wizard-steps-number-idle-background);
+  background: var(--product-wizard-steps-number-idle-background, var(--color-surface-subtle));
 }
 
 .product-wizard-steps__label {

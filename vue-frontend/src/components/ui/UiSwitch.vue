@@ -55,60 +55,56 @@ function toggle(): void {
 
 <style scoped>
 .ui-switch {
-  --ui-switch-width: 40px;
-  --ui-switch-height: 22px;
-  --ui-switch-thumb-size: 16px;
-  --ui-switch-thumb-offset: 3px;
-  --ui-switch-thumb-translate: 18px;
-  --ui-switch-track-background: var(--color-border-muted);
-  --ui-switch-track-checked-background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%);
-  --ui-switch-thumb-background: var(--color-surface-base);
-  --ui-switch-thumb-shadow: 0 1px 3px var(--shadow-medium);
+  --internal-ui-switch-width: 40px;
+  --internal-ui-switch-height: 22px;
+  --internal-ui-switch-thumb-size: 16px;
+  --internal-ui-switch-thumb-offset: 3px;
+  --internal-ui-switch-thumb-translate: 18px;
 
   position: relative;
   display: inline-flex;
-  width: var(--ui-switch-width);
-  height: var(--ui-switch-height);
+  width: var(--ui-switch-width, var(--internal-ui-switch-width));
+  height: var(--ui-switch-height, var(--internal-ui-switch-height));
   padding: 0;
   border: 0;
-  border-radius: var(--ui-switch-height);
+  border-radius: var(--ui-switch-height, var(--internal-ui-switch-height));
   background: transparent;
   flex-shrink: 0;
 }
 
 .ui-switch--sm {
-  --ui-switch-width: 32px;
-  --ui-switch-height: 18px;
-  --ui-switch-thumb-size: 14px;
-  --ui-switch-thumb-offset: 2px;
-  --ui-switch-thumb-translate: 14px;
+  --internal-ui-switch-width: 32px;
+  --internal-ui-switch-height: 18px;
+  --internal-ui-switch-thumb-size: 14px;
+  --internal-ui-switch-thumb-offset: 2px;
+  --internal-ui-switch-thumb-translate: 14px;
 }
 
 .ui-switch__track {
   position: absolute;
   inset: 0;
-  border-radius: var(--ui-switch-height);
-  background: var(--ui-switch-track-background);
+  border-radius: var(--ui-switch-height, var(--internal-ui-switch-height));
+  background: var(--ui-switch-track-background, var(--color-border-muted));
   transition: background 0.2s ease;
 }
 
 .ui-switch__thumb {
   position: absolute;
-  width: var(--ui-switch-thumb-size);
-  height: var(--ui-switch-thumb-size);
-  left: var(--ui-switch-thumb-offset);
-  bottom: var(--ui-switch-thumb-offset);
+  width: var(--ui-switch-thumb-size, var(--internal-ui-switch-thumb-size));
+  height: var(--ui-switch-thumb-size, var(--internal-ui-switch-thumb-size));
+  left: var(--ui-switch-thumb-offset, var(--internal-ui-switch-thumb-offset));
+  bottom: var(--ui-switch-thumb-offset, var(--internal-ui-switch-thumb-offset));
   border-radius: 50%;
-  background: var(--ui-switch-thumb-background);
-  box-shadow: var(--ui-switch-thumb-shadow);
+  background: var(--ui-switch-thumb-background, var(--color-surface-base));
+  box-shadow: var(--ui-switch-thumb-shadow, 0 1px 3px var(--shadow-medium));
   transition: transform 0.2s ease;
 }
 
 .ui-switch--checked .ui-switch__track {
-  background: var(--ui-switch-track-checked-background);
+  background: var(--ui-switch-track-checked-background, linear-gradient(135deg, var(--color-action-success) 0%, var(--color-action-success-strong) 100%));
 }
 
 .ui-switch--checked .ui-switch__thumb {
-  transform: translateX(var(--ui-switch-thumb-translate));
+  transform: translateX(var(--ui-switch-thumb-translate, var(--internal-ui-switch-thumb-translate)));
 }
 </style>

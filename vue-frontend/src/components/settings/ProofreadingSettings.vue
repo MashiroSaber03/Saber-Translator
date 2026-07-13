@@ -63,47 +63,38 @@
           </UiField>
 
           <UiFormGrid>
-            <UiField
-              variant="settings"
-              label="服务商"
-              :control-id="roundFieldId(index, 'Provider')"
-            >
-              <UiSelect
-                :id="roundFieldId(index, 'Provider')"
-                :model-value="round.provider"
-                :options="providerOptions"
-                @change="(value: string | number) => handleRoundProviderChange(index, value)"
-              />
-            </UiField>
-            <UiField
-              v-show="providerRequiresApiKey(round.provider)"
-              variant="settings"
-              label="API Key"
-              :control-id="roundFieldId(index, 'ApiKey')"
-            >
-              <UiPasswordField
-                :input-id="roundFieldId(index, 'ApiKey')"
-                v-model="round.apiKey"
-                placeholder="请输入API Key"
-                :show-label="`显示${round.name} API Key`"
-                :hide-label="`隐藏${round.name} API Key`"
-              />
-            </UiField>
+            <AiProviderSelectField
+              :model-value="round.provider"
+              :input-id="roundFieldId(index, 'Provider')"
+              :options="providerOptions"
+              @change="handleRoundProviderChange(index, $event)"
+            />
+            <AiProviderCredentialFields
+              :api-key="round.apiKey"
+              :api-key-input-id="roundFieldId(index, 'ApiKey')"
+              :base-url="round.customBaseUrl"
+              :base-url-input-id="roundFieldId(index, 'BaseUrl')"
+              :show-api-key="providerRequiresApiKey(round.provider)"
+              :show-base-url="false"
+              :include-base-url="false"
+              api-key-placeholder="请输入API Key"
+              :api-key-show-label="`显示${round.name} API Key`"
+              :api-key-hide-label="`隐藏${round.name} API Key`"
+              @update:api-key="round.apiKey = $event"
+            />
           </UiFormGrid>
 
-          <UiField
-            v-show="providerRequiresBaseUrl(round.provider)"
-            variant="settings"
-            label="Base URL"
-            :control-id="roundFieldId(index, 'BaseUrl')"
-          >
-            <UiInput
-              type="text"
-              :id="roundFieldId(index, 'BaseUrl')"
-              v-model="round.customBaseUrl"
-              placeholder="例如: https://api.example.com/v1"
-            />
-          </UiField>
+          <AiProviderCredentialFields
+            :api-key="round.apiKey"
+            :api-key-input-id="roundFieldId(index, 'ApiKey')"
+            :base-url="round.customBaseUrl"
+            :base-url-input-id="roundFieldId(index, 'BaseUrl')"
+            :show-api-key="false"
+            :show-base-url="providerRequiresBaseUrl(round.provider)"
+            :include-api-key="false"
+            base-url-placeholder="例如: https://api.example.com/v1"
+            @update:base-url="round.customBaseUrl = $event"
+          />
 
           <UiField
             variant="settings"
@@ -115,10 +106,10 @@
               v-model="round.modelName"
               placeholder="请输入模型名称"
               fetch-variant="primary"
-              :fetching="Boolean(roundFetchingStates[index])"
-              :fetch-disabled="Boolean(roundFetchingStates[index])"
+              :fetching="isRoundFetching(index)"
+              :fetch-disabled="isRoundFetching(index)"
               :options="getRoundModelOptions(index)"
-              :model-count="roundModelLists[index]?.length || 0"
+              :model-count="getRoundModelCount(index)"
               @fetch="fetchRoundModels(index)"
             />
           </UiField>
@@ -253,14 +244,13 @@ import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import UiPasswordField from '@/components/ui/UiPasswordField.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed, watch } from 'vue'
 import {
   getProviderOptionsForCapability,
   providerRequiresApiKey,
-  providerSupportsCapability,
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
@@ -270,17 +260,15 @@ import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
-import { useKeyedLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
 
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
-const roundFetchingStates = ref<Record<number, boolean>>({})
 const roundTestingStates = ref<Record<number, boolean>>({})
-const roundModelLists = ref<Record<number, string[]>>({})
-const roundModelFetchGuard = useKeyedLatestRequestGuard<number>()
+const roundModelDiscoveries = new Map<number, ReturnType<typeof useAiModelDiscovery>>()
 
 const proofreadingRounds = computed(() => settingsStore.settings.proofreading.rounds)
 const proofreadingMaxRetries = computed({
@@ -305,75 +293,64 @@ watch(
 )
 
 function getRoundModelOptions(index: number) {
-  const models = roundModelLists.value[index] || []
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  models.forEach(m => options.push({ label: m, value: m }))
+  getRoundModelDiscovery(index).models.value.forEach(model => {
+    options.push({ label: model.id, value: model.id })
+  })
   return options
 }
 
-function invalidateRoundModelFetch(index: number) {
-  roundModelFetchGuard.invalidate(index)
-  roundFetchingStates.value[index] = false
+function notifyRoundModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
+  toast[tone](message)
+}
+
+function getRoundModelDiscovery(index: number): ReturnType<typeof useAiModelDiscovery> {
+  const existing = roundModelDiscoveries.get(index)
+  if (existing) return existing
+
+  const discovery = useAiModelDiscovery({
+    source: () => {
+      const round = proofreadingRounds.value[index]
+      return {
+        provider: round?.provider ?? '',
+        apiKey: round?.apiKey ?? '',
+        baseUrl: round?.customBaseUrl ?? '',
+      }
+    },
+    notify: notifyRoundModelDiscovery,
+    successMessage: count => `轮次 ${index + 1}: 获取到 ${count} 个模型`,
+    emptyBaseUrl: '',
+  })
+  roundModelDiscoveries.set(index, discovery)
+  return discovery
+}
+
+function isRoundFetching(index: number): boolean {
+  return getRoundModelDiscovery(index).isFetchingModels.value
+}
+
+function getRoundModelCount(index: number): number {
+  return getRoundModelDiscovery(index).models.value.length
+}
+
+function resetRoundModelDiscoveries(): void {
+  for (const discovery of roundModelDiscoveries.values()) {
+    discovery.invalidate()
+  }
+  roundModelDiscoveries.clear()
 }
 
 function handleRoundProviderChange(index: number, value: string | number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
-  invalidateRoundModelFetch(index)
+  getRoundModelDiscovery(index).invalidate()
   round.provider = String(value) as ProofreadingRound['provider']
-  roundModelLists.value[index] = []
-}
-
-function isCurrentRoundModelFetch(index: number, requestId: number, provider: string, apiKey: string | undefined, baseUrl: string | undefined) {
-  return roundModelFetchGuard.isCurrent(index, requestId, () => {
-    const round = proofreadingRounds.value[index]
-    return Boolean(
-      round &&
-      round.provider === provider &&
-      round.apiKey?.trim() === apiKey &&
-      round.customBaseUrl?.trim() === baseUrl
-    )
-  })
 }
 
 async function fetchRoundModels(index: number) {
   const round = proofreadingRounds.value[index]
   if (!round) return
-
-  const provider = round.provider
-  const apiKey = round.apiKey?.trim()
-  const baseUrl = round.customBaseUrl?.trim()
-
-  if (providerRequiresApiKey(provider) && !apiKey) {
-    toast.warning('请先填写 API Key')
-    return
-  }
-
-  if (!providerSupportsCapability(provider, 'modelFetch')) {
-    toast.warning('当前服务商不支持获取模型列表')
-    return
-  }
-
-  const requestId = roundModelFetchGuard.next(index)
-  roundFetchingStates.value[index] = true
-  try {
-    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
-    if (!isCurrentRoundModelFetch(index, requestId, provider, apiKey, baseUrl)) return
-    if (result.success && result.models && result.models.length > 0) {
-      roundModelLists.value[index] = result.models.map(m => m.id)
-      toast.success(`轮次 ${index + 1}: 获取到 ${result.models.length} 个模型`)
-    } else {
-      toast.warning(result.message || '未获取到可用模型')
-    }
-  } catch (error: unknown) {
-    if (!isCurrentRoundModelFetch(index, requestId, provider, apiKey, baseUrl)) return
-    const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
-    toast.error(errorMessage)
-  } finally {
-    if (roundModelFetchGuard.isCurrent(index, requestId)) {
-      roundFetchingStates.value[index] = false
-    }
-  }
+  await getRoundModelDiscovery(index).fetchModels()
 }
 
 async function testRoundConnection(index: number) {
@@ -449,6 +426,7 @@ function removeRound(index: number) {
     toast.warning('至少需要保留一个校对轮次')
     return
   }
+  resetRoundModelDiscoveries()
   settingsStore.removeProofreadingRound(index)
   toast.success('已删除校对轮次')
 }

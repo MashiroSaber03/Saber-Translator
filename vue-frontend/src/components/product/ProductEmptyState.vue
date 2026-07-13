@@ -49,41 +49,41 @@ withDefaults(defineProps<{
 
 <style scoped>
 .product-empty-state {
-  --product-empty-state-description: var(--color-text-supporting);
-  --product-empty-state-icon-background: var(--color-surface-quiet);
-  --product-empty-state-icon-border: var(--color-border-muted);
-  --product-empty-state-icon-color: var(--color-action-brand);
-  --product-empty-state-min-height: 360px;
-  --product-empty-state-text: var(--color-text-default);
-  --product-empty-state-eyebrow-background: var(--color-surface-muted);
-  --product-empty-state-eyebrow-text: var(--color-text-supporting);
-  --product-empty-state-title: var(--color-text-strong);
+  --internal-product-empty-state-description: var(--color-text-supporting);
+  --internal-product-empty-state-icon-background: var(--color-surface-quiet);
+  --internal-product-empty-state-icon-border: var(--color-border-muted);
+  --internal-product-empty-state-icon-color: var(--color-action-brand);
+  --internal-product-empty-state-min-height: 360px;
+  --internal-product-empty-state-text: var(--color-text-default);
+  --internal-product-empty-state-eyebrow-background: var(--color-surface-muted);
+  --internal-product-empty-state-eyebrow-text: var(--color-text-supporting);
+  --internal-product-empty-state-title: var(--color-text-strong);
 
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   max-width: 520px;
-  min-height: var(--product-empty-state-min-height);
+  min-height: var(--product-empty-state-min-height, var(--internal-product-empty-state-min-height));
   margin-inline: auto;
   padding: 64px 20px;
-  color: var(--product-empty-state-text);
+  color: var(--product-empty-state-text, var(--internal-product-empty-state-text));
   text-align: center;
 }
 
 .product-empty-state--inverse {
-  --product-empty-state-description: color-mix(in srgb, var(--color-text-inverse) 72%, transparent);
-  --product-empty-state-icon-background: var(--color-overlay-inverse-soft);
-  --product-empty-state-icon-border: var(--color-overlay-inverse-emphasis);
-  --product-empty-state-icon-color: var(--color-text-inverse);
-  --product-empty-state-text: var(--color-text-inverse);
-  --product-empty-state-eyebrow-background: var(--color-overlay-inverse-soft);
-  --product-empty-state-eyebrow-text: var(--color-text-inverse);
-  --product-empty-state-title: var(--color-text-inverse);
+  --internal-product-empty-state-description: color-mix(in srgb, var(--color-text-inverse) 72%, transparent);
+  --internal-product-empty-state-icon-background: var(--color-overlay-inverse-soft);
+  --internal-product-empty-state-icon-border: var(--color-overlay-inverse-emphasis);
+  --internal-product-empty-state-icon-color: var(--color-text-inverse);
+  --internal-product-empty-state-text: var(--color-text-inverse);
+  --internal-product-empty-state-eyebrow-background: var(--color-overlay-inverse-soft);
+  --internal-product-empty-state-eyebrow-text: var(--color-text-inverse);
+  --internal-product-empty-state-title: var(--color-text-inverse);
 }
 
 .product-empty-state--compact {
-  --product-empty-state-min-height: 100%;
+  --internal-product-empty-state-min-height: 100%;
 
   max-width: none;
   padding: 16px 8px;
@@ -96,10 +96,10 @@ withDefaults(defineProps<{
   width: 72px;
   height: 72px;
   margin-bottom: 18px;
-  border: 1px solid var(--product-empty-state-icon-border);
+  border: 1px solid var(--product-empty-state-icon-border, var(--internal-product-empty-state-icon-border));
   border-radius: 18px;
-  background: var(--product-empty-state-icon-background);
-  color: var(--product-empty-state-icon-color);
+  background: var(--product-empty-state-icon-background, var(--internal-product-empty-state-icon-background));
+  color: var(--product-empty-state-icon-color, var(--internal-product-empty-state-icon-color));
 }
 
 .product-empty-state--compact .product-empty-state__icon {
@@ -114,8 +114,8 @@ withDefaults(defineProps<{
   margin: 0 0 12px;
   padding: 5px 12px;
   border-radius: 999px;
-  background: var(--product-empty-state-eyebrow-background);
-  color: var(--product-empty-state-eyebrow-text);
+  background: var(--product-empty-state-eyebrow-background, var(--internal-product-empty-state-eyebrow-background));
+  color: var(--product-empty-state-eyebrow-text, var(--internal-product-empty-state-eyebrow-text));
   font-weight: 600;
   font-size: 0.78rem;
   line-height: 1.4;
@@ -123,7 +123,7 @@ withDefaults(defineProps<{
 
 .product-empty-state__title {
   margin: 0;
-  color: var(--product-empty-state-title);
+  color: var(--product-empty-state-title, var(--internal-product-empty-state-title));
   font-weight: 700;
   font-size: 1.45rem;
   line-height: 1.25;
@@ -136,7 +136,7 @@ withDefaults(defineProps<{
 
 .product-empty-state__description {
   margin: 10px 0 0;
-  color: var(--product-empty-state-description);
+  color: var(--product-empty-state-description, var(--internal-product-empty-state-description));
   font-size: 0.95rem;
   line-height: 1.6;
 }

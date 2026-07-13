@@ -15,6 +15,8 @@ import {
   SavePool,
 } from './pools'
 import { useImageStore } from '@/stores/imageStore'
+import { useSessionStore } from '@/stores/sessionStore'
+import { getActivePinia } from 'pinia'
 import { createPipelineRuntime, hydrateTaskContextFromImage } from '@/composables/translation/core/runtime'
 import { resolveParallelPoolChain, type ParallelPoolStepName } from '@/composables/translation/core/pipelineRegistry'
 
@@ -126,7 +128,18 @@ export class ParallelPipeline {
     this.progressTracker.init(images.length)
     this.resultCollector.init(images.length)
 
-    const runtime = createPipelineRuntime(mode)
+    let bookId: string | null = null
+    let chapterId: string | null = null
+    const pinia = getActivePinia()
+    if (pinia) {
+      const sessionStore = useSessionStore(pinia)
+      bookId = sessionStore.currentBookId
+      chapterId = sessionStore.currentChapterId
+    }
+    const runtime = createPipelineRuntime(mode, {
+      bookId,
+      chapterId,
+    })
     const chainConfig = resolveParallelPoolChain(mode, {
       removeTextWithOcr: runtime.settingsSnapshot.removeTextWithOcr,
       autoSaveEnabled: runtime.autoSaveEnabled,

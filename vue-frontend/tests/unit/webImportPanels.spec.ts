@@ -367,7 +367,8 @@ describe('WebImport panels', () => {
 
     expect(basicSource).not.toContain('@input="settingsActions.setAgentBaseUrl(($event.target as HTMLInputElement).value)"')
     expect(basicSource).not.toContain('@input="settingsActions.setExtractionPrompt(($event.target as HTMLTextAreaElement).value)"')
-    expect(basicSource).toContain('@update:model-value="value => settingsActions.setAgentBaseUrl(String(value))"')
+    expect(basicSource).toContain('AiProviderCredentialFields')
+    expect(basicSource).toContain('@update:base-url="settingsActions.setAgentBaseUrl"')
     expect(basicSource).toContain('@update:model-value="settingsActions.setExtractionPrompt"')
 
     expect(advancedSource).not.toContain('@input="settingsActions.setCustomCookie(($event.target as HTMLInputElement).value)"')

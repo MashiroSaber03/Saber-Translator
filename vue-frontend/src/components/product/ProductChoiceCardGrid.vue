@@ -60,18 +60,9 @@ function selectItem(item: ProductChoiceCardItem): void {
 
 <style scoped>
 .product-choice-card-grid {
-  --product-choice-card-grid-gap: 16px;
-  --product-choice-card-grid-item-background: var(--color-surface-base);
-  --product-choice-card-grid-item-background-selected: var(--color-focus-brand-soft);
-  --product-choice-card-grid-item-border: var(--color-border-muted);
-  --product-choice-card-grid-item-border-selected: var(--color-border-brand);
-  --product-choice-card-grid-item-radius: 8px;
-  --product-choice-card-grid-item-padding: 22px;
-  --product-choice-card-grid-item-shadow-hover: 0 4px 12px var(--color-focus-brand-soft);
-
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--product-choice-card-grid-gap);
+  gap: var(--product-choice-card-grid-gap, 16px);
 }
 
 .product-choice-card-grid__item {
@@ -82,24 +73,24 @@ function selectItem(item: ProductChoiceCardItem): void {
   gap: 8px;
   width: 100%;
   min-height: 150px;
-  padding: var(--product-choice-card-grid-item-padding);
-  border: 2px solid var(--product-choice-card-grid-item-border);
-  border-radius: var(--product-choice-card-grid-item-radius);
-  background: var(--product-choice-card-grid-item-background);
+  padding: var(--product-choice-card-grid-item-padding, 22px);
+  border: 2px solid var(--product-choice-card-grid-item-border, var(--color-border-muted));
+  border-radius: var(--product-choice-card-grid-item-radius, 8px);
+  background: var(--product-choice-card-grid-item-background, var(--color-surface-base));
   text-align: center;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .product-choice-card-grid__item:hover {
-  border-color: var(--product-choice-card-grid-item-border-selected);
-  box-shadow: var(--product-choice-card-grid-item-shadow-hover);
+  border-color: var(--product-choice-card-grid-item-border-selected, var(--color-border-brand));
+  box-shadow: var(--product-choice-card-grid-item-shadow-hover, 0 4px 12px var(--color-focus-brand-soft));
   transform: translateY(-2px);
 }
 
 .product-choice-card-grid__item--selected,
 .product-choice-card-grid__item--selected:hover {
-  border-color: var(--product-choice-card-grid-item-border-selected);
-  background: var(--product-choice-card-grid-item-background-selected);
+  border-color: var(--product-choice-card-grid-item-border-selected, var(--color-border-brand));
+  background: var(--product-choice-card-grid-item-background-selected, var(--color-focus-brand-soft));
 }
 
 .product-choice-card-grid__item--disabled {

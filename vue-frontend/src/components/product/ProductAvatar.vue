@@ -38,54 +38,52 @@ const fallbackInitial = computed(() => props.fallbackText.trim().slice(0, 1) || 
 
 <style scoped>
 .product-avatar {
-  --product-avatar-width: 56px;
-  --product-avatar-height: var(--product-avatar-width);
-  --product-avatar-radius: 999px;
-  --product-avatar-background: linear-gradient(135deg, var(--color-action-brand), var(--color-action-brand-strong));
-  --product-avatar-color: var(--color-text-inverse);
-  --product-avatar-font-size: 20px;
-  --product-avatar-font-weight: 600;
+  --internal-product-avatar-width: 56px;
+  --internal-product-avatar-height: var(--product-avatar-width, var(--internal-product-avatar-width));
+  --internal-product-avatar-radius: 999px;
+  --internal-product-avatar-font-size: 20px;
+  --internal-product-avatar-font-weight: 600;
 
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: var(--product-avatar-width);
-  height: var(--product-avatar-height);
+  width: var(--product-avatar-width, var(--internal-product-avatar-width));
+  height: var(--product-avatar-height, var(--internal-product-avatar-height));
   overflow: hidden;
-  border-radius: var(--product-avatar-radius);
-  background: var(--product-avatar-background);
-  color: var(--product-avatar-color);
+  border-radius: var(--product-avatar-radius, var(--internal-product-avatar-radius));
+  background: var(--product-avatar-background, linear-gradient(135deg, var(--color-action-brand), var(--color-action-brand-strong)));
+  color: var(--product-avatar-color, var(--color-text-inverse));
 }
 
 .product-avatar--sm {
-  --product-avatar-width: 40px;
-  --product-avatar-font-size: 16px;
+  --internal-product-avatar-width: 40px;
+  --internal-product-avatar-font-size: 16px;
 }
 
 .product-avatar--md {
-  --product-avatar-width: 56px;
-  --product-avatar-font-size: 20px;
+  --internal-product-avatar-width: 56px;
+  --internal-product-avatar-font-size: 20px;
 }
 
 .product-avatar--lg {
-  --product-avatar-width: 64px;
-  --product-avatar-font-size: 24px;
+  --internal-product-avatar-width: 64px;
+  --internal-product-avatar-font-size: 24px;
 }
 
 .product-avatar--hero {
-  --product-avatar-width: 116px;
-  --product-avatar-height: 164px;
-  --product-avatar-font-size: 32px;
-  --product-avatar-font-weight: 700;
+  --internal-product-avatar-width: 116px;
+  --internal-product-avatar-height: 164px;
+  --internal-product-avatar-font-size: 32px;
+  --internal-product-avatar-font-weight: 700;
 }
 
 .product-avatar--rounded {
-  --product-avatar-radius: 12px;
+  --internal-product-avatar-radius: 12px;
 }
 
 .product-avatar--portrait {
-  --product-avatar-radius: 24px;
+  --internal-product-avatar-radius: 24px;
 }
 
 .product-avatar__image {
@@ -96,8 +94,8 @@ const fallbackInitial = computed(() => props.fallbackText.trim().slice(0, 1) || 
 }
 
 .product-avatar__fallback {
-  font-size: var(--product-avatar-font-size);
-  font-weight: var(--product-avatar-font-weight);
+  font-size: var(--product-avatar-font-size, var(--internal-product-avatar-font-size));
+  font-weight: var(--product-avatar-font-weight, var(--internal-product-avatar-font-weight));
   line-height: 1;
 }
 </style>

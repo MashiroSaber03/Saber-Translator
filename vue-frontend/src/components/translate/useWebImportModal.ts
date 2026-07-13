@@ -1,14 +1,14 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
-import { configApi } from '@/api/config'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useImageStore } from '@/stores/imageStore'
 import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
 import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
-import { getProviderDisplayName, normalizeProviderId, providerRequiresApiKey, providerRequiresBaseUrl, providerSupportsCapability } from '@/config/aiProviders'
+import { normalizeProviderId, providerRequiresApiKey, providerSupportsCapability } from '@/config/aiProviders'
 import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import { useAiModelDiscovery } from '@/composables/useAiModelDiscovery'
 import type { WebImportSettingsActions } from './web-import/webImportSettingsActions'
 
 export function useWebImportModal() {
@@ -27,8 +27,6 @@ export function useWebImportModal() {
   const activeSettingsTab = ref<'basic' | 'preprocess' | 'advanced'>('basic')
   const testingFirecrawl = ref(false)
   const testingAgent = ref(false)
-  const isFetchingModels = ref(false)
-  const modelList = ref<string[]>([])
   const settingsActions: WebImportSettingsActions = {
     setAgentApiKey: webImportStore.setAgentApiKey,
     setAgentBaseUrl: webImportStore.setAgentBaseUrl,
@@ -69,6 +67,17 @@ export function useWebImportModal() {
   const error = computed(() => webImportStore.error)
   const isProcessing = computed(() => webImportStore.isProcessing)
   const draftSettings = computed(() => webImportStore.draftSettings)
+  const modelDiscovery = useAiModelDiscovery({
+    source: () => ({
+      provider: draftSettings.value.agent.provider,
+      apiKey: draftSettings.value.agent.apiKey,
+      baseUrl: draftSettings.value.agent.customBaseUrl,
+    }),
+    notify: showToast,
+    emptyBaseUrl: '',
+  })
+  const { isFetchingModels } = modelDiscovery
+  const modelList = computed(() => modelDiscovery.models.value.map(model => model.id))
   const hasUnsavedSettings = computed(() => webImportStore.hasUnsavedSettings)
   const isSavingSettings = computed(() => webImportStore.isSavingSettings)
   const showAgentLogs = computed(() => draftSettings.value.ui.showAgentLogs)
@@ -98,7 +107,6 @@ export function useWebImportModal() {
   let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
   let focusInputTimeout: ReturnType<typeof setTimeout> | null = null
   const urlSupportGuard = useLatestRequestGuard()
-  const modelFetchGuard = useLatestRequestGuard()
 
   function isCurrentUrlSupport(requestId: number, url: string): boolean {
     return urlSupportGuard.isCurrent(requestId, () => urlInput.value.trim() === url)
@@ -370,9 +378,7 @@ export function useWebImportModal() {
   watch(
     () => draftSettings.value.agent.provider,
     () => {
-      modelFetchGuard.invalidate()
-      isFetchingModels.value = false
-      modelList.value = []
+      modelDiscovery.invalidate()
     }
   )
 
@@ -425,56 +431,7 @@ export function useWebImportModal() {
     }
   }
 
-  async function handleFetchModels() {
-    const provider = draftSettings.value.agent.provider
-    const apiKey = draftSettings.value.agent.apiKey?.trim()
-    const baseUrl = draftSettings.value.agent.customBaseUrl?.trim()
-
-    if (providerRequiresApiKey(provider) && !apiKey) {
-      showToast('请先填写 API Key', 'warning')
-      return
-    }
-
-    if (!providerSupportsCapability(provider, 'modelFetch')) {
-      showToast(`${getProviderDisplayName(provider)} 不支持自动获取模型列表`, 'warning')
-      return
-    }
-
-    if (providerRequiresBaseUrl(provider) && !baseUrl) {
-      showToast('自定义服务需要先填写 Base URL', 'warning')
-      return
-    }
-
-    const requestId = modelFetchGuard.next()
-    isFetchingModels.value = true
-    try {
-      const result = await configApi.fetchModels(provider, apiKey, baseUrl || '')
-      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
-      if (result.success && result.models && result.models.length > 0) {
-        modelList.value = result.models.map(model => model.id)
-        showToast(`获取到 ${result.models.length} 个模型`, 'success')
-      } else {
-        modelList.value = []
-        showToast(result.message || '未获取到可用模型', 'warning')
-      }
-    } catch (error: unknown) {
-      if (!isCurrentModelFetch(requestId, provider, apiKey, baseUrl)) return
-      modelList.value = []
-      showToast(error instanceof Error ? error.message : '获取模型列表失败', 'error')
-    } finally {
-      if (modelFetchGuard.isCurrent(requestId)) {
-        isFetchingModels.value = false
-      }
-    }
-  }
-
-  function isCurrentModelFetch(requestId: number, provider: string, apiKey: string | undefined, baseUrl: string | undefined): boolean {
-    return modelFetchGuard.isCurrent(requestId, () => (
-      draftSettings.value.agent.provider === provider &&
-      draftSettings.value.agent.apiKey?.trim() === apiKey &&
-      draftSettings.value.agent.customBaseUrl?.trim() === baseUrl
-    ))
-  }
+  const handleFetchModels = modelDiscovery.fetchModels
 
   async function handleResetPrompt() {
     const confirmed = await confirmProductAction({
@@ -495,8 +452,7 @@ export function useWebImportModal() {
     }
     urlSupportGuard.invalidate()
     checkingSupport.value = false
-    modelFetchGuard.invalidate()
-    isFetchingModels.value = false
+    modelDiscovery.invalidate()
     if (focusInputTimeout) {
       clearTimeout(focusInputTimeout)
       focusInputTimeout = null

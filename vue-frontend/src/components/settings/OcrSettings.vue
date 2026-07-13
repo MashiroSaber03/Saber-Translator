@@ -132,42 +132,37 @@
     <ProductFormSection v-show="settings.ocrEngine === 'ai_vision'">
       <template #title>AI视觉OCR 设置</template>
       <UiFormGrid>
-        <UiField variant="settings" label="服务商" control-id="settingsAiVisionProvider">
-          <UiSelect
-            id="settingsAiVisionProvider"
-            :model-value="settings.aiVisionOcr.provider"
-            :options="aiVisionProviderOptions"
-            @change="handleAiVisionProviderChange"
-          />
-        </UiField>
-        <UiField
-          v-show="providerRequiresApiKey(settings.aiVisionOcr.provider)"
-          variant="settings"
-          label="API Key"
-          control-id="settingsAiVisionApiKey"
-        >
-          <UiPasswordField
-            input-id="settingsAiVisionApiKey"
-            v-model="localAiVisionOcr.apiKey"
-            placeholder="请输入API Key"
-            show-label="显示 AI 视觉 API Key"
-            hide-label="隐藏 AI 视觉 API Key"
-          />
-        </UiField>
-      </UiFormGrid>
-      <UiField
-        v-show="providerRequiresBaseUrl(settings.aiVisionOcr.provider)"
-        variant="settings"
-        label="Base URL"
-        control-id="settingsCustomAiVisionBaseUrl"
-      >
-        <UiInput
-          type="text"
-          id="settingsCustomAiVisionBaseUrl"
-          v-model="localAiVisionOcr.customBaseUrl"
-          placeholder="例如: https://api.example.com/v1"
+        <AiProviderSelectField
+          :model-value="settings.aiVisionOcr.provider"
+          input-id="settingsAiVisionProvider"
+          :options="aiVisionProviderOptions"
+          @change="handleAiVisionProviderChange"
         />
-      </UiField>
+        <AiProviderCredentialFields
+          :api-key="localAiVisionOcr.apiKey"
+          api-key-input-id="settingsAiVisionApiKey"
+          :base-url="localAiVisionOcr.customBaseUrl"
+          base-url-input-id="settingsCustomAiVisionBaseUrl"
+          :show-api-key="providerRequiresApiKey(settings.aiVisionOcr.provider)"
+          :show-base-url="false"
+          :include-base-url="false"
+          api-key-placeholder="请输入API Key"
+          api-key-show-label="显示 AI 视觉 API Key"
+          api-key-hide-label="隐藏 AI 视觉 API Key"
+          @update:api-key="localAiVisionOcr.apiKey = $event"
+        />
+      </UiFormGrid>
+      <AiProviderCredentialFields
+        :api-key="localAiVisionOcr.apiKey"
+        api-key-input-id="settingsAiVisionApiKey"
+        :base-url="localAiVisionOcr.customBaseUrl"
+        base-url-input-id="settingsCustomAiVisionBaseUrl"
+        :show-api-key="false"
+        :show-base-url="providerRequiresBaseUrl(settings.aiVisionOcr.provider)"
+        :include-api-key="false"
+        base-url-placeholder="例如: https://api.example.com/v1"
+        @update:base-url="localAiVisionOcr.customBaseUrl = $event"
+      />
       <UiField variant="settings" label="模型名称" control-id="settingsAiVisionModelName">
         <UiModelPicker
           input-id="settingsAiVisionModelName"
@@ -270,7 +265,6 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -278,14 +272,15 @@ import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiPasswordField from '@/components/ui/UiPasswordField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed, watch } from 'vue'
 import {
   normalizeProviderId,
   providerRequiresApiKey,
-  providerRequiresBaseUrl,
-  providerSupportsCapability
+  providerRequiresBaseUrl
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
 import { configApi } from '@/api/config'
@@ -315,7 +310,7 @@ import {
   promptModeOptions,
   sourceLanguageGroups
 } from './ocrSettingsOptions'
-import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
+import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
 const settingsStore = useSettingsStore()
 const toast = useToast()
 const localBaiduOcr = ref({
@@ -381,13 +376,24 @@ watch(() => localAiVisionOcr.value.minImageSize, (val) => {
   settingsStore.updateAiVisionOcr({ minImageSize: val })
 })
 const isTesting = ref(false)
-const isFetchingModels = ref(false)
-const aiVisionModels = ref<string[]>([])
-const aiVisionModelFetchGuard = useLatestRequestGuard()
+function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
+  toast[tone](message)
+}
+const aiVisionModelDiscovery = useAiModelDiscovery({
+  source: () => ({
+    provider: settingsStore.settings.aiVisionOcr.provider,
+    apiKey: localAiVisionOcr.value.apiKey,
+    baseUrl: localAiVisionOcr.value.customBaseUrl,
+  }),
+  notify: notifyModelDiscovery,
+  emptyBaseUrl: '',
+})
+const { isFetchingModels } = aiVisionModelDiscovery
+const aiVisionModels = computed(() => aiVisionModelDiscovery.models.value.map(model => model.id))
 const aiVisionModelOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  aiVisionModels.value.forEach(model => {
-    options.push({ label: model, value: model })
+  aiVisionModelDiscovery.models.value.forEach(model => {
+    options.push({ label: model.id, value: model.id })
   })
   return options
 })
@@ -463,11 +469,9 @@ function getSourceLanguageHint(): string {
   }
 }
 function handleAiVisionProviderChange(providerValue: UiSelectValue) {
-  aiVisionModelFetchGuard.invalidate()
-  isFetchingModels.value = false
+  aiVisionModelDiscovery.invalidate()
   const newProvider = normalizeProviderId(toSelectString(providerValue))
   settingsStore.setAiVisionOcrProvider(newProvider)
-  aiVisionModels.value = []
   syncLocalAiVisionOcr()
 }
 function syncLocalAiVisionOcr() {
@@ -577,43 +581,7 @@ async function testAiVisionOcr() {
     isTesting.value = false
   }
 }
-async function fetchAiVisionModels() {
-  const provider = settingsStore.settings.aiVisionOcr.provider
-  const apiKey = localAiVisionOcr.value.apiKey?.trim()
-  const baseUrl = localAiVisionOcr.value.customBaseUrl?.trim()
-  if (providerRequiresApiKey(provider) && !apiKey) {
-    toast.warning('请先填写 API Key')
-    return
-  }
-  if (!providerSupportsCapability(provider, 'modelFetch')) {
-    toast.warning('当前服务商不支持自动获取模型列表')
-    return
-  }
-  if (providerRequiresBaseUrl(provider) && !baseUrl) {
-    toast.warning('自定义服务需要先填写 Base URL')
-    return
-  }
-  const requestId = aiVisionModelFetchGuard.next()
-  isFetchingModels.value = true
-  try {
-    const result = await configApi.fetchModels(provider, apiKey, baseUrl)
-    if (!aiVisionModelFetchGuard.isCurrent(requestId)) return
-    if (result.success && result.models && result.models.length > 0) {
-      aiVisionModels.value = result.models.map(m => m.id)
-      toast.success(`获取到 ${result.models.length} 个模型`)
-    } else {
-      toast.warning(result.message || '未获取到可用模型')
-    }
-  } catch (error: unknown) {
-    if (!aiVisionModelFetchGuard.isCurrent(requestId)) return
-    const errorMessage = error instanceof Error ? error.message : '获取模型列表失败'
-    toast.error(errorMessage)
-  } finally {
-    if (aiVisionModelFetchGuard.isCurrent(requestId)) {
-      isFetchingModels.value = false
-    }
-  }
-}
+const fetchAiVisionModels = aiVisionModelDiscovery.fetchModels
 function handleAiVisionPromptSelect(content: string, name: string) {
   const inferredMode: 'normal' | 'json' | 'paddleocr_vl' =
     content.includes('"extracted_text"')

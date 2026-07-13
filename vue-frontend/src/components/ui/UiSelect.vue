@@ -229,10 +229,10 @@ onUnmounted(() => {
   width: 100%;
   min-height: var(--ui-select-min-height, var(--ui-selector-control-min-height));
   padding: var(--ui-select-padding, var(--ui-selector-control-padding));
-  border: var(--ui-select-border, 1px solid var(--ui-selector-control-border));
+  border: var(--ui-select-border, 1px solid var(--ui-selector-control-border, var(--color-border-input, ButtonBorder)));
   border-radius: var(--ui-select-radius, var(--ui-selector-control-radius));
-  background: var(--ui-select-background, var(--ui-selector-control-background));
-  color: var(--ui-select-color, var(--ui-selector-control-text));
+  background: var(--ui-select-background, var(--ui-selector-control-background, var(--color-surface-base, Canvas)));
+  color: var(--ui-select-color, var(--ui-selector-control-text, var(--color-text-default, CanvasText)));
   font-family: inherit;
   font-size: var(--ui-select-font-size, var(--ui-selector-control-font-size));
   line-height: var(--ui-select-line-height, var(--ui-selector-control-line-height));
@@ -272,10 +272,10 @@ onUnmounted(() => {
 :where(.ui-select--studio) {
   min-height: 38px;
   padding: var(--ui-select-padding, 10px 12px);
-  border: var(--ui-select-border, 1px solid var(--ui-selector-control-border));
+  border: var(--ui-select-border, 1px solid var(--ui-selector-control-border, var(--color-border-input, ButtonBorder)));
   border-radius: var(--ui-select-radius, 14px);
-  background: var(--ui-select-background, var(--ui-selector-control-background));
-  color: var(--ui-select-color, var(--ui-selector-control-text));
+  background: var(--ui-select-background, var(--ui-selector-control-background, var(--color-surface-base, Canvas)));
+  color: var(--ui-select-color, var(--ui-selector-control-text, var(--color-text-default, CanvasText)));
   font-size: var(--ui-select-font-size, var(--ui-selector-control-font-size));
 }
 
@@ -334,11 +334,11 @@ onUnmounted(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px 0;
-  border: 1px solid var(--ui-selector-dropdown-border);
+  border: 1px solid var(--ui-selector-dropdown-border, var(--color-border-default, ButtonBorder));
   border-radius: var(--ui-selector-dropdown-radius);
-  background: var(--ui-selector-dropdown-background);
+  background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
   box-shadow: 0 12px 26px var(--ui-selector-dropdown-shadow-color);
-  color: var(--ui-selector-control-text);
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
   z-index: var(--z-popover);
 }
 
@@ -348,8 +348,8 @@ onUnmounted(() => {
   min-height: 38px;
   padding: 9px 12px;
   border: 0;
-  background: var(--ui-selector-dropdown-background);
-  color: var(--ui-selector-control-text);
+  background: var(--ui-selector-dropdown-background, var(--color-surface-base, Canvas));
+  color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
   font: inherit;
   line-height: 1.4;
   text-align: left;
@@ -369,13 +369,9 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.ui-select-option:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .ui-select-option[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
 </style>

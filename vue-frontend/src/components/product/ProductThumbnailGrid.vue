@@ -159,17 +159,13 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
 
 <style scoped>
 .product-thumbnail-grid {
-  --product-thumbnail-grid-column-count: 4;
-  --product-thumbnail-grid-min-size: 64px;
-  --product-thumbnail-grid-aspect-ratio: 3 / 4;
-
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--product-thumbnail-grid-min-size), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--product-thumbnail-grid-min-size, 64px), 1fr));
   gap: 6px;
 }
 
 .product-thumbnail-grid--fixed-columns {
-  grid-template-columns: repeat(var(--product-thumbnail-grid-column-count), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--product-thumbnail-grid-column-count, 4), minmax(0, 1fr));
 }
 
 .product-thumbnail-grid__slot {
@@ -181,7 +177,7 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
   display: block;
   width: 100%;
   overflow: hidden;
-  aspect-ratio: var(--product-thumbnail-grid-aspect-ratio);
+  aspect-ratio: var(--product-thumbnail-grid-aspect-ratio, 3 / 4);
   border: 2px solid transparent;
   border-radius: 6px;
   background: var(--color-surface-subtle);

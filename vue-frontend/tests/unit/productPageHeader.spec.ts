@@ -166,7 +166,7 @@ describe('ProductPageHeader', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/product/ProductHeaderAction.vue'), 'utf8')
 
     expect(source).not.toContain('--product-header-action-danger-hover-text')
-    expect(source).toMatch(/product-header-action--tone-danger:hover[\s\S]*?color:\s*var\(--product-header-action-danger-text-color\);/)
+    expect(source).toMatch(/product-header-action--tone-danger:hover[\s\S]*?color:\s*var\(--product-header-action-danger-text-color,\s*var\(--color-status-error\)\);/)
   })
 
   it('keeps static header actions out of interactive hover rules', () => {

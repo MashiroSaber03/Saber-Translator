@@ -3,12 +3,12 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiInput from '@/components/ui/UiInput.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiPasswordField from '@/components/ui/UiPasswordField.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
+import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import type { UiSelectOption } from '@/components/ui/selectTypes'
@@ -65,45 +65,28 @@ defineEmits<{
   <ProductFormSection>
     <template #title>AI Agent 配置</template>
 
-    <UiField variant="settings" label="服务商" control-id="webImportAgentProvider">
-      <UiSelect
-        id="webImportAgentProvider"
-        :model-value="draftSettings.agent.provider"
-        :options="agentProviderOptions"
-        @update:model-value="(value) => settingsActions.setAgentProvider(String(value))"
-      />
-    </UiField>
+    <AiProviderSelectField
+      :model-value="draftSettings.agent.provider"
+      input-id="webImportAgentProvider"
+      :options="agentProviderOptions"
+      @update:model-value="settingsActions.setAgentProvider"
+    />
 
-    <UiField
-      v-if="providerRequiresApiKey(draftSettings.agent.provider)"
-      variant="settings"
-      label="API Key"
-      control-id="webImportAgentApiKey"
-    >
-      <UiPasswordField
-        input-id="webImportAgentApiKey"
-        :model-value="draftSettings.agent.apiKey"
-        placeholder="sk-xxxxxxxxxxxxxxxx"
-        show-label="显示 AI Agent API Key"
-        hide-label="隐藏 AI Agent API Key"
-        @update:model-value="settingsActions.setAgentApiKey"
-      />
-    </UiField>
-
-    <UiField
-      v-if="showCustomUrl"
-      variant="settings"
-      label="自定义 API 地址"
-      control-id="webImportAgentBaseUrl"
-    >
-      <UiInput
-        id="webImportAgentBaseUrl"
-        type="url"
-        :model-value="draftSettings.agent.customBaseUrl"
-        placeholder="https://api.example.com/v1"
-        @update:model-value="value => settingsActions.setAgentBaseUrl(String(value))"
-      />
-    </UiField>
+    <AiProviderCredentialFields
+      :api-key="draftSettings.agent.apiKey"
+      api-key-input-id="webImportAgentApiKey"
+      :base-url="draftSettings.agent.customBaseUrl"
+      base-url-input-id="webImportAgentBaseUrl"
+      :show-api-key="providerRequiresApiKey(draftSettings.agent.provider)"
+      :show-base-url="showCustomUrl"
+      api-key-placeholder="sk-xxxxxxxxxxxxxxxx"
+      api-key-show-label="显示 AI Agent API Key"
+      api-key-hide-label="隐藏 AI Agent API Key"
+      base-url-label="自定义 API 地址"
+      base-url-placeholder="https://api.example.com/v1"
+      @update:api-key="settingsActions.setAgentApiKey"
+      @update:base-url="settingsActions.setAgentBaseUrl"
+    />
 
     <UiField variant="settings" label="模型名称" control-id="webImportAgentModelName">
       <UiModelPicker

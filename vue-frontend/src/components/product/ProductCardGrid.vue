@@ -30,12 +30,9 @@ const gridStyle = computed(() => ({
 
 <style scoped>
 .product-card-grid {
-  --product-card-grid-gap: 24px;
-  --product-card-grid-min-item-width: 160px;
-
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--product-card-grid-min-item-width)), 1fr));
-  gap: var(--product-card-grid-gap);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--product-card-grid-min-item-width, 160px)), 1fr));
+  gap: var(--product-card-grid-gap, 24px);
   align-items: start;
 }
 </style>

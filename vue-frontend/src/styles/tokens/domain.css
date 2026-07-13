@@ -2,19 +2,15 @@
   --insight-surface-page: var(--color-surface-panel);
   --insight-surface-secondary: color-mix(in srgb, var(--color-surface-muted) 52%, transparent);
   --insight-surface-tertiary: var(--color-surface-quiet);
-  --insight-surface-hover: color-mix(in srgb, var(--color-surface-interactive-hover) 82%, transparent);
-  --insight-surface-warning-soft: var(--color-status-warning-surface-soft);
 
   --insight-text-primary: var(--color-text-default);
   --insight-text-secondary: var(--color-text-secondary);
   --insight-text-muted: var(--color-text-muted);
 
   --insight-action-primary: var(--color-text-brand);
-  --insight-action-primary-soft: var(--color-border-brand-gradient);
   --insight-action-primary-strong: var(--color-surface-brand-strong);
 
   --insight-status-success: var(--color-status-success);
   --insight-status-warning: var(--color-status-warning);
   --insight-status-error: var(--color-status-error);
-  --insight-status-danger: var(--color-status-error-bright);
 }
