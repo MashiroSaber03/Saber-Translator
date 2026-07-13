@@ -774,7 +774,6 @@ describe('UI primitives architecture contracts', () => {
         variant: 'studio',
         chrome: 'fixed',
         viewportMode: 'locked',
-        contentScroll: 'content',
         headerHeight: '72px',
         headerOffset: '72px',
         contentPadding: '16px',
@@ -797,6 +796,8 @@ describe('UI primitives architecture contracts', () => {
     expect(shell.attributes('style')).toContain('--ui-app-shell-header-height: 72px;')
     expect(shell.attributes('style')).toContain('--ui-app-shell-header-offset: 72px;')
     expect(shell.attributes('style')).toContain('--ui-app-shell-content-padding: 16px;')
+    const shellSource = readFileSync(resolve(process.cwd(), 'src/components/ui/AppShell.vue'), 'utf8')
+    expect(shellSource).not.toContain('contentScroll')
 
     const layout = mount(SidebarLayout, {
       props: {

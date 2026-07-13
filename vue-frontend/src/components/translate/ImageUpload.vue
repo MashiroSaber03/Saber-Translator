@@ -8,6 +8,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
 import { ref, computed } from 'vue'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -171,7 +172,7 @@ function getPdfCanvasContext(context: BrowserCanvasContext): PdfCanvasContext {
 async function processPdfFrontend(file: File): Promise<number> {
   try {
     const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     const numPages = pdf.numPages

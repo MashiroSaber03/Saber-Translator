@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
@@ -54,6 +55,51 @@ afterEach(() => {
 })
 
 describe('BaseModal', () => {
+  it('lets only the topmost dialog respond to Escape', () => {
+    const first = mountModal({ title: 'First Modal' })
+    const second = mountModal({ title: 'Second Modal' })
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(first.emitted('close')).toBeUndefined()
+    expect(second.emitted('close')).toHaveLength(1)
+  })
+
+  it('moves focus into the dialog and restores the previous trigger after close', async () => {
+    const trigger = document.createElement('button')
+    trigger.textContent = 'Open modal'
+    document.body.appendChild(trigger)
+    trigger.focus()
+
+    const wrapper = mountModal({ title: 'Focus Modal' })
+    await nextTick()
+
+    expect(document.activeElement).toBe(getCloseButton())
+
+    await wrapper.setProps({ modelValue: false })
+    await nextTick()
+
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('wraps keyboard focus inside the topmost dialog', async () => {
+    mountModal({ title: 'Focus Trap Modal' })
+    const lastAction = document.createElement('button')
+    lastAction.className = 'dialog-last-action'
+    lastAction.textContent = 'Last action'
+    getContainer().appendChild(lastAction)
+    await nextTick()
+
+    const closeButton = getCloseButton()
+    lastAction.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(closeButton)
+
+    closeButton.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(lastAction)
+  })
+
   it('locks body scrolling when mounted in the open state', () => {
     mountModal()
 

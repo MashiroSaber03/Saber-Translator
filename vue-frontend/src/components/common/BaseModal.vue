@@ -10,10 +10,12 @@
         @mousedown.self="handleOverlayMouseDown"
       >
         <div
+          ref="dialogRef"
           class="ui-modal__container"
           :class="[uiSizeClass, uiChromeClass, uiFrameClass, uiMobilePresentationClass, customClass]"
           :style="dialogStyle"
           role="dialog"
+          tabindex="-1"
           aria-modal="true"
           :aria-labelledby="showHeader ? titleId : undefined"
           :aria-label="!showHeader && title ? title : undefined"
@@ -89,8 +91,9 @@ function unlockBodyScroll() {
 <script setup lang="ts">
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
-import { computed, watch, onMounted, onUnmounted, useId } from 'vue'
+import { computed, ref, toRef, watch, onMounted, onUnmounted, useId } from 'vue'
 import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
+import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
 
 let hasLockedBodyScroll = false
 
@@ -193,6 +196,7 @@ const emit = defineEmits<{
   close: []
   open: []
 }>()
+const dialogRef = ref<HTMLElement | null>(null)
 
 const uiSizeClass = computed(() => {
   return `ui-modal__container--${props.size}`
@@ -298,11 +302,12 @@ const { overlayRef, handleOverlayMouseDown, resetOverlayDismissState } = useOver
   enabled: () => props.closeOnOverlay && props.modelValue,
 })
 
-const handleKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && props.closeOnEsc && props.modelValue) {
-    close()
-  }
-}
+useDialogLifecycle({
+  open: toRef(props, 'modelValue'),
+  container: dialogRef,
+  close,
+  closeOnEscape: () => props.closeOnEsc,
+})
 
 watch(
   () => props.modelValue,
@@ -318,14 +323,12 @@ watch(
 )
 
 onMounted(() => {
-  document.addEventListener('keydown', handleKeydown)
   if (props.modelValue) {
     ensureBodyScrollLocked()
   }
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown)
   releaseBodyScrollLock()
 })
 </script>

@@ -10,7 +10,6 @@ const props = withDefaults(defineProps<{
   headerOffset?: string
   contentPadding?: string
   scrollMode?: 'page' | 'content'
-  contentScroll?: 'page' | 'content'
   fullHeight?: boolean
 }>(), {
   variant: 'default',
@@ -21,7 +20,6 @@ const props = withDefaults(defineProps<{
   headerOffset: '',
   contentPadding: '',
   scrollMode: 'page',
-  contentScroll: undefined,
   fullHeight: false,
 })
 
@@ -31,7 +29,6 @@ const shellStyle = computed(() => ({
   ...(props.contentPadding ? { '--ui-app-shell-content-padding': props.contentPadding } : {}),
 }))
 
-const effectiveScrollMode = computed(() => props.contentScroll ?? props.scrollMode)
 </script>
 
 <template>
@@ -41,7 +38,7 @@ const effectiveScrollMode = computed(() => props.contentScroll ?? props.scrollMo
       `ui-app-shell--${variant}`,
       `ui-app-shell--chrome-${chrome}`,
       `ui-app-shell--viewport-${viewportMode}`,
-      `ui-app-shell--scroll-${effectiveScrollMode}`,
+      `ui-app-shell--scroll-${scrollMode}`,
       { 'ui-app-shell--full-height': fullHeight },
     ]"
     :style="shellStyle"

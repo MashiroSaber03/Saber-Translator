@@ -225,6 +225,35 @@ describe('ReaderControls', () => {
     expect(viewSource).toContain(':settings-request-id="settingsRequestId"')
   })
 
+  it('uses the shared dialog lifecycle and restores focus after closing settings', async () => {
+    const trigger = document.createElement('button')
+    trigger.textContent = 'Open reader settings'
+    document.body.appendChild(trigger)
+    trigger.focus()
+
+    const wrapper = mount(ReaderControls, {
+      attachTo: document.body,
+      props: {
+        hasPrevChapter: true,
+        hasNextChapter: true,
+        showChapterNav: true,
+      },
+    })
+    await requestSettingsPanel(wrapper)
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
+      'utf8',
+    )
+    expect(source).toContain('useDialogLifecycle')
+    expect(source).not.toContain("case 'Escape':")
+    expect(document.activeElement).toBe(wrapper.get('.reader-controls__close-button').element)
+
+    await wrapper.get('.reader-controls__close-button').trigger('click')
+    await nextTick()
+    expect(document.activeElement).toBe(trigger)
+  })
+
   it('maps controls style owner colors through semantic tokens while keeping preset values as data', () => {
     const style = readScopedStyle('src/components/reader/ReaderControls.vue')
 

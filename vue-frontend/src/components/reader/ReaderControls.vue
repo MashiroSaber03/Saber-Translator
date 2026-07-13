@@ -7,6 +7,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
 import {
   DEFAULT_READER_SETTINGS,
   READER_BG_COLOR_PRESETS,
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 
 const settings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
 const isSettingsPanelOpen = ref(false)
+const settingsDialogRef = ref<HTMLElement | null>(null)
 const showScrollTopBtn = ref(false)
 const bgColorPresets = READER_BG_COLOR_PRESETS
 
@@ -49,10 +51,8 @@ function handleScroll() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (isSettingsPanelOpen.value) return
   switch (e.key) {
-    case 'Escape':
-      closeSettings()
-      break
     case 'ArrowLeft':
       if (props.hasPrevChapter) {
         emit('navigateChapter', 'prev')
@@ -71,6 +71,12 @@ function handleKeydown(e: KeyboardEvent) {
       break
   }
 }
+
+useDialogLifecycle({
+  open: isSettingsPanelOpen,
+  container: settingsDialogRef,
+  close: closeSettings,
+})
 
 function loadSettings() {
   const storedSettings = loadReaderSettings()
@@ -184,7 +190,7 @@ onUnmounted(() => {
     aria-label="阅读设置"
   >
     <div class="reader-controls__settings-overlay" @click="closeSettings"></div>
-    <div class="reader-controls__settings-content">
+    <div ref="settingsDialogRef" class="reader-controls__settings-content" tabindex="-1">
       <div class="reader-controls__settings-header">
         <h3 class="reader-controls__settings-title">阅读设置</h3>
         <UiIconButton

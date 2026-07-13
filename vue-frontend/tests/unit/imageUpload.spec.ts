@@ -158,6 +158,14 @@ describe('ImageUpload', () => {
     expect(source).toContain("throw new Error('无法创建 PDF 渲染上下文')")
   })
 
+  it('bundles the PDF worker locally instead of depending on a CDN', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
+
+    expect(source).toContain("pdfjs-dist/build/pdf.worker.min.js?url")
+    expect(source).toContain('GlobalWorkerOptions.workerSrc = pdfWorkerUrl')
+    expect(source).not.toContain('cdnjs.cloudflare.com')
+  })
+
   it('uses shared document parse helpers for backend document imports', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
 
