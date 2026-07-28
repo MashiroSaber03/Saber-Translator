@@ -22,6 +22,8 @@ export interface BubblePosition {
 }
 
 export interface BubbleState {
+  /** Stable backend identity. UI-only bubbles do not have one until persisted. */
+  backendBubbleId?: string
   originalText: string
   translatedText: string
   textboxText: string

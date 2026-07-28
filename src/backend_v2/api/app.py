@@ -81,7 +81,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
     app = Flask("saber_translator_v2", static_folder=None)
     app.config.update(
         JSON_SORT_KEYS=False,
-        MAX_CONTENT_LENGTH=512 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=1024 * 1024 * 1024,
         SABER_V2_DATA_ROOT=str(settings.data_root),
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
     )
@@ -102,7 +102,12 @@ def create_api_app(settings: ApiSettings) -> Flask:
         RenderRequestRepository,
     )
     from src.backend_v2.rendering.service import AuthoritativeRenderService
+    from src.backend_v2.settings.routes import create_settings_blueprint
     from src.backend_v2.translation.routes import create_translation_blueprint
+    from src.backend_v2.transfer.routes import create_transfer_blueprint
+    from src.backend_v2.web_import.routes import (
+        create_web_import_blueprint,
+    )
     from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 
     engine = settings.engine or create_sqlite_engine(database_path_for(settings.data_root))
@@ -142,6 +147,18 @@ def create_api_app(settings: ApiSettings) -> Flask:
         create_operations_blueprint(data_root=settings.data_root, engine=engine)
     )
     app.register_blueprint(create_translation_blueprint(engine=engine))
+    app.register_blueprint(
+        create_settings_blueprint(data_root=settings.data_root, engine=engine)
+    )
+    app.register_blueprint(
+        create_transfer_blueprint(data_root=settings.data_root, engine=engine)
+    )
+    app.register_blueprint(
+        create_web_import_blueprint(
+            data_root=settings.data_root,
+            engine=engine,
+        )
+    )
 
     assert_api_import_boundary()
     return app

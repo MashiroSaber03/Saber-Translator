@@ -384,6 +384,53 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
         )
 
 
+def test_page_document_command_is_idempotent_and_propagates_style(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((50, 50)),
+        logical_path="idempotent-document.png",
+        key="idempotent-document",
+    )
+    page_id = str(imported["page"]["id"])
+    bubble_id = "00000000-0000-0000-0000-000000000211"
+    command = {
+        "page_id": page_id,
+        "base_revision": 1,
+        "mutations": [
+            {
+                "op": "create",
+                "bubbleId": bubble_id,
+                "fields": {"translatedText": "hello", "fontSize": 18},
+            }
+        ],
+        "idempotency_key": "document-command",
+        "page_style_defaults_patch": {"fontSize": 30},
+        "propagate_style_fields": ["fontSize"],
+    }
+    first, replayed = repository.mutate_page_document(**command)
+    assert replayed is False
+    assert first["documentRevision"] == 2
+    assert first["pageStyleDefaults"]["fontSize"] == 30
+    assert first["bubbles"][0]["payload"]["fontSize"] == 30
+
+    replay, replayed = repository.mutate_page_document(**command)
+    assert replayed is True
+    assert replay == first
+
+    with pytest.raises(IdempotencyConflict):
+        repository.mutate_page_document(
+            **{
+                **command,
+                "page_style_defaults_patch": {"fontSize": 31},
+            }
+        )
+
+
 def test_quick_workspace_promote_moves_relations_without_moving_assets(
     content_platform,
 ) -> None:

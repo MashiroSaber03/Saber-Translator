@@ -3,7 +3,6 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import ProductBreadcrumbTrail from '@/components/product/ProductBreadcrumbTrail.vue'
 import ProductFolderCard from '@/components/product/ProductFolderCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
 import VirtualThumbnailList from '@/components/virtual/VirtualThumbnailList.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -112,7 +111,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   const statusType = getStatusType(image)
   return {
     id: index,
-    src: image.thumbnailSourceUrl ?? image.originalDataURL ?? '',
+    src: image.thumbnailSourceUrl ?? '',
     alt: image.fileName,
     label: String(index + 1),
     selected: index === currentIndex.value,
@@ -184,11 +183,11 @@ onMounted(() => {
             @select="handleFolderClick(subfolder.path)"
           />
 
-          <ProductThumbnailGrid
+          <VirtualThumbnailList
             v-if="currentFolderThumbnailItems.length > 0"
             class="thumbnail-sidebar__grid"
             aria-label="图片缩略图导航"
-            :columns="1"
+            :active-id="currentIndex"
             :items="currentFolderThumbnailItems"
             @select="handleThumbnailSelect"
           />

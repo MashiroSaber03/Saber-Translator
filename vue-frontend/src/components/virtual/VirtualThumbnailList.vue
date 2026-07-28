@@ -78,8 +78,10 @@ watch(() => props.activeId, () => nextTick(scrollActiveIntoView))
 
 onMounted(() => {
   syncViewport()
-  resizeObserver = new ResizeObserver(syncViewport)
-  if (containerRef.value) resizeObserver.observe(containerRef.value)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(syncViewport)
+    if (containerRef.value) resizeObserver.observe(containerRef.value)
+  }
   scrollActiveIntoView()
 })
 

@@ -2,11 +2,11 @@ import type { ComputedRef, Ref } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
-import { useSessionStore } from '@/stores/sessionStore'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useTranslateInit } from '@/composables/useTranslateInit'
 import { confirmProductAction, type ProductConfirmAction } from '@/composables/useProductConfirm'
 import type { WorkflowRunRequest } from '@/types/workflow'
+import { deletePage, resetQuickWorkspace } from '@/api/v2/content'
 
 type TranslateValidationMode = 'normal' | 'hq' | 'proofread'
 
@@ -17,15 +17,12 @@ interface TranslateImageLike {
 interface UseTranslateViewActionsOptions {
   imageStore: ReturnType<typeof useImageStore>
   settingsStore: ReturnType<typeof useSettingsStore>
-  sessionStore: ReturnType<typeof useSessionStore>
   translation: ReturnType<typeof useTranslation>
   translateInit: ReturnType<typeof useTranslateInit>
   validateBeforeTranslation: (mode: TranslateValidationMode) => boolean
   currentImage: ComputedRef<TranslateImageLike | null | undefined>
   hasImages: ComputedRef<boolean>
   hasFailedImages: ComputedRef<boolean>
-  currentBookId: ComputedRef<string | undefined>
-  currentChapterId: ComputedRef<string | undefined>
   isEditMode: Ref<boolean>
   confirmAction?: ProductConfirmAction
 }
@@ -34,34 +31,26 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
   const {
     imageStore,
     settingsStore,
-    sessionStore,
     translation,
     translateInit,
     validateBeforeTranslation,
     currentImage,
     hasImages,
     hasFailedImages,
-    currentBookId,
-    currentChapterId,
     isEditMode,
     confirmAction = confirmProductAction,
   } = options
 
   async function loadChapterSession() {
-    if (!currentBookId.value || !currentChapterId.value) return
-
     try {
       await translateInit.initializeBookChapterContext()
     } catch {
-      showToast('加载章节会话失败', 'error')
+      showToast('刷新后端章节失败', 'error')
     }
   }
 
-  function handleUploadComplete(_count: number) {
-    if (imageStore.hasImages) {
-      imageStore.sortImagesByFileName()
-      translateInit.switchImage(0)
-    }
+  async function handleUploadComplete(_count: number) {
+    await translateInit.initializeBookChapterContext()
   }
 
   async function translateCurrentImage() {
@@ -171,7 +160,10 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       tone: 'danger',
     })
     if (!confirmed) return
-    imageStore.deleteCurrentImage()
+    const pageId = imageStore.currentImage?.id
+    if (!pageId) return
+    await deletePage(pageId)
+    await translateInit.initializeBookChapterContext()
     showToast('图片已删除', 'success')
   }
 
@@ -179,12 +171,19 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     if (!hasImages.value) return
     const confirmed = await confirmAction({
       title: '清空图片',
-      message: '确定要清除所有图片吗？这将丢失所有未保存的进度。',
+      message: '确定要从后端章节中删除所有图片和翻译结果吗？',
       confirmText: '清空',
       tone: 'danger',
     })
     if (!confirmed) return
-    imageStore.clearImages()
+    if (!translateInit.isBookshelfMode.value) {
+      await resetQuickWorkspace()
+    } else {
+      for (const image of [...imageStore.images]) {
+        await deletePage(image.id)
+      }
+    }
+    await translateInit.initializeBookChapterContext()
     showToast('所有图片已清除', 'success')
   }
 
@@ -208,22 +207,6 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
 
     if (!validateBeforeTranslation('normal')) return
     await translation.retryFailedImages()
-  }
-
-  async function saveCurrentSession() {
-    if (!hasImages.value) {
-      showToast('没有可保存的内容', 'warning')
-      return
-    }
-
-    if (!currentBookId.value || !currentChapterId.value) return
-
-    try {
-      const success = await sessionStore.saveChapterSession(currentBookId.value, currentChapterId.value)
-      showToast(success ? '章节进度已保存' : '保存失败', success ? 'success' : 'error')
-    } catch (error) {
-      showToast('保存失败: ' + (error instanceof Error ? error.message : '未知错误'), 'error')
-    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -278,7 +261,6 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     handleRunWorkflow,
     handleUploadComplete,
     loadChapterSession,
-    saveCurrentSession,
     selectImage,
     toggleEditMode,
   }

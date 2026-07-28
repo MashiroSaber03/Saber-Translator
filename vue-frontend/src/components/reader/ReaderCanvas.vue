@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, watch, onBeforeUpdate, onMounted, onUnmounted, ref } from 'vue'
-import type { ChapterImageData } from '@/api/bookshelf'
+import { computed } from 'vue'
+
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
+import VirtualPageStream from '@/components/virtual/VirtualPageStream.vue'
+import type { VirtualPageStreamItem } from '@/components/virtual/VirtualPageStream.vue'
+import type { V2PageSummary } from '@/api/v2/content'
 
 const props = defineProps<{
-  images: ChapterImageData[]
+  images: V2PageSummary[]
   viewMode: 'original' | 'translated'
   isLoading: boolean
 }>()
@@ -18,92 +21,38 @@ const emit = defineEmits<{
 
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
-const imageWrapperRefs = ref<HTMLElement[]>([])
-
-let pageInfoTimer: ReturnType<typeof setTimeout> | null = null
-
-function clearPageInfoTimer() {
-  if (pageInfoTimer !== null) {
-    clearTimeout(pageInfoTimer)
-    pageInfoTimer = null
+const streamItems = computed<VirtualPageStreamItem[]>(() => props.images.map((page, index) => {
+  const compatible = page as V2PageSummary & {
+    original?: string
+    translated?: string
   }
-}
-
-function getImageSource(imageData: ChapterImageData): string {
-  if (props.viewMode === 'translated') {
-    return imageData.translated || imageData.original
+  const source = page.sourceUrl || compatible.original || ''
+  return {
+    alt: `第 ${index + 1} 页`,
+    height: page.height ?? 1,
+    id: page.id || String(index),
+    label: `${index + 1} / ${props.images.length}`,
+    url: props.viewMode === 'translated'
+      ? page.translatedUrl || compatible.translated || source
+      : source,
+    width: page.width ?? 1,
   }
-  return imageData.original
+}))
+
+function handleVisibleChange(ids: string[]): void {
+  if (ids.length === 0) return
+  const visibleIndexes = ids
+    .map(id => props.images.findIndex(page => page.id === id))
+    .filter(index => index >= 0)
+  if (visibleIndexes.length === 0) return
+  emit('pageChange', Math.min(...visibleIndexes) + 1)
 }
-
-function updatePageInfo() {
-  const images = imageWrapperRefs.value
-  const viewportCenter = window.innerHeight / 2
-  let currentPage = 1
-
-  images.forEach((img, index) => {
-    const rect = img.getBoundingClientRect()
-    if (rect.top < viewportCenter && rect.bottom > 0) {
-      currentPage = index + 1
-    }
-  })
-
-  emit('pageChange', currentPage)
-}
-
-function setImageWrapperRef(el: Element | null) {
-  if (el instanceof HTMLElement) {
-    imageWrapperRefs.value.push(el)
-  }
-}
-
-function handleScroll() {
-  updatePageInfo()
-}
-
-function schedulePageInfoUpdate() {
-  clearPageInfoTimer()
-  pageInfoTimer = setTimeout(() => {
-    pageInfoTimer = null
-    updatePageInfo()
-  }, 100)
-}
-
-function goToTranslate() {
-  emit('goTranslate')
-}
-
-onMounted(() => {
-  window.addEventListener('scroll', handleScroll)
-})
-
-onBeforeUpdate(() => {
-  imageWrapperRefs.value = []
-})
-
-onUnmounted(() => {
-  window.removeEventListener('scroll', handleScroll)
-  clearPageInfoTimer()
-  imageWrapperRefs.value = []
-})
-
-watch(
-  () => props.images,
-  () => {
-    schedulePageInfoUpdate()
-  },
-  { deep: true }
-)
 </script>
 
 <template>
   <main class="reader-canvas">
     <div v-if="isLoading" class="reader-canvas__loading-state">
-      <UiSpinner
-        size="48px"
-        label="正在加载阅读内容"
-        :decorative="false"
-      />
+      <UiSpinner size="48px" label="正在加载阅读内容" :decorative="false" />
       <p class="reader-canvas__loading-text">正在加载...</p>
     </div>
 
@@ -116,28 +65,20 @@ watch(
       variant="inverse"
     >
       <template #actions>
-        <UiButton variant="primary" @click="goToTranslate">
+        <UiButton variant="primary" @click="emit('goTranslate')">
           进入翻译
         </UiButton>
       </template>
     </ProductEmptyState>
 
-    <div v-else-if="showImagesContainer" class="reader-canvas__images">
-      <div
-        v-for="(img, index) in images"
-        :key="index"
-        :ref="setImageWrapperRef"
-        class="reader-canvas__image-wrapper"
-      >
-        <img
-          class="reader-canvas__image"
-          :src="getImageSource(img)"
-          :alt="`第 ${index + 1} 页`"
-          loading="lazy"
-        />
-        <div class="reader-canvas__image-index">{{ index + 1 }} / {{ images.length }}</div>
-      </div>
-    </div>
+    <VirtualPageStream
+      v-else-if="showImagesContainer"
+      class="reader-canvas__stream"
+      :items="streamItems"
+      :gap="8"
+      :overscan-screens="2"
+      @visible-change="handleVisibleChange"
+    />
   </main>
 </template>
 
@@ -145,13 +86,16 @@ watch(
 .reader-canvas {
   --reader-canvas-page-background: var(--color-surface-inverse);
   --reader-canvas-muted-text: color-mix(in srgb, var(--color-text-inverse) 70%, transparent);
-  --reader-canvas-page-index-background: color-mix(in srgb, var(--color-surface-inverse-depth) 60%, transparent);
 
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   min-height: calc(100dvh - 56px);
   background: var(--reader-page-background, var(--reader-canvas-page-background));
+}
+
+.reader-canvas__stream {
+  width: min(100%, 1200px);
+  height: calc(100dvh - 56px);
+  margin: 0 auto;
+  padding: 16px 0 80px;
 }
 
 .reader-canvas__loading-state {
@@ -169,46 +113,5 @@ watch(
 
 .reader-canvas__empty-state {
   --product-empty-state-min-height: calc(100dvh - 56px);
-}
-
-.reader-canvas__images {
-  width: 100%;
-  max-width: var(--reader-max-width, 100%);
-  padding: 16px 0 80px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--reader-gap, 8px);
-}
-
-.reader-canvas__image-wrapper {
-  width: var(--reader-image-width, 100%);
-  max-width: 1200px;
-  position: relative;
-}
-
-.reader-canvas__image {
-  width: 100%;
-  height: auto;
-  display: block;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.reader-canvas__image-index {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  background: var(--reader-canvas-page-index-background);
-  color: var(--color-text-inverse);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.reader-canvas__image-wrapper:hover .reader-canvas__image-index {
-  opacity: 1;
 }
 </style>

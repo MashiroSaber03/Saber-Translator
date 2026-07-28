@@ -99,8 +99,16 @@ def run_worker(args: object) -> int:
             from src.backend_v2.translation.interactive_operations import (
                 InteractivePageOperationService,
             )
+            from src.backend_v2.translation.auxiliary import (
+                StyleApplyWorkerService,
+                TextImportWorkerService,
+            )
             from src.backend_v2.translation.pipeline import (
                 TranslationPipelineService,
+            )
+            from src.backend_v2.transfer.worker import TransferWorkerService
+            from src.backend_v2.web_import.worker import (
+                WebImportWorkerService,
             )
 
             job_repository = JobQueueRepository(engine)
@@ -121,6 +129,53 @@ def run_worker(args: object) -> int:
                 "render",
                 "publish_clean",
             }
+            transfer = TransferWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs_repository=job_repository,
+            )
+            job_handlers = {
+                step_kind: translation.handler
+                for step_kind in translation_steps
+            }
+            job_handlers.update(
+                {
+                    step_kind: transfer.handler
+                    for step_kind in (
+                        "container_scan",
+                        "container_import_page",
+                        "container_cleanup",
+                        "export_package",
+                    )
+                }
+            )
+            web_import = WebImportWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers.update(
+                {
+                    step_kind: web_import.handle
+                    for step_kind in (
+                        "web_extract_scan",
+                        "web_extract_page",
+                        "web_extract_finalize",
+                        "web_import_commit_page",
+                        "web_import_commit_finalize",
+                    )
+                }
+            )
+            style_apply = StyleApplyWorkerService(
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers["style_apply_document"] = style_apply.handle
+            text_import = TextImportWorkerService(
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers["text_import_apply"] = text_import.handle
             operation_repository = OperationRepository(engine)
             interactive = InteractivePageOperationService(
                 data_root=data_root,
@@ -145,10 +200,7 @@ def run_worker(args: object) -> int:
             JobWorkerLoop(
                 job_repository,
                 worker_epoch_id=identity.epoch_id,
-                handlers={
-                    step_kind: translation.handler
-                    for step_kind in translation_steps
-                },
+                handlers=job_handlers,
                 safe_point=operation_runner.run_one,
             ).run(stop_event)
     finally:

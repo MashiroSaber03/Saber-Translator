@@ -1,8 +1,17 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useWebImportStore } from '@/stores/webImportStore'
-import { useImageStore } from '@/stores/imageStore'
-import { extractImages, downloadImages, checkGalleryDLSupport, getGalleryDLImages, testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
-import type { AgentLog, ExtractResult, WebImportEngine } from '@/types/webImport'
+import { testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
+import type { WebImportEngine } from '@/types/webImport'
+import {
+  checkWebImportSupport,
+  commitWebImportDraft,
+  createWebImportDraft,
+  getWebImportDraft,
+  listAllWebImportDraftPages,
+  updateWebImportSelection,
+} from '@/api/v2/webImport'
+import { getTranslationBootstrap } from '@/api/v2/content'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
 import { normalizeProviderId, providerRequiresApiKey, providerSupportsCapability } from '@/config/aiProviders'
 import { showToast } from '@/utils/toast'
@@ -13,7 +22,7 @@ import type { WebImportSettingsActions } from './web-import/webImportSettingsAct
 
 export function useWebImportModal() {
   const webImportStore = useWebImportStore()
-  const imageStore = useImageStore()
+  const route = useRoute()
 
   const focusSourceUrlRequestId = ref(0)
   const urlInput = ref('')
@@ -27,6 +36,10 @@ export function useWebImportModal() {
   const activeSettingsTab = ref<'basic' | 'preprocess' | 'advanced'>('basic')
   const testingFirecrawl = ref(false)
   const testingAgent = ref(false)
+  const activeDraftId = ref<string | null>(null)
+  const activeDraftRevision = ref(0)
+  const draftPageIdsByNumber = new Map<number, string>()
+  let draftPollGeneration = 0
   const settingsActions: WebImportSettingsActions = {
     setAgentApiKey: webImportStore.setAgentApiKey,
     setAgentBaseUrl: webImportStore.setAgentBaseUrl,
@@ -132,10 +145,10 @@ export function useWebImportModal() {
       checkSupportTimeout = null
       checkingSupport.value = true
       try {
-        const result = await checkGalleryDLSupport(trimmedUrl)
+        const result = await checkWebImportSupport(trimmedUrl)
         if (!isCurrentUrlSupport(requestId, trimmedUrl)) return
-        galleryDLAvailable.value = result.available
-        galleryDLSupported.value = result.supported
+        galleryDLAvailable.value = result.galleryDlAvailable
+        galleryDLSupported.value = result.galleryDlSupported
       } catch {
         if (!isCurrentUrlSupport(requestId, trimmedUrl)) return
         galleryDLAvailable.value = false
@@ -152,13 +165,13 @@ export function useWebImportModal() {
     if (isProcessing.value) {
       const confirmed = await confirmProductAction({
         title: '关闭网页导入',
-        message: '正在处理中，确定要关闭吗？',
+        message: '后端任务会继续运行。确定关闭此窗口吗？',
         confirmText: '关闭',
-        cancelText: '继续处理',
-        tone: 'danger',
+        cancelText: '继续查看',
       })
       if (!confirmed) return
     }
+    draftPollGeneration += 1
     webImportStore.discardSettingsChanges()
     webImportStore.closeModal()
     webImportStore.resetState()
@@ -236,36 +249,29 @@ export function useWebImportModal() {
     webImportStore.setStatus('extracting')
 
     try {
-      await extractImages(
-        url,
-        webImportStore.settings,
-        (log: AgentLog) => {
-          webImportStore.addLog(log)
+      const bootstrap = await getTranslationBootstrap({
+        bookId: typeof route.query.book === 'string' ? route.query.book : undefined,
+        chapterId: typeof route.query.chapter === 'string' ? route.query.chapter : undefined,
+      })
+      const download = webImportStore.settings.download
+      const accepted = await createWebImportDraft({
+        chapterId: bootstrap.chapter.id,
+        sourceUrl: url,
+        engine: selectedEngine.value,
+        config: {
+          delay: download.delay,
+          referer: download.useReferer ? url : undefined,
+          retries: download.retries,
+          timeout: download.timeout,
         },
-        (result: ExtractResult) => {
-          webImportStore.setExtractResult(result)
-          if (result.success) {
-            webImportStore.setStatus('extracted')
-          } else {
-            webImportStore.setError(result.error || '提取失败')
-          }
-        },
-        (errorMsg: string) => {
-          webImportStore.setError(errorMsg)
-        },
-        selectedEngine.value,
-        (page) => {
-          webImportStore.addPageIncremental(page)
-        }
-      )
-
-      if (
-        webImportStore.settings.ui.autoImport &&
-        webImportStore.status === 'extracted' &&
-        webImportStore.extractResult?.success
-      ) {
-        await handleImport()
-      }
+      })
+      activeDraftId.value = accepted.draftId
+      webImportStore.addLog({
+        timestamp: new Date().toISOString(),
+        type: 'info',
+        message: '网页提取任务已进入后端任务中心，可安全关闭页面。',
+      })
+      await pollDraft(accepted.draftId)
     } catch (e) {
       webImportStore.setError(e instanceof Error ? e.message : '提取失败')
     }
@@ -289,72 +295,94 @@ export function useWebImportModal() {
       return
     }
 
-    const selectedPagesList = extractResult.value.pages.filter((p) =>
-      selectedPages.value.has(p.pageNumber)
-    )
-
     webImportStore.setStatus('downloading')
-    webImportStore.updateDownloadProgress(0, selectedPagesList.length)
-
-    const engineToUse = currentEngine.value || 'ai-agent'
+    webImportStore.updateDownloadProgress(0, selectedCount.value)
 
     try {
-      if (engineToUse === 'gallery-dl') {
-        const galleryResult = await getGalleryDLImages()
-
-        if (galleryResult.success && galleryResult.images.length > 0) {
-          let importedCount = 0
-          let processedCount = 0
-
-          for (const page of selectedPagesList) {
-            const img = galleryResult.images[page.pageNumber - 1]
-            processedCount++
-            if (img && img.filename && img.data) {
-              imageStore.addImage(img.filename, img.data)
-              importedCount++
-            }
-            webImportStore.updateDownloadProgress(processedCount, selectedPagesList.length)
-          }
-
-          if (importedCount === 0) {
-            throw new Error('未能导入选中的图片')
-          }
-
-          webImportStore.setStatus('completed')
-          showToast(`成功导入 ${importedCount} 张图片`, 'success')
-          await handleClose()
-          return
-        } else {
-          throw new Error(galleryResult.error || '获取图片失败')
-        }
-      }
-
-      const result = await downloadImages(
-        selectedPagesList,
-        extractResult.value.sourceUrl,
-        webImportStore.settings,
-        engineToUse
+      if (!activeDraftId.value) throw new Error('网页导入草稿不存在')
+      const selectedIds = [...selectedPages.value]
+        .map(pageNumber => draftPageIdsByNumber.get(pageNumber))
+        .filter((value): value is string => Boolean(value))
+      const selection = await updateWebImportSelection(
+        activeDraftId.value,
+        activeDraftRevision.value,
+        selectedIds,
       )
-
-      if (result.success && result.images.length > 0) {
-        webImportStore.setDownloadedImages(result.images)
-        webImportStore.updateDownloadProgress(result.images.length, selectedPagesList.length)
-
-        for (const img of result.images) {
-          imageStore.addImage(img.filename, img.dataUrl)
-        }
-
-        webImportStore.setStatus('completed')
-
-        const failedMsg = result.failedCount > 0 ? `，${result.failedCount} 张失败` : ''
-        showToast(`成功导入 ${result.images.length} 张图片${failedMsg}`, result.failedCount > 0 ? 'warning' : 'success')
-
-        await handleClose()
-      } else {
-        webImportStore.setError(result.error || '下载失败')
-      }
+      activeDraftRevision.value = selection.revision
+      await commitWebImportDraft(activeDraftId.value, activeDraftRevision.value)
+      webImportStore.setStatus('completed')
+      showToast('入库任务已进入后端任务中心，可安全关闭页面', 'success')
+      await handleClose()
     } catch (e) {
       webImportStore.setError(e instanceof Error ? e.message : '下载失败')
+    }
+  }
+
+  function delay(milliseconds: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+  }
+
+  async function pollDraft(draftId: string): Promise<void> {
+    const generation = ++draftPollGeneration
+    while (generation === draftPollGeneration) {
+      const draft = await getWebImportDraft(draftId)
+      if (generation !== draftPollGeneration) return
+      activeDraftRevision.value = draft.revision
+      webImportStore.updateDownloadProgress(
+        draft.candidateCount - draft.failedCount,
+        Math.max(draft.candidateCount, 1),
+      )
+      if (draft.status === 'failed') {
+        webImportStore.setError('后端网页提取任务失败，请在任务中心查看详情')
+        return
+      }
+      if (draft.status === 'committing' || draft.status === 'completed') {
+        webImportStore.setStatus('completed')
+        return
+      }
+      if (draft.status === 'ready') {
+        const pages = await listAllWebImportDraftPages(draftId)
+        if (generation !== draftPollGeneration) return
+        draftPageIdsByNumber.clear()
+        const successful = pages.filter(page => !page.error)
+        successful.forEach((page, index) => {
+          draftPageIdsByNumber.set(index + 1, page.id)
+        })
+        webImportStore.setExtractResult({
+          success: true,
+          comicTitle: '',
+          chapterTitle: '',
+          pages: successful.map((page, index) => ({
+            pageNumber: index + 1,
+            imageUrl: page.thumbnailUrl || page.sourceMediaUrl || '',
+          })),
+          totalPages: successful.length,
+          sourceUrl: draft.sourceUrl,
+          engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
+        })
+        webImportStore.setStatus('extracted')
+        if (webImportStore.settings.ui.autoImport && successful.length > 0) {
+          await handleImport()
+        }
+        return
+      }
+      await delay(750)
+    }
+  }
+
+  async function restoreActiveDraft(): Promise<void> {
+    try {
+      const bootstrap = await getTranslationBootstrap({
+        bookId: typeof route.query.book === 'string' ? route.query.book : undefined,
+        chapterId: typeof route.query.chapter === 'string' ? route.query.chapter : undefined,
+      })
+      const draft = bootstrap.activeWebImportDraft
+      if (!draft) return
+      activeDraftId.value = draft.id
+      webImportStore.setStatus(draft.status === 'ready' ? 'extracting' : 'extracting')
+      await pollDraft(draft.id)
+    } catch {
+      // Opening the modal is still useful for starting a new draft.
     }
   }
 
@@ -368,6 +396,7 @@ export function useWebImportModal() {
         focusInputTimeout = null
         focusSourceUrlRequestId.value += 1
       }, 100)
+      void restoreActiveDraft()
     }
   })
 
@@ -446,6 +475,7 @@ export function useWebImportModal() {
   }
 
   onUnmounted(() => {
+    draftPollGeneration += 1
     if (checkSupportTimeout) {
       clearTimeout(checkSupportTimeout)
       checkSupportTimeout = null

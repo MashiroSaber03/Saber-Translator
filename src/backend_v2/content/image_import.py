@@ -103,30 +103,7 @@ class ImageImportService:
                 lease_id=lease_id,
                 owner_token=owner_token,
             )
-            (
-                extension,
-                mime_type,
-                width,
-                height,
-                thumbnail_width,
-                thumbnail_height,
-                thumbnail,
-            ) = self._decode_and_thumbnail(temporary)
-            with temporary.open("rb") as source_stream:
-                source_asset = self.storage.publish_stream(
-                    source_stream,
-                    extension=extension,
-                    mime_type=mime_type,
-                    width=width,
-                    height=height,
-                )
-            thumbnail_asset = self.storage.publish_bytes(
-                thumbnail,
-                extension="webp",
-                mime_type="image/webp",
-                width=thumbnail_width,
-                height=thumbnail_height,
-            )
+            source_asset, thumbnail_asset = self._publish_temporary(temporary)
             return self.repository.append_page(
                 chapter_id=chapter_id,
                 requested_logical_path=logical_path,
@@ -140,6 +117,163 @@ class ImageImportService:
             )
         finally:
             temporary.unlink(missing_ok=True)
+
+    def publish_replacement(
+        self,
+        upload: BinaryIO,
+    ):
+        temporary = (
+            self.data_root
+            / "temp"
+            / "imports"
+            / f"replacement-{uuid.uuid4().hex}.upload"
+        )
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._copy_upload(upload, temporary)
+            return self._publish_temporary(temporary)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def replace_page_source(
+        self,
+        *,
+        page_id: str,
+        base_source_revision: int,
+        upload: BinaryIO,
+        idempotency_key: str,
+    ) -> tuple[dict[str, object], bool]:
+        if not idempotency_key or len(idempotency_key) > 200:
+            raise ValueError(
+                "Idempotency-Key is required and must be at most 200 characters"
+            )
+        temporary = (
+            self.data_root
+            / "temp"
+            / "imports"
+            / f"replacement-{uuid.uuid4().hex}.upload"
+        )
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            checksum, byte_size = self._copy_upload(upload, temporary)
+            request_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "pageId": page_id,
+                        "baseSourceRevision": base_source_revision,
+                        "checksum": checksum,
+                        "byteSize": byte_size,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            scope = f"POST:replacePageSource:{page_id}"
+            replay = self.repository.replay_idempotency(
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+            )
+            if replay is not None:
+                return replay, True
+            source, thumbnail = self._publish_temporary(temporary)
+            return self.repository.replace_page_source(
+                page_id=page_id,
+                base_source_revision=base_source_revision,
+                source=source,
+                thumbnail=thumbnail,
+                idempotency_scope=scope,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def publish_cover(self, upload: BinaryIO):
+        temporary = (
+            self.data_root
+            / "temp"
+            / "imports"
+            / f"cover-{uuid.uuid4().hex}.upload"
+        )
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._copy_upload(upload, temporary)
+            try:
+                with Image.open(temporary) as probe:
+                    probe.verify()
+                with Image.open(temporary) as decoded:
+                    decoded.seek(0)
+                    oriented = ImageOps.exif_transpose(decoded)
+                    oriented.load()
+                    cover = oriented.copy()
+                    cover.thumbnail((640, 640), Image.Resampling.LANCZOS)
+                    if cover.mode not in ("RGB", "RGBA"):
+                        cover = cover.convert("RGBA")
+                    output = BytesIO()
+                    cover.save(output, format="WEBP", quality=85, method=4)
+                    width, height = cover.size
+                    cover.close()
+                    if oriented is not decoded:
+                        oriented.close()
+            except (UnidentifiedImageError, OSError) as exc:
+                raise UnsupportedImage(
+                    "uploaded cover is not a decodable image"
+                ) from exc
+            return self.storage.publish_bytes(
+                output.getvalue(),
+                extension="webp",
+                mime_type="image/webp",
+                width=width,
+                height=height,
+            )
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def publish_draft_thumbnail(self, path: Path):
+        (
+            _extension,
+            _mime_type,
+            _width,
+            _height,
+            thumbnail_width,
+            thumbnail_height,
+            thumbnail,
+        ) = self._decode_and_thumbnail(path)
+        return self.storage.publish_bytes(
+            thumbnail,
+            extension="webp",
+            mime_type="image/webp",
+            width=thumbnail_width,
+            height=thumbnail_height,
+        )
+
+    def _publish_temporary(self, temporary: Path):
+        (
+            extension,
+            mime_type,
+            width,
+            height,
+            thumbnail_width,
+            thumbnail_height,
+            thumbnail,
+        ) = self._decode_and_thumbnail(temporary)
+        with temporary.open("rb") as source_stream:
+            source_asset = self.storage.publish_stream(
+                source_stream,
+                extension=extension,
+                mime_type=mime_type,
+                width=width,
+                height=height,
+            )
+        thumbnail_asset = self.storage.publish_bytes(
+            thumbnail,
+            extension="webp",
+            mime_type="image/webp",
+            width=thumbnail_width,
+            height=thumbnail_height,
+        )
+        return source_asset, thumbnail_asset
 
     def _copy_upload(self, upload: BinaryIO, destination: Path) -> tuple[str, int]:
         digest = hashlib.sha256()

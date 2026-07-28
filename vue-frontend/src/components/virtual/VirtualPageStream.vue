@@ -14,6 +14,7 @@ export interface VirtualPageStreamItem {
   alt: string
   height: number
   id: string
+  label?: string
   url: string
   width: number
 }
@@ -75,7 +76,7 @@ function rebuildIntersectionObserver(): void {
   intersectionObserver?.disconnect()
   visibleIds.value = new Set()
   const root = containerRef.value
-  if (!root) return
+  if (!root || typeof IntersectionObserver === 'undefined') return
   intersectionObserver = new IntersectionObserver(entries => {
     const next = new Set(visibleIds.value)
     for (const entry of entries) {
@@ -95,10 +96,19 @@ function rebuildIntersectionObserver(): void {
 }
 
 watch(renderedItems, () => nextTick(rebuildIntersectionObserver))
+watch(
+  () => props.items.map(item => item.id).join('\u0000'),
+  () => {
+    if (containerRef.value) containerRef.value.scrollTop = 0
+    scrollTop.value = 0
+  },
+)
 onMounted(() => {
   syncViewport()
-  resizeObserver = new ResizeObserver(syncViewport)
-  if (containerRef.value) resizeObserver.observe(containerRef.value)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(syncViewport)
+    if (containerRef.value) resizeObserver.observe(containerRef.value)
+  }
   nextTick(rebuildIntersectionObserver)
 })
 onBeforeUnmount(() => {
@@ -129,6 +139,9 @@ onBeforeUnmount(() => {
             loading="lazy"
             decoding="async"
           >
+          <span v-if="item.label" class="virtual-page-stream__label">
+            {{ item.label }}
+          </span>
         </figure>
       </div>
     </div>
@@ -156,9 +169,27 @@ onBeforeUnmount(() => {
 }
 
 .virtual-page-stream__page {
+  position: relative;
   margin-block-start: 0;
   margin-inline: 0;
   inline-size: 100%;
+}
+
+.virtual-page-stream__label {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: white;
+  background: rgb(0 0 0 / 60%);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.virtual-page-stream__page:hover .virtual-page-stream__label {
+  opacity: 1;
 }
 
 .virtual-page-stream__image {

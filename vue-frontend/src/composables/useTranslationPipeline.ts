@@ -1,18 +1,21 @@
-import { computed } from 'vue'
-import { useImageStore } from '@/stores/imageStore'
-import { useBubbleStore } from '@/stores/bubbleStore'
-import { useToast } from '@/utils/toast'
-import {
-  usePipeline,
-  getStandardModeConfig,
-  getHqModeConfig,
-  getProofreadModeConfig,
-  getRemoveTextModeConfig,
-} from './translation'
-import type { PageSelection } from './translation/core/types'
-import { pageIndexesToSelection, pageSelectionToPageIndexes } from '@/utils/pageSelection'
+import { computed, ref, watch } from 'vue'
 
-export type { TranslationProgress, PageSelection } from './translation/core/types'
+import { createChapterTranslationJob } from '@/api/v2/translation'
+import { listChapterPages } from '@/api/v2/content'
+import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
+import { useBubbleStore } from '@/stores/bubbleStore'
+import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { hasPendingPageDocument } from '@/services/pageDocumentPersistence'
+import { useToast } from '@/utils/toast'
+import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
+import type {
+  PageSelection,
+  TranslationProgress,
+} from './translation/core/types'
+
+export type { PageSelection, TranslationProgress } from './translation/core/types'
 
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
@@ -23,194 +26,258 @@ export interface TranslateResult {
   errors: string[]
 }
 
+const progress = ref<TranslationProgress>({
+  current: 0,
+  total: 0,
+  completed: 0,
+  failed: 0,
+  isInProgress: false,
+  label: '',
+  percentage: 0,
+})
+const activeJobId = ref<string | null>(null)
+const activePageIds = ref<string[]>([])
+let lastHandledEventId = 0
+
 export function range(start: number, end: number): number[] {
-  const result: number[] = []
-  for (let i = start; i < end; i++) {
-    result.push(i)
+  return Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index)
+}
+
+function numberField(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function applyProgressSnapshot(snapshot: Record<string, unknown>, label: string): void {
+  const total = numberField(snapshot.totalItems)
+  const completed = numberField(snapshot.completedItems)
+  const failed = numberField(snapshot.failedItems)
+  const current = completed + failed
+  progress.value = {
+    current,
+    total,
+    completed,
+    failed,
+    isInProgress: true,
+    label,
+    percentage: total > 0 ? Math.round(current / total * 100) : 0,
   }
-  return result
+}
+
+async function refreshCurrentChapter(imageStore: ReturnType<typeof useImageStore>): Promise<void> {
+  const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
+  if (!chapterId) return
+  const result = await listChapterPages(chapterId, { all: true })
+  const summaries = new Map(result.items.map(page => [page.id, page]))
+  for (const [index, image] of imageStore.images.entries()) {
+    const summary = summaries.get(image.id)
+    if (!summary) continue
+    const mapped = pageSummaryToImage(summary)
+    imageStore.updateImageByIndex(index, {
+      chapterId: mapped.chapterId,
+      cleanImageData: mapped.cleanImageData,
+      documentRevision: mapped.documentRevision,
+      height: mapped.height,
+      originalDataURL: mapped.originalDataURL,
+      renderedRevision: mapped.renderedRevision,
+      sourceAssetUrl: mapped.sourceAssetUrl,
+      sourceRevision: mapped.sourceRevision,
+      thumbnailSourceUrl: mapped.thumbnailSourceUrl,
+      thumbnailTranslatedUrl: mapped.thumbnailTranslatedUrl,
+      translatedAssetUrl: mapped.translatedAssetUrl,
+      translatedDataURL: mapped.translatedDataURL,
+      translationFailed: mapped.translationFailed,
+      translationStatus: mapped.translationStatus,
+      width: mapped.width,
+    })
+  }
 }
 
 export function useTranslation() {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
+  const settingsStore = useSettingsStore()
+  const taskCenterStore = useTaskCenterStore()
   const toast = useToast()
-  const pipeline = usePipeline()
 
-  const progress = pipeline.progress
-  const isTranslatingSingle = pipeline.isExecuting
-  const isTranslating = pipeline.isTranslating
-  const progressPercent = pipeline.progressPercent
+  const isTranslating = computed(() => progress.value.isInProgress)
+  const isTranslatingSingle = computed(
+    () => progress.value.isInProgress && activePageIds.value.length === 1,
+  )
+  const isHqTranslating = computed(() => progress.value.isInProgress)
+  const isProofreading = computed(() => progress.value.isInProgress)
+  const progressPercent = computed(() => progress.value.percentage || 0)
 
-  const isHqTranslating = computed(() => pipeline.isExecuting.value)
-  const isProofreading = computed(() => pipeline.isExecuting.value)
+  watch(
+    () => taskCenterStore.latestEvent,
+    event => {
+      if (!event || event.eventId <= lastHandledEventId) return
+      lastHandledEventId = event.eventId
+      const eventProgress = event.payload.progress
+      if (
+        event.jobId === activeJobId.value
+        && eventProgress
+        && typeof eventProgress === 'object'
+      ) {
+        applyProgressSnapshot(
+          eventProgress as Record<string, unknown>,
+          event.type === 'page_completed' ? '后端正在处理后续页面' : '后端正在处理',
+        )
+      }
+      if (!['job_finished', 'job_failed', 'job_cancelled'].includes(event.type)) return
+
+      // Any terminal task may have changed the open chapter. This also covers a task
+      // that survived a browser restart and therefore has no local activeJobId.
+      void refreshCurrentChapter(imageStore)
+      if (event.jobId !== activeJobId.value) return
+
+      const succeeded = event.type === 'job_finished'
+      progress.value = {
+        ...progress.value,
+        current: progress.value.total,
+        isInProgress: false,
+        label: succeeded ? '后端任务已完成' : '后端任务未完成',
+        percentage: succeeded ? 100 : progress.value.percentage,
+      }
+      imageStore.setBatchTranslationInProgress(false)
+      activeJobId.value = null
+      activePageIds.value = []
+    },
+  )
 
   async function translatePages(
     pageIndexes: number[],
-    mode: TranslationMode
-  ): Promise<TranslateResult> {
-    if (pageIndexes.length === 0) {
-      toast.error('没有指定要翻译的页面')
-      return { success: false, completed: 0, failed: 0, errors: ['没有指定要翻译的页面'] }
-    }
-
-    const totalImages = imageStore.images.length
-    if (totalImages === 0) {
-      toast.error('请先上传图片')
-      return { success: false, completed: 0, failed: 0, errors: ['请先上传图片'] }
-    }
-
-    for (const idx of pageIndexes) {
-      if (idx < 0 || idx >= totalImages) {
-        toast.error(`无效的页面索引: ${idx}`)
-        return { success: false, completed: 0, failed: 0, errors: [`无效的页面索引: ${idx}`] }
-      }
-    }
-
-    const isSinglePage = pageIndexes.length === 1
-    const isAllPages = pageIndexes.length === totalImages
-
-    let config
-    if (isSinglePage) {
-      const originalIndex = imageStore.currentImageIndex
-      const targetIndex = pageIndexes[0]
-      if (targetIndex !== undefined) {
-        imageStore.setCurrentImageIndex(targetIndex)
-      }
-
-      config = getModeConfig(mode, 'current')
-      let pipelineResult
-      try {
-        pipelineResult = await pipeline.execute(config)
-      } finally {
-        imageStore.setCurrentImageIndex(originalIndex)
-      }
-      return {
-        success: pipelineResult.success,
-        completed: pipelineResult.completed,
-        failed: pipelineResult.failed,
-        errors: pipelineResult.errors ?? [],
-      }
-    }
-
-    if (isAllPages) {
-      config = getModeConfig(mode, 'all')
-    } else {
-      const pageSelection = { pages: pageIndexesToSelection(pageIndexes) }
-      config = getModeConfig(mode, 'selection', pageSelection)
-    }
-
-    const pipelineResult = await pipeline.execute(config)
-    return {
-      success: pipelineResult.success,
-      completed: pipelineResult.completed,
-      failed: pipelineResult.failed,
-      errors: pipelineResult.errors ?? [],
-    }
-  }
-
-  function getModeConfig(
     mode: TranslationMode,
-    scope: 'current' | 'all' | 'selection' | 'failed',
-    pageSelection?: PageSelection
-  ) {
-    const options = pageSelection ? { pageSelection } : undefined
-    switch (mode) {
-      case 'standard':
-        return getStandardModeConfig(scope, options)
-      case 'hq':
-        return getHqModeConfig(scope, options)
-      case 'proofread':
-        return getProofreadModeConfig(scope, options)
-      case 'removeText':
-        return getRemoveTextModeConfig(scope, options)
-      default:
-        return getStandardModeConfig(scope, options)
+  ): Promise<TranslateResult> {
+    const uniqueIndexes = [...new Set(pageIndexes)]
+    if (uniqueIndexes.length === 0) {
+      toast.error('没有指定要处理的页面')
+      return { success: false, completed: 0, failed: 0, errors: ['没有指定页面'] }
+    }
+    const pages = uniqueIndexes.map(index => imageStore.images[index])
+    if (pages.some(page => !page)) {
+      toast.error('指定页码无效')
+      return { success: false, completed: 0, failed: 0, errors: ['指定页码无效'] }
+    }
+    const chapterId = pages[0]?.chapterId
+    if (!chapterId || pages.some(page => page?.chapterId !== chapterId)) {
+      toast.error('当前页面尚未写入后端章节')
+      return { success: false, completed: 0, failed: 0, errors: ['页面不属于同一后端章节'] }
+    }
+
+    const pageIds = pages.map(page => page!.id)
+    if (pageIds.some(hasPendingPageDocument)) {
+      toast.error('页面编辑正在写入后端或写入失败，请稍后重试')
+      return {
+        success: false,
+        completed: 0,
+        failed: 0,
+        errors: ['页面文档尚未完成后端写入'],
+      }
+    }
+    try {
+      const batch = await createChapterTranslationJob(chapterId, pageIds, {
+        executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
+        mode: mode === 'removeText' ? 'remove_text' : mode,
+        sourceLanguage: settingsStore.settings.sourceLanguage,
+        targetLanguage: settingsStore.settings.targetLanguage,
+      })
+      const jobId = batch.jobIds[0]
+      if (!jobId) throw new Error('后端没有返回任务')
+      activeJobId.value = jobId
+      activePageIds.value = pageIds
+      progress.value = {
+        current: 0,
+        total: pageIds.length,
+        completed: 0,
+        failed: 0,
+        isInProgress: true,
+        label: '任务已进入后端队列',
+        percentage: 0,
+      }
+      imageStore.setBatchTranslationInProgress(pageIds.length > 1)
+      for (const pageId of pageIds) {
+        const index = imageStore.images.findIndex(image => image.id === pageId)
+        if (index >= 0) imageStore.setTranslationStatus(index, 'processing')
+      }
+      await taskCenterStore.refresh()
+      toast.success('任务已加入后端任务中心，可安全关闭页面')
+      return { success: true, completed: 0, failed: 0, errors: [] }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '创建后端任务失败'
+      toast.error(message)
+      return { success: false, completed: 0, failed: 0, errors: [message] }
     }
   }
 
   async function translateCurrentImage(): Promise<boolean> {
-    const result = await translatePages([imageStore.currentImageIndex], 'standard')
-    return result.success
+    return (await translatePages([imageStore.currentImageIndex], 'standard')).success
   }
 
   async function translateImageByIndex(index: number): Promise<boolean> {
-    const result = await translatePages([index], 'standard')
-    return result.success
+    return (await translatePages([index], 'standard')).success
   }
 
   async function translateAllImages(): Promise<boolean> {
-    const result = await translatePages(range(0, imageStore.images.length), 'standard')
-    return result.success
+    return (
+      await translatePages(range(0, imageStore.images.length), 'standard')
+    ).success
   }
 
-  async function translateSelectedImages(pageSelection: PageSelection): Promise<boolean> {
-    const pageIndexes = pageSelectionToPageIndexes(pageSelection.pages)
-    const result = await translatePages(pageIndexes, 'standard')
-    return result.success
+  async function translateSelectedImages(selection: PageSelection): Promise<boolean> {
+    return (
+      await translatePages(pageSelectionToPageIndexes(selection.pages), 'standard')
+    ).success
   }
 
   function cancelBatchTranslation(): void {
-    pipeline.cancel()
+    if (activeJobId.value) void taskCenterStore.cancel(activeJobId.value)
   }
 
   async function removeTextOnly(): Promise<boolean> {
-    const result = await translatePages([imageStore.currentImageIndex], 'removeText')
-    return result.success
+    return (await translatePages([imageStore.currentImageIndex], 'removeText')).success
   }
 
   async function removeAllTexts(): Promise<boolean> {
-    const result = await translatePages(range(0, imageStore.images.length), 'removeText')
-    return result.success
+    return (
+      await translatePages(range(0, imageStore.images.length), 'removeText')
+    ).success
   }
 
-  async function removeTextSelection(pageSelection: PageSelection): Promise<boolean> {
-    const pageIndexes = pageSelectionToPageIndexes(pageSelection.pages)
-    const result = await translatePages(pageIndexes, 'removeText')
-    return result.success
+  async function removeTextSelection(selection: PageSelection): Promise<boolean> {
+    return (
+      await translatePages(pageSelectionToPageIndexes(selection.pages), 'removeText')
+    ).success
   }
 
   async function retryFailedImages(): Promise<boolean> {
-    const failedIndices = imageStore.getFailedImageIndices()
-    if (failedIndices.length === 0) {
+    const failed = imageStore.getFailedImageIndices()
+    if (failed.length === 0) {
       toast.info('没有失败的图片需要重新翻译')
       return true
     }
-
-    const result = await translatePages(failedIndices, 'standard')
-    return result.success
+    return (await translatePages(failed, 'standard')).success
   }
 
-  async function executeHqTranslation(pageSelection?: PageSelection): Promise<boolean> {
-    const pageIndexes = pageSelection
-      ? pageSelectionToPageIndexes(pageSelection.pages)
+  async function executeHqTranslation(selection?: PageSelection): Promise<boolean> {
+    const indexes = selection
+      ? pageSelectionToPageIndexes(selection.pages)
       : range(0, imageStore.images.length)
-    const result = await translatePages(pageIndexes, 'hq')
-    return result.success
+    return (await translatePages(indexes, 'hq')).success
   }
 
-  async function executeProofreading(pageSelection?: PageSelection): Promise<boolean> {
-    const pageIndexes = pageSelection
-      ? pageSelectionToPageIndexes(pageSelection.pages)
+  async function executeProofreading(selection?: PageSelection): Promise<boolean> {
+    const indexes = selection
+      ? pageSelectionToPageIndexes(selection.pages)
       : range(0, imageStore.images.length)
-    const result = await translatePages(pageIndexes, 'proofread')
-    return result.success
+    return (await translatePages(indexes, 'proofread')).success
   }
 
   async function translateWithCurrentBubbles(): Promise<boolean> {
-    const currentImage = imageStore.currentImage
-    if (!currentImage) {
-      toast.error('请先上传图片')
-      return false
-    }
-
-    const bubbles = bubbleStore.bubbles
-    if (!bubbles || bubbles.length === 0) {
+    if (!imageStore.currentImage || bubbleStore.bubbles.length === 0) {
       toast.error('当前图片没有气泡框，请先检测或手动添加')
       return false
     }
-
-    imageStore.setManuallyAnnotated(true)
     return translateCurrentImage()
   }
 

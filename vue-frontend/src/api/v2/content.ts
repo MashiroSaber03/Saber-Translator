@@ -27,6 +27,60 @@ export interface SequentialImportProgress {
   total: number
 }
 
+export interface V2BootstrapBook {
+  id: string
+  kind: 'library' | 'quick_workspace'
+  title: string
+}
+
+export interface V2BootstrapChapter {
+  id: string
+  pageOrderRevision: number
+  settingsMemory: Record<string, unknown>
+  settingsMemoryRevision: number
+  settingsMemorySchemaVersion: number
+  title: string
+}
+
+export interface V2TranslationBootstrap {
+  activeJobs: Array<{
+    id: string
+    kind: string
+    progress: Record<string, unknown>
+    queueRank: number | null
+    status: string
+  }>
+  activeWebImportDraft: {
+    expiresAt: string
+    id: string
+    revision: number
+    status: string
+  } | null
+  book: V2BootstrapBook
+  chapter: V2BootstrapChapter
+  constraints: {
+    payload: Record<string, unknown>
+    revision: number
+    schemaVersion: number
+  }
+  navigation: {
+    lastVisitedPageId: string | null
+    revision: number
+  }
+  pages: V2PageList
+}
+
+export interface V2BookDetail extends V2Book {
+  chapters: V2Chapter[]
+  tags?: Array<{ color: string; id: string; name: string }>
+}
+
+export interface V2ContainerImportAccepted {
+  batchId: string
+  jobIds: string[]
+  status: 'queued'
+}
+
 export function newIdempotencyKey(): string {
   return crypto.randomUUID()
 }
@@ -54,6 +108,28 @@ export async function listChapterPages(
   const suffix = query.size > 0 ? `?${query}` : ''
   return apiClient.get<V2PageList>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/pages${suffix}`,
+    { signal: options.signal },
+  )
+}
+
+export async function getBook(bookId: string, signal?: AbortSignal): Promise<V2BookDetail> {
+  return apiClient.get<V2BookDetail>(
+    `${API_ROOT}/books/${encodeURIComponent(bookId)}`,
+    { signal },
+  )
+}
+
+export async function getTranslationBootstrap(
+  options: { bookId?: string; chapterId?: string; signal?: AbortSignal } = {},
+): Promise<V2TranslationBootstrap> {
+  const query = new URLSearchParams()
+  if (options.bookId && options.chapterId) {
+    query.set('bookId', options.bookId)
+    query.set('chapterId', options.chapterId)
+  }
+  const suffix = query.size > 0 ? `?${query}` : ''
+  return apiClient.get<V2TranslationBootstrap>(
+    `${API_ROOT}/translation/bootstrap${suffix}`,
     { signal: options.signal },
   )
 }
@@ -138,6 +214,35 @@ export async function importImagesSequentially(
   }
 }
 
+export async function createContainerImportJob(
+  chapterId: string,
+  file: File,
+): Promise<V2ContainerImportAccepted> {
+  const body = new FormData()
+  body.append('file', file, file.name)
+  return apiClient.upload<V2ContainerImportAccepted>(
+    `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/container-import-jobs`,
+    body,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export async function deletePage(pageId: string): Promise<void> {
+  await apiClient.delete(
+    `${API_ROOT}/pages/${encodeURIComponent(pageId)}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export async function resetQuickWorkspace(): Promise<V2TranslationBootstrap> {
+  await apiClient.post(
+    `${API_ROOT}/quick-workspace/reset`,
+    undefined,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+  return getTranslationBootstrap()
+}
+
 export async function getPageDocument(
   pageId: string,
   signal?: AbortSignal,
@@ -153,7 +258,7 @@ export async function mutatePageDocument(
   command: components['schemas']['PageDocumentBatchMutation'],
 ): Promise<V2PageDocument> {
   return apiClient.patch<V2PageDocument>(
-    `${API_ROOT}/pages/${encodeURIComponent(pageId)}/document/batch`,
+    `${API_ROOT}/pages/${encodeURIComponent(pageId)}/document`,
     command,
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )

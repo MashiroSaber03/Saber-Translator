@@ -10,11 +10,14 @@ from pathlib import PurePosixPath
 import uuid
 from typing import Any
 
-from sqlalchemy import Engine, and_, insert, select, update
+from sqlalchemy import Engine, and_, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.storage.defaults import FACTORY_PROMPTS
 from src.backend_v2.storage.schema import (
+    PROMPT_TYPES,
     app_settings,
+    book_settings,
     credential_current_versions,
     credential_versions,
     credentials,
@@ -24,7 +27,9 @@ from src.backend_v2.storage.schema import (
     plugins,
     provider_rate_limits,
     provider_settings,
+    prompts,
 )
+from src.backend_v2.storage.database import immediate_transaction
 
 
 class RevisionConflict(RuntimeError):
@@ -72,6 +77,15 @@ class CredentialEdit:
     credential_id: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BookSettingMutation:
+    book_id: str
+    domain: str
+    payload: dict[str, Any]
+    base_revision: int
+    schema_version: int = 1
+
+
 class SettingsRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -80,12 +94,17 @@ class SettingsRepository:
         self,
         *,
         settings: tuple[SettingMutation, ...] = (),
+        book_settings_edits: tuple[BookSettingMutation, ...] = (),
         providers: tuple[ProviderSettingMutation, ...] = (),
         credentials_edits: tuple[CredentialEdit, ...] = (),
     ) -> dict[str, list[dict[str, object]]]:
-        with self.engine.begin() as connection:
+        with immediate_transaction(self.engine) as connection:
             setting_results = [
                 self._save_setting(connection, mutation) for mutation in settings
+            ]
+            book_setting_results = [
+                self._save_book_setting(connection, mutation)
+                for mutation in book_settings_edits
             ]
             provider_results = [
                 self._save_provider_setting(connection, mutation)
@@ -96,8 +115,91 @@ class SettingsRepository:
             ]
         return {
             "settings": setting_results,
+            "bookSettings": book_setting_results,
             "providerSettings": provider_results,
             "credentials": credential_results,
+        }
+
+    def load(
+        self,
+        *,
+        domains: tuple[str, ...] = (),
+        book_id: str | None = None,
+    ) -> dict[str, object]:
+        setting_condition = (
+            app_settings.c.domain.in_(domains) if domains else True
+        )
+        provider_condition = (
+            provider_settings.c.domain.in_(domains) if domains else True
+        )
+        with self.engine.connect() as connection:
+            setting_rows = list(
+                connection.execute(
+                    select(app_settings)
+                    .where(setting_condition)
+                    .order_by(app_settings.c.domain)
+                ).mappings()
+            )
+            provider_rows = list(
+                connection.execute(
+                    select(provider_settings)
+                    .where(provider_condition)
+                    .order_by(
+                        provider_settings.c.domain,
+                        provider_settings.c.provider,
+                    )
+                ).mappings()
+            )
+            book_rows = (
+                list(
+                    connection.execute(
+                        select(book_settings)
+                        .where(
+                            book_settings.c.book_id == book_id,
+                            (
+                                book_settings.c.domain.in_(domains)
+                                if domains
+                                else True
+                            ),
+                        )
+                        .order_by(book_settings.c.domain)
+                    ).mappings()
+                )
+                if book_id
+                else []
+            )
+        return {
+            "settings": [
+                {
+                    "domain": row["domain"],
+                    "revision": row["revision"],
+                    "schemaVersion": row["schema_version"],
+                    "payload": json.loads(row["payload_json"]),
+                }
+                for row in setting_rows
+            ],
+            "bookSettings": [
+                {
+                    "bookId": row["book_id"],
+                    "domain": row["domain"],
+                    "revision": row["revision"],
+                    "schemaVersion": row["schema_version"],
+                    "payload": json.loads(row["payload_json"]),
+                }
+                for row in book_rows
+            ],
+            "providerSettings": [
+                {
+                    "domain": row["domain"],
+                    "provider": row["provider"],
+                    "revision": row["revision"],
+                    "schemaVersion": row["schema_version"],
+                    "credentialVersionId": row["credential_version_id"],
+                    "payload": json.loads(row["payload_json"]),
+                }
+                for row in provider_rows
+            ],
+            "credentials": self.credential_summaries(),
         }
 
     @staticmethod
@@ -195,6 +297,59 @@ class SettingsRepository:
         }
 
     @staticmethod
+    def _save_book_setting(
+        connection: object,
+        mutation: BookSettingMutation,
+    ) -> dict[str, object]:
+        if mutation.base_revision < 0 or mutation.schema_version < 1:
+            raise ValueError("book setting revisions must be non-negative")
+        key = and_(
+            book_settings.c.book_id == mutation.book_id,
+            book_settings.c.domain == mutation.domain,
+        )
+        current = connection.execute(  # type: ignore[attr-defined]
+            select(book_settings.c.revision).where(key)
+        ).scalar_one_or_none()
+        values = {
+            "payload_json": _canonical_json(
+                _require_object(mutation.payload, "book setting payload")
+            ),
+            "schema_version": mutation.schema_version,
+        }
+        if current is None:
+            if mutation.base_revision != 0:
+                raise RevisionConflict("book setting does not exist at requested revision")
+            connection.execute(  # type: ignore[attr-defined]
+                insert(book_settings).values(
+                    book_id=mutation.book_id,
+                    domain=mutation.domain,
+                    revision=1,
+                    **values,
+                )
+            )
+            revision = 1
+        else:
+            if current != mutation.base_revision:
+                raise RevisionConflict("book setting revision changed")
+            changed = connection.execute(  # type: ignore[attr-defined]
+                update(book_settings)
+                .where(key, book_settings.c.revision == mutation.base_revision)
+                .values(
+                    revision=mutation.base_revision + 1,
+                    updated_at=_utcnow(),
+                    **values,
+                )
+            )
+            if changed.rowcount != 1:
+                raise RevisionConflict("book setting revision changed")
+            revision = mutation.base_revision + 1
+        return {
+            "bookId": mutation.book_id,
+            "domain": mutation.domain,
+            "revision": revision,
+        }
+
+    @staticmethod
     def _save_credential(connection: object, edit: CredentialEdit) -> dict[str, object]:
         secret = _require_object(edit.secret, "credential secret")
         if not secret or not any(value not in (None, "") for value in secret.values()):
@@ -232,6 +387,7 @@ class SettingsRepository:
             )
             return {
                 "credentialId": credential_id,
+                "credentialVersionId": version_id,
                 "domain": edit.domain,
                 "provider": edit.provider,
                 "hasKey": True,
@@ -289,6 +445,7 @@ class SettingsRepository:
             raise RevisionConflict("credential revision changed")
         return {
             "credentialId": edit.credential_id,
+            "credentialVersionId": version_id,
             "domain": edit.domain,
             "provider": edit.provider,
             "hasKey": True,
@@ -304,6 +461,7 @@ class SettingsRepository:
                     credentials.c.domain,
                     credentials.c.provider,
                     credential_current_versions.c.revision,
+                    credential_current_versions.c.credential_version_id,
                     credential_versions.c.version,
                 )
                 .join(
@@ -319,6 +477,7 @@ class SettingsRepository:
             return [
                 {
                     "credentialId": row["id"],
+                    "credentialVersionId": row["credential_version_id"],
                     "domain": row["domain"],
                     "provider": row["provider"],
                     "hasKey": True,
@@ -336,6 +495,175 @@ class SettingsRepository:
                 )
             ).scalar_one()
         return _require_object(json.loads(value), "stored credential secret")
+
+    def delete_credential(self, credential_id: str) -> None:
+        try:
+            with immediate_transaction(self.engine) as connection:
+                removed = connection.execute(
+                    delete(credentials).where(credentials.c.id == credential_id)
+                )
+                if removed.rowcount != 1:
+                    raise LookupError("credential not found")
+        except IntegrityError as exc:
+            raise RevisionConflict(
+                "credential is still referenced by settings or history"
+            ) from exc
+
+
+class PromptRepository:
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
+
+    def list(self, prompt_type: str | None = None) -> list[dict[str, object]]:
+        if prompt_type is not None and prompt_type not in PROMPT_TYPES:
+            raise ValueError("unsupported prompt type")
+        condition = prompts.c.type == prompt_type if prompt_type else True
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(prompts)
+                .where(condition)
+                .order_by(prompts.c.type, prompts.c.name)
+            ).mappings()
+            return [self._dto(row) for row in rows]
+
+    def create(
+        self,
+        *,
+        prompt_type: str,
+        name: str,
+        content: str,
+    ) -> dict[str, object]:
+        self._validate(prompt_type, name, content)
+        prompt_id = str(uuid.uuid4())
+        try:
+            with immediate_transaction(self.engine) as connection:
+                connection.execute(
+                    insert(prompts).values(
+                        id=prompt_id,
+                        type=prompt_type,
+                        name=name.strip(),
+                        content=content,
+                    )
+                )
+        except IntegrityError as exc:
+            raise RevisionConflict("prompt name already exists for this type") from exc
+        return {
+            "id": prompt_id,
+            "type": prompt_type,
+            "name": name.strip(),
+            "content": content,
+            "revision": 1,
+            "isFactoryDefault": False,
+        }
+
+    def update(
+        self,
+        *,
+        prompt_id: str,
+        name: str,
+        content: str,
+        base_revision: int,
+    ) -> dict[str, object]:
+        with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(prompts.c.type).where(prompts.c.id == prompt_id)
+            ).scalar_one_or_none()
+            if row is None:
+                raise LookupError("prompt not found")
+            self._validate(str(row), name, content)
+            try:
+                changed = connection.execute(
+                    update(prompts)
+                    .where(
+                        prompts.c.id == prompt_id,
+                        prompts.c.revision == base_revision,
+                    )
+                    .values(
+                        name=name.strip(),
+                        content=content,
+                        revision=base_revision + 1,
+                        updated_at=_utcnow(),
+                    )
+                )
+            except IntegrityError as exc:
+                raise RevisionConflict(
+                    "prompt name already exists for this type"
+                ) from exc
+            if changed.rowcount != 1:
+                raise RevisionConflict("prompt revision changed")
+        return {
+            "id": prompt_id,
+            "type": str(row),
+            "name": name.strip(),
+            "content": content,
+            "revision": base_revision + 1,
+        }
+
+    def delete(self, prompt_id: str) -> None:
+        with immediate_transaction(self.engine) as connection:
+            factory = connection.execute(
+                select(prompts.c.is_factory_default).where(
+                    prompts.c.id == prompt_id
+                )
+            ).scalar_one_or_none()
+            if factory is None:
+                raise LookupError("prompt not found")
+            if factory:
+                raise RevisionConflict("factory prompt cannot be deleted")
+            connection.execute(delete(prompts).where(prompts.c.id == prompt_id))
+
+    def reset(self, prompt_id: str, *, base_revision: int) -> dict[str, object]:
+        with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(prompts.c.type, prompts.c.name).where(
+                    prompts.c.id == prompt_id,
+                    prompts.c.is_factory_default.is_(True),
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise RevisionConflict("only factory prompts can be reset")
+            changed = connection.execute(
+                update(prompts)
+                .where(
+                    prompts.c.id == prompt_id,
+                    prompts.c.revision == base_revision,
+                )
+                .values(
+                    content=FACTORY_PROMPTS[str(row["type"])],
+                    revision=base_revision + 1,
+                    updated_at=_utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                raise RevisionConflict("prompt revision changed")
+        return {
+            "id": prompt_id,
+            "type": row["type"],
+            "name": row["name"],
+            "content": FACTORY_PROMPTS[str(row["type"])],
+            "revision": base_revision + 1,
+            "isFactoryDefault": True,
+        }
+
+    @staticmethod
+    def _validate(prompt_type: str, name: str, content: str) -> None:
+        if prompt_type not in PROMPT_TYPES:
+            raise ValueError("unsupported prompt type")
+        if not name.strip() or len(name.strip()) > 200:
+            raise ValueError("prompt name must contain 1-200 characters")
+        if len(content) > 200_000:
+            raise ValueError("prompt content is too large")
+
+    @staticmethod
+    def _dto(row: object) -> dict[str, object]:
+        return {
+            "id": row["id"],  # type: ignore[index]
+            "type": row["type"],  # type: ignore[index]
+            "name": row["name"],  # type: ignore[index]
+            "content": row["content"],  # type: ignore[index]
+            "revision": row["revision"],  # type: ignore[index]
+            "isFactoryDefault": bool(row["is_factory_default"]),  # type: ignore[index]
+        }
 
 
 class PluginVersionRepository:
@@ -449,6 +777,45 @@ class FontRepository:
                 )
             )
         return font_id
+
+    def list(self) -> list[dict[str, object]]:
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(fonts).order_by(fonts.c.kind, fonts.c.display_name)
+            ).mappings()
+            return [
+                {
+                    "id": row["id"],
+                    "kind": row["kind"],
+                    "displayName": row["display_name"],
+                    "assetUrl": (
+                        f"/api/v2/assets/{row['asset_id']}"
+                        if row["asset_id"]
+                        else None
+                    ),
+                    "builtinKey": row["builtin_key"],
+                }
+                for row in rows
+            ]
+
+    def delete_uploaded(self, font_id: str) -> str:
+        try:
+            with immediate_transaction(self.engine) as connection:
+                row = connection.execute(
+                    select(fonts.c.kind, fonts.c.asset_id).where(
+                        fonts.c.id == font_id
+                    )
+                ).one_or_none()
+                if row is None:
+                    raise LookupError("font not found")
+                if row.kind != "uploaded":
+                    raise ValueError("built-in fonts cannot be deleted")
+                connection.execute(delete(fonts).where(fonts.c.id == font_id))
+        except IntegrityError as exc:
+            raise RevisionConflict(
+                "font is still referenced by content or history"
+            ) from exc
+        return str(row.asset_id)
 
 
 @dataclass(frozen=True, slots=True)

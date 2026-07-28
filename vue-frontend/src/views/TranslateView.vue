@@ -5,7 +5,6 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
-import { useSessionStore } from '@/stores/sessionStore'
 import { showToast } from '@/utils/toast'
 import ImageUpload from '@/components/translate/ImageUpload.vue'
 import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
@@ -22,12 +21,12 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 import BookGlossaryModal from '@/components/translate/BookGlossaryModal.vue'
 import BookNonTranslateModal from '@/components/translate/BookNonTranslateModal.vue'
 import EditWorkspace from '@/components/edit/EditWorkspace.vue'
-import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import ProductHeaderAction from '@/components/product/ProductHeaderAction.vue'
 import ProductPageHeader from '@/components/product/ProductPageHeader.vue'
 import ProductThemeToggle from '@/components/product/ProductThemeToggle.vue'
 import { useTextStyleSync } from '@/composables/useTextStyleSync'
 import { useTranslateViewActions } from './useTranslateViewActions'
+import { queuePageDocumentSave } from '@/services/pageDocumentPersistence'
 
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
@@ -36,7 +35,6 @@ const route = useRoute()
 
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
-const sessionStore = useSessionStore()
 const bubbleStore = useBubbleStore()
 
 const {
@@ -66,21 +64,12 @@ const isEditMode = ref(false)
 
 const currentImage = computed(() => imageStore.currentImage)
 const hasImages = computed(() => imageStore.hasImages)
-const isBatchTranslating = computed(() => imageStore.isBatchTranslationInProgress)
 const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
 const showThumbnailSidebar = computed(() => hasImages.value && !isEditMode.value)
-const isBookshelfMode = computed(() => {
-  return !!route.query.book && !!route.query.chapter
-})
-const currentBookId = computed(() => route.query.book as string | undefined)
-const currentChapterId = computed(() => route.query.chapter as string | undefined)
+const isBookshelfMode = computed(() => translateInit.isBookshelfMode.value)
+const currentChapterId = computed(() => translateInit.currentChapterId.value || undefined)
 const currentBookTitle = computed(() => translateInit.currentBookTitle.value)
 const currentChapterTitle = computed(() => translateInit.currentChapterTitle.value)
-const sessionLoadingPercent = computed(() => {
-  const { current, total } = sessionStore.loadingProgress
-  if (total <= 0) return 0
-  return Math.min(100, Math.max(0, Math.round((current / total) * 100)))
-})
 const pageTitle = computed(() => {
   if (isBookshelfMode.value && currentChapterTitle.value && currentBookTitle.value) {
     return `${currentChapterTitle.value} - ${currentBookTitle.value}`
@@ -106,16 +95,10 @@ onUnmounted(() => {
 watch(
   () => [route.query.book, route.query.chapter],
   async ([newBook, newChapter], [previousBook, previousChapter]) => {
-    if (newBook && newChapter) {
-      imageStore.clearImages()
-      bubbleStore.clearBubbles()
-
-      await loadChapterSession()
-    } else if (previousBook && previousChapter && !newBook && !newChapter) {
-      imageStore.clearImages()
-      bubbleStore.clearBubbles()
-      await translateInit.initializeBookChapterContext()
-    }
+    if (newBook === previousBook && newChapter === previousChapter) return
+    imageStore.clearImages()
+    bubbleStore.clearBubbles()
+    await loadChapterSession()
   }
 )
 
@@ -129,6 +112,27 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => bubbleStore.bubbles,
+  bubbles => {
+    const image = imageStore.currentImage
+    if (!image || image.documentRevision === undefined) {
+      return
+    }
+    void queuePageDocumentSave(
+      image.id,
+      image.documentRevision,
+      bubbles,
+    ).catch(error => {
+      showToast(
+        `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
+        'error',
+      )
+    })
+  },
+  { deep: true },
+)
+
 const {
   goToNext,
   goToPrevious,
@@ -137,21 +141,17 @@ const {
   handleRunWorkflow,
   handleUploadComplete,
   loadChapterSession,
-  saveCurrentSession,
   selectImage,
   toggleEditMode,
 } = useTranslateViewActions({
   imageStore,
   settingsStore,
-  sessionStore,
   translation,
   translateInit,
   validateBeforeTranslation,
   currentImage,
   hasImages,
   hasFailedImages,
-  currentBookId,
-  currentChapterId,
   isEditMode,
 })
 
@@ -212,16 +212,6 @@ function openSponsor() {
 
       <template #actions>
         <ProductHeaderAction
-          v-if="isBookshelfMode"
-          variant="solid"
-          class="translate-header__save-button"
-          title="保存进度"
-          aria-label="保存进度"
-          icon-name="save"
-          icon-only
-          @click="saveCurrentSession"
-        />
-        <ProductHeaderAction
           class="translate-header__settings-button"
           :class="{ 'translate-header__settings-button--highlighted': isSettingsButtonHighlighted }"
           title="打开设置"
@@ -276,29 +266,14 @@ function openSponsor() {
         <section class="translate-upload-card">
           <div class="translate-upload-card__actions">
             <ImageUpload
+              :chapter-id="currentChapterId || null"
               @upload-complete="handleUploadComplete"
             />
           </div>
 
-          <UiProgressBar
-            v-if="sessionStore.loadingProgress.total > 0"
-            :label="sessionStore.loadingProgress.message"
-            :value="sessionLoadingPercent"
-          >
-            <span class="translate-upload-card__progress-label">
-              {{ sessionStore.loadingProgress.message }}
-            </span>
-          </UiProgressBar>
-
           <TranslationProgress
             :progress="translation.progress.value"
           />
-
-          <div v-if="isBatchTranslating && isBookshelfMode" class="translate-bookshelf-mode-hint">
-            <span class="translate-bookshelf-mode-hint__text">
-              （书架模式下退出前请点击顶部保存按钮）
-            </span>
-          </div>
         </section>
 
         <ImageResultDisplay

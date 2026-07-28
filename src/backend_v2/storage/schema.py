@@ -578,6 +578,16 @@ Index(
         jobs.c.chapter_id.is_not(None),
     ),
 )
+Index(
+    "uq_jobs_one_nonterminal_web_commit_per_draft",
+    jobs.c.web_import_draft_id,
+    unique=True,
+    sqlite_where=and_(
+        jobs.c.kind == "web_import_commit",
+        jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+        jobs.c.web_import_draft_id.is_not(None),
+    ),
+)
 Index("ix_jobs_queue_claim", jobs.c.status, jobs.c.queue_rank)
 
 queue_state = Table(

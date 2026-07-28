@@ -3,14 +3,20 @@ import { useRoute } from 'vue-router'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
-import { useSessionStore } from '@/stores/sessionStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useEditMode } from '@/composables/useEditMode'
 import { showToast } from '@/utils/toast'
 import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
 import { reloadTextStyleDefaultsFromBackend } from '@/defaults/textStyleDefaults'
-import { getBookDetail } from '@/api/bookshelf'
-import { cleanupGpu } from '@/api/system'
+import {
+  getPageDocument,
+  getTranslationBootstrap,
+} from '@/api/v2/content'
+import {
+  pageSummaryToImage,
+} from '@/adapters/v2ContentAdapter'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
+import { registerPageDocument } from '@/services/pageDocumentPersistence'
 
 import type { FontInfo } from '@/types/api'
 
@@ -33,7 +39,6 @@ export function useTranslateInit() {
   const settingsStore = useSettingsStore()
   const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
   const imageStore = useImageStore()
-  const sessionStore = useSessionStore()
   const bubbleStore = useBubbleStore()
   const editMode = useEditMode()
 
@@ -52,6 +57,8 @@ export function useTranslateInit() {
   let switchImageFlagTimer: ReturnType<typeof setTimeout> | null = null
   let isOwnerAlive = true
   let bookContextRequestId = 0
+  let pageDocumentRequestId = 0
+  let pageDocumentAbortController: AbortController | null = null
 
   function clearSwitchImageFlagTimer(): void {
     if (switchImageFlagTimer) {
@@ -68,20 +75,10 @@ export function useTranslateInit() {
   function markOwnerUnmounted(): void {
     isOwnerAlive = false
     bookContextRequestId += 1
+    pageDocumentRequestId += 1
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = null
     resetSwitchImageFlag()
-  }
-
-  function isActiveBookContextRequest(
-    requestId: number,
-    bookId: string,
-    chapterId: string
-  ): boolean {
-    return (
-      isOwnerAlive &&
-      requestId === bookContextRequestId &&
-      route.query.book === bookId &&
-      route.query.chapter === chapterId
-    )
   }
 
   if (getCurrentInstance()) {
@@ -103,7 +100,6 @@ export function useTranslateInit() {
       await initializeFontList()
       await initializePromptSettings()
       await initializeTextboxPromptSettings()
-      await initializeGpu()
       await initializeBookChapterContext()
 
       isInitialized.value = true
@@ -172,90 +168,46 @@ export function useTranslateInit() {
     }
   }
 
-  async function initializeGpu(): Promise<void> {
-    try {
-      const response = await cleanupGpu()
-      if (!response.success) {
-        showToast(response.error || 'GPU 清理失败', 'warning')
-      }
-    } catch {
-      // GPU cleanup is a best-effort startup task and should not block the page.
-    }
-  }
-
   async function initializeBookChapterContext(): Promise<void> {
     const requestId = ++bookContextRequestId
     const bookId = route.query.book as string | undefined
     const chapterId = route.query.chapter as string | undefined
 
-    if (!bookId || !chapterId) {
-      isBookshelfMode.value = false
-      currentBookId.value = null
-      currentChapterId.value = null
-      currentBookTitle.value = null
-      currentChapterTitle.value = null
-      sessionStore.clearContext()
-      bookTranslationConstraintsStore.resetBookConstraints()
-      return
-    }
-
-    isBookshelfMode.value = true
-    currentBookId.value = bookId
-    currentChapterId.value = chapterId
-
     try {
-      const bookResponse = await getBookDetail(bookId)
-      if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
-        return
+      const bootstrap = await getTranslationBootstrap({
+        bookId: bookId && chapterId ? bookId : undefined,
+        chapterId: bookId && chapterId ? chapterId : undefined,
+      })
+      if (!isOwnerAlive || requestId !== bookContextRequestId) return
+
+      currentBookId.value = bootstrap.book.id
+      currentChapterId.value = bootstrap.chapter.id
+      currentBookTitle.value = bootstrap.book.title
+      currentChapterTitle.value = bootstrap.chapter.title
+      isBookshelfMode.value = bootstrap.book.kind === 'library'
+      bookTranslationConstraintsStore.loadBookConstraints(
+        bootstrap.book.id,
+        bootstrap.constraints.payload as Partial<BookTranslationConstraints>,
+      )
+      imageStore.setImages(bootstrap.pages.items.map(pageSummaryToImage))
+
+      const lastVisitedIndex = bootstrap.navigation.lastVisitedPageId
+        ? imageStore.images.findIndex(image => image.id === bootstrap.navigation.lastVisitedPageId)
+        : -1
+      const initialIndex = lastVisitedIndex >= 0 ? lastVisitedIndex : 0
+      if (imageStore.imageCount > 0) {
+        switchImage(initialIndex)
+      } else {
+        bubbleStore.clearBubblesLocal()
       }
-
-      if (!bookResponse.success || !bookResponse.book) {
-        bookTranslationConstraintsStore.resetBookConstraints()
-        showToast('书籍不存在', 'warning')
-        return
-      }
-
-      const book = bookResponse.book
-      const chapter = book.chapters?.find(c => c.id === chapterId)
-
-      if (!chapter) {
-        bookTranslationConstraintsStore.resetBookConstraints()
-        showToast('章节不存在', 'warning')
-        return
-      }
-
-      currentBookTitle.value = book.title
-      currentChapterTitle.value = chapter.title
-      bookTranslationConstraintsStore.loadBookConstraints(bookId, book.translation_constraints)
-
-      sessionStore.setBookChapterContext(bookId, chapterId, book.title, chapter.title)
 
       if (typeof document !== 'undefined') {
-        document.title = `${chapter.title} - ${book.title} - Saber-Translator`
+        document.title = `${bootstrap.chapter.title} - ${bootstrap.book.title} - Saber-Translator`
       }
-
-      const hasData = chapter.page_count && chapter.page_count > 0
-      if (chapter.session_path && hasData) {
-        try {
-          if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
-            return
-          }
-          await sessionStore.loadSessionByPath(chapter.session_path)
-          if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
-            return
-          }
-          showToast(`已加载章节: ${chapter.title}`, 'success')
-        } catch {
-          // 会话不可用时保持当前章节上下文，等待用户重新保存。
-        }
-      }
-
     } catch {
-      if (!isActiveBookContextRequest(requestId, bookId, chapterId)) {
-        return
-      }
+      if (!isOwnerAlive || requestId !== bookContextRequestId) return
       bookTranslationConstraintsStore.resetBookConstraints()
-      showToast('加载书籍信息失败', 'error')
+      showToast('加载后端章节数据失败', 'error')
     }
   }
 
@@ -284,22 +236,39 @@ export function useTranslateInit() {
       return
     }
 
-    // 使用 clearBubblesLocal 保持 null 和 [] 的语义区分：
-    //   - bubbleStates === null: 从未处理过，翻译时应自动检测
-    //   - bubbleStates === []: 用户主动清空，翻译时应跳过（避免"框复活"）
-    if (newImage.bubbleStates && newImage.bubbleStates.length > 0) {
-      bubbleStore.setBubbles(newImage.bubbleStates, true)
-    } else {
-      // 仅清除本地状态，避免把 null 错误地写成 []。
-      bubbleStore.clearBubblesLocal()
-    }
-
-    // 当 currentImage 变化时，watch 会调用 syncImageToSidebar
-
-    switchImageFlagTimer = setTimeout(() => {
-      switchImageFlagTimer = null
-      isSwitchingImage.value = false
-    }, 100)
+    bubbleStore.clearBubblesLocal()
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = new AbortController()
+    const pageRequestId = ++pageDocumentRequestId
+    const pageId = newImage.id
+    void getPageDocument(pageId, pageDocumentAbortController.signal)
+      .then(document => {
+        if (
+          !isOwnerAlive
+          || pageRequestId !== pageDocumentRequestId
+          || imageStore.currentImage?.id !== pageId
+        ) return
+        const bubbles = registerPageDocument(document)
+        imageStore.updateCurrentImage({
+          bubbleStates: bubbles,
+          documentRevision: document.documentRevision,
+          hasUnsavedChanges: false,
+        })
+        bubbleStore.setBubbles(bubbles, true)
+      })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (pageRequestId === pageDocumentRequestId) {
+          showToast('加载当前页编辑数据失败', 'error')
+        }
+      })
+      .finally(() => {
+        if (pageRequestId !== pageDocumentRequestId) return
+        switchImageFlagTimer = setTimeout(() => {
+          switchImageFlagTimer = null
+          isSwitchingImage.value = false
+        }, 100)
+      })
   }
 
   function goToPrevious(): void {

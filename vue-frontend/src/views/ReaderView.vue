@@ -4,8 +4,13 @@ import ProductHeaderAction from '@/components/product/ProductHeaderAction.vue'
 import ProductPageHeader from '@/components/product/ProductPageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getBookDetail, getChapterImages, type ChapterImageData } from '@/api/bookshelf'
-import type { BookData, ChapterData } from '@/types'
+import {
+  getBook,
+  listChapterPages,
+  type V2BookDetail,
+  type V2Chapter,
+  type V2PageSummary,
+} from '@/api/v2/content'
 import { useToast } from '@/utils/toast'
 import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
 import ReaderControls from '@/components/reader/ReaderControls.vue'
@@ -18,13 +23,13 @@ const props = defineProps<{
 const router = useRouter()
 const toast = useToast()
 
-const bookInfo = ref<BookData | null>(null)
-const chaptersData = ref<ChapterData[]>([])
+const bookInfo = ref<V2BookDetail | null>(null)
+const chaptersData = ref<V2Chapter[]>([])
 const currentChapterInfo = computed(() =>
   chaptersData.value.find(c => c.id === props.chapterId)
 )
 
-const imagesData = ref<ChapterImageData[]>([])
+const imagesData = ref<V2PageSummary[]>([])
 const isLoading = ref(true)
 const currentViewMode = ref<'original' | 'translated'>('translated')
 const currentPage = ref(1)
@@ -77,24 +82,15 @@ async function loadReaderData() {
 
   try {
     const [bookResult, imagesResult] = await Promise.all([
-      getBookDetail(bookId),
-      getChapterImages(bookId, chapterId)
+      getBook(bookId),
+      listChapterPages(chapterId, { all: true }),
     ])
 
     if (!isReaderViewMounted || loadId !== readerLoadSequence) return
 
-    if (bookResult.success && bookResult.book) {
-      bookInfo.value = bookResult.book
-      chaptersData.value = bookResult.book.chapters || []
-    } else {
-      throw new Error(bookResult.error || '获取书籍信息失败')
-    }
-
-    if (imagesResult.success && imagesResult.images) {
-      imagesData.value = imagesResult.images
-    } else {
-      throw new Error(imagesResult.error || '获取章节图片失败')
-    }
+    bookInfo.value = bookResult
+    chaptersData.value = bookResult.chapters || []
+    imagesData.value = imagesResult.items
 
     document.title = pageTitle.value
 

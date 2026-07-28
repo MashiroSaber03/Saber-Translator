@@ -7,22 +7,28 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import PurePosixPath
+import re
 import secrets
 from typing import Any
 import uuid
 
 from sqlalchemy import Engine, and_, delete, func, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.storage.assets import AssetRecord
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
+    assets,
     book_tags,
     books,
     bubbles,
     chapter_write_intents,
     chapter_write_locks,
+    chapter_navigation_state,
     chapters,
     idempotency_records,
+    app_settings,
+    fonts,
     import_leases,
     jobs,
     operations,
@@ -30,6 +36,7 @@ from src.backend_v2.storage.schema import (
     pages,
     tags,
     translation_constraints,
+    web_import_drafts,
 )
 from src.backend_v2.storage.seeding import (
     QUICK_WORKSPACE_BOOK_ID,
@@ -46,6 +53,7 @@ NONTERMINAL_JOB_STATUSES = (
     "interrupted",
 )
 ACTIVE_OPERATION_STATUSES = ("pending", "running")
+_MISSING = object()
 
 
 class ContentNotFound(LookupError):
@@ -107,6 +115,13 @@ def _deduplicate_logical_path(requested: str, existing: set[str]) -> str:
         counter += 1
 
 
+def _natural_sort_key(value: object) -> tuple[object, ...]:
+    return tuple(
+        int(part) if part.isdigit() else part.casefold()
+        for part in re.split(r"(\d+)", str(value))
+    )
+
+
 class ContentRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -116,7 +131,13 @@ class ContentRepository:
         *,
         search: str = "",
         tag_ids: tuple[str, ...] = (),
+        sort_by: str = "updated_at",
+        sort_order: str = "desc",
     ) -> list[dict[str, object]]:
+        if sort_by not in {"title", "created_at", "updated_at"}:
+            raise ValueError("sort_by must be title, created_at, or updated_at")
+        if sort_order not in {"asc", "desc"}:
+            raise ValueError("sort_order must be asc or desc")
         chapter_counts = (
             select(
                 chapters.c.book_id,
@@ -143,8 +164,17 @@ class ContentRepository:
             .outerjoin(chapter_counts, chapter_counts.c.book_id == books.c.id)
             .outerjoin(page_counts, page_counts.c.book_id == books.c.id)
             .where(books.c.kind == "library")
-            .order_by(books.c.updated_at.desc(), books.c.id)
         )
+        if sort_by != "title":
+            sort_column = (
+                books.c.created_at
+                if sort_by == "created_at"
+                else books.c.updated_at
+            )
+            statement = statement.order_by(
+                sort_column.asc() if sort_order == "asc" else sort_column.desc(),
+                books.c.id,
+            )
         if search:
             statement = statement.where(books.c.title.ilike(f"%{search.strip()}%"))
         if tag_ids:
@@ -165,11 +195,45 @@ class ContentRepository:
                     .where(book_tags.c.book_id.in_([row["id"] for row in rows]))
                 ).mappings()
             ) if rows else []
+            job_rows = list(
+                connection.execute(
+                    select(
+                        jobs.c.book_id,
+                        jobs.c.status,
+                        func.count(jobs.c.id).label("job_count"),
+                    )
+                    .where(
+                        jobs.c.book_id.in_([row["id"] for row in rows]),
+                        jobs.c.status.in_(
+                            (
+                                "queued",
+                                "running",
+                                "pausing",
+                                "paused",
+                                "cancelling",
+                                "interrupted",
+                                "failed",
+                            )
+                        ),
+                    )
+                    .group_by(jobs.c.book_id, jobs.c.status)
+                ).mappings()
+            ) if rows else []
+        if sort_by == "title":
+            rows.sort(
+                key=lambda row: _natural_sort_key(row["title"]),
+                reverse=sort_order == "desc",
+            )
         tags_by_book: dict[str, list[dict[str, str]]] = {}
         for row in tag_rows:
             tags_by_book.setdefault(str(row["book_id"]), []).append(
                 {"id": str(row["id"]), "name": str(row["name"]), "color": str(row["color"])}
             )
+        jobs_by_book: dict[str, dict[str, int]] = {}
+        for row in job_rows:
+            jobs_by_book.setdefault(str(row["book_id"]), {})[
+                str(row["status"])
+            ] = int(row["job_count"])
         return [
             {
                 "id": row["id"],
@@ -182,6 +246,7 @@ class ContentRepository:
                 "chapterCount": row["chapter_count"],
                 "pageCount": row["page_count"],
                 "tags": tags_by_book.get(str(row["id"]), []),
+                "jobStatusSummary": jobs_by_book.get(str(row["id"]), {}),
                 "chapterOrderRevision": row["chapter_order_revision"],
                 "createdAt": row["created_at"].isoformat(),
                 "updatedAt": row["updated_at"].isoformat(),
@@ -189,14 +254,25 @@ class ContentRepository:
             for row in rows
         ]
 
-    def create_book(self, *, title: str) -> dict[str, object]:
+    def create_book(
+        self,
+        *,
+        title: str,
+        tag_ids: list[str] | None = None,
+        cover_asset_id: str | None = None,
+    ) -> dict[str, object]:
         normalized = title.strip()
         if not normalized or len(normalized) > 500:
             raise ValueError("book title must contain 1-500 characters")
         book_id = str(uuid.uuid4())
         with self.engine.begin() as connection:
             connection.execute(
-                insert(books).values(id=book_id, kind="library", title=normalized)
+                insert(books).values(
+                    id=book_id,
+                    kind="library",
+                    title=normalized,
+                    cover_asset_id=cover_asset_id,
+                )
             )
             connection.execute(
                 insert(translation_constraints).values(
@@ -204,7 +280,617 @@ class ContentRepository:
                     payload_json='{"glossary":[],"nonTranslate":[]}',
                 )
             )
-        return {"id": book_id, "title": normalized, "chapterOrderRevision": 1}
+            if tag_ids is not None:
+                self._replace_book_tags(connection, book_id, tag_ids)
+        return {
+            "id": book_id,
+            "title": normalized,
+            "chapterOrderRevision": 1,
+            "coverAssetUrl": (
+                f"/api/v2/assets/{cover_asset_id}"
+                if cover_asset_id
+                else None
+            ),
+        }
+
+    def get_book(self, book_id: str) -> dict[str, object]:
+        with self.engine.connect() as connection:
+            book = connection.execute(
+                select(books).where(
+                    books.c.id == book_id,
+                    books.c.kind == "library",
+                )
+            ).mappings().one_or_none()
+            if book is None:
+                raise ContentNotFound("book not found")
+            chapter_rows = list(
+                connection.execute(
+                    select(
+                        chapters.c.id,
+                        chapters.c.ordinal,
+                        chapters.c.title,
+                        chapters.c.page_order_revision,
+                        func.count(pages.c.id).label("page_count"),
+                    )
+                    .outerjoin(pages, pages.c.chapter_id == chapters.c.id)
+                    .where(chapters.c.book_id == book_id)
+                    .group_by(chapters.c.id)
+                    .order_by(chapters.c.ordinal)
+                ).mappings()
+            )
+            tag_rows = list(
+                connection.execute(
+                    select(tags.c.id, tags.c.name, tags.c.color)
+                    .join(book_tags, book_tags.c.tag_id == tags.c.id)
+                    .where(book_tags.c.book_id == book_id)
+                    .order_by(tags.c.name)
+                ).mappings()
+            )
+        return {
+            "id": book["id"],
+            "title": book["title"],
+            "coverAssetUrl": (
+                f"/api/v2/assets/{book['cover_asset_id']}"
+                if book["cover_asset_id"]
+                else None
+            ),
+            "chapterOrderRevision": book["chapter_order_revision"],
+            "tags": [dict(row) for row in tag_rows],
+            "chapters": [
+                {
+                    "id": row["id"],
+                    "ordinal": row["ordinal"],
+                    "title": row["title"],
+                    "pageCount": row["page_count"],
+                    "pageOrderRevision": row["page_order_revision"],
+                }
+                for row in chapter_rows
+            ],
+        }
+
+    def update_book(
+        self,
+        *,
+        book_id: str,
+        title: str,
+        tag_ids: list[str] | None = None,
+        cover_asset_id: str | None = None,
+        replace_cover: bool = False,
+    ) -> dict[str, object]:
+        normalized = title.strip()
+        if not normalized or len(normalized) > 500:
+            raise ValueError("book title must contain 1-500 characters")
+        with immediate_transaction(self.engine) as connection:
+            values: dict[str, object] = {
+                "title": normalized,
+                "updated_at": _utcnow(),
+            }
+            if replace_cover:
+                values["cover_asset_id"] = cover_asset_id
+            changed = connection.execute(
+                update(books)
+                .where(books.c.id == book_id, books.c.kind == "library")
+                .values(**values)
+            )
+            if changed.rowcount != 1:
+                raise ContentNotFound("book not found")
+            if tag_ids is not None:
+                self._replace_book_tags(connection, book_id, tag_ids)
+        return self.get_book(book_id)
+
+    def delete_book(self, book_id: str) -> None:
+        with immediate_transaction(self.engine) as connection:
+            kind = connection.execute(
+                select(books.c.kind).where(books.c.id == book_id)
+            ).scalar_one_or_none()
+            if kind != "library":
+                raise ContentNotFound("book not found")
+            chapter_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(chapters.c.id).where(chapters.c.book_id == book_id)
+                ).scalars()
+            ]
+            self._assert_targets_idle(connection, book_id, chapter_ids)
+            connection.execute(delete(books).where(books.c.id == book_id))
+
+    def batch_delete_books(
+        self,
+        book_ids: list[str],
+    ) -> dict[str, list[dict[str, str]] | list[str]]:
+        if not book_ids or len(book_ids) != len(set(book_ids)):
+            raise ValueError("bookIds must contain unique IDs")
+        deleted: list[str] = []
+        rejected: list[dict[str, str]] = []
+        for book_id in book_ids:
+            try:
+                self.delete_book(book_id)
+                deleted.append(book_id)
+            except (ContentLocked, ContentNotFound) as exc:
+                rejected.append(
+                    {
+                        "bookId": book_id,
+                        "reason": (
+                            "locked"
+                            if isinstance(exc, ContentLocked)
+                            else "not_found"
+                        ),
+                        "message": str(exc),
+                    }
+                )
+        return {"deleted": deleted, "rejected": rejected}
+
+    def update_chapter(self, *, chapter_id: str, title: str) -> dict[str, object]:
+        normalized = title.strip()
+        if not normalized or len(normalized) > 500:
+            raise ValueError("chapter title must contain 1-500 characters")
+        with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(chapters.c.book_id).where(chapters.c.id == chapter_id)
+            ).mappings().one_or_none()
+            if row is None:
+                raise ContentNotFound("chapter not found")
+            self._assert_targets_idle(
+                connection,
+                str(row["book_id"]),
+                [chapter_id],
+            )
+            connection.execute(
+                update(chapters)
+                .where(chapters.c.id == chapter_id)
+                .values(title=normalized, updated_at=_utcnow())
+            )
+        return {"id": chapter_id, "title": normalized}
+
+    def delete_chapter(self, chapter_id: str) -> None:
+        with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(
+                    chapters.c.book_id,
+                    chapters.c.ordinal,
+                    books.c.kind,
+                )
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(chapters.c.id == chapter_id)
+            ).mappings().one_or_none()
+            if row is None or row["kind"] != "library":
+                raise ContentNotFound("chapter not found")
+            book_id = str(row["book_id"])
+            self._assert_targets_idle(connection, book_id, [chapter_id])
+            connection.execute(delete(chapters).where(chapters.c.id == chapter_id))
+            connection.execute(
+                update(chapters)
+                .where(
+                    chapters.c.book_id == book_id,
+                    chapters.c.ordinal > row["ordinal"],
+                )
+                .values(ordinal=chapters.c.ordinal - 1)
+            )
+            connection.execute(
+                update(books)
+                .where(books.c.id == book_id)
+                .values(
+                    chapter_order_revision=books.c.chapter_order_revision + 1,
+                    updated_at=_utcnow(),
+                )
+            )
+
+    def list_tags(self) -> list[dict[str, object]]:
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(
+                    tags,
+                    func.count(book_tags.c.book_id).label("book_count"),
+                )
+                .outerjoin(book_tags, book_tags.c.tag_id == tags.c.id)
+                .group_by(tags.c.id)
+                .order_by(tags.c.name)
+            ).mappings()
+            return [
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "color": row["color"],
+                    "bookCount": row["book_count"],
+                }
+                for row in rows
+            ]
+
+    def create_tag(self, *, name: str, color: str) -> dict[str, object]:
+        normalized_name = name.strip()
+        normalized_color = self._normalize_color(color)
+        if not normalized_name or len(normalized_name) > 200:
+            raise ValueError("tag name must contain 1-200 characters")
+        tag_id = str(uuid.uuid4())
+        try:
+            with immediate_transaction(self.engine) as connection:
+                connection.execute(
+                    insert(tags).values(
+                        id=tag_id,
+                        name=normalized_name,
+                        color=normalized_color,
+                    )
+                )
+        except IntegrityError as exc:
+            raise ContentConflict("tag name already exists") from exc
+        return {
+            "id": tag_id,
+            "name": normalized_name,
+            "color": normalized_color,
+            "bookCount": 0,
+        }
+
+    def update_tag(
+        self,
+        *,
+        tag_id: str,
+        name: str,
+        color: str,
+    ) -> dict[str, object]:
+        normalized_name = name.strip()
+        normalized_color = self._normalize_color(color)
+        if not normalized_name or len(normalized_name) > 200:
+            raise ValueError("tag name must contain 1-200 characters")
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                update(tags)
+                .where(tags.c.id == tag_id)
+                .values(
+                    name=normalized_name,
+                    color=normalized_color,
+                    updated_at=_utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                raise ContentNotFound("tag not found")
+        return {
+            "id": tag_id,
+            "name": normalized_name,
+            "color": normalized_color,
+        }
+
+    def delete_tag(self, tag_id: str) -> None:
+        with immediate_transaction(self.engine) as connection:
+            removed = connection.execute(delete(tags).where(tags.c.id == tag_id))
+            if removed.rowcount != 1:
+                raise ContentNotFound("tag not found")
+
+    def batch_update_tags(
+        self,
+        *,
+        book_ids: list[str],
+        tag_ids: list[str],
+        action: str,
+    ) -> None:
+        if action not in {"add", "remove"}:
+            raise ValueError("tag action must be add or remove")
+        if not book_ids or len(book_ids) != len(set(book_ids)):
+            raise ValueError("bookIds must contain unique IDs")
+        with immediate_transaction(self.engine) as connection:
+            existing_books = set(
+                connection.execute(
+                    select(books.c.id).where(
+                        books.c.id.in_(book_ids),
+                        books.c.kind == "library",
+                    )
+                ).scalars()
+            )
+            existing_tags = set(
+                connection.execute(
+                    select(tags.c.id).where(tags.c.id.in_(tag_ids))
+                ).scalars()
+            )
+            if existing_books != set(book_ids) or existing_tags != set(tag_ids):
+                raise ContentNotFound("book or tag not found")
+            if action == "add" and tag_ids:
+                connection.execute(
+                    insert(book_tags).prefix_with("OR IGNORE"),
+                    [
+                        {"book_id": book_id, "tag_id": tag_id}
+                        for book_id in book_ids
+                        for tag_id in tag_ids
+                    ],
+                )
+            elif tag_ids:
+                connection.execute(
+                    delete(book_tags).where(
+                        book_tags.c.book_id.in_(book_ids),
+                        book_tags.c.tag_id.in_(tag_ids),
+                    )
+                )
+
+    def get_constraints(self, book_id: str) -> dict[str, object]:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(translation_constraints).where(
+                    translation_constraints.c.book_id == book_id
+                )
+            ).mappings().one_or_none()
+        if row is None:
+            raise ContentNotFound("translation constraints not found")
+        return {
+            "bookId": book_id,
+            "revision": row["revision"],
+            "payload": json.loads(row["payload_json"]),
+        }
+
+    def update_constraints(
+        self,
+        *,
+        book_id: str,
+        base_revision: int,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        if set(payload) - {"glossary", "nonTranslate"}:
+            raise ValueError("translation constraints contain unknown fields")
+        if not isinstance(payload.get("glossary", []), list) or not isinstance(
+            payload.get("nonTranslate", []), list
+        ):
+            raise ValueError("constraint lists must be arrays")
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                update(translation_constraints)
+                .where(
+                    translation_constraints.c.book_id == book_id,
+                    translation_constraints.c.revision == base_revision,
+                )
+                .values(
+                    payload_json=_json(payload),
+                    revision=base_revision + 1,
+                    updated_at=_utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                exists_book = connection.execute(
+                    select(books.c.id).where(books.c.id == book_id)
+                ).scalar_one_or_none()
+                if exists_book is None:
+                    raise ContentNotFound("book not found")
+                raise ContentConflict("translation constraints revision changed")
+        return {
+            "bookId": book_id,
+            "revision": base_revision + 1,
+            "payload": payload,
+        }
+
+    def quick_workspace_context(self) -> dict[str, str]:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(books.c.id, chapters.c.id.label("chapter_id"))
+                .join(chapters, chapters.c.book_id == books.c.id)
+                .where(books.c.kind == "quick_workspace")
+                .order_by(chapters.c.ordinal)
+                .limit(1)
+            ).mappings().one_or_none()
+        if row is None:
+            raise ContentNotFound("quick workspace not found")
+        return {"bookId": str(row["id"]), "chapterId": str(row["chapter_id"])}
+
+    def translation_bootstrap(
+        self,
+        *,
+        book_id: str | None = None,
+        chapter_id: str | None = None,
+    ) -> dict[str, object]:
+        if bool(book_id) != bool(chapter_id):
+            raise ValueError("bookId and chapterId must be provided together")
+        if not book_id:
+            context = self.quick_workspace_context()
+            book_id = context["bookId"]
+            chapter_id = context["chapterId"]
+        assert chapter_id is not None
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    books.c.id.label("book_id"),
+                    books.c.title.label("book_title"),
+                    books.c.kind.label("book_kind"),
+                    chapters.c.id.label("chapter_id"),
+                    chapters.c.title.label("chapter_title"),
+                    chapters.c.page_order_revision,
+                    chapters.c.settings_memory_json,
+                    chapters.c.settings_memory_schema_version,
+                    chapters.c.settings_memory_revision,
+                )
+                .join(chapters, chapters.c.book_id == books.c.id)
+                .where(
+                    books.c.id == book_id,
+                    chapters.c.id == chapter_id,
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise ContentNotFound("book/chapter translation context not found")
+            navigation = connection.execute(
+                select(
+                    chapter_navigation_state.c.last_visited_page_id,
+                    chapter_navigation_state.c.revision,
+                ).where(
+                    chapter_navigation_state.c.chapter_id == chapter_id
+                )
+            ).mappings().one_or_none()
+            constraints = connection.execute(
+                select(
+                    translation_constraints.c.payload_json,
+                    translation_constraints.c.schema_version,
+                    translation_constraints.c.revision,
+                ).where(translation_constraints.c.book_id == book_id)
+            ).mappings().one_or_none()
+            active_jobs = list(
+                connection.execute(
+                    select(
+                        jobs.c.id,
+                        jobs.c.kind,
+                        jobs.c.status,
+                        jobs.c.queue_rank,
+                        jobs.c.latest_progress_json,
+                    )
+                    .where(
+                        jobs.c.chapter_id == chapter_id,
+                        jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                    )
+                    .order_by(jobs.c.queue_rank, jobs.c.created_at)
+                ).mappings()
+            )
+            active_draft = connection.execute(
+                select(
+                    web_import_drafts.c.id,
+                    web_import_drafts.c.status,
+                    web_import_drafts.c.revision,
+                    web_import_drafts.c.expires_at,
+                )
+                .where(
+                    web_import_drafts.c.chapter_id == chapter_id,
+                    web_import_drafts.c.expires_at > _utcnow(),
+                    web_import_drafts.c.status.in_(
+                        ("extracting", "ready", "committing")
+                    ),
+                )
+                .order_by(web_import_drafts.c.updated_at.desc())
+                .limit(1)
+            ).mappings().one_or_none()
+        return {
+            "book": {
+                "id": row["book_id"],
+                "title": row["book_title"],
+                "kind": row["book_kind"],
+            },
+            "chapter": {
+                "id": row["chapter_id"],
+                "title": row["chapter_title"],
+                "pageOrderRevision": row["page_order_revision"],
+                "settingsMemory": json.loads(row["settings_memory_json"]),
+                "settingsMemorySchemaVersion": row[
+                    "settings_memory_schema_version"
+                ],
+                "settingsMemoryRevision": row["settings_memory_revision"],
+            },
+            "pages": self.list_pages(
+                chapter_id=chapter_id,
+                all_pages=True,
+            ),
+            "navigation": {
+                "lastVisitedPageId": (
+                    navigation["last_visited_page_id"]
+                    if navigation
+                    else None
+                ),
+                "revision": navigation["revision"] if navigation else 0,
+            },
+            "constraints": {
+                "payload": (
+                    json.loads(constraints["payload_json"])
+                    if constraints
+                    else {"glossary": [], "nonTranslate": []}
+                ),
+                "schemaVersion": constraints["schema_version"] if constraints else 1,
+                "revision": constraints["revision"] if constraints else 0,
+            },
+            "activeJobs": [
+                {
+                    "id": job["id"],
+                    "kind": job["kind"],
+                    "status": job["status"],
+                    "queueRank": job["queue_rank"],
+                    "progress": json.loads(job["latest_progress_json"]),
+                }
+                for job in active_jobs
+            ],
+            "activeWebImportDraft": (
+                {
+                    "id": active_draft["id"],
+                    "status": active_draft["status"],
+                    "revision": active_draft["revision"],
+                    "expiresAt": active_draft["expires_at"].isoformat(),
+                }
+                if active_draft
+                else None
+            ),
+        }
+
+    def update_chapter_settings_memory(
+        self,
+        *,
+        chapter_id: str,
+        base_revision: int,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                update(chapters)
+                .where(
+                    chapters.c.id == chapter_id,
+                    chapters.c.settings_memory_revision == base_revision,
+                )
+                .values(
+                    settings_memory_json=_json(payload),
+                    settings_memory_revision=base_revision + 1,
+                    updated_at=_utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                if connection.execute(
+                    select(chapters.c.id).where(chapters.c.id == chapter_id)
+                ).scalar_one_or_none() is None:
+                    raise ContentNotFound("chapter not found")
+                raise ContentConflict("chapter settings memory revision changed")
+        return {
+            "chapterId": chapter_id,
+            "revision": base_revision + 1,
+            "payload": payload,
+        }
+
+    def update_last_visited_page(
+        self,
+        *,
+        chapter_id: str,
+        page_id: str,
+        base_revision: int,
+    ) -> dict[str, object]:
+        with immediate_transaction(self.engine) as connection:
+            if connection.execute(
+                select(pages.c.id).where(
+                    pages.c.id == page_id,
+                    pages.c.chapter_id == chapter_id,
+                )
+            ).scalar_one_or_none() is None:
+                raise ContentNotFound("page not found in chapter")
+            current = connection.execute(
+                select(chapter_navigation_state.c.revision).where(
+                    chapter_navigation_state.c.chapter_id == chapter_id
+                )
+            ).scalar_one_or_none()
+            if current is None:
+                if base_revision != 0:
+                    raise ContentConflict("chapter navigation revision changed")
+                connection.execute(
+                    insert(chapter_navigation_state).values(
+                        chapter_id=chapter_id,
+                        last_visited_page_id=page_id,
+                        revision=1,
+                    )
+                )
+                revision = 1
+            else:
+                if current != base_revision:
+                    raise ContentConflict("chapter navigation revision changed")
+                connection.execute(
+                    update(chapter_navigation_state)
+                    .where(
+                        chapter_navigation_state.c.chapter_id == chapter_id,
+                        chapter_navigation_state.c.revision == base_revision,
+                    )
+                    .values(
+                        last_visited_page_id=page_id,
+                        revision=base_revision + 1,
+                        updated_at=_utcnow(),
+                    )
+                )
+                revision = base_revision + 1
+        return {
+            "chapterId": chapter_id,
+            "lastVisitedPageId": page_id,
+            "revision": revision,
+        }
 
     def create_chapter(self, *, book_id: str, title: str) -> dict[str, object]:
         normalized = title.strip()
@@ -345,6 +1031,224 @@ class ContentRepository:
             )
         return base_revision + 1
 
+    def reorder_pages(
+        self,
+        *,
+        chapter_id: str,
+        ordered_ids: list[str],
+        base_revision: int,
+    ) -> int:
+        with immediate_transaction(self.engine) as connection:
+            chapter = connection.execute(
+                select(
+                    chapters.c.book_id,
+                    chapters.c.page_order_revision,
+                ).where(chapters.c.id == chapter_id)
+            ).mappings().one_or_none()
+            if chapter is None:
+                raise ContentNotFound("chapter not found")
+            if chapter["page_order_revision"] != base_revision:
+                raise ContentConflict("page order revision changed")
+            self._assert_chapter_writable(connection, chapter_id)
+            existing = list(
+                connection.execute(
+                    select(pages.c.id)
+                    .where(pages.c.chapter_id == chapter_id)
+                    .order_by(pages.c.ordinal)
+                ).scalars()
+            )
+            if len(ordered_ids) != len(set(ordered_ids)) or set(existing) != set(
+                ordered_ids
+            ):
+                raise ValueError("ordered page ids must be an exact permutation")
+            offset = len(existing) * 2 + 1
+            connection.execute(
+                update(pages)
+                .where(pages.c.chapter_id == chapter_id)
+                .values(ordinal=pages.c.ordinal + offset)
+            )
+            for ordinal, page_id in enumerate(ordered_ids, start=1):
+                connection.execute(
+                    update(pages)
+                    .where(
+                        pages.c.id == page_id,
+                        pages.c.chapter_id == chapter_id,
+                    )
+                    .values(ordinal=ordinal)
+                )
+            connection.execute(
+                update(chapters)
+                .where(
+                    chapters.c.id == chapter_id,
+                    chapters.c.page_order_revision == base_revision,
+                )
+                .values(
+                    page_order_revision=base_revision + 1,
+                    updated_at=_utcnow(),
+                )
+            )
+        return base_revision + 1
+
+    def delete_page(self, page_id: str) -> None:
+        with immediate_transaction(self.engine) as connection:
+            page = connection.execute(
+                select(
+                    pages.c.chapter_id,
+                    pages.c.ordinal,
+                    chapters.c.book_id,
+                )
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .where(pages.c.id == page_id)
+            ).mappings().one_or_none()
+            if page is None:
+                raise ContentNotFound("page not found")
+            chapter_id = str(page["chapter_id"])
+            self._assert_targets_idle(
+                connection,
+                str(page["book_id"]),
+                [chapter_id],
+            )
+            connection.execute(delete(pages).where(pages.c.id == page_id))
+            connection.execute(
+                update(pages)
+                .where(
+                    pages.c.chapter_id == chapter_id,
+                    pages.c.ordinal > page["ordinal"],
+                )
+                .values(ordinal=pages.c.ordinal - 1)
+            )
+            connection.execute(
+                update(chapters)
+                .where(chapters.c.id == chapter_id)
+                .values(
+                    page_order_revision=chapters.c.page_order_revision + 1,
+                    updated_at=_utcnow(),
+                )
+            )
+
+    def replace_page_source(
+        self,
+        *,
+        page_id: str,
+        base_source_revision: int,
+        source: AssetRecord,
+        thumbnail: AssetRecord,
+        idempotency_scope: str,
+        idempotency_key: str,
+        request_hash: str,
+    ) -> dict[str, object] | tuple[dict[str, object], bool]:
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            replay = connection.execute(
+                select(
+                    idempotency_records.c.request_hash,
+                    idempotency_records.c.response_json,
+                    idempotency_records.c.expires_at,
+                ).where(
+                    idempotency_records.c.scope == idempotency_scope,
+                    idempotency_records.c.key == idempotency_key,
+                )
+            ).mappings().one_or_none()
+            if replay is not None:
+                if replay["expires_at"] > now:
+                    if replay["request_hash"] != request_hash:
+                        raise IdempotencyConflict(
+                            "Idempotency-Key was reused for different content"
+                        )
+                    return json.loads(replay["response_json"]), True
+                connection.execute(
+                    delete(idempotency_records).where(
+                        idempotency_records.c.scope == idempotency_scope,
+                        idempotency_records.c.key == idempotency_key,
+                    )
+                )
+            page = connection.execute(
+                select(
+                    pages.c.chapter_id,
+                    pages.c.source_revision,
+                    pages.c.document_revision,
+                ).where(pages.c.id == page_id)
+            ).mappings().one_or_none()
+            if page is None:
+                raise ContentNotFound("page not found")
+            if page["source_revision"] != base_source_revision:
+                raise ContentConflict("page source revision changed")
+            self._assert_chapter_writable(
+                connection,
+                str(page["chapter_id"]),
+            )
+            if connection.execute(
+                select(operations.c.id).where(
+                    operations.c.page_id == page_id,
+                    operations.c.status.in_(ACTIVE_OPERATION_STATUSES),
+                )
+            ).scalar_one_or_none() is not None:
+                raise ContentConflict("page has an active operation")
+            new_source_revision = base_source_revision + 1
+            new_document_revision = int(page["document_revision"]) + 1
+            connection.execute(delete(bubbles).where(bubbles.c.page_id == page_id))
+            connection.execute(
+                delete(page_assets).where(
+                    page_assets.c.page_id == page_id,
+                    page_assets.c.role.not_in(("source", "thumbnail_source")),
+                )
+            )
+            for role, record, parent in (
+                ("source", source, None),
+                ("thumbnail_source", thumbnail, source.id),
+            ):
+                connection.execute(
+                    update(page_assets)
+                    .where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == role,
+                    )
+                    .values(
+                        asset_id=record.id,
+                        input_source_revision=new_source_revision,
+                        input_document_revision=None,
+                        parent_asset_id=parent,
+                        producer_job_step_id=None,
+                        producer_operation_id=None,
+                        producer_render_request_id=None,
+                    )
+                )
+            connection.execute(
+                update(pages)
+                .where(
+                    pages.c.id == page_id,
+                    pages.c.source_revision == base_source_revision,
+                )
+                .values(
+                    source_revision=new_source_revision,
+                    document_revision=new_document_revision,
+                    rendered_revision=None,
+                    render_status="not_rendered",
+                    detection_state="unprocessed",
+                    updated_at=_utcnow(),
+                )
+            )
+            result = {
+                "pageId": page_id,
+                "sourceRevision": new_source_revision,
+                "documentRevision": new_document_revision,
+                "sourceUrl": f"/api/v2/assets/{source.id}",
+                "thumbnailSourceUrl": f"/api/v2/assets/{thumbnail.id}",
+            }
+            connection.execute(
+                insert(idempotency_records).values(
+                    scope=idempotency_scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    http_status=200,
+                    response_json=_json(result),
+                    resource_type="page",
+                    resource_id=page_id,
+                    expires_at=now.replace(microsecond=0) + timedelta(days=7),
+                )
+            )
+        return result, False
+
     def append_page(
         self,
         *,
@@ -427,12 +1331,25 @@ class ContentRepository:
                 + 1
             )
             page_id = str(uuid.uuid4())
+            style_payload = connection.execute(
+                select(app_settings.c.payload_json).where(
+                    app_settings.c.domain == "text_style_defaults"
+                )
+            ).scalar_one_or_none() or "{}"
+            default_font_id = connection.execute(
+                select(fonts.c.id)
+                .where(fonts.c.kind == "builtin")
+                .order_by(fonts.c.created_at)
+                .limit(1)
+            ).scalar_one_or_none()
             connection.execute(
                 insert(pages).values(
                     id=page_id,
                     chapter_id=chapter_id,
                     ordinal=ordinal,
                     logical_source_path=final_logical_path,
+                    default_font_id=default_font_id,
+                    page_style_defaults_json=style_payload,
                 )
             )
             connection.execute(
@@ -561,6 +1478,8 @@ class ContentRepository:
                 asset_aliases[role].c.asset_id.label(f"{role}_asset_id")
                 for role in asset_aliases
             ],
+            assets.c.width.label("source_width"),
+            assets.c.height.label("source_height"),
         ).where(
             pages.c.chapter_id == chapter_id,
             pages.c.ordinal > after_ordinal,
@@ -570,6 +1489,10 @@ class ContentRepository:
                 alias,
                 and_(alias.c.page_id == pages.c.id, alias.c.role == role),
             )
+        statement = statement.outerjoin(
+            assets,
+            assets.c.id == asset_aliases["source"].c.asset_id,
+        )
         statement = statement.order_by(pages.c.ordinal)
         if not all_pages:
             statement = statement.limit(limit + 1)
@@ -642,16 +1565,89 @@ class ContentRepository:
         page_id: str,
         base_revision: int,
         mutations: list[dict[str, object]],
-    ) -> dict[str, object]:
-        if not mutations or len(mutations) > 500:
-            raise ValueError("mutations must contain 1-500 items")
+        idempotency_key: str | None = None,
+        default_font_id: object = _MISSING,
+        page_style_defaults_patch: dict[str, object] | None = None,
+        propagate_style_fields: list[str] | None = None,
+    ) -> tuple[dict[str, object], bool]:
+        style_patch = dict(page_style_defaults_patch or {})
+        propagation = list(propagate_style_fields or [])
+        if len(mutations) > 500 or (
+            not mutations
+            and default_font_id is _MISSING
+            and not style_patch
+        ):
+            raise ValueError(
+                "command must mutate bubbles, the default font, or page style"
+            )
+        allowed_style_fields = {
+            "fontSize",
+            "autoFontSize",
+            "fontFamily",
+            "layoutDirection",
+            "textColor",
+            "fillColor",
+            "inpaintMethod",
+            "strokeEnabled",
+            "strokeColor",
+            "strokeWidth",
+            "lineSpacing",
+            "textAlign",
+            "useAutoTextColor",
+        }
+        unknown_style = set(style_patch) - allowed_style_fields
+        if unknown_style:
+            raise ValueError(
+                "unknown page style fields: "
+                + ", ".join(sorted(unknown_style))
+            )
+        if len(propagation) != len(set(propagation)):
+            raise ValueError("propagateStyleFields must contain unique fields")
+        if not set(propagation).issubset(style_patch):
+            raise ValueError(
+                "propagateStyleFields must be present in pageStyleDefaultsPatch"
+            )
+        request_payload = {
+            "baseRevision": base_revision,
+            "mutations": mutations,
+            "defaultFontId": (
+                default_font_id if default_font_id is not _MISSING else "__missing__"
+            ),
+            "pageStyleDefaultsPatch": style_patch,
+            "propagateStyleFields": propagation,
+        }
+        request_hash = hashlib.sha256(
+            _json(request_payload).encode("utf-8")
+        ).hexdigest()
+        scope = f"page-document:{page_id}"
+        now = _utcnow()
         with immediate_transaction(self.engine) as connection:
+            if idempotency_key:
+                replay = connection.execute(
+                    select(
+                        idempotency_records.c.request_hash,
+                        idempotency_records.c.response_json,
+                    ).where(
+                        idempotency_records.c.scope == scope,
+                        idempotency_records.c.key == idempotency_key,
+                        idempotency_records.c.expires_at > now,
+                    )
+                ).mappings().one_or_none()
+                if replay is not None:
+                    if replay["request_hash"] != request_hash:
+                        raise IdempotencyConflict(
+                            "Idempotency-Key was reused for a different page mutation"
+                        )
+                    return json.loads(replay["response_json"]), True
             page = connection.execute(
                 select(
                     pages.c.chapter_id,
                     pages.c.document_revision,
                     pages.c.rendered_revision,
                     pages.c.render_status,
+                    pages.c.default_font_id,
+                    pages.c.page_style_defaults_json,
+                    pages.c.page_style_schema_version,
                 ).where(pages.c.id == page_id)
             ).mappings().one_or_none()
             if page is None:
@@ -683,6 +1679,28 @@ class ContentRepository:
             deleted_ids: set[str] = set()
             created_ids: set[str] = set()
             renderable_change = False
+            if default_font_id is not _MISSING:
+                if default_font_id is not None and not isinstance(
+                    default_font_id, str
+                ):
+                    raise ValueError("defaultFontId must be a string or null")
+                if default_font_id is not None and connection.execute(
+                    select(fonts.c.id).where(fonts.c.id == default_font_id)
+                ).scalar_one_or_none() is None:
+                    raise ContentNotFound("default font not found")
+                renderable_change = (
+                    renderable_change
+                    or default_font_id != page["default_font_id"]
+                )
+            current_style = json.loads(page["page_style_defaults_json"])
+            if not isinstance(current_style, dict):
+                current_style = {}
+            if style_patch:
+                renderable_change = renderable_change or any(
+                    current_style.get(key) != value
+                    for key, value in style_patch.items()
+                )
+                current_style.update(style_patch)
             has_current_translated = (
                 connection.execute(
                     select(page_assets.c.asset_id).where(
@@ -696,8 +1714,26 @@ class ContentRepository:
                 if not isinstance(mutation, dict):
                     raise ValueError("each bubble mutation must be an object")
                 operation = mutation.get("op")
-                bubble_id = mutation.get("bubbleId")
-                fields = mutation.get("fields", {})
+                if operation == "update":
+                    operation = "patch"
+                bubble_id = (
+                    mutation.get("bubbleId")
+                    or mutation.get("bubble_id")
+                    or (
+                        mutation.get("clientMutationId")
+                        if operation == "create"
+                        else None
+                    )
+                    or (
+                        mutation.get("client_mutation_id")
+                        if operation == "create"
+                        else None
+                    )
+                )
+                fields = mutation.get(
+                    "fields",
+                    mutation.get("payload", {}),
+                )
                 if (
                     operation not in {"create", "patch", "delete", "reset"}
                     or not isinstance(bubble_id, str)
@@ -748,6 +1784,13 @@ class ContentRepository:
                     current_payload = dict(current["payload"])  # type: ignore[arg-type]
                     current_payload.update(payload_fields)
                     current["payload"] = current_payload
+
+            if propagation:
+                for document in documents.values():
+                    payload = dict(document["payload"])  # type: ignore[arg-type]
+                    for field in propagation:
+                        payload[field] = style_patch[field]
+                    document["payload"] = payload
 
             new_revision = base_revision + 1
             if existing_rows:
@@ -801,6 +1844,10 @@ class ContentRepository:
                 "document_revision": new_revision,
                 "updated_at": _utcnow(),
             }
+            if default_font_id is not _MISSING:
+                page_values["default_font_id"] = default_font_id
+            if style_patch:
+                page_values["page_style_defaults_json"] = _json(current_style)
             if needs_render:
                 page_values["render_status"] = "stale"
             elif (
@@ -839,7 +1886,72 @@ class ContentRepository:
                     page_id=page_id,
                     requested_revision=new_revision,
                 )
-        return self.get_page_document(page_id)
+            result = self._get_page_document(connection, page_id)
+            if idempotency_key:
+                connection.execute(
+                    insert(idempotency_records).values(
+                        scope=scope,
+                        key=idempotency_key,
+                        request_hash=request_hash,
+                        http_status=200,
+                        response_json=_json(result),
+                        resource_type="page_document",
+                        resource_id=page_id,
+                        expires_at=now + timedelta(hours=24),
+                    )
+                )
+        if idempotency_key:
+            return result, False
+        return result
+
+    @staticmethod
+    def _get_page_document(
+        connection: Any,
+        page_id: str,
+    ) -> dict[str, object]:
+        page = connection.execute(
+            select(
+                pages.c.id,
+                pages.c.chapter_id,
+                pages.c.document_revision,
+                pages.c.default_font_id,
+                pages.c.page_style_defaults_json,
+                pages.c.page_style_schema_version,
+            ).where(pages.c.id == page_id)
+        ).mappings().one_or_none()
+        if page is None:
+            raise ContentNotFound("page not found")
+        bubble_rows = list(
+            connection.execute(
+                select(
+                    bubbles.c.id,
+                    bubbles.c.ordinal,
+                    bubbles.c.font_id,
+                    bubbles.c.payload_json,
+                    bubbles.c.updated_revision,
+                )
+                .where(bubbles.c.page_id == page_id)
+                .order_by(bubbles.c.ordinal)
+            ).mappings()
+        )
+        return {
+            "pageId": page["id"],
+            "chapterId": page["chapter_id"],
+            "documentRevision": page["document_revision"],
+            "defaultFontId": page["default_font_id"],
+            "pageStyleDefaults": json.loads(page["page_style_defaults_json"]),
+            "pageStyleSchemaVersion": page["page_style_schema_version"],
+            "bubbles": [
+                {
+                    "bubbleId": row["id"],
+                    "ordinal": row["ordinal"],
+                    "fontId": row["font_id"],
+                    "payload": json.loads(row["payload_json"]),
+                    "updatedRevision": row["updated_revision"],
+                }
+                for row in bubble_rows
+            ],
+        }
 
     @staticmethod
     def _affects_render(fields: dict[str, object]) -> bool:
@@ -873,6 +1985,8 @@ class ContentRepository:
             "chapterId": row["chapter_id"],
             "ordinal": row["ordinal"],
             "logicalSourcePath": row["logical_source_path"],
+            "width": row.get("source_width"),
+            "height": row.get("source_height"),
             "sourceRevision": row["source_revision"],
             "documentRevision": row["document_revision"],
             "renderedRevision": row["rendered_revision"],
@@ -1000,6 +2114,12 @@ class ContentRepository:
                 )
             )
             connection.execute(
+                insert(translation_constraints).values(
+                    book_id=book,
+                    payload_json='{"glossary":[],"nonTranslate":[]}',
+                )
+            )
+            connection.execute(
                 update(books)
                 .where(books.c.id == book)
                 .values(
@@ -1117,6 +2237,12 @@ class ContentRepository:
                     translation_constraints.c.book_id == quick_book_id
                 )
             )
+            connection.execute(
+                insert(translation_constraints).values(
+                    book_id=quick_book_id,
+                    payload_json='{"glossary":[],"nonTranslate":[]}',
+                )
+            )
             new_quick_chapter_id = str(uuid.uuid4())
             connection.execute(
                 insert(chapters).values(
@@ -1171,3 +2297,42 @@ class ContentRepository:
         ).scalar_one_or_none() if chapter_ids else None
         if active_job or active_operation or active_import:
             raise ContentLocked("quick workspace is still referenced by active work")
+
+    @staticmethod
+    def _replace_book_tags(
+        connection: object,
+        book_id: str,
+        tag_ids: list[str],
+    ) -> None:
+        if len(tag_ids) != len(set(tag_ids)):
+            raise ValueError("tagIds must contain unique IDs")
+        if tag_ids:
+            found = set(
+                connection.execute(  # type: ignore[attr-defined]
+                    select(tags.c.id).where(tags.c.id.in_(tag_ids))
+                ).scalars()
+            )
+            if found != set(tag_ids):
+                raise ContentNotFound("tag not found")
+        connection.execute(  # type: ignore[attr-defined]
+            delete(book_tags).where(book_tags.c.book_id == book_id)
+        )
+        if tag_ids:
+            connection.execute(  # type: ignore[attr-defined]
+                insert(book_tags),
+                [
+                    {"book_id": book_id, "tag_id": tag_id}
+                    for tag_id in tag_ids
+                ],
+            )
+
+    @staticmethod
+    def _normalize_color(value: str) -> str:
+        normalized = value.strip()
+        if (
+            len(normalized) != 7
+            or not normalized.startswith("#")
+            or any(character not in "0123456789abcdefABCDEF" for character in normalized[1:])
+        ):
+            raise ValueError("tag color must be a six-digit hexadecimal color")
+        return normalized.lower()

@@ -46,10 +46,15 @@ from src.backend_v2.storage.schema import (
     idempotency_records,
     assets,
     job_asset_inputs,
+    job_artifacts,
     job_batches,
+    job_config_snapshots,
+    job_credential_snapshots,
     job_drain_acks,
     job_events,
     job_items,
+    job_font_snapshots,
+    job_plugin_snapshots,
     job_steps,
     jobs,
     operations,
@@ -102,6 +107,7 @@ class AttemptFenced(JobConflict):
 class JobItemSpec:
     page_id: str | None
     step_kinds: tuple[str, ...]
+    asset_inputs: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
         if not self.step_kinds:
@@ -118,7 +124,11 @@ class JobSpec:
     book_id: str | None = None
     chapter_id: str | None = None
     page_id: str | None = None
+    web_import_draft_id: str | None = None
     target_display: Mapping[str, Any] | None = None
+    credential_snapshots: Mapping[str, str] | None = None
+    font_snapshots: Mapping[str, str] | None = None
+    plugin_snapshots: Mapping[str, Mapping[str, Any]] | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in JOB_KINDS:
@@ -152,6 +162,31 @@ def _load_json(value: str | None, default: object) -> object:
     return json.loads(value)
 
 
+def _credential_version_references(
+    value: Mapping[str, Any],
+) -> dict[str, str]:
+    references: dict[str, str] = {}
+
+    def visit(current: object, path: tuple[str, ...]) -> None:
+        if isinstance(current, Mapping):
+            for key, child in current.items():
+                key_text = str(key)
+                next_path = (*path, key_text)
+                if key_text == "credentialVersionId" and isinstance(child, str):
+                    role = ".".join(path) or "default"
+                    if len(role) > 64:
+                        role = hashlib.sha256(role.encode("utf-8")).hexdigest()
+                    references[role] = child
+                else:
+                    visit(child, next_path)
+        elif isinstance(current, (list, tuple)):
+            for index, child in enumerate(current):
+                visit(child, (*path, str(index)))
+
+    visit(value, ())
+    return references
+
+
 class JobQueueRepository:
     """Own all queue ordering, transition, checkpoint, and lock transactions."""
 
@@ -170,6 +205,12 @@ class JobQueueRepository:
         idempotency_scope: str | None = None,
         idempotency_key: str | None = None,
         idempotency_payload: Mapping[str, Any] | None = None,
+        transaction_initializer: (
+            Callable[[Connection, str], None] | None
+        ) = None,
+        transaction_hook: (
+            Callable[[Connection, str, Sequence[str]], None] | None
+        ) = None,
     ) -> dict[str, object]:
         if not specs:
             raise ValueError("a batch requires at least one job")
@@ -219,6 +260,8 @@ class JobQueueRepository:
                         updated_at=now,
                     )
                 )
+                if transaction_initializer is not None:
+                    transaction_initializer(connection, batch_id)
                 next_rank = int(
                     connection.execute(
                         select(func.coalesce(func.max(jobs.c.queue_rank), 0))
@@ -238,6 +281,7 @@ class JobQueueRepository:
                             book_id=spec.book_id,
                             chapter_id=spec.chapter_id,
                             page_id=spec.page_id,
+                            web_import_draft_id=spec.web_import_draft_id,
                             config_json=_json(dict(spec.config)),
                             config_schema_version=1,
                             latest_progress_json=_json(
@@ -252,6 +296,55 @@ class JobQueueRepository:
                             updated_at=now,
                         )
                     )
+                    connection.execute(
+                        insert(job_config_snapshots).values(
+                            job_id=job_id,
+                            payload_json=_json(dict(spec.config)),
+                            schema_version=1,
+                        )
+                    )
+                    credential_refs = {
+                        **_credential_version_references(spec.config),
+                        **dict(spec.credential_snapshots or {}),
+                    }
+                    if credential_refs:
+                        connection.execute(
+                            insert(job_credential_snapshots),
+                            [
+                                {
+                                    "job_id": job_id,
+                                    "credential_version_id": version_id,
+                                    "role": role,
+                                }
+                                for role, version_id in credential_refs.items()
+                            ],
+                        )
+                    if spec.font_snapshots:
+                        connection.execute(
+                            insert(job_font_snapshots),
+                            [
+                                {
+                                    "job_id": job_id,
+                                    "font_id": font_id,
+                                    "role": role,
+                                }
+                                for role, font_id in spec.font_snapshots.items()
+                            ],
+                        )
+                    if spec.plugin_snapshots:
+                        connection.execute(
+                            insert(job_plugin_snapshots),
+                            [
+                                {
+                                    "job_id": job_id,
+                                    "plugin_version_id": version_id,
+                                    "config_json": _json(dict(plugin_config)),
+                                }
+                                for version_id, plugin_config in (
+                                    spec.plugin_snapshots.items()
+                                )
+                            ],
+                        )
                     for item_ordinal, item_spec in enumerate(spec.items, start=1):
                         item_id = str(uuid.uuid4())
                         connection.execute(
@@ -283,12 +376,32 @@ class JobQueueRepository:
                                 )
                             ],
                         )
+                        if item_spec.asset_inputs:
+                            connection.execute(
+                                insert(job_asset_inputs),
+                                [
+                                    {
+                                        "job_id": job_id,
+                                        "asset_id": asset_id,
+                                        "role": role,
+                                        "binding_phase": "create",
+                                        "job_item_id": item_id,
+                                    }
+                                    for role, asset_id in item_spec.asset_inputs.items()
+                                ],
+                            )
                     self._append_event(
                         connection,
                         job_id=job_id,
                         event_type="job_created",
                         payload={"batchId": batch_id, "queueRank": next_rank},
                         now=now,
+                    )
+                if transaction_hook is not None:
+                    transaction_hook(
+                        connection,
+                        batch_id,
+                        tuple(created_ids),
                     )
                 self._bump_queue_revision(connection, now)
                 response = {
@@ -407,8 +520,24 @@ class JobQueueRepository:
                         ],
                     }
                 )
+            artifact_rows = list(
+                connection.execute(
+                    select(job_artifacts).where(
+                        job_artifacts.c.job_id == job_id
+                    )
+                ).mappings()
+            )
         result = self._job_dto(job)
         result["items"] = items
+        result["artifacts"] = [
+            {
+                "kind": row["kind"],
+                "assetId": row["asset_id"],
+                "url": f"/api/v2/assets/{row['asset_id']}",
+                "expiresAt": self._iso(row["expires_at"]),
+            }
+            for row in artifact_rows
+        ]
         return result
 
     def get_batch(self, batch_id: str) -> dict[str, object]:

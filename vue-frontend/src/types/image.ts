@@ -13,6 +13,10 @@ export type TranslationStatus = 'pending' | 'processing' | 'completed' | 'failed
 
 export interface ImageSourceFields {
   id: string
+  chapterId?: string
+  sourceRevision?: number
+  documentRevision?: number
+  renderedRevision?: number | null
   fileName: string
   width?: number
   height?: number
