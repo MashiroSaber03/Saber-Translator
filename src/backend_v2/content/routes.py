@@ -425,6 +425,15 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             etag=asset.checksum,
             last_modified=asset.created_at,
             max_age=31536000,
+            as_attachment=request.args.get("download") == "1",
+            download_name=(
+                (
+                    request.args.get("filename", asset_id)
+                    + asset.path.suffix
+                )
+                if request.args.get("download") == "1"
+                else None
+            ),
         )
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response

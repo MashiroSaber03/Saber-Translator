@@ -1647,6 +1647,11 @@ transient_requests = Table(
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
     Column("kind", String(64), nullable=False),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+    ),
     Column("status", String(16), nullable=False, server_default="pending"),
     Column("connection_token_hash", String(HASH_LENGTH), nullable=False),
     Column("connection_open", Boolean, nullable=False, server_default="1"),
@@ -1661,6 +1666,22 @@ transient_requests = Table(
     *_timestamps(),
     CheckConstraint("kind IN ('vector_query')", name="kind_values"),
     CheckConstraint(f"status IN ({_sql_values(OPERATION_STATUSES)})", name="status_values"),
+)
+Index(
+    "uq_transient_active_vector_query_book",
+    transient_requests.c.book_id,
+    unique=True,
+    sqlite_where=and_(
+        transient_requests.c.kind == "vector_query",
+        transient_requests.c.book_id.is_not(None),
+        transient_requests.c.connection_open.is_(True),
+        transient_requests.c.status.in_(("pending", "running", "completed")),
+    ),
+)
+Index(
+    "ix_transient_requests_claim",
+    transient_requests.c.status,
+    transient_requests.c.created_at,
 )
 
 render_requests = Table(

@@ -6,7 +6,7 @@ import json
 import queue
 from typing import Iterator
 
-from flask import Blueprint, Response, jsonify, request, stream_with_context
+from flask import Blueprint, Response, jsonify, redirect, request, stream_with_context
 from sqlalchemy import Engine
 
 from src.backend_v2.jobs.events import JobEventBroadcaster
@@ -120,6 +120,28 @@ def create_jobs_blueprint(
                     limit=int(request.args.get("limit", "200")),
                 )
             }
+        )
+
+    @blueprint.get("/jobs/<job_id>/download")
+    def download_job_artifact(job_id: str) -> Response:
+        job = repository.get_job(job_id)
+        artifacts = job.get("artifacts", [])
+        if not artifacts:
+            raise JobNotFound("job has no downloadable artifact")
+        selected_kind = request.args.get("kind")
+        artifact = next(
+            (
+                item
+                for item in artifacts
+                if selected_kind is None or item["kind"] == selected_kind
+            ),
+            None,
+        )
+        if artifact is None:
+            raise JobNotFound("requested job artifact not found")
+        return redirect(
+            f"{artifact['url']}?download=1&filename={job_id}",
+            code=302,
         )
 
     @blueprint.post("/jobs/<job_id>/pause")

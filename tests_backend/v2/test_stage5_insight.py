@@ -8,11 +8,18 @@ import uuid
 
 from PIL import Image
 import pytest
+from flask import Flask
 from sqlalchemy import select
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.insight.commands import InsightAnalysisCommandService
+from src.backend_v2.insight.continuation import (
+    ContinuationAlgorithms,
+    ContinuationCommandService,
+    ContinuationRepository,
+    ContinuationWorkerService,
+)
 from src.backend_v2.insight.derived import (
     InsightDerivedCommandService,
     InsightDerivedRepository,
@@ -22,10 +29,17 @@ from src.backend_v2.insight.page_schema import (
     InvalidPageAnalysis,
     normalize_page_analysis,
 )
+from src.backend_v2.insight.qa import (
+    InsightQACommandService,
+    InsightQAWorkerService,
+    QAConflict,
+    TransientRequestRepository,
+)
 from src.backend_v2.insight.repository import (
     InsightConflict,
     InsightRepository,
 )
+from src.backend_v2.insight.routes import create_insight_blueprint
 from src.backend_v2.insight.worker import InsightAnalysisWorkerService
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.assets import AssetStorageService
@@ -44,6 +58,7 @@ from src.backend_v2.storage.schema import (
     jobs,
     metadata,
     timeline_versions,
+    transient_requests,
     vector_generations,
 )
 from src.backend_v2.storage.seeding import seed_system_records
@@ -118,6 +133,51 @@ class FakeVectorStore:
 
     def publish(self, **kwargs) -> None:
         self.publications.append(kwargs)
+
+
+class FakeContinuationAlgorithms:
+    def generate_script(self, *, context, config):
+        return "第1页：新的开始\n第2页：继续前进"
+
+    def generate_page(self, *, ordinal, script, previous, config):
+        return {
+            "storyText": f"第 {ordinal} 页剧情",
+            "continuityText": (
+                str(previous.get("storyText", "")) if previous else "原作结尾"
+            ),
+            "dialogueText": "对白",
+            "characters": ["Saber"],
+            "characterForms": [],
+            "finalPrompt": f"page {ordinal}",
+            "status": "ready",
+        }
+
+    def generate_image(self, *, prompt, reference_paths, config):
+        payload = BytesIO()
+        with Image.new("RGB", (48, 64), (120, 80, 160)) as image:
+            image.save(payload, format="PNG")
+        return payload.getvalue()
+
+
+class FakeQARetrievalAlgorithms:
+    def embed_queries(self, queries, *, config):
+        return [[float(index + 1), 0.25] for index, _ in enumerate(queries)]
+
+
+class FakeQAApiAlgorithms:
+    def rerank(self, *, question, candidates, top_k, config):
+        return list(candidates)[:top_k]
+
+    def stream_answer(
+        self,
+        *,
+        question,
+        candidates,
+        config,
+        cancelled,
+    ):
+        yield "答案"
+        yield "内容"
 
 
 @pytest.fixture()
@@ -562,3 +622,233 @@ def test_queued_full_run_cancel_converges_without_publication(
                 analysis_heads.c.book_id == platform["book"]["id"]
             )
         ).all() == []
+
+
+def test_continuation_script_and_page_loops_are_worker_owned(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="continuation-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    repository = ContinuationRepository(platform["engine"])
+    project = repository.sync_latest(
+        book_id=str(platform["book"]["id"])
+    )
+    project = repository.update_project(
+        project_id=str(project["projectId"]),
+        base_revision=int(project["revision"]),
+        config={
+            "pageCount": 2,
+            "styleReferencePages": 2,
+            "direction": "继续冒险",
+        },
+    )
+    commands = ContinuationCommandService(platform["engine"])
+    queue = JobQueueRepository(platform["engine"])
+    worker = ContinuationWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+        algorithms=FakeContinuationAlgorithms(),
+    )
+    commands.create_script_job(
+        book_id=str(platform["book"]["id"]),
+        idempotency_key="continuation-script",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+
+    commands.create_pages_job(
+        book_id=str(platform["book"]["id"]),
+        ordinals=None,
+        idempotency_key="continuation-pages",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+    restored = repository.bootstrap(
+        book_id=str(platform["book"]["id"])
+    )["project"]
+    assert restored["script"]["content"].startswith("第1页")
+    assert [page["payload"]["storyText"] for page in restored["pages"]] == [
+        "第 1 页剧情",
+        "第 2 页剧情",
+    ]
+    commands.create_images_job(
+        book_id=str(platform["book"]["id"]),
+        ordinals=None,
+        idempotency_key="continuation-images",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+
+    exported = commands.create_export_job(
+        book_id=str(platform["book"]["id"]),
+        output_format="zip",
+        idempotency_key="continuation-export",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+    detail = queue.get_job(str(exported["jobIds"][0]))
+    assert detail["artifacts"][0]["kind"] == "continuation_export"
+
+
+def test_qa_vector_query_is_connection_bound_and_worker_owned(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="qa-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    commands = InsightQACommandService(platform["engine"])
+    handle = commands.create(
+        book_id=str(platform["book"]["id"]),
+        command={
+            "question": "主角为什么继续前进？",
+            "mode": "exact",
+            "topK": 5,
+            "useReasoning": True,
+        },
+    )
+    with pytest.raises(QAConflict):
+        commands.create(
+            book_id=str(platform["book"]["id"]),
+            command={"question": "第二个问题", "mode": "exact"},
+        )
+    requests = TransientRequestRepository(platform["engine"])
+    worker = InsightQAWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        worker_epoch_id=platform["epoch_id"],
+        repository=requests,
+        algorithms=FakeQARetrievalAlgorithms(),
+    )
+    worker._query_chroma = lambda **_kwargs: [
+        {
+            "id": "page-result",
+            "type": "page",
+            "pageId": platform["page_ids"][0],
+            "pageNumber": 1,
+            "document": "主角决定继续前进",
+            "vectorScore": 0.9,
+            "hybridScore": 0.92,
+        }
+    ]
+    assert worker.run_one()
+    state = requests.poll(
+        request_id=handle.request_id,
+        connection_token=handle.connection_token,
+    )
+    assert state["status"] == "completed"
+    result = requests.consume(
+        request_id=handle.request_id,
+        connection_token=handle.connection_token,
+    )
+    assert result["candidates"][0]["pageId"] == platform["page_ids"][0]
+    requests.close(
+        request_id=handle.request_id,
+        connection_token=handle.connection_token,
+    )
+    with platform["engine"].connect() as connection:
+        assert connection.execute(
+            select(transient_requests.c.id)
+        ).scalar_one_or_none() is None
+
+    cancelled = commands.create(
+        book_id=str(platform["book"]["id"]),
+        command={"question": "取消这个问题", "mode": "exact"},
+    )
+    requests.close(
+        request_id=cancelled.request_id,
+        connection_token=cancelled.connection_token,
+    )
+    assert not worker.run_one()
+    assert requests.poll(
+        request_id=cancelled.request_id,
+        connection_token=cancelled.connection_token,
+    )["status"] == "cancelled"
+    requests.close(
+        request_id=cancelled.request_id,
+        connection_token=cancelled.connection_token,
+    )
+
+
+def test_qa_http_response_streams_without_creating_job_history(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="qa-stream-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    with platform["engine"].connect() as connection:
+        jobs_before = len(list(connection.execute(select(jobs.c.id)).scalars()))
+    app = Flask("qa-test")
+    app.register_blueprint(
+        create_insight_blueprint(
+            engine=platform["engine"],
+            qa_algorithms=FakeQAApiAlgorithms(),
+        )
+    )
+    client = app.test_client()
+    response = client.post(
+        f"/api/v2/insight/books/{platform['book']['id']}/qa",
+        json={"question": "发生了什么？", "mode": "exact"},
+        buffered=False,
+    )
+    worker = InsightQAWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        worker_epoch_id=platform["epoch_id"],
+        algorithms=FakeQARetrievalAlgorithms(),
+    )
+    worker._query_chroma = lambda **_kwargs: [
+        {
+            "id": "page-result",
+            "type": "page",
+            "pageId": platform["page_ids"][0],
+            "pageNumber": 1,
+            "document": "关键事件",
+            "vectorScore": 0.9,
+            "hybridScore": 0.9,
+        }
+    ]
+    assert worker.run_one()
+    payload = b"".join(response.response).decode("utf-8")
+    assert response.status_code == 200
+    assert "event: chunk" in payload
+    assert "答案" in payload
+    assert "event: done" in payload
+    with platform["engine"].connect() as connection:
+        assert len(
+            list(connection.execute(select(jobs.c.id)).scalars())
+        ) == jobs_before
+        assert connection.execute(
+            select(transient_requests.c.id)
+        ).scalar_one_or_none() is None

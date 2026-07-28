@@ -468,9 +468,7 @@ class InsightDerivedRepository:
             }
             for row in rows
         )
-        fingerprint = hashlib.sha256(
-            _json(pages_payload).encode("utf-8")
-        ).hexdigest()
+        fingerprint = _analysis_input_fingerprint(pages_payload)
         return AnalysisInputSnapshot(
             book_id=str(run["book_id"]),
             source_run_id=run_id,
@@ -576,9 +574,7 @@ class InsightDerivedRepository:
             }
             for row, frozen_input in zip(rows, ordered_inputs)
         )
-        fingerprint = hashlib.sha256(
-            _json(pages_payload).encode("utf-8")
-        ).hexdigest()
+        fingerprint = _analysis_input_fingerprint(pages_payload)
         return AnalysisInputSnapshot(
             book_id=book_id,
             source_run_id=(
@@ -1568,6 +1564,24 @@ def _publication_status(
     if frozen.source_run_status == "completed_with_errors":
         return "degraded"
     return "ready"
+
+
+def _analysis_input_fingerprint(
+    pages_payload: Sequence[Mapping[str, Any]],
+) -> str:
+    """Hash the same immutable identity fields before and after publication."""
+
+    canonical = [
+        {
+            "resultId": str(page["resultId"]),
+            "pageId": str(page["pageId"]),
+            "pageNumber": int(page["pageNumber"]),
+            "sourceChecksum": str(page["sourceChecksum"]),
+            "currentSourceChecksum": str(page["currentSourceChecksum"]),
+        }
+        for page in pages_payload
+    ]
+    return hashlib.sha256(_json(canonical).encode("utf-8")).hexdigest()
 
 
 def _layer_prompt_type(

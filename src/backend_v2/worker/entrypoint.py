@@ -99,6 +99,10 @@ def run_worker(args: object) -> int:
             from src.backend_v2.insight.derived import (
                 InsightDerivedWorkerService,
             )
+            from src.backend_v2.insight.continuation import (
+                ContinuationWorkerService,
+            )
+            from src.backend_v2.insight.qa import InsightQAWorkerService
             from src.backend_v2.operations.executor import WorkerOperationRunner
             from src.backend_v2.operations.repair import PageRepairService
             from src.backend_v2.operations.repository import OperationRepository
@@ -215,6 +219,19 @@ def run_worker(args: object) -> int:
                 job_handlers[
                     f"insight_build_layer_{layer_index}"
                 ] = insight_derived.handle
+            continuation = ContinuationWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers.update(
+                {
+                    "continuation_generate_script": continuation.handle,
+                    "continuation_generate_page": continuation.handle,
+                    "continuation_generate_image": continuation.handle,
+                    "continuation_export": continuation.handle,
+                }
+            )
             operation_repository = OperationRepository(engine)
             interactive = InteractivePageOperationService(
                 data_root=data_root,
@@ -236,11 +253,20 @@ def run_worker(args: object) -> int:
                     "page_repair": repairs.handle,
                 },
             )
+            qa_runner = InsightQAWorkerService(
+                data_root=data_root,
+                engine=engine,
+                worker_epoch_id=identity.epoch_id,
+            )
+
+            def run_immediate_work() -> bool:
+                return operation_runner.run_one() or qa_runner.run_one()
+
             JobWorkerLoop(
                 job_repository,
                 worker_epoch_id=identity.epoch_id,
                 handlers=job_handlers,
-                safe_point=operation_runner.run_one,
+                safe_point=run_immediate_work,
             ).run(stop_event)
     finally:
         if heartbeat is not None:
