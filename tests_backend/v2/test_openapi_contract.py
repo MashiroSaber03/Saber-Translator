@@ -58,7 +58,6 @@ def test_required_backend_first_commands_are_explicit() -> None:
     assert schemas["OperationStatus"]["enum"]
     assert set(schemas["StudioMessageCommand"]["required"]) >= {
         "baseSessionRevision",
-        "baseSessionGeneration",
     }
 
 
@@ -68,6 +67,8 @@ def test_mutating_commands_use_idempotency_keys() -> None:
         for method in ("post", "put", "patch", "delete"):
             operation = path_item.get(method)
             if operation is None:
+                continue
+            if operation.get("x-command-mode") == "transient":
                 continue
             parameters = [*path_item.get("parameters", []), *operation.get("parameters", [])]
             refs = {parameter.get("$ref") for parameter in parameters}

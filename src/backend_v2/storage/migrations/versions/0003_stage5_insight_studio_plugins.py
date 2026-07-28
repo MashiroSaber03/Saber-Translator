@@ -371,14 +371,27 @@ def downgrade() -> None:
     op.drop_column('studio_messages', 'generation_meta_json')
     op.drop_column('studio_messages', 'variables_snapshot_json')
     op.drop_column('studio_messages', 'runtime_log')
-    op.drop_column('studio_documents', 'avatar_asset_id')
+    # avatar_asset_id owns an inline SQLite foreign key. Rebuild the table
+    # so the FK and column disappear together.
+    with op.batch_alter_table(
+        'studio_documents',
+        recreate='always',
+    ) as batch:
+        batch.drop_column('avatar_asset_id')
     op.drop_index('uq_studio_chat_sessions_one_active', table_name='studio_chat_sessions', sqlite_where=sa.text('archived_at IS NULL'))
     op.drop_index('ix_studio_chat_sessions_document_updated', table_name='studio_chat_sessions')
-    op.drop_column('studio_chat_sessions', 'archived_at')
-    op.drop_column('studio_chat_sessions', 'summary_generation')
-    op.drop_column('studio_chat_sessions', 'summary_through_message_id')
-    op.drop_column('studio_chat_sessions', 'summary_blocks_json')
-    op.drop_column('studio_chat_sessions', 'variables_json')
+    # summary_through_message_id owns an inline SQLite foreign key. Rebuild
+    # once so the constraint disappears with the column instead of leaving
+    # SQLite with a dangling foreign-key definition.
+    with op.batch_alter_table(
+        'studio_chat_sessions',
+        recreate='always',
+    ) as batch:
+        batch.drop_column('archived_at')
+        batch.drop_column('summary_generation')
+        batch.drop_column('summary_through_message_id')
+        batch.drop_column('summary_blocks_json')
+        batch.drop_column('variables_json')
     op.drop_column('plugins', 'error_message')
     op.drop_column('plugins', 'config_revision')
     op.drop_column('plugins', 'config_json')

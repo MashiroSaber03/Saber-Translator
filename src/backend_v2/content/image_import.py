@@ -7,7 +7,7 @@ import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable
 import uuid
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -261,6 +261,44 @@ class ImageImportService:
         try:
             self._copy_upload(upload, temporary)
             return self._publish_temporary(temporary)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def publish_standalone_source(
+        self,
+        upload: BinaryIO,
+        *,
+        bind: Callable[[object, str], None] | None = None,
+    ):
+        """Publish one validated image when no thumbnail relation exists."""
+
+        temporary = (
+            self.data_root
+            / "temp"
+            / "imports"
+            / f"standalone-{uuid.uuid4().hex}.upload"
+        )
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._copy_upload(upload, temporary)
+            (
+                extension,
+                mime_type,
+                width,
+                height,
+                _thumbnail_width,
+                _thumbnail_height,
+                _thumbnail,
+            ) = self._decode_and_thumbnail(temporary)
+            with temporary.open("rb") as source_stream:
+                return self.storage.publish_stream(
+                    source_stream,
+                    extension=extension,
+                    mime_type=mime_type,
+                    width=width,
+                    height=height,
+                    bind=bind,
+                )
         finally:
             temporary.unlink(missing_ok=True)
 

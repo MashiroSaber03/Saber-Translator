@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, Response, jsonify, request
+import json
+import time
+from typing import Iterator
+
+from flask import (
+    Blueprint,
+    Response,
+    jsonify,
+    request,
+    stream_with_context,
+)
 from sqlalchemy import Engine
 
 from src.backend_v2.operations.repository import (
@@ -77,6 +87,77 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.get("/operations/<operation_id>")
     def get_operation(operation_id: str) -> Response:
         return jsonify(repository.get(operation_id))
+
+    @blueprint.get("/operations/<operation_id>/events")
+    def get_operation_events(operation_id: str) -> Response:
+        after = int(
+            request.headers.get(
+                "Last-Event-ID",
+                request.args.get("after", "0"),
+            )
+        )
+        wants_stream = (
+            request.args.get("stream") == "1"
+            or "text/event-stream" in request.headers.get("Accept", "")
+        )
+        if not wants_stream:
+            return jsonify(
+                {
+                    "items": repository.events_after(
+                        operation_id,
+                        after=after,
+                        limit=int(request.args.get("limit", "500")),
+                    )
+                }
+            )
+
+        # Validate before the streaming response starts, so unknown operations
+        # retain normal JSON 404 semantics.
+        repository.get(operation_id)
+
+        @stream_with_context
+        def generate() -> Iterator[str]:
+            cursor = max(0, after)
+            last_heartbeat = time.monotonic()
+            yield "retry: 1000\n\n"
+            while True:
+                events = repository.events_after(
+                    operation_id,
+                    after=cursor,
+                    limit=500,
+                )
+                for event in events:
+                    cursor = int(event["eventId"])
+                    yield (
+                        f"id: {cursor}\n"
+                        f"event: {event['type']}\n"
+                        "data: "
+                        + json.dumps(
+                            event,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        + "\n\n"
+                    )
+                operation = repository.get(operation_id)
+                if operation["status"] in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                }:
+                    return
+                if time.monotonic() - last_heartbeat >= 15:
+                    yield ": heartbeat\n\n"
+                    last_heartbeat = time.monotonic()
+                time.sleep(0.25)
+
+        response = Response(
+            generate(),
+            content_type="text/event-stream; charset=utf-8",
+        )
+        response.headers["Cache-Control"] = "no-cache, no-transform"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
 
     @blueprint.post("/pages/<page_id>/repairs")
     def create_repair(page_id: str):

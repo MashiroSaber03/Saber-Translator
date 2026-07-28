@@ -141,6 +141,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     studio_operations = StudioOperationService(
         engine=engine,
+        data_root=settings.data_root,
         repository=StudioRepository(engine),
     )
     cpu_operation_executor = DurableOperationExecutor(
@@ -172,7 +173,12 @@ def create_api_app(settings: ApiSettings) -> Flask:
             data_root=settings.data_root,
         )
     )
-    app.register_blueprint(create_studio_blueprint(engine=engine))
+    app.register_blueprint(
+        create_studio_blueprint(
+            engine=engine,
+            data_root=settings.data_root,
+        )
+    )
     app.register_blueprint(
         create_operations_blueprint(data_root=settings.data_root, engine=engine)
     )

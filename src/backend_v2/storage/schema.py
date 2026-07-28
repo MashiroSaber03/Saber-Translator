@@ -857,20 +857,42 @@ studio_documents = Table(
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
     Column("book_id", String(UUID_LENGTH), ForeignKey("books.id", ondelete="CASCADE"), nullable=False),
-    Column("kind", String(32), nullable=False),
+    Column("origin_type", String(32), nullable=False),
+    Column("source_character", String(500)),
     Column("title", String(500), nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
-    Column("generation", Integer, nullable=False, server_default="1"),
+    Column(
+        "chat_index_revision",
+        Integer,
+        nullable=False,
+        server_default="1",
+    ),
     Column(
         "avatar_asset_id",
         String(UUID_LENGTH),
         ForeignKey("assets.id", ondelete="SET NULL"),
     ),
-    Column("payload_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False, server_default="1"),
+    Column("tags_json", Text, nullable=False, server_default="[]"),
+    Column("is_favorite", Boolean, nullable=False, server_default="0"),
+    Column("identity_json", Text, nullable=False, server_default="{}"),
+    Column("core_messages_json", Text, nullable=False, server_default="{}"),
+    Column("lorebook_json", Text, nullable=False, server_default="{}"),
+    Column("regex_scripts_json", Text, nullable=False, server_default="[]"),
+    Column("state_tasks_json", Text, nullable=False, server_default="[]"),
+    Column("frozen_sections_json", Text, nullable=False, server_default="[]"),
+    Column("last_diagnostics_json", Text),
+    Column("last_validated_at", DateTime(timezone=True)),
+    Column("schema_version", Integer, nullable=False, server_default="2"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
-    CheckConstraint("generation >= 1", name="generation_positive"),
+    CheckConstraint(
+        "chat_index_revision >= 1",
+        name="chat_index_revision_positive",
+    ),
+    CheckConstraint(
+        "origin_type IN ('analysis','manual','imported')",
+        name="origin_type_values",
+    ),
 )
 
 studio_chat_sessions = Table(
@@ -886,6 +908,7 @@ studio_chat_sessions = Table(
     Column("title", String(500), nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("generation", Integer, nullable=False, server_default="1"),
+    Column("greeting_source_json", Text, nullable=False, server_default="{}"),
     Column("variables_json", Text, nullable=False, server_default="{}"),
     Column("summary_blocks_json", Text, nullable=False, server_default="[]"),
     Column("summary_through_message_id", String(UUID_LENGTH)),
@@ -1710,6 +1733,31 @@ operation_asset_inputs = Table(
     ),
     Column("role", String(64), primary_key=True),
     Column("asset_id", String(UUID_LENGTH), ForeignKey("assets.id", ondelete="RESTRICT"), nullable=False),
+)
+
+operation_events = Table(
+    "operation_events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "operation_id",
+        String(UUID_LENGTH),
+        ForeignKey("operations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("type", String(64), nullable=False),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    ),
+)
+Index(
+    "ix_operation_events_operation_cursor",
+    operation_events.c.operation_id,
+    operation_events.c.id,
 )
 
 operation_artifacts = Table(

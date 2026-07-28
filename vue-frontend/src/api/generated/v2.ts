@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/operations/{operation_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Returns durable catch-up events as JSON, or an SSE stream when the client sends Accept: text/event-stream or stream=1. */
+        get: operations["getOperationEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{page_id}/operations": {
         parameters: {
             query?: never;
@@ -276,6 +293,280 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/studio/books/{book_id}/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStudioIndex"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/books/{book_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStudioCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/books/{book_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createStudioDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/books/{book_id}/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Imports v2/v3 JSON, metadata PNG, or an ordinary avatar image. */
+        post: operations["importStudioDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["uploadStudioAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStudioDocument"];
+        put: operations["updateStudioDocument"];
+        post?: never;
+        delete: operations["deleteStudioDocument"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setStudioAvatar"];
+        delete: operations["clearStudioAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generateStudioDocumentSection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validateStudioDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportStudioDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/worldbook/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importStudioWorldbook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Connection-scoped assistant; disconnect cancels and nothing is persisted. */
+        post: operations["streamStudioAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStudioChatState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createStudioChatSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/documents/{document_id}/chat/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importStudioChatSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStudioChatSession"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteArchivedStudioChatSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/sessions/{session_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["activateStudioChatSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/studio/chat/sessions/{session_id}/messages": {
         parameters: {
             query?: never;
@@ -286,6 +577,102 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["createStudioChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/sessions/{session_id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["abortStudioChatOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/sessions/{session_id}/summarize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["summarizeStudioChatSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/sessions/{session_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportStudioChatSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/sessions/{session_id}/prompt-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["previewStudioChatPrompt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/messages/{message_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["editStudioChatMessageAndRegenerate"];
+        post?: never;
+        delete: operations["deleteStudioChatMessageChain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/chat/messages/{message_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["regenerateStudioChatMessage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -569,7 +956,10 @@ export interface components {
             executorRole: "api" | "worker";
             pageId?: components["schemas"]["Uuid"] | null;
             bubbleId?: components["schemas"]["Uuid"] | null;
+            studioDocumentId?: components["schemas"]["Uuid"] | null;
+            studioSessionId?: components["schemas"]["Uuid"] | null;
             baseRevision?: number | null;
+            baseGeneration?: number | null;
             request: {
                 [key: string]: unknown;
             };
@@ -591,6 +981,24 @@ export interface components {
             status: "pending";
             /** @enum {string} */
             executorRole: "api" | "worker";
+            baseRevision?: number | null;
+            baseGeneration?: number | null;
+            sessionRevision?: number;
+            sessionGeneration?: number;
+            userMessageId?: components["schemas"]["Uuid"];
+        };
+        OperationEvent: {
+            eventId: number;
+            operationId: components["schemas"]["Uuid"];
+            type: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        OperationEventList: {
+            items: components["schemas"]["OperationEvent"][];
         };
         PageOperationCommand: {
             /** @enum {string} */
@@ -653,11 +1061,127 @@ export interface components {
             /** @constant */
             method: "restore_source";
         };
+        FileUpload: {
+            /** Format: binary */
+            file: string;
+        } & {
+            [key: string]: unknown;
+        };
+        StudioAsset: {
+            assetId: components["schemas"]["Uuid"];
+            assetUrl: string;
+            mimeType: string;
+            byteSize: number;
+            width?: number | null;
+            height?: number | null;
+        };
+        StudioDocument: {
+            id: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            title: string;
+            revision: number;
+            avatarAssetId?: components["schemas"]["Uuid"] | null;
+            avatarUrl?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        StudioDocumentMutation: {
+            baseRevision: number;
+            title?: string;
+            document: {
+                [key: string]: unknown;
+            };
+        };
+        StudioGenerateCommand: {
+            baseRevision: number;
+            /** @enum {string} */
+            section: "identity" | "greetings" | "lorebook" | "regex" | "state-tasks" | "translate" | "full" | "review";
+        };
+        StudioIndex: {
+            bookId: components["schemas"]["Uuid"];
+            documents: {
+                [key: string]: unknown;
+            }[];
+            candidateStatus: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        StudioCandidate: {
+            characterId: components["schemas"]["Uuid"];
+            name: string;
+            aliases: string[];
+            description: string;
+            personality: string;
+            arc: string;
+            firstAppearancePage: number | null;
+            keyMomentCount: number;
+            relatedPageCount: number;
+            relatedPageNumbers: number[];
+        };
+        StudioCandidateList: {
+            available: boolean;
+            reason: string | null;
+            items: components["schemas"]["StudioCandidate"][];
+        };
+        StudioAttachment: components["schemas"]["StudioAsset"] & {
+            available?: boolean;
+        };
+        StudioMessage: {
+            messageId: components["schemas"]["Uuid"];
+            ordinal: number;
+            /** @enum {string} */
+            role: "system" | "user" | "assistant";
+            content: string;
+            attachments: components["schemas"]["StudioAttachment"][];
+        } & {
+            [key: string]: unknown;
+        };
+        StudioChatSession: {
+            sessionId: components["schemas"]["Uuid"];
+            documentId: components["schemas"]["Uuid"];
+            indexRevision: number;
+            revision: number;
+            generation: number;
+            archived: boolean;
+            messages: components["schemas"]["StudioMessage"][];
+        } & {
+            [key: string]: unknown;
+        };
+        StudioChatState: {
+            documentId: components["schemas"]["Uuid"];
+            indexRevision: number;
+            sessions: {
+                [key: string]: unknown;
+            }[];
+            activeSession: components["schemas"]["StudioChatSession"] | null;
+            availableGreetings: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        StudioSessionIndexCommand: {
+            baseIndexRevision: number;
+        };
+        StudioSessionCreateCommand: {
+            baseIndexRevision: number;
+            title?: string;
+            greetingId?: string;
+            greeting?: string;
+            greetingSource?: {
+                [key: string]: unknown;
+            };
+        };
         StudioMessageCommand: {
             baseSessionRevision: number;
-            baseSessionGeneration: number;
+            content?: string;
+            assetIds?: components["schemas"]["Uuid"][];
+        };
+        StudioMessageEditCommand: {
+            baseSessionRevision: number;
             content: string;
-            attachmentAssetIds?: components["schemas"]["Uuid"][];
         };
         Book: {
             id: components["schemas"]["Uuid"];
@@ -791,6 +1315,8 @@ export interface components {
         JobId: components["schemas"]["Uuid"];
         BatchId: components["schemas"]["Uuid"];
         SessionId: components["schemas"]["Uuid"];
+        DocumentId: components["schemas"]["Uuid"];
+        MessageId: components["schemas"]["Uuid"];
         BookId: components["schemas"]["Uuid"];
         ChapterId: components["schemas"]["Uuid"];
         LeaseId: components["schemas"]["Uuid"];
@@ -908,6 +1434,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Operation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getOperationEvents: {
+        parameters: {
+            query?: {
+                after?: number;
+                stream?: 0 | 1;
+            };
+            header?: never;
+            path: {
+                operation_id: components["parameters"]["OperationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operation events or an event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationEventList"];
+                    "text/event-stream": string;
                 };
             };
             404: components["responses"]["NotFound"];
@@ -1242,6 +1795,582 @@ export interface operations {
             409: components["responses"]["InvalidTransition"];
         };
     };
+    getStudioIndex: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Studio document summaries and candidate availability. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioIndex"];
+                };
+            };
+        };
+    };
+    getStudioCandidates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enhanced-timeline character candidates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioCandidateList"];
+                };
+            };
+        };
+    };
+    createStudioDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Created canonical Studio document. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+        };
+    };
+    importStudioDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUpload"];
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Imported canonical Studio document. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+        };
+    };
+    uploadStudioAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUpload"];
+            };
+        };
+        responses: {
+            /** @description Validated immutable image asset. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAsset"];
+                };
+            };
+        };
+    };
+    getStudioDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+        };
+    };
+    updateStudioDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioDocumentMutation"];
+            };
+        };
+        responses: {
+            /** @description Document saved with revision CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteStudioDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            423: components["responses"]["Locked"];
+        };
+    };
+    setStudioAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUpload"] & {
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Avatar bound with document revision CAS. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+        };
+    };
+    clearStudioAvatar: {
+        parameters: {
+            query: {
+                baseRevision: number;
+            };
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avatar reference cleared. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+        };
+    };
+    generateStudioDocumentSection: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioGenerateCommand"];
+            };
+        };
+        responses: {
+            /** @description Saved generation operation created. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationAccepted"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    validateStudioDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Diagnostics persisted with CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    exportStudioDocument: {
+        parameters: {
+            query: {
+                format: "v2" | "v3" | "png" | "worldbook";
+            };
+            header?: never;
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portable character-card file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    importStudioWorldbook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": components["schemas"]["FileUpload"];
+            };
+        };
+        responses: {
+            /** @description Worldbook replaced with document revision CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDocument"];
+                };
+            };
+        };
+    };
+    streamStudioAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Temporary assistant chunks. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    getStudioChatState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active and archived session summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioChatState"];
+                };
+            };
+        };
+    };
+    createStudioChatSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioSessionCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description New active session; previous active session archived. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioChatSession"];
+                };
+            };
+        };
+    };
+    importStudioChatSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Current Studio chat-session index revision. */
+                "If-Match": number;
+            };
+            path: {
+                document_id: components["parameters"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": components["schemas"]["FileUpload"];
+            };
+        };
+        responses: {
+            /** @description Imported active session with restored asset attachments. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioChatSession"];
+                };
+            };
+            423: components["responses"]["Locked"];
+        };
+    };
+    getStudioChatSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full relational session and message chain. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioChatSession"];
+                };
+            };
+        };
+    };
+    deleteArchivedStudioChatSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "If-Match": number;
+            };
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived session permanently deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    activateStudioChatSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioSessionIndexCommand"];
+            };
+        };
+        responses: {
+            /** @description Selected session activated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioChatSession"];
+                };
+            };
+            423: components["responses"]["Locked"];
+        };
+    };
     createStudioChatMessage: {
         parameters: {
             query?: never;
@@ -1270,6 +2399,208 @@ export interface operations {
                 };
             };
             409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    abortStudioChatOperation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    operationId: components["schemas"]["Uuid"];
+                };
+            };
+        };
+        responses: {
+            /** @description Active operation cancelled and generation advanced. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    summarizeStudioChatSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseSessionRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved summary operation created. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationAccepted"];
+                };
+            };
+            423: components["responses"]["Locked"];
+        };
+    };
+    exportStudioChatSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portable JSON with base64 attachment blobs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    previewStudioChatPrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend-assembled current prompt without remote execution. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    editStudioChatMessageAndRegenerate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                message_id: components["parameters"]["MessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioMessageEditCommand"];
+            };
+        };
+        responses: {
+            /** @description Chain truncated and chat operation created atomically. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationAccepted"];
+                };
+            };
+            423: components["responses"]["Locked"];
+        };
+    };
+    deleteStudioChatMessageChain: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                message_id: components["parameters"]["MessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseSessionRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Target and later messages deleted without generation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            423: components["responses"]["Locked"];
+        };
+    };
+    regenerateStudioChatMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                message_id: components["parameters"]["MessageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseSessionRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Later chain truncated and chat operation created. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationAccepted"];
+                };
+            };
             423: components["responses"]["Locked"];
         };
     };

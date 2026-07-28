@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import os
+import sqlite3
 import subprocess
 import sys
 
@@ -151,3 +153,106 @@ def test_alembic_head_upgrades_and_downgrades_without_fk_damage(
         text=True,
         timeout=60,
     )
+
+
+def test_studio_document_payload_is_migrated_into_domain_columns(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "studio-migration.sqlite3"
+    environment = os.environ.copy()
+    environment["SABER_V2_DATABASE_URL"] = (
+        f"sqlite+pysqlite:///{database_path.resolve().as_posix()}"
+    )
+    command = [
+        sys.executable,
+        "-m",
+        "alembic",
+        "-c",
+        str(PROJECT_ROOT / "alembic.ini"),
+    ]
+    subprocess.run(
+        [*command, "upgrade", "0006"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    old_payload = {
+        "origin": {
+            "type": "analysis",
+            "source_character": "Saber",
+        },
+        "meta": {"tags": ["主角"]},
+        "status": {
+            "is_favorite": True,
+            "frozen_sections": ["identity"],
+            "last_diagnostics": {"ok": True},
+            "last_validated_at": "2026-07-28T10:00:00Z",
+        },
+        "identity": {
+            "name": "Saber",
+            "aliases": ["阿尔托莉雅"],
+            "description": "骑士王",
+        },
+        "coreMessages": {"first_message": "你好"},
+        "lorebook": {"name": "不列颠", "entries": []},
+        "regexScripts": [{"id": "regex-1"}],
+        "stateTasks": [{"id": "task-1"}],
+    }
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO books (id, kind, title) VALUES (?, ?, ?)",
+            ("migration-book", "library", "Migration Book"),
+        )
+        connection.execute(
+            "INSERT INTO studio_documents "
+            "(id, book_id, kind, title, revision, generation, "
+            "payload_json, schema_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "migration-document",
+                "migration-book",
+                "analysis",
+                "Saber",
+                7,
+                3,
+                json.dumps(old_payload, ensure_ascii=False),
+                1,
+            ),
+        )
+        connection.commit()
+    subprocess.run(
+        [*command, "upgrade", "0007"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(studio_documents)"
+            )
+        }
+        row = connection.execute(
+            "SELECT * FROM studio_documents WHERE id = ?",
+            ("migration-document",),
+        ).fetchone()
+    assert row is not None
+    assert {"payload_json", "generation", "kind"}.isdisjoint(columns)
+    assert row["origin_type"] == "analysis"
+    assert row["source_character"] == "Saber"
+    assert row["revision"] == 7
+    assert json.loads(row["tags_json"]) == ["主角"]
+    assert json.loads(row["identity_json"]) == {
+        "aliases": ["阿尔托莉雅"],
+        "description": "骑士王",
+    }
+    assert json.loads(row["core_messages_json"])["first_message"] == "你好"
+    assert json.loads(row["last_diagnostics_json"]) == {"ok": True}

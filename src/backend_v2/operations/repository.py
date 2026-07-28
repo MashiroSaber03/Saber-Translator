@@ -24,6 +24,7 @@ from src.backend_v2.storage.schema import (
     idempotency_records,
     operation_asset_inputs,
     operation_credential_snapshots,
+    operation_events,
     operations,
     page_assets,
     pages,
@@ -503,6 +504,70 @@ class OperationRepository:
             raise OperationNotFound("operation not found")
         return self._dto(row)
 
+    def events_after(
+        self,
+        operation_id: str,
+        *,
+        after: int = 0,
+        limit: int = 500,
+    ) -> list[dict[str, object]]:
+        if limit < 1 or limit > 2000:
+            raise ValueError("limit must be between 1 and 2000")
+        with self.engine.connect() as connection:
+            if connection.execute(
+                select(operations.c.id).where(
+                    operations.c.id == operation_id
+                )
+            ).scalar_one_or_none() is None:
+                raise OperationNotFound("operation not found")
+            rows = list(
+                connection.execute(
+                    select(operation_events)
+                    .where(
+                        operation_events.c.operation_id == operation_id,
+                        operation_events.c.id > max(0, after),
+                    )
+                    .order_by(operation_events.c.id)
+                    .limit(limit)
+                ).mappings()
+            )
+        return [
+            {
+                "eventId": int(row["id"]),
+                "operationId": str(row["operation_id"]),
+                "type": str(row["type"]),
+                "payload": _load_json(row["payload_json"], {}),
+                "createdAt": (
+                    row["created_at"].isoformat() + "Z"
+                    if hasattr(row["created_at"], "isoformat")
+                    else str(row["created_at"])
+                ),
+            }
+            for row in rows
+        ]
+
+    def append_event(
+        self,
+        fence: OperationFence,
+        *,
+        event_type: str,
+        payload: Mapping[str, Any],
+    ) -> int:
+        if not event_type or len(event_type) > 64:
+            raise ValueError("operation event type is invalid")
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._assert_fence(connection, fence, now)
+            cursor = connection.execute(
+                insert(operation_events).values(
+                    operation_id=fence.operation_id,
+                    type=event_type,
+                    payload_json=_json(dict(payload)),
+                    created_at=now,
+                )
+            ).inserted_primary_key[0]
+        return int(cursor)
+
     def claim_next(
         self,
         *,
@@ -555,6 +620,14 @@ class OperationRepository:
             )
             if changed.rowcount != 1:
                 return None
+            connection.execute(
+                insert(operation_events).values(
+                    operation_id=row["id"],
+                    type="operation_started",
+                    payload_json=_json({"status": "running"}),
+                    created_at=now,
+                )
+            )
             dto = self._dto(dict(row))
             dto["status"] = "running"
             dto["inputs"] = {
@@ -693,6 +766,27 @@ class OperationRepository:
             )
             if changed.rowcount != 1:
                 raise OperationFenced("operation terminal write was fenced")
+            connection.execute(
+                insert(operation_events).values(
+                    operation_id=fence.operation_id,
+                    type=(
+                        "operation_completed"
+                        if error is None
+                        else "operation_failed"
+                    ),
+                    payload_json=_json(
+                        {
+                            "status": status,
+                            **(
+                                {"result": dict(result)}
+                                if result is not None
+                                else {"error": dict(error or {})}
+                            ),
+                        }
+                    ),
+                    created_at=now,
+                )
+            )
 
     @staticmethod
     def _assert_new_page_write_allowed(

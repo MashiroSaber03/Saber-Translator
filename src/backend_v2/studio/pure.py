@@ -248,6 +248,32 @@ def build_diagnostics_report(document: Mapping[str, Any]) -> dict[str, Any]:
     for index, entry in enumerate(_object(doc["lorebook"]).get("entries", [])):
         if not _object(entry).get("keys"):
             errors.append(f"lorebook.entries[{index}].keys 必须为非空数组")
+    allowed_task_events = {
+        "initialization",
+        "message_received",
+        "message_sent",
+    }
+    for index, task in enumerate(doc.get("stateTasks", [])):
+        item = _object(task)
+        if not str(item.get("name", "")).strip():
+            errors.append(f"stateTasks[{index}].name 不能为空")
+        trigger = str(item.get("triggerTiming", ""))
+        if trigger not in allowed_task_events:
+            errors.append(
+                f"stateTasks[{index}].triggerTiming 不支持值: {trigger}"
+            )
+        try:
+            interval = int(item.get("interval", 0) or 0)
+        except (TypeError, ValueError):
+            errors.append(f"stateTasks[{index}].interval 必须为整数")
+        else:
+            if interval < 0:
+                errors.append(f"stateTasks[{index}].interval 不能为负数")
+        commands = str(item.get("commands", "") or "")
+        if not commands.strip():
+            errors.append(f"stateTasks[{index}].commands 不能为空")
+        if "<<taskjs>>" in commands and "<</taskjs>>" not in commands:
+            errors.append(f"stateTasks[{index}] 缺少 <</taskjs>> 结束标记")
     bundle = build_export_bundle(doc)
     return {
         "valid": not errors,
@@ -370,13 +396,19 @@ def run_state_tasks(
 ) -> list[dict[str, Any]]:
     runtime = session.setdefault("_runtime", {})
     counts = runtime.setdefault("event_counts", {})
-    counts[event] = int(counts.get(event, 0)) + 1
+    if event != "initialization":
+        counts[event] = int(counts.get(event, 0)) + 1
+    current_count = int(counts.get(event, 0))
     logs: list[dict[str, Any]] = []
     for task in tasks or []:
         if task.get("disabled") or task.get("triggerTiming") != event:
             continue
         interval = int(task.get("interval", 0) or 0)
-        if interval > 1 and counts[event] % interval:
+        if (
+            event != "initialization"
+            and interval > 1
+            and current_count % interval
+        ):
             continue
         for line in str(task.get("commands", "")).splitlines():
             match = re.search(
@@ -392,6 +424,7 @@ def run_state_tasks(
                 "type": "task",
                 "name": task.get("name", ""),
                 "event": event,
+                "interval": interval,
             }
         )
     return logs

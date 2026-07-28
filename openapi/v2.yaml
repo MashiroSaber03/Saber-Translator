@@ -96,6 +96,31 @@ paths:
                 $ref: "#/components/schemas/Operation"
         "404":
           $ref: "#/components/responses/NotFound"
+  /operations/{operation_id}/events:
+    get:
+      tags: [operations]
+      operationId: getOperationEvents
+      description: >-
+        Returns durable catch-up events as JSON, or an SSE stream when the
+        client sends Accept: text/event-stream or stream=1.
+      parameters:
+        - $ref: "#/components/parameters/OperationId"
+        - name: after
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: stream
+          in: query
+          schema: {type: integer, enum: [0, 1], default: 0}
+      responses:
+        "200":
+          description: Operation events or an event stream.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OperationEventList"}
+            text/event-stream:
+              schema: {type: string}
+        "404":
+          $ref: "#/components/responses/NotFound"
   /pages/{page_id}/operations:
     post:
       tags: [operations]
@@ -318,6 +343,361 @@ paths:
                 $ref: "#/components/schemas/Job"
         "409":
           $ref: "#/components/responses/InvalidTransition"
+  /studio/books/{book_id}/index:
+    get:
+      tags: [studio]
+      operationId: getStudioIndex
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Studio document summaries and candidate availability.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioIndex"}
+  /studio/books/{book_id}/candidates:
+    get:
+      tags: [studio]
+      operationId: getStudioCandidates
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Enhanced-timeline character candidates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioCandidateList"
+  /studio/books/{book_id}/documents:
+    post:
+      tags: [studio]
+      operationId: createStudioDocument
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "201":
+          description: Created canonical Studio document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+  /studio/books/{book_id}/imports:
+    post:
+      tags: [studio]
+      operationId: importStudioDocument
+      description: Imports v2/v3 JSON, metadata PNG, or an ordinary avatar image.
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/FileUpload"}
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "201":
+          description: Imported canonical Studio document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+  /studio/assets:
+    post:
+      tags: [studio]
+      operationId: uploadStudioAsset
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/FileUpload"}
+      responses:
+        "201":
+          description: Validated immutable image asset.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioAsset"}
+  /studio/documents/{document_id}:
+    get:
+      tags: [studio]
+      operationId: getStudioDocument
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Canonical document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+    put:
+      tags: [studio]
+      operationId: updateStudioDocument
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/StudioDocumentMutation"}
+      responses:
+        "200":
+          description: Document saved with revision CAS.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+        "409": {$ref: "#/components/responses/Conflict"}
+    delete:
+      tags: [studio]
+      operationId: deleteStudioDocument
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": {description: Document deleted.}
+        "423": {$ref: "#/components/responses/Locked"}
+  /studio/documents/{document_id}/avatar:
+    post:
+      tags: [studio]
+      operationId: setStudioAvatar
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/FileUpload"
+                - type: object
+                  required: [baseRevision]
+                  properties:
+                    baseRevision: {type: integer, minimum: 1}
+      responses:
+        "201":
+          description: Avatar bound with document revision CAS.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+    delete:
+      tags: [studio]
+      operationId: clearStudioAvatar
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: baseRevision
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Avatar reference cleared.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+  /studio/documents/{document_id}/generate:
+    post:
+      tags: [studio]
+      operationId: generateStudioDocumentSection
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/StudioGenerateCommand"}
+      responses:
+        "202":
+          description: Saved generation operation created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OperationAccepted"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /studio/documents/{document_id}/validate:
+    post:
+      tags: [studio]
+      operationId: validateStudioDocument
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseRevision]
+              properties:
+                baseRevision: {type: integer, minimum: 1}
+      responses:
+        "200": {description: Diagnostics persisted with CAS.}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /studio/documents/{document_id}/export:
+    get:
+      tags: [studio]
+      operationId: exportStudioDocument
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - name: format
+          in: query
+          required: true
+          schema: {type: string, enum: [v2, v3, png, worldbook]}
+      responses:
+        "200":
+          description: Portable character-card file.
+  /studio/documents/{document_id}/worldbook/import:
+    post:
+      tags: [studio]
+      operationId: importStudioWorldbook
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/FileUpload"}
+      responses:
+        "200":
+          description: Worldbook replaced with document revision CAS.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioDocument"}
+  /studio/documents/{document_id}/agent:
+    post:
+      tags: [studio]
+      operationId: streamStudioAgent
+      x-command-mode: transient
+      description: Connection-scoped assistant; disconnect cancels and nothing is persisted.
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "200":
+          description: Temporary assistant chunks.
+          content:
+            text/event-stream:
+              schema: {type: string}
+  /studio/documents/{document_id}/chat:
+    get:
+      tags: [studio]
+      operationId: getStudioChatState
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Active and archived session summaries.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioChatState"}
+  /studio/documents/{document_id}/chat/sessions:
+    post:
+      tags: [studio]
+      operationId: createStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioSessionCreateCommand"
+      responses:
+        "201":
+          description: New active session; previous active session archived.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioChatSession"}
+  /studio/documents/{document_id}/chat/import:
+    post:
+      tags: [studio]
+      operationId: importStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: If-Match
+          in: header
+          required: true
+          description: Current Studio chat-session index revision.
+          schema: {type: integer, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/FileUpload"}
+      responses:
+        "201":
+          description: Imported active session with restored asset attachments.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioChatSession"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /studio/chat/sessions/{session_id}:
+    get:
+      tags: [studio]
+      operationId: getStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Full relational session and message chain.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioChatSession"}
+    delete:
+      tags: [studio]
+      operationId: deleteArchivedStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        "200": {description: Archived session permanently deleted.}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /studio/chat/sessions/{session_id}/activate:
+    post:
+      tags: [studio]
+      operationId: activateStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioSessionIndexCommand"
+      responses:
+        "200":
+          description: Selected session activated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioChatSession"}
+        "423": {$ref: "#/components/responses/Locked"}
   /studio/chat/sessions/{session_id}/messages:
     post:
       tags: [studio]
@@ -342,6 +722,132 @@ paths:
           $ref: "#/components/responses/Conflict"
         "423":
           $ref: "#/components/responses/Locked"
+  /studio/chat/sessions/{session_id}/abort:
+    post:
+      tags: [studio]
+      operationId: abortStudioChatOperation
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operationId]
+              properties:
+                operationId: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200": {description: Active operation cancelled and generation advanced.}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /studio/chat/sessions/{session_id}/summarize:
+    post:
+      tags: [studio]
+      operationId: summarizeStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseSessionRevision]
+              properties:
+                baseSessionRevision: {type: integer, minimum: 1}
+      responses:
+        "202":
+          description: Saved summary operation created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OperationAccepted"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /studio/chat/sessions/{session_id}/export:
+    get:
+      tags: [studio]
+      operationId: exportStudioChatSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Portable JSON with base64 attachment blobs.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+  /studio/chat/sessions/{session_id}/prompt-preview:
+    get:
+      tags: [studio]
+      operationId: previewStudioChatPrompt
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Backend-assembled current prompt without remote execution.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+  /studio/chat/messages/{message_id}:
+    put:
+      tags: [studio]
+      operationId: editStudioChatMessageAndRegenerate
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/StudioMessageEditCommand"}
+      responses:
+        "202":
+          description: Chain truncated and chat operation created atomically.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OperationAccepted"}
+        "423": {$ref: "#/components/responses/Locked"}
+    delete:
+      tags: [studio]
+      operationId: deleteStudioChatMessageChain
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseSessionRevision]
+              properties:
+                baseSessionRevision: {type: integer, minimum: 1}
+      responses:
+        "200": {description: Target and later messages deleted without generation.}
+        "423": {$ref: "#/components/responses/Locked"}
+  /studio/chat/messages/{message_id}/regenerate:
+    post:
+      tags: [studio]
+      operationId: regenerateStudioChatMessage
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseSessionRevision]
+              properties:
+                baseSessionRevision: {type: integer, minimum: 1}
+      responses:
+        "202":
+          description: Later chain truncated and chat operation created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OperationAccepted"}
+        "423": {$ref: "#/components/responses/Locked"}
   /books:
     get:
       tags: [content]
@@ -643,6 +1149,18 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    MessageId:
+      name: message_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
     BookId:
       name: book_id
       in: path
@@ -934,7 +1452,18 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
+        studioDocumentId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        studioSessionId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
         baseRevision:
+          type: [integer, "null"]
+          minimum: 1
+        baseGeneration:
           type: [integer, "null"]
           minimum: 1
         request:
@@ -973,6 +1502,38 @@ components:
         executorRole:
           type: string
           enum: [api, worker]
+        baseRevision:
+          type: [integer, "null"]
+          minimum: 1
+        baseGeneration:
+          type: [integer, "null"]
+          minimum: 1
+        sessionRevision:
+          type: integer
+          minimum: 1
+        sessionGeneration:
+          type: integer
+          minimum: 1
+        userMessageId:
+          $ref: "#/components/schemas/Uuid"
+    OperationEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, operationId, type, payload, createdAt]
+      properties:
+        eventId: {type: integer, minimum: 1}
+        operationId: {$ref: "#/components/schemas/Uuid"}
+        type: {type: string}
+        payload: {type: object, additionalProperties: true}
+        createdAt: {type: string, format: date-time}
+    OperationEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/OperationEvent"}
     PageOperationCommand:
       type: object
       additionalProperties: false
@@ -1099,27 +1660,196 @@ components:
         method:
           type: string
           const: restore_source
+    FileUpload:
+      type: object
+      additionalProperties: true
+      required: [file]
+      properties:
+        file: {type: string, format: binary}
+    StudioAsset:
+      type: object
+      additionalProperties: false
+      required: [assetId, assetUrl, mimeType, byteSize]
+      properties:
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        assetUrl: {type: string}
+        mimeType: {type: string}
+        byteSize: {type: integer, minimum: 1}
+        width: {type: [integer, "null"], minimum: 1}
+        height: {type: [integer, "null"], minimum: 1}
+    StudioDocument:
+      type: object
+      additionalProperties: true
+      required: [id, bookId, title, revision]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        revision: {type: integer, minimum: 1}
+        avatarAssetId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        avatarUrl: {type: [string, "null"]}
+    StudioDocumentMutation:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, document]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        title: {type: string}
+        document: {type: object, additionalProperties: true}
+    StudioGenerateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, section]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        section:
+          type: string
+          enum:
+            [identity, greetings, lorebook, regex, state-tasks, translate, full, review]
+    StudioIndex:
+      type: object
+      additionalProperties: true
+      required: [bookId, documents, candidateStatus]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        documents:
+          type: array
+          items: {type: object, additionalProperties: true}
+        candidateStatus: {type: object, additionalProperties: true}
+    StudioCandidate:
+      type: object
+      additionalProperties: false
+      required:
+        - characterId
+        - name
+        - aliases
+        - description
+        - personality
+        - arc
+        - firstAppearancePage
+        - keyMomentCount
+        - relatedPageCount
+        - relatedPageNumbers
+      properties:
+        characterId: {$ref: "#/components/schemas/Uuid"}
+        name: {type: string, minLength: 1}
+        aliases:
+          type: array
+          items: {type: string}
+        description: {type: string}
+        personality: {type: string}
+        arc: {type: string}
+        firstAppearancePage: {type: [integer, "null"], minimum: 1}
+        keyMomentCount: {type: integer, minimum: 0}
+        relatedPageCount: {type: integer, minimum: 0}
+        relatedPageNumbers:
+          type: array
+          uniqueItems: true
+          items: {type: integer, minimum: 1}
+    StudioCandidateList:
+      type: object
+      additionalProperties: false
+      required: [available, reason, items]
+      properties:
+        available: {type: boolean}
+        reason: {type: [string, "null"]}
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/StudioCandidate"}
+    StudioAttachment:
+      allOf:
+        - $ref: "#/components/schemas/StudioAsset"
+        - type: object
+          properties:
+            available: {type: boolean}
+    StudioMessage:
+      type: object
+      additionalProperties: true
+      required: [messageId, ordinal, role, content, attachments]
+      properties:
+        messageId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        role: {type: string, enum: [system, user, assistant]}
+        content: {type: string}
+        attachments:
+          type: array
+          items: {$ref: "#/components/schemas/StudioAttachment"}
+    StudioChatSession:
+      type: object
+      additionalProperties: true
+      required:
+        [sessionId, documentId, indexRevision, revision, generation, archived, messages]
+      properties:
+        sessionId: {$ref: "#/components/schemas/Uuid"}
+        documentId: {$ref: "#/components/schemas/Uuid"}
+        indexRevision: {type: integer, minimum: 1}
+        revision: {type: integer, minimum: 1}
+        generation: {type: integer, minimum: 1}
+        archived: {type: boolean}
+        messages:
+          type: array
+          items: {$ref: "#/components/schemas/StudioMessage"}
+    StudioChatState:
+      type: object
+      additionalProperties: true
+      required:
+        [documentId, indexRevision, sessions, activeSession, availableGreetings]
+      properties:
+        documentId: {$ref: "#/components/schemas/Uuid"}
+        indexRevision: {type: integer, minimum: 1}
+        sessions:
+          type: array
+          items: {type: object, additionalProperties: true}
+        activeSession:
+          oneOf:
+            - $ref: "#/components/schemas/StudioChatSession"
+            - type: "null"
+        availableGreetings:
+          type: array
+          items: {type: object, additionalProperties: true}
+    StudioSessionIndexCommand:
+      type: object
+      additionalProperties: false
+      required: [baseIndexRevision]
+      properties:
+        baseIndexRevision: {type: integer, minimum: 1}
+    StudioSessionCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseIndexRevision]
+      properties:
+        baseIndexRevision: {type: integer, minimum: 1}
+        title: {type: string, maxLength: 500}
+        greetingId: {type: string}
+        greeting: {type: string}
+        greetingSource: {type: object, additionalProperties: true}
     StudioMessageCommand:
       type: object
       additionalProperties: false
-      required: [baseSessionRevision, baseSessionGeneration, content]
+      required: [baseSessionRevision]
       properties:
         baseSessionRevision:
           type: integer
           minimum: 1
-        baseSessionGeneration:
-          type: integer
-          minimum: 1
         content:
           type: string
-          minLength: 1
           maxLength: 100000
-        attachmentAssetIds:
+        assetIds:
           type: array
           maxItems: 20
           uniqueItems: true
           items:
             $ref: "#/components/schemas/Uuid"
+    StudioMessageEditCommand:
+      type: object
+      additionalProperties: false
+      required: [baseSessionRevision, content]
+      properties:
+        baseSessionRevision: {type: integer, minimum: 1}
+        content: {type: string, minLength: 1, maxLength: 100000}
     Book:
       type: object
       additionalProperties: false
