@@ -861,6 +861,214 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPlugins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["refreshPlugins"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/{plugin_id}/runtime-enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setPluginRuntimeEnabled"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/{plugin_id}/default-enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setPluginDefaultEnabled"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/{plugin_id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPluginConfig"];
+        put: operations["updatePluginConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/{plugin_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportPlugin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/{plugin_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deletePlugin"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugin-agent/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPluginAgentSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugin-agent/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPluginAgentSession"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePluginAgentSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugin-agent/sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sendPluginAgentPlanningMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugin-agent/sessions/{session_id}/lock-target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["lockPluginAgentTarget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugin-agent/sessions/{session_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startPluginAgentJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1183,6 +1391,169 @@ export interface components {
             baseSessionRevision: number;
             content: string;
         };
+        PluginAgentTarget: {
+            plugin_id: string;
+            display_name: string;
+            supported_steps: ("job" | "pipeline" | "detect" | "ocr" | "color" | "translate" | "ai_translate" | "inpaint" | "render")[];
+            supported_modes: ("standard" | "hq" | "proofread" | "remove_text")[];
+        };
+        PluginAgentLockedTarget: {
+            /** @enum {string} */
+            mode: "create" | "modify";
+            plugin_dir: string;
+            plugin_id: string;
+            display_name: string;
+            supported_steps: string[];
+            supported_modes: string[];
+        };
+        PluginAgentMessage: {
+            id: string;
+            /** @enum {string} */
+            role: "user" | "assistant";
+            content: string;
+            /** Format: date-time */
+            timestamp: string;
+        };
+        PluginAgentEvent: {
+            id: number;
+            type: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            timestamp: string;
+        };
+        PluginAgentSession: {
+            session_id: string;
+            /** @enum {string} */
+            mode: "create" | "modify";
+            /** @enum {string} */
+            run_state: "drafting" | "awaiting_target_lock" | "ready" | "running" | "completed" | "failed" | "cancelled";
+            selected_plugin_id?: string | null;
+            pending_target?: components["schemas"]["PluginAgentTarget"] | null;
+            locked_target?: components["schemas"]["PluginAgentLockedTarget"] | null;
+            messages: components["schemas"]["PluginAgentMessage"][];
+            events: components["schemas"]["PluginAgentEvent"][];
+            touched_files: string[];
+            file_previews: {
+                [key: string]: string;
+            };
+            last_validation?: {
+                [key: string]: unknown;
+            } | null;
+            last_error?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            execution_started_at?: string | null;
+            /** Format: date-time */
+            execution_finished_at?: string | null;
+            job_id?: components["schemas"]["Uuid"] | null;
+        };
+        PluginAgentSessionEnvelope: {
+            session: components["schemas"]["PluginAgentSession"];
+        };
+        PluginAgentSessionCreateCommand: {
+            /** @enum {string} */
+            mode: "create" | "modify";
+            pluginId?: string;
+        } & unknown;
+        PluginAgentStartResult: {
+            session: components["schemas"]["PluginAgentSession"];
+            batchId: components["schemas"]["Uuid"];
+            jobId: components["schemas"]["Uuid"];
+        };
+        PluginConfigField: {
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "select";
+            default?: unknown;
+            minimum?: number;
+            maximum?: number;
+            options?: unknown[];
+        } & {
+            [key: string]: unknown;
+        };
+        PluginManifest: {
+            /** @constant */
+            schema_version: 3;
+            plugin_id: string;
+            display_name: string;
+            package_version: string;
+            entrypoint: string;
+            hooks: ("before_job" | "after_job" | "before_pipeline" | "after_pipeline" | "before_detect" | "after_detect" | "before_ocr" | "after_ocr" | "before_color" | "after_color" | "before_translate" | "after_translate" | "before_ai_translate" | "after_ai_translate" | "before_inpaint" | "after_inpaint" | "before_render" | "after_render")[];
+            supported_steps: ("job" | "pipeline" | "detect" | "ocr" | "color" | "translate" | "ai_translate" | "inpaint" | "render")[];
+            supported_modes: ("standard" | "hq" | "proofread" | "remove_text")[];
+            priority: number;
+            /** @enum {string} */
+            failure_policy: "continue" | "fail";
+            author: string;
+            description: string;
+            default_enabled: boolean;
+            config_schema: {
+                [key: string]: components["schemas"]["PluginConfigField"];
+            };
+        };
+        Plugin: {
+            pluginId: string;
+            displayName: string;
+            author: string;
+            description: string;
+            /** @enum {string} */
+            state: "enabled" | "disabled" | "error";
+            defaultEnabled: boolean;
+            runtimeEnabled: boolean;
+            config: {
+                [key: string]: unknown;
+            };
+            configRevision: number;
+            errorMessage?: string | null;
+            pluginVersionId: components["schemas"]["Uuid"];
+            packageVersion: string;
+            currentRevision: number;
+            manifest: components["schemas"]["PluginManifest"];
+            configSchema: {
+                [key: string]: components["schemas"]["PluginConfigField"];
+            };
+        };
+        PluginList: {
+            items: components["schemas"]["Plugin"][];
+        };
+        PluginConfig: {
+            pluginId: string;
+            schema: {
+                [key: string]: components["schemas"]["PluginConfigField"];
+            };
+            value: {
+                [key: string]: unknown;
+            };
+            configRevision: number;
+        };
+        PluginConfigCommand: {
+            baseRevision: number;
+            config: {
+                [key: string]: unknown;
+            };
+        };
+        PluginEnabledCommand: {
+            enabled: boolean;
+        };
+        PluginImportResult: {
+            pluginId: string;
+            pluginVersionId: components["schemas"]["Uuid"];
+            packageVersion: string;
+            currentRevision: number;
+        };
+        PluginRefreshResult: {
+            checkedVersions: number;
+            failedVersions: number;
+        };
+        PluginDeleteResult: {
+            /** @constant */
+            deleted: true;
+            pluginId: string;
+        };
         Book: {
             id: components["schemas"]["Uuid"];
             title: string;
@@ -1321,6 +1692,8 @@ export interface components {
         ChapterId: components["schemas"]["Uuid"];
         LeaseId: components["schemas"]["Uuid"];
         AssetId: components["schemas"]["Uuid"];
+        PluginId: string;
+        PluginAgentSessionId: string;
         ImportLeaseId: components["schemas"]["Uuid"];
         ImportLeaseToken: string;
         /** @description Stable key for this normalized command and target scope. */
@@ -2978,6 +3351,408 @@ export interface operations {
                 content?: never;
             };
             423: components["responses"]["Locked"];
+        };
+    };
+    listPlugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Metadata for all installed immutable plugin packages. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginList"];
+                };
+            };
+        };
+    };
+    refreshPlugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable package integrity scan result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRefreshResult"];
+                };
+            };
+        };
+    };
+    importPlugin: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable plugin version published and selected. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginImportResult"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    setPluginRuntimeEnabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginEnabledCommand"];
+            };
+        };
+        responses: {
+            /** @description Runtime switch updated for this process lifetime. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plugin"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    setPluginDefaultEnabled: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                plugin_id: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginEnabledCommand"];
+            };
+        };
+        responses: {
+            /** @description Persistent startup default updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plugin"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getPluginConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current validated config and its CAS revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginConfig"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updatePluginConfig: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                plugin_id: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginConfigCommand"];
+            };
+        };
+        responses: {
+            /** @description Config validated and updated with CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginConfig"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    exportPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deterministic ZIP of the selected immutable version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deletePlugin: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "If-Match": number;
+            };
+            path: {
+                plugin_id: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unreferenced plugin versions were removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDeleteResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    createPluginAgentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginAgentSessionCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description The single in-memory planning session was created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAgentSessionEnvelope"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getPluginAgentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["PluginAgentSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current planning session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAgentSessionEnvelope"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deletePluginAgentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["PluginAgentSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Planning memory deleted; any durable job continues. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+        };
+    };
+    sendPluginAgentPlanningMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["PluginAgentSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Synchronous planning turn completed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAgentSessionEnvelope"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    lockPluginAgentTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["PluginAgentSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    proposal: components["schemas"]["PluginAgentTarget"];
+                };
+            };
+        };
+        responses: {
+            /** @description New-plugin identity locked for this session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAgentSessionEnvelope"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    startPluginAgentJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                session_id: components["parameters"]["PluginAgentSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Durable Plugin Agent job entered the global queue. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAgentStartResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
         };
     };
 }

@@ -938,6 +938,57 @@ class JobQueueRepository:
             raise JobConflict("job configuration snapshot is invalid")
         return loaded
 
+    def append_plugin_event(
+        self,
+        fence: AttemptFence,
+        *,
+        event_type: str,
+        payload: Mapping[str, Any],
+    ) -> int:
+        if not event_type.startswith("plugin_") or len(event_type) > 64:
+            raise ValueError("plugin event type is invalid")
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            return self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type=event_type,
+                payload=payload,
+                now=now,
+            )
+
+    def plugin_stage_completed(
+        self,
+        fence: AttemptFence,
+        *,
+        hook: str,
+    ) -> bool:
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            rows = connection.execute(
+                select(job_events.c.payload_json).where(
+                    job_events.c.job_id == fence.job_id,
+                    job_events.c.event_type
+                    == "plugin_stage_completed",
+                )
+            ).scalars()
+            return any(
+                _load_json(str(payload), {}).get("hook") == hook
+                for payload in rows
+            )
+
     def active_step_counts(self, fence: AttemptFence) -> tuple[int, int]:
         now = utcnow()
         with self.engine.connect() as connection:

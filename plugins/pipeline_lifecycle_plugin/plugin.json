@@ -1,0 +1,27 @@
+{
+  "schema_version": 3,
+  "plugin_id": "pipeline_lifecycle_plugin",
+  "display_name": "Pipeline 生命周期示例",
+  "package_version": "3.0.0",
+  "entrypoint": "plugin.py:Plugin",
+  "hooks": [
+    "before_job",
+    "after_job",
+    "before_pipeline",
+    "after_pipeline"
+  ],
+  "supported_steps": ["job", "pipeline"],
+  "supported_modes": ["standard", "hq", "proofread", "remove_text"],
+  "priority": 10,
+  "failure_policy": "continue",
+  "author": "Codex",
+  "description": "演示后端 Worker 中 job 与 pipeline 生命周期 Hook。",
+  "default_enabled": false,
+  "config_schema": {
+    "log_target": {
+      "type": "boolean",
+      "default": true,
+      "label": "记录任务目标"
+    }
+  }
+}

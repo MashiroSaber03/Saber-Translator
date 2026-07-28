@@ -14,6 +14,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
+from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.schema import (
     books,
@@ -78,6 +79,7 @@ class AuxiliaryTranslationCommands:
             "executionMode": "parallel",
             "settingsSnapshot": dict(resolved["settingsSnapshot"]),
         }
+        plugin_snapshots = self._plugin_snapshots()
         return self.jobs.create_batch(
             kind="detect",
             display_name=f"检测 {chapter['book_title']} / {chapter['title']}",
@@ -96,6 +98,7 @@ class AuxiliaryTranslationCommands:
                         "chapter": chapter["title"],
                         "pageCount": len(ordered),
                     },
+                    plugin_snapshots=plugin_snapshots,
                 )
             ],
             idempotency_scope=f"chapter-detect:{chapter_id}",
@@ -154,6 +157,7 @@ class AuxiliaryTranslationCommands:
             "frozenStyle": frozen,
             "executionMode": "sequential",
         }
+        plugin_snapshots = self._plugin_snapshots()
         return self.jobs.create_batch(
             kind="style_apply",
             display_name=f"应用样式 {chapter['book_title']} / {chapter['title']}",
@@ -175,6 +179,7 @@ class AuxiliaryTranslationCommands:
                         "chapter": chapter["title"],
                         "pageCount": len(ordered),
                     },
+                    plugin_snapshots=plugin_snapshots,
                 )
             ],
             idempotency_scope=f"style-apply:{chapter_id}",
@@ -187,6 +192,10 @@ class AuxiliaryTranslationCommands:
                 "frozenStyle": frozen,
             },
         )
+
+    def _plugin_snapshots(self) -> dict[str, dict[str, Any]]:
+        with self.engine.connect() as connection:
+            return enabled_plugin_snapshots(connection)
 
     def export_text(self, chapter_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:

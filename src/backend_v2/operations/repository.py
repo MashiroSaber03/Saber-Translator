@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import (
     OPERATION_KINDS,
     bubbles,
@@ -25,6 +26,7 @@ from src.backend_v2.storage.schema import (
     operation_asset_inputs,
     operation_credential_snapshots,
     operation_events,
+    operation_plugin_snapshots,
     operations,
     page_assets,
     pages,
@@ -240,6 +242,11 @@ class OperationRepository:
                         for role, version_id in credential_refs.items()
                     ],
                 )
+            if executor_role == "worker":
+                self._snapshot_plugins(
+                    connection,
+                    operation_id=operation_id,
+                )
             response = {
                 "operationId": operation_id,
                 "kind": kind,
@@ -321,6 +328,11 @@ class OperationRepository:
                             }
                             for role, asset_id in input_assets.items()
                         ],
+                    )
+                if executor_role == "worker":
+                    self._snapshot_plugins(
+                        connection,
+                        operation_id=operation_id,
                     )
         except IntegrityError as exc:
             raise OperationConflict("an active operation already targets this entity") from exc
@@ -431,6 +443,11 @@ class OperationRepository:
                     for role, asset_id in inputs.items()
                 ],
             )
+            if executor_role == "worker":
+                self._snapshot_plugins(
+                    connection,
+                    operation_id=operation_id,
+                )
             connection.execute(
                 update(pages)
                 .where(
@@ -464,6 +481,27 @@ class OperationRepository:
                 )
             )
         return response, False
+
+    @staticmethod
+    def _snapshot_plugins(
+        connection: Connection,
+        *,
+        operation_id: str,
+    ) -> None:
+        snapshots = enabled_plugin_snapshots(connection)
+        if not snapshots:
+            return
+        connection.execute(
+            insert(operation_plugin_snapshots),
+            [
+                {
+                    "operation_id": operation_id,
+                    "plugin_version_id": version_id,
+                    "config_json": _json(dict(snapshot)),
+                }
+                for version_id, snapshot in snapshots.items()
+            ],
+        )
 
     def find_page_repair_replay(
         self,

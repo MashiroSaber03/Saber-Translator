@@ -64,12 +64,14 @@ class JobWorkerLoop:
         *,
         worker_epoch_id: str,
         handlers: Mapping[str, StepHandler],
+        plugin_runtime: Any | None = None,
         safe_point: Callable[[], bool] | None = None,
         idle_poll_seconds: float = 0.25,
     ) -> None:
         self.repository = repository
         self.worker_epoch_id = worker_epoch_id
         self.handlers = dict(handlers)
+        self.plugin_runtime = plugin_runtime
         self.safe_point = safe_point
         self.idle_poll_seconds = idle_poll_seconds
 
@@ -98,12 +100,28 @@ class JobWorkerLoop:
         heartbeat.start()
         try:
             config = self.repository.attempt_config(fence)
+            if self.plugin_runtime is not None:
+                config = self.plugin_runtime.before_job(fence, config)
+                config = self.plugin_runtime.before_pipeline(
+                    fence,
+                    config,
+                )
             if config.get("executionMode") == "parallel":
                 self._run_parallel_attempt(heartbeat, stop_event)
             else:
                 self._run_sequential_attempt(heartbeat, stop_event)
         except AttemptFenced:
             return
+        except Exception as exc:
+            if not heartbeat.fenced.is_set():
+                try:
+                    self.repository.fail_job(
+                        heartbeat.fence,
+                        code="PLUGIN_LIFECYCLE_FAILED",
+                        message=str(exc),
+                    )
+                except AttemptFenced:
+                    pass
         finally:
             heartbeat.stop()
 
@@ -133,6 +151,16 @@ class JobWorkerLoop:
                     continue
                 step = self.repository.next_step(fence)
                 if step is None:
+                    if self.plugin_runtime is not None:
+                        terminal = {"status": "completed"}
+                        terminal = self.plugin_runtime.after_pipeline(
+                            fence,
+                            terminal,
+                        )
+                        self.plugin_runtime.after_job(
+                            fence,
+                            terminal,
+                        )
                     self.repository.finish_if_complete(fence)
                     return
                 last_step_id = str(step["stepId"])
@@ -145,7 +173,24 @@ class JobWorkerLoop:
                     )
                     return
                 try:
-                    checkpoint = handler(heartbeat.fence, step)
+                    effective_step = (
+                        self.plugin_runtime.before_step(
+                            heartbeat.fence,
+                            step,
+                        )
+                        if self.plugin_runtime is not None
+                        else step
+                    )
+                    checkpoint = handler(
+                        heartbeat.fence,
+                        effective_step,
+                    )
+                    if self.plugin_runtime is not None:
+                        checkpoint = self.plugin_runtime.after_step(
+                            heartbeat.fence,
+                            effective_step,
+                            checkpoint,
+                        )
                 except Exception as exc:
                     if heartbeat.fenced.is_set():
                         return
@@ -220,7 +265,26 @@ class JobWorkerLoop:
                         )
                         continue
                     try:
-                        checkpoint = handler(heartbeat.fence, step)
+                        effective_step = (
+                            self.plugin_runtime.before_step(
+                                heartbeat.fence,
+                                step,
+                            )
+                            if self.plugin_runtime is not None
+                            else step
+                        )
+                        checkpoint = handler(
+                            heartbeat.fence,
+                            effective_step,
+                        )
+                        if self.plugin_runtime is not None:
+                            checkpoint = (
+                                self.plugin_runtime.after_step(
+                                    heartbeat.fence,
+                                    effective_step,
+                                    checkpoint,
+                                )
+                            )
                     except Exception as exc:
                         if heartbeat.fenced.is_set():
                             return
@@ -295,6 +359,16 @@ class JobWorkerLoop:
                 expected_slots=expected,
             )
             return
+        if self.plugin_runtime is not None:
+            terminal = {"status": "completed"}
+            terminal = self.plugin_runtime.after_pipeline(
+                heartbeat.fence,
+                terminal,
+            )
+            self.plugin_runtime.after_job(
+                heartbeat.fence,
+                terminal,
+            )
         self.repository.finish_if_complete(heartbeat.fence)
 
 

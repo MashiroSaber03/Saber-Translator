@@ -1,0 +1,47 @@
+{
+  "schema_version": 3,
+  "plugin_id": "style_mutation_plugin",
+  "display_name": "样式调试插件",
+  "package_version": "3.0.0",
+  "entrypoint": "plugin.py:Plugin",
+  "hooks": [
+    "before_detect",
+    "after_color",
+    "before_inpaint",
+    "before_render"
+  ],
+  "supported_steps": ["detect", "color", "inpaint", "render"],
+  "supported_modes": ["standard", "hq", "proofread", "remove_text"],
+  "priority": 40,
+  "failure_policy": "continue",
+  "author": "Codex",
+  "description": "验证后端颜色、修复和渲染 Hook 的结构化数据改写。",
+  "default_enabled": false,
+  "config_schema": {
+    "force_detector_type": {
+      "type": "text",
+      "default": "",
+      "label": "强制检测器"
+    },
+    "override_text_color": {
+      "type": "text",
+      "default": "#ff0055",
+      "label": "文字颜色"
+    },
+    "override_stroke_color": {
+      "type": "text",
+      "default": "#00aaff",
+      "label": "描边颜色"
+    },
+    "override_fill_color": {
+      "type": "text",
+      "default": "#c8ffb0",
+      "label": "修复填充色"
+    },
+    "override_palette": {
+      "type": "boolean",
+      "default": true,
+      "label": "覆盖颜色提取"
+    }
+  }
+}

@@ -109,6 +109,13 @@ def run_worker(args: object) -> int:
             from src.backend_v2.operations.executor import WorkerOperationRunner
             from src.backend_v2.operations.repair import PageRepairService
             from src.backend_v2.operations.repository import OperationRepository
+            from src.backend_v2.plugins.runtime import (
+                PluginJobRuntime,
+                PluginOperationRuntime,
+            )
+            from src.backend_v2.plugins.agent_worker import (
+                PluginAgentWorkerService,
+            )
             from src.backend_v2.translation.interactive_operations import (
                 InteractivePageOperationService,
             )
@@ -244,6 +251,12 @@ def run_worker(args: object) -> int:
                 jobs=job_repository,
             )
             job_handlers["insight_export_report"] = insight_export.handle
+            plugin_agent = PluginAgentWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers["plugin_agent_execute"] = plugin_agent.handle
             operation_repository = OperationRepository(engine)
             interactive = InteractivePageOperationService(
                 data_root=data_root,
@@ -264,6 +277,11 @@ def run_worker(args: object) -> int:
                     "page_detect": interactive.handle,
                     "page_repair": repairs.handle,
                 },
+                plugin_runtime=PluginOperationRuntime(
+                    data_root=data_root,
+                    engine=engine,
+                    repository=operation_repository,
+                ),
             )
             qa_runner = InsightQAWorkerService(
                 data_root=data_root,
@@ -279,6 +297,11 @@ def run_worker(args: object) -> int:
                 worker_epoch_id=identity.epoch_id,
                 handlers=job_handlers,
                 safe_point=run_immediate_work,
+                plugin_runtime=PluginJobRuntime(
+                    data_root=data_root,
+                    engine=engine,
+                    repository=job_repository,
+                ),
             ).run(stop_event)
     finally:
         if heartbeat is not None:

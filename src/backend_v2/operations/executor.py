@@ -64,6 +64,7 @@ class DurableOperationExecutor:
         executor_role: str,
         executor_epoch_id: str,
         handlers: Mapping[str, OperationHandler],
+        plugin_runtime: Any | None = None,
         max_workers: int,
         poll_seconds: float = 0.25,
     ) -> None:
@@ -71,6 +72,7 @@ class DurableOperationExecutor:
         self.executor_role = executor_role
         self.executor_epoch_id = executor_epoch_id
         self.handlers = dict(handlers)
+        self.plugin_runtime = plugin_runtime
         self.max_workers = max_workers
         self.poll_seconds = poll_seconds
         self._stop = threading.Event()
@@ -172,7 +174,21 @@ class WorkerOperationRunner:
         heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
         heartbeat.start()
         try:
-            result = self.handlers[str(operation["kind"])](fence, operation)
+            effective_operation = (
+                self.plugin_runtime.before(fence, operation)
+                if self.plugin_runtime is not None
+                else operation
+            )
+            result = self.handlers[str(operation["kind"])](
+                fence,
+                effective_operation,
+            )
+            if self.plugin_runtime is not None:
+                result = self.plugin_runtime.after(
+                    fence,
+                    effective_operation,
+                    result,
+                )
             if (
                 not heartbeat.fenced.is_set()
                 and not result.get("__already_published__")

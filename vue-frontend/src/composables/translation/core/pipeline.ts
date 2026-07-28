@@ -13,20 +13,9 @@ import {
 } from './saveStep'
 import {
   resolvePipelineImageSelection,
-  resolvePipelinePageIndexes,
 } from './pageScope'
 import type { PipelineConfig, PipelineResult, TranslationMode } from './types'
 import type { ParallelTranslationMode } from '../parallel/types'
-import {
-  notifyPipelineAfter,
-  notifyPipelineBefore,
-  PipelineCancelledError,
-  type PipelineMode,
-} from '@/api/pipeline'
-
-function toBackendMode(mode: TranslationMode): PipelineMode {
-  return mode === 'removeText' ? 'remove_text' : (mode as PipelineMode)
-}
 
 export function usePipeline() {
     const imageStore = useImageStore()
@@ -68,78 +57,13 @@ export function usePipeline() {
             return { success: false, completed: 0, failed: 0, errors: ['配置验证失败'] }
         }
 
-        const pipelineId =
-            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-                ? crypto.randomUUID()
-                : `pipeline-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        const parallelConfig = settingsStore.settings.parallel
+        const isBatchScope = config.scope === 'all' || config.scope === 'selection'
+        const shouldUseParallel = parallelConfig?.enabled && isBatchScope
 
-        const failedIndices = imageStore.getFailedImageIndices()
-        const pageIndexes = resolvePipelinePageIndexes(
-            config,
-            imageStore.images.length,
-            imageStore.currentImageIndex,
-            failedIndices
-        )
-        const backendMode = toBackendMode(config.mode)
-        const backendScope = config.scope
-
-        try {
-            await notifyPipelineBefore({
-                pipeline_id: pipelineId,
-                mode: backendMode,
-                scope: backendScope,
-                page_indexes: pageIndexes,
-                total_images: pageIndexes.length,
-            })
-        } catch (err) {
-            if (err instanceof PipelineCancelledError) {
-                toast.error(`翻译被插件取消：${err.message}`)
-                return {
-                    success: false,
-                    completed: 0,
-                    failed: 0,
-                    errors: [`插件取消任务: ${err.message}`],
-                }
-            }
-        }
-
-        const startedAt = Date.now()
-        const sumWarnings = () => imageStore.images.reduce(
-            (total, image) => total + (image.translationWarnings?.length || 0),
-            0
-        )
-        const sendAfter = (r: PipelineResult) => notifyPipelineAfter({
-            pipeline_id: pipelineId,
-            mode: backendMode,
-            scope: backendScope,
-            completed: r.completed,
-            failed: r.failed,
-            errors: r.errors,
-            warnings_count: sumWarnings(),
-            duration_ms: Date.now() - startedAt,
-        })
-
-        try {
-            const parallelConfig = settingsStore.settings.parallel
-            const isBatchScope = config.scope === 'all' || config.scope === 'selection'
-            const shouldUseParallel = parallelConfig?.enabled && isBatchScope
-
-            const result = shouldUseParallel
-                ? await executeParallelMode(config)
-                : await sequentialPipeline.execute(config)
-
-            void sendAfter(result)
-            return result
-        } catch (err) {
-            const message = err instanceof Error ? err.message : '翻译执行出错'
-            void sendAfter({
-                success: false,
-                completed: 0,
-                failed: pageIndexes.length,
-                errors: [message],
-            })
-            throw err
-        }
+        return shouldUseParallel
+            ? executeParallelMode(config)
+            : sequentialPipeline.execute(config)
     }
 
     async function executeParallelMode(config: PipelineConfig): Promise<PipelineResult> {

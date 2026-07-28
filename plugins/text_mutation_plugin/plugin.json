@@ -1,0 +1,42 @@
+{
+  "schema_version": 3,
+  "plugin_id": "text_mutation_plugin",
+  "display_name": "文本改写示例",
+  "package_version": "3.0.0",
+  "entrypoint": "plugin.py:Plugin",
+  "hooks": [
+    "after_ocr",
+    "before_translate",
+    "after_translate",
+    "after_ai_translate"
+  ],
+  "supported_steps": ["ocr", "translate", "ai_translate"],
+  "supported_modes": ["standard", "hq", "proofread"],
+  "priority": 30,
+  "failure_policy": "continue",
+  "author": "Codex",
+  "description": "演示 Worker 中 OCR 与翻译结构化文本的改写。",
+  "default_enabled": false,
+  "config_schema": {
+    "ocr_suffix": {
+      "type": "text",
+      "default": "【OCR v3】",
+      "label": "OCR 后缀"
+    },
+    "source_prefix": {
+      "type": "text",
+      "default": "[v3 源文]",
+      "label": "源文前缀"
+    },
+    "translate_suffix": {
+      "type": "text",
+      "default": "【普通翻译 v3】",
+      "label": "普通翻译后缀"
+    },
+    "ai_suffix": {
+      "type": "text",
+      "default": "【AI 翻译 v3】",
+      "label": "AI 翻译后缀"
+    }
+  }
+}

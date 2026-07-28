@@ -93,6 +93,10 @@ def create_api_app(settings: ApiSettings) -> Flask:
     from src.backend_v2.jobs.routes import create_jobs_blueprint
     from src.backend_v2.insight.routes import create_insight_blueprint
     from src.backend_v2.operations.routes import create_operations_blueprint
+    from src.backend_v2.plugins.routes import create_plugins_blueprint
+    from src.backend_v2.plugins.agent_routes import (
+        create_plugin_agent_blueprint,
+    )
     from src.backend_v2.operations.executor import (
         DurableOperationExecutor,
         DurableRenderExecutor,
@@ -181,6 +185,18 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     app.register_blueprint(
         create_operations_blueprint(data_root=settings.data_root, engine=engine)
+    )
+    app.register_blueprint(
+        create_plugins_blueprint(
+            data_root=settings.data_root,
+            engine=engine,
+        )
+    )
+    app.register_blueprint(
+        create_plugin_agent_blueprint(
+            data_root=settings.data_root,
+            engine=engine,
+        )
     )
     app.register_blueprint(create_translation_blueprint(engine=engine))
     app.register_blueprint(

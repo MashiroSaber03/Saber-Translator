@@ -13,4 +13,8 @@ export interface PluginData {
   failure_policy?: string
   configSchema?: Record<string, unknown>
   config?: Record<string, unknown>
+  current_revision?: number
+  config_revision?: number
+  state?: 'enabled' | 'disabled' | 'error'
+  error_message?: string | null
 }

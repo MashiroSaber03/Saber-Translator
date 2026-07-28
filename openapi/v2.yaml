@@ -14,6 +14,8 @@ tags:
   - name: operations
   - name: jobs
   - name: studio
+  - name: plugins
+  - name: plugin-agent
 paths:
   /health:
     get:
@@ -1117,6 +1119,287 @@ paths:
           description: Chapter relations moved and a new empty quick chapter created.
         "423":
           $ref: "#/components/responses/Locked"
+  /plugins:
+    get:
+      tags: [plugins]
+      operationId: listPlugins
+      responses:
+        "200":
+          description: Metadata for all installed immutable plugin packages.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PluginList"}
+  /plugins/refresh:
+    post:
+      tags: [plugins]
+      operationId: refreshPlugins
+      x-command-mode: transient
+      responses:
+        "200":
+          description: Immutable package integrity scan result.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PluginRefreshResult"}
+  /plugins/import:
+    post:
+      tags: [plugins]
+      operationId: importPlugin
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file, baseRevision]
+              properties:
+                file: {type: string, format: binary}
+                baseRevision: {type: integer, minimum: 0}
+      responses:
+        "201":
+          description: Immutable plugin version published and selected.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PluginImportResult"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /plugins/{plugin_id}/runtime-enabled:
+    put:
+      tags: [plugins]
+      operationId: setPluginRuntimeEnabled
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/PluginId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PluginEnabledCommand"}
+      responses:
+        "200":
+          description: Runtime switch updated for this process lifetime.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Plugin"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /plugins/{plugin_id}/default-enabled:
+    put:
+      tags: [plugins]
+      operationId: setPluginDefaultEnabled
+      parameters:
+        - $ref: "#/components/parameters/PluginId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PluginEnabledCommand"}
+      responses:
+        "200":
+          description: Persistent startup default updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Plugin"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /plugins/{plugin_id}/config:
+    get:
+      tags: [plugins]
+      operationId: getPluginConfig
+      parameters:
+        - $ref: "#/components/parameters/PluginId"
+      responses:
+        "200":
+          description: Current validated config and its CAS revision.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PluginConfig"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [plugins]
+      operationId: updatePluginConfig
+      parameters:
+        - $ref: "#/components/parameters/PluginId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PluginConfigCommand"}
+      responses:
+        "200":
+          description: Config validated and updated with CAS.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PluginConfig"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /plugins/{plugin_id}/export:
+    get:
+      tags: [plugins]
+      operationId: exportPlugin
+      parameters:
+        - $ref: "#/components/parameters/PluginId"
+      responses:
+        "200":
+          description: Deterministic ZIP of the selected immutable version.
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /plugins/{plugin_id}:
+    delete:
+      tags: [plugins]
+      operationId: deletePlugin
+      parameters:
+        - $ref: "#/components/parameters/PluginId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Unreferenced plugin versions were removed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PluginDeleteResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /plugin-agent/sessions:
+    post:
+      tags: [plugin-agent]
+      operationId: createPluginAgentSession
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginAgentSessionCreateCommand"
+      responses:
+        "201":
+          description: The single in-memory planning session was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginAgentSessionEnvelope"
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /plugin-agent/sessions/{session_id}:
+    get:
+      tags: [plugin-agent]
+      operationId: getPluginAgentSession
+      parameters:
+        - $ref: "#/components/parameters/PluginAgentSessionId"
+      responses:
+        "200":
+          description: Current planning session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginAgentSessionEnvelope"
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [plugin-agent]
+      operationId: deletePluginAgentSession
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/PluginAgentSessionId"
+      responses:
+        "200":
+          description: Planning memory deleted; any durable job continues.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [deleted]
+                properties:
+                  deleted: {type: boolean}
+  /plugin-agent/sessions/{session_id}/messages:
+    post:
+      tags: [plugin-agent]
+      operationId: sendPluginAgentPlanningMessage
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/PluginAgentSessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 100000
+      responses:
+        "200":
+          description: Synchronous planning turn completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginAgentSessionEnvelope"
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /plugin-agent/sessions/{session_id}/lock-target:
+    post:
+      tags: [plugin-agent]
+      operationId: lockPluginAgentTarget
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/PluginAgentSessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [proposal]
+              properties:
+                proposal:
+                  $ref: "#/components/schemas/PluginAgentTarget"
+      responses:
+        "200":
+          description: New-plugin identity locked for this session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginAgentSessionEnvelope"
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /plugin-agent/sessions/{session_id}/start:
+    post:
+      tags: [plugin-agent]
+      operationId: startPluginAgentJob
+      parameters:
+        - $ref: "#/components/parameters/PluginAgentSessionId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "202":
+          description: Durable Plugin Agent job entered the global queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginAgentStartResult"
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
 components:
   parameters:
     PageId:
@@ -1185,6 +1468,20 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    PluginId:
+      name: plugin_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+    PluginAgentSessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-f0-9]{32}$"
     ImportLeaseId:
       name: Import-Lease-Id
       in: header
@@ -1850,6 +2147,338 @@ components:
       properties:
         baseSessionRevision: {type: integer, minimum: 1}
         content: {type: string, minLength: 1, maxLength: 100000}
+    PluginAgentTarget:
+      type: object
+      additionalProperties: false
+      required:
+        [plugin_id, display_name, supported_steps, supported_modes]
+      properties:
+        plugin_id:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+        display_name: {type: string, minLength: 1, maxLength: 200}
+        supported_steps:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [job, pipeline, detect, ocr, color, translate, ai_translate, inpaint, render]
+        supported_modes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [standard, hq, proofread, remove_text]
+    PluginAgentLockedTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+        - plugin_dir
+        - plugin_id
+        - display_name
+        - supported_steps
+        - supported_modes
+      properties:
+        mode: {type: string, enum: [create, modify]}
+        plugin_dir: {type: string}
+        plugin_id: {type: string}
+        display_name: {type: string}
+        supported_steps:
+          type: array
+          items: {type: string}
+        supported_modes:
+          type: array
+          items: {type: string}
+    PluginAgentMessage:
+      type: object
+      additionalProperties: false
+      required: [id, role, content, timestamp]
+      properties:
+        id: {type: string}
+        role: {type: string, enum: [user, assistant]}
+        content: {type: string}
+        timestamp: {type: string, format: date-time}
+    PluginAgentEvent:
+      type: object
+      additionalProperties: false
+      required: [id, type, payload, timestamp]
+      properties:
+        id: {type: integer, minimum: 1}
+        type: {type: string}
+        payload: {type: object, additionalProperties: true}
+        timestamp: {type: string, format: date-time}
+    PluginAgentSession:
+      type: object
+      additionalProperties: false
+      required:
+        - session_id
+        - mode
+        - run_state
+        - messages
+        - events
+        - touched_files
+        - file_previews
+        - created_at
+        - updated_at
+      properties:
+        session_id:
+          type: string
+          pattern: "^[a-f0-9]{32}$"
+        mode: {type: string, enum: [create, modify]}
+        run_state:
+          type: string
+          enum:
+            [drafting, awaiting_target_lock, ready, running, completed, failed, cancelled]
+        selected_plugin_id: {type: [string, "null"]}
+        pending_target:
+          oneOf:
+            - $ref: "#/components/schemas/PluginAgentTarget"
+            - type: "null"
+        locked_target:
+          oneOf:
+            - $ref: "#/components/schemas/PluginAgentLockedTarget"
+            - type: "null"
+        messages:
+          type: array
+          items: {$ref: "#/components/schemas/PluginAgentMessage"}
+        events:
+          type: array
+          items: {$ref: "#/components/schemas/PluginAgentEvent"}
+        touched_files:
+          type: array
+          items: {type: string}
+        file_previews:
+          type: object
+          additionalProperties: {type: string}
+        last_validation:
+          type: [object, "null"]
+          additionalProperties: true
+        last_error: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        execution_started_at: {type: [string, "null"], format: date-time}
+        execution_finished_at: {type: [string, "null"], format: date-time}
+        job_id:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+    PluginAgentSessionEnvelope:
+      type: object
+      additionalProperties: false
+      required: [session]
+      properties:
+        session:
+          $ref: "#/components/schemas/PluginAgentSession"
+    PluginAgentSessionCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: {type: string, enum: [create, modify]}
+        pluginId: {type: string}
+      allOf:
+        - if:
+            properties:
+              mode: {const: modify}
+          then:
+            required: [pluginId]
+    PluginAgentStartResult:
+      type: object
+      additionalProperties: false
+      required: [session, batchId, jobId]
+      properties:
+        session:
+          $ref: "#/components/schemas/PluginAgentSession"
+        batchId: {$ref: "#/components/schemas/Uuid"}
+        jobId: {$ref: "#/components/schemas/Uuid"}
+    PluginConfigField:
+      type: object
+      additionalProperties: true
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [text, number, boolean, select]
+        default: {}
+        minimum: {type: number}
+        maximum: {type: number}
+        options:
+          type: array
+          items: {}
+    PluginManifest:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - plugin_id
+        - display_name
+        - package_version
+        - entrypoint
+        - hooks
+        - supported_steps
+        - supported_modes
+        - priority
+        - failure_policy
+        - author
+        - description
+        - default_enabled
+        - config_schema
+      properties:
+        schema_version: {type: integer, const: 3}
+        plugin_id: {type: string}
+        display_name: {type: string}
+        package_version: {type: string}
+        entrypoint: {type: string}
+        hooks:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - before_job
+              - after_job
+              - before_pipeline
+              - after_pipeline
+              - before_detect
+              - after_detect
+              - before_ocr
+              - after_ocr
+              - before_color
+              - after_color
+              - before_translate
+              - after_translate
+              - before_ai_translate
+              - after_ai_translate
+              - before_inpaint
+              - after_inpaint
+              - before_render
+              - after_render
+        supported_steps:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - job
+              - pipeline
+              - detect
+              - ocr
+              - color
+              - translate
+              - ai_translate
+              - inpaint
+              - render
+        supported_modes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [standard, hq, proofread, remove_text]
+        priority: {type: integer, minimum: -10000, maximum: 10000}
+        failure_policy: {type: string, enum: [continue, fail]}
+        author: {type: string}
+        description: {type: string}
+        default_enabled: {type: boolean}
+        config_schema:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PluginConfigField"
+    Plugin:
+      type: object
+      additionalProperties: false
+      required:
+        - pluginId
+        - displayName
+        - author
+        - description
+        - state
+        - defaultEnabled
+        - runtimeEnabled
+        - config
+        - configRevision
+        - pluginVersionId
+        - packageVersion
+        - currentRevision
+        - manifest
+        - configSchema
+      properties:
+        pluginId: {type: string}
+        displayName: {type: string}
+        author: {type: string}
+        description: {type: string}
+        state: {type: string, enum: [enabled, disabled, error]}
+        defaultEnabled: {type: boolean}
+        runtimeEnabled: {type: boolean}
+        config: {type: object, additionalProperties: true}
+        configRevision: {type: integer, minimum: 1}
+        errorMessage: {type: [string, "null"]}
+        pluginVersionId: {$ref: "#/components/schemas/Uuid"}
+        packageVersion: {type: string}
+        currentRevision: {type: integer, minimum: 1}
+        manifest: {$ref: "#/components/schemas/PluginManifest"}
+        configSchema:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PluginConfigField"
+    PluginList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Plugin"}
+    PluginConfig:
+      type: object
+      additionalProperties: false
+      required: [pluginId, schema, value, configRevision]
+      properties:
+        pluginId: {type: string}
+        schema:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PluginConfigField"
+        value: {type: object, additionalProperties: true}
+        configRevision: {type: integer, minimum: 1}
+    PluginConfigCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, config]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        config: {type: object, additionalProperties: true}
+    PluginEnabledCommand:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+    PluginImportResult:
+      type: object
+      additionalProperties: false
+      required:
+        [pluginId, pluginVersionId, packageVersion, currentRevision]
+      properties:
+        pluginId: {type: string}
+        pluginVersionId: {$ref: "#/components/schemas/Uuid"}
+        packageVersion: {type: string}
+        currentRevision: {type: integer, minimum: 1}
+    PluginRefreshResult:
+      type: object
+      additionalProperties: false
+      required: [checkedVersions, failedVersions]
+      properties:
+        checkedVersions: {type: integer, minimum: 0}
+        failedVersions: {type: integer, minimum: 0}
+    PluginDeleteResult:
+      type: object
+      additionalProperties: false
+      required: [deleted, pluginId]
+      properties:
+        deleted: {type: boolean, const: true}
+        pluginId: {type: string}
     Book:
       type: object
       additionalProperties: false

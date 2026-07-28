@@ -79,6 +79,9 @@
           </template>
 
           <p class="plugin-manager__plugin-description">{{ plugin.description || '暂无描述' }}</p>
+          <p v-if="plugin.state === 'error'" class="plugin-manager__plugin-error">
+            加载错误：{{ plugin.error_message || '插件完整性或入口加载失败' }}
+          </p>
           <p class="plugin-manager__plugin-meta">步骤: {{ (plugin.supported_steps || []).join(', ') || '无' }}</p>
           <p class="plugin-manager__plugin-meta">模式: {{ (plugin.supported_modes || []).join(', ') || '无' }}</p>
         </ProductRecordCard>
@@ -501,6 +504,12 @@ onMounted(() => {
   font-size: 13px;
   color: var(--color-text-supporting);
   margin: 0;
+}
+
+.plugin-manager__plugin-error {
+  margin: 6px 0 0;
+  color: var(--color-text-danger);
+  font-size: 12px;
 }
 
 .plugin-manager__plugin-meta {

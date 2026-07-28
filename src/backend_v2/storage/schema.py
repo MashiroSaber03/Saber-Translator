@@ -241,7 +241,6 @@ plugin_versions = Table(
     Column("config_schema_json", Text, nullable=False, server_default="{}"),
     Column("manifest_schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
-    UniqueConstraint("plugin_id", "version"),
 )
 
 plugin_current_versions = Table(

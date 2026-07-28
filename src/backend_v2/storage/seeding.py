@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, case, insert, select, update
 
 from src.backend_v2.storage.defaults import (
     DEFAULT_FONT_ID,
@@ -18,6 +18,7 @@ from src.backend_v2.storage.schema import (
     books,
     chapters,
     fonts,
+    plugins,
     prompts,
     queue_state,
     translation_constraints,
@@ -81,6 +82,7 @@ def seed_system_records(engine: Engine) -> None:
             "text_style_defaults": DEFAULT_TEXT_STYLE,
             "insight": {},
             "web_import": {},
+            "plugin_agent": {},
         }
         existing_domains = set(
             connection.execute(select(app_settings.c.domain)).scalars()
@@ -98,6 +100,23 @@ def seed_system_records(engine: Engine) -> None:
                         ),
                     )
                 )
+
+        # Runtime enablement is a process-lifetime override.  The Launcher is
+        # the sole migration/seeding owner, so reset it once before API and
+        # Worker are spawned; an API child restart must not rewrite this state.
+        connection.execute(
+            update(plugins).values(
+                runtime_enabled=plugins.c.default_enabled,
+                state=case(
+                    (plugins.c.state == "error", "error"),
+                    (
+                        plugins.c.default_enabled.is_(True),
+                        "enabled",
+                    ),
+                    else_="disabled",
+                ),
+            )
+        )
 
         if connection.execute(
             select(fonts.c.id).where(fonts.c.builtin_key == "default")

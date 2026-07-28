@@ -1,9 +1,10 @@
 import { apiClient } from './client'
-import { readApiErrorMessage } from './download'
-import { readSseStream } from './sse'
 import type { PluginData } from '@/types'
-import { serializeOpenAICompatibleOptionsForApi } from '@/utils/openaiOptions'
 import type { OpenAICompatibleOptions } from '@/types/settings'
+import { getProviderOptionsForCapability } from '@/config/aiProviders'
+import { getPlugins } from './plugin'
+import { jobsApi } from './v2/jobs'
+import { newIdempotencyKey } from './v2/content'
 
 export type PluginAgentMode = 'create' | 'modify'
 export type PluginAgentRunState =
@@ -145,6 +146,7 @@ export interface PluginAgentSession {
   updated_at: string
   execution_started_at?: string | null
   execution_finished_at?: string | null
+  job_id?: string | null
 }
 
 export interface PluginAgentOverviewSection {
@@ -177,37 +179,76 @@ export interface PluginAgentAgentConfig {
   openaiOptions: OpenAICompatibleOptions
 }
 
-function serializeAgentConfig(config: PluginAgentAgentConfig) {
-  return {
-    provider: config.provider,
-    api_key: config.apiKey,
-    model_name: config.modelName,
-    custom_base_url: config.customBaseUrl || '',
-    openai_options: serializeOpenAICompatibleOptionsForApi(config.openaiOptions),
-  }
-}
+const sessionJobs = new Map<string, string>()
+const jobEventCursors = new Map<string, number>()
+let activeSessionId = ''
 
 function pluginAgentSessionEndpoint(sessionId: string, suffix = ''): string {
-  return `/api/plugins/agent/sessions/${encodeURIComponent(sessionId)}${suffix}`
+  return `/api/v2/plugin-agent/sessions/${encodeURIComponent(sessionId)}${suffix}`
 }
 
 export async function getPluginAgentSettings(): Promise<PluginAgentSettingsResponse> {
-  return apiClient.get<PluginAgentSettingsResponse>('/api/plugins/agent/settings')
+  const pluginResult = await getPlugins()
+  let session: PluginAgentSession | null = null
+  if (activeSessionId) {
+    try {
+      session = (await getPluginAgentSession(activeSessionId)).session
+    } catch {
+      activeSessionId = ''
+    }
+  }
+  return {
+    success: true,
+    overview: [
+      '规划对话是短 API；开始执行后任务进入全局后端队列。',
+      '浏览器关闭不会终止插件生成，执行日志由任务中心持久保存。',
+      '插件代码只在 Worker 临时工作区运行，校验成功后发布不可变 v3 版本。',
+    ],
+    overview_sections: [],
+    prompt_examples: [
+      '创建一个 after_translate 插件，把“老师”替换为“导师”，替换表可配置。',
+      '创建一个 before_render 插件，统一开启描边并设置最小字号。',
+      '修改现有插件，增加 after_ocr 文本清洗，保留原有行为。',
+    ],
+    providers: getProviderOptionsForCapability('pluginAgent'),
+    plugins: pluginResult.plugins,
+    session,
+  }
 }
 
 export async function createPluginAgentSession(payload: {
   mode: PluginAgentMode
   plugin_id?: string
 }): Promise<PluginAgentSessionResponse> {
-  return apiClient.post<PluginAgentSessionResponse>('/api/plugins/agent/sessions', payload)
+  const result = await apiClient.post<{ session: PluginAgentSession }>(
+    '/api/v2/plugin-agent/sessions',
+    {
+      mode: payload.mode,
+      ...(payload.plugin_id ? { pluginId: payload.plugin_id } : {}),
+    },
+  )
+  activeSessionId = result.session.session_id
+  return { success: true, session: result.session }
 }
 
 export async function getPluginAgentSession(sessionId: string): Promise<PluginAgentSessionResponse> {
-  return apiClient.get<PluginAgentSessionResponse>(pluginAgentSessionEndpoint(sessionId))
+  const result = await apiClient.get<{ session: PluginAgentSession }>(
+    pluginAgentSessionEndpoint(sessionId),
+  )
+  if (result.session.job_id) {
+    sessionJobs.set(sessionId, result.session.job_id)
+  }
+  return { success: true, session: result.session }
 }
 
 export async function deletePluginAgentSession(sessionId: string): Promise<{ success: boolean; deleted: boolean }> {
-  return apiClient.delete<{ success: boolean; deleted: boolean }>(pluginAgentSessionEndpoint(sessionId))
+  const result = await apiClient.delete<{ deleted: boolean }>(
+    pluginAgentSessionEndpoint(sessionId),
+  )
+  if (activeSessionId === sessionId) activeSessionId = ''
+  sessionJobs.delete(sessionId)
+  jobEventCursors.delete(sessionId)
+  return { success: true, deleted: result.deleted }
 }
 
 export async function sendPluginAgentMessage(
@@ -217,41 +258,48 @@ export async function sendPluginAgentMessage(
     agentConfig: PluginAgentAgentConfig
   },
 ): Promise<PluginAgentSessionResponse> {
-  return apiClient.post<PluginAgentSessionResponse>(
+  const result = await apiClient.post<{ session: PluginAgentSession }>(
     pluginAgentSessionEndpoint(sessionId, '/messages'),
-    {
-      content: payload.content,
-      agent_config: serializeAgentConfig(payload.agentConfig),
-    },
+    { content: payload.content },
   )
+  return { success: true, session: result.session }
 }
 
 export async function lockPluginAgentTarget(
   sessionId: string,
   proposal: PluginAgentTargetProposal,
 ): Promise<PluginAgentSessionResponse> {
-  return apiClient.post<PluginAgentSessionResponse>(
+  const result = await apiClient.post<{ session: PluginAgentSession }>(
     pluginAgentSessionEndpoint(sessionId, '/lock-target'),
     { proposal },
   )
+  return { success: true, session: result.session }
 }
 
 export async function startPluginAgentExecution(
   sessionId: string,
-  agentConfig: PluginAgentAgentConfig,
+  _agentConfig: PluginAgentAgentConfig,
 ): Promise<PluginAgentSessionResponse> {
-  return apiClient.post<PluginAgentSessionResponse>(
+  const result = await apiClient.post<{
+    session: PluginAgentSession
+    jobId: string
+  }>(
     pluginAgentSessionEndpoint(sessionId, '/start'),
-    { agent_config: serializeAgentConfig(agentConfig) },
+    {},
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
+  result.session.job_id = result.jobId
+  sessionJobs.set(sessionId, result.jobId)
+  return { success: true, session: result.session }
 }
 
 export async function cancelPluginAgentExecution(
   sessionId: string,
 ): Promise<{ success: boolean; cancelled: boolean }> {
-  return apiClient.post<{ success: boolean; cancelled: boolean }>(
-    pluginAgentSessionEndpoint(sessionId, '/cancel'),
-  )
+  const jobId = sessionJobs.get(sessionId)
+  if (!jobId) return { success: false, cancelled: false }
+  await jobsApi.cancel(jobId)
+  return { success: true, cancelled: true }
 }
 
 export async function subscribePluginAgentEvents(
@@ -263,41 +311,46 @@ export async function subscribePluginAgentEvents(
     onError: (error: string) => void
   },
 ): Promise<void> {
-  let response: Response
+  const jobId = sessionJobs.get(sessionId)
+  if (!jobId) {
+    options.onError('插件 Agent 任务 ID 不存在')
+    return
+  }
   try {
-    response = await fetch(
-      `${pluginAgentSessionEndpoint(sessionId, '/events')}?after_id=${options.afterId || 0}`,
-      {
-        method: 'GET',
-        signal: options.signal,
-        headers: {
-          Accept: 'text/event-stream',
-        },
-      },
+    const cursor = jobEventCursors.get(sessionId) || 0
+    const response = await apiClient.get<{
+      items: Array<{
+        eventId: number
+        type: string
+        payload: Record<string, unknown>
+        createdAt: string
+      }>
+    }>(
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/events?after=${cursor}&limit=200`,
+      { signal: options.signal },
     )
-  } catch (error) {
-    if (!options.signal?.aborted) {
-      options.onError(error instanceof Error ? error.message : '事件流订阅失败')
+    for (const event of response.items) {
+      jobEventCursors.set(
+        sessionId,
+        Math.max(
+          jobEventCursors.get(sessionId) || 0,
+          event.eventId,
+        ),
+      )
+      if (!event.type.startsWith('plugin_agent_')) continue
+      options.onEvent({
+        id: event.eventId,
+        type: event.type.slice('plugin_agent_'.length),
+        payload: event.payload,
+        timestamp: event.createdAt,
+      })
     }
-    return
-  }
-
-  if (!response.ok) {
-    options.onError(await readApiErrorMessage(response, `HTTP ${response.status}`))
-    return
-  }
-
-  try {
-    await readSseStream<PluginAgentEvent>(response, {
-      missingBodyMessage: '无法读取响应流',
-      parseErrorMessage: '解析插件 Agent 事件失败',
-      onMessage(message) {
-        options.onEvent({ ...message.data, type: message.event })
-      },
-    })
+    if (response.items.length === 0) {
+      await new Promise(resolve => window.setTimeout(resolve, 750))
+    }
   } catch (error) {
     if (!options.signal?.aborted) {
-      options.onError(error instanceof Error ? error.message : '事件流订阅失败')
+      options.onError(error instanceof Error ? error.message : '任务事件加载失败')
     }
   }
 }

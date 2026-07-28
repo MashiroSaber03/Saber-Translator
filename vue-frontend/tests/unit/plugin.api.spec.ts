@@ -1,13 +1,16 @@
+import JSZip from 'jszip'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   getMock,
   postMock,
+  putMock,
   deleteMock,
   uploadMock,
 } = vi.hoisted(() => ({
   getMock: vi.fn(),
   postMock: vi.fn(),
+  putMock: vi.fn(),
   deleteMock: vi.fn(),
   uploadMock: vi.fn(),
 }))
@@ -16,15 +19,44 @@ vi.mock('@/api/client', () => ({
   apiClient: {
     get: getMock,
     post: postMock,
+    put: putMock,
     delete: deleteMock,
     upload: uploadMock,
   },
 }))
 
-describe('plugin api import/export helpers', () => {
+vi.mock('@/api/v2/content', () => ({
+  newIdempotencyKey: () => 'test-idempotency-key',
+}))
+
+const pluginV2 = {
+  pluginId: 'sample_plugin',
+  displayName: 'Sample Plugin',
+  author: 'Tests',
+  description: 'v3 plugin',
+  state: 'enabled',
+  defaultEnabled: false,
+  runtimeEnabled: true,
+  config: { enabled: true },
+  configRevision: 4,
+  errorMessage: null,
+  pluginVersionId: 'version-1',
+  packageVersion: '1.0.0',
+  currentRevision: 7,
+  manifest: {
+    supported_steps: ['ocr'],
+    supported_modes: ['standard'],
+  },
+  configSchema: {
+    enabled: { type: 'boolean' },
+  },
+}
+
+describe('plugin v3 api', () => {
   beforeEach(() => {
     getMock.mockReset()
     postMock.mockReset()
+    putMock.mockReset()
     deleteMock.mockReset()
     uploadMock.mockReset()
     vi.restoreAllMocks()
@@ -35,7 +67,7 @@ describe('plugin api import/export helpers', () => {
     vi.restoreAllMocks()
   })
 
-  it('downloads plugin export and parses content-disposition filename', async () => {
+  it('downloads the immutable current package from the v2 route', async () => {
     const blob = new Blob(['zip-bytes'], { type: 'application/zip' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -53,57 +85,101 @@ describe('plugin api import/export helpers', () => {
     const { exportPlugin } = await import('@/api/plugin')
     const result = await exportPlugin('sample_plugin')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/plugins/sample_plugin/export')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v2/plugins/sample_plugin/export')
     expect(result.filename).toBe('sample_plugin.zip')
     expect(result.blob).toBe(blob)
   })
 
-  it('uploads plugin package with replace flag', async () => {
-    uploadMock.mockResolvedValue({
-      success: true,
-      plugin: {
-        id: 'sample_plugin',
-      },
+  it('reads plugin.json and imports a v3 package with CAS and idempotency', async () => {
+    const archive = new JSZip()
+    archive.file('plugin.json', JSON.stringify({
+      schema_version: 3,
+      plugin_id: 'sample_plugin',
+    }))
+    archive.file('plugin.py', 'class Plugin:\n    pass\n')
+    const bytes = await archive.generateAsync({ type: 'uint8array' })
+    const file = new File([bytes], 'sample_plugin.zip', {
+      type: 'application/zip',
     })
+    uploadMock.mockResolvedValue(pluginV2)
+    getMock.mockResolvedValue({ items: [pluginV2] })
 
     const { importPlugin } = await import('@/api/plugin')
-    const file = new File(['zip-bytes'], 'sample_plugin.zip', { type: 'application/zip' })
-    const result = await importPlugin(file, true)
+    const result = await importPlugin(file)
 
     expect(uploadMock).toHaveBeenCalledTimes(1)
-    const [url, formData] = uploadMock.mock.calls[0] || []
-    expect(url).toBe('/api/plugins/import')
+    const [url, formData, config] = uploadMock.mock.calls[0] || []
+    expect(url).toBe('/api/v2/plugins/import')
     expect(formData).toBeInstanceOf(FormData)
     expect((formData as FormData).get('file')).toBe(file)
-    expect((formData as FormData).get('replace')).toBe('true')
-    expect(result.success).toBe(true)
+    expect((formData as FormData).get('baseRevision')).toBe('0')
+    expect(config).toEqual({
+      headers: { 'Idempotency-Key': 'test-idempotency-key' },
+    })
+    expect(result.plugin?.id).toBe('sample_plugin')
   })
 
-  it('encodes plugin ids consistently for management endpoints', async () => {
-    postMock.mockResolvedValue({ success: true })
-    getMock.mockResolvedValue({ success: true })
-    deleteMock.mockResolvedValue({ success: true })
+  it('uses v2 management routes and cached CAS revisions', async () => {
+    getMock
+      .mockResolvedValueOnce({ items: [pluginV2] })
+      .mockResolvedValueOnce({
+        pluginId: 'sample_plugin',
+        schema: pluginV2.configSchema,
+        value: pluginV2.config,
+        configRevision: 4,
+      })
+    putMock
+      .mockResolvedValueOnce({ ...pluginV2, runtimeEnabled: true })
+      .mockResolvedValueOnce({
+        pluginId: 'sample_plugin',
+        schema: pluginV2.configSchema,
+        value: { enabled: false },
+        configRevision: 5,
+      })
+      .mockResolvedValueOnce({ ...pluginV2, defaultEnabled: true })
+    deleteMock.mockResolvedValue({ deleted: true })
 
     const {
       deletePlugin,
       enablePlugin,
       getPluginConfig,
+      getPlugins,
       savePluginConfig,
       setPluginDefaultState,
     } = await import('@/api/plugin')
 
-    await enablePlugin('group/plugin one')
-    await deletePlugin('group/plugin one')
-    await getPluginConfig('group/plugin one')
-    await savePluginConfig('group/plugin one', { enabled: true })
-    await setPluginDefaultState('group/plugin one', true)
+    await getPlugins()
+    await enablePlugin('sample_plugin')
+    await getPluginConfig('sample_plugin')
+    await savePluginConfig('sample_plugin', { enabled: false })
+    await setPluginDefaultState('sample_plugin', true)
+    await deletePlugin('sample_plugin')
 
-    expect(postMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/enable')
-    expect(deleteMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one')
-    expect(getMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/config')
-    expect(postMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/config', { enabled: true })
-    expect(postMock).toHaveBeenCalledWith('/api/plugins/group%2Fplugin%20one/set_default_state', {
-      enabled: true,
-    })
+    expect(putMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/v2/plugins/sample_plugin/runtime-enabled',
+      { enabled: true },
+    )
+    expect(putMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v2/plugins/sample_plugin/config',
+      { baseRevision: 4, config: { enabled: false } },
+      { headers: { 'Idempotency-Key': 'test-idempotency-key' } },
+    )
+    expect(putMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/v2/plugins/sample_plugin/default-enabled',
+      { enabled: true },
+      { headers: { 'Idempotency-Key': 'test-idempotency-key' } },
+    )
+    expect(deleteMock).toHaveBeenCalledWith(
+      '/api/v2/plugins/sample_plugin',
+      {
+        headers: {
+          'If-Match': '7',
+          'Idempotency-Key': 'test-idempotency-key',
+        },
+      },
+    )
   })
 })
