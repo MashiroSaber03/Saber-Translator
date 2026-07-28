@@ -11,218 +11,136 @@ interface ImageGenerationComposable {
     regeneratePageImage: (pageNumber: number) => Promise<void>
 }
 
-export function useImageGeneration(bookId: Ref<string | undefined>, state: ContinuationState): ImageGenerationComposable {
+function progressPercent(progress: Record<string, unknown>): number {
+    const direct = Number(progress.percent ?? progress.percentage)
+    if (Number.isFinite(direct) && direct >= 0) return Math.min(100, direct)
+    const completed = Number(progress.completed ?? progress.current ?? 0)
+    const total = Number(progress.total ?? 0)
+    return total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 5
+}
+
+export function useImageGeneration(
+    bookId: Ref<string | undefined>,
+    state: ContinuationState,
+): ImageGenerationComposable {
     const isGenerating = ref(false)
     const generationProgress = ref(0)
-    let generationRequestId = 0
-    let isOwnerMounted = true
+    let requestId = 0
+    let isMounted = true
 
-    function startGenerationRequest(): { activeBookId: string; requestId: number } | null {
+    function isCurrent(id: number, activeBookId: string): boolean {
+        return isMounted && requestId === id && bookId.value === activeBookId
+    }
+
+    async function batchGenerateImages(
+        pages: PageContent[],
+        initialStyleReferenceTokens?: string[],
+    ): Promise<void> {
         const activeBookId = bookId.value
-        if (!activeBookId) return null
-
-        return {
-            activeBookId,
-            requestId: ++generationRequestId
+        if (!activeBookId || pages.length === 0) return
+        const id = ++requestId
+        const pending = pages.filter(page => !page.image_url)
+        if (pending.length === 0) {
+            state.showMessage('所有页面图片均已生成', 'info')
+            return
         }
-    }
-
-    function isActiveGenerationRequest(requestId: number): boolean {
-        return isOwnerMounted && requestId === generationRequestId
-    }
-
-    function isCurrentBookGenerationRequest(activeBookId: string, requestId: number): boolean {
-        return isActiveGenerationRequest(requestId) && bookId.value === activeBookId
-    }
-
-    async function resolveStyleReferenceTokens(
-        activeBookId: string,
-        currentPageNumber: number,
-        isCurrentRequest: () => boolean
-    ): Promise<string[]> {
-        if (!isCurrentRequest()) return []
-
-        const availableResult = await continuationApi.getAvailableImages(
-            activeBookId,
-            'image'
-        ).catch(() => null)
-        if (!isCurrentRequest()) return []
-
-        if (availableResult?.success) {
-            const currentAbsolutePage = (availableResult.total_original_pages || 0) + currentPageNumber
-            const merged = [
-                ...(availableResult.original_images || []),
-                ...(availableResult.continuation_images || []),
-            ]
-                .filter(image => image.has_image && image.path && image.token)
-                .filter(image => image.page_number < currentAbsolutePage)
-                .sort((left, right) => left.page_number - right.page_number)
-                .map(image => image.token)
-
-            if (merged.length > 0) {
-                return merged.slice(-state.styleRefPages.value)
+        for (const page of pending) {
+            page.final_prompt = normalizeImagePrompt(page.final_prompt)
+            if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
+                state.showMessage(
+                    `第 ${page.page_number} 页剧情或最终提示词无效，请先完善后再生成`,
+                    'error',
+                )
+                return
             }
         }
-
-        const styleResult = await continuationApi.getStyleReferences(activeBookId, state.styleRefPages.value)
-        if (!isCurrentRequest()) return []
-        return styleResult.success && styleResult.tokens ? styleResult.tokens : []
-    }
-
-    async function batchGenerateImages(pages: PageContent[], initialStyleReferenceTokens?: string[]) {
-        if (pages.length === 0) return
-        const generationRequest = startGenerationRequest()
-        if (!generationRequest) return
-        const { activeBookId, requestId } = generationRequest
-        const isCurrentRequest = () => isCurrentBookGenerationRequest(activeBookId, requestId)
 
         isGenerating.value = true
-        generationProgress.value = 0
-
-        const totalPages = pages.length
-        let completedPages = 0
-
+        generationProgress.value = 5
         try {
-            let styleReferenceTokens: string[]
-            if (initialStyleReferenceTokens && initialStyleReferenceTokens.length > 0) {
-                styleReferenceTokens = [...initialStyleReferenceTokens]
-            } else {
-                const firstPendingPage = pages.find(page => !page.image_url)?.page_number ?? 1
-                styleReferenceTokens = await resolveStyleReferenceTokens(activeBookId, firstPendingPage, isCurrentRequest)
-                if (!isCurrentRequest()) return
+            await continuationApi.savePages(activeBookId, pages)
+            if (initialStyleReferenceTokens?.length) {
+                await continuationApi.setContinuationReferenceTokens(
+                    activeBookId,
+                    initialStyleReferenceTokens,
+                )
             }
-
-            for (const page of pages) {
-                if (!isCurrentRequest()) return
-
-                if (page.image_url) {
-                    completedPages++
-                    generationProgress.value = Math.round((completedPages / totalPages) * 100)
-                    continue
+            const jobId = await continuationApi.generateAllPageImages(
+                activeBookId,
+                pending.map(page => page.page_number),
+            )
+            state.showMessage('批量生图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
+            await continuationApi.waitForContinuationJob(jobId, 800, progress => {
+                if (isCurrent(id, activeBookId)) {
+                    generationProgress.value = progressPercent(progress)
                 }
-
-                page.final_prompt = normalizeImagePrompt(page.final_prompt)
-                if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
-                    page.status = 'failed'
-                    state.showMessage(`第 ${page.page_number} 页剧情或最终提示词无效，请先完善页面剧情或手动修改最终提示词`, 'error')
-                    await continuationApi.savePages(activeBookId, pages)
-                    if (!isCurrentRequest()) return
-                    completedPages++
-                    generationProgress.value = Math.round((completedPages / totalPages) * 100)
-                    continue
-                }
-
-                state.showMessage(`正在生成第 ${page.page_number}/${totalPages} 页图片...`, 'info')
-
-                try {
-                    const result = await continuationApi.generatePageImage(
-                        activeBookId,
-                        page.page_number,
-                        page,
-                        styleReferenceTokens,
-                        undefined,
-                        state.styleRefPages.value
-                    )
-                    if (!isCurrentRequest()) return
-
-                    if (result.success && result.image_path) {
-                        page.image_url = result.image_path
-                        page.status = 'generated'
-
-                        // 推进 token 滑动窗口，后续页自然可以解析到新生成的续写图。
-                        const nextToken = `continuation:${page.page_number}`
-                        if (styleReferenceTokens.length >= state.styleRefPages.value) {
-                            styleReferenceTokens.shift()
-                        }
-                        styleReferenceTokens.push(nextToken)
-                    } else {
-                        page.status = 'failed'
-                    }
-                } catch {
-                    if (!isCurrentRequest()) return
-                    page.status = 'failed'
-                }
-
-                await continuationApi.savePages(activeBookId, pages)
-                if (!isCurrentRequest()) return
-
-                completedPages++
-                generationProgress.value = Math.round((completedPages / totalPages) * 100)
-            }
-            state.showMessage(`图片生成完成 (${completedPages}/${totalPages})`, 'success')
+            })
+            if (!isCurrent(id, activeBookId)) return
+            await state.initializeData()
+            state.showMessage(`图片生成完成 (${pending.length} 页)`, 'success')
         } catch (error) {
-            if (isCurrentRequest()) {
-                state.showMessage('批量生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+            if (isCurrent(id, activeBookId)) {
+                state.showMessage(
+                    '批量生成失败: ' + (error instanceof Error ? error.message : '网络错误'),
+                    'error',
+                )
             }
         } finally {
-            if (isActiveGenerationRequest(requestId)) {
+            if (isMounted && requestId === id) {
                 isGenerating.value = false
                 generationProgress.value = 0
             }
         }
     }
 
-
-    async function regeneratePageImage(pageNumber: number) {
-        const generationRequest = startGenerationRequest()
-        if (!generationRequest) return
-        const { activeBookId, requestId } = generationRequest
-        const isCurrentRequest = () => isCurrentBookGenerationRequest(activeBookId, requestId)
-
-        const page = state.pages.value.find(p => p.page_number === pageNumber)
-        if (!page) return
-
+    async function regeneratePageImage(pageNumber: number): Promise<void> {
+        const activeBookId = bookId.value
+        const page = state.pages.value.find(item => item.page_number === pageNumber)
+        if (!activeBookId || !page) return
+        const id = ++requestId
+        page.final_prompt = normalizeImagePrompt(page.final_prompt)
+        if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
+            state.showMessage(`第 ${pageNumber} 页剧情或最终提示词无效`, 'error')
+            return
+        }
+        isGenerating.value = true
+        generationProgress.value = 5
         try {
-            page.status = 'generating'
-            page.final_prompt = normalizeImagePrompt(page.final_prompt)
-
-            if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
-                page.status = 'failed'
-                await continuationApi.savePages(activeBookId, state.pages.value)
-                if (!isCurrentRequest()) return
-                state.showMessage(`第 ${pageNumber} 页剧情或最终提示词无效，请先完善页面剧情或手动修改最终提示词`, 'error')
-                return
-            }
-
-            const styleReferenceTokens = await resolveStyleReferenceTokens(activeBookId, pageNumber, isCurrentRequest)
-            if (!isCurrentRequest()) return
-
             const result = await continuationApi.regeneratePageImage(
                 activeBookId,
                 pageNumber,
                 page,
-                styleReferenceTokens,
-                undefined,
-                state.styleRefPages.value
+                [],
             )
-            if (!isCurrentRequest()) return
-
-            if (result.success && result.image_path) {
-                if (page.image_url) {
-                    page.previous_url = page.image_url
+            if (!result.task_id) throw new Error(result.error || '未创建生图任务')
+            state.showMessage('重新生图任务已进入任务中心', 'info')
+            await continuationApi.waitForContinuationJob(result.task_id, 800, progress => {
+                if (isCurrent(id, activeBookId)) {
+                    generationProgress.value = progressPercent(progress)
                 }
-                page.image_url = result.image_path
-                page.status = 'generated'
-
-                await continuationApi.savePages(activeBookId, state.pages.value)
-                if (!isCurrentRequest()) return
-                state.showMessage(`第 ${pageNumber} 页图片已重新生成`, 'success')
-            } else {
-                page.status = 'failed'
-                state.showMessage('重新生成失败: ' + result.error, 'error')
-            }
+            })
+            if (!isCurrent(id, activeBookId)) return
+            await state.initializeData()
+            state.showMessage(`第 ${pageNumber} 页图片已重新生成`, 'success')
         } catch (error) {
-            if (isCurrentRequest()) {
-                page.status = 'failed'
-                state.showMessage('重新生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+            if (isCurrent(id, activeBookId)) {
+                state.showMessage(
+                    '重新生成失败: ' + (error instanceof Error ? error.message : '网络错误'),
+                    'error',
+                )
+            }
+        } finally {
+            if (isMounted && requestId === id) {
+                isGenerating.value = false
+                generationProgress.value = 0
             }
         }
     }
 
     if (getCurrentInstance()) {
         onBeforeUnmount(() => {
-            isOwnerMounted = false
-            generationRequestId += 1
+            isMounted = false
+            requestId += 1
         })
     }
 
@@ -230,6 +148,6 @@ export function useImageGeneration(bookId: Ref<string | undefined>, state: Conti
         isGenerating,
         generationProgress,
         batchGenerateImages,
-        regeneratePageImage
+        regeneratePageImage,
     }
 }

@@ -172,6 +172,21 @@ def test_document_is_canonical_and_revision_cas_is_enforced(
         document=changed,
     )
     assert updated["revision"] == 2
+    summary = repository.index(
+        book_id=str(studio_platform["book"]["id"])
+    )["documents"][0]
+    assert summary == {
+        "avatarAssetId": None,
+        "documentId": str(created["id"]),
+        "hasAvatar": False,
+        "isFavorite": False,
+        "kind": "manual",
+        "revision": 2,
+        "sourceCharacter": None,
+        "tags": [],
+        "title": "Saber",
+        "updatedAt": summary["updatedAt"],
+    }
     with pytest.raises(StudioConflict, match="revision"):
         repository.update_document(
             document_id=str(created["id"]),

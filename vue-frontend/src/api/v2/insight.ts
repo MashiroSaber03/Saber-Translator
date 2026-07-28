@@ -36,6 +36,7 @@ export interface V2InsightPageSummary {
   chapterId: string
   displayPageNumber: number
   pageId: string
+  sourceAssetId: string
   thumbnailUrl: string | null
 }
 

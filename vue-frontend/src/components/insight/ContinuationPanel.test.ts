@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   confirmProductAction: vi.fn(),
   clearContinuationData: vi.fn(),
   generateScriptWithRefs: vi.fn(),
+  waitForContinuationJob: vi.fn(),
   saveConfig: vi.fn(),
   saveScript: vi.fn(),
   savePages: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock('@/composables/continuation/useImageGeneration', () => ({
 vi.mock('@/api/continuation', () => ({
   clearContinuationData: mocks.clearContinuationData,
   generateScriptWithRefs: mocks.generateScriptWithRefs,
+  waitForContinuationJob: mocks.waitForContinuationJob,
   saveConfig: mocks.saveConfig,
   saveScript: mocks.saveScript,
   savePages: mocks.savePages,
@@ -173,6 +175,7 @@ describe('ContinuationPanel', () => {
         generated_at: '2026-05-12T00:00:00',
       },
     })
+    mocks.waitForContinuationJob.mockReset().mockResolvedValue({ status: 'completed' })
     mocks.saveConfig.mockReset().mockResolvedValue({ success: true })
     mocks.saveScript.mockReset().mockResolvedValue({ success: true })
     mocks.savePages.mockReset().mockResolvedValue({ success: true })
@@ -460,9 +463,10 @@ describe('ContinuationPanel', () => {
     expect(wrapper.find('.message').exists()).toBe(false)
   })
 
-  it('surfaces config persistence failures after script generation', async () => {
+  it('surfaces durable script job failures after enqueue', async () => {
     mocks.state = createStateStub(1)
-    mocks.saveConfig.mockRejectedValue(new Error('配置保存失败'))
+    mocks.generateScriptWithRefs.mockResolvedValue({ success: true, task_id: 'job-1' })
+    mocks.waitForContinuationJob.mockRejectedValue(new Error('后端脚本任务失败'))
 
     const wrapper = mount(ContinuationPanel, {
       global: {
@@ -481,8 +485,8 @@ describe('ContinuationPanel', () => {
 
     expect(mocks.generateScriptWithRefs).toHaveBeenCalledWith('book-1', '', 10, undefined, 5)
     expect(mocks.state.showMessage).toHaveBeenCalledWith(
-      expect.stringContaining('配置保存失败'),
-      expect.any(String),
+      expect.stringContaining('后端脚本任务失败'),
+      'error',
     )
   })
 

@@ -256,25 +256,16 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         setMessageState(message, type, false)
     }
 
-    function getBookPathSegment(): string | null {
-        return bookId.value ? encodeURIComponent(bookId.value) : null
-    }
-
     function getCharacterImageUrl(characterName: string): string {
-        const bookPathSegment = getBookPathSegment()
-        if (!bookPathSegment) return ''
-        return `/api/manga-insight/${bookPathSegment}/continuation/characters/${encodeURIComponent(characterName)}/image?t=${imageRefreshKey.value}`
+        return characters.value.find(character => character.name === characterName)?.reference_image ?? ''
     }
 
     function getFormImageUrl(imagePath: string): string {
-        if (!bookId.value || !imagePath) return ''
-        return `/api/manga-insight/file?path=${encodeURIComponent(imagePath)}&t=${imageRefreshKey.value}`
+        return imagePath
     }
 
     function getGeneratedImageUrl(imagePath: string): string {
-        const bookPathSegment = getBookPathSegment()
-        if (!bookPathSegment || !imagePath) return ''
-        return `/api/manga-insight/${bookPathSegment}/continuation/generated-image?path=${encodeURIComponent(imagePath)}`
+        return imagePath
     }
 
     if (getCurrentInstance()) {

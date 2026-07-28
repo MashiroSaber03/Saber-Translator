@@ -1,41 +1,123 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getMock, postMock, putMock, deleteMock, uploadMock } = vi.hoisted(() => ({
+const {
+  deleteMock,
+  getMock,
+  patchMock,
+  postMock,
+  putMock,
+  uploadMock,
+} = vi.hoisted(() => ({
+  deleteMock: vi.fn(),
   getMock: vi.fn(),
+  patchMock: vi.fn(),
   postMock: vi.fn(),
   putMock: vi.fn(),
-  deleteMock: vi.fn(),
   uploadMock: vi.fn(),
 }))
 
-vi.mock('@/api/client', () => ({
-  apiClient: {
+vi.mock('@/api/client', () => {
+  const apiClient = {
+    delete: deleteMock,
     get: getMock,
+    patch: patchMock,
     post: postMock,
     put: putMock,
-    delete: deleteMock,
     upload: uploadMock,
-  },
-}))
+  }
+  return { apiClient, default: apiClient }
+})
 
 function streamFromChunks(chunks: string[]) {
   const encoder = new TextEncoder()
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk))
-      }
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
       controller.close()
     },
   })
 }
 
-describe('character studio api downloads', () => {
+const document = {
+  avatarAssetId: null,
+  avatarUrl: null,
+  bookId: 'book/id one',
+  coreMessages: {},
+  createdAt: '2026-07-01T00:00:00Z',
+  exportArtifacts: {},
+  id: 'doc/id one',
+  identity: {
+    name: 'Saber',
+    aliases: [],
+    description: '',
+    personality: '',
+    scenario: '',
+  },
+  lorebook: { name: '', entries: [] },
+  meta: { title: 'Saber', tags: [] },
+  origin: { type: 'manual', source_character: null, source_pages: [] },
+  regexScripts: [],
+  revision: 3,
+  stateTasks: [],
+  status: { is_favorite: false, frozen_sections: [] },
+  title: 'Saber',
+  updatedAt: '2026-07-01T00:00:00Z',
+}
+
+const session = {
+  archived: false,
+  documentId: 'doc/id one',
+  generation: 1,
+  indexRevision: 2,
+  messages: [
+    {
+      messageId: 'msg-user',
+      role: 'user',
+      content: 'hello',
+      attachments: [],
+      runtimeLog: [],
+      variablesSnapshot: {},
+      generationMeta: {},
+    },
+    {
+      messageId: 'msg-assistant',
+      role: 'assistant',
+      content: 'hello back',
+      attachments: [],
+      runtimeLog: [],
+      variablesSnapshot: {},
+      generationMeta: {},
+    },
+  ],
+  revision: 4,
+  sessionId: 'session/id one',
+  summaryBlocks: [],
+  title: 'Chat',
+  variables: {},
+}
+
+const chatState = {
+  activeSession: session,
+  availableGreetings: [],
+  documentId: 'doc/id one',
+  indexRevision: 2,
+  sessions: [{
+    sessionId: session.sessionId,
+    title: session.title,
+    revision: session.revision,
+    archived: false,
+    updatedAt: '2026-07-01T00:00:00Z',
+  }],
+}
+
+describe('character studio v2 api facade', () => {
   beforeEach(() => {
+    vi.resetModules()
+    deleteMock.mockReset()
     getMock.mockReset()
+    patchMock.mockReset()
     postMock.mockReset()
     putMock.mockReset()
-    deleteMock.mockReset()
     uploadMock.mockReset()
   })
 
@@ -44,148 +126,178 @@ describe('character studio api downloads', () => {
     vi.restoreAllMocks()
   })
 
-  it('routes document and chat endpoints through encoded path helpers', async () => {
-    getMock.mockResolvedValue({ success: true })
-    postMock.mockResolvedValue({ success: true })
-    putMock.mockResolvedValue({ success: true })
-    deleteMock.mockResolvedValue({ success: true })
-
+  it('uses v2 index, stable document IDs, CAS revisions, and durable generation', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith('/index')) {
+        return Promise.resolve({
+          bookId: 'book/id one',
+          candidateStatus: { available: true, reason: null },
+          documents: [{
+            documentId: 'doc/id one',
+            title: 'Saber',
+            kind: 'manual',
+            revision: 3,
+            avatarAssetId: null,
+            updatedAt: 'now',
+          }],
+        })
+      }
+      if (url.endsWith('/candidates')) {
+        return Promise.resolve({ available: true, reason: null, items: [] })
+      }
+      if (url === '/api/v2/studio/documents/doc%2Fid%20one') {
+        return Promise.resolve(document)
+      }
+      if (url === '/api/v2/operations/generate-op') {
+        return Promise.resolve({ operationId: 'generate-op', status: 'completed' })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    putMock.mockResolvedValue({ ...document, revision: 4 })
+    postMock.mockResolvedValue({ operationId: 'generate-op', status: 'pending' })
     const {
-      createCharacterStudioDocument,
-      deleteCharacterStudioChatMessage,
-      deleteCharacterStudioDocument,
-      editCharacterStudioChatMessage,
       generateCharacterStudioSection,
-      getCharacterStudioChatPromptPreview,
       getCharacterStudioDocument,
       getCharacterStudioIndex,
       saveCharacterStudioDocument,
-      switchCharacterStudioChatSession,
     } = await import('@/api/characterStudio')
 
-    const bookId = 'book/id one'
-    const docId = 'doc/id one'
-    const encodedBase = '/api/manga-insight/book%2Fid%20one/character-studio'
-    const encodedDocument = `${encodedBase}/documents/doc%2Fid%20one`
+    const index = await getCharacterStudioIndex('book/id one')
+    const loaded = await getCharacterStudioDocument('book/id one', 'doc/id one')
+    await saveCharacterStudioDocument('book/id one', 'doc/id one', loaded.document!)
+    await generateCharacterStudioSection('book/id one', 'doc/id one', 'identity')
 
-    await getCharacterStudioIndex(bookId)
-    await createCharacterStudioDocument(bookId, { title: 'New Card' })
-    await getCharacterStudioDocument(bookId, docId)
-    await saveCharacterStudioDocument(bookId, docId, { title: 'Saved' })
-    await deleteCharacterStudioDocument(bookId, docId)
-    await generateCharacterStudioSection(bookId, docId, 'profile')
-    await switchCharacterStudioChatSession(bookId, docId, 'session/id one')
-    await editCharacterStudioChatMessage(bookId, docId, 'session/id one', 'message/id one', 'updated')
-    await deleteCharacterStudioChatMessage(bookId, docId, 'session/id one', 'message/id one')
-    await getCharacterStudioChatPromptPreview(bookId, docId, 'session/id one')
-
-    expect(getMock).toHaveBeenNthCalledWith(1, `${encodedBase}/index`)
-    expect(postMock).toHaveBeenNthCalledWith(1, `${encodedBase}/documents`, { title: 'New Card' })
-    expect(getMock).toHaveBeenNthCalledWith(2, encodedDocument)
-    expect(putMock).toHaveBeenNthCalledWith(1, encodedDocument, { title: 'Saved' })
-    expect(deleteMock).toHaveBeenNthCalledWith(1, encodedDocument)
-    expect(postMock).toHaveBeenNthCalledWith(2, `${encodedDocument}/generate/profile`, {})
-    expect(postMock).toHaveBeenNthCalledWith(3, `${encodedDocument}/chat/sessions/session%2Fid%20one/activate`, {})
-    expect(putMock).toHaveBeenNthCalledWith(2, `${encodedDocument}/chat/messages/message%2Fid%20one`, {
-      session_id: 'session/id one',
-      content: 'updated',
-    })
-    expect(deleteMock).toHaveBeenNthCalledWith(
-      2,
-      `${encodedDocument}/chat/messages/message%2Fid%20one?session_id=session%2Fid+one`,
+    expect(index.documents?.[0]).toMatchObject({ id: 'doc/id one', title: 'Saber' })
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/studio/books/book%2Fid%20one/index',
     )
-    expect(getMock).toHaveBeenNthCalledWith(
-      3,
-      `${encodedDocument}/chat/prompt-preview?session_id=session%2Fid+one`,
+    expect(putMock).toHaveBeenCalledWith(
+      '/api/v2/studio/documents/doc%2Fid%20one',
+      expect.objectContaining({
+        baseRevision: 3,
+        title: 'Saber',
+      }),
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    )
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/studio/documents/doc%2Fid%20one/generate',
+      { baseRevision: 4, section: 'identity' },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
     )
   })
 
-  it('exports chat sessions with shared filename parsing', async () => {
-    const blob = new Blob(['chat'], { type: 'application/json' })
+  it('exports documents and chat sessions through v2 download routes', async () => {
+    const blob = new Blob(['data'], { type: 'application/json' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       headers: {
-        get: vi.fn().mockImplementation((name: string) => (
-          name.toLowerCase() === 'content-disposition'
-            ? 'attachment; filename="chat-session.json"'
-            : null
-        )),
+        get: vi.fn().mockReturnValue('attachment; filename="studio.json"'),
       },
       blob: vi.fn().mockResolvedValue(blob),
     })
     vi.stubGlobal('fetch', fetchMock)
+    const {
+      downloadCharacterStudioExport,
+      exportCharacterStudioChatSession,
+    } = await import('@/api/characterStudio')
 
-    const { exportCharacterStudioChatSession } = await import('@/api/characterStudio')
-    const result = await exportCharacterStudioChatSession('book-1', 'doc-a', 'session/one')
+    await exportCharacterStudioChatSession('book-1', 'doc-a', 'session/id one')
+    await downloadCharacterStudioExport('book-1', 'doc/id one', 'v3')
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/manga-insight/book-1/character-studio/documents/doc-a/chat/export?session_id=session%2Fone'
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/v2/studio/chat/sessions/session%2Fid%20one/export',
     )
-    expect(result).toEqual({ blob, filename: 'chat-session.json' })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v2/studio/documents/doc%2Fid%20one/export?format=v3',
+    )
   })
 
-  it('uses download fallback filenames and shared json errors', async () => {
-    const successBlob = new Blob(['card'], { type: 'application/json' })
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        headers: { get: vi.fn().mockReturnValue(null) },
-        blob: vi.fn().mockResolvedValue(successBlob),
-      })
-      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'studio export failed' }), { status: 500 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { downloadCharacterStudioExport, downloadCharacterStudioWorldbook } = await import('@/api/characterStudio')
-
-    await expect(downloadCharacterStudioExport('book-1', 'doc-a', 'json')).resolves.toEqual({
-      blob: successBlob,
-      filename: 'doc-a.json',
+  it('creates a durable chat operation before subscribing to its event stream', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith('/documents/doc%2Fid%20one/chat')) return Promise.resolve(chatState)
+      if (url === '/api/v2/operations/chat-op') {
+        return Promise.resolve({ operationId: 'chat-op', status: 'completed' })
+      }
+      if (url === '/api/v2/studio/chat/sessions/session%2Fid%20one') {
+        return Promise.resolve(session)
+      }
+      throw new Error(`Unexpected GET ${url}`)
     })
-    await expect(downloadCharacterStudioWorldbook('book-1', 'doc-a')).rejects.toThrow('studio export failed')
-  })
-
-  it('streams chat events through the shared SSE reader', async () => {
+    postMock.mockResolvedValue({ operationId: 'chat-op', status: 'pending' })
     const fetchMock = vi.fn().mockResolvedValue(new Response(streamFromChunks([
-      'event: assistant_delta\n',
-      'data: {"delta":"hel',
-      'lo","content":"hello"}\n\n',
-      'event: assistant_done\ndata: {"message_id":"msg-1","content":"hello"}\n\n',
+      'event: chunk\n',
+      'data: {"eventId":1,"type":"chunk","payload":{"text":"hello"}}\n\n',
     ]), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const onEvent = vi.fn()
+    const {
+      getCharacterStudioChatState,
+      streamCharacterStudioChatMessage,
+    } = await import('@/api/characterStudio')
 
-    const { streamCharacterStudioChatMessage } = await import('@/api/characterStudio')
-    await streamCharacterStudioChatMessage('book-1', 'doc-a', {
-      sessionId: 'session-1',
+    await getCharacterStudioChatState('book/id one', 'doc/id one')
+    await streamCharacterStudioChatMessage('book/id one', 'doc/id one', {
+      sessionId: 'session/id one',
       content: 'hello',
       onEvent,
     })
 
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/studio/chat/sessions/session%2Fid%20one/messages',
+      {
+        baseSessionRevision: 4,
+        content: 'hello',
+        assetIds: [],
+      },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v2/operations/chat-op/events?stream=1',
+      {
+        headers: { Accept: 'text/event-stream' },
+        signal: undefined,
+      },
+    )
     expect(onEvent).toHaveBeenCalledWith({
       type: 'assistant_delta',
       delta: 'hello',
       content: 'hello',
     })
     expect(onEvent).toHaveBeenCalledWith({
-      type: 'assistant_done',
-      message_id: 'msg-1',
-      content: 'hello',
+      type: 'state',
+      session: expect.objectContaining({ session_id: 'session/id one' }),
     })
   })
 
-  it('throws when a streamed chat error event arrives', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(streamFromChunks([
-      'event: error\ndata: {"message":"stream failed"}\n\n',
-    ]), { status: 200 })))
+  it('surfaces durable operation failures after the event subscription ends', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith('/documents/doc%2Fid%20one/chat')) return Promise.resolve(chatState)
+      if (url === '/api/v2/operations/regenerate-op') {
+        return Promise.resolve({
+          operationId: 'regenerate-op',
+          status: 'failed',
+          error: { message: 'stream failed' },
+        })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    postMock.mockResolvedValue({ operationId: 'regenerate-op', status: 'pending' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(streamFromChunks([]), { status: 200 }),
+    ))
+    const {
+      getCharacterStudioChatState,
+      regenerateCharacterStudioChatMessage,
+    } = await import('@/api/characterStudio')
 
-    const { regenerateCharacterStudioChatMessage } = await import('@/api/characterStudio')
-
+    await getCharacterStudioChatState('book/id one', 'doc/id one')
     await expect(regenerateCharacterStudioChatMessage(
-      'book-1',
-      'doc-a',
-      'session-1',
-      'msg-1',
+      'book/id one',
+      'doc/id one',
+      'session/id one',
+      'msg-assistant',
       vi.fn(),
     )).rejects.toThrow('stream failed')
   })

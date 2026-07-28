@@ -135,6 +135,7 @@ import AddFormDialog from './AddFormDialog.vue'
 import EditFormDialog from './EditFormDialog.vue'
 import OrthographicDialog from './OrthographicDialog.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
+import * as continuationApi from '@/api/continuation'
 
 const props = defineProps<{
   bookId: string
@@ -320,7 +321,19 @@ async function handleGenerateOrtho(sourceImages: File[]) {
       sourceImages
     )
 
-    if (result.success && result.image_path) {
+    if (result.success && result.task_id) {
+      state.showMessage('三视图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
+      await continuationApi.waitForContinuationJob(result.task_id)
+      await state.initializeData()
+      const form = state.characters.value
+        .find(character => character.name === selectedCharacter.value)
+        ?.forms.find(item => item.form_id === orthoFormId.value)
+      orthoResultImagePath.value = form?.reference_image || null
+      if (!orthoResultImagePath.value) {
+        throw new Error('任务完成但未找到生成结果')
+      }
+      state.showMessage('三视图生成成功', 'success')
+    } else if (result.success && result.image_path) {
       orthoResultImagePath.value = result.image_path
       state.showMessage('三视图生成成功', 'success')
     } else {

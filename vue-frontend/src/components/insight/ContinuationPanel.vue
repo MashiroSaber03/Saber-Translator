@@ -330,22 +330,18 @@ async function handleGenerateScript(payload: { referenceTokens: string[] | null;
       payload.referenceTokens || undefined,
       payload.referenceImageCount
     )
-    if (result.success && result.script) {
-      const hadExistingPages = state.pages.value.length > 0
+    if (result.success && result.task_id) {
+      state.showMessage('脚本生成任务已进入任务中心，关闭浏览器也会继续运行', 'info')
+      await continuationApi.waitForContinuationJob(result.task_id)
+      await state.initializeData()
+      lastSavedScriptText.value = state.chapterScript.value?.script_text ?? ''
+      scriptDirty.value = false
+      state.showMessage('脚本生成成功，旧页面剧情已标记为需要重新生成', 'success')
+    } else if (result.success && result.script) {
       state.chapterScript.value = result.script
       lastSavedScriptText.value = result.script.script_text
       scriptDirty.value = false
-      if (hadExistingPages) {
-        state.pages.value = []
-        await persistPages([])
-      }
-      const baseMessage = hadExistingPages ? '脚本生成成功，已有页面剧情已清空' : '脚本生成成功'
-      const configResult = await persistContinuationConfig()
-      if (configResult.success) {
-        state.showMessage(baseMessage, 'success')
-      } else {
-        state.showMessage(`${baseMessage}，但续写配置保存失败：${configResult.error}`, 'info')
-      }
+      state.showMessage('脚本生成成功', 'success')
     } else {
       state.showMessage('生成失败: ' + result.error, 'error')
     }
@@ -435,65 +431,12 @@ async function handleGeneratePageDetails() {
   }
   state.isGeneratingPages.value = true
   state.errorMessage.value = ''
-  const totalPages = state.chapterScript.value.page_count || state.pageCount.value
-  const workingPages = Array.from({ length: totalPages }, (_, index) => {
-    const pageNumber = index + 1
-    const existing = state.pages.value.find(page => page.page_number === pageNumber)
-    return existing
-      ? { ...existing }
-      : {
-          page_number: pageNumber,
-          continuity_text: '',
-          story_text: '',
-          dialogue_text: '',
-          characters: [],
-          character_forms: [],
-          final_prompt: '',
-          image_url: '',
-          previous_url: '',
-          status: 'pending' as const,
-        }
-  })
-  state.pages.value = [...workingPages]
   try {
-    for (let i = 1; i <= totalPages; i++) {
-      const existingPage = workingPages[i - 1]!
-      const alreadyReady = existingPage.status !== 'failed'
-        && hasUsableStoryContent(existingPage)
-      if (alreadyReady) {
-        continue
-      }
-      state.showMessage(`正在生成第 ${i}/${totalPages} 页剧情...`, 'info')
-      const detailResult = await continuationApi.generateSinglePageDetails(
-        insightStore.currentBookId,
-        state.chapterScript.value,
-        i
-      )
-      if (!detailResult.success || !detailResult.page) {
-        workingPages[i - 1] = {
-          page_number: i,
-          continuity_text: '',
-          story_text: '',
-          dialogue_text: '',
-          characters: [],
-          character_forms: [],
-          final_prompt: '',
-          image_url: '',
-          previous_url: '',
-          status: 'failed' as const
-        }
-        state.pages.value = [...workingPages]
-        await persistPages(workingPages)
-        continue
-      }
-      workingPages[i - 1] = {
-        ...detailResult.page,
-        status: detailResult.page.status || 'pending',
-      }
-      state.pages.value = [...workingPages]
-      await persistPages(workingPages)
-    }
-    state.showMessage(`页面剧情生成完成 (${workingPages.length} 页)`, 'success')
+    const jobId = await continuationApi.generateAllPageDetails(insightStore.currentBookId)
+    state.showMessage('页面剧情任务已整体进入任务中心，关闭浏览器也会继续运行', 'info')
+    await continuationApi.waitForContinuationJob(jobId)
+    await state.initializeData()
+    state.showMessage(`页面剧情生成完成 (${state.pages.value.length} 页)`, 'success')
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {
@@ -520,11 +463,15 @@ async function handleRegenerateImage(pageNumber: number) {
 async function handleUsePrevious(pageNumber: number) {
   const page = state.pages.value.find(p => p.page_number === pageNumber)
   if (!page || !page.previous_url) return
-  const temp = page.image_url
-  page.image_url = page.previous_url
-  page.previous_url = temp
   if (insightStore.currentBookId) {
-    await persistPages()
+    const result = await continuationApi.activatePageImageVersion(
+      insightStore.currentBookId,
+      pageNumber,
+      page.previous_url,
+    )
+    if (result.success) {
+      await state.initializeData()
+    }
   }
 }
 async function handlePromptChange(pageNumber: number, prompt: string) {

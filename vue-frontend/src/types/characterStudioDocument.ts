@@ -98,4 +98,8 @@ export interface CharacterStudioDocument {
     key_moments: Array<Record<string, unknown>>
   }
   exportArtifacts: Record<string, unknown>
+  revision?: number
+  avatarUrl?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
 }

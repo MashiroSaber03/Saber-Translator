@@ -436,6 +436,31 @@ def test_full_analysis_degraded_publish_keeps_failed_page_missing(
     assert page_two["analysisState"] == "not_analyzed"
 
 
+def test_page_summaries_include_source_assets_but_only_thumbnail_urls(
+    insight_platform,
+) -> None:
+    repository = InsightRepository(insight_platform["engine"])
+    result = repository.list_pages(
+        book_id=str(insight_platform["book"]["id"]),
+        chapter_id=None,
+        after=0,
+        limit=100,
+    )
+
+    assert [item["pageId"] for item in result["items"]] == (
+        insight_platform["page_ids"]
+    )
+    assert all(item["sourceAssetId"] for item in result["items"])
+    assert all(
+        item["thumbnailUrl"].startswith("/api/v2/assets/")
+        for item in result["items"]
+    )
+    assert all(
+        item["sourceAssetId"] not in item["thumbnailUrl"]
+        for item in result["items"]
+    )
+
+
 def test_page_scope_publishes_page_head_without_switching_book_head(
     insight_platform,
 ) -> None:

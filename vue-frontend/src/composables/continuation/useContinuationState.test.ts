@@ -312,15 +312,18 @@ describe('useContinuationState', () => {
     }
   })
 
-  it('encodes book ids when building continuation image urls', () => {
+  it('uses backend-owned v2 asset urls without rebuilding legacy paths', () => {
     const state = useContinuationState(ref('book/id one#x'))
-    state.imageRefreshKey.value = 123
+    state.characters.value = [{
+      name: '主角/形态',
+      aliases: [],
+      description: '',
+      forms: [],
+      reference_image: '/api/v2/assets/avatar-1',
+    }]
 
-    expect(state.getCharacterImageUrl('主角/形态')).toBe(
-      '/api/manga-insight/book%2Fid%20one%23x/continuation/characters/%E4%B8%BB%E8%A7%92%2F%E5%BD%A2%E6%80%81/image?t=123',
-    )
-    expect(state.getGeneratedImageUrl('/tmp/generated page.png')).toBe(
-      '/api/manga-insight/book%2Fid%20one%23x/continuation/generated-image?path=%2Ftmp%2Fgenerated%20page.png',
-    )
+    expect(state.getCharacterImageUrl('主角/形态')).toBe('/api/v2/assets/avatar-1')
+    expect(state.getFormImageUrl('/api/v2/assets/form-1')).toBe('/api/v2/assets/form-1')
+    expect(state.getGeneratedImageUrl('/api/v2/assets/page-1')).toBe('/api/v2/assets/page-1')
   })
 })

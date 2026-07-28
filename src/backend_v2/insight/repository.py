@@ -836,6 +836,7 @@ class InsightRepository:
                 "pageId": str(row["page_id"]),
                 "chapterId": str(row["chapter_id"]),
                 "displayPageNumber": int(row["page_number"]),
+                "sourceAssetId": str(row["source_asset_id"]),
                 "thumbnailUrl": (
                     f"/api/v2/assets/{row['thumbnail_asset_id']}"
                     if row["thumbnail_asset_id"]

@@ -96,6 +96,10 @@ class StudioRepository:
                     "kind": str(row["origin_type"]),
                     "revision": int(row["revision"]),
                     "avatarAssetId": row["avatar_asset_id"],
+                    "hasAvatar": row["avatar_asset_id"] is not None,
+                    "sourceCharacter": row["source_character"],
+                    "tags": _load(row["tags_json"], []),
+                    "isFavorite": bool(row["is_favorite"]),
                     "updatedAt": str(row["updated_at"]),
                 }
                 for row in rows

@@ -148,7 +148,7 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         if (!activeBookId) return
 
         const formData = new FormData()
-        formData.append('image', file)
+        formData.append('file', file)
 
         await runContinuationMutation({
             state,

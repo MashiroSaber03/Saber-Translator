@@ -1,7 +1,43 @@
-import { apiClient } from './client'
 import { downloadBlob, readApiErrorMessage } from './download'
 import { readSseStream } from './sse'
+import { waitForOperation } from '@/api/v2/operations'
+import {
+  activateV2StudioSession,
+  createV2StudioDocument,
+  createV2StudioSession,
+  deleteV2StudioDocument,
+  deleteV2StudioMessage,
+  editV2StudioMessage,
+  generateV2StudioDocument,
+  getV2StudioCandidates,
+  getV2StudioChatState,
+  getV2StudioDocument,
+  getV2StudioIndex,
+  getV2StudioPromptPreview,
+  getV2StudioSession,
+  importV2StudioDocument,
+  importV2StudioSession,
+  importV2StudioWorldbook,
+  regenerateV2StudioMessage,
+  sendV2StudioMessage,
+  summarizeV2StudioSession,
+  updateV2StudioDocument,
+  uploadV2StudioAsset,
+  validateV2StudioDocument,
+  v2StudioAgentUrl,
+  v2StudioDocumentExportUrl,
+  v2StudioOperationEventsUrl,
+  v2StudioSessionExportUrl,
+  type V2StudioCandidate,
+  type V2StudioChatState,
+  type V2StudioDocument,
+  type V2StudioSession,
+} from '@/api/v2/studio'
 import type {
+  CharacterStudioChatAttachment,
+  CharacterStudioChatMessage,
+  CharacterStudioChatSession,
+  CharacterStudioChatSessionSummary,
   CharacterStudioDocument,
   CharacterStudioChatStateResponse,
   CharacterStudioDocumentResponse,
@@ -9,188 +45,455 @@ import type {
   ExportDiagnostic,
 } from '@/types/characterStudio'
 
-function characterStudioPathSegment(value: string): string {
-  return encodeURIComponent(value)
+const documentCache = new Map<string, V2StudioDocument>()
+const chatStateCache = new Map<string, V2StudioChatState>()
+const candidateCache = new Map<string, V2StudioCandidate[]>()
+const sessionCache = new Map<string, V2StudioSession>()
+
+function record(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
-function characterStudioEndpoint(bookId: string, suffix = ''): string {
-  return `/api/manga-insight/${characterStudioPathSegment(bookId)}/character-studio${suffix}`
+function array(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
 }
 
-function characterStudioDocumentEndpoint(bookId: string, docId: string, suffix = ''): string {
-  return characterStudioEndpoint(bookId, `/documents/${characterStudioPathSegment(docId)}${suffix}`)
-}
-
-function characterStudioQuery(params: Record<string, string | null | undefined>): string {
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null) {
-      query.set(key, value)
-    }
+function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
+  documentCache.set(raw.id, raw)
+  const origin = record(raw.origin)
+  const status = record(raw.status)
+  const meta = record(raw.meta)
+  const avatar = record(raw.avatar)
+  return {
+    id: raw.id,
+    bookId: raw.bookId,
+    origin: {
+      type: (origin.type === 'analysis' || origin.type === 'imported')
+        ? origin.type
+        : 'manual',
+      source_character: typeof origin.source_character === 'string'
+        ? origin.source_character
+        : null,
+      source_pages: array(origin.source_pages).map(Number).filter(Number.isFinite),
+    },
+    status: {
+      is_favorite: Boolean(status.is_favorite),
+      frozen_sections: array(status.frozen_sections).map(String),
+      last_validated_at: typeof status.last_validated_at === 'string'
+        ? status.last_validated_at
+        : null,
+    },
+    meta: {
+      title: String(meta.title ?? raw.title),
+      tags: array(meta.tags).map(String),
+      created_at: raw.createdAt ?? '',
+      updated_at: raw.updatedAt ?? '',
+    },
+    avatar: {
+      mode: String(avatar.mode ?? (raw.avatarAssetId ? 'asset' : 'none')),
+      asset_path: raw.avatarUrl,
+      source_page: typeof avatar.source_page === 'number' ? avatar.source_page : null,
+    },
+    identity: {
+      name: String(record(raw.identity).name ?? raw.title),
+      aliases: array(record(raw.identity).aliases).map(String),
+      description: String(record(raw.identity).description ?? ''),
+      personality: String(record(raw.identity).personality ?? ''),
+      scenario: String(record(raw.identity).scenario ?? ''),
+    },
+    coreMessages: {
+      first_message: String(record(raw.coreMessages).first_message ?? ''),
+      message_example: String(record(raw.coreMessages).message_example ?? ''),
+      alternate_greetings: array(record(raw.coreMessages).alternate_greetings).map(String),
+      system_prompt: String(record(raw.coreMessages).system_prompt ?? ''),
+      post_history_instructions: String(
+        record(raw.coreMessages).post_history_instructions ?? '',
+      ),
+      creator_notes: String(record(raw.coreMessages).creator_notes ?? ''),
+      character_version: String(record(raw.coreMessages).character_version ?? ''),
+    },
+    lorebook: {
+      name: String(record(raw.lorebook).name ?? ''),
+      entries: array(record(raw.lorebook).entries) as CharacterStudioDocument['lorebook']['entries'],
+    },
+    regexScripts: array(raw.regexScripts) as CharacterStudioDocument['regexScripts'],
+    stateTasks: array(raw.stateTasks) as CharacterStudioDocument['stateTasks'],
+    chatPreset: {
+      opening_mode: String(record(raw.chatPreset).opening_mode ?? 'first_message'),
+    },
+    grounding: {
+      timeline_mode: String(record(raw.grounding).timeline_mode ?? 'enhanced'),
+      sample_pages: array(record(raw.grounding).sample_pages).map(Number).filter(Number.isFinite),
+      relationships: array(record(raw.grounding).relationships) as Array<Record<string, unknown>>,
+      key_moments: array(record(raw.grounding).key_moments) as Array<Record<string, unknown>>,
+    },
+    exportArtifacts: record(raw.exportArtifacts),
+    revision: raw.revision,
+    avatarUrl: raw.avatarUrl,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
   }
-  const serialized = query.toString()
-  return serialized ? `?${serialized}` : ''
+}
+
+function rawDocument(documentId: string, fallback?: CharacterStudioDocument): V2StudioDocument {
+  const cached = documentCache.get(documentId)
+  if (cached) return cached
+  if (!fallback) throw new Error('角色文档版本缺失，请重新加载')
+  return {
+    ...fallback,
+    avatarAssetId: null,
+    avatarUrl: fallback.avatarUrl ?? null,
+    bookId: fallback.bookId,
+    createdAt: fallback.createdAt ?? null,
+    id: fallback.id,
+    revision: fallback.revision ?? 0,
+    title: fallback.meta.title,
+    updatedAt: fallback.updatedAt ?? null,
+  }
+}
+
+function mapAttachment(value: Record<string, unknown>): CharacterStudioChatAttachment {
+  const assetId = String(value.assetId ?? '')
+  return {
+    attachment_id: assetId,
+    filename: String(value.filename ?? assetId),
+    mime_type: String(value.mimeType ?? 'application/octet-stream'),
+    asset_path: String(value.assetUrl ?? ''),
+    created_at: String(value.createdAt ?? ''),
+  }
+}
+
+function mapMessage(value: Record<string, unknown>): CharacterStudioChatMessage {
+  return {
+    message_id: String(value.messageId ?? ''),
+    role: value.role === 'user' ? 'user' : 'assistant',
+    content: String(value.content ?? ''),
+    attachments: array(value.attachments).map(item => mapAttachment(record(item))),
+    runtime_log: array(value.runtimeLog) as Array<Record<string, unknown>>,
+    variables_snapshot: record(value.variablesSnapshot),
+    generation_meta: record(value.generationMeta),
+    created_at: String(value.createdAt ?? ''),
+    updated_at: String(value.updatedAt ?? ''),
+  }
+}
+
+function mapSession(raw: V2StudioSession): CharacterStudioChatSession {
+  sessionCache.set(raw.sessionId, raw)
+  return {
+    session_id: raw.sessionId,
+    doc_id: raw.documentId,
+    title: raw.title,
+    created_at: String(raw.createdAt ?? ''),
+    updated_at: String(raw.updatedAt ?? ''),
+    archived_at: raw.archived ? String(raw.updatedAt ?? '') : null,
+    greeting_source: record(raw.greetingSource),
+    summary_blocks: raw.summaryBlocks.map(block => ({
+      summary_id: String(block.summaryId ?? ''),
+      content: String(block.content ?? ''),
+      created_at: String(block.createdAt ?? ''),
+      covered_message_ids: array(block.coveredMessageIds).map(String),
+    })),
+    messages: raw.messages.map(mapMessage),
+    variables: raw.variables,
+    _runtime: record(raw.runtimeState),
+    last_prompt_preview: '',
+  }
+}
+
+function mapSessionSummary(value: Record<string, unknown>): CharacterStudioChatSessionSummary {
+  return {
+    session_id: String(value.sessionId ?? ''),
+    title: String(value.title ?? ''),
+    message_count: Number(value.messageCount ?? 0),
+    updated_at: String(value.updatedAt ?? ''),
+    archived_at: value.archived ? String(value.updatedAt ?? '') : null,
+    last_message_excerpt: String(value.lastMessageExcerpt ?? ''),
+  }
+}
+
+function mapChatState(raw: V2StudioChatState): CharacterStudioChatStateResponse {
+  chatStateCache.set(raw.documentId, raw)
+  return {
+    success: true,
+    doc_id: raw.documentId,
+    active_session: raw.activeSession ? mapSession(raw.activeSession) : undefined,
+    archived_sessions: raw.sessions
+      .filter(item => Boolean(item.archived))
+      .map(mapSessionSummary),
+    available_greetings: array(raw.availableGreetings).map(item => {
+      const greeting = record(item)
+      return {
+        greeting_id: String(greeting.greetingId ?? ''),
+        label: String(greeting.label ?? ''),
+        content: String(greeting.content ?? ''),
+        source: record(greeting.source),
+      }
+    }),
+  }
+}
+
+async function refreshedChatState(documentId: string): Promise<CharacterStudioChatStateResponse> {
+  return mapChatState(await getV2StudioChatState(documentId))
+}
+
+function cachedSession(sessionId: string): V2StudioSession {
+  const cached = sessionCache.get(sessionId)
+  if (cached) return cached
+  throw new Error('聊天会话版本缺失，请重新加载')
 }
 
 export async function getCharacterStudioIndex(bookId: string): Promise<CharacterStudioIndexResponse> {
-  return apiClient.get<CharacterStudioIndexResponse>(characterStudioEndpoint(bookId, '/index'))
+  const [index, candidates] = await Promise.all([
+    getV2StudioIndex(bookId),
+    getV2StudioCandidates(bookId),
+  ])
+  candidateCache.set(bookId, candidates.items)
+  return {
+    success: true,
+    book_id: bookId,
+    documents: index.documents.map(item => ({
+      id: item.documentId,
+      title: item.title,
+      origin: item.kind === 'analysis' || item.kind === 'imported' ? item.kind : 'manual',
+      source_character: item.sourceCharacter ?? null,
+      updated_at: item.updatedAt,
+      tags: item.tags ?? [],
+      is_favorite: item.isFavorite ?? false,
+      has_avatar: item.hasAvatar ?? Boolean(item.avatarAssetId),
+      sample_pages: [],
+    })),
+    candidates: candidates.items.map(item => ({
+      name: item.name,
+      aliases: item.aliases,
+      first_appearance: item.firstAppearancePage ?? 0,
+      dialogue_count: item.keyMomentCount,
+      has_dialogues: item.keyMomentCount > 0,
+      sample_pages: item.relatedPageNumbers,
+    })),
+    count: index.documents.length,
+    has_timeline: candidates.available,
+  }
 }
 
 export async function getCharacterStudioCandidates(bookId: string): Promise<CharacterStudioIndexResponse> {
-  return apiClient.get<CharacterStudioIndexResponse>(characterStudioEndpoint(bookId, '/candidates'))
+  const result = await getV2StudioCandidates(bookId)
+  candidateCache.set(bookId, result.items)
+  return {
+    success: true,
+    book_id: bookId,
+    candidates: result.items.map(item => ({
+      name: item.name,
+      aliases: item.aliases,
+      first_appearance: item.firstAppearancePage ?? 0,
+      dialogue_count: item.keyMomentCount,
+      has_dialogues: item.keyMomentCount > 0,
+      sample_pages: item.relatedPageNumbers,
+    })),
+    has_timeline: result.available,
+  }
 }
 
 export async function createCharacterStudioDocument(
   bookId: string,
-  payload?: { candidate_name?: string; title?: string }
+  payload?: { candidate_name?: string; title?: string },
 ): Promise<CharacterStudioDocumentResponse> {
-  return apiClient.post<CharacterStudioDocumentResponse>(characterStudioEndpoint(bookId, '/documents'), payload || {})
+  const candidate = candidateCache.get(bookId)?.find(item => item.name === payload?.candidate_name)
+  const document = await createV2StudioDocument(bookId, {
+    title: payload?.title ?? candidate?.name ?? '新角色',
+    ...(candidate ? { candidate } : {}),
+  })
+  return { success: true, document: mapDocument(document) }
 }
 
-export async function getCharacterStudioDocument(bookId: string, docId: string): Promise<CharacterStudioDocumentResponse> {
-  return apiClient.get<CharacterStudioDocumentResponse>(characterStudioDocumentEndpoint(bookId, docId))
+export async function getCharacterStudioDocument(
+  _bookId: string,
+  docId: string,
+): Promise<CharacterStudioDocumentResponse> {
+  return { success: true, document: mapDocument(await getV2StudioDocument(docId)) }
 }
 
 export async function saveCharacterStudioDocument(
-  bookId: string,
+  _bookId: string,
   docId: string,
-  payload: CharacterStudioDocument
+  payload: CharacterStudioDocument,
 ): Promise<CharacterStudioDocumentResponse> {
-  return apiClient.put<CharacterStudioDocumentResponse>(
-    characterStudioDocumentEndpoint(bookId, docId),
-    payload
-  )
+  const current = rawDocument(docId, payload)
+  const document = await updateV2StudioDocument(docId, {
+    baseRevision: current.revision,
+    title: payload.meta.title,
+    document: payload as unknown as Record<string, unknown>,
+  })
+  return { success: true, document: mapDocument(document) }
 }
 
-export async function deleteCharacterStudioDocument(bookId: string, docId: string): Promise<{ success: boolean; error?: string; message?: string }> {
-  return apiClient.delete(characterStudioDocumentEndpoint(bookId, docId))
+export async function deleteCharacterStudioDocument(
+  _bookId: string,
+  docId: string,
+): Promise<{ success: boolean; error?: string; message?: string }> {
+  await deleteV2StudioDocument(docId)
+  documentCache.delete(docId)
+  chatStateCache.delete(docId)
+  return { success: true, message: '角色文档已删除' }
 }
 
 export async function generateCharacterStudioSection(
-  bookId: string,
+  _bookId: string,
   docId: string,
-  section: string
+  section: string,
 ): Promise<CharacterStudioDocumentResponse> {
-  return apiClient.post<CharacterStudioDocumentResponse>(
-    characterStudioDocumentEndpoint(bookId, docId, `/generate/${characterStudioPathSegment(section)}`),
-    {}
-  )
+  const current = rawDocument(docId)
+  const accepted = await generateV2StudioDocument(docId, current.revision, section)
+  await waitForOperation(accepted.operationId)
+  return {
+    success: true,
+    document: mapDocument(await getV2StudioDocument(docId)),
+  }
 }
 
-export async function validateCharacterStudioDocument(bookId: string, docId: string): Promise<ExportDiagnostic & { success: boolean; message?: string; error?: string }> {
-  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/validate'), {})
+export async function validateCharacterStudioDocument(
+  _bookId: string,
+  docId: string,
+): Promise<ExportDiagnostic & { success: boolean; message?: string; error?: string }> {
+  const current = rawDocument(docId)
+  const response = await validateV2StudioDocument(docId, current.revision)
+  const diagnostics = record(response.diagnostics)
+  const refreshed = await getV2StudioDocument(docId)
+  mapDocument(refreshed)
+  return {
+    success: true,
+    valid: Boolean(diagnostics.valid),
+    errors: array(diagnostics.errors).map(String),
+    warnings: array(diagnostics.warnings).map(String),
+    checks: record(diagnostics.checks) as Record<string, boolean>,
+  }
 }
 
 export async function runCharacterStudioAgent(
-  bookId: string,
+  _bookId: string,
   docId: string,
-  message: string
+  message: string,
 ): Promise<{ success: boolean; content?: string; context?: string; error?: string; message?: string }> {
-  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/agent'), { message })
+  const response = await fetch(v2StudioAgentUrl(docId), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({ content: message }),
+  })
+  if (!response.ok) throw new Error(await readApiErrorMessage(response, 'Agent 调用失败'))
+  let content = ''
+  let streamError = ''
+  await readSseStream<Record<string, unknown>>(response, {
+    missingBodyMessage: '无法读取 Agent 响应流',
+    parseErrorMessage: 'Agent 响应格式无效',
+    onMessage(event) {
+      if (event.event === 'chunk') content += String(event.data.text ?? '')
+      if (event.event === 'error') streamError = String(event.data.message ?? 'Agent 调用失败')
+    },
+  })
+  return streamError
+    ? { success: false, error: streamError }
+    : { success: true, content, context: '' }
 }
 
 export async function getCharacterStudioChatState(
-  bookId: string,
+  _bookId: string,
   docId: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.get(characterStudioDocumentEndpoint(bookId, docId, '/chat'))
+  return refreshedChatState(docId)
 }
 
 export async function createCharacterStudioChatSession(
-  bookId: string,
+  _bookId: string,
   docId: string,
   greetingId?: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/chat/sessions'), {
-    greeting_id: greetingId || null,
+  const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
+  await createV2StudioSession(docId, {
+    baseIndexRevision: state.indexRevision,
+    ...(greetingId ? { greetingId } : {}),
   })
+  return refreshedChatState(docId)
 }
 
 export async function switchCharacterStudioChatSession(
-  bookId: string,
+  _bookId: string,
   docId: string,
   sessionId: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.post(
-    characterStudioDocumentEndpoint(bookId, docId, `/chat/sessions/${characterStudioPathSegment(sessionId)}/activate`),
-    {}
-  )
+  const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
+  await activateV2StudioSession(sessionId, state.indexRevision)
+  return refreshedChatState(docId)
 }
 
 export async function editCharacterStudioChatMessage(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   sessionId: string,
   messageId: string,
   content: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
-  return apiClient.put(characterStudioDocumentEndpoint(
-    bookId,
-    docId,
-    `/chat/messages/${characterStudioPathSegment(messageId)}`
-  ), {
-    session_id: sessionId,
-    content,
-  })
+  const session = cachedSession(sessionId)
+  const accepted = await editV2StudioMessage(messageId, session.revision, content)
+  await waitForOperation(accepted.operationId)
+  return { success: true, session: mapSession(await getV2StudioSession(sessionId)) }
 }
 
 export async function deleteCharacterStudioChatMessage(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   sessionId: string,
   messageId: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
-  return apiClient.delete(
-    characterStudioDocumentEndpoint(
-      bookId,
-      docId,
-      `/chat/messages/${characterStudioPathSegment(messageId)}${characterStudioQuery({ session_id: sessionId })}`
-    )
-  )
+  const session = cachedSession(sessionId)
+  const updated = await deleteV2StudioMessage(messageId, session.revision)
+  return { success: true, session: mapSession(updated) }
 }
 
 export async function summarizeCharacterStudioChatSession(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   sessionId: string,
-  cutoffMessageId?: string,
+  _cutoffMessageId?: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
-  return apiClient.post(characterStudioDocumentEndpoint(bookId, docId, '/chat/summary'), {
-    session_id: sessionId,
-    cutoff_message_id: cutoffMessageId || null,
-  })
+  const session = cachedSession(sessionId)
+  const accepted = await summarizeV2StudioSession(sessionId, session.revision)
+  await waitForOperation(accepted.operationId)
+  return { success: true, session: mapSession(await getV2StudioSession(sessionId)) }
 }
 
 export async function exportCharacterStudioChatSession(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   sessionId: string,
 ): Promise<{ blob: Blob; filename: string }> {
   return downloadBlob({
-    url: characterStudioDocumentEndpoint(bookId, docId, `/chat/export${characterStudioQuery({ session_id: sessionId })}`),
-    fallbackFilename: `${docId}.${sessionId}.chat.json`,
+    url: v2StudioSessionExportUrl(sessionId),
+    fallbackFilename: `${sessionId}.chat.json`,
     fallbackErrorMessage: '导出聊天记录失败',
   })
 }
 
 export async function importCharacterStudioChatSession(
-  bookId: string,
+  _bookId: string,
   docId: string,
   file: File,
 ): Promise<CharacterStudioChatStateResponse> {
-  const form = new FormData()
-  form.append('file', file)
-  return apiClient.upload(characterStudioDocumentEndpoint(bookId, docId, '/chat/import'), form)
+  const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
+  await importV2StudioSession(docId, state.indexRevision, file)
+  return refreshedChatState(docId)
 }
 
 export async function getCharacterStudioChatPromptPreview(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   sessionId: string,
 ): Promise<CharacterStudioChatStateResponse> {
-  return apiClient.get(
-    characterStudioDocumentEndpoint(bookId, docId, `/chat/prompt-preview${characterStudioQuery({ session_id: sessionId })}`)
-  )
+  const result = await getV2StudioPromptPreview(sessionId)
+  return { success: true, prompt_preview: result.promptPreview }
 }
 
 export type CharacterStudioChatStreamEvent =
@@ -201,29 +504,45 @@ export type CharacterStudioChatStreamEvent =
   | { type: 'error'; message: string }
   | { type: 'heartbeat'; ok: boolean }
 
-async function readCharacterStudioChatStream(
-  response: Response,
+async function followStudioOperation(
+  operationId: string,
+  sessionId: string,
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
+  const response = await fetch(v2StudioOperationEventsUrl(operationId), {
+    headers: { Accept: 'text/event-stream' },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, '聊天事件订阅失败'))
+  }
+  let content = ''
   await readSseStream<Record<string, unknown>>(response, {
     missingBodyMessage: '无法读取聊天事件流',
     parseErrorMessage: '解析聊天事件流失败',
     onMessage(message) {
-      const event = {
-        type: message.event,
-        ...message.data,
-      } as CharacterStudioChatStreamEvent
-      onEvent(event)
-      if (event.type === 'error') {
-        throw new Error(event.message || '聊天事件流返回错误')
-      }
+      if (message.event !== 'chunk') return
+      const payload = record(message.data.payload)
+      const delta = String(payload.text ?? '')
+      content += delta
+      onEvent({ type: 'assistant_delta', delta, content })
     },
   })
+  await waitForOperation(operationId, { signal })
+  const session = mapSession(await getV2StudioSession(sessionId))
+  const assistant = [...session.messages].reverse().find(message => message.role === 'assistant')
+  onEvent({
+    type: 'assistant_done',
+    message_id: assistant?.message_id ?? '',
+    content: assistant?.content ?? content,
+  })
+  onEvent({ type: 'state', session })
 }
 
 export async function streamCharacterStudioChatMessage(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   payload: {
     sessionId: string
     content: string
@@ -232,93 +551,89 @@ export async function streamCharacterStudioChatMessage(
     signal?: AbortSignal
   },
 ): Promise<void> {
-  const form = new FormData()
-  form.append('session_id', payload.sessionId)
-  form.append('content', payload.content)
-  for (const file of payload.attachments || []) {
-    form.append(file.name || 'attachment', file)
-  }
-  const response = await fetch(characterStudioDocumentEndpoint(bookId, docId, '/chat/messages/stream'), {
-    method: 'POST',
-    body: form,
-    signal: payload.signal,
-    headers: { Accept: 'text/event-stream' },
+  const session = cachedSession(payload.sessionId)
+  const assets = await Promise.all((payload.attachments ?? []).map(uploadV2StudioAsset))
+  const accepted = await sendV2StudioMessage(payload.sessionId, {
+    baseSessionRevision: session.revision,
+    content: payload.content,
+    assetIds: assets.map(asset => asset.assetId),
   })
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, '聊天消息发送失败'))
-  }
-  await readCharacterStudioChatStream(response, payload.onEvent)
+  await followStudioOperation(
+    accepted.operationId,
+    payload.sessionId,
+    payload.onEvent,
+    payload.signal,
+  )
 }
 
 export async function regenerateCharacterStudioChatMessage(
-  bookId: string,
-  docId: string,
+  _bookId: string,
+  _docId: string,
   sessionId: string,
   messageId: string,
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(characterStudioDocumentEndpoint(
-    bookId,
-    docId,
-    `/chat/messages/${characterStudioPathSegment(messageId)}/regenerate/stream`
-  ), {
-    method: 'POST',
-    body: JSON.stringify({ session_id: sessionId }),
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
-  })
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, '消息重生失败'))
-  }
-  await readCharacterStudioChatStream(response, onEvent)
+  const session = cachedSession(sessionId)
+  const accepted = await regenerateV2StudioMessage(messageId, session.revision)
+  await followStudioOperation(accepted.operationId, sessionId, onEvent, signal)
 }
 
 export async function importCharacterStudioFile(
   bookId: string,
-  file: File
+  file: File,
 ): Promise<CharacterStudioDocumentResponse> {
-  const form = new FormData()
-  form.append('file', file)
-  return apiClient.upload<CharacterStudioDocumentResponse>(characterStudioEndpoint(bookId, '/imports'), form)
+  return {
+    success: true,
+    document: mapDocument(await importV2StudioDocument(bookId, file)),
+  }
 }
 
 export async function importWorldbookIntoCharacterStudioDocument(
-  bookId: string,
+  _bookId: string,
   docId: string,
-  file: File
+  file: File,
 ): Promise<CharacterStudioDocumentResponse> {
-  const form = new FormData()
-  form.append('file', file)
-  return apiClient.upload<CharacterStudioDocumentResponse>(
-    characterStudioDocumentEndpoint(bookId, docId, '/worldbook/import'),
-    form
-  )
+  const current = rawDocument(docId)
+  return {
+    success: true,
+    document: mapDocument(
+      await importV2StudioWorldbook(docId, current.revision, file),
+    ),
+  }
 }
 
-export async function downloadCharacterStudioExport(bookId: string, docId: string, format: string): Promise<{ blob: Blob; filename: string }> {
+export function downloadCharacterStudioExport(
+  _bookId: string,
+  docId: string,
+  format: string,
+): Promise<{ blob: Blob; filename: string }> {
   return downloadBlob({
-    url: characterStudioDocumentEndpoint(bookId, docId, `/export${characterStudioQuery({ format })}`),
+    url: v2StudioDocumentExportUrl(docId, format),
     fallbackFilename: `${docId}.${format}`,
     fallbackErrorMessage: '导出失败',
   })
 }
 
-export async function downloadCharacterStudioWorldbook(bookId: string, docId: string): Promise<{ blob: Blob; filename: string }> {
+export function downloadCharacterStudioWorldbook(
+  _bookId: string,
+  docId: string,
+): Promise<{ blob: Blob; filename: string }> {
   return downloadBlob({
-    url: characterStudioDocumentEndpoint(bookId, docId, '/worldbook/export'),
+    url: v2StudioDocumentExportUrl(docId, 'worldbook'),
     fallbackFilename: `${docId}.worldbook.json`,
     fallbackErrorMessage: '导出世界书失败',
   })
 }
 
-export function getCharacterStudioAvatarUrl(bookId: string, docId: string): string {
-  return characterStudioDocumentEndpoint(bookId, docId, '/avatar')
+export function getCharacterStudioAvatarUrl(_bookId: string, docId: string): string {
+  return documentCache.get(docId)?.avatarUrl ?? ''
 }
 
-export function getCharacterStudioChatAttachmentUrl(bookId: string, docId: string, assetPath: string): string {
-  return characterStudioDocumentEndpoint(bookId, docId, `/chat/attachment${characterStudioQuery({ asset_path: assetPath })}`)
+export function getCharacterStudioChatAttachmentUrl(
+  _bookId: string,
+  _docId: string,
+  assetPath: string,
+): string {
+  return assetPath
 }

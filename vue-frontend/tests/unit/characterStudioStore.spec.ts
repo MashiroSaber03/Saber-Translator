@@ -770,7 +770,7 @@ describe('characterStudioStore', () => {
     expect(store.errorMessage).toBe('AI 生成结果缺少 identity。')
   })
 
-  it('editing a user message automatically regenerates the assistant reply for that turn', async () => {
+  it('uses the backend-regenerated session returned by a durable user-message edit', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
@@ -786,52 +786,20 @@ describe('characterStudioStore', () => {
       success: true,
       session: {
         ...deepClone(conversationChatSession),
-        messages: deepClone(conversationChatSession.messages.slice(0, 2)).map((item, index) => {
-          if (index === 1) {
-            return {
-              ...item,
-              content: '编辑后的用户消息',
-              generation_meta: { original_content: '编辑后的用户消息' },
-            }
-          }
-          return item
-        }),
+        messages: [
+          deepClone(conversationChatSession.messages[0]!),
+          {
+            ...deepClone(conversationChatSession.messages[1]!),
+            content: '编辑后的用户消息',
+            generation_meta: { original_content: '编辑后的用户消息' },
+          },
+          {
+            ...deepClone(conversationChatSession.messages[2]!),
+            message_id: 'msg_assistant_regenerated',
+            content: '新的回答',
+          },
+        ],
       },
-    })
-
-    regenerateCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      _bookId,
-      _docId,
-      _sessionId,
-      _messageId,
-      onEvent,
-    ) => {
-      onEvent({
-        type: 'assistant_delta',
-        delta: '新的',
-        content: '新的回答',
-      })
-      onEvent({
-        type: 'state',
-        session: {
-          ...deepClone(conversationChatSession),
-          messages: [
-            {
-              ...deepClone(conversationChatSession.messages[0]!),
-            },
-            {
-              ...deepClone(conversationChatSession.messages[1]!),
-              content: '编辑后的用户消息',
-              generation_meta: { original_content: '编辑后的用户消息' },
-            },
-            {
-              ...deepClone(conversationChatSession.messages[2]!),
-              message_id: 'msg_assistant_regenerated',
-              content: '新的回答',
-            },
-          ],
-        },
-      })
     })
 
     await store.loadWorkspace('book-demo')
@@ -839,7 +807,7 @@ describe('characterStudioStore', () => {
     await store.editChatMessage('msg_user_1', '编辑后的用户消息')
 
     expect(editCharacterStudioChatMessageMock).toHaveBeenCalledTimes(1)
-    expect(regenerateCharacterStudioChatMessageMock).toHaveBeenCalledTimes(1)
+    expect(regenerateCharacterStudioChatMessageMock).not.toHaveBeenCalled()
     expect(store.activeChatSession?.messages.map(item => item.content)).toEqual([
       '我是阿尔法。',
       '编辑后的用户消息',

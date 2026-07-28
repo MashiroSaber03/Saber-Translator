@@ -24,7 +24,7 @@ describe('useCharacterManagement', () => {
     expect(helperSource).toContain('function formatContinuationActionError')
   })
 
-  it('uploads form images using the image field expected by the backend', async () => {
+  it('uploads form images using the v2 file field', async () => {
     uploadFormImageMock.mockResolvedValue({ success: true, image_path: '/tmp/form.png' })
 
     const state = {
@@ -42,8 +42,8 @@ describe('useCharacterManagement', () => {
     expect(uploadFormImageMock).toHaveBeenCalledTimes(1)
     const [, , , formData] = uploadFormImageMock.mock.calls[0]
     expect(formData).toBeInstanceOf(FormData)
-    expect(formData.has('image')).toBe(true)
-    expect(formData.get('image')).toBe(file)
-    expect(formData.has('file')).toBe(false)
+    expect(formData.has('file')).toBe(true)
+    expect(formData.get('file')).toBe(file)
+    expect(formData.has('image')).toBe(false)
   })
 })
