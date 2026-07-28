@@ -2267,13 +2267,26 @@ components:
       allOf:
         - $ref: "#/components/schemas/Job"
         - type: object
-          required: [items]
+          required: [items, artifacts]
           properties:
             items:
               type: array
               items:
                 type: object
                 additionalProperties: true
+            artifacts:
+              type: array
+              items:
+                $ref: "#/components/schemas/JobArtifact"
+    JobArtifact:
+      type: object
+      additionalProperties: false
+      required: [kind, assetId, url, expiresAt]
+      properties:
+        kind: {type: string}
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        url: {type: string}
+        expiresAt: {type: [string, "null"], format: date-time}
     JobEvent:
       type: object
       additionalProperties: false
@@ -2470,10 +2483,54 @@ components:
           minimum: 1
         mutations:
           type: array
-          minItems: 1
           maxItems: 500
           items:
             $ref: "#/components/schemas/BubbleMutation"
+        defaultFontId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        pageStyleDefaultsPatch:
+          $ref: "#/components/schemas/PageStyleDefaultsPatch"
+        propagateStyleFields:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/PageStyleField"
+    PageStyleField:
+      type: string
+      enum:
+        - fontSize
+        - autoFontSize
+        - fontFamily
+        - layoutDirection
+        - textColor
+        - fillColor
+        - inpaintMethod
+        - useAutoTextColor
+        - strokeEnabled
+        - strokeColor
+        - strokeWidth
+        - lineSpacing
+        - textAlign
+    PageStyleDefaultsPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        fontSize: {type: integer, minimum: 1, maximum: 512}
+        autoFontSize: {type: boolean}
+        fontFamily: {$ref: "#/components/schemas/Uuid"}
+        layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
+        textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        useAutoTextColor: {type: boolean}
+        strokeEnabled: {type: boolean}
+        strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        strokeWidth: {type: integer, minimum: 0, maximum: 64}
+        lineSpacing: {type: number, exclusiveMinimum: 0, maximum: 10}
+        textAlign: {type: string, enum: [start, center, end]}
     BubbleDocument:
       type: object
       additionalProperties: false
@@ -2494,11 +2551,46 @@ components:
     PageDocument:
       type: object
       additionalProperties: false
-      required: [pageId, documentRevision, bubbles]
+      required:
+        - pageId
+        - chapterId
+        - documentRevision
+        - defaultFontId
+        - pageStyleDefaults
+        - pageStyleSchemaVersion
+        - bubbles
       properties:
         pageId:
           $ref: "#/components/schemas/Uuid"
+        chapterId:
+          $ref: "#/components/schemas/Uuid"
         documentRevision:
+          type: integer
+          minimum: 1
+        defaultFontId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        pageStyleDefaults:
+          type: object
+          additionalProperties: false
+          required:
+            - fontSize
+            - autoFontSize
+            - fontFamily
+            - layoutDirection
+            - textColor
+            - fillColor
+            - inpaintMethod
+            - useAutoTextColor
+            - strokeEnabled
+            - strokeColor
+            - strokeWidth
+            - lineSpacing
+            - textAlign
+          allOf:
+            - $ref: "#/components/schemas/PageStyleDefaultsPatch"
+        pageStyleSchemaVersion:
           type: integer
           minimum: 1
         bubbles:

@@ -1,218 +1,173 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { createPinia, setActivePinia } from 'pinia'
-import * as fc from 'fast-check'
-import { useImageStore } from '@/stores/imageStore'
-import { useExportImport, type ExportTextData } from '@/composables/useExportImport'
-import type { BubbleState } from '@/types/bubble'
+import { readFileSync } from 'node:fs'
 
-describe('text export/import properties', () => {
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { useExportImport } from '@/composables/useExportImport'
+import { useImageStore } from '@/stores/imageStore'
+
+const mocks = vi.hoisted(() => ({
+  commitChapterTextImport: vi.fn(),
+  createChapterExportJob: vi.fn(),
+  getChapterTextExportUrl: vi.fn(),
+  jobGet: vi.fn(),
+  jobList: vi.fn(),
+  previewChapterTextImport: vi.fn(),
+  triggerUrlDownload: vi.fn(),
+  toast: {
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+  },
+}))
+
+vi.mock('@/api/v2/translation', () => ({
+  commitChapterTextImport: mocks.commitChapterTextImport,
+  createChapterExportJob: mocks.createChapterExportJob,
+  getChapterTextExportUrl: mocks.getChapterTextExportUrl,
+  previewChapterTextImport: mocks.previewChapterTextImport,
+}))
+
+vi.mock('@/api/v2/jobs', () => ({
+  jobsApi: {
+    get: mocks.jobGet,
+    list: mocks.jobList,
+  },
+}))
+
+vi.mock('@/utils/browserDownload', () => ({
+  triggerUrlDownload: mocks.triggerUrlDownload,
+}))
+
+vi.mock('@/utils/toast', () => ({
+  useToast: () => mocks.toast,
+}))
+
+function seedChapter() {
+  const store = useImageStore()
+  store.addImage('001.png', '/api/v2/assets/source-1', {
+    chapterId: 'chapter-1',
+    id: 'page-1',
+    sourceAssetUrl: '/api/v2/assets/source-1',
+  })
+  store.addImage('002.png', '/api/v2/assets/source-2', {
+    chapterId: 'chapter-1',
+    id: 'page-2',
+    sourceAssetUrl: '/api/v2/assets/source-2',
+  })
+  return store
+}
+
+describe('backend-owned export/import contracts', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mocks.getChapterTextExportUrl.mockReturnValue('/api/v2/chapters/chapter-1/text-export')
+    mocks.jobList.mockResolvedValue({ items: [], queueRevision: 1 })
   })
 
-  const validTextArb = fc.string({ minLength: 0, maxLength: 100 })
-  const concreteDirectionArb = fc.constantFrom('vertical', 'horizontal') as fc.Arbitrary<
-    'vertical' | 'horizontal'
-  >
-  const bubbleCoordsArb = fc
-    .record({
-      x1: fc.nat(1000),
-      y1: fc.nat(1000),
-      width: fc.integer({ min: 1, max: 1000 }),
-      height: fc.integer({ min: 1, max: 1000 }),
-    })
-    .map(
-      ({ x1, y1, width, height }) =>
-        [x1, y1, x1 + width, y1 + height] as [number, number, number, number],
+  it('downloads text from the backend export endpoint', () => {
+    seedChapter()
+
+    useExportImport().exportText()
+
+    expect(mocks.getChapterTextExportUrl).toHaveBeenCalledWith('chapter-1')
+    expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
+      '/api/v2/chapters/chapter-1/text-export',
     )
-
-  const bubbleStateArb: fc.Arbitrary<BubbleState> = fc.record({
-    coords: bubbleCoordsArb,
-    polygon: fc.constant([]) as fc.Arbitrary<number[][]>,
-    originalText: validTextArb,
-    translatedText: validTextArb,
-    textboxText: validTextArb,
-    fontSize: fc.integer({ min: 10, max: 100 }),
-    fontFamily: fc.constant('fonts/STSONG.TTF'),
-    textDirection: fc.constantFrom('vertical', 'horizontal', 'auto') as fc.Arbitrary<
-      'vertical' | 'horizontal' | 'auto'
-    >,
-    autoTextDirection: concreteDirectionArb,
-    textColor: fc.constant('#000000'),
-    fillColor: fc.constant('#FFFFFF'),
-    rotationAngle: fc.integer({ min: 0, max: 360 }),
-    position: fc.constant({ x: 0, y: 0 }),
-    strokeEnabled: fc.boolean(),
-    strokeColor: fc.constant('#FFFFFF'),
-    strokeWidth: fc.integer({ min: 1, max: 10 }),
-    lineSpacing: fc.double({ min: 0.5, max: 3, noNaN: true }),
-    textAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<
-      'start' | 'center' | 'end'
-    >,
-    inpaintMethod: fc.constantFrom('solid', 'lama_mpe', 'litelama') as fc.Arbitrary<
-      'solid' | 'lama_mpe' | 'litelama'
-    >,
-    textlines: fc.constant([]),
   })
-  const mockDataUrlArb = fc.constant(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  )
 
-  function addImageWithBubbles(fileName: string, dataUrl: string, bubbleStates: BubbleState[]): void {
-    const store = useImageStore()
-    store.addImage(fileName, dataUrl)
-    const image = store.images.at(-1)
-    if (image) {
-      image.bubbleStates = bubbleStates
+  it('previews text on the backend and commits only matched changed pages', async () => {
+    seedChapter()
+    const matchingPage = {
+      baseDocumentRevision: 7,
+      changes: [{
+        bubbleId: 'bubble-1',
+        differences: { translatedText: { after: '你好', before: 'hello' } },
+        fields: { translatedText: '你好' },
+      }],
+      issues: [],
+      pageId: 'page-1',
+      sourceAssetId: 'source-1',
+      sourceChecksum: 'sha256:source-1',
+      status: 'match' as const,
     }
-  }
-
-  function exportCurrentStoreText(): ExportTextData[] | null {
-    const { exportTextToJson } = useExportImport()
-    return exportTextToJson()
-  }
-
-  it('exports one image record for each image in the store', () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.array(bubbleStateArb, { minLength: 1, maxLength: 5 }), {
-          minLength: 1,
-          maxLength: 5,
-        }),
-        mockDataUrlArb,
-        (bubbleStatesPerImage, dataUrl) => {
-          setActivePinia(createPinia())
-
-          for (const [index, bubbleStates] of bubbleStatesPerImage.entries()) {
-            addImageWithBubbles(`image_${index}.png`, dataUrl, bubbleStates)
-          }
-
-          const exportData = exportCurrentStoreText()
-
-          expect(exportData).not.toBeNull()
-          expect(exportData).toHaveLength(bubbleStatesPerImage.length)
-          expect(exportData?.map(imageData => imageData.imageIndex)).toEqual(
-            bubbleStatesPerImage.map((_, index) => index),
-          )
-          for (const [imageIndex, imageData] of (exportData ?? []).entries()) {
-            const expectedBubbles = bubbleStatesPerImage[imageIndex] ?? []
-            expect(imageData.bubbles).toHaveLength(expectedBubbles.length)
-            expect(imageData.bubbles.map(bubble => bubble.bubbleIndex)).toEqual(
-              expectedBubbles.map((_, bubbleIndex) => bubbleIndex),
-            )
-          }
+    mocks.previewChapterTextImport.mockResolvedValue({
+      chapterId: 'chapter-1',
+      conflictedPages: 1,
+      matchedPages: 1,
+      pages: [
+        matchingPage,
+        {
+          ...matchingPage,
+          baseDocumentRevision: null,
+          changes: [],
+          issues: ['revision_conflict'],
+          pageId: 'page-2',
+          status: 'conflict',
         },
-      ),
-      { numRuns: 100 },
+      ],
+      schemaVersion: 2,
+    })
+    mocks.commitChapterTextImport.mockResolvedValue({
+      batchId: 'batch-1',
+      jobIds: ['job-import-1'],
+      status: 'queued',
+    })
+
+    const file = new File(['{}'], 'translation.json', { type: 'application/json' })
+    await useExportImport().importText(file)
+
+    expect(mocks.previewChapterTextImport).toHaveBeenCalledWith('chapter-1', file)
+    expect(mocks.commitChapterTextImport).toHaveBeenCalledWith('chapter-1', [matchingPage])
+    expect(mocks.jobList).toHaveBeenCalledTimes(2)
+    expect(mocks.toast.success).toHaveBeenCalledWith(
+      '已提交 1 页文本导入，可安全关闭页面；跳过 1 页冲突',
     )
   })
 
-  it('exports original and translated text from production bubble states', () => {
-    fc.assert(
-      fc.property(bubbleStateArb, mockDataUrlArb, (bubbleState, dataUrl) => {
-        setActivePinia(createPinia())
-        addImageWithBubbles('test.png', dataUrl, [bubbleState])
+  it('creates a durable backend export and downloads its artifact', async () => {
+    seedChapter()
+    mocks.createChapterExportJob.mockResolvedValue({
+      batchId: 'batch-export',
+      jobIds: ['job-export-1'],
+      status: 'queued',
+    })
+    mocks.jobGet.mockResolvedValue({
+      artifacts: [{
+        assetId: 'asset-export',
+        expiresAt: null,
+        kind: 'chapter_export',
+        url: '/api/v2/assets/asset-export',
+      }],
+      id: 'job-export-1',
+      progress: { completedItems: 2, failedItems: 0, totalItems: 2 },
+      status: 'completed',
+    })
 
-        const exportData = exportCurrentStoreText()
-        const exportedBubble = exportData?.[0]?.bubbles[0]
+    await useExportImport().downloadAllImages('cbz')
 
-        expect(exportedBubble?.original).toBe(bubbleState.originalText || '')
-        expect(exportedBubble?.translated).toBe(
-          bubbleState.translatedText || bubbleState.textboxText || '',
-        )
-      }),
-      { numRuns: 100 },
+    expect(mocks.createChapterExportJob).toHaveBeenCalledWith(
+      'chapter-1',
+      'cbz',
+      ['page-1', 'page-2'],
+    )
+    expect(mocks.jobGet).toHaveBeenCalledWith('job-export-1')
+    expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
+      '/api/v2/assets/asset-export?download=1&filename=chapter-export.cbz',
     )
   })
 
-  it('exports a concrete text direction instead of auto', () => {
-    fc.assert(
-      fc.property(bubbleStateArb, mockDataUrlArb, (bubbleState, dataUrl) => {
-        setActivePinia(createPinia())
-        addImageWithBubbles('test.png', dataUrl, [bubbleState])
+  it('contains no browser-side payload generation or legacy download sessions', () => {
+    const source = readFileSync('src/composables/useExportImport.ts', 'utf8')
 
-        const exportedDirection = exportCurrentStoreText()?.[0]?.bubbles[0]?.textDirection
-
-        expect(exportedDirection).not.toBe('auto')
-        expect(['vertical', 'horizontal']).toContain(exportedDirection)
-        expect(exportedDirection).toBe(
-          bubbleState.textDirection === 'auto'
-            ? bubbleState.autoTextDirection
-            : bubbleState.textDirection,
-        )
-      }),
-      { numRuns: 100 },
-    )
-  })
-
-  it('returns null when there are no images to export', () => {
-    expect(exportCurrentStoreText()).toBeNull()
-  })
-
-  it('serializes exported text as valid JSON', () => {
-    fc.assert(
-      fc.property(fc.array(bubbleStateArb, { minLength: 1, maxLength: 5 }), mockDataUrlArb, (
-        bubbleStates,
-        dataUrl,
-      ) => {
-        setActivePinia(createPinia())
-        addImageWithBubbles('test.png', dataUrl, bubbleStates)
-
-        const exportData = exportCurrentStoreText()
-        expect(exportData).not.toBeNull()
-
-        const parsed = JSON.parse(JSON.stringify(exportData)) as ExportTextData[]
-        expect(Array.isArray(parsed)).toBe(true)
-        expect(parsed).toHaveLength(exportData?.length ?? 0)
-      }),
-      { numRuns: 100 },
-    )
-  })
-
-  it('round-trips exported text through JSON without changing the schema', () => {
-    fc.assert(
-      fc.property(
-        validTextArb,
-        validTextArb,
-        concreteDirectionArb,
-        mockDataUrlArb,
-        (originalText, translatedText, textDirection, dataUrl) => {
-          setActivePinia(createPinia())
-          const bubbleState: BubbleState = {
-            coords: [0, 0, 100, 100],
-            polygon: [],
-            originalText,
-            translatedText,
-            textboxText: translatedText,
-            fontSize: 25,
-            fontFamily: 'fonts/STSONG.TTF',
-            textDirection,
-            autoTextDirection: textDirection,
-            textColor: '#000000',
-            fillColor: '#FFFFFF',
-            rotationAngle: 0,
-            position: { x: 0, y: 0 },
-            strokeEnabled: false,
-            strokeColor: '#FFFFFF',
-            strokeWidth: 3,
-            lineSpacing: 1,
-            textAlign: 'center',
-            inpaintMethod: 'solid',
-            textlines: [],
-          }
-          addImageWithBubbles('test.png', dataUrl, [bubbleState])
-
-          const importedData = JSON.parse(JSON.stringify(exportCurrentStoreText())) as ExportTextData[]
-          const importedBubble = importedData[0]?.bubbles[0]
-
-          expect(importedData).toHaveLength(1)
-          expect(importedData[0]?.bubbles).toHaveLength(1)
-          expect(importedBubble?.original).toBe(originalText)
-          expect(importedBubble?.translated).toBe(translatedText)
-          expect(importedBubble?.textDirection).toBe(textDirection)
-        },
-      ),
-      { numRuns: 100 },
-    )
+    expect(source).not.toContain('executeRender')
+    expect(source).not.toContain('FileReader')
+    expect(source).not.toContain('readAsDataURL')
+    expect(source).not.toContain('downloadStartSession')
+    expect(source).not.toContain('exportTextToJson')
+    expect(source).toContain('createChapterExportJob')
+    expect(source).toContain('previewChapterTextImport')
   })
 })

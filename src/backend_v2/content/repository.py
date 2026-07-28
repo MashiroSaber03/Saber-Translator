@@ -122,6 +122,16 @@ def _natural_sort_key(value: object) -> tuple[object, ...]:
     )
 
 
+def _rgb_hex(value: object) -> str:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return "#000000"
+    red, green, blue = (
+        max(0, min(255, int(part)))
+        for part in value[:3]
+    )
+    return f"#{red:02X}{green:02X}{blue:02X}"
+
+
 class ContentRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -1678,8 +1688,22 @@ class ContentRepository:
             if not isinstance(current_style, dict):
                 current_style = {}
             if style_patch:
+                renderable_style_fields = {
+                    "fontSize",
+                    "autoFontSize",
+                    "fontFamily",
+                    "layoutDirection",
+                    "textColor",
+                    "useAutoTextColor",
+                    "strokeEnabled",
+                    "strokeColor",
+                    "strokeWidth",
+                    "lineSpacing",
+                    "textAlign",
+                }
                 renderable_change = renderable_change or any(
-                    current_style.get(key) != value
+                    key in renderable_style_fields
+                    and current_style.get(key) != value
                     for key, value in style_patch.items()
                 )
                 current_style.update(style_patch)
@@ -1771,7 +1795,32 @@ class ContentRepository:
                 for document in documents.values():
                     payload = dict(document["payload"])  # type: ignore[arg-type]
                     for field in propagation:
-                        payload[field] = style_patch[field]
+                        value = style_patch[field]
+                        if field == "fontFamily":
+                            if document["fontId"] != value:
+                                renderable_change = True
+                            document["fontId"] = value
+                        elif field == "layoutDirection":
+                            direction = (
+                                payload.get("autoTextDirection", "vertical")
+                                if value == "auto"
+                                else value
+                            )
+                            if direction not in {"vertical", "horizontal"}:
+                                direction = "vertical"
+                            payload["textDirection"] = direction
+                        elif field == "useAutoTextColor":
+                            if value:
+                                if payload.get("autoFgColor") is not None:
+                                    payload["textColor"] = _rgb_hex(
+                                        payload["autoFgColor"]
+                                    )
+                                if payload.get("autoBgColor") is not None:
+                                    payload["fillColor"] = _rgb_hex(
+                                        payload["autoBgColor"]
+                                    )
+                        elif field != "autoFontSize":
+                            payload[field] = value
                     document["payload"] = payload
 
             new_revision = base_revision + 1

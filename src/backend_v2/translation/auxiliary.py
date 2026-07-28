@@ -51,6 +51,16 @@ TEXT_IMPORT_FIELDS = {
 }
 
 
+def _rgb_hex(value: object) -> str:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return "#000000"
+    red, green, blue = (
+        max(0, min(255, int(part)))
+        for part in value[:3]
+    )
+    return f"#{red:02X}{green:02X}{blue:02X}"
+
+
 class AuxiliaryTranslationCommands:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -148,6 +158,14 @@ class AuxiliaryTranslationCommands:
             for field in selected
             if field != "fontFamily"
         }
+        if "fontSize" in selected:
+            frozen["autoFontSize"] = bool(
+                defaults.get("autoFontSize", False)
+            )
+        if selected.intersection({"textColor", "fillColor"}):
+            frozen["useAutoTextColor"] = bool(
+                defaults.get("useAutoTextColor", False)
+            )
         if "fontFamily" in selected:
             frozen["fontFamily"] = source["default_font_id"]
         config = {
@@ -625,6 +643,14 @@ class StyleApplyWorkerService:
                 default_font_id = frozen.get(field)
             else:
                 new_defaults[field] = frozen.get(field)
+        if "fontSize" in selected:
+            new_defaults["autoFontSize"] = bool(
+                frozen.get("autoFontSize", False)
+            )
+        if selected.intersection({"textColor", "fillColor"}):
+            new_defaults["useAutoTextColor"] = bool(
+                frozen.get("useAutoTextColor", False)
+            )
         updated_payloads: list[tuple[str, dict[str, Any]]] = []
         changed = (
             new_defaults != defaults
@@ -637,12 +663,41 @@ class StyleApplyWorkerService:
             for field in selected:
                 if field == "fontFamily":
                     continue
-                target = (
-                    "textDirection"
-                    if field == "layoutDirection"
-                    else field
-                )
-                updated[target] = frozen.get(field)
+                value = frozen.get(field)
+                if field == "layoutDirection":
+                    direction = (
+                        updated.get("autoTextDirection", "vertical")
+                        if value == "auto"
+                        else value
+                    )
+                    updated["textDirection"] = (
+                        direction
+                        if direction in {"vertical", "horizontal"}
+                        else "vertical"
+                    )
+                elif (
+                    field == "fontSize"
+                    and bool(frozen.get("autoFontSize", False))
+                ):
+                    pass
+                elif (
+                    field == "textColor"
+                    and bool(frozen.get("useAutoTextColor", False))
+                    and updated.get("autoFgColor") is not None
+                ):
+                    updated["textColor"] = _rgb_hex(
+                        updated["autoFgColor"]
+                    )
+                elif (
+                    field == "fillColor"
+                    and bool(frozen.get("useAutoTextColor", False))
+                    and updated.get("autoBgColor") is not None
+                ):
+                    updated["fillColor"] = _rgb_hex(
+                        updated["autoBgColor"]
+                    )
+                else:
+                    updated[field] = value
             changed = changed or updated != payload
             has_drawable_text = has_drawable_text or bool(
                 str(updated.get("translatedText", "")).strip()

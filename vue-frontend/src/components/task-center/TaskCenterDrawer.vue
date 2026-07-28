@@ -3,10 +3,14 @@ import { computed, ref } from 'vue'
 import type { V2Job } from '@/api/v2/jobs'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { describeJobTarget, progressPercent } from '@/stores/taskCenterProjection'
+import { jobsApi } from '@/api/v2/jobs'
+import { triggerUrlDownload } from '@/utils/browserDownload'
+import { showToast } from '@/utils/toast'
 
 const store = useTaskCenterStore()
 const tab = ref<'queue' | 'history'>('queue')
 const expanded = ref(new Set<string>())
+const downloading = ref(new Set<string>())
 
 const groups = computed(() => tab.value === 'queue' ? store.queueBatches : store.historyBatches)
 
@@ -35,6 +39,33 @@ function toggle(key: string) {
 
 function canCancel(job: V2Job) {
   return ['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)
+}
+
+async function downloadArtifact(job: V2Job) {
+  const pending = new Set(downloading.value)
+  pending.add(job.jobId)
+  downloading.value = pending
+  try {
+    const detail = await jobsApi.get(job.jobId)
+    const artifact = detail.artifacts[0]
+    if (!artifact) {
+      showToast('该任务没有可下载产物', 'warning')
+      return
+    }
+    const separator = artifact.url.includes('?') ? '&' : '?'
+    triggerUrlDownload(
+      `${artifact.url}${separator}download=1&filename=${encodeURIComponent(`${job.kind}-${job.jobId}`)}`,
+    )
+  } catch (error) {
+    showToast(
+      `读取任务产物失败：${error instanceof Error ? error.message : '未知错误'}`,
+      'error',
+    )
+  } finally {
+    const next = new Set(downloading.value)
+    next.delete(job.jobId)
+    downloading.value = next
+  }
 }
 </script>
 
@@ -102,6 +133,14 @@ function canCancel(job: V2Job) {
                   {{ job.blockedReason === 'draining_immediate_writes' ? '正在排空即时写入，新编辑已暂停' : `等待：${job.blockedReason}` }}
                 </p>
                 <div class="task-job__actions">
+                  <button
+                    v-if="job.status === 'completed'"
+                    type="button"
+                    :disabled="downloading.has(job.jobId)"
+                    @click="downloadArtifact(job)"
+                  >
+                    {{ downloading.has(job.jobId) ? '读取中…' : '下载产物' }}
+                  </button>
                   <button v-if="job.status === 'running'" type="button" @click="store.pause(job.jobId)">暂停</button>
                   <button v-if="job.status === 'paused'" type="button" @click="store.resume(job.jobId)">继续</button>
                   <button v-if="job.status === 'interrupted'" type="button" @click="store.continueJob(job.jobId)">从检查点继续</button>

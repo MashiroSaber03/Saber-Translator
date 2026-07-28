@@ -11,6 +11,7 @@ from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.operations.repository import RenderFence
+from src.backend_v2.rendering.fonts import materialize_render_payloads
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
@@ -31,9 +32,12 @@ class AuthoritativeRenderService:
 
         with self.engine.connect() as connection:
             page = connection.execute(
-                select(pages.c.source_revision, pages.c.document_revision).where(
-                    pages.c.id == fence.page_id
-                )
+                select(
+                    pages.c.source_revision,
+                    pages.c.document_revision,
+                    pages.c.default_font_id,
+                    pages.c.page_style_defaults_json,
+                ).where(pages.c.id == fence.page_id)
             ).mappings().one_or_none()
             if page is None or page["document_revision"] != fence.rendering_revision:
                 raise RuntimeError("render target revision is no longer current")
@@ -49,13 +53,18 @@ class AuthoritativeRenderService:
                 )
                 .limit(1)
             ).scalar_one_or_none()
+            projected = materialize_render_payloads(
+                connection,
+                self.storage,
+                fence.page_id,
+            )
+            persisted_payloads = [
+                (bubble_id, persisted)
+                for bubble_id, persisted, _render_payload in projected
+            ]
             payloads = [
-                json.loads(value)
-                for value in connection.execute(
-                    select(bubbles.c.payload_json)
-                    .where(bubbles.c.page_id == fence.page_id)
-                    .order_by(bubbles.c.ordinal)
-                ).scalars()
+                render_payload
+                for _bubble_id, _persisted, render_payload in projected
             ]
         if asset is None:
             raise RuntimeError("page has no renderable source asset")
@@ -75,6 +84,24 @@ class AuthoritativeRenderService:
                 rendered.close()
 
         def publish(connection: Connection) -> None:
+            for bubble_id, payload in persisted_payloads:
+                connection.execute(
+                    update(bubbles)
+                    .where(
+                        bubbles.c.id == bubble_id,
+                        bubbles.c.page_id == fence.page_id,
+                        bubbles.c.updated_revision <= fence.rendering_revision,
+                    )
+                    .values(
+                        payload_json=json.dumps(
+                            payload,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        updated_revision=fence.rendering_revision,
+                    )
+                )
             self._set_pointer(
                 connection,
                 fence=fence,
@@ -126,7 +153,6 @@ class AuthoritativeRenderService:
             width=width,
             height=height,
         )
-
     @staticmethod
     def _set_pointer(
         connection: Connection,

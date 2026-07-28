@@ -516,6 +516,24 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        from src.backend_v2.rendering.fonts import (
+            materialize_render_payloads,
+        )
+
+        with self.engine.connect() as connection:
+            projected = materialize_render_payloads(
+                connection,
+                self.storage,
+                page_id,
+            )
+        persisted_payloads = [
+            (bubble_id, payload)
+            for bubble_id, payload, _render_payload in projected
+        ]
+        render_payloads = [
+            render_payload
+            for _bubble_id, _payload, render_payload in projected
+        ]
         try:
             clean = self._open_bound_image(fence, step, page_id, "clean")
         except JobConflict:
@@ -523,7 +541,7 @@ class TranslationPipelineService:
         try:
             rendered = self.algorithms.render(
                 clean,
-                [dict(value) for value in snapshot.bubbles],
+                render_payloads,
                 self._config(step).get("render", {}),
             )
         finally:
@@ -536,6 +554,20 @@ class TranslationPipelineService:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
             )
+            for bubble_id, payload in persisted_payloads:
+                connection.execute(
+                    update(bubbles)
+                    .where(
+                        bubbles.c.id == bubble_id,
+                        bubbles.c.page_id == page_id,
+                        bubbles.c.updated_revision
+                        <= snapshot.document_revision,
+                    )
+                    .values(
+                        payload_json=_json(payload),
+                        updated_revision=snapshot.document_revision,
+                    )
+                )
             self._publish_pointer(
                 connection,
                 page_id=page_id,

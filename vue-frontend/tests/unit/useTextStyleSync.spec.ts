@@ -2,320 +2,159 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { useImageStore } from '@/stores/imageStore'
-import { useBubbleStore } from '@/stores/bubbleStore'
-import { useSettingsStore } from '@/stores/settings'
-import { createBubbleState } from '@/utils/bubbleFactory'
-import type { BubbleState } from '@/types/bubble'
 
-const { executeRenderMock, showToastMock } = vi.hoisted(() => ({
-  executeRenderMock: vi.fn(),
+import { createBubbleState } from '@/utils/bubbleFactory'
+import { useBubbleStore } from '@/stores/bubbleStore'
+import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
+
+const {
+  createStyleJobMock,
+  queueMutationMock,
+  refreshTasksMock,
+  showToastMock,
+} = vi.hoisted(() => ({
+  createStyleJobMock: vi.fn(),
+  queueMutationMock: vi.fn(),
+  refreshTasksMock: vi.fn(),
   showToastMock: vi.fn(),
 }))
 
-vi.mock('@/composables/translation/core/steps', () => ({
-  executeRender: executeRenderMock,
+vi.mock('@/api/v2/content', () => ({
+  getPageSummary: vi.fn(),
 }))
 
-vi.mock('@/composables/useTranslationPipeline', () => ({
-  useTranslation: () => ({
-    progress: {
-      value: {
-        isInProgress: false,
-        current: 0,
-        total: 0,
-        completed: 0,
-        failed: 0,
-        label: '',
-        percentage: 0,
-      },
-    },
-  }),
+vi.mock('@/api/v2/translation', () => ({
+  createChapterStyleApplyJob: createStyleJobMock,
+}))
+
+vi.mock('@/services/pageDocumentPersistence', () => ({
+  queuePageDocumentMutation: queueMutationMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ refresh: refreshTasksMock }),
 }))
 
 vi.mock('@/utils/toast', () => ({
   showToast: showToastMock,
 }))
 
-async function expectNoRoutineConsoleLogs(run: () => Promise<void>) {
-  const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-  try {
-    await run()
-    expect(logSpy).not.toHaveBeenCalled()
-  } finally {
-    logSpy.mockRestore()
-  }
-}
-
-describe('useTextStyleSync', () => {
+describe('useTextStyleSync backend ownership', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    executeRenderMock.mockReset()
+    createStyleJobMock.mockReset().mockResolvedValue({
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+      status: 'queued',
+    })
+    queueMutationMock.mockReset().mockResolvedValue(undefined)
+    refreshTasksMock.mockReset().mockResolvedValue(undefined)
     showToastMock.mockReset()
   })
 
-  it('reuses the edit render request projection for standard style rerenders', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/composables/useTextStyleSync.ts'), 'utf8')
-
-    expect(source).toContain('buildEditRenderInput(')
-    expect(source).not.toContain('buildSavedTextStylesFromSettings')
-    expect(source).not.toContain('bubbleCoords: bubbleStates.map')
-  })
-
-  it('keeps the text-style sync owner free of scaffold narration', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/composables/useTextStyleSync.ts'), 'utf8')
-
-    expect(source).not.toContain('/**')
-    expect(source).not.toContain('@param')
-    expect(source).not.toContain('// ============================================================')
-    expect(source).not.toContain('文字样式同步与应用 composable')
-    expect(source).not.toContain('辅助函数：')
-  })
-
-  it('keeps text-style sync tests on typed bubble fixtures', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/useTextStyleSync.spec.ts'), 'utf8')
-    const bannedAnyCast = ' as' + ' any'
-    const bannedBubbleStatesArray = 'bubbleStates: ' + 'any[]'
-
-    expect(source).not.toContain(bannedAnyCast)
-    expect(source).not.toContain(bannedBubbleStatesArray)
-  })
-
-  it('explicit auto font size re-application requests initialize_auto once and writes back the new sizes', async () => {
-    executeRenderMock.mockResolvedValue({
-      finalImage: 'rendered-auto-font',
-      bubbleStates: [
-        createBubbleState({
-          coords: [0, 0, 120, 80],
-          polygon: [],
-          translatedText: '第一页译文',
-          fontSize: 33,
-          textColor: '#123456',
-          fillColor: '#abcdef',
-        }),
-      ],
-    })
-
+  function mountPage() {
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
-    const settingsStore = useSettingsStore()
-
-    settingsStore.updateTextStyle({ autoFontSize: true })
-
-    imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
-    imageStore.updateCurrentImage({
-      translatedDataURL: 'data:image/png;base64,existing-render',
-      cleanImageData: 'clean-image',
-    })
-
-    bubbleStore.setBubbles([
-      createBubbleState({
-        coords: [0, 0, 120, 80],
-        polygon: [],
-        translatedText: '第一页译文',
-        fontSize: 22,
-        textColor: '#123456',
-        fillColor: '#abcdef',
-      }),
-    ])
-
-    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
-    const { handleAutoFontSizeChanged } = useTextStyleSync()
-
-    await expectNoRoutineConsoleLogs(async () => {
-      await handleAutoFontSizeChanged(true)
-    })
-
-    expect(executeRenderMock).toHaveBeenCalledWith(expect.objectContaining({
-      renderStylePolicy: {
-        fontSize: 'initialize_auto',
-        color: 'preserve',
-      },
-    }))
-    expect(imageStore.currentImage?.bubbleStates?.[0]?.fontSize).toBe(33)
-  })
-
-  it('explicit auto text color re-application materializes auto colors into bubble states before a preserve render', async () => {
-    executeRenderMock.mockResolvedValue({
-      finalImage: 'rendered-auto-color',
-      bubbleStates: [
-        createBubbleState({
-          coords: [0, 0, 120, 80],
-          polygon: [],
-          translatedText: '第一页译文',
-          fontSize: 22,
-          textColor: '#010203',
-          fillColor: '#0a0b0c',
-          autoFgColor: [1, 2, 3],
-          autoBgColor: [10, 11, 12],
-        }),
-      ],
-    })
-
-    const imageStore = useImageStore()
-    const bubbleStore = useBubbleStore()
-    const settingsStore = useSettingsStore()
-
-    settingsStore.updateTextStyle({ useAutoTextColor: true })
-
-    imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
-    imageStore.updateCurrentImage({
-      translatedDataURL: 'data:image/png;base64,existing-render',
-      cleanImageData: 'clean-image',
-    })
-
-    bubbleStore.setBubbles([
-      createBubbleState({
-        coords: [0, 0, 120, 80],
-        polygon: [],
-        translatedText: '第一页译文',
-        fontSize: 22,
-        textColor: '#123456',
-        fillColor: '#abcdef',
-        autoFgColor: [1, 2, 3],
-        autoBgColor: [10, 11, 12],
-      }),
-    ])
-
-    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
-    const { handleAutoTextColorChanged } = useTextStyleSync()
-
-    await expectNoRoutineConsoleLogs(async () => {
-      await handleAutoTextColorChanged(true)
-    })
-
-    expect(executeRenderMock).toHaveBeenCalledWith(expect.objectContaining({
-      renderStylePolicy: {
-        fontSize: 'preserve',
-        color: 'preserve',
-      },
-      existingBubbleStates: [
-        expect.objectContaining({
-          textColor: '#010203',
-          fillColor: '#0a0b0c',
-        }),
-      ],
-    }))
-    expect(imageStore.currentImage?.bubbleStates?.[0]?.textColor).toBe('#010203')
-    expect(imageStore.currentImage?.bubbleStates?.[0]?.fillColor).toBe('#0a0b0c')
-  })
-
-  it('style changes and apply-to-all keep normal render orchestration quiet', async () => {
-    executeRenderMock.mockResolvedValue({
-      finalImage: 'rendered-batch',
-      bubbleStates: [
-        createBubbleState({
-          coords: [0, 0, 120, 80],
-          polygon: [],
-          translatedText: '批量译文',
-          fontSize: 24,
-          textColor: '#123456',
-          fillColor: '#abcdef',
-        }),
-      ],
-    })
-
-    const imageStore = useImageStore()
-    const bubbleStore = useBubbleStore()
-    const settingsStore = useSettingsStore()
-    const firstBubble = createBubbleState({
+    const bubble = createBubbleState({
+      autoBgColor: [10, 11, 12],
+      autoFgColor: [1, 2, 3],
       coords: [0, 0, 120, 80],
+      fontSize: 22,
       polygon: [],
       translatedText: '第一页译文',
-      fontSize: 22,
-      textColor: '#123456',
-      fillColor: '#abcdef',
     })
-    const secondBubble = createBubbleState({
-      coords: [5, 5, 100, 60],
-      polygon: [],
-      translatedText: '第二页译文',
-      fontSize: 20,
-      textColor: '#654321',
-      fillColor: '#fedcba',
+    const image = imageStore.addImage('page-1.png', '/api/v2/assets/source-1', {
+      bubbleStates: [bubble],
+      chapterId: 'chapter-1',
+      documentRevision: 4,
     })
+    bubbleStore.setBubbles([bubble])
+    return { bubbleStore, image, imageStore }
+  }
 
-    imageStore.addImage('page-1.png', 'data:image/png;base64,page1', {
-      translatedDataURL: 'data:image/png;base64,existing-render-1',
-      cleanImageData: 'clean-image-1',
-      bubbleStates: [firstBubble],
-    })
-    imageStore.addImage('page-2.png', 'data:image/png;base64,page2', {
-      translatedDataURL: 'data:image/png;base64,existing-render-2',
-      cleanImageData: 'clean-image-2',
-      bubbleStates: [secondBubble],
-    })
-    bubbleStore.setBubbles([firstBubble])
-    settingsStore.updateTextStyle({ fontSize: 24 })
+  it('contains no browser render or Base64 pipeline', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/composables/useTextStyleSync.ts'),
+      'utf8',
+    )
 
-    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
-    const { handleTextStyleChanged, handleApplyToAll } = useTextStyleSync()
-
-    await expectNoRoutineConsoleLogs(async () => {
-      await handleTextStyleChanged('fontSize', 24)
-      await handleApplyToAll({
-        fontSize: true,
-        fontFamily: false,
-        layoutDirection: false,
-        textColor: false,
-        fillColor: false,
-        strokeEnabled: false,
-        strokeColor: false,
-        strokeWidth: false,
-        lineSpacing: false,
-        textAlign: false,
-      })
-    })
-
-    expect(showToastMock).toHaveBeenCalledWith('已将 自动字号 应用到 2 张图片', 'success')
-    expect(imageStore.images[0]?.bubbleStates?.[0]?.fontSize).toBe(24)
-    expect(imageStore.images[1]?.bubbleStates?.[0]?.fontSize).toBe(24)
+    expect(source).not.toContain('executeRender')
+    expect(source).not.toContain('buildEditRenderInput')
+    expect(source).not.toContain('base64')
+    expect(source).toContain('queuePageDocumentMutation')
+    expect(source).toContain('createChapterStyleApplyJob')
   })
 
-  it('does not write a style-change render result to a different current image', async () => {
-    let resolveRender!: (value: { finalImage: string; bubbleStates: BubbleState[] }) => void
-    const pendingRender = new Promise<{ finalImage: string; bubbleStates: BubbleState[] }>((resolve) => {
-      resolveRender = resolve
-    })
-    executeRenderMock.mockReturnValueOnce(pendingRender)
-
-    const imageStore = useImageStore()
-    const bubbleStore = useBubbleStore()
-    const firstBubble = createBubbleState({
-      coords: [0, 0, 120, 80],
-      polygon: [],
-      translatedText: '第一页译文',
-      fontSize: 22,
-    })
-
-    imageStore.addImage('page-1.png', 'data:image/png;base64,page1', {
-      translatedDataURL: 'data:image/png;base64,existing-render-1',
-      cleanImageData: 'clean-image-1',
-      bubbleStates: [firstBubble],
-    })
-    imageStore.addImage('page-2.png', 'data:image/png;base64,page2')
-    bubbleStore.setBubbles([firstBubble])
-
+  it('writes one page style and its bubble projection through the CAS coordinator', async () => {
+    const { image } = mountPage()
     const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
-    const { handleTextStyleChanged } = useTextStyleSync()
 
-    const renderPromise = handleTextStyleChanged('fontSize', 24)
-    imageStore.setCurrentImageIndex(1)
-    resolveRender({
-      finalImage: 'rendered-page-1-after-switch',
-      bubbleStates: [
-        createBubbleState({
-          coords: [0, 0, 120, 80],
-          polygon: [],
-          translatedText: '第一页译文',
-          fontSize: 24,
-        }),
-      ],
+    await useTextStyleSync().handleTextStyleChanged('fontFamily', 'font-id-2')
+
+    expect(queueMutationMock).toHaveBeenCalledWith(
+      image.id,
+      4,
+      [expect.objectContaining({ fontFamily: 'font-id-2' })],
+      {
+        defaultFontId: 'font-id-2',
+        pageStyleDefaultsPatch: { fontFamily: 'font-id-2' },
+        propagateStyleFields: ['fontFamily'],
+      },
+    )
+  })
+
+  it('materializes stored automatic colors before the backend CAS', async () => {
+    const { image, imageStore } = mountPage()
+    useSettingsStore().updateTextStyle({ useAutoTextColor: true })
+    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
+
+    await useTextStyleSync().handleAutoTextColorChanged(true)
+
+    expect(imageStore.currentImage?.bubbleStates?.[0]).toMatchObject({
+      fillColor: '#0a0b0c',
+      textColor: '#010203',
+    })
+    expect(queueMutationMock).toHaveBeenCalledWith(
+      image.id,
+      4,
+      [expect.objectContaining({
+        fillColor: '#0a0b0c',
+        textColor: '#010203',
+      })],
+      {
+        pageStyleDefaultsPatch: { useAutoTextColor: true },
+        propagateStyleFields: ['useAutoTextColor'],
+      },
+    )
+  })
+
+  it('submits apply-to-all as one durable backend job', async () => {
+    const { image } = mountPage()
+    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
+
+    await useTextStyleSync().handleApplyToAll({
+      fillColor: false,
+      fontFamily: false,
+      fontSize: true,
+      layoutDirection: false,
+      lineSpacing: false,
+      strokeColor: false,
+      strokeEnabled: false,
+      strokeWidth: false,
+      textAlign: true,
+      textColor: false,
     })
 
-    await renderPromise
-
-    expect(imageStore.images[1]?.translatedDataURL).toBeNull()
-    expect(showToastMock).not.toHaveBeenCalledWith('设置变更后重新渲染失败', 'error')
+    expect(createStyleJobMock).toHaveBeenCalledWith('chapter-1', {
+      selectedFields: ['fontSize', 'textAlign'],
+      sourceDocumentRevision: 4,
+      sourcePageId: image.id,
+    })
+    expect(refreshTasksMock).toHaveBeenCalled()
+    expect(showToastMock).toHaveBeenCalledWith(
+      '样式应用任务已加入后端任务中心，可安全关闭页面',
+      'success',
+    )
   })
 })

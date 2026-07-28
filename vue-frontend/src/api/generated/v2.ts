@@ -1514,6 +1514,14 @@ export interface components {
             items: {
                 [key: string]: unknown;
             }[];
+            artifacts: components["schemas"]["JobArtifact"][];
+        };
+        JobArtifact: {
+            kind: string;
+            assetId: components["schemas"]["Uuid"];
+            url: string;
+            /** Format: date-time */
+            expiresAt: string | null;
         };
         JobEvent: {
             eventId: number;
@@ -1619,6 +1627,29 @@ export interface components {
         PageDocumentBatchMutation: {
             baseRevision: number;
             mutations: components["schemas"]["BubbleMutation"][];
+            defaultFontId?: components["schemas"]["Uuid"] | null;
+            pageStyleDefaultsPatch?: components["schemas"]["PageStyleDefaultsPatch"];
+            propagateStyleFields?: components["schemas"]["PageStyleField"][];
+        };
+        /** @enum {string} */
+        PageStyleField: "fontSize" | "autoFontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign";
+        PageStyleDefaultsPatch: {
+            fontSize?: number;
+            autoFontSize?: boolean;
+            fontFamily?: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            layoutDirection?: "auto" | "vertical" | "horizontal";
+            textColor?: string;
+            fillColor?: string;
+            /** @enum {string} */
+            inpaintMethod?: "solid" | "lama_mpe" | "litelama";
+            useAutoTextColor?: boolean;
+            strokeEnabled?: boolean;
+            strokeColor?: string;
+            strokeWidth?: number;
+            lineSpacing?: number;
+            /** @enum {string} */
+            textAlign?: "start" | "center" | "end";
         };
         BubbleDocument: {
             bubbleId: components["schemas"]["Uuid"];
@@ -1630,7 +1661,11 @@ export interface components {
         };
         PageDocument: {
             pageId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
             documentRevision: number;
+            defaultFontId: components["schemas"]["Uuid"] | null;
+            pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign">;
+            pageStyleSchemaVersion: number;
             bubbles: components["schemas"]["BubbleDocument"][];
         };
         /** @enum {string} */
@@ -4654,3 +4689,6 @@ export interface operations {
         };
     };
 }
+type WithRequired<T, K extends keyof T> = T & {
+    [P in K]-?: T[P];
+};

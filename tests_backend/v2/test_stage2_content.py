@@ -16,6 +16,7 @@ from src.backend_v2.content.repository import (
     IdempotencyConflict,
 )
 from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.rendering.fonts import materialize_render_payloads
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.schema import (
@@ -490,6 +491,68 @@ def test_page_document_command_is_idempotent_and_propagates_style(
                 "page_style_defaults_patch": {"fontSize": 31},
             }
         )
+
+
+def test_render_projection_materializes_backend_auto_style_and_font(
+    content_platform,
+) -> None:
+    _root, engine, repository, storage, importer, _book, chapter = (
+        content_platform
+    )
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((160, 120)),
+        logical_path="auto-style.png",
+        key="auto-style",
+    )
+    page_id = str(imported["page"]["id"])
+    repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "bubbleId": "00000000-0000-0000-0000-000000000212",
+                "fields": {
+                    "translatedText": "自动样式",
+                    "coords": [0, 0, 120, 80],
+                    "autoTextDirection": "horizontal",
+                    "autoFgColor": [1, 2, 3],
+                    "autoBgColor": [10, 11, 12],
+                    "fontSize": 12,
+                },
+            }
+        ],
+        page_style_defaults_patch={
+            "autoFontSize": True,
+            "layoutDirection": "auto",
+            "useAutoTextColor": True,
+        },
+        propagate_style_fields=[
+            "autoFontSize",
+            "layoutDirection",
+            "useAutoTextColor",
+        ],
+    )
+
+    with engine.connect() as connection:
+        projected = materialize_render_payloads(
+            connection,
+            storage,
+            page_id,
+        )
+
+    _bubble_id, persisted, render_payload = projected[0]
+    assert persisted["textDirection"] == "horizontal"
+    assert persisted["textColor"] == "#010203"
+    assert persisted["fillColor"] == "#0A0B0C"
+    assert persisted["fontSize"] > 12
+    assert render_payload["fontFamily"]
+    assert "00000000-0000-0000-0000-000000000010" not in str(
+        render_payload["fontFamily"]
+    )
 
 
 def test_quick_workspace_promote_moves_relations_without_moving_assets(

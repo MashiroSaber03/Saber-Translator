@@ -5,6 +5,10 @@ import { useImageStore } from '@/stores/imageStore'
 import type { BubbleState } from '@/types/bubble'
 
 interface PersistedPageState {
+  defaultFontChanged: boolean
+  desiredDefaultFontId: string | null
+  desiredPropagateStyleFields: Set<string>
+  desiredStylePatch: Record<string, unknown>
   desired: BubbleState[]
   desiredVersion: number
   documentRevision: number
@@ -27,6 +31,9 @@ function canonical(value: unknown): string {
 function bubbleFields(bubble: BubbleState): Record<string, unknown> {
   const fields = { ...structuredClone(bubble) } as Record<string, unknown>
   delete fields.backendBubbleId
+  const fontId = typeof fields.fontFamily === 'string' ? fields.fontFamily : null
+  delete fields.fontFamily
+  fields.fontId = fontId
   return fields
 }
 
@@ -84,6 +91,10 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
     )
   ) {
     states.set(document.pageId, {
+      defaultFontChanged: false,
+      desiredDefaultFontId: document.defaultFontId ?? null,
+      desiredPropagateStyleFields: new Set(),
+      desiredStylePatch: {},
       desired: cloneBubbles(bubbles),
       desiredVersion: 0,
       documentRevision: document.documentRevision,
@@ -102,10 +113,29 @@ export function queuePageDocumentSave(
   documentRevision: number,
   bubbles: BubbleState[],
 ): Promise<void> {
+  return queuePageDocumentMutation(pageId, documentRevision, bubbles)
+}
+
+export interface PageDocumentStyleMutation {
+  defaultFontId?: string | null
+  pageStyleDefaultsPatch?: Record<string, unknown>
+  propagateStyleFields?: string[]
+}
+
+export function queuePageDocumentMutation(
+  pageId: string,
+  documentRevision: number,
+  bubbles: BubbleState[],
+  style: PageDocumentStyleMutation = {},
+): Promise<void> {
   ensureBubbleIds(bubbles)
   let state = states.get(pageId)
   if (!state) {
     state = {
+      defaultFontChanged: false,
+      desiredDefaultFontId: null,
+      desiredPropagateStyleFields: new Set(),
+      desiredStylePatch: {},
       desired: [],
       desiredVersion: 0,
       documentRevision,
@@ -117,6 +147,14 @@ export function queuePageDocumentSave(
     states.set(pageId, state)
   }
   state.desired = cloneBubbles(bubbles)
+  if (Object.hasOwn(style, 'defaultFontId')) {
+    state.defaultFontChanged = true
+    state.desiredDefaultFontId = style.defaultFontId ?? null
+  }
+  Object.assign(state.desiredStylePatch, style.pageStyleDefaultsPatch ?? {})
+  for (const field of style.propagateStyleFields ?? []) {
+    state.desiredPropagateStyleFields.add(field)
+  }
   state.desiredVersion += 1
   state.lastError = null
   if (!state.promise) {
@@ -137,11 +175,39 @@ async function persistLoop(
       const sentVersion = state.desiredVersion
       const sent = cloneBubbles(state.desired)
       const mutations = mutationsFor(state.persisted, sent)
-      if (mutations.length === 0) return
+      const sentStylePatch = structuredClone(state.desiredStylePatch)
+      const sentPropagation = [...state.desiredPropagateStyleFields]
+      const sentDefaultFont = state.desiredDefaultFontId
+      const sentDefaultFontChanged = state.defaultFontChanged
+      if (
+        mutations.length === 0
+        && Object.keys(sentStylePatch).length === 0
+        && !sentDefaultFontChanged
+      ) return
       const document = await mutatePageDocument(pageId, {
         baseRevision: state.documentRevision,
         mutations,
+        ...(sentDefaultFontChanged ? { defaultFontId: sentDefaultFont } : {}),
+        ...(Object.keys(sentStylePatch).length > 0
+          ? {
+              pageStyleDefaultsPatch: sentStylePatch,
+              propagateStyleFields: sentPropagation,
+            }
+          : {}),
       })
+      for (const [field, value] of Object.entries(sentStylePatch)) {
+        if (canonical(state.desiredStylePatch[field]) === canonical(value)) {
+          delete state.desiredStylePatch[field]
+          state.desiredPropagateStyleFields.delete(field)
+        }
+      }
+      if (
+        sentDefaultFontChanged
+        && state.defaultFontChanged
+        && state.desiredDefaultFontId === sentDefaultFont
+      ) {
+        state.defaultFontChanged = false
+      }
       state.documentRevision = document.documentRevision
       state.persisted = pageDocumentToBubbles(document)
 
@@ -150,6 +216,9 @@ async function persistLoop(
       if (imageIndex >= 0) {
         imageStore.updateImageByIndex(imageIndex, {
           documentRevision: document.documentRevision,
+          bubbleStates: sentVersion === state.desiredVersion
+            ? cloneBubbles(state.persisted)
+            : cloneBubbles(state.desired),
           hasUnsavedChanges: sentVersion !== state.desiredVersion,
         })
       }
@@ -157,9 +226,13 @@ async function persistLoop(
         state.desired = cloneBubbles(state.persisted)
         if (imageStore.currentImage?.id === pageId) {
           const bubbleStore = useBubbleStore()
+          bubbleStore.setBubbles(cloneBubbles(state.persisted), true)
           bubbleStore.saveAsInitial()
         }
-        return
+        if (
+          Object.keys(state.desiredStylePatch).length === 0
+          && !state.defaultFontChanged
+        ) return
       }
     }
   } catch (error) {
