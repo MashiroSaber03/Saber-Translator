@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 import uuid
+import zipfile
 
 from PIL import Image
 import pytest
@@ -24,6 +25,10 @@ from src.backend_v2.insight.derived import (
     InsightDerivedCommandService,
     InsightDerivedRepository,
     InsightDerivedWorkerService,
+)
+from src.backend_v2.insight.exports import (
+    InsightExportCommandService,
+    InsightExportWorkerService,
 )
 from src.backend_v2.insight.page_schema import (
     InvalidPageAnalysis,
@@ -54,9 +59,12 @@ from src.backend_v2.storage.schema import (
     analysis_layer_results,
     analysis_page_results,
     analysis_runs,
+    assets,
+    continuation_form_image_versions,
     job_asset_inputs,
     jobs,
     metadata,
+    page_assets,
     timeline_versions,
     transient_requests,
     vector_generations,
@@ -106,7 +114,12 @@ class FakeDerivedAlgorithms:
     def build_layer(self, inputs, *, layer, config):
         return {
             "summary": f"{layer['name']}:{len(inputs)}",
-            "key_events": [],
+            "key_events": [
+                dict(event)
+                for value in inputs
+                for event in value.get("key_events", [])
+                if isinstance(event, Mapping)
+            ],
         }
 
     def build_overview(self, pages, *, template, config):
@@ -481,6 +494,12 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
             content="",
             page_ids=[],
         )
+    page = repository.list_notes(
+        book_id=str(platform["book"]["id"]),
+        limit=1,
+    )
+    assert page["items"][0]["content"] is None
+    assert repository.get_note(note_id=note["noteId"])["content"] == "新内容"
 
 
 def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
@@ -708,6 +727,150 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     assert queue.finish_if_complete(fence) == "completed"
     detail = queue.get_job(str(exported["jobIds"][0]))
     assert detail["artifacts"][0]["kind"] == "continuation_export"
+
+
+def test_continuation_character_forms_and_sheet_are_versioned(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="form-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    repository = ContinuationRepository(platform["engine"])
+    project = repository.sync_latest(
+        book_id=str(platform["book"]["id"])
+    )
+    character = repository.create_character(
+        project_id=project["projectId"],
+        name="Alter",
+        aliases=["黑化"],
+        enabled=True,
+        payload={"description": "盔甲形态"},
+    )
+    form = repository.create_form(
+        character_id=character["characterId"],
+        name="战斗服",
+        payload={"colors": ["black", "red"]},
+    )
+    with platform["engine"].connect() as connection:
+        reference_asset_id = str(
+            connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == platform["page_ids"][0],
+                    page_assets.c.role == "source",
+                )
+            ).scalar_one()
+        )
+        reference_thumbnail_id = str(
+            connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == platform["page_ids"][0],
+                    page_assets.c.role == "thumbnail_source",
+                )
+            ).scalar_one()
+        )
+    form = repository.bind_form_reference(
+        form_id=form["formId"],
+        base_revision=form["revision"],
+        asset_id=reference_asset_id,
+        thumbnail_asset_id=reference_thumbnail_id,
+    )
+    project = repository.set_project_references(
+        project_id=project["projectId"],
+        base_revision=project["revision"],
+        asset_ids=[reference_asset_id],
+    )
+    assert project["referenceAssets"][0]["thumbnailUrl"].endswith(
+        reference_thumbnail_id
+    )
+    commands = ContinuationCommandService(platform["engine"])
+    accepted = commands.create_character_sheet_job(
+        book_id=str(platform["book"]["id"]),
+        form_id=form["formId"],
+        idempotency_key="character-sheet",
+    )
+    queue = JobQueueRepository(platform["engine"])
+    worker = ContinuationWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+        algorithms=FakeContinuationAlgorithms(),
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+    generated = repository.list_forms(
+        project_id=project["projectId"]
+    )["items"][0]
+    assert generated["imageVersions"][0]["thumbnailUrl"]
+    adopted = repository.adopt_form_image(
+        form_id=form["formId"],
+        version=1,
+        base_revision=generated["revision"],
+    )
+    assert adopted["version"] == 1
+    with platform["engine"].connect() as connection:
+        assert connection.execute(
+            select(continuation_form_image_versions.c.is_adopted)
+        ).scalar_one()
+        job = connection.execute(
+            select(jobs).where(jobs.c.id == accepted["jobIds"][0])
+        ).mappings().one()
+        assert job["continuation_project_id"] == project["projectId"]
+        assert job["analysis_run_id"] == project["sourceRunId"]
+
+
+def test_insight_export_job_freezes_run_and_builds_backend_zip(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="export-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    accepted = InsightExportCommandService(
+        platform["engine"]
+    ).create_export_job(
+        book_id=str(platform["book"]["id"]),
+        idempotency_key="insight-export",
+    )
+    queue = JobQueueRepository(platform["engine"])
+    worker = InsightExportWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+    detail = queue.get_job(str(accepted["jobIds"][0]))
+    artifact_id = detail["artifacts"][0]["assetId"]
+    with platform["engine"].connect() as connection:
+        relative_path = connection.execute(
+            select(assets.c.relative_path).where(assets.c.id == artifact_id)
+        ).scalar_one()
+    path = platform["data_root"] / str(relative_path)
+    with zipfile.ZipFile(path) as archive:
+        assert {
+            "manifest.json",
+            "pages.json",
+            "layers.json",
+            "timeline.json",
+            "report.md",
+        }.issubset(archive.namelist())
 
 
 def test_qa_vector_query_is_connection_bound_and_worker_owned(

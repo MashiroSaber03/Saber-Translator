@@ -14,6 +14,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -531,6 +532,16 @@ jobs = Table(
     Column("book_id", String(UUID_LENGTH), ForeignKey("books.id", ondelete="SET NULL")),
     Column("chapter_id", String(UUID_LENGTH), ForeignKey("chapters.id", ondelete="SET NULL")),
     Column("page_id", String(UUID_LENGTH), ForeignKey("pages.id", ondelete="SET NULL")),
+    Column(
+        "analysis_run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "continuation_project_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_projects.id", ondelete="SET NULL"),
+    ),
     Column(
         "web_import_draft_id",
         String(UUID_LENGTH),
@@ -1337,9 +1348,13 @@ notes = Table(
     ),
     Column("title", String(500), nullable=False),
     Column("content", Text, nullable=False),
+    Column("kind", String(16), nullable=False, server_default="text"),
+    Column("tags_json", Text, nullable=False, server_default="[]"),
+    Column("comments_json", Text, nullable=False, server_default="[]"),
     Column("revision", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint("kind IN ('text','qa')", name="kind_values"),
 )
 Index("ix_notes_book_updated", notes.c.book_id, notes.c.updated_at)
 
@@ -1360,6 +1375,13 @@ note_citations = Table(
     ),
     Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
     Column("page_number_snapshot", Integer, nullable=False),
+    Column(
+        "source_analysis_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_page_results.id", ondelete="SET NULL"),
+    ),
+    Column("excerpt", Text, nullable=False, server_default=""),
+    Column("score", Float),
 )
 
 continuation_projects = Table(
@@ -1430,10 +1452,36 @@ continuation_image_versions = Table(
         ForeignKey("assets.id", ondelete="RESTRICT"),
         nullable=False,
     ),
+    Column(
+        "thumbnail_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
     Column("version", Integer, nullable=False),
     Column("is_active", Boolean, nullable=False, server_default="0"),
     *_timestamps(),
     UniqueConstraint("continuation_page_id", "version"),
+)
+
+continuation_project_reference_assets = Table(
+    "continuation_project_reference_assets",
+    metadata,
+    Column(
+        "project_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, primary_key=True),
+    Column(
+        "asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    UniqueConstraint("project_id", "asset_id"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
 )
 
 continuation_characters = Table(
@@ -1450,6 +1498,8 @@ continuation_characters = Table(
     Column("aliases_json", Text, nullable=False, server_default="[]"),
     Column("enabled", Boolean, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False, server_default="{}"),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    *_timestamps(),
     UniqueConstraint("project_id", "name"),
 )
 
@@ -1470,12 +1520,47 @@ continuation_character_forms = Table(
         ForeignKey("assets.id", ondelete="SET NULL"),
     ),
     Column(
+        "reference_thumbnail_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="SET NULL"),
+    ),
+    Column(
         "adopted_asset_id",
         String(UUID_LENGTH),
         ForeignKey("assets.id", ondelete="SET NULL"),
     ),
     Column("payload_json", Text, nullable=False, server_default="{}"),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    *_timestamps(),
     UniqueConstraint("character_id", "name"),
+)
+
+continuation_form_image_versions = Table(
+    "continuation_form_image_versions",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "form_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_character_forms.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "thumbnail_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("version", Integer, nullable=False),
+    Column("is_adopted", Boolean, nullable=False, server_default="0"),
+    *_timestamps(),
+    UniqueConstraint("form_id", "version"),
 )
 
 operations = Table(

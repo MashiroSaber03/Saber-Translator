@@ -103,6 +103,9 @@ def run_worker(args: object) -> int:
                 ContinuationWorkerService,
             )
             from src.backend_v2.insight.qa import InsightQAWorkerService
+            from src.backend_v2.insight.exports import (
+                InsightExportWorkerService,
+            )
             from src.backend_v2.operations.executor import WorkerOperationRunner
             from src.backend_v2.operations.repair import PageRepairService
             from src.backend_v2.operations.repository import OperationRepository
@@ -229,9 +232,18 @@ def run_worker(args: object) -> int:
                     "continuation_generate_script": continuation.handle,
                     "continuation_generate_page": continuation.handle,
                     "continuation_generate_image": continuation.handle,
+                    "continuation_generate_character_sheet": (
+                        continuation.handle
+                    ),
                     "continuation_export": continuation.handle,
                 }
             )
+            insight_export = InsightExportWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers["insight_export_report"] = insight_export.handle
             operation_repository = OperationRepository(engine)
             interactive = InteractivePageOperationService(
                 data_root=data_root,

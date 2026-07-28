@@ -166,7 +166,12 @@ def create_api_app(settings: ApiSettings) -> Flask:
     app.register_blueprint(
         create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
     )
-    app.register_blueprint(create_insight_blueprint(engine=engine))
+    app.register_blueprint(
+        create_insight_blueprint(
+            engine=engine,
+            data_root=settings.data_root,
+        )
+    )
     app.register_blueprint(create_studio_blueprint(engine=engine))
     app.register_blueprint(
         create_operations_blueprint(data_root=settings.data_root, engine=engine)

@@ -13,7 +13,7 @@ from typing import Any, Protocol
 import uuid
 import zipfile
 
-from sqlalchemy import Engine, delete, func, insert, select, update
+from sqlalchemy import Engine, delete, exists, func, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.insight.repository import (
@@ -39,14 +39,17 @@ from src.backend_v2.storage.schema import (
     assets,
     continuation_character_forms,
     continuation_characters,
+    continuation_form_image_versions,
     continuation_image_versions,
     continuation_pages,
+    continuation_project_reference_assets,
     continuation_projects,
     continuation_scripts,
     credential_versions,
     chapters,
     jobs,
     job_artifacts,
+    job_asset_inputs,
     page_assets,
     pages,
     timeline_characters,
@@ -298,6 +301,73 @@ class ContinuationRepository:
             ).mappings().one()
             return self._project_dto(connection, row)
 
+    def set_project_references(
+        self,
+        *,
+        project_id: str,
+        base_revision: int,
+        asset_ids: Sequence[str],
+    ) -> dict[str, Any]:
+        normalized = list(dict.fromkeys(str(value) for value in asset_ids))
+        if len(normalized) != len(asset_ids) or len(normalized) > 20:
+            raise ValueError(
+                "reference assetIds must be unique and contain at most 20 items"
+            )
+        with immediate_transaction(self.engine) as connection:
+            if normalized:
+                existing = set(
+                    str(value)
+                    for value in connection.execute(
+                        select(assets.c.id).where(
+                            assets.c.id.in_(tuple(normalized))
+                        )
+                    ).scalars()
+                )
+                if existing != set(normalized):
+                    raise InsightNotFound("reference asset not found")
+            changed = connection.execute(
+                update(continuation_projects)
+                .where(
+                    continuation_projects.c.id == project_id,
+                    continuation_projects.c.revision == base_revision,
+                )
+                .values(
+                    revision=base_revision + 1,
+                    updated_at=utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                raise InsightConflict(
+                    "continuation project revision changed"
+                )
+            connection.execute(
+                delete(continuation_project_reference_assets).where(
+                    continuation_project_reference_assets.c.project_id
+                    == project_id
+                )
+            )
+            if normalized:
+                connection.execute(
+                    insert(continuation_project_reference_assets),
+                    [
+                        {
+                            "project_id": project_id,
+                            "ordinal": ordinal,
+                            "asset_id": asset_id,
+                        }
+                        for ordinal, asset_id in enumerate(
+                            normalized,
+                            start=1,
+                        )
+                    ],
+                )
+            row = connection.execute(
+                select(continuation_projects).where(
+                    continuation_projects.c.id == project_id
+                )
+            ).mappings().one()
+            return self._project_dto(connection, row)
+
     def update_script(
         self,
         *,
@@ -429,6 +499,315 @@ class ContinuationRepository:
             "assetId": str(target["asset_id"]),
         }
 
+    def create_character(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        aliases: Sequence[str],
+        enabled: bool,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        name, aliases = _normalize_character_identity(name, aliases)
+        character_id = str(uuid.uuid4())
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._require_project(connection, project_id)
+            connection.execute(
+                insert(continuation_characters).values(
+                    id=character_id,
+                    project_id=project_id,
+                    name=name,
+                    aliases_json=_json(aliases),
+                    enabled=enabled,
+                    payload_json=_json(dict(payload)),
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            row = connection.execute(
+                select(continuation_characters).where(
+                    continuation_characters.c.id == character_id
+                )
+            ).mappings().one()
+        return _character_dto(row)
+
+    def update_character(
+        self,
+        *,
+        character_id: str,
+        base_revision: int,
+        name: str,
+        aliases: Sequence[str],
+        enabled: bool,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        name, aliases = _normalize_character_identity(name, aliases)
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                update(continuation_characters)
+                .where(
+                    continuation_characters.c.id == character_id,
+                    continuation_characters.c.revision == base_revision,
+                )
+                .values(
+                    name=name,
+                    aliases_json=_json(aliases),
+                    enabled=enabled,
+                    payload_json=_json(dict(payload)),
+                    revision=base_revision + 1,
+                    updated_at=utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                self._raise_character_cas(connection, character_id)
+            row = connection.execute(
+                select(continuation_characters).where(
+                    continuation_characters.c.id == character_id
+                )
+            ).mappings().one()
+        return _character_dto(row)
+
+    def delete_character(
+        self,
+        *,
+        character_id: str,
+        base_revision: int,
+    ) -> None:
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                delete(continuation_characters).where(
+                    continuation_characters.c.id == character_id,
+                    continuation_characters.c.revision == base_revision,
+                )
+            )
+            if changed.rowcount != 1:
+                self._raise_character_cas(connection, character_id)
+
+    def create_form(
+        self,
+        *,
+        character_id: str,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        name = _form_name(name)
+        form_id = str(uuid.uuid4())
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            if connection.execute(
+                select(continuation_characters.c.id).where(
+                    continuation_characters.c.id == character_id
+                )
+            ).scalar_one_or_none() is None:
+                raise InsightNotFound("continuation character not found")
+            connection.execute(
+                insert(continuation_character_forms).values(
+                    id=form_id,
+                    character_id=character_id,
+                    name=name,
+                    payload_json=_json(dict(payload)),
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            row = connection.execute(
+                select(continuation_character_forms).where(
+                    continuation_character_forms.c.id == form_id
+                )
+            ).mappings().one()
+        return self._form_dto(row, image_versions=[])
+
+    def update_form(
+        self,
+        *,
+        form_id: str,
+        base_revision: int,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        name = _form_name(name)
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                update(continuation_character_forms)
+                .where(
+                    continuation_character_forms.c.id == form_id,
+                    continuation_character_forms.c.revision
+                    == base_revision,
+                )
+                .values(
+                    name=name,
+                    payload_json=_json(dict(payload)),
+                    revision=base_revision + 1,
+                    updated_at=utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                self._raise_form_cas(connection, form_id)
+            row = connection.execute(
+                select(continuation_character_forms).where(
+                    continuation_character_forms.c.id == form_id
+                )
+            ).mappings().one()
+            versions = self._form_versions(connection, form_id)
+        return self._form_dto(row, image_versions=versions)
+
+    def delete_form(
+        self,
+        *,
+        form_id: str,
+        base_revision: int,
+    ) -> None:
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                delete(continuation_character_forms).where(
+                    continuation_character_forms.c.id == form_id,
+                    continuation_character_forms.c.revision
+                    == base_revision,
+                )
+            )
+            if changed.rowcount != 1:
+                self._raise_form_cas(connection, form_id)
+
+    def bind_form_reference(
+        self,
+        *,
+        form_id: str,
+        base_revision: int,
+        asset_id: str | None,
+        thumbnail_asset_id: str | None,
+    ) -> dict[str, Any]:
+        if (asset_id is None) != (thumbnail_asset_id is None):
+            raise ValueError(
+                "reference asset and thumbnail must be set together"
+            )
+        with immediate_transaction(self.engine) as connection:
+            changed = connection.execute(
+                update(continuation_character_forms)
+                .where(
+                    continuation_character_forms.c.id == form_id,
+                    continuation_character_forms.c.revision
+                    == base_revision,
+                )
+                .values(
+                    reference_asset_id=asset_id,
+                    reference_thumbnail_asset_id=thumbnail_asset_id,
+                    revision=base_revision + 1,
+                    updated_at=utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                self._raise_form_cas(connection, form_id)
+            row = connection.execute(
+                select(continuation_character_forms).where(
+                    continuation_character_forms.c.id == form_id
+                )
+            ).mappings().one()
+            versions = self._form_versions(connection, form_id)
+        return self._form_dto(row, image_versions=versions)
+
+    def list_forms(
+        self,
+        *,
+        project_id: str,
+        cursor: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        if cursor < 0 or not 1 <= limit <= 200:
+            raise ValueError("invalid continuation form pagination")
+        with self.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    select(continuation_character_forms)
+                    .join(
+                        continuation_characters,
+                        continuation_characters.c.id
+                        == continuation_character_forms.c.character_id,
+                    )
+                    .where(
+                        continuation_characters.c.project_id == project_id
+                    )
+                    .order_by(
+                        continuation_characters.c.name,
+                        continuation_character_forms.c.name,
+                    )
+                    .offset(cursor)
+                    .limit(limit + 1)
+                ).mappings()
+            )
+            has_more = len(rows) > limit
+            selected_rows = rows[:limit]
+            items = [
+                self._form_dto(
+                    row,
+                    image_versions=self._form_versions(
+                        connection,
+                        str(row["id"]),
+                    ),
+                )
+                for row in selected_rows
+            ]
+        return {
+            "items": items,
+            "nextCursor": cursor + limit if has_more else None,
+        }
+
+    def adopt_form_image(
+        self,
+        *,
+        form_id: str,
+        version: int,
+        base_revision: int,
+    ) -> dict[str, Any]:
+        with immediate_transaction(self.engine) as connection:
+            target = connection.execute(
+                select(continuation_form_image_versions).where(
+                    continuation_form_image_versions.c.form_id == form_id,
+                    continuation_form_image_versions.c.version == version,
+                )
+            ).mappings().one_or_none()
+            if target is None:
+                raise InsightNotFound(
+                    "continuation form image version not found"
+                )
+            changed = connection.execute(
+                update(continuation_character_forms)
+                .where(
+                    continuation_character_forms.c.id == form_id,
+                    continuation_character_forms.c.revision
+                    == base_revision,
+                )
+                .values(
+                    adopted_asset_id=target["asset_id"],
+                    revision=base_revision + 1,
+                    updated_at=utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                self._raise_form_cas(connection, form_id)
+            connection.execute(
+                update(continuation_form_image_versions)
+                .where(
+                    continuation_form_image_versions.c.form_id == form_id
+                )
+                .values(is_adopted=False, updated_at=utcnow())
+            )
+            connection.execute(
+                update(continuation_form_image_versions)
+                .where(
+                    continuation_form_image_versions.c.id == target["id"]
+                )
+                .values(is_adopted=True, updated_at=utcnow())
+            )
+        return {
+            "formId": form_id,
+            "version": version,
+            "assetId": str(target["asset_id"]),
+            "revision": base_revision + 1,
+        }
+
     def clear(self, *, book_id: str) -> None:
         with immediate_transaction(self.engine) as connection:
             project_id = connection.execute(
@@ -440,7 +819,7 @@ class ContinuationRepository:
                 return
             active_job = connection.execute(
                 select(jobs.c.id).where(
-                    jobs.c.book_id == book_id,
+                    jobs.c.continuation_project_id == project_id,
                     jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
                 )
             ).scalar_one_or_none()
@@ -464,6 +843,103 @@ class ContinuationRepository:
         if row is None:
             raise InsightNotFound("continuation project not found")
         return row
+
+    @staticmethod
+    def _require_project(
+        connection: Connection,
+        project_id: str,
+    ) -> None:
+        if connection.execute(
+            select(continuation_projects.c.id).where(
+                continuation_projects.c.id == project_id
+            )
+        ).scalar_one_or_none() is None:
+            raise InsightNotFound("continuation project not found")
+
+    @staticmethod
+    def _raise_character_cas(
+        connection: Connection,
+        character_id: str,
+    ) -> None:
+        if connection.execute(
+            select(continuation_characters.c.id).where(
+                continuation_characters.c.id == character_id
+            )
+        ).scalar_one_or_none() is None:
+            raise InsightNotFound("continuation character not found")
+        raise InsightConflict("continuation character revision changed")
+
+    @staticmethod
+    def _raise_form_cas(
+        connection: Connection,
+        form_id: str,
+    ) -> None:
+        if connection.execute(
+            select(continuation_character_forms.c.id).where(
+                continuation_character_forms.c.id == form_id
+            )
+        ).scalar_one_or_none() is None:
+            raise InsightNotFound("continuation character form not found")
+        raise InsightConflict("continuation character form revision changed")
+
+    @staticmethod
+    def _form_versions(
+        connection: Connection,
+        form_id: str,
+    ) -> list[Mapping[str, Any]]:
+        return list(
+            connection.execute(
+                select(continuation_form_image_versions)
+                .where(
+                    continuation_form_image_versions.c.form_id == form_id
+                )
+                .order_by(
+                    continuation_form_image_versions.c.version.desc()
+                )
+                .limit(5)
+            ).mappings()
+        )
+
+    @staticmethod
+    def _form_dto(
+        row: Mapping[str, Any],
+        *,
+        image_versions: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "formId": str(row["id"]),
+            "characterId": str(row["character_id"]),
+            "name": str(row["name"]),
+            "revision": int(row["revision"]),
+            "payload": _load(row["payload_json"], {}),
+            "referenceAssetId": row["reference_asset_id"],
+            "referenceAssetUrl": (
+                f"/api/v2/assets/{row['reference_asset_id']}"
+                if row["reference_asset_id"]
+                else None
+            ),
+            "referenceThumbnailUrl": (
+                f"/api/v2/assets/{row['reference_thumbnail_asset_id']}"
+                if row["reference_thumbnail_asset_id"]
+                else None
+            ),
+            "adoptedAssetId": row["adopted_asset_id"],
+            "imageVersions": [
+                {
+                    "version": int(version["version"]),
+                    "assetId": str(version["asset_id"]),
+                    "assetUrl": (
+                        f"/api/v2/assets/{version['asset_id']}"
+                    ),
+                    "thumbnailUrl": (
+                        f"/api/v2/assets/"
+                        f"{version['thumbnail_asset_id']}"
+                    ),
+                    "adopted": bool(version["is_adopted"]),
+                }
+                for version in image_versions
+            ],
+        }
 
     def _project_dto(
         self,
@@ -489,6 +965,20 @@ class ContinuationRepository:
                 .order_by(continuation_characters.c.name)
             ).mappings()
         )
+        references = list(
+            connection.execute(
+                select(
+                    continuation_project_reference_assets.c.asset_id
+                )
+                .where(
+                    continuation_project_reference_assets.c.project_id
+                    == row["id"]
+                )
+                .order_by(
+                    continuation_project_reference_assets.c.ordinal
+                )
+            ).scalars()
+        )
         return {
             "projectId": str(row["id"]),
             "bookId": str(row["book_id"]),
@@ -504,15 +994,38 @@ class ContinuationRepository:
                 if script
                 else None
             ),
-            "pages": [_page_dto(page) for page in pages_rows],
-            "characters": [
+            "pages": [
+                _page_dto(
+                    page,
+                    image_versions=list(
+                        connection.execute(
+                            select(continuation_image_versions)
+                            .where(
+                                continuation_image_versions.c.continuation_page_id
+                                == page["id"]
+                            )
+                            .order_by(
+                                continuation_image_versions.c.version.desc()
+                            )
+                            .limit(5)
+                        ).mappings()
+                    ),
+                )
+                for page in pages_rows
+            ],
+            "referenceAssets": [
                 {
-                    "characterId": str(character["id"]),
-                    "name": str(character["name"]),
-                    "aliases": _load(character["aliases_json"], []),
-                    "enabled": bool(character["enabled"]),
-                    "payload": _load(character["payload_json"], {}),
+                    "assetId": str(asset_id),
+                    "assetUrl": f"/api/v2/assets/{asset_id}",
+                    "thumbnailUrl": (
+                        f"/api/v2/assets/"
+                        f"{_reference_thumbnail_asset_id(connection, str(asset_id))}"
+                    ),
                 }
+                for asset_id in references
+            ],
+            "characters": [
+                _character_dto(character)
                 for character in characters
             ],
         }
@@ -626,6 +1139,8 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
+                    analysis_run_id=str(project["source_run_id"]),
+                    continuation_project_id=str(project["id"]),
                     config=config,
                     items=(
                         JobItemSpec(
@@ -723,6 +1238,8 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
+                    analysis_run_id=str(project["source_run_id"]),
+                    continuation_project_id=str(project["id"]),
                     config=config,
                     items=tuple(
                         JobItemSpec(
@@ -760,6 +1277,51 @@ class ContinuationCommandService:
                     .order_by(continuation_pages.c.ordinal)
                 ).mappings()
             )
+            initial_reference_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(
+                        continuation_project_reference_assets.c.asset_id
+                    )
+                    .where(
+                        continuation_project_reference_assets.c.project_id
+                        == project["id"]
+                    )
+                    .order_by(
+                        continuation_project_reference_assets.c.ordinal
+                    )
+                ).scalars()
+            ]
+            reference_count = int(
+                _load(project["payload_json"], {}).get(
+                    "styleReferencePages",
+                    3,
+                )
+            )
+            if len(initial_reference_ids) < reference_count:
+                fallback_ids = [
+                    str(value)
+                    for value in connection.execute(
+                        select(page_assets.c.asset_id)
+                        .join(pages, pages.c.id == page_assets.c.page_id)
+                        .join(chapters, chapters.c.id == pages.c.chapter_id)
+                        .where(
+                            chapters.c.book_id == book_id,
+                            page_assets.c.role == "source",
+                            page_assets.c.asset_id.not_in(
+                                tuple(initial_reference_ids)
+                            ),
+                        )
+                        .order_by(
+                            chapters.c.ordinal.desc(),
+                            pages.c.ordinal.desc(),
+                        )
+                        .limit(
+                            reference_count - len(initial_reference_ids)
+                        )
+                    ).scalars()
+                ]
+                initial_reference_ids.extend(fallback_ids)
         selected_set = (
             set(int(value) for value in ordinals) if ordinals else None
         )
@@ -788,8 +1350,13 @@ class ContinuationCommandService:
                 "continuationAction": "images",
                 "projectId": str(project["id"]),
                 "targets": targets,
+                "initialReferenceAssetIds": initial_reference_ids,
             }
         )
+        frozen_references = {
+            f"style_reference_{index}": asset_id
+            for index, asset_id in enumerate(initial_reference_ids, start=1)
+        }
         return self.jobs.create_batch(
             kind="continuation",
             display_name="续写 · 批量生图",
@@ -797,13 +1364,20 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
+                    analysis_run_id=str(project["source_run_id"]),
+                    continuation_project_id=str(project["id"]),
                     config=config,
                     items=tuple(
                         JobItemSpec(
                             page_id=None,
                             step_kinds=("continuation_generate_image",),
+                            asset_inputs=(
+                                frozen_references
+                                if index == 0 and frozen_references
+                                else None
+                            ),
                         )
-                        for _target in targets
+                        for index, _target in enumerate(targets)
                     ),
                 ),
             ),
@@ -831,12 +1405,40 @@ class ContinuationCommandService:
         if output_format not in {"zip", "pdf"}:
             raise ValueError("format must be zip or pdf")
         project = self.repository.project_by_book(book_id)
+        with self.engine.connect() as connection:
+            images = [
+                {
+                    "ordinal": int(ordinal),
+                    "assetId": str(asset_id),
+                }
+                for ordinal, asset_id in connection.execute(
+                    select(
+                        continuation_pages.c.ordinal,
+                        continuation_image_versions.c.asset_id,
+                    )
+                    .join(
+                        continuation_image_versions,
+                        continuation_image_versions.c.continuation_page_id
+                        == continuation_pages.c.id,
+                    )
+                    .where(
+                        continuation_pages.c.project_id == project["id"],
+                        continuation_image_versions.c.is_active.is_(True),
+                    )
+                    .order_by(continuation_pages.c.ordinal)
+                )
+            ]
+        if not images:
+            raise InsightConflict(
+                "continuation has no active images to export"
+            )
         config = self._config(book_id, project)
         config.update(
             {
                 "continuationAction": "export",
                 "projectId": str(project["id"]),
                 "format": output_format,
+                "images": images,
             }
         )
         return self.jobs.create_batch(
@@ -846,11 +1448,19 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
+                    analysis_run_id=str(project["source_run_id"]),
+                    continuation_project_id=str(project["id"]),
                     config=config,
                     items=(
                         JobItemSpec(
                             page_id=None,
                             step_kinds=("continuation_export",),
+                            asset_inputs={
+                                f"continuation_page_{image['ordinal']}": str(
+                                    image["assetId"]
+                                )
+                                for image in images
+                            },
                         ),
                     ),
                 ),
@@ -863,6 +1473,92 @@ class ContinuationCommandService:
                 "projectId": str(project["id"]),
                 "format": output_format,
                 "projectRevision": int(project["revision"]),
+                "images": images,
+            },
+        )
+
+    def create_character_sheet_job(
+        self,
+        *,
+        book_id: str,
+        form_id: str,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    continuation_character_forms,
+                    continuation_characters.c.name.label("character_name"),
+                    continuation_characters.c.project_id,
+                )
+                .join(
+                    continuation_characters,
+                    continuation_characters.c.id
+                    == continuation_character_forms.c.character_id,
+                )
+                .join(
+                    continuation_projects,
+                    continuation_projects.c.id
+                    == continuation_characters.c.project_id,
+                )
+                .where(
+                    continuation_character_forms.c.id == form_id,
+                    continuation_projects.c.book_id == book_id,
+                )
+            ).mappings().one_or_none()
+        if row is None:
+            raise InsightNotFound("continuation character form not found")
+        project = self.repository.project_by_book(book_id)
+        config = self._config(book_id, project)
+        config.update(
+            {
+                "continuationAction": "character_sheet",
+                "projectId": str(project["id"]),
+                "formId": form_id,
+                "baseFormRevision": int(row["revision"]),
+                "characterName": str(row["character_name"]),
+                "formName": str(row["name"]),
+                "formPayload": _load(row["payload_json"], {}),
+                "referenceAssetId": row["reference_asset_id"],
+            }
+        )
+        asset_inputs = (
+            {"character_reference": str(row["reference_asset_id"])}
+            if row["reference_asset_id"]
+            else None
+        )
+        return self.jobs.create_batch(
+            kind="continuation",
+            display_name=(
+                f"续写 · {row['character_name']} · {row['name']} 三视图"
+            ),
+            specs=(
+                JobSpec(
+                    kind="continuation",
+                    book_id=book_id,
+                    analysis_run_id=str(project["source_run_id"]),
+                    continuation_project_id=str(project["id"]),
+                    config=config,
+                    items=(
+                        JobItemSpec(
+                            page_id=None,
+                            step_kinds=(
+                                "continuation_generate_character_sheet",
+                            ),
+                            asset_inputs=asset_inputs,
+                        ),
+                    ),
+                ),
+            ),
+            idempotency_scope=(
+                f"continuation-character-sheet:{form_id}:"
+                f"{int(row['revision'])}"
+            ),
+            idempotency_key=idempotency_key,
+            idempotency_payload={
+                "formId": form_id,
+                "baseRevision": int(row["revision"]),
+                "referenceAssetId": row["reference_asset_id"],
             },
         )
 
@@ -1143,6 +1839,21 @@ class ContinuationWorkerService:
                         }
                     )
                     return
+                current_revision = connection.execute(
+                    select(continuation_pages.c.revision).where(
+                        continuation_pages.c.id == page_id
+                    )
+                ).scalar_one_or_none()
+                if current_revision != int(target["baseRevision"]):
+                    checkpoint.update(
+                        {
+                            "continuationPageId": page_id,
+                            "ordinal": int(target["ordinal"]),
+                            "skipped": True,
+                            "skipReason": "revision_conflict",
+                        }
+                    )
+                    return
                 revision = ContinuationRepository.insert_page_result(
                     connection,
                     page_id=page_id,
@@ -1155,6 +1866,155 @@ class ContinuationWorkerService:
                         "ordinal": int(target["ordinal"]),
                         "pageRevision": revision,
                         "skipped": False,
+                    }
+                )
+        elif kind == "continuation_generate_character_sheet":
+            reference_paths: list[Path] = []
+            reference_asset_id = config.get("referenceAssetId")
+            if reference_asset_id:
+                with self.engine.connect() as connection:
+                    relative_path = connection.execute(
+                        select(assets.c.relative_path).where(
+                            assets.c.id == reference_asset_id
+                        )
+                    ).scalar_one_or_none()
+                if relative_path is None:
+                    raise JobConflict(
+                        "character form reference asset is missing"
+                    )
+                reference_paths.append(
+                    self.storage.resolve_relative_path(
+                        str(relative_path)
+                    )
+                )
+            prompt = (
+                "生成同一角色同一形态的正面、侧面、背面三视图角色设定图。"
+                "保持服装、发型、配色和比例一致，使用干净背景。\n"
+                f"角色：{config.get('characterName', '')}\n"
+                f"形态：{config.get('formName', '')}\n"
+                f"设定：{_json(config.get('formPayload', {}))}"
+            )
+            image_bytes = self.algorithms.generate_image(
+                prompt=prompt,
+                reference_paths=reference_paths,
+                config=config,
+            )
+            image_info = _image_info(image_bytes)
+            thumbnail = _thumbnail_image(image_bytes)
+            asset = self.storage.publish_bytes(
+                image_bytes,
+                extension=image_info["extension"],
+                mime_type=image_info["mimeType"],
+                width=image_info["width"],
+                height=image_info["height"],
+            )
+            thumbnail_asset = self.storage.publish_bytes(
+                thumbnail["bytes"],
+                extension="webp",
+                mime_type="image/webp",
+                width=thumbnail["width"],
+                height=thumbnail["height"],
+            )
+            checkpoint = {}
+
+            def publish(connection: Connection) -> None:
+                form_id = str(config["formId"])
+                base_revision = int(config["baseFormRevision"])
+                changed = connection.execute(
+                    update(continuation_character_forms)
+                    .where(
+                        continuation_character_forms.c.id == form_id,
+                        continuation_character_forms.c.revision
+                        == base_revision,
+                    )
+                    .values(
+                        revision=base_revision + 1,
+                        updated_at=utcnow(),
+                    )
+                )
+                if changed.rowcount != 1:
+                    raise JobConflict(
+                        "character form changed before sheet publication"
+                    )
+                version = int(
+                    connection.execute(
+                        select(
+                            func.coalesce(
+                                func.max(
+                                    continuation_form_image_versions.c.version
+                                ),
+                                0,
+                            )
+                            + 1
+                        ).where(
+                            continuation_form_image_versions.c.form_id
+                            == form_id
+                        )
+                    ).scalar_one()
+                )
+                connection.execute(
+                    insert(continuation_form_image_versions).values(
+                        id=str(uuid.uuid4()),
+                        form_id=form_id,
+                        asset_id=asset.id,
+                        thumbnail_asset_id=thumbnail_asset.id,
+                        version=version,
+                        is_adopted=False,
+                        created_at=utcnow(),
+                        updated_at=utcnow(),
+                    )
+                )
+                obsolete = list(
+                    connection.execute(
+                        select(continuation_form_image_versions.c.id)
+                        .where(
+                            continuation_form_image_versions.c.form_id
+                            == form_id,
+                            continuation_form_image_versions.c.is_adopted.is_(
+                                False
+                            ),
+                            ~exists(
+                                select(job_asset_inputs.c.asset_id).where(
+                                    job_asset_inputs.c.asset_id
+                                    == continuation_form_image_versions.c.asset_id
+                                )
+                            ),
+                            ~exists(
+                                select(job_artifacts.c.asset_id).where(
+                                    job_artifacts.c.asset_id
+                                    == continuation_form_image_versions.c.asset_id
+                                )
+                            ),
+                            ~exists(
+                                select(
+                                    continuation_project_reference_assets.c.asset_id
+                                ).where(
+                                    continuation_project_reference_assets.c.asset_id
+                                    == continuation_form_image_versions.c.asset_id
+                                )
+                            ),
+                        )
+                        .order_by(
+                            continuation_form_image_versions.c.version.desc()
+                        )
+                        .offset(5)
+                    ).scalars()
+                )
+                if obsolete:
+                    connection.execute(
+                        delete(continuation_form_image_versions).where(
+                            continuation_form_image_versions.c.id.in_(
+                                tuple(obsolete)
+                            )
+                        )
+                    )
+                checkpoint.update(
+                    {
+                        "formId": form_id,
+                        "formRevision": base_revision + 1,
+                        "version": version,
+                        "assetId": asset.id,
+                        "thumbnailAssetId": thumbnail_asset.id,
                     }
                 )
         elif kind == "continuation_generate_image":
@@ -1170,6 +2030,13 @@ class ContinuationWorkerService:
                         3,
                     )
                 ),
+                initial_asset_ids=[
+                    str(value)
+                    for value in config.get(
+                        "initialReferenceAssetIds",
+                        [],
+                    )
+                ],
             )
             image_bytes = self.algorithms.generate_image(
                 prompt=str(target["payload"]["finalPrompt"]),
@@ -1177,12 +2044,20 @@ class ContinuationWorkerService:
                 config=config,
             )
             image_info = _image_info(image_bytes)
+            thumbnail = _thumbnail_image(image_bytes)
             asset = self.storage.publish_bytes(
                 image_bytes,
                 extension=image_info["extension"],
                 mime_type=image_info["mimeType"],
                 width=image_info["width"],
                 height=image_info["height"],
+            )
+            thumbnail_asset = self.storage.publish_bytes(
+                thumbnail["bytes"],
+                extension="webp",
+                mime_type="image/webp",
+                width=thumbnail["width"],
+                height=thumbnail["height"],
             )
             checkpoint = {}
 
@@ -1226,6 +2101,7 @@ class ContinuationWorkerService:
                         id=str(uuid.uuid4()),
                         continuation_page_id=page_id,
                         asset_id=asset.id,
+                        thumbnail_asset_id=thumbnail_asset.id,
                         version=version,
                         is_active=True,
                         created_at=utcnow(),
@@ -1237,7 +2113,41 @@ class ContinuationWorkerService:
                         select(continuation_image_versions.c.id)
                         .where(
                             continuation_image_versions.c.continuation_page_id
-                            == page_id
+                            == page_id,
+                            ~exists(
+                                select(job_asset_inputs.c.asset_id).where(
+                                    job_asset_inputs.c.asset_id
+                                    == continuation_image_versions.c.asset_id
+                                )
+                            ),
+                            ~exists(
+                                select(job_artifacts.c.asset_id).where(
+                                    job_artifacts.c.asset_id
+                                    == continuation_image_versions.c.asset_id
+                                )
+                            ),
+                            ~exists(
+                                select(
+                                    continuation_project_reference_assets.c.asset_id
+                                ).where(
+                                    continuation_project_reference_assets.c.asset_id
+                                    == continuation_image_versions.c.asset_id
+                                )
+                            ),
+                            ~exists(
+                                select(
+                                    continuation_character_forms.c.reference_asset_id
+                                ).where(
+                                    (
+                                        continuation_character_forms.c.reference_asset_id
+                                        == continuation_image_versions.c.asset_id
+                                    )
+                                    | (
+                                        continuation_character_forms.c.adopted_asset_id
+                                        == continuation_image_versions.c.asset_id
+                                    )
+                                )
+                            ),
                         )
                         .order_by(
                             continuation_image_versions.c.version.desc()
@@ -1258,12 +2168,17 @@ class ContinuationWorkerService:
                         "continuationPageId": page_id,
                         "version": version,
                         "assetId": asset.id,
+                        "thumbnailAssetId": thumbnail_asset.id,
                     }
                 )
         elif kind == "continuation_export":
             output_format = str(config.get("format", "zip"))
             output = self._build_export(
-                project_id=str(config["projectId"]),
+                images=(
+                    config.get("images", [])
+                    if isinstance(config.get("images"), list)
+                    else []
+                ),
                 output_format=output_format,
             )
             try:
@@ -1312,6 +2227,7 @@ class ContinuationWorkerService:
         project_id: str,
         before_ordinal: int,
         count: int,
+        initial_asset_ids: Sequence[str],
     ) -> list[Path]:
         with self.engine.connect() as connection:
             rows = list(
@@ -1335,6 +2251,24 @@ class ContinuationWorkerService:
                     .limit(count)
                 ).scalars()
             )
+            if len(rows) < count:
+                path_by_id = {
+                    str(asset_id): str(relative_path)
+                    for asset_id, relative_path in connection.execute(
+                        select(
+                            assets.c.id,
+                            assets.c.relative_path,
+                        ).where(
+                            assets.c.id.in_(tuple(initial_asset_ids))
+                        )
+                    )
+                } if initial_asset_ids else {}
+                selected = [
+                    path_by_id[asset_id]
+                    for asset_id in reversed(initial_asset_ids)
+                    if asset_id in path_by_id
+                ][: count - len(rows)]
+                rows.extend(selected)
             if len(rows) < count:
                 book_id = connection.execute(
                     select(continuation_projects.c.book_id).where(
@@ -1367,35 +2301,30 @@ class ContinuationWorkerService:
     def _build_export(
         self,
         *,
-        project_id: str,
+        images: Sequence[Mapping[str, Any]],
         output_format: str,
     ):
         with self.engine.connect() as connection:
-            rows = list(
-                connection.execute(
-                    select(
-                        continuation_pages.c.ordinal,
-                        assets.c.relative_path,
-                    )
-                    .join(
-                        continuation_image_versions,
-                        continuation_image_versions.c.continuation_page_id
-                        == continuation_pages.c.id,
-                    )
-                    .join(
-                        assets,
-                        assets.c.id
-                        == continuation_image_versions.c.asset_id,
-                    )
-                    .where(
-                        continuation_pages.c.project_id == project_id,
-                        continuation_image_versions.c.is_active.is_(True),
-                    )
-                    .order_by(continuation_pages.c.ordinal)
-                )
+            asset_ids = tuple(
+                str(value["assetId"]) for value in images
             )
-        if not rows:
-            raise JobConflict("continuation has no active images to export")
+            paths = {
+                str(asset_id): str(relative_path)
+                for asset_id, relative_path in connection.execute(
+                    select(assets.c.id, assets.c.relative_path).where(
+                        assets.c.id.in_(asset_ids)
+                    )
+                )
+            } if asset_ids else {}
+            rows = list(
+                (
+                    int(value["ordinal"]),
+                    paths.get(str(value["assetId"])),
+                )
+                for value in images
+            )
+        if not rows or any(relative_path is None for _, relative_path in rows):
+            raise JobConflict("frozen continuation export image is missing")
         temporary = tempfile.TemporaryFile()
         if output_format == "zip":
             with zipfile.ZipFile(
@@ -1524,13 +2453,105 @@ def _missing_prerequisites(
     return missing
 
 
-def _page_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+def _page_dto(
+    row: Mapping[str, Any],
+    *,
+    image_versions: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
     return {
         "continuationPageId": str(row["id"]),
         "ordinal": int(row["ordinal"]),
         "revision": int(row["revision"]),
         "payload": _load(row["payload_json"], {}),
+        "imageVersions": [
+            {
+                "version": int(version["version"]),
+                "assetId": str(version["asset_id"]),
+                "assetUrl": f"/api/v2/assets/{version['asset_id']}",
+                "thumbnailUrl": (
+                    f"/api/v2/assets/{version['thumbnail_asset_id']}"
+                ),
+                "active": bool(version["is_active"]),
+            }
+            for version in image_versions
+        ],
     }
+
+
+def _character_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "characterId": str(row["id"]),
+        "projectId": str(row["project_id"]),
+        "name": str(row["name"]),
+        "aliases": _load(row["aliases_json"], []),
+        "enabled": bool(row["enabled"]),
+        "payload": _load(row["payload_json"], {}),
+        "revision": int(row["revision"]),
+    }
+
+
+def _normalize_character_identity(
+    name: str,
+    aliases: Sequence[str],
+) -> tuple[str, list[str]]:
+    normalized_name = name.strip()
+    if not normalized_name or len(normalized_name) > 500:
+        raise ValueError("character name must contain 1-500 characters")
+    normalized_aliases = list(
+        dict.fromkeys(
+            str(value).strip()
+            for value in aliases
+            if str(value).strip()
+        )
+    )
+    if len(normalized_aliases) > 100 or any(
+        len(value) > 500 for value in normalized_aliases
+    ):
+        raise ValueError("character aliases exceed the allowed size")
+    return normalized_name, normalized_aliases
+
+
+def _form_name(value: str) -> str:
+    result = value.strip()
+    if not result or len(result) > 500:
+        raise ValueError("form name must contain 1-500 characters")
+    return result
+
+
+def _reference_thumbnail_asset_id(
+    connection: Connection,
+    asset_id: str,
+) -> str:
+    thumbnail = connection.execute(
+        select(
+            continuation_character_forms.c.reference_thumbnail_asset_id
+        ).where(
+            continuation_character_forms.c.reference_asset_id == asset_id
+        ).limit(1)
+    ).scalar_one_or_none()
+    if thumbnail is None:
+        thumbnail = connection.execute(
+            select(
+                continuation_image_versions.c.thumbnail_asset_id
+            )
+            .where(continuation_image_versions.c.asset_id == asset_id)
+            .limit(1)
+        ).scalar_one_or_none()
+    if thumbnail is None:
+        source_page_id = connection.execute(
+            select(page_assets.c.page_id).where(
+                page_assets.c.asset_id == asset_id,
+                page_assets.c.role == "source",
+            )
+        ).scalar_one_or_none()
+        if source_page_id is not None:
+            thumbnail = connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == source_page_id,
+                    page_assets.c.role == "thumbnail_source",
+                )
+            ).scalar_one_or_none()
+    return str(thumbnail or asset_id)
 
 
 def _image_info(payload: bytes) -> dict[str, Any]:
@@ -1549,6 +2570,29 @@ def _image_info(payload: bytes) -> dict[str, Any]:
     return {
         "extension": extension,
         "mimeType": mime_type,
+        "width": width,
+        "height": height,
+    }
+
+
+def _thumbnail_image(payload: bytes) -> dict[str, Any]:
+    from PIL import Image, ImageOps
+
+    with Image.open(BytesIO(payload)) as source:
+        oriented = ImageOps.exif_transpose(source)
+        oriented.load()
+        thumbnail = oriented.copy()
+        thumbnail.thumbnail((320, 320), Image.Resampling.LANCZOS)
+        if thumbnail.mode not in {"RGB", "RGBA"}:
+            thumbnail = thumbnail.convert("RGBA")
+        output = BytesIO()
+        thumbnail.save(output, format="WEBP", quality=80, method=4)
+        width, height = thumbnail.size
+        thumbnail.close()
+        if oriented is not source:
+            oriented.close()
+    return {
+        "bytes": output.getvalue(),
         "width": width,
         "height": height,
     }

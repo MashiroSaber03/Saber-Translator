@@ -248,6 +248,22 @@ class ImageImportService:
             height=thumbnail_height,
         )
 
+    def publish_standalone_image(self, upload: BinaryIO):
+        """Publish one validated image and its generated thumbnail."""
+
+        temporary = (
+            self.data_root
+            / "temp"
+            / "imports"
+            / f"asset-{uuid.uuid4().hex}.upload"
+        )
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._copy_upload(upload, temporary)
+            return self._publish_temporary(temporary)
+        finally:
+            temporary.unlink(missing_ok=True)
+
     def _publish_temporary(self, temporary: Path):
         (
             extension,

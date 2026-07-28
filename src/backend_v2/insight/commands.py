@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from src.backend_v2.insight.repository import InsightRepository
 from src.backend_v2.jobs.repository import (
@@ -25,6 +25,7 @@ from src.backend_v2.storage.schema import (
     chapters,
     page_assets,
     pages,
+    jobs,
 )
 
 
@@ -158,6 +159,11 @@ class InsightAnalysisCommandService:
                 scope=scope,
                 config=config,
                 targets=target_mappings,
+            )
+            connection.execute(
+                update(jobs)
+                .where(jobs.c.id == str(job_ids[0]))
+                .values(analysis_run_id=run_id)
             )
 
         response = self.jobs.create_batch(

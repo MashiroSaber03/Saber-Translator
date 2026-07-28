@@ -126,6 +126,8 @@ class JobSpec:
     book_id: str | None = None
     chapter_id: str | None = None
     page_id: str | None = None
+    analysis_run_id: str | None = None
+    continuation_project_id: str | None = None
     web_import_draft_id: str | None = None
     target_display: Mapping[str, Any] | None = None
     credential_snapshots: Mapping[str, str] | None = None
@@ -283,6 +285,10 @@ class JobQueueRepository:
                             book_id=spec.book_id,
                             chapter_id=spec.chapter_id,
                             page_id=spec.page_id,
+                            analysis_run_id=spec.analysis_run_id,
+                            continuation_project_id=(
+                                spec.continuation_project_id
+                            ),
                             web_import_draft_id=spec.web_import_draft_id,
                             config_json=_json(dict(spec.config)),
                             config_schema_version=1,

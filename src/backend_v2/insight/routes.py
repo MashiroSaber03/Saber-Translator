@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import threading
 import time
 from collections.abc import Mapping
@@ -12,6 +13,8 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 from sqlalchemy import Engine
 
 from src.backend_v2.insight.commands import InsightAnalysisCommandService
+from src.backend_v2.content.image_import import ImageImportService
+from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.insight.continuation import (
     ContinuationCommandService,
     ContinuationRepository,
@@ -19,6 +22,10 @@ from src.backend_v2.insight.continuation import (
 from src.backend_v2.insight.derived import (
     InsightDerivedCommandService,
     InsightDerivedRepository,
+)
+from src.backend_v2.insight.exports import (
+    InsightExportCommandService,
+    build_current_export,
 )
 from src.backend_v2.insight.repository import (
     InsightConflict,
@@ -36,11 +43,13 @@ from src.backend_v2.insight.qa import (
     suggested_questions,
 )
 from src.backend_v2.jobs.repository import JobConflict
+from src.backend_v2.storage.assets import AssetStorageService
 
 
 def create_insight_blueprint(
     *,
     engine: Engine,
+    data_root: Path | None = None,
     qa_algorithms: QAApiAlgorithms | None = None,
 ) -> Blueprint:
     blueprint = Blueprint("insight_v2", __name__, url_prefix="/api/v2/insight")
@@ -48,6 +57,7 @@ def create_insight_blueprint(
     commands = InsightAnalysisCommandService(engine)
     derived = InsightDerivedRepository(engine)
     derived_commands = InsightDerivedCommandService(engine)
+    export_commands = InsightExportCommandService(engine)
     continuation = ContinuationRepository(engine)
     continuation_commands = ContinuationCommandService(engine)
     qa_requests = TransientRequestRepository(engine)
@@ -56,6 +66,15 @@ def create_insight_blueprint(
         repository=qa_requests,
     )
     qa_api = qa_algorithms or DefaultQAApiAlgorithms()
+    image_import = (
+        ImageImportService(
+            data_root=data_root,
+            repository=ContentRepository(engine),
+            storage=AssetStorageService(data_root, engine),
+        )
+        if data_root is not None
+        else None
+    )
 
     @blueprint.errorhandler(InsightNotFound)
     def not_found(error: InsightNotFound):
@@ -148,7 +167,15 @@ def create_insight_blueprint(
         book_id = request.args.get("bookId", "")
         if not book_id:
             raise ValueError("bookId is required")
-        timeline = derived.get_timeline(book_id=book_id)
+        timeline = derived.get_timeline(
+            book_id=book_id,
+            event_after=int(request.args.get("eventCursor", "0")),
+            event_limit=int(request.args.get("eventLimit", "100")),
+            character_after=request.args.get("characterCursor"),
+            character_limit=int(
+                request.args.get("characterLimit", "100")
+            ),
+        )
         if timeline is None:
             raise InsightNotFound("timeline not found")
         return jsonify(timeline)
@@ -390,12 +417,58 @@ def create_insight_blueprint(
         )
         return response
 
+    @blueprint.get("/books/<book_id>/export/current")
+    def export_current(book_id: str) -> Response:
+        template = request.args.get("template", "").strip()
+        if not template:
+            raise ValueError("template is required")
+        artifact = derived.get_artifact(
+            book_id=book_id,
+            kind="overview",
+            template=template,
+        )
+        if artifact is None:
+            raise InsightNotFound("overview not found")
+        body, mime, filename = build_current_export(
+            artifact,
+            output_format=request.args.get("format", "markdown"),
+        )
+        response = Response(body, content_type=mime)
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="{filename}"'
+        )
+        return response
+
+    @blueprint.post("/books/<book_id>/exports")
+    def export_all(book_id: str):
+        _json_body()
+        return (
+            jsonify(
+                export_commands.create_export_job(
+                    book_id=book_id,
+                    idempotency_key=_require_idempotency_key(),
+                )
+            ),
+            202,
+        )
+
     @blueprint.get("/notes")
     def list_notes() -> Response:
         book_id = request.args.get("bookId", "")
         if not book_id:
             raise ValueError("bookId is required")
-        return jsonify({"items": repository.list_notes(book_id=book_id)})
+        return jsonify(
+            repository.list_notes(
+                book_id=book_id,
+                cursor=request.args.get("cursor"),
+                limit=int(request.args.get("limit", "50")),
+                kind=request.args.get("kind"),
+            )
+        )
+
+    @blueprint.get("/notes/<note_id>")
+    def get_note(note_id: str) -> Response:
+        return jsonify(repository.get_note(note_id=note_id))
 
     @blueprint.post("/notes")
     def create_note():
@@ -407,7 +480,10 @@ def create_insight_blueprint(
                     book_id=_required_string(body, "bookId"),
                     title=_required_string(body, "title"),
                     content=str(body.get("content", "")),
-                    page_ids=_page_ids(body),
+                    citations=_citations(body),
+                    kind=str(body.get("kind", "text")),
+                    tags=_string_list(body, "tags"),
+                    comments=_comments(body),
                 )
             ),
             201,
@@ -423,7 +499,10 @@ def create_insight_blueprint(
                 base_revision=int(body.get("baseRevision", 0)),
                 title=_required_string(body, "title"),
                 content=str(body.get("content", "")),
-                page_ids=_page_ids(body),
+                citations=_citations(body),
+                kind=str(body.get("kind", "text")),
+                tags=_string_list(body, "tags"),
+                comments=_comments(body),
             )
         )
 
@@ -451,6 +530,11 @@ def create_insight_blueprint(
         _json_body()
         return jsonify(continuation.sync_latest(book_id=book_id))
 
+    @blueprint.post("/books/<book_id>/continuation/sync-analysis")
+    def sync_continuation_analysis(book_id: str) -> Response:
+        _json_body()
+        return jsonify(continuation.sync_latest(book_id=book_id))
+
     @blueprint.patch("/continuation/projects/<project_id>")
     def update_continuation_project(project_id: str) -> Response:
         body = _json_body()
@@ -462,6 +546,175 @@ def create_insight_blueprint(
                 project_id=project_id,
                 base_revision=int(body.get("baseRevision", 0)),
                 config=config,
+            )
+        )
+
+    @blueprint.put("/continuation/projects/<project_id>/references")
+    def set_continuation_references(project_id: str) -> Response:
+        body = _json_body()
+        asset_ids = _string_list(body, "assetIds")
+        return jsonify(
+            continuation.set_project_references(
+                project_id=project_id,
+                base_revision=int(body.get("baseRevision", 0)),
+                asset_ids=asset_ids,
+            )
+        )
+
+    @blueprint.post("/continuation/projects/<project_id>/characters")
+    def create_continuation_character(project_id: str):
+        body = _json_body()
+        payload = body.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        return (
+            jsonify(
+                continuation.create_character(
+                    project_id=project_id,
+                    name=_required_string(body, "name"),
+                    aliases=_string_list(body, "aliases"),
+                    enabled=bool(body.get("enabled", True)),
+                    payload=payload,
+                )
+            ),
+            201,
+        )
+
+    @blueprint.patch("/continuation/characters/<character_id>")
+    def update_continuation_character(character_id: str) -> Response:
+        body = _json_body()
+        payload = body.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        return jsonify(
+            continuation.update_character(
+                character_id=character_id,
+                base_revision=int(body.get("baseRevision", 0)),
+                name=_required_string(body, "name"),
+                aliases=_string_list(body, "aliases"),
+                enabled=bool(body.get("enabled", True)),
+                payload=payload,
+            )
+        )
+
+    @blueprint.delete("/continuation/characters/<character_id>")
+    def delete_continuation_character(character_id: str) -> Response:
+        continuation.delete_character(
+            character_id=character_id,
+            base_revision=_base_revision(),
+        )
+        return jsonify({"deleted": True})
+
+    @blueprint.post("/continuation/characters/<character_id>/forms")
+    def create_continuation_form(character_id: str):
+        body = _json_body()
+        payload = body.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        return (
+            jsonify(
+                continuation.create_form(
+                    character_id=character_id,
+                    name=_required_string(body, "name"),
+                    payload=payload,
+                )
+            ),
+            201,
+        )
+
+    @blueprint.get("/continuation/projects/<project_id>/forms")
+    def list_continuation_forms(project_id: str) -> Response:
+        return jsonify(
+            continuation.list_forms(
+                project_id=project_id,
+                cursor=int(request.args.get("cursor", "0")),
+                limit=int(request.args.get("limit", "50")),
+            )
+        )
+
+    @blueprint.patch("/continuation/forms/<form_id>")
+    def update_continuation_form(form_id: str) -> Response:
+        body = _json_body()
+        payload = body.get("payload", {})
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        return jsonify(
+            continuation.update_form(
+                form_id=form_id,
+                base_revision=int(body.get("baseRevision", 0)),
+                name=_required_string(body, "name"),
+                payload=payload,
+            )
+        )
+
+    @blueprint.delete("/continuation/forms/<form_id>")
+    def delete_continuation_form(form_id: str) -> Response:
+        continuation.delete_form(
+            form_id=form_id,
+            base_revision=_base_revision(),
+        )
+        return jsonify({"deleted": True})
+
+    @blueprint.post("/continuation/forms/<form_id>/reference")
+    def upload_continuation_reference(form_id: str) -> Response:
+        if image_import is None:
+            raise RuntimeError("image storage is unavailable")
+        upload = request.files.get("file")
+        if upload is None:
+            raise ValueError("file is required")
+        base_revision = int(request.form.get("baseRevision", "0"))
+        source, thumbnail = image_import.publish_standalone_image(
+            upload.stream
+        )
+        return jsonify(
+            continuation.bind_form_reference(
+                form_id=form_id,
+                base_revision=base_revision,
+                asset_id=source.id,
+                thumbnail_asset_id=thumbnail.id,
+            )
+        )
+
+    @blueprint.delete("/continuation/forms/<form_id>/reference")
+    def delete_continuation_reference(form_id: str) -> Response:
+        return jsonify(
+            continuation.bind_form_reference(
+                form_id=form_id,
+                base_revision=_base_revision(),
+                asset_id=None,
+                thumbnail_asset_id=None,
+            )
+        )
+
+    @blueprint.post(
+        "/books/<book_id>/continuation/character-sheet-jobs"
+    )
+    def continuation_character_sheet_job(book_id: str):
+        body = _json_body()
+        return (
+            jsonify(
+                continuation_commands.create_character_sheet_job(
+                    book_id=book_id,
+                    form_id=_required_string(body, "formId"),
+                    idempotency_key=_require_idempotency_key(),
+                )
+            ),
+            202,
+        )
+
+    @blueprint.post(
+        "/continuation/forms/<form_id>/image-versions/<int:version>/adopt"
+    )
+    def adopt_continuation_character_sheet(
+        form_id: str,
+        version: int,
+    ) -> Response:
+        body = _json_body()
+        return jsonify(
+            continuation.adopt_form_image(
+                form_id=form_id,
+                version=version,
+                base_revision=int(body.get("baseRevision", 0)),
             )
         )
 
@@ -477,6 +730,50 @@ def create_insight_blueprint(
             ),
             202,
         )
+
+    @blueprint.post("/books/<book_id>/continuation/jobs")
+    def create_continuation_job(book_id: str):
+        body = _json_body()
+        kind = _required_string(body, "kind")
+        idempotency_key = _require_idempotency_key()
+        ordinals = body.get("ordinals")
+        if ordinals is not None and (
+            not isinstance(ordinals, list)
+            or not all(isinstance(value, int) for value in ordinals)
+        ):
+            raise ValueError("ordinals must be an integer array")
+        if kind == "script":
+            result = continuation_commands.create_script_job(
+                book_id=book_id,
+                idempotency_key=idempotency_key,
+            )
+        elif kind == "pages":
+            result = continuation_commands.create_pages_job(
+                book_id=book_id,
+                ordinals=ordinals,
+                idempotency_key=idempotency_key,
+            )
+        elif kind == "images":
+            result = continuation_commands.create_images_job(
+                book_id=book_id,
+                ordinals=ordinals,
+                idempotency_key=idempotency_key,
+            )
+        elif kind == "export":
+            result = continuation_commands.create_export_job(
+                book_id=book_id,
+                output_format=str(body.get("format", "zip")),
+                idempotency_key=idempotency_key,
+            )
+        elif kind == "character_sheet":
+            result = continuation_commands.create_character_sheet_job(
+                book_id=book_id,
+                form_id=_required_string(body, "formId"),
+                idempotency_key=idempotency_key,
+            )
+        else:
+            raise ValueError("unsupported continuation job kind")
+        return jsonify(result), 202
 
     @blueprint.patch("/continuation/projects/<project_id>/script")
     def update_continuation_script(project_id: str) -> Response:
@@ -594,6 +891,14 @@ def _require_idempotency_key() -> str:
     return value
 
 
+def _base_revision() -> int:
+    value = request.args.get(
+        "baseRevision",
+        request.headers.get("If-Match", "0"),
+    )
+    return int(value)
+
+
 def _required_string(body: dict[str, Any], key: str) -> str:
     value = body.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -601,22 +906,41 @@ def _required_string(body: dict[str, Any], key: str) -> str:
     return value.strip()
 
 
-def _page_ids(body: dict[str, Any]) -> list[str]:
+def _citations(
+    body: dict[str, Any],
+) -> list[dict[str, Any] | str]:
     citations = body.get("citations", [])
     if not isinstance(citations, list):
         raise ValueError("citations must be an array")
-    result: list[str] = []
+    result: list[dict[str, Any] | str] = []
     for citation in citations:
         if isinstance(citation, str):
-            page_id = citation
+            result.append(citation)
         elif isinstance(citation, dict):
-            page_id = citation.get("pageId")
+            if not isinstance(citation.get("pageId"), str):
+                raise ValueError("every citation requires pageId")
+            result.append(dict(citation))
         else:
-            page_id = None
-        if not isinstance(page_id, str) or not page_id:
             raise ValueError("every citation requires pageId")
-        result.append(page_id)
     return result
+
+
+def _string_list(body: dict[str, Any], key: str) -> list[str]:
+    value = body.get(key, [])
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) for item in value
+    ):
+        raise ValueError(f"{key} must be a string array")
+    return value
+
+
+def _comments(body: dict[str, Any]) -> list[dict[str, Any] | str]:
+    value = body.get("comments", [])
+    if not isinstance(value, list) or not all(
+        isinstance(item, (str, dict)) for item in value
+    ):
+        raise ValueError("comments must be an array of strings or objects")
+    return value
 
 
 def _qa_sse(event: str, payload: Mapping[str, Any]) -> str:

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import base64
 from datetime import datetime, timezone
 import json
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, delete, func, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.storage.database import immediate_transaction
@@ -79,6 +80,64 @@ def _iso(value: datetime | str | None) -> str | None:
     if isinstance(value, str):
         return value
     return value.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _encode_note_cursor(updated_at: datetime, note_id: str) -> str:
+    raw = f"{updated_at.isoformat()}|{note_id}".encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_note_cursor(value: str) -> tuple[datetime, str]:
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        decoded = base64.urlsafe_b64decode(
+            padded.encode("ascii")
+        ).decode("utf-8")
+        timestamp, note_id = decoded.rsplit("|", 1)
+        parsed = datetime.fromisoformat(timestamp)
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError("invalid note cursor") from exc
+    if not note_id:
+        raise ValueError("invalid note cursor")
+    return parsed, note_id
+
+
+def _normalize_note_metadata(
+    *,
+    kind: str,
+    tags: Sequence[str],
+    comments: Sequence[Mapping[str, Any] | str],
+) -> tuple[str, list[str], list[dict[str, Any]]]:
+    if kind not in {"text", "qa"}:
+        raise ValueError("note kind must be text or qa")
+    normalized_tags = list(
+        dict.fromkeys(
+            str(value).strip()
+            for value in tags
+            if str(value).strip()
+        )
+    )
+    if len(normalized_tags) > 100 or any(
+        len(value) > 100 for value in normalized_tags
+    ):
+        raise ValueError("note tags exceed the allowed size")
+    normalized_comments = []
+    for value in comments:
+        if isinstance(value, str):
+            comment = {"text": value}
+        elif isinstance(value, Mapping):
+            comment = dict(value)
+        else:
+            raise ValueError("note comments must be strings or objects")
+        text_value = str(comment.get("text", "")).strip()
+        if not text_value or len(text_value) > 10_000:
+            raise ValueError(
+                "every note comment must contain 1-10000 characters"
+            )
+        normalized_comments.append({**comment, "text": text_value})
+    if len(normalized_comments) > 1000:
+        raise ValueError("note has too many comments")
+    return kind, normalized_tags, normalized_comments
 
 
 class InsightRepository:
@@ -896,20 +955,68 @@ class InsightRepository:
             "generatedAt": _iso(result["created_at"]) if result is not None else None,
         }
 
-    def list_notes(self, *, book_id: str) -> list[dict[str, Any]]:
+    def list_notes(
+        self,
+        *,
+        book_id: str,
+        cursor: str | None = None,
+        limit: int = 50,
+        kind: str | None = None,
+    ) -> dict[str, Any]:
+        if not 1 <= limit <= 200:
+            raise ValueError("note limit must be between 1 and 200")
+        if kind is not None and kind not in {"text", "qa"}:
+            raise ValueError("note kind must be text or qa")
+        cursor_value = _decode_note_cursor(cursor) if cursor else None
         with self.engine.connect() as connection:
+            statement = select(notes).where(notes.c.book_id == book_id)
+            if kind is not None:
+                statement = statement.where(notes.c.kind == kind)
+            if cursor_value is not None:
+                cursor_time, cursor_id = cursor_value
+                statement = statement.where(
+                    or_(
+                        notes.c.updated_at < cursor_time,
+                        (
+                            (notes.c.updated_at == cursor_time)
+                            & (notes.c.id < cursor_id)
+                        ),
+                    )
+                )
             rows = list(
                 connection.execute(
-                    select(notes)
-                    .where(notes.c.book_id == book_id)
-                    .order_by(notes.c.updated_at.desc())
+                    statement.order_by(
+                        notes.c.updated_at.desc(),
+                        notes.c.id.desc(),
+                    ).limit(limit + 1)
                 ).mappings()
             )
-            result = [
-                self._note_dto(connection, row)
-                for row in rows
+            has_more = len(rows) > limit
+            selected_rows = rows[:limit]
+            items = [
+                self._note_dto(connection, row, summary=True)
+                for row in selected_rows
             ]
-        return result
+        return {
+            "items": items,
+            "nextCursor": (
+                _encode_note_cursor(
+                    selected_rows[-1]["updated_at"],
+                    str(selected_rows[-1]["id"]),
+                )
+                if has_more and selected_rows
+                else None
+            ),
+        }
+
+    def get_note(self, *, note_id: str) -> dict[str, Any]:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(notes).where(notes.c.id == note_id)
+            ).mappings().one_or_none()
+            if row is None:
+                raise InsightNotFound("note not found")
+            return self._note_dto(connection, row)
 
     def create_note(
         self,
@@ -917,13 +1024,27 @@ class InsightRepository:
         book_id: str,
         title: str,
         content: str,
-        page_ids: Sequence[str],
+        citations: Sequence[Mapping[str, Any] | str] | None = None,
+        page_ids: Sequence[str] | None = None,
+        kind: str = "text",
+        tags: Sequence[str] = (),
+        comments: Sequence[Mapping[str, Any] | str] = (),
     ) -> dict[str, Any]:
         title = title.strip()
         if not title or len(title) > 500:
             raise ValueError("note title must contain 1-500 characters")
         if len(content) > 1_000_000:
             raise ValueError("note content is too large")
+        kind, tags, comments = _normalize_note_metadata(
+            kind=kind,
+            tags=tags,
+            comments=comments,
+        )
+        normalized_citations = (
+            list(citations)
+            if citations is not None
+            else list(page_ids or ())
+        )
         note_id = str(uuid.uuid4())
         with immediate_transaction(self.engine) as connection:
             self._assert_book(connection, book_id)
@@ -933,13 +1054,16 @@ class InsightRepository:
                     book_id=book_id,
                     title=title,
                     content=content,
+                    kind=kind,
+                    tags_json=_json(tags),
+                    comments_json=_json(comments),
                 )
             )
             self._replace_citations(
                 connection,
                 note_id=note_id,
                 book_id=book_id,
-                page_ids=page_ids,
+                citations=normalized_citations,
             )
             row = connection.execute(
                 select(notes).where(notes.c.id == note_id)
@@ -953,13 +1077,27 @@ class InsightRepository:
         base_revision: int,
         title: str,
         content: str,
-        page_ids: Sequence[str],
+        citations: Sequence[Mapping[str, Any] | str] | None = None,
+        page_ids: Sequence[str] | None = None,
+        kind: str = "text",
+        tags: Sequence[str] = (),
+        comments: Sequence[Mapping[str, Any] | str] = (),
     ) -> dict[str, Any]:
         title = title.strip()
         if not title or len(title) > 500:
             raise ValueError("note title must contain 1-500 characters")
         if len(content) > 1_000_000:
             raise ValueError("note content is too large")
+        kind, tags, comments = _normalize_note_metadata(
+            kind=kind,
+            tags=tags,
+            comments=comments,
+        )
+        normalized_citations = (
+            list(citations)
+            if citations is not None
+            else list(page_ids or ())
+        )
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             current = connection.execute(
@@ -978,6 +1116,9 @@ class InsightRepository:
                 .values(
                     title=title,
                     content=content,
+                    kind=kind,
+                    tags_json=_json(tags),
+                    comments_json=_json(comments),
                     revision=base_revision + 1,
                     updated_at=now,
                 )
@@ -988,7 +1129,7 @@ class InsightRepository:
                 connection,
                 note_id=note_id,
                 book_id=str(current["book_id"]),
-                page_ids=page_ids,
+                citations=normalized_citations,
             )
             row = connection.execute(
                 select(notes).where(notes.c.id == note_id)
@@ -1287,8 +1428,22 @@ class InsightRepository:
         *,
         note_id: str,
         book_id: str,
-        page_ids: Sequence[str],
+        citations: Sequence[Mapping[str, Any] | str],
     ) -> None:
+        normalized = [
+            (
+                {"pageId": value}
+                if isinstance(value, str)
+                else dict(value)
+            )
+            for value in citations
+        ]
+        page_ids = [
+            str(value.get("pageId", ""))
+            for value in normalized
+        ]
+        if any(not value for value in page_ids):
+            raise ValueError("every citation requires pageId")
         if len(set(page_ids)) != len(page_ids):
             raise ValueError("citation pageIds must be unique")
         connection.execute(
@@ -1316,6 +1471,19 @@ class InsightRepository:
                     "page_id": page_id,
                     "page_id_snapshot": page_id,
                     "page_number_snapshot": page_numbers[page_id],
+                    "source_analysis_id": connection.execute(
+                        select(analysis_heads.c.active_result_id).where(
+                            analysis_heads.c.page_id == page_id
+                        )
+                    ).scalar_one_or_none(),
+                    "excerpt": str(
+                        normalized[ordinal - 1].get("excerpt", "")
+                    )[:2000],
+                    "score": (
+                        float(normalized[ordinal - 1]["score"])
+                        if normalized[ordinal - 1].get("score") is not None
+                        else None
+                    ),
                 }
                 for ordinal, page_id in enumerate(page_ids, 1)
             ],
@@ -1325,6 +1493,8 @@ class InsightRepository:
     def _note_dto(
         connection: Connection,
         row: Mapping[str, Any],
+        *,
+        summary: bool = False,
     ) -> dict[str, Any]:
         citations = list(
             connection.execute(
@@ -1337,7 +1507,20 @@ class InsightRepository:
             "noteId": str(row["id"]),
             "bookId": str(row["book_id"]),
             "title": str(row["title"]),
-            "content": str(row["content"]),
+            "content": (
+                None if summary else str(row["content"])
+            ),
+            "excerpt": (
+                str(row["content"])[:300] if summary else None
+            ),
+            "kind": str(row["kind"]),
+            "tags": _load(row["tags_json"], []),
+            "comments": (
+                []
+                if summary
+                else _load(row["comments_json"], [])
+            ),
+            "commentCount": len(_load(row["comments_json"], [])),
             "revision": int(row["revision"]),
             "citations": [
                 {
@@ -1346,6 +1529,9 @@ class InsightRepository:
                     "pageNumberSnapshot": int(
                         citation["page_number_snapshot"]
                     ),
+                    "sourceAnalysisId": citation["source_analysis_id"],
+                    "excerpt": str(citation["excerpt"]),
+                    "score": citation["score"],
                 }
                 for citation in citations
             ],

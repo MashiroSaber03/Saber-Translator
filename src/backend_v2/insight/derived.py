@@ -1062,7 +1062,21 @@ class InsightDerivedRepository:
             "payload": _load(row["payload_json"], {}),
         }
 
-    def get_timeline(self, *, book_id: str) -> dict[str, Any] | None:
+    def get_timeline(
+        self,
+        *,
+        book_id: str,
+        event_after: int = 0,
+        event_limit: int = 100,
+        character_after: str | None = None,
+        character_limit: int = 100,
+    ) -> dict[str, Any] | None:
+        if event_after < 0:
+            raise ValueError("event cursor must be nonnegative")
+        if not 1 <= event_limit <= 200:
+            raise ValueError("event limit must be between 1 and 200")
+        if not 1 <= character_limit <= 200:
+            raise ValueError("character limit must be between 1 and 200")
         with self.engine.connect() as connection:
             row = connection.execute(
                 select(timeline_versions).where(
@@ -1072,24 +1086,43 @@ class InsightDerivedRepository:
             ).mappings().one_or_none()
             if row is None:
                 return None
-            events = list(
+            event_rows = list(
                 connection.execute(
-                    select(timeline_events.c.payload_json)
+                    select(
+                        timeline_events.c.id,
+                        timeline_events.c.ordinal,
+                        timeline_events.c.payload_json,
+                    )
                     .where(
-                        timeline_events.c.timeline_version_id == row["id"]
+                        timeline_events.c.timeline_version_id == row["id"],
+                        timeline_events.c.ordinal > event_after,
                     )
                     .order_by(timeline_events.c.ordinal)
-                ).scalars()
+                    .limit(event_limit + 1)
+                )
             )
-            characters = list(
+            character_statement = select(
+                timeline_characters.c.id,
+                timeline_characters.c.name,
+                timeline_characters.c.payload_json,
+            ).where(
+                timeline_characters.c.timeline_version_id == row["id"]
+            )
+            if character_after:
+                character_statement = character_statement.where(
+                    timeline_characters.c.name > character_after
+                )
+            character_rows = list(
                 connection.execute(
-                    select(timeline_characters.c.payload_json)
-                    .where(
-                        timeline_characters.c.timeline_version_id == row["id"]
-                    )
-                    .order_by(timeline_characters.c.name)
-                ).scalars()
+                    character_statement.order_by(
+                        timeline_characters.c.name
+                    ).limit(character_limit + 1)
+                )
             )
+        has_more_events = len(event_rows) > event_limit
+        selected_events = event_rows[:event_limit]
+        has_more_characters = len(character_rows) > character_limit
+        selected_characters = character_rows[:character_limit]
         return {
             "timelineVersionId": str(row["id"]),
             "bookId": str(row["book_id"]),
@@ -1097,8 +1130,34 @@ class InsightDerivedRepository:
             "mode": str(row["mode"]),
             "status": str(row["status"]),
             "content": _load(row["content_json"], {}),
-            "events": [_load(value, {}) for value in events],
-            "characters": [_load(value, {}) for value in characters],
+            "events": [
+                {
+                    "eventId": str(event_id),
+                    **_object(_load(value, {})),
+                }
+                for event_id, _ordinal, value in selected_events
+            ],
+            "characters": [
+                {
+                    "characterId": str(character_id),
+                    **_object(_load(value, {})),
+                }
+                for character_id, _name, value in selected_characters
+            ],
+            "eventPage": {
+                "nextCursor": (
+                    int(selected_events[-1][1])
+                    if has_more_events and selected_events
+                    else None
+                )
+            },
+            "characterPage": {
+                "nextCursor": (
+                    str(selected_characters[-1][1])
+                    if has_more_characters and selected_characters
+                    else None
+                )
+            },
             "dependencyFingerprint": str(row["dependency_fingerprint"]),
         }
 
@@ -1203,6 +1262,7 @@ class InsightDerivedCommandService:
                 JobSpec(
                     kind=job_kind,
                     book_id=book_id,
+                    analysis_run_id=frozen.source_run_id,
                     config=config,
                     items=(
                         JobItemSpec(
@@ -1480,30 +1540,7 @@ class InsightDerivedWorkerService:
                         },
                     }
                 )
-            for index, event in enumerate(
-                analysis.get("key_events", []),
-                start=1,
-            ):
-                if not isinstance(event, Mapping):
-                    continue
-                text = str(event.get("summary", "")).strip()
-                if not text:
-                    continue
-                event_records.append(
-                    {
-                        "id": f"event-{page['pageId']}-{index}",
-                        "document": text,
-                        "metadata": {
-                            "book_id": frozen.book_id,
-                            "page_id": str(page["pageId"]),
-                            "page_number": int(page["pageNumber"]),
-                            "importance": str(
-                                event.get("importance", "normal")
-                            ),
-                            "type": "event",
-                        },
-                    }
-                )
+        event_records.extend(self._layer_zero_event_records(frozen))
         documents = [
             str(row["document"])
             for row in (*page_records, *event_records)
@@ -1528,6 +1565,97 @@ class InsightDerivedWorkerService:
             "pageCount": len(page_records),
             "eventCount": len(event_records),
         }
+
+    def _layer_zero_event_records(
+        self,
+        frozen: AnalysisInputSnapshot,
+    ) -> list[dict[str, Any]]:
+        if not frozen.source_run_id:
+            return []
+        with self.engine.connect() as connection:
+            layers = list(
+                connection.execute(
+                    select(
+                        analysis_layer_results.c.id,
+                        analysis_layer_results.c.content_json,
+                    )
+                    .where(
+                        analysis_layer_results.c.run_id
+                        == frozen.source_run_id,
+                        analysis_layer_results.c.layer_index == 0,
+                        analysis_layer_results.c.status.in_(
+                            ("staging", "published")
+                        ),
+                    )
+                    .order_by(analysis_layer_results.c.unit_index)
+                ).mappings()
+            )
+            page_rows = list(
+                connection.execute(
+                    select(
+                        analysis_layer_result_pages.c.layer_result_id,
+                        analysis_layer_result_pages.c.page_id_snapshot,
+                        analysis_layer_result_pages.c.page_number_snapshot,
+                    )
+                    .where(
+                        analysis_layer_result_pages.c.layer_result_id.in_(
+                            tuple(str(row["id"]) for row in layers)
+                        )
+                    )
+                    .order_by(
+                        analysis_layer_result_pages.c.layer_result_id,
+                        analysis_layer_result_pages.c.ordinal,
+                    )
+                )
+            ) if layers else []
+        pages_by_layer: dict[str, list[tuple[str, int]]] = {}
+        for layer_result_id, page_id, page_number in page_rows:
+            pages_by_layer.setdefault(
+                str(layer_result_id),
+                [],
+            ).append((str(page_id), int(page_number)))
+        records: list[dict[str, Any]] = []
+        for layer in layers:
+            layer_id = str(layer["id"])
+            content = _object(_load(layer["content_json"], {}))
+            page_refs = pages_by_layer.get(layer_id, [])
+            for index, event in enumerate(
+                content.get("key_events", []),
+                start=1,
+            ):
+                if not isinstance(event, Mapping):
+                    continue
+                text = str(
+                    event.get("summary", event.get("content", ""))
+                ).strip()
+                if not text:
+                    continue
+                records.append(
+                    {
+                        "id": f"event-{layer_id}-{index}",
+                        "document": text,
+                        "metadata": {
+                            "book_id": frozen.book_id,
+                            "page_id": (
+                                page_refs[0][0] if page_refs else ""
+                            ),
+                            "page_number": (
+                                page_refs[0][1] if page_refs else 0
+                            ),
+                            "page_ids_json": _json(
+                                [value[0] for value in page_refs]
+                            ),
+                            "page_numbers_json": _json(
+                                [value[1] for value in page_refs]
+                            ),
+                            "importance": str(
+                                event.get("importance", "normal")
+                            ),
+                            "type": "event",
+                        },
+                    }
+                )
+        return records
 
     def _with_credentials(
         self,
