@@ -91,6 +91,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
     from src.backend_v2.jobs.events import JobEventBroadcaster
     from src.backend_v2.jobs.repository import JobQueueRepository
     from src.backend_v2.jobs.routes import create_jobs_blueprint
+    from src.backend_v2.insight.routes import create_insight_blueprint
     from src.backend_v2.operations.routes import create_operations_blueprint
     from src.backend_v2.operations.executor import (
         DurableOperationExecutor,
@@ -103,6 +104,9 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     from src.backend_v2.rendering.service import AuthoritativeRenderService
     from src.backend_v2.settings.routes import create_settings_blueprint
+    from src.backend_v2.studio.routes import create_studio_blueprint
+    from src.backend_v2.studio.repository import StudioRepository
+    from src.backend_v2.studio.service import StudioOperationService
     from src.backend_v2.translation.routes import create_translation_blueprint
     from src.backend_v2.transfer.routes import create_transfer_blueprint
     from src.backend_v2.web_import.routes import (
@@ -135,6 +139,10 @@ def create_api_app(settings: ApiSettings) -> Flask:
         engine=engine,
         repository=repair_service.repository,
     )
+    studio_operations = StudioOperationService(
+        engine=engine,
+        repository=StudioRepository(engine),
+    )
     cpu_operation_executor = DurableOperationExecutor(
         repair_service.repository,
         executor_role="api",
@@ -142,8 +150,11 @@ def create_api_app(settings: ApiSettings) -> Flask:
         handlers={
             "page_repair": repair_service.handle,
             "bubble_translate": remote_page_operations.handle,
+            "studio_generate": studio_operations.handle,
+            "studio_chat": studio_operations.handle,
+            "studio_summary": studio_operations.handle,
         },
-        max_workers=2,
+        max_workers=4,
     )
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
         job_events=broadcaster,
@@ -155,6 +166,8 @@ def create_api_app(settings: ApiSettings) -> Flask:
     app.register_blueprint(
         create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
     )
+    app.register_blueprint(create_insight_blueprint(engine=engine))
+    app.register_blueprint(create_studio_blueprint(engine=engine))
     app.register_blueprint(
         create_operations_blueprint(data_root=settings.data_root, engine=engine)
     )

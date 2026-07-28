@@ -10,8 +10,10 @@ from sqlalchemy import Engine, select
 
 from src.backend_v2.storage.schema import (
     app_settings,
+    book_settings,
     chapters,
     pages,
+    prompts,
     provider_settings,
 )
 
@@ -63,6 +65,64 @@ def _provider_section(
     if credential_version_id:
         section["credentialVersionId"] = credential_version_id
     return section
+
+
+_INSIGHT_LAYER_PRESETS: dict[str, tuple[dict[str, Any], ...]] = {
+    "simple": (
+        {"name": "批量分析", "unitsPerGroup": 5, "alignToChapter": False},
+        {"name": "全书总结", "unitsPerGroup": 0, "alignToChapter": False},
+    ),
+    "standard": (
+        {"name": "批量分析", "unitsPerGroup": 5, "alignToChapter": False},
+        {"name": "段落总结", "unitsPerGroup": 5, "alignToChapter": False},
+        {"name": "全书总结", "unitsPerGroup": 0, "alignToChapter": False},
+    ),
+    "chapter_based": (
+        {"name": "批量分析", "unitsPerGroup": 5, "alignToChapter": True},
+        {"name": "章节总结", "unitsPerGroup": 0, "alignToChapter": True},
+        {"name": "全书总结", "unitsPerGroup": 0, "alignToChapter": False},
+    ),
+    "full": (
+        {"name": "批量分析", "unitsPerGroup": 5, "alignToChapter": False},
+        {"name": "小总结", "unitsPerGroup": 5, "alignToChapter": False},
+        {"name": "章节总结", "unitsPerGroup": 0, "alignToChapter": True},
+        {"name": "全书总结", "unitsPerGroup": 0, "alignToChapter": False},
+    ),
+}
+
+
+def _insight_layers(
+    preset: str,
+    custom_layers: object,
+) -> list[dict[str, Any]]:
+    raw_layers: object = (
+        custom_layers
+        if preset == "custom" and isinstance(custom_layers, list) and custom_layers
+        else _INSIGHT_LAYER_PRESETS.get(preset, _INSIGHT_LAYER_PRESETS["standard"])
+    )
+    result: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_layers):
+        if not isinstance(raw, Mapping):
+            raise ValueError("Insight layer definitions must be objects")
+        name = str(raw.get("name", "")).strip()
+        units = int(raw.get("unitsPerGroup", raw.get("units_per_group", 0)))
+        if not name or len(name) > 200:
+            raise ValueError("Insight layer name must contain 1-200 characters")
+        if units < 0 or units > 100:
+            raise ValueError("Insight layer unitsPerGroup must be between 0 and 100")
+        result.append(
+            {
+                "index": index,
+                "name": name,
+                "unitsPerGroup": units,
+                "alignToChapter": bool(
+                    raw.get("alignToChapter", raw.get("align_to_chapter", False))
+                ),
+            }
+        )
+    if len(result) < 2 or len(result) > 8:
+        raise ValueError("Insight architecture must contain between 2 and 8 layers")
+    return result
 
 
 class SettingsResolver:
@@ -368,6 +428,182 @@ class SettingsResolver:
                 "credentialVersionId": http_row["credentialVersionId"]
             }
         return options
+
+    def resolve_insight(
+        self,
+        *,
+        book_id: str,
+        command: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Freeze the complete, secret-free configuration for one Insight run."""
+
+        prompt_types = (
+            "batch_analysis",
+            "segment_summary",
+            "chapter_summary",
+            "book_overview",
+            "group_summary",
+            "qa_response",
+            "question_decompose",
+            "analysis_system",
+        )
+        provider_domains = (
+            "insight_vlm",
+            "insight_chat",
+            "insight_embedding",
+            "insight_reranker",
+            "insight_image_gen",
+        )
+        with self.engine.connect() as connection:
+            app_row = connection.execute(
+                select(
+                    app_settings.c.payload_json,
+                    app_settings.c.revision,
+                ).where(app_settings.c.domain == "insight")
+            ).mappings().one_or_none()
+            book_row = connection.execute(
+                select(
+                    book_settings.c.payload_json,
+                    book_settings.c.revision,
+                ).where(
+                    book_settings.c.book_id == book_id,
+                    book_settings.c.domain == "insight",
+                )
+            ).mappings().one_or_none()
+            raw_provider_rows = connection.execute(
+                select(
+                    provider_settings.c.domain,
+                    provider_settings.c.provider,
+                    provider_settings.c.payload_json,
+                    provider_settings.c.credential_version_id,
+                    provider_settings.c.revision,
+                ).where(provider_settings.c.domain.in_(provider_domains))
+            ).mappings()
+            provider_rows = {
+                (str(row["domain"]), str(row["provider"])): {
+                    "payload": json.loads(row["payload_json"]),
+                    "credentialVersionId": row["credential_version_id"],
+                    "revision": row["revision"],
+                }
+                for row in raw_provider_rows
+            }
+            prompt_rows = list(
+                connection.execute(
+                    select(
+                        prompts.c.id,
+                        prompts.c.type,
+                        prompts.c.content,
+                        prompts.c.revision,
+                        prompts.c.is_factory_default,
+                    ).where(prompts.c.type.in_(prompt_types))
+                ).mappings()
+            )
+
+        global_settings = (
+            _object(json.loads(app_row["payload_json"])) if app_row else {}
+        )
+        per_book = (
+            _object(json.loads(book_row["payload_json"])) if book_row else {}
+        )
+        effective = _deep_merge(global_settings, per_book)
+        selected_prompts = _object(effective.get("prompts"))
+        prompt_by_id = {str(row["id"]): row for row in prompt_rows}
+        factory_by_type = {
+            str(row["type"]): row
+            for row in prompt_rows
+            if bool(row["is_factory_default"])
+        }
+        frozen_prompts: dict[str, dict[str, Any]] = {}
+        for prompt_type in prompt_types:
+            selected = selected_prompts.get(prompt_type)
+            row = (
+                prompt_by_id.get(str(selected))
+                if selected is not None
+                else factory_by_type.get(prompt_type)
+            )
+            if row is None:
+                continue
+            frozen_prompts[prompt_type] = {
+                "promptId": str(row["id"]),
+                "revision": int(row["revision"]),
+                "content": str(row["content"]),
+            }
+
+        def provider(domain: str, key: str) -> dict[str, Any]:
+            selected = _object(effective.get(key))
+            return _provider_section(
+                domain=domain,
+                selected=selected,
+                provider_rows=provider_rows,
+            )
+
+        analysis = _object(effective.get("analysis"))
+        batch = _object(analysis.get("batch"))
+        architecture_preset = str(
+            batch.get("architecturePreset", batch.get("architecture_preset", "standard"))
+        )
+        layers = _insight_layers(
+            architecture_preset,
+            batch.get("customLayers", batch.get("custom_layers")),
+        )
+        pages_per_batch = int(
+            batch.get("pagesPerBatch", batch.get("pages_per_batch", 5))
+        )
+        context_batch_count = int(
+            batch.get(
+                "contextBatchCount",
+                batch.get("context_batch_count", 3),
+            )
+        )
+        if not 1 <= pages_per_batch <= 20:
+            raise ValueError("Insight pagesPerBatch must be between 1 and 20")
+        if not 0 <= context_batch_count <= 10:
+            raise ValueError("Insight contextBatchCount must be between 0 and 10")
+
+        sections = {
+            "vlm": provider("insight_vlm", "vlm"),
+            "chat": provider("insight_chat", "chat"),
+            "embedding": provider("insight_embedding", "embedding"),
+            "reranker": provider("insight_reranker", "reranker"),
+            "imageGen": provider("insight_image_gen", "imageGen"),
+        }
+        provider_revisions: dict[str, int] = {}
+        for domain, key in (
+            ("insight_vlm", "vlm"),
+            ("insight_chat", "chat"),
+            ("insight_embedding", "embedding"),
+            ("insight_reranker", "reranker"),
+            ("insight_image_gen", "imageGen"),
+        ):
+            selected = _object(effective.get(key))
+            provider_revisions[domain] = int(
+                provider_rows.get(
+                    (domain, str(selected.get("provider", ""))),
+                    {},
+                ).get("revision", 0)
+            )
+
+        return {
+            "executionMode": "sequential",
+            "scope": str(command.get("scope", "full")),
+            "force": bool(command.get("force", False)),
+            "analysis": {
+                "pagesPerBatch": pages_per_batch,
+                "contextBatchCount": context_batch_count,
+                "architecturePreset": architecture_preset,
+                "layers": layers,
+            },
+            **sections,
+            "prompts": frozen_prompts,
+            "maxSourceBytes": int(
+                effective.get("maxSourceBytes", 100 * 1024 * 1024)
+            ),
+            "settingsSnapshot": {
+                "appRevision": int(app_row["revision"]) if app_row else 0,
+                "bookRevision": int(book_row["revision"]) if book_row else 0,
+                "providerRevisions": provider_revisions,
+            },
+        }
 
     @staticmethod
     def _translation_prompt(

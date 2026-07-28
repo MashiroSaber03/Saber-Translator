@@ -34,6 +34,21 @@ REQUIRED_TABLES = frozenset(
         "credentials",
         "credential_versions",
         "prompts",
+        "analysis_runs",
+        "analysis_run_targets",
+        "analysis_page_results",
+        "analysis_heads",
+        "analysis_layer_results",
+        "analysis_artifacts",
+        "timeline_versions",
+        "vector_generations",
+        "notes",
+        "studio_documents",
+        "studio_chat_sessions",
+        "studio_messages",
+        "plugins",
+        "plugin_versions",
+        "continuation_projects",
     }
 )
 

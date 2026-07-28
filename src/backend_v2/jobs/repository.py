@@ -63,6 +63,8 @@ from src.backend_v2.storage.schema import (
     process_epochs,
     queue_state,
     render_requests,
+    analysis_runs,
+    analysis_run_targets,
 )
 
 
@@ -697,6 +699,12 @@ class JobQueueRepository:
                     )
                 )
                 self._release_write_reservations(connection, job_id)
+                self._sync_domain_terminal(
+                    connection,
+                    job_id=str(job_id),
+                    status="cancelled",
+                    now=now,
+                )
                 self._append_event(
                     connection,
                     job_id=job_id,
@@ -1057,6 +1065,7 @@ class JobQueueRepository:
         step_id: str,
         code: str,
         message: str,
+        publisher: Callable[[Connection], None] | None = None,
     ) -> None:
         self._finish_step(
             fence,
@@ -1065,7 +1074,7 @@ class JobQueueRepository:
             checkpoint=None,
             error={"code": code, "message": message},
             input_fingerprint=None,
-            publisher=None,
+            publisher=publisher,
         )
 
     def finish_if_complete(self, fence: AttemptFence) -> str | None:
@@ -1123,6 +1132,12 @@ class JobQueueRepository:
                 )
             )
             self._release_write_reservations(connection, fence.job_id)
+            self._sync_domain_terminal(
+                connection,
+                job_id=fence.job_id,
+                status=final,
+                now=now,
+            )
             self._append_event(
                 connection,
                 job_id=fence.job_id,
@@ -1269,6 +1284,12 @@ class JobQueueRepository:
                     .values(status="cancelled", updated_at=now)
                 )
                 self._release_write_reservations(connection, fence.job_id)
+                self._sync_domain_terminal(
+                    connection,
+                    job_id=fence.job_id,
+                    status="cancelled",
+                    now=now,
+                )
             connection.execute(
                 update(jobs)
                 .where(
@@ -1326,6 +1347,12 @@ class JobQueueRepository:
                 )
             )
             self._release_write_reservations(connection, fence.job_id)
+            self._sync_domain_terminal(
+                connection,
+                job_id=fence.job_id,
+                status="failed",
+                now=now,
+            )
             self._append_event(
                 connection,
                 job_id=fence.job_id,
@@ -1486,6 +1513,12 @@ class JobQueueRepository:
             if new_status is JobStatus.CANCELLED:
                 values.update(queue_rank=None, finished_at=now)
                 self._release_write_reservations(connection, job_id)
+                self._sync_domain_terminal(
+                    connection,
+                    job_id=job_id,
+                    status="cancelled",
+                    now=now,
+                )
             connection.execute(
                 update(jobs).where(jobs.c.id == job_id).values(**values)
             )
@@ -1501,6 +1534,57 @@ class JobQueueRepository:
             updated = dict(row)
             updated.update(values)
             return self._job_dto(updated)
+
+    @staticmethod
+    def _sync_domain_terminal(
+        connection: Connection,
+        *,
+        job_id: str,
+        status: str,
+        now: datetime,
+    ) -> None:
+        """Converge staging domain runs when their owning job terminates."""
+
+        run_id = connection.execute(
+            select(analysis_runs.c.id).where(
+                analysis_runs.c.job_id == job_id,
+                analysis_runs.c.status == "staging",
+            )
+        ).scalar_one_or_none()
+        if run_id is None:
+            return
+        rows = list(
+            connection.execute(
+                select(
+                    analysis_run_targets.c.page_id_snapshot,
+                    analysis_run_targets.c.status,
+                ).where(analysis_run_targets.c.run_id == run_id)
+            )
+        )
+        success_count = sum(
+            1 for _page_id, target_status in rows
+            if str(target_status) == "completed"
+        )
+        missing = [
+            str(page_id)
+            for page_id, target_status in rows
+            if str(target_status) != "completed"
+        ]
+        terminal = "cancelled" if status == "cancelled" else "failed"
+        connection.execute(
+            update(analysis_runs)
+            .where(
+                analysis_runs.c.id == run_id,
+                analysis_runs.c.status == "staging",
+            )
+            .values(
+                status=terminal,
+                success_count=success_count,
+                failed_count=len(rows) - success_count,
+                missing_page_ids_json=_json(missing),
+                updated_at=now,
+            )
+        )
 
     def _advance_write_reservation(
         self,

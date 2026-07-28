@@ -93,6 +93,12 @@ def run_worker(args: object) -> int:
         else:
             from src.backend_v2.jobs.repository import JobQueueRepository
             from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+            from src.backend_v2.insight.worker import (
+                InsightAnalysisWorkerService,
+            )
+            from src.backend_v2.insight.derived import (
+                InsightDerivedWorkerService,
+            )
             from src.backend_v2.operations.executor import WorkerOperationRunner
             from src.backend_v2.operations.repair import PageRepairService
             from src.backend_v2.operations.repository import OperationRepository
@@ -176,6 +182,39 @@ def run_worker(args: object) -> int:
                 jobs=job_repository,
             )
             job_handlers["text_import_apply"] = text_import.handle
+            insight = InsightAnalysisWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers.update(
+                {
+                    "insight_analyze_page": insight.handle,
+                    "insight_publish_run": insight.handle,
+                }
+            )
+            insight_derived = InsightDerivedWorkerService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            job_handlers.update(
+                {
+                    "insight_build_overview": insight_derived.handle,
+                    "insight_build_compressed_context": insight_derived.handle,
+                    "insight_build_timeline": insight_derived.handle,
+                    "insight_build_vectors": insight_derived.handle,
+                    "insight_stage_compressed_context": insight_derived.handle,
+                    "insight_stage_overview_no_spoiler": insight_derived.handle,
+                    "insight_stage_overview_story_summary": insight_derived.handle,
+                    "insight_stage_timeline": insight_derived.handle,
+                    "insight_stage_vectors": insight_derived.handle,
+                }
+            )
+            for layer_index in range(8):
+                job_handlers[
+                    f"insight_build_layer_{layer_index}"
+                ] = insight_derived.handle
             operation_repository = OperationRepository(engine)
             interactive = InteractivePageOperationService(
                 data_root=data_root,

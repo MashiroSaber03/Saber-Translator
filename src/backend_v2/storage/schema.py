@@ -216,8 +216,16 @@ plugins = Table(
     Column("id", String(UUID_LENGTH), primary_key=True),
     Column("name", String(200), nullable=False),
     Column("state", String(16), nullable=False, server_default="enabled"),
+    Column("author", String(200), nullable=False, server_default=""),
+    Column("description", Text, nullable=False, server_default=""),
+    Column("default_enabled", Boolean, nullable=False, server_default="0"),
+    Column("runtime_enabled", Boolean, nullable=False, server_default="0"),
+    Column("config_json", Text, nullable=False, server_default="{}"),
+    Column("config_revision", Integer, nullable=False, server_default="1"),
+    Column("error_message", Text),
     *_timestamps(),
     CheckConstraint("state IN ('enabled', 'disabled', 'error')", name="state_values"),
+    CheckConstraint("config_revision >= 1", name="config_revision_positive"),
 )
 
 plugin_versions = Table(
@@ -229,6 +237,7 @@ plugin_versions = Table(
     Column("package_relative_path", Text, nullable=False, unique=True),
     Column("checksum", String(HASH_LENGTH), nullable=False),
     Column("manifest_json", Text, nullable=False),
+    Column("config_schema_json", Text, nullable=False, server_default="{}"),
     Column("manifest_schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     UniqueConstraint("plugin_id", "version"),
@@ -841,6 +850,11 @@ studio_documents = Table(
     Column("title", String(500), nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("generation", Integer, nullable=False, server_default="1"),
+    Column(
+        "avatar_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="SET NULL"),
+    ),
     Column("payload_json", Text, nullable=False),
     Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
@@ -861,9 +875,28 @@ studio_chat_sessions = Table(
     Column("title", String(500), nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("generation", Integer, nullable=False, server_default="1"),
+    Column("variables_json", Text, nullable=False, server_default="{}"),
+    Column("summary_blocks_json", Text, nullable=False, server_default="[]"),
+    Column("summary_through_message_id", String(UUID_LENGTH)),
+    Column("summary_generation", Integer, nullable=False, server_default="0"),
     Column("runtime_state_json", Text, nullable=False, server_default="{}"),
     Column("runtime_schema_version", Integer, nullable=False, server_default="1"),
+    Column("archived_at", DateTime(timezone=True)),
     *_timestamps(),
+    CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint("generation >= 1", name="generation_positive"),
+    CheckConstraint("summary_generation >= 0", name="summary_generation_nonnegative"),
+)
+Index(
+    "uq_studio_chat_sessions_one_active",
+    studio_chat_sessions.c.document_id,
+    unique=True,
+    sqlite_where=studio_chat_sessions.c.archived_at.is_(None),
+)
+Index(
+    "ix_studio_chat_sessions_document_updated",
+    studio_chat_sessions.c.document_id,
+    studio_chat_sessions.c.updated_at,
 )
 
 studio_messages = Table(
@@ -879,11 +912,570 @@ studio_messages = Table(
     Column("ordinal", Integer, nullable=False),
     Column("role", String(16), nullable=False),
     Column("content", Text, nullable=False),
+    Column("runtime_log", Text, nullable=False, server_default=""),
+    Column("variables_snapshot_json", Text, nullable=False, server_default="{}"),
+    Column("generation_meta_json", Text, nullable=False, server_default="{}"),
     Column("metadata_json", Text, nullable=False, server_default="{}"),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+    *_timestamps(),
     UniqueConstraint("session_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("role IN ('system','user','assistant')", name="role_values"),
+)
+Index(
+    "ix_studio_messages_session_ordinal",
+    studio_messages.c.session_id,
+    studio_messages.c.ordinal,
+)
+
+studio_chat_sessions.c.summary_through_message_id.append_foreign_key(
+    ForeignKey("studio_messages.id", ondelete="SET NULL")
+)
+
+studio_message_assets = Table(
+    "studio_message_assets",
+    metadata,
+    Column(
+        "message_id",
+        String(UUID_LENGTH),
+        ForeignKey("studio_messages.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, nullable=False),
+    UniqueConstraint("message_id", "ordinal"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+)
+
+analysis_runs = Table(
+    "analysis_runs",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "job_id",
+        String(UUID_LENGTH),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        unique=True,
+    ),
+    Column("scope", String(16), nullable=False),
+    Column("status", String(32), nullable=False, server_default="staging"),
+    Column("config_json", Text, nullable=False),
+    Column("schema_version", Integer, nullable=False, server_default="2"),
+    Column("missing_page_ids_json", Text, nullable=False, server_default="[]"),
+    Column("target_count", Integer, nullable=False, server_default="0"),
+    Column("success_count", Integer, nullable=False, server_default="0"),
+    Column("failed_count", Integer, nullable=False, server_default="0"),
+    Column("published_at", DateTime(timezone=True)),
+    *_timestamps(),
+    CheckConstraint(
+        "scope IN ('full','incremental','chapter','page')",
+        name="scope_values",
+    ),
+    CheckConstraint(
+        "status IN ('staging','completed','completed_with_errors','failed','cancelled')",
+        name="status_values",
+    ),
+    CheckConstraint(
+        "target_count >= 0 AND success_count >= 0 AND failed_count >= 0",
+        name="counts_nonnegative",
+    ),
+)
+Index("ix_analysis_runs_book_created", analysis_runs.c.book_id, analysis_runs.c.created_at)
+
+analysis_run_targets = Table(
+    "analysis_run_targets",
+    metadata,
+    Column(
+        "run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, primary_key=True),
+    Column(
+        "page_id",
+        String(UUID_LENGTH),
+        ForeignKey("pages.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "chapter_id",
+        String(UUID_LENGTH),
+        ForeignKey("chapters.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "source_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("source_checksum", String(HASH_LENGTH), nullable=False),
+    Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
+    Column("page_number_snapshot", Integer, nullable=False),
+    Column("status", String(16), nullable=False, server_default="pending"),
+    Column("error_json", Text),
+    UniqueConstraint("run_id", "page_id_snapshot"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+    CheckConstraint("page_number_snapshot >= 1", name="page_number_positive"),
+    CheckConstraint(
+        "status IN ('pending','completed','failed','conflict')",
+        name="status_values",
+    ),
+)
+Index(
+    "ix_analysis_run_targets_page",
+    analysis_run_targets.c.page_id,
+    analysis_run_targets.c.run_id,
+)
+
+analysis_page_results = Table(
+    "analysis_page_results",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "page_id",
+        String(UUID_LENGTH),
+        ForeignKey("pages.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "source_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("source_checksum", String(HASH_LENGTH), nullable=False),
+    Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
+    Column("page_number_snapshot", Integer, nullable=False),
+    Column("payload_json", Text, nullable=False),
+    Column("schema_version", Integer, nullable=False, server_default="2"),
+    Column("status", String(16), nullable=False, server_default="staging"),
+    *_timestamps(),
+    UniqueConstraint("run_id", "page_id_snapshot"),
+    CheckConstraint(
+        "status IN ('staging','published','stale')",
+        name="status_values",
+    ),
+)
+Index(
+    "ix_analysis_page_results_page_created",
+    analysis_page_results.c.page_id,
+    analysis_page_results.c.created_at,
+)
+
+analysis_heads = Table(
+    "analysis_heads",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "page_id",
+        String(UUID_LENGTH),
+        ForeignKey("pages.id", ondelete="CASCADE"),
+    ),
+    Column(
+        "active_run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "active_result_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_page_results.id", ondelete="RESTRICT"),
+    ),
+    *_timestamps(),
+    CheckConstraint(
+        "(page_id IS NULL AND active_result_id IS NULL) OR "
+        "(page_id IS NOT NULL AND active_result_id IS NOT NULL)",
+        name="target_shape",
+    ),
+)
+Index(
+    "uq_analysis_heads_book",
+    analysis_heads.c.book_id,
+    unique=True,
+    sqlite_where=analysis_heads.c.page_id.is_(None),
+)
+Index(
+    "uq_analysis_heads_page",
+    analysis_heads.c.page_id,
+    unique=True,
+    sqlite_where=analysis_heads.c.page_id.is_not(None),
+)
+
+analysis_layer_results = Table(
+    "analysis_layer_results",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("layer_index", Integer, nullable=False),
+    Column("layer_name", String(200), nullable=False),
+    Column("unit_index", Integer, nullable=False),
+    Column(
+        "chapter_id",
+        String(UUID_LENGTH),
+        ForeignKey("chapters.id", ondelete="SET NULL"),
+    ),
+    Column("page_range_snapshot_json", Text, nullable=False, server_default="{}"),
+    Column("content_json", Text, nullable=False),
+    Column("input_fingerprint", String(HASH_LENGTH), nullable=False),
+    Column("status", String(16), nullable=False, server_default="staging"),
+    *_timestamps(),
+    UniqueConstraint("run_id", "layer_index", "unit_index"),
+    CheckConstraint("layer_index >= 0 AND unit_index >= 0", name="indices_nonnegative"),
+    CheckConstraint("status IN ('staging','published','stale')", name="status_values"),
+)
+Index(
+    "ix_analysis_layer_results_run_layer",
+    analysis_layer_results.c.run_id,
+    analysis_layer_results.c.layer_index,
+    analysis_layer_results.c.unit_index,
+)
+
+analysis_layer_result_pages = Table(
+    "analysis_layer_result_pages",
+    metadata,
+    Column(
+        "layer_result_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_layer_results.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, primary_key=True),
+    Column(
+        "page_id",
+        String(UUID_LENGTH),
+        ForeignKey("pages.id", ondelete="SET NULL"),
+    ),
+    Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
+    Column("page_number_snapshot", Integer, nullable=False),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+)
+
+analysis_artifacts = Table(
+    "analysis_artifacts",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+    ),
+    Column("kind", String(32), nullable=False),
+    Column("template", String(64), nullable=False, server_default="default"),
+    Column("status", String(16), nullable=False),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("is_active", Boolean, nullable=False, server_default="0"),
+    Column("dependency_fingerprint", String(HASH_LENGTH), nullable=False),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    Column(
+        "asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+    ),
+    *_timestamps(),
+    CheckConstraint(
+        "status IN ('ready','stale','building','failed','degraded')",
+        name="status_values",
+    ),
+    CheckConstraint("revision >= 1", name="revision_positive"),
+)
+Index(
+    "uq_analysis_artifacts_active",
+    analysis_artifacts.c.book_id,
+    analysis_artifacts.c.kind,
+    analysis_artifacts.c.template,
+    unique=True,
+    sqlite_where=analysis_artifacts.c.is_active.is_(True),
+)
+Index(
+    "ix_analysis_artifacts_book_kind_created",
+    analysis_artifacts.c.book_id,
+    analysis_artifacts.c.kind,
+    analysis_artifacts.c.created_at,
+)
+
+timeline_versions = Table(
+    "timeline_versions",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+    ),
+    Column("mode", String(16), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("content_json", Text, nullable=False, server_default="{}"),
+    Column("dependency_fingerprint", String(HASH_LENGTH), nullable=False),
+    Column("is_active", Boolean, nullable=False, server_default="0"),
+    *_timestamps(),
+    CheckConstraint("mode IN ('enhanced','compressed','simple')", name="mode_values"),
+    CheckConstraint("status IN ('ready','stale','building','failed','degraded')", name="status_values"),
+)
+Index(
+    "uq_timeline_versions_active",
+    timeline_versions.c.book_id,
+    unique=True,
+    sqlite_where=timeline_versions.c.is_active.is_(True),
+)
+
+timeline_events = Table(
+    "timeline_events",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "timeline_version_id",
+        String(UUID_LENGTH),
+        ForeignKey("timeline_versions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("ordinal", Integer, nullable=False),
+    Column("payload_json", Text, nullable=False),
+    UniqueConstraint("timeline_version_id", "ordinal"),
+)
+Index(
+    "ix_timeline_events_version_ordinal",
+    timeline_events.c.timeline_version_id,
+    timeline_events.c.ordinal,
+)
+
+timeline_characters = Table(
+    "timeline_characters",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "timeline_version_id",
+        String(UUID_LENGTH),
+        ForeignKey("timeline_versions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("name", String(500), nullable=False),
+    Column("payload_json", Text, nullable=False),
+    UniqueConstraint("timeline_version_id", "name"),
+)
+
+vector_generations = Table(
+    "vector_generations",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+    ),
+    Column("generation", Integer, nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("dependency_fingerprint", String(HASH_LENGTH), nullable=False),
+    Column("page_count", Integer, nullable=False, server_default="0"),
+    Column("event_count", Integer, nullable=False, server_default="0"),
+    Column("is_active", Boolean, nullable=False, server_default="0"),
+    *_timestamps(),
+    UniqueConstraint("book_id", "generation"),
+    CheckConstraint("generation >= 1", name="generation_positive"),
+    CheckConstraint("status IN ('ready','stale','building','failed','degraded')", name="status_values"),
+)
+Index(
+    "uq_vector_generations_active",
+    vector_generations.c.book_id,
+    unique=True,
+    sqlite_where=vector_generations.c.is_active.is_(True),
+)
+
+notes = Table(
+    "notes",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("title", String(500), nullable=False),
+    Column("content", Text, nullable=False),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    *_timestamps(),
+    CheckConstraint("revision >= 1", name="revision_positive"),
+)
+Index("ix_notes_book_updated", notes.c.book_id, notes.c.updated_at)
+
+note_citations = Table(
+    "note_citations",
+    metadata,
+    Column(
+        "note_id",
+        String(UUID_LENGTH),
+        ForeignKey("notes.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, primary_key=True),
+    Column(
+        "page_id",
+        String(UUID_LENGTH),
+        ForeignKey("pages.id", ondelete="SET NULL"),
+    ),
+    Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
+    Column("page_number_snapshot", Integer, nullable=False),
+)
+
+continuation_projects = Table(
+    "continuation_projects",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "source_run_id",
+        String(UUID_LENGTH),
+        ForeignKey("analysis_runs.id", ondelete="RESTRICT"),
+    ),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    *_timestamps(),
+)
+
+continuation_scripts = Table(
+    "continuation_scripts",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "project_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("content", Text, nullable=False, server_default=""),
+    *_timestamps(),
+)
+
+continuation_pages = Table(
+    "continuation_pages",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "project_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("ordinal", Integer, nullable=False),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    UniqueConstraint("project_id", "ordinal"),
+)
+
+continuation_image_versions = Table(
+    "continuation_image_versions",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "continuation_page_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_pages.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("version", Integer, nullable=False),
+    Column("is_active", Boolean, nullable=False, server_default="0"),
+    *_timestamps(),
+    UniqueConstraint("continuation_page_id", "version"),
+)
+
+continuation_characters = Table(
+    "continuation_characters",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "project_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("name", String(500), nullable=False),
+    Column("aliases_json", Text, nullable=False, server_default="[]"),
+    Column("enabled", Boolean, nullable=False, server_default="1"),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    UniqueConstraint("project_id", "name"),
+)
+
+continuation_character_forms = Table(
+    "continuation_character_forms",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "character_id",
+        String(UUID_LENGTH),
+        ForeignKey("continuation_characters.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("name", String(500), nullable=False),
+    Column(
+        "reference_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="SET NULL"),
+    ),
+    Column(
+        "adopted_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="SET NULL"),
+    ),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    UniqueConstraint("character_id", "name"),
 )
 
 operations = Table(
