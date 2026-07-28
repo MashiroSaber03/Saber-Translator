@@ -68,6 +68,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{page_id}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPageOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["streamJobEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listJobEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pauseRunningJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}/resume": {
         parameters: {
             query?: never;
@@ -78,6 +174,86 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["resumePausedJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reorderJobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/cancel-queued": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelQueuedJobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/history/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["clearJobHistory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/job-batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getJobBatch"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -299,16 +475,69 @@ export interface components {
         /** @enum {string} */
         JobStatus: "queued" | "running" | "pausing" | "paused" | "cancelling" | "cancelled" | "completed" | "completed_with_errors" | "failed" | "interrupted";
         /** @enum {string} */
-        JobKind: "translation" | "remove_text" | "detect" | "style_apply" | "text_import" | "container_import" | "web_extract" | "web_import_commit" | "export" | "insight_analysis" | "insight_export" | "vector_rebuild" | "continuation" | "plugin_agent";
+        JobKind: "translation" | "remove_text" | "detect" | "style_apply" | "text_import" | "container_import" | "web_extract" | "web_import_commit" | "export" | "insight_analysis" | "insight_export" | "vector_rebuild" | "continuation" | "derived_rebuild" | "plugin_agent";
         Job: {
             jobId: components["schemas"]["Uuid"];
+            batchId?: components["schemas"]["Uuid"] | null;
+            batchDisplayName?: string | null;
             kind: components["schemas"]["JobKind"];
             status: components["schemas"]["JobStatus"];
-            queueRank: number;
+            queueRank: number | null;
+            bookId?: components["schemas"]["Uuid"] | null;
+            chapterId?: components["schemas"]["Uuid"] | null;
+            pageId?: components["schemas"]["Uuid"] | null;
             /** @enum {string|null} */
             blockedReason?: null | "blocked_by_job" | "blocked_by_import_lease" | "draining_immediate_writes";
+            blockedByJobId?: components["schemas"]["Uuid"] | null;
+            progress: {
+                [key: string]: unknown;
+            };
+            target: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
-            createdAt: string;
+            createdAt: string | null;
+            /** Format: date-time */
+            startedAt?: string | null;
+            /** Format: date-time */
+            finishedAt?: string | null;
+        };
+        JobList: {
+            items: components["schemas"]["Job"][];
+            queueRevision: number;
+        };
+        JobDetail: components["schemas"]["Job"] & {
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        JobEvent: {
+            eventId: number;
+            jobId: components["schemas"]["Uuid"];
+            type: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string | null;
+        };
+        JobEventList: {
+            items: components["schemas"]["JobEvent"][];
+        };
+        JobReorderCommand: {
+            baseRevision: number;
+            orderedJobIds: components["schemas"]["Uuid"][];
+        };
+        JobBatch: {
+            batchId: components["schemas"]["Uuid"];
+            kind: string;
+            displayName: string;
+            summary: {
+                [key: string]: unknown;
+            };
+            jobs: components["schemas"]["Job"][];
+            /** Format: date-time */
+            createdAt: string | null;
         };
         /** @enum {string} */
         OperationStatus: "pending" | "running" | "completed" | "failed" | "cancelled";
@@ -318,17 +547,41 @@ export interface components {
             operationId: components["schemas"]["Uuid"];
             kind: components["schemas"]["OperationKind"];
             status: components["schemas"]["OperationStatus"];
+            /** @enum {string} */
+            executorRole: "api" | "worker";
+            pageId?: components["schemas"]["Uuid"] | null;
+            bubbleId?: components["schemas"]["Uuid"] | null;
+            baseRevision?: number | null;
+            request: {
+                [key: string]: unknown;
+            };
             result?: {
                 [key: string]: unknown;
             } | null;
             error?: components["schemas"]["ErrorDetail"] | null;
             /** Format: date-time */
-            createdAt: string;
+            createdAt: string | null;
+            /** Format: date-time */
+            startedAt?: string | null;
+            /** Format: date-time */
+            finishedAt?: string | null;
         };
         OperationAccepted: {
             operationId: components["schemas"]["Uuid"];
+            kind: components["schemas"]["OperationKind"];
             /** @constant */
             status: "pending";
+            /** @enum {string} */
+            executorRole: "api" | "worker";
+        };
+        PageOperationCommand: {
+            /** @enum {string} */
+            kind: "bubble_ocr" | "bubble_color" | "page_detect" | "bubble_translate";
+            baseRevision: number;
+            bubbleId?: components["schemas"]["Uuid"];
+            payload?: {
+                [key: string]: unknown;
+            };
         };
         BubbleMutation: {
             /** @enum {string} */
@@ -358,27 +611,29 @@ export interface components {
         /** @enum {string} */
         RepairMethod: "solid" | "lama_mpe" | "litelama" | "restore_source";
         BubbleRepairCommand: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
+            /** @constant */
             target: "bubble";
             bubble_id: components["schemas"]["Uuid"];
             base_revision: number;
-            method: components["schemas"]["RepairMethod"];
-            fill_color?: string | null;
         };
-        MaskRepairCommand: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
+        MaskRepairWithFillCommand: {
+            /** @constant */
             target: "mask";
             /** Format: binary */
             mask: string;
             base_revision: number;
-            method: components["schemas"]["RepairMethod"];
-            fill_color?: string | null;
+            /** @enum {string} */
+            method: "solid" | "lama_mpe" | "litelama";
+            fill_color: string;
+        };
+        MaskRestoreCommand: {
+            /** @constant */
+            target: "mask";
+            /** Format: binary */
+            mask: string;
+            base_revision: number;
+            /** @constant */
+            method: "restore_source";
         };
         StudioMessageCommand: {
             baseSessionRevision: number;
@@ -516,6 +771,7 @@ export interface components {
         PageId: components["schemas"]["Uuid"];
         OperationId: components["schemas"]["Uuid"];
         JobId: components["schemas"]["Uuid"];
+        BatchId: components["schemas"]["Uuid"];
         SessionId: components["schemas"]["Uuid"];
         BookId: components["schemas"]["Uuid"];
         ChapterId: components["schemas"]["Uuid"];
@@ -598,7 +854,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["BubbleRepairCommand"] | components["schemas"]["MaskRepairCommand"];
+                "multipart/form-data": components["schemas"]["BubbleRepairCommand"] | components["schemas"]["MaskRepairWithFillCommand"] | components["schemas"]["MaskRestoreCommand"];
             };
         };
         responses: {
@@ -639,6 +895,162 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    createPageOperation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageOperationCommand"];
+            };
+        };
+        responses: {
+            /** @description The operation was committed before returning. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationAccepted"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    listJobs: {
+        parameters: {
+            query?: {
+                scope?: "queue" | "history";
+                status?: components["schemas"]["JobStatus"];
+                type?: components["schemas"]["JobKind"];
+                book_id?: components["schemas"]["Uuid"];
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable queue or retained history snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobList"];
+                };
+            };
+        };
+    };
+    streamJobEvents: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: number;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One global resumable SSE stream for all job consumers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job, item, step, checkpoint and error details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listJobEvents: {
+        parameters: {
+            query?: {
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable key-event page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobEventList"];
+                };
+            };
+        };
+    };
+    pauseRunningJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pause intent accepted or replayed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            409: components["responses"]["InvalidTransition"];
+        };
+    };
     resumePausedJob: {
         parameters: {
             query?: never;
@@ -663,6 +1075,127 @@ export interface operations {
                 };
             };
             409: components["responses"]["InvalidTransition"];
+        };
+    };
+    cancelJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancel intent accepted or the queued job cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            409: components["responses"]["InvalidTransition"];
+        };
+    };
+    reorderJobs: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobReorderCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated queue revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        queueRevision: number;
+                    };
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelQueuedJobs: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All currently queued jobs were atomically cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clearJobHistory: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terminal history removed; interrupted jobs are retained. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getJobBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch summary and member jobs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatch"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     continueInterruptedJob: {

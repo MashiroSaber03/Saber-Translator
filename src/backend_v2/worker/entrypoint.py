@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import signal
 import threading
-import time
 
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
@@ -88,8 +87,70 @@ def run_worker(args: object) -> int:
     if heartbeat is not None:
         heartbeat.start()
     try:
-        while not stop_event.wait(timeout=0.5):
-            time.monotonic()
+        if engine is None:
+            while not stop_event.wait(timeout=0.5):
+                pass
+        else:
+            from src.backend_v2.jobs.repository import JobQueueRepository
+            from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+            from src.backend_v2.operations.executor import WorkerOperationRunner
+            from src.backend_v2.operations.repair import PageRepairService
+            from src.backend_v2.operations.repository import OperationRepository
+            from src.backend_v2.translation.interactive_operations import (
+                InteractivePageOperationService,
+            )
+            from src.backend_v2.translation.pipeline import (
+                TranslationPipelineService,
+            )
+
+            job_repository = JobQueueRepository(engine)
+            translation = TranslationPipelineService(
+                data_root=data_root,
+                engine=engine,
+                jobs=job_repository,
+            )
+            translation_steps = {
+                "detect",
+                "ocr",
+                "color",
+                "auto_terms",
+                "translate",
+                "hq_translate",
+                "proofread",
+                "repair",
+                "render",
+                "publish_clean",
+            }
+            operation_repository = OperationRepository(engine)
+            interactive = InteractivePageOperationService(
+                data_root=data_root,
+                engine=engine,
+                repository=operation_repository,
+            )
+            repairs = PageRepairService(
+                data_root=data_root,
+                engine=engine,
+                repository=operation_repository,
+            )
+            operation_runner = WorkerOperationRunner(
+                operation_repository,
+                worker_epoch_id=identity.epoch_id,
+                handlers={
+                    "bubble_ocr": interactive.handle,
+                    "bubble_color": interactive.handle,
+                    "page_detect": interactive.handle,
+                    "page_repair": repairs.handle,
+                },
+            )
+            JobWorkerLoop(
+                job_repository,
+                worker_epoch_id=identity.epoch_id,
+                handlers={
+                    step_kind: translation.handler
+                    for step_kind in translation_steps
+                },
+                safe_point=operation_runner.run_one,
+            ).run(stop_event)
     finally:
         if heartbeat is not None:
             heartbeat.stop()

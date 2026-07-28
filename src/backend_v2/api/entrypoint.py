@@ -54,6 +54,7 @@ def run_api(args: object) -> int:
                 sort_keys=True,
             )
         )
+        app.extensions["saber_v2_runtime"].close()
         if engine is not None:
             engine.dispose()
         return 0
@@ -66,6 +67,7 @@ def run_api(args: object) -> int:
         port=int(getattr(args, "port", 5000)),
         threads=24,
     )
+    app.extensions["saber_v2_runtime"].start()
 
     def stop_fenced_server() -> None:
         fenced.set()
@@ -86,6 +88,7 @@ def run_api(args: object) -> int:
             heartbeat.stop()
         server.close()
         server.task_dispatcher.shutdown(cancel_pending=True, timeout=5)
+        app.extensions["saber_v2_runtime"].close()
         if engine is not None:
             engine.dispose()
     if fenced.is_set():

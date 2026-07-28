@@ -11,7 +11,7 @@ import secrets
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, and_, case, delete, func, insert, or_, select, update
+from sqlalchemy import Engine, and_, delete, func, insert, or_, select, update
 
 from src.backend_v2.storage.assets import AssetRecord
 from src.backend_v2.storage.database import immediate_transaction
@@ -647,9 +647,12 @@ class ContentRepository:
             raise ValueError("mutations must contain 1-500 items")
         with immediate_transaction(self.engine) as connection:
             page = connection.execute(
-                select(pages.c.chapter_id, pages.c.document_revision).where(
-                    pages.c.id == page_id
-                )
+                select(
+                    pages.c.chapter_id,
+                    pages.c.document_revision,
+                    pages.c.rendered_revision,
+                    pages.c.render_status,
+                ).where(pages.c.id == page_id)
             ).mappings().one_or_none()
             if page is None:
                 raise ContentNotFound("page not found")
@@ -679,6 +682,16 @@ class ContentRepository:
             order = [str(row["id"]) for row in existing_rows]
             deleted_ids: set[str] = set()
             created_ids: set[str] = set()
+            renderable_change = False
+            has_current_translated = (
+                connection.execute(
+                    select(page_assets.c.asset_id).where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
             for mutation in mutations:
                 if not isinstance(mutation, dict):
                     raise ValueError("each bubble mutation must be an object")
@@ -707,6 +720,7 @@ class ContentRepository:
                     }
                     order.append(bubble_id)
                     created_ids.add(bubble_id)
+                    renderable_change = True
                     continue
                 if bubble_id not in documents:
                     raise ContentNotFound(f"bubble {bubble_id} not found")
@@ -714,6 +728,7 @@ class ContentRepository:
                     documents.pop(bubble_id)
                     order.remove(bubble_id)
                     deleted_ids.add(bubble_id)
+                    renderable_change = True
                     continue
                 if not isinstance(fields, dict):
                     raise ValueError("patch/reset fields must be an object")
@@ -725,6 +740,8 @@ class ContentRepository:
                     for key, value in fields.items()
                     if key not in {"fontId", "ordinal"}
                 }
+                if "fontId" in fields or self._affects_render(payload_fields):
+                    renderable_change = True
                 if operation == "reset":
                     current["payload"] = payload_fields
                 else:
@@ -773,34 +790,77 @@ class ContentRepository:
                         )
                         .values(**values)
                     )
+            has_drawable_text = any(
+                str(document["payload"].get("translatedText", "")).strip()
+                for document in documents.values()
+            )
+            needs_render = renderable_change and (
+                has_current_translated or has_drawable_text
+            )
+            page_values: dict[str, object] = {
+                "document_revision": new_revision,
+                "updated_at": _utcnow(),
+            }
+            if needs_render:
+                page_values["render_status"] = "stale"
+            elif (
+                page["render_status"] == "ready"
+                and page["rendered_revision"] == base_revision
+            ):
+                page_values["rendered_revision"] = new_revision
+                connection.execute(
+                    update(page_assets)
+                    .where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role.in_(
+                            ("translated", "thumbnail_translated")
+                        ),
+                        page_assets.c.input_document_revision == base_revision,
+                    )
+                    .values(input_document_revision=new_revision)
+                )
             changed = connection.execute(
                 update(pages)
                 .where(
                     pages.c.id == page_id,
                     pages.c.document_revision == base_revision,
                 )
-                .values(
-                    document_revision=new_revision,
-                    render_status=case(
-                        (
-                            pages.c.render_status.in_(
-                                (
-                                    "ready",
-                                    "stale",
-                                    "rendering",
-                                    "render_failed",
-                                )
-                            ),
-                            "stale",
-                        ),
-                        else_=pages.c.render_status,
-                    ),
-                    updated_at=_utcnow(),
-                )
+                .values(**page_values)
             )
             if changed.rowcount != 1:
                 raise ContentConflict("page document revision changed")
+            if needs_render:
+                from src.backend_v2.operations.repository import (
+                    RenderRequestRepository,
+                )
+
+                RenderRequestRepository(self.engine).upsert(
+                    connection,
+                    page_id=page_id,
+                    requested_revision=new_revision,
+                )
         return self.get_page_document(page_id)
+
+    @staticmethod
+    def _affects_render(fields: dict[str, object]) -> bool:
+        return bool(
+            {
+                "translatedText",
+                "coords",
+                "fontSize",
+                "fontFamily",
+                "textDirection",
+                "textColor",
+                "rotationAngle",
+                "position",
+                "strokeEnabled",
+                "strokeColor",
+                "strokeWidth",
+                "lineSpacing",
+                "textAlign",
+            }
+            & fields.keys()
+        )
 
     @staticmethod
     def _page_summary(row: dict[str, Any]) -> dict[str, object]:

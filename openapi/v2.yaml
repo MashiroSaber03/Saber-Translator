@@ -66,12 +66,8 @@ paths:
             schema:
               oneOf:
                 - $ref: "#/components/schemas/BubbleRepairCommand"
-                - $ref: "#/components/schemas/MaskRepairCommand"
-              discriminator:
-                propertyName: target
-                mapping:
-                  bubble: "#/components/schemas/BubbleRepairCommand"
-                  mask: "#/components/schemas/MaskRepairCommand"
+                - $ref: "#/components/schemas/MaskRepairWithFillCommand"
+                - $ref: "#/components/schemas/MaskRestoreCommand"
       responses:
         "202":
           description: Repair operation was durably created.
@@ -100,6 +96,125 @@ paths:
                 $ref: "#/components/schemas/Operation"
         "404":
           $ref: "#/components/responses/NotFound"
+  /pages/{page_id}/operations:
+    post:
+      tags: [operations]
+      operationId: createPageOperation
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageOperationCommand"
+      responses:
+        "202":
+          description: The operation was committed before returning.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationAccepted"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /jobs:
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      parameters:
+        - name: scope
+          in: query
+          schema: {type: string, enum: [queue, history], default: queue}
+        - name: status
+          in: query
+          schema: {$ref: "#/components/schemas/JobStatus"}
+        - name: type
+          in: query
+          schema: {$ref: "#/components/schemas/JobKind"}
+        - name: book_id
+          in: query
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 200}
+      responses:
+        "200":
+          description: Durable queue or retained history snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobList"
+  /jobs/events:
+    get:
+      tags: [jobs]
+      operationId: streamJobEvents
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          schema: {type: integer, minimum: 0}
+        - name: after
+          in: query
+          schema: {type: integer, minimum: 0}
+      responses:
+        "200":
+          description: One global resumable SSE stream for all job consumers.
+          content:
+            text/event-stream:
+              schema: {type: string}
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job, item, step, checkpoint and error details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{job_id}/events:
+    get:
+      tags: [jobs]
+      operationId: listJobEvents
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: after
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 200}
+      responses:
+        "200":
+          description: Durable key-event page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobEventList"
+  /jobs/{job_id}/pause:
+    post:
+      tags: [jobs]
+      operationId: pauseRunningJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Pause intent accepted or replayed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Job"}
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
   /jobs/{job_id}/resume:
     post:
       tags: [jobs]
@@ -116,6 +231,77 @@ paths:
                 $ref: "#/components/schemas/Job"
         "409":
           $ref: "#/components/responses/InvalidTransition"
+  /jobs/{job_id}/cancel:
+    post:
+      tags: [jobs]
+      operationId: cancelJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Cancel intent accepted or the queued job cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Job"}
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+  /jobs/reorder:
+    post:
+      tags: [jobs]
+      operationId: reorderJobs
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/JobReorderCommand"}
+      responses:
+        "200":
+          description: Updated queue revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [queueRevision]
+                properties:
+                  queueRevision: {type: integer, minimum: 1}
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /jobs/cancel-queued:
+    post:
+      tags: [jobs]
+      operationId: cancelQueuedJobs
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: All currently queued jobs were atomically cancelled.
+  /jobs/history/clear:
+    post:
+      tags: [jobs]
+      operationId: clearJobHistory
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Terminal history removed; interrupted jobs are retained.
+  /job-batches/{batch_id}:
+    get:
+      tags: [jobs]
+      operationId: getJobBatch
+      parameters:
+        - $ref: "#/components/parameters/BatchId"
+      responses:
+        "200":
+          description: Batch summary and member jobs.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatch"}
+        "404":
+          $ref: "#/components/responses/NotFound"
   /jobs/{job_id}/continue:
     post:
       tags: [jobs]
@@ -430,6 +616,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    BatchId:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
     SessionId:
       name: session_id
       in: path
@@ -565,21 +757,42 @@ components:
         - insight_export
         - vector_rebuild
         - continuation
+        - derived_rebuild
         - plugin_agent
     Job:
       type: object
       additionalProperties: false
-      required: [jobId, kind, status, queueRank, createdAt]
+      required: [jobId, kind, status, queueRank, progress, target, createdAt]
       properties:
         jobId:
           $ref: "#/components/schemas/Uuid"
+        batchId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        batchDisplayName:
+          type: [string, "null"]
         kind:
           $ref: "#/components/schemas/JobKind"
         status:
           $ref: "#/components/schemas/JobStatus"
         queueRank:
-          type: integer
-          minimum: 1
+          oneOf:
+            - type: integer
+              minimum: 1
+            - type: "null"
+        bookId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        chapterId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
         blockedReason:
           type:
             - string
@@ -589,9 +802,87 @@ components:
             - blocked_by_job
             - blocked_by_import_lease
             - draining_immediate_writes
+        blockedByJobId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        progress:
+          type: object
+          additionalProperties: true
+        target:
+          type: object
+          additionalProperties: true
         createdAt:
-          type: string
+          type: [string, "null"]
           format: date-time
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+    JobList:
+      type: object
+      additionalProperties: false
+      required: [items, queueRevision]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Job"}
+        queueRevision: {type: integer, minimum: 1}
+    JobDetail:
+      allOf:
+        - $ref: "#/components/schemas/Job"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    JobEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, jobId, type, payload, createdAt]
+      properties:
+        eventId: {type: integer, minimum: 1}
+        jobId: {$ref: "#/components/schemas/Uuid"}
+        type: {type: string}
+        payload: {type: object, additionalProperties: true}
+        createdAt: {type: [string, "null"], format: date-time}
+    JobEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/JobEvent"}
+    JobReorderCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, orderedJobIds]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        orderedJobIds:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items: {$ref: "#/components/schemas/Uuid"}
+    JobBatch:
+      type: object
+      additionalProperties: false
+      required: [batchId, kind, displayName, summary, jobs, createdAt]
+      properties:
+        batchId: {$ref: "#/components/schemas/Uuid"}
+        kind: {type: string}
+        displayName: {type: string}
+        summary: {type: object, additionalProperties: true}
+        jobs:
+          type: array
+          items: {$ref: "#/components/schemas/Job"}
+        createdAt: {type: [string, "null"], format: date-time}
     OperationStatus:
       type: string
       enum: [pending, running, completed, failed, cancelled]
@@ -609,7 +900,7 @@ components:
     Operation:
       type: object
       additionalProperties: false
-      required: [operationId, kind, status, createdAt]
+      required: [operationId, kind, executorRole, status, request, createdAt]
       properties:
         operationId:
           $ref: "#/components/schemas/Uuid"
@@ -617,6 +908,23 @@ components:
           $ref: "#/components/schemas/OperationKind"
         status:
           $ref: "#/components/schemas/OperationStatus"
+        executorRole:
+          type: string
+          enum: [api, worker]
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        bubbleId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        baseRevision:
+          type: [integer, "null"]
+          minimum: 1
+        request:
+          type: object
+          additionalProperties: true
         result:
           type:
             - object
@@ -627,18 +935,42 @@ components:
             - $ref: "#/components/schemas/ErrorDetail"
             - type: "null"
         createdAt:
-          type: string
+          type: [string, "null"]
+          format: date-time
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
           format: date-time
     OperationAccepted:
       type: object
       additionalProperties: false
-      required: [operationId, status]
+      required: [operationId, kind, status, executorRole]
       properties:
         operationId:
           $ref: "#/components/schemas/Uuid"
+        kind:
+          $ref: "#/components/schemas/OperationKind"
         status:
           type: string
           const: pending
+        executorRole:
+          type: string
+          enum: [api, worker]
+    PageOperationCommand:
+      type: object
+      additionalProperties: false
+      required: [kind, baseRevision]
+      properties:
+        kind:
+          type: string
+          enum: [bubble_ocr, bubble_color, page_detect, bubble_translate]
+        baseRevision: {type: integer, minimum: 1}
+        bubbleId: {$ref: "#/components/schemas/Uuid"}
+        payload:
+          type: object
+          additionalProperties: true
     BubbleMutation:
       type: object
       additionalProperties: false
@@ -703,7 +1035,7 @@ components:
     BubbleRepairCommand:
       type: object
       additionalProperties: false
-      required: [target, bubble_id, base_revision, method]
+      required: [target, bubble_id, base_revision]
       properties:
         target:
           type: string
@@ -713,14 +1045,28 @@ components:
         base_revision:
           type: integer
           minimum: 1
+    MaskRepairWithFillCommand:
+      type: object
+      additionalProperties: false
+      required: [target, mask, base_revision, method, fill_color]
+      properties:
+        target:
+          type: string
+          const: mask
+        mask:
+          type: string
+          format: binary
+          contentMediaType: image/png
+        base_revision:
+          type: integer
+          minimum: 1
         method:
-          $ref: "#/components/schemas/RepairMethod"
+          type: string
+          enum: [solid, lama_mpe, litelama]
         fill_color:
-          type:
-            - string
-            - "null"
+          type: string
           pattern: "^#[0-9A-Fa-f]{6}$"
-    MaskRepairCommand:
+    MaskRestoreCommand:
       type: object
       additionalProperties: false
       required: [target, mask, base_revision, method]
@@ -736,12 +1082,8 @@ components:
           type: integer
           minimum: 1
         method:
-          $ref: "#/components/schemas/RepairMethod"
-        fill_color:
-          type:
-            - string
-            - "null"
-          pattern: "^#[0-9A-Fa-f]{6}$"
+          type: string
+          const: restore_source
     StudioMessageCommand:
       type: object
       additionalProperties: false

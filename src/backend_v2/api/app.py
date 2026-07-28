@@ -25,6 +25,21 @@ class ApiSettings:
     engine: Engine | None = None
 
 
+@dataclass(slots=True)
+class ApiRuntimeServices:
+    job_events: Any
+    executors: tuple[Any, ...] = ()
+
+    def start(self) -> None:
+        for executor in self.executors:
+            executor.start()
+
+    def close(self) -> None:
+        for executor in reversed(self.executors):
+            executor.close()
+        self.job_events.close()
+
+
 def _load_openapi_document() -> dict[str, Any]:
     spec_path = project_root() / "openapi" / "v2.yaml"
     with spec_path.open("r", encoding="utf-8") as handle:
@@ -73,12 +88,60 @@ def create_api_app(settings: ApiSettings) -> Flask:
     CORS(app)
     app.register_blueprint(_create_v2_blueprint(settings))
     from src.backend_v2.content.routes import create_content_blueprint
+    from src.backend_v2.jobs.events import JobEventBroadcaster
+    from src.backend_v2.jobs.repository import JobQueueRepository
+    from src.backend_v2.jobs.routes import create_jobs_blueprint
+    from src.backend_v2.operations.routes import create_operations_blueprint
+    from src.backend_v2.operations.executor import (
+        DurableOperationExecutor,
+        DurableRenderExecutor,
+    )
+    from src.backend_v2.operations.repair import PageRepairService
+    from src.backend_v2.operations.repository import (
+        OperationRepository,
+        RenderRequestRepository,
+    )
+    from src.backend_v2.rendering.service import AuthoritativeRenderService
+    from src.backend_v2.translation.routes import create_translation_blueprint
     from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 
     engine = settings.engine or create_sqlite_engine(database_path_for(settings.data_root))
+    broadcaster = JobEventBroadcaster(JobQueueRepository(engine))
+    render_service = AuthoritativeRenderService(
+        data_root=settings.data_root,
+        engine=engine,
+    )
+    render_executor = DurableRenderExecutor(
+        RenderRequestRepository(engine),
+        api_epoch_id=settings.identity.epoch_id,
+        handler=render_service.prepare,
+    )
+    repair_service = PageRepairService(
+        data_root=settings.data_root,
+        engine=engine,
+        repository=OperationRepository(engine),
+    )
+    cpu_operation_executor = DurableOperationExecutor(
+        repair_service.repository,
+        executor_role="api",
+        executor_epoch_id=settings.identity.epoch_id,
+        handlers={"page_repair": repair_service.handle},
+        max_workers=2,
+    )
+    app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
+        job_events=broadcaster,
+        executors=(cpu_operation_executor, render_executor),
+    )
     app.register_blueprint(
         create_content_blueprint(data_root=settings.data_root, engine=engine)
     )
+    app.register_blueprint(
+        create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
+    )
+    app.register_blueprint(
+        create_operations_blueprint(data_root=settings.data_root, engine=engine)
+    )
+    app.register_blueprint(create_translation_blueprint(engine=engine))
 
     assert_api_import_boundary()
     return app

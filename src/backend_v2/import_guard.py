@@ -11,7 +11,6 @@ API_FORBIDDEN_MODULE_PREFIXES = (
     "chromadb",
     "src.plugins",
     "src.interfaces",
-    "src.core.rendering",
     "src.core.inpainting",
     "src.core.manga_insight",
     "app",

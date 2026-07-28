@@ -9,11 +9,15 @@ import json
 import secrets
 from typing import Literal
 
-from sqlalchemy import Engine, and_, delete, insert, select, update
+from sqlalchemy import Engine, and_, delete, func, insert, select, update
 
+from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     api_executor_leases,
     chapter_write_intents,
+    chapter_write_locks,
+    job_events,
+    job_steps,
     jobs,
     operations,
     process_epochs,
@@ -69,7 +73,7 @@ class ProcessEpochRepository:
     def register(self, registration: EpochRegistration) -> None:
         now = utcnow()
         expires_at = now + timedelta(seconds=self.lease_seconds)
-        with self.engine.begin() as connection:
+        with immediate_transaction(self.engine) as connection:
             connection.execute(
                 insert(process_epochs).values(
                     id=registration.epoch_id,
@@ -125,7 +129,7 @@ class ProcessEpochRepository:
     def bind_pid(self, registration: EpochRegistration, pid: int) -> bool:
         if pid < 1:
             raise ValueError("child pid must be positive")
-        with self.engine.begin() as connection:
+        with immediate_transaction(self.engine) as connection:
             changed = connection.execute(
                 update(process_epochs)
                 .where(
@@ -200,7 +204,7 @@ class ProcessEpochRepository:
 
     def reconcile_dead_worker(self, epoch_id: str) -> ReconcileResult:
         now = utcnow()
-        with self.engine.begin() as connection:
+        with immediate_transaction(self.engine) as connection:
             closed = connection.execute(
                 update(process_epochs)
                 .where(
@@ -217,6 +221,36 @@ class ProcessEpochRepository:
             if closed.rowcount != 1:
                 return ReconcileResult(epoch_id=epoch_id, role="worker")
 
+            affected_jobs = list(
+                connection.execute(
+                    select(
+                        jobs.c.id,
+                        jobs.c.status,
+                        jobs.c.attempt_id,
+                    ).where(
+                        jobs.c.worker_epoch_id == epoch_id,
+                        jobs.c.status.in_(("running", "pausing", "cancelling")),
+                    )
+                ).mappings()
+            )
+            attempt_ids = [
+                str(row["attempt_id"])
+                for row in affected_jobs
+                if row["attempt_id"] is not None
+            ]
+            if attempt_ids:
+                connection.execute(
+                    update(job_steps)
+                    .where(
+                        job_steps.c.status == "running",
+                        job_steps.c.attempt_id.in_(attempt_ids),
+                    )
+                    .values(
+                        status="pending",
+                        attempt_id=None,
+                        updated_at=now,
+                    )
+                )
             interrupted = connection.execute(
                 update(jobs)
                 .where(
@@ -240,6 +274,7 @@ class ProcessEpochRepository:
                 )
                 .values(
                     status="cancelled",
+                    queue_rank=None,
                     attempt_id=None,
                     lease_token=None,
                     lease_expires_at=None,
@@ -248,6 +283,45 @@ class ProcessEpochRepository:
                     updated_at=now,
                 )
             ).rowcount
+            cancelled_ids = [
+                str(row["id"])
+                for row in affected_jobs
+                if row["status"] == "cancelling"
+            ]
+            if cancelled_ids:
+                connection.execute(
+                    delete(chapter_write_locks).where(
+                        chapter_write_locks.c.job_id.in_(cancelled_ids)
+                    )
+                )
+            next_event_id = int(
+                connection.execute(
+                    select(func.coalesce(func.max(job_events.c.id), 0))
+                ).scalar_one()
+            )
+            for row in affected_jobs:
+                next_event_id += 1
+                final_status = (
+                    "cancelled"
+                    if row["status"] == "cancelling"
+                    else "interrupted"
+                )
+                connection.execute(
+                    insert(job_events).values(
+                        id=next_event_id,
+                        job_id=row["id"],
+                        event_type=f"job_{final_status}",
+                        payload_json=json.dumps(
+                            {
+                                "reason": "WORKER_EPOCH_LOST",
+                                "workerEpochId": epoch_id,
+                            },
+                            separators=(",", ":"),
+                        ),
+                        payload_schema_version=1,
+                        created_at=now,
+                    )
+                )
             requeued = connection.execute(
                 update(operations)
                 .where(
@@ -288,7 +362,7 @@ class ProcessEpochRepository:
 
     def reconcile_dead_api(self, epoch_id: str) -> ReconcileResult:
         now = utcnow()
-        with self.engine.begin() as connection:
+        with immediate_transaction(self.engine) as connection:
             closed = connection.execute(
                 update(process_epochs)
                 .where(
