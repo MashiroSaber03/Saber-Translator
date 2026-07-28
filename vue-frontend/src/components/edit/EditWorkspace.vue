@@ -58,20 +58,6 @@
       @apply-and-next="applyAndNext"
     />
 
-    <EditExitSaveModal
-      v-if="exitDialogState !== 'closed'"
-      :state="exitDialogState"
-      :message="exitSaveMessage"
-      :error="exitDialogError"
-      :progress-percent="exitSaveProgressPercent"
-      :has-progress="exitSaveHasProgress"
-      :current="exitSaveCurrent"
-      :total="exitSaveTotal"
-      @cancel="closeExitDialog"
-      @exit-without-saving="exitWithoutSaving"
-      @save-and-exit="saveAndExit"
-    />
-
     <EditThumbnailPanel
       :visible="showThumbnails"
       :images="images"
@@ -126,7 +112,6 @@
 
 <script setup lang="ts">
 
-import EditExitSaveModal from './EditExitSaveModal.vue'
 import EditImageComparison from './EditImageComparison.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
@@ -186,16 +171,6 @@ const {
   progressText,
   progressCurrent,
   progressTotal,
-  exitDialogState,
-  exitSaveMessage,
-  exitDialogError,
-  exitSaveProgressPercent,
-  exitSaveHasProgress,
-  exitSaveCurrent,
-  exitSaveTotal,
-  closeExitDialog,
-  exitWithoutSaving,
-  saveAndExit,
   startDividerDrag,
   startPanelResize,
   zoomIn,

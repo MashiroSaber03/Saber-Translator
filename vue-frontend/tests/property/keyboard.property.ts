@@ -4,12 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWorkspaceKeyboardShortcuts'
 import type { BrushMode } from '@/composables/useBrush'
-import type { ExitDialogState } from '@/composables/edit/useEditWorkspaceExit'
 
 type ShortcutOptions = Parameters<typeof useEditWorkspaceKeyboardShortcuts>[0]
 type ShortcutCallback = keyof Pick<
   ShortcutOptions,
-  | 'closeExitDialog'
   | 'exitEditMode'
   | 'deleteSelectedBubbles'
   | 'goToPreviousImage'
@@ -32,11 +30,9 @@ const brushModeArb = fc.constantFrom<BrushMode>(null, 'repair', 'restore')
 
 function createShortcutHarness(overrides: Partial<ShortcutOptions> = {}) {
   const options: ShortcutOptions = {
-    exitDialogState: ref<ExitDialogState>('closed'),
     brushMode: ref<BrushMode>(null),
     hasSelection: ref(true),
     isBrushKeyDown: ref(false),
-    closeExitDialog: vi.fn(),
     exitEditMode: vi.fn(),
     deleteSelectedBubbles: vi.fn(),
     goToPreviousImage: vi.fn(),
@@ -159,22 +155,10 @@ describe('edit keyboard shortcut properties', () => {
     )
   })
 
-  it('treats Escape as either an exit request or an exit-dialog close request', () => {
-    fc.assert(
-      fc.property(fc.constantFrom<ExitDialogState>('closed', 'confirm', 'error', 'saving'), (state) => {
-        const { options, handleKeyDown } = createShortcutHarness({
-          exitDialogState: ref(state),
-        })
-        const event = createKeyEvent('Escape')
-
-        handleKeyDown(event)
-
-        expectCallback(options, 'exitEditMode', state === 'closed' ? 1 : 0)
-        expectCallback(options, 'closeExitDialog', state === 'confirm' || state === 'error' ? 1 : 0)
-        expect(event.defaultPrevented).toBe(state === 'confirm' || state === 'error')
-      }),
-      { numRuns: 100 },
-    )
+  it('flushes through the exit callback when Escape is pressed', () => {
+    const { options, handleKeyDown } = createShortcutHarness()
+    handleKeyDown(createKeyEvent('Escape'))
+    expectCallback(options, 'exitEditMode', 1)
   })
 
   it('keeps text entry fields from swallowing editing text while preserving global navigation keys', () => {

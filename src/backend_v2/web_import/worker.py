@@ -41,6 +41,7 @@ from src.backend_v2.storage.schema import (
     pages,
     web_import_draft_pages,
     web_import_drafts,
+    credential_versions,
 )
 
 
@@ -523,17 +524,84 @@ class WebImportWorkerService:
                 raise ValueError("gallery-dl does not support this URL")
         if requested == "ai-agent":
             configured = config.get("options")
-            if not isinstance(configured, Mapping) or not configured.get(
+            agent = (
+                configured.get("agent")
+                if isinstance(configured, Mapping)
+                else None
+            )
+            if not isinstance(agent, Mapping) or not agent.get(
                 "credentialVersionId"
             ):
                 raise ValueError(
                     "ai-agent extraction requires a credentialVersionId"
                 )
-            # The durable v2 draft and download path are independent of the
-            # discovery strategy. Until a provider adapter is selected, the
-            # deterministic HTML extractor is the safe local fallback.
-            return _html_image_urls(source_url), "html-fallback"
+            return self._run_ai_agent(source_url, configured), "ai-agent"
         return _html_image_urls(source_url), "html"
+
+    def _run_ai_agent(
+        self,
+        source_url: str,
+        options: Mapping[str, Any],
+    ) -> list[str]:
+        from src.core.web_import import MangaScraperAgent
+
+        agent_options = options.get("agent")
+        if not isinstance(agent_options, Mapping):
+            raise ValueError("AI Agent settings are missing")
+        agent_secret = self._credential_secret(
+            agent_options.get("credentialVersionId")
+        )
+        firecrawl_options = options.get("firecrawl")
+        firecrawl_secret = (
+            self._credential_secret(
+                firecrawl_options.get("credentialVersionId")
+            )
+            if isinstance(firecrawl_options, Mapping)
+            else {}
+        )
+        api_key = agent_secret.get("api_key", agent_secret.get("apiKey", ""))
+        firecrawl_key = firecrawl_secret.get(
+            "api_key",
+            firecrawl_secret.get("apiKey", ""),
+        )
+        if not api_key:
+            raise ValueError("AI Agent credential has no API key")
+        if not firecrawl_key:
+            raise ValueError("Firecrawl credential is required for AI Agent")
+        extraction = options.get("extraction")
+        extraction_options = (
+            dict(extraction) if isinstance(extraction, Mapping) else {}
+        )
+        agent = MangaScraperAgent(
+            {
+                "firecrawl": {"apiKey": firecrawl_key},
+                "agent": {
+                    "provider": agent_options.get("provider", ""),
+                    "apiKey": api_key,
+                    "customBaseUrl": agent_options.get(
+                        "custom_base_url",
+                        "",
+                    ),
+                    "modelName": agent_options.get("model_name", ""),
+                    "useStream": bool(agent_options.get("useStream", False)),
+                    "forceJsonOutput": bool(
+                        agent_options.get("forceJsonOutput", True)
+                    ),
+                    "maxRetries": int(agent_options.get("maxRetries", 3)),
+                    "timeout": int(agent_options.get("timeout", 120)),
+                },
+                "extraction": extraction_options,
+            }
+        )
+        result = agent.extract(source_url)
+        if not result.success:
+            raise ValueError(result.error or "AI Agent extraction failed")
+        urls = [
+            str(page.get("imageUrl", "")).strip()
+            for page in result.pages
+            if isinstance(page, Mapping) and page.get("imageUrl")
+        ]
+        return _deduplicate_urls(urls)
 
     def _download(
         self,
@@ -559,6 +627,24 @@ class WebImportWorkerService:
         }
         if options.get("referer"):
             headers["Referer"] = str(options["referer"])
+        http_credential = options.get("http")
+        if isinstance(http_credential, Mapping):
+            secret = self._credential_secret(
+                http_credential.get("credentialVersionId")
+            )
+            cookie = secret.get("cookie")
+            if cookie:
+                headers["Cookie"] = str(cookie)
+            custom_headers = secret.get("headers")
+            if isinstance(custom_headers, Mapping):
+                for name, value in custom_headers.items():
+                    normalized_name = str(name).strip()
+                    if (
+                        normalized_name
+                        and normalized_name.casefold()
+                        not in {"host", "content-length", "connection"}
+                    ):
+                        headers[normalized_name] = str(value)
         last_error: Exception | None = None
         for attempt in range(retries + 1):
             temporary = target.with_suffix(target.suffix + ".part")
@@ -603,6 +689,22 @@ class WebImportWorkerService:
                     time.sleep(delay)
         assert last_error is not None
         raise last_error
+
+    def _credential_secret(self, version_id: object) -> dict[str, Any]:
+        if not isinstance(version_id, str) or not version_id:
+            return {}
+        with self.engine.connect() as connection:
+            raw = connection.execute(
+                select(credential_versions.c.secret_json).where(
+                    credential_versions.c.id == version_id
+                )
+            ).scalar_one_or_none()
+        if raw is None:
+            raise ValueError("frozen web import credential no longer exists")
+        value = json.loads(raw)
+        if not isinstance(value, dict):
+            raise ValueError("frozen web import credential is invalid")
+        return value
 
     def _record_extract_failure(
         self,

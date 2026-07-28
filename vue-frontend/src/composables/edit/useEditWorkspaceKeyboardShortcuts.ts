@@ -1,14 +1,11 @@
 import type { Ref } from 'vue'
 import type { BrushMode } from '@/composables/useBrush'
-import type { ExitDialogState } from './useEditWorkspaceExit'
 
 interface UseEditWorkspaceKeyboardShortcutsOptions {
-  exitDialogState: Ref<ExitDialogState>
   brushMode: Ref<BrushMode>
   hasSelection: Ref<boolean>
   isBrushKeyDown: Ref<boolean>
-  closeExitDialog: () => void
-  exitEditMode: () => void
+  exitEditMode: () => Promise<void> | void
   deleteSelectedBubbles: () => void
   goToPreviousImage: () => void
   goToNextImage: () => void
@@ -25,14 +22,6 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
     const target = event.target as HTMLElement
     const key = event.key.toLowerCase()
 
-    if (options.exitDialogState.value !== 'closed') {
-      if (event.key === 'Escape' && options.exitDialogState.value !== 'saving') {
-        options.closeExitDialog()
-        event.preventDefault()
-      }
-      return
-    }
-
     if (key === 'r' || key === 'u' || key === 'a' || key === 'd') {
       if (target.tagName === 'TEXTAREA') return
       if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON') {
@@ -44,7 +33,7 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
 
     switch (event.key) {
       case 'Escape':
-        options.exitEditMode()
+        void options.exitEditMode()
         break
       case 'Delete':
       case 'Backspace':
@@ -56,14 +45,14 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
       case 'a':
       case 'A':
         if (!options.brushMode.value) {
-          options.goToPreviousImage()
+          void options.goToPreviousImage()
           event.preventDefault()
         }
         break
       case 'd':
       case 'D':
         if (!options.brushMode.value) {
-          options.goToNextImage()
+          void options.goToNextImage()
           event.preventDefault()
         }
         break

@@ -112,6 +112,16 @@ export async function listChapterPages(
   )
 }
 
+export async function getPageSummary(
+  pageId: string,
+  signal?: AbortSignal,
+): Promise<V2PageSummary> {
+  return apiClient.get<V2PageSummary>(
+    `${API_ROOT}/pages/${encodeURIComponent(pageId)}`,
+    { signal },
+  )
+}
+
 export async function getBook(bookId: string, signal?: AbortSignal): Promise<V2BookDetail> {
   return apiClient.get<V2BookDetail>(
     `${API_ROOT}/books/${encodeURIComponent(bookId)}`,

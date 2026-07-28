@@ -126,11 +126,23 @@ def create_api_app(settings: ApiSettings) -> Flask:
         engine=engine,
         repository=OperationRepository(engine),
     )
+    from src.backend_v2.translation.interactive_operations import (
+        InteractivePageOperationService,
+    )
+
+    remote_page_operations = InteractivePageOperationService(
+        data_root=settings.data_root,
+        engine=engine,
+        repository=repair_service.repository,
+    )
     cpu_operation_executor = DurableOperationExecutor(
         repair_service.repository,
         executor_role="api",
         executor_epoch_id=settings.identity.epoch_id,
-        handlers={"page_repair": repair_service.handle},
+        handlers={
+            "page_repair": repair_service.handle,
+            "bubble_translate": remote_page_operations.handle,
+        },
         max_workers=2,
     )
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(

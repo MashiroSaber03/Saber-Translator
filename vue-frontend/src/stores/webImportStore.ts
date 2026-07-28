@@ -10,9 +10,12 @@ import type {
 } from '@/types/webImport'
 import { STORAGE_KEY_WEB_IMPORT_SETTINGS } from '@/constants'
 import {
-  getWebImportSettings,
-  saveWebImportSettings,
-} from '@/api/webImport'
+  getV2Settings,
+  saveV2SettingsTransaction,
+  type V2CredentialEdit,
+  type V2CredentialSummary,
+  type V2ProviderSettingMutation,
+} from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
 import {
   createDefaultWebImportProviderConfigs,
@@ -20,9 +23,6 @@ import {
   useWebImportSettings,
 } from './settings/modules/webImport'
 import {
-  buildWebImportSettingsPayload,
-  hasMeaningfulWebImportSettingsPayload,
-  parseLocalWebImportSettingsPayload,
   parseWebImportSettingsPayload,
   serializeWebImportSettingsValue,
 } from './webImportSettingsPayload'
@@ -35,6 +35,30 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)))
 }
 
+function parseCustomHeaders(value: string): Record<string, string> | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Object.fromEntries(
+        Object.entries(parsed).map(([name, headerValue]) => [name, String(headerValue)]),
+      )
+    }
+  } catch {
+    // Fall through to the user-friendly "Header: value" format.
+  }
+  const headers: Record<string, string> = {}
+  for (const line of trimmed.split(/\r?\n/)) {
+    const separator = line.indexOf(':')
+    if (separator <= 0) continue
+    const name = line.slice(0, separator).trim()
+    const headerValue = line.slice(separator + 1).trim()
+    if (name && headerValue) headers[name] = headerValue
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
 export const useWebImportStore = defineStore('webImport', () => {
   const settings = ref<WebImportSettings>(createDefaultWebImportSettings())
   const providerConfigs = ref<WebImportProviderConfigs>(createDefaultWebImportProviderConfigs())
@@ -44,6 +68,9 @@ export const useWebImportStore = defineStore('webImport', () => {
   const isSavingSettings = ref(false)
   const isInitializingSettings = ref(false)
   const hasLoadedBackendSettings = ref(false)
+  const credentialSummaries = ref<V2CredentialSummary[]>([])
+  let settingsRevision = 0
+  let providerRevisions = new Map<string, number>()
   let initPromise: Promise<void> | null = null
 
   const status = ref<WebImportState['status']>('idle')
@@ -78,10 +105,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     draftProviderConfigs.value = deepClone(providerConfigs.value)
   }
 
-  function toStoragePayload() {
-    return buildWebImportSettingsPayload(settings.value, providerConfigs.value)
-  }
-
   function applyLoadedPayload(payload: unknown): boolean {
     const parsed = parseWebImportSettingsPayload(payload)
     if (!parsed) {
@@ -95,45 +118,52 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   function saveToStorage(): void {
     try {
-      localStorage.setItem(STORAGE_KEY_WEB_IMPORT_SETTINGS, JSON.stringify(toStoragePayload()))
+      localStorage.removeItem(STORAGE_KEY_WEB_IMPORT_SETTINGS)
     } catch {
       return
     }
   }
 
   function loadFromStorage(): void {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY_WEB_IMPORT_SETTINGS)
-      if (!data) return
-
-      const parsed = JSON.parse(data)
-      const payload = parseLocalWebImportSettingsPayload(parsed)
-      if (!payload) {
-        syncDraftFromCommitted()
-        return
-      }
-      applyLoadedPayload(payload)
-    } catch {
-      syncDraftFromCommitted()
-    }
+    saveToStorage()
+    syncDraftFromCommitted()
   }
 
   async function loadFromBackend(): Promise<boolean> {
     try {
-      const response = await getWebImportSettings()
-      if (!response.success) return false
-
-      const responsePayload = {
-        settings: response.settings,
-        providerConfigs: response.providerConfigs
+      const response = await getV2Settings(['web_import', 'web_import_agent', 'web_import_firecrawl', 'web_import_http'])
+      const entry = response.settings.find(row => row.domain === 'web_import')
+      settingsRevision = entry?.revision ?? 0
+      providerRevisions = new Map(
+        response.providerSettings.map(row => [`${row.domain}\u0000${row.provider}`, row.revision]),
+      )
+      credentialSummaries.value = response.credentials
+      const loadedProviderConfigs = createDefaultWebImportProviderConfigs()
+      for (const row of response.providerSettings) {
+        if (row.domain !== 'web_import_agent') continue
+        loadedProviderConfigs.agent[row.provider] = {
+          apiKey: '',
+          modelName: String(row.payload.modelName ?? ''),
+          customBaseUrl: String(row.payload.customBaseUrl ?? ''),
+        }
       }
-      const hasStoredSettings = response.hasStoredSettings === true || hasMeaningfulWebImportSettingsPayload(responsePayload)
-      if (!hasStoredSettings) return false
-
-      if (!applyLoadedPayload(responsePayload)) {
-        return false
+      const loadedSettings = entry?.payload && Object.keys(entry.payload).length > 0
+        ? entry.payload
+        : createDefaultWebImportSettings()
+      if (!applyLoadedPayload({
+        settings: loadedSettings,
+        providerConfigs: loadedProviderConfigs,
+      })) {
+        settings.value = createDefaultWebImportSettings()
+        providerConfigs.value = loadedProviderConfigs
       }
-      saveToStorage()
+      settings.value.firecrawl.apiKey = ''
+      settings.value.agent.apiKey = ''
+      settings.value.advanced.customCookie = ''
+      settings.value.advanced.customHeaders = ''
+      settingsMethods.restoreAgentProviderConfig(settings.value.agent.provider)
+      settings.value.agent.apiKey = ''
+      syncDraftFromCommitted()
       hasLoadedBackendSettings.value = true
       return true
     } catch {
@@ -143,8 +173,87 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   async function saveToBackend(): Promise<boolean> {
     try {
-      const response = await saveWebImportSettings(toStoragePayload())
-      return Boolean(response.success)
+      const providerSettings: V2ProviderSettingMutation[] = []
+      const credentialEdits: V2CredentialEdit[] = []
+      const addProvider = (
+        domain: string,
+        provider: string,
+        payload: Record<string, unknown>,
+        secret: Record<string, unknown>,
+      ) => {
+        const identity = `${domain}\u0000${provider}`
+        const existing = credentialSummaries.value.find(
+          row => row.domain === domain && row.provider === provider,
+        )
+        const nonEmptySecret = Object.fromEntries(
+          Object.entries(secret).filter(([, value]) => value !== '' && value != null),
+        )
+        const mutation: V2ProviderSettingMutation = {
+          domain,
+          provider,
+          payload,
+          baseRevision: providerRevisions.get(identity) ?? 0,
+        }
+        if (Object.keys(nonEmptySecret).length > 0) {
+          const clientRef = `credential:${domain}:${provider}`
+          credentialEdits.push({
+            domain,
+            provider,
+            secret: nonEmptySecret,
+            baseRevision: existing?.revision ?? 0,
+            credentialId: existing?.credentialId,
+            clientRef,
+          })
+          mutation.credentialEditRef = clientRef
+        } else if (existing) {
+          mutation.credentialVersionId = existing.credentialVersionId
+        }
+        providerSettings.push(mutation)
+      }
+
+      for (const [provider, config] of Object.entries(providerConfigs.value.agent)) {
+        addProvider(
+          'web_import_agent',
+          provider,
+          {
+            modelName: config.modelName,
+            customBaseUrl: config.customBaseUrl,
+          },
+          { api_key: config.apiKey },
+        )
+      }
+      addProvider(
+        'web_import_firecrawl',
+        'firecrawl',
+        {},
+        { api_key: settings.value.firecrawl.apiKey },
+      )
+      addProvider(
+        'web_import_http',
+        'headers',
+        {},
+        {
+          cookie: settings.value.advanced.customCookie,
+          headers: parseCustomHeaders(settings.value.advanced.customHeaders),
+        },
+      )
+
+      const payload = deepClone(settings.value)
+      payload.firecrawl.apiKey = ''
+      payload.agent.apiKey = ''
+      payload.advanced.customCookie = ''
+      payload.advanced.customHeaders = ''
+      await saveV2SettingsTransaction({
+        settings: [{
+          domain: 'web_import',
+          payload: payload as unknown as Record<string, unknown>,
+          baseRevision: settingsRevision,
+          schemaVersion: 1,
+        }],
+        providerSettings,
+        credentialEdits,
+      })
+      return await loadFromBackend()
     } catch {
       return false
     }
@@ -203,15 +312,12 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
     settings.value = parsedDraft.settings
     providerConfigs.value = parsedDraft.providerConfigs
-    saveToStorage()
-
     isSavingSettings.value = true
     try {
       const success = await saveToBackend()
       if (!success) {
         settings.value = previousSettings
         providerConfigs.value = previousProviderConfigs
-        saveToStorage()
         return false
       }
 

@@ -148,6 +148,7 @@ export function useTranslation() {
   async function translatePages(
     pageIndexes: number[],
     mode: TranslationMode,
+    options: { reuseExistingBubbles?: boolean } = {},
   ): Promise<TranslateResult> {
     const uniqueIndexes = [...new Set(pageIndexes)]
     if (uniqueIndexes.length === 0) {
@@ -179,8 +180,7 @@ export function useTranslation() {
       const batch = await createChapterTranslationJob(chapterId, pageIds, {
         executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
         mode: mode === 'removeText' ? 'remove_text' : mode,
-        sourceLanguage: settingsStore.settings.sourceLanguage,
-        targetLanguage: settingsStore.settings.targetLanguage,
+        reuseExistingBubbles: options.reuseExistingBubbles,
       })
       const jobId = batch.jobIds[0]
       if (!jobId) throw new Error('后端没有返回任务')
@@ -278,7 +278,13 @@ export function useTranslation() {
       toast.error('当前图片没有气泡框，请先检测或手动添加')
       return false
     }
-    return translateCurrentImage()
+    return (
+      await translatePages(
+        [imageStore.currentImageIndex],
+        'standard',
+        { reuseExistingBubbles: true },
+      )
+    ).success
   }
 
   return {

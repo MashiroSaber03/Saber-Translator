@@ -44,6 +44,7 @@ def test_required_backend_first_commands_are_explicit() -> None:
     document = _document()
     paths = document["paths"]
     assert {
+        "/pages/{page_id}",
         "/pages/{page_id}/document/batch",
         "/pages/{page_id}/repairs",
         "/operations/{operation_id}",

@@ -360,6 +360,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{page_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPageSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chapters/{chapter_id}/import-leases": {
         parameters: {
             query?: never;
@@ -1454,6 +1472,29 @@ export interface operations {
             };
             422: components["responses"]["ValidationError"];
             423: components["responses"]["Locked"];
+        };
+    };
+    getPageSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current metadata and immutable asset URLs for one page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageSummary"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     createChapterImportLease: {

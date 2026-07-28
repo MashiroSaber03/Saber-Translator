@@ -1,32 +1,27 @@
-import { onUnmounted, ref } from 'vue'
+import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { getPageDocument } from '@/api/v2/content'
+import {
+  runBubbleRepair,
+  runPageOperation,
+} from '@/api/v2/operations'
+import {
+  queuePageDocumentSave,
+  registerPageDocument,
+} from '@/services/pageDocumentPersistence'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settings'
-import { ocrSingleBubble as ocrSingleBubbleApi, inpaintSingleBubble as inpaintSingleBubbleApi } from '@/api/translate'
 import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
-import { buildSingleBubbleOcrRequest } from '@/composables/edit/singleBubbleOcrRequest'
 
 export interface BubbleActionCallbacks {
   onReRender?: () => void | Promise<unknown>
   onDelayedPreview?: () => void | Promise<unknown>
 }
 
-// Backend OpenCV endpoints require integer coordinates.
-function normalizeCoords(coords: BubbleCoords): BubbleCoords {
-  return [
-    Math.round(coords[0]),
-    Math.round(coords[1]),
-    Math.round(coords[2]),
-    Math.round(coords[3])
-  ]
-}
-
 export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
-  const settingsStore = useSettingsStore()
 
   const {
     bubbles,
@@ -139,33 +134,16 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     }, PREVIEW_DELAY)
   }
 
-  function isSameCurrentImage(expectedImageId: string): boolean {
-    return currentImage.value?.id === expectedImageId
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      if (previewTimer) {
+        clearTimeout(previewTimer)
+        previewTimer = null
+      }
+      isRenderingPreview = false
+      previewRequestedWhileRendering = false
+    })
   }
-
-  function isSameBubbleTarget(expectedImageId: string, index: number, expectedBubble: BubbleState): boolean {
-    return isSameCurrentImage(expectedImageId) && bubbles.value[index] === expectedBubble
-  }
-
-  function updateCurrentImageIfStillCurrent(
-    expectedImageId: string,
-    updates: Parameters<typeof imageStore.updateCurrentImage>[0]
-  ): boolean {
-    if (!isSameCurrentImage(expectedImageId)) {
-      return false
-    }
-    imageStore.updateCurrentImage(updates)
-    return true
-  }
-
-  onUnmounted(() => {
-    if (previewTimer) {
-      clearTimeout(previewTimer)
-      previewTimer = null
-    }
-    isRenderingPreview = false
-    previewRequestedWhileRendering = false
-  })
 
   function handleBubbleUpdate(updates: Partial<BubbleState>): void {
     bubbleStore.updateSelectedBubble(updates)
@@ -188,212 +166,93 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
     const bubble = bubbles.value[index]
     const image = currentImage.value
-    if (!bubble || !image?.originalDataURL) {
-      showToast('无法修复背景：缺少气泡或图片数据', 'warning')
+    if (!bubble || !image || image.documentRevision === undefined) {
+      showToast('无法修复背景：页面尚未完成后端初始化', 'warning')
       return
     }
-    const expectedImageId = image.id
-
-    const inpaintMethod = bubble.inpaintMethod || 'solid'
-    const fillColor = bubble.fillColor || '#FFFFFF'
-    const rotationAngle = bubble.rotationAngle || 0
 
     try {
-      let baseImageData: string
-      if (image.cleanImageData) {
-        baseImageData = image.cleanImageData
-      } else {
-        const match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
-        baseImageData = match && match[1] ? match[1] : ''
-        if (!baseImageData) {
-          showToast('无法解析图像数据', 'error')
-          return
-        }
+      await queuePageDocumentSave(
+        image.id,
+        image.documentRevision,
+        bubbles.value,
+      )
+      const current = currentImage.value
+      const bubbleId = bubble.backendBubbleId
+      if (
+        !current
+        || current.id !== image.id
+        || current.documentRevision === undefined
+        || !bubbleId
+      ) {
+        throw new Error('气泡尚未完成后端持久化')
       }
-
-      const isLamaMethod = inpaintMethod === 'lama_mpe' || inpaintMethod === 'litelama'
-
-      if (isLamaMethod) {
-        const lamaModel = inpaintMethod === 'litelama' ? 'litelama' : 'lama_mpe'
-        const coords = normalizeCoords(bubble.coords)
-
-        const response = await inpaintSingleBubbleApi(
-          baseImageData,
-          coords,
-          {
-            bubbleAngle: rotationAngle,
-            method: 'lama',
-            lamaModel: lamaModel
-          }
-        )
-
-        if (response.success && response.inpainted_image) {
-          if (!updateCurrentImageIfStillCurrent(expectedImageId, { cleanImageData: response.inpainted_image })) {
-            return
-          }
-          triggerDelayedPreview()
-        } else {
-          showToast('LAMA 修复失败，已使用纯色填充', 'warning')
-          const applied = await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle, expectedImageId)
-          if (applied) {
-            triggerDelayedPreview()
-          }
-        }
-      } else {
-        const applied = await fillBubbleWithColor(bubble.coords, fillColor, rotationAngle, expectedImageId)
-        if (applied) {
-          triggerDelayedPreview()
-        }
-      }
+      await runBubbleRepair(
+        current.id,
+        bubbleId,
+        current.documentRevision,
+      )
+      await reloadPageDocument(current.id, bubbleId)
+      await callbacks?.onReRender?.()
     } catch (error) {
-      if (!isSameCurrentImage(expectedImageId)) {
-        return
-      }
       const errorMessage = error instanceof Error ? error.message : '背景修复失败'
       showToast(errorMessage, 'error')
     }
   }
 
-  async function fillBubbleWithColor(
-    coords: [number, number, number, number],
-    fillColor: string,
-    rotationAngle: number = 0,
-    expectedImageId?: string
-  ): Promise<boolean> {
-    const image = currentImage.value
-    if (!image) return false
-
-    const [x1, y1, x2, y2] = coords
-
-    let baseSrc: string
-    if (image.cleanImageData) {
-      baseSrc = 'data:image/png;base64,' + image.cleanImageData
-    } else if (image.originalDataURL) {
-      baseSrc = image.originalDataURL
-    } else {
-      showToast('无法找到基础图像用于填充', 'error')
-      return false
-    }
-
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas')
-          canvas.width = img.naturalWidth
-          canvas.height = img.naturalHeight
-          const ctx = canvas.getContext('2d')
-          if (!ctx) {
-            resolve(false)
-            return
-          }
-
-          ctx.drawImage(img, 0, 0)
-          ctx.fillStyle = fillColor
-
-          if (Math.abs(rotationAngle) < 0.1) {
-            ctx.fillRect(x1, y1, x2 - x1, y2 - y1)
-          } else {
-            const cx = (x1 + x2) / 2
-            const cy = (y1 + y2) / 2
-            const hw = (x2 - x1) / 2
-            const hh = (y2 - y1) / 2
-            const rad = rotationAngle * Math.PI / 180
-            const cos_a = Math.cos(rad)
-            const sin_a = Math.sin(rad)
-
-            const corners: [number, number][] = [
-              [-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]
-            ].map(([dx, dy]): [number, number] => [
-              cx + (dx as number) * cos_a - (dy as number) * sin_a,
-              cy + (dx as number) * sin_a + (dy as number) * cos_a
-            ])
-
-            ctx.beginPath()
-            const firstCorner = corners[0]
-            if (firstCorner) {
-              ctx.moveTo(firstCorner[0], firstCorner[1])
-              for (let i = 1; i < corners.length; i++) {
-                const corner = corners[i]
-                if (corner) {
-                  ctx.lineTo(corner[0], corner[1])
-                }
-              }
-            }
-            ctx.closePath()
-            ctx.fill()
-          }
-
-          const newCleanData = canvas.toDataURL('image/png').split(',')[1]
-          if (expectedImageId) {
-            if (!updateCurrentImageIfStillCurrent(expectedImageId, { cleanImageData: newCleanData })) {
-              resolve(false)
-              return
-            }
-          } else {
-            imageStore.updateCurrentImage({ cleanImageData: newCleanData })
-          }
-
-          resolve(true)
-        } catch (error) {
-          reject(error)
-        }
-      }
-      img.onerror = () => {
-        showToast('加载基础图像失败', 'error')
-        resolve(false)
-      }
-      img.src = baseSrc
-    })
-  }
-
   async function handleOcrRecognize(index: number): Promise<void> {
     const bubble = bubbles.value[index]
     const image = currentImage.value
-    if (!bubble || !image?.originalDataURL) {
-      showToast('无法进行 OCR 识别：缺少气泡或图片数据', 'warning')
+    if (!bubble || !image || image.documentRevision === undefined) {
+      showToast('无法进行 OCR 识别：页面尚未完成后端初始化', 'warning')
       return
     }
-    const expectedImageId = image.id
-    const expectedBubble = bubble
 
     try {
-      const ocrRequest = buildSingleBubbleOcrRequest({
-        image,
-        bubble,
-        bubbleIndex: index,
-        settings: settingsStore.settings,
-      })
-      const response = await ocrSingleBubbleApi(
-        ocrRequest.imageData,
-        ocrRequest.bubbleCoords,
-        ocrRequest.ocrEngine,
-        ocrRequest.options,
+      await queuePageDocumentSave(
+        image.id,
+        image.documentRevision,
+        bubbles.value,
       )
-
-      if (response.success && response.text !== undefined) {
-        if (!isSameBubbleTarget(expectedImageId, index, expectedBubble)) {
-          return
-        }
-        bubbleStore.updateBubble(index, {
-          originalText: response.text,
-          textlines: response.textlines || ocrRequest.bubbleTextlines,
-          ocrResult: response.ocr_result || null
-        })
-      } else {
-        if (!isSameCurrentImage(expectedImageId)) {
-          return
-        }
-        const errorMsg = response.error || '识别失败'
-        showToast(errorMsg, 'error')
+      const current = currentImage.value
+      const bubbleId = bubble.backendBubbleId
+      if (
+        !current
+        || current.id !== image.id
+        || current.documentRevision === undefined
+        || !bubbleId
+      ) {
+        throw new Error('气泡尚未完成后端持久化')
       }
+      await runPageOperation(current.id, {
+        baseRevision: current.documentRevision,
+        bubbleId,
+        kind: 'bubble_ocr',
+      })
+      await reloadPageDocument(current.id, bubbleId)
     } catch (error) {
-      if (!isSameCurrentImage(expectedImageId)) {
-        return
-      }
       const errorMessage = error instanceof Error ? error.message : 'OCR 识别出错'
       showToast(errorMessage, 'error')
     }
+  }
+
+  async function reloadPageDocument(
+    pageId: string,
+    bubbleId?: string,
+  ): Promise<void> {
+    const document = await getPageDocument(pageId)
+    if (currentImage.value?.id !== pageId) return
+    const updated = registerPageDocument(document)
+    imageStore.updateCurrentImage({
+      bubbleStates: updated,
+      documentRevision: document.documentRevision,
+      hasUnsavedChanges: false,
+    })
+    bubbleStore.setBubbles(updated, true)
+    const index = bubbleId
+      ? updated.findIndex(item => item.backendBubbleId === bubbleId)
+      : -1
+    if (index >= 0) bubbleStore.selectBubble(index)
   }
 
   return {

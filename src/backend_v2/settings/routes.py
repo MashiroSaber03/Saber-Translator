@@ -77,60 +77,74 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.put("/settings/transactions")
     def save_settings_transaction() -> Response:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         body = _json_body()
-        return jsonify(
-            settings.save_transaction(
-                settings=tuple(
-                    SettingMutation(
-                        domain=_required_string(row, "domain"),
-                        payload=_required_object(row, "payload"),
-                        base_revision=int(row.get("baseRevision", 0)),
-                        schema_version=int(row.get("schemaVersion", 1)),
-                    )
-                    for row in _object_array(body, "settings")
-                ),
-                book_settings_edits=tuple(
-                    BookSettingMutation(
-                        book_id=_required_string(row, "bookId"),
-                        domain=_required_string(row, "domain"),
-                        payload=_required_object(row, "payload"),
-                        base_revision=int(row.get("baseRevision", 0)),
-                        schema_version=int(row.get("schemaVersion", 1)),
-                    )
-                    for row in _object_array(body, "bookSettings")
-                ),
-                providers=tuple(
-                    ProviderSettingMutation(
-                        domain=_required_string(row, "domain"),
-                        provider=_required_string(row, "provider"),
-                        payload=_required_object(row, "payload"),
-                        base_revision=int(row.get("baseRevision", 0)),
-                        credential_version_id=(
-                            str(row["credentialVersionId"])
-                            if row.get("credentialVersionId") is not None
-                            else None
-                        ),
-                        schema_version=int(row.get("schemaVersion", 1)),
-                    )
-                    for row in _object_array(body, "providerSettings")
-                ),
-                credentials_edits=tuple(
-                    CredentialEdit(
-                        domain=_required_string(row, "domain"),
-                        provider=_required_string(row, "provider"),
-                        secret=_required_object(row, "secret"),
-                        base_revision=int(row.get("baseRevision", 0)),
-                        credential_id=(
-                            str(row["credentialId"])
-                            if row.get("credentialId") is not None
-                            else None
-                        ),
-                    )
-                    for row in _object_array(body, "credentialEdits")
-                ),
-            )
+        result, replayed = settings.save_transaction_idempotent(
+            idempotency_key=idempotency_key,
+            request_body=body,
+            settings=tuple(
+                SettingMutation(
+                    domain=_required_string(row, "domain"),
+                    payload=_required_object(row, "payload"),
+                    base_revision=int(row.get("baseRevision", 0)),
+                    schema_version=int(row.get("schemaVersion", 1)),
+                )
+                for row in _object_array(body, "settings")
+            ),
+            book_settings_edits=tuple(
+                BookSettingMutation(
+                    book_id=_required_string(row, "bookId"),
+                    domain=_required_string(row, "domain"),
+                    payload=_required_object(row, "payload"),
+                    base_revision=int(row.get("baseRevision", 0)),
+                    schema_version=int(row.get("schemaVersion", 1)),
+                )
+                for row in _object_array(body, "bookSettings")
+            ),
+            providers=tuple(
+                ProviderSettingMutation(
+                    domain=_required_string(row, "domain"),
+                    provider=_required_string(row, "provider"),
+                    payload=_required_object(row, "payload"),
+                    base_revision=int(row.get("baseRevision", 0)),
+                    credential_version_id=(
+                        str(row["credentialVersionId"])
+                        if row.get("credentialVersionId") is not None
+                        else None
+                    ),
+                    credential_edit_ref=(
+                        str(row["credentialEditRef"])
+                        if row.get("credentialEditRef") is not None
+                        else None
+                    ),
+                    schema_version=int(row.get("schemaVersion", 1)),
+                )
+                for row in _object_array(body, "providerSettings")
+            ),
+            credentials_edits=tuple(
+                CredentialEdit(
+                    domain=_required_string(row, "domain"),
+                    provider=_required_string(row, "provider"),
+                    secret=_required_object(row, "secret"),
+                    base_revision=int(row.get("baseRevision", 0)),
+                    credential_id=(
+                        str(row["credentialId"])
+                        if row.get("credentialId") is not None
+                        else None
+                    ),
+                    client_ref=(
+                        str(row["clientRef"])
+                        if row.get("clientRef") is not None
+                        else None
+                    ),
+                )
+                for row in _object_array(body, "credentialEdits")
+            ),
         )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.patch("/settings/workflow-preferences")
     def update_workflow_preferences() -> Response:

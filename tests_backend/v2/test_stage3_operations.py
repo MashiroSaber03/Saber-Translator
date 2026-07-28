@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 import uuid
 
@@ -30,12 +31,18 @@ from src.backend_v2.storage.schema import (
     assets,
     bubbles,
     chapter_write_intents,
+    credentials,
+    credential_versions,
     metadata,
+    operation_credential_snapshots,
     page_assets,
     pages,
     render_requests,
 )
 from src.backend_v2.storage.seeding import seed_system_records
+from src.backend_v2.translation.interactive_operations import (
+    InteractivePageOperationService,
+)
 
 
 @pytest.fixture()
@@ -213,6 +220,104 @@ def test_operation_creation_obeys_revision_and_write_intent(
             payload={},
             idempotency_key="blocked",
         )
+
+
+def test_bubble_translate_freezes_credential_and_publishes_document(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    credential_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            insert(credentials).values(
+                id=credential_id,
+                domain="translation",
+                provider="test",
+            )
+        )
+        connection.execute(
+            insert(credential_versions).values(
+                id=version_id,
+                credential_id=credential_id,
+                version=1,
+                secret_json='{"api_key":"server-secret"}',
+                key_fingerprint="0" * 64,
+            )
+        )
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == platform["bubble_id"])
+            .values(
+                payload_json=(
+                    '{"coords":[4,4,20,20],"fillColor":"#ff0000",'
+                    '"inpaintMethod":"solid","originalText":"source"}'
+                )
+            )
+        )
+
+    accepted, replayed = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_translate",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={
+            "provider": "test",
+            "target_language": "zh",
+            "credentialVersionId": version_id,
+        },
+        idempotency_key="translate-bubble",
+    )
+    assert not replayed
+    with platform["engine"].connect() as connection:
+        snapshot = connection.execute(
+            select(operation_credential_snapshots).where(
+                operation_credential_snapshots.c.operation_id
+                == accepted["operationId"]
+            )
+        ).mappings().one()
+    assert snapshot["credential_version_id"] == version_id
+
+    class TranslateOnlyAlgorithms:
+        def translate(self, texts, config, *, mode):
+            assert texts == ["source"]
+            assert config["api_key"] == "server-secret"
+            assert "credentialVersionId" not in config
+            assert mode == "single"
+            return {"translated": ["译文"], "textbox": []}
+
+    service = InteractivePageOperationService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+        algorithms=TranslateOnlyAlgorithms(),
+    )
+    claimed = repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("bubble_translate",),
+    )
+    assert claimed is not None
+    fence, operation = claimed
+    result = service.handle(fence, operation)
+    assert result["translatedText"] == "译文"
+    with platform["engine"].connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.id == platform["bubble_id"]
+                )
+            ).scalar_one()
+        )
+        revision = connection.execute(
+            select(pages.c.document_revision).where(
+                pages.c.id == platform["page_id"]
+            )
+        ).scalar_one()
+    assert payload["translatedText"] == "译文"
+    assert revision == 2
+    assert repository.get(str(accepted["operationId"]))["status"] == "completed"
 
 
 def test_render_request_coalesces_and_old_revision_cannot_publish(

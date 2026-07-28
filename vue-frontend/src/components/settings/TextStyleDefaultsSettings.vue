@@ -212,7 +212,8 @@ import type { InpaintMethod, TextAlign, TextDirection } from '@/types/bubble'
 import type { TextStyleSettings } from '@/types/settings'
 import { getFactoryTextStyleDefaults } from '@/defaults/textStyleFactoryDefaults'
 import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
-import { configApi } from '@/api/config'
+import { listV2Fonts, uploadV2Font, type V2Font } from '@/api/v2/settings'
+import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
@@ -242,21 +243,27 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+const settingsStore = useSettingsStore()
 const draftDefaults = ref<TextStyleSettings>(getFactoryTextStyleDefaults())
 const loadedDefaults = ref<TextStyleSettings | null>(null)
 const resetRequested = ref(false)
 const userTouched = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
-const fontList = ref<string[]>([])
+const fontList = ref<V2Font[]>([])
 const fontUploadInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const handledSaveRequestId = ref(0)
 
 const fontSelectOptions = computed(() => {
-  const options = Array.from(new Set([...BUILTIN_FONTS, ...fontList.value])).map(font => ({
-    label: getFontDisplayName(font),
-    value: font,
+  const backendOptions = fontList.value.map(font => ({
+    label: font.displayName,
+    value: font.id,
   }))
+  const known = new Set(backendOptions.map(option => option.value))
+  const legacyOptions = BUILTIN_FONTS
+    .filter(font => !known.has(font))
+    .map(font => ({ label: getFontDisplayName(font), value: font }))
+  const options = [...backendOptions, ...legacyOptions]
   options.push({ label: '自定义字体...', value: 'custom-font' })
   return options
 })
@@ -269,11 +276,9 @@ const hasPendingChanges = computed(() => {
 
 async function loadFontList(): Promise<void> {
   try {
-    const response = await configApi.getFontList()
-    const fonts = response.fonts || []
-    fontList.value = fonts.map(font => font.path)
+    fontList.value = await listV2Fonts()
   } catch {
-    fontList.value = [...BUILTIN_FONTS]
+    fontList.value = []
   }
 }
 
@@ -281,16 +286,14 @@ async function loadDefaults(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
   try {
-    const [defaultsResponse] = await Promise.all([
-      configApi.getTextStyleDefaults(),
+    await Promise.all([
+      settingsStore.isBackendReady ? Promise.resolve(true) : settingsStore.loadFromBackend(),
       loadFontList(),
     ])
-
-    if (!defaultsResponse.success || !defaultsResponse.defaults) {
-      throw new Error(defaultsResponse.error || '获取文本默认值失败')
+    if (!settingsStore.isBackendReady) {
+      throw new Error(settingsStore.backendError || '获取文本默认值失败')
     }
-
-    const normalized = normalizeTextStyleSettings(defaultsResponse.defaults)
+    const normalized = normalizeTextStyleSettings(settingsStore.settings.textStyle)
     draftDefaults.value = normalized
     loadedDefaults.value = normalized
     resetRequested.value = false
@@ -395,24 +398,20 @@ async function handleFontUpload(files: File[]): Promise<void> {
   const file = files[0]
   if (!file) return
 
-  const validExtensions = ['.ttf', '.ttc', '.otf']
+  const validExtensions = ['.ttf', '.otf', '.woff', '.woff2']
   const fileName = file.name.toLowerCase()
   const isValidType = validExtensions.some(ext => fileName.endsWith(ext))
   if (!isValidType) {
-    toast.error('请选择 .ttf、.ttc 或 .otf 格式的字体文件')
+    toast.error('请选择 .ttf、.otf、.woff 或 .woff2 格式的字体文件')
     fontUploadInput.value?.clear()
     return
   }
 
   try {
-    const response = await configApi.uploadFont(file)
-    if (response.success && response.fontPath) {
-      await loadFontList()
-      updateDraft({ fontFamily: response.fontPath })
-      toast.success('字体上传成功')
-    } else {
-      toast.error(response.error || '字体上传失败')
-    }
+    const response = await uploadV2Font(file)
+    await loadFontList()
+    updateDraft({ fontFamily: response.id })
+    toast.success('字体上传成功')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '字体上传失败')
   } finally {
@@ -431,26 +430,14 @@ function handleFontSelectChange(value: string | number): void {
 
 async function saveDefaults(): Promise<TextDefaultsSaveResult> {
   if (resetRequested.value) {
-    try {
-      const response = await configApi.resetTextStyleDefaults()
-      if (!response.success || !response.defaults) {
-        const error = response.error || '重置文本默认值失败'
-        errorMessage.value = error
-        return { success: false, changed: false, error }
-      }
-
-      const normalized = normalizeTextStyleSettings(response.defaults)
-      draftDefaults.value = normalized
-      loadedDefaults.value = normalized
-      resetRequested.value = false
-      userTouched.value = false
-      errorMessage.value = ''
-      return { success: true, changed: true }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '重置文本默认值失败'
-      errorMessage.value = message
-      return { success: false, changed: false, error: message }
-    }
+    const normalized = normalizeTextStyleSettings(getFactoryTextStyleDefaults())
+    settingsStore.updateTextStyle(normalized)
+    draftDefaults.value = normalized
+    loadedDefaults.value = normalized
+    resetRequested.value = false
+    userTouched.value = false
+    errorMessage.value = ''
+    return { success: true, changed: true }
   }
 
   if (!loadedDefaults.value) {
@@ -466,26 +453,14 @@ async function saveDefaults(): Promise<TextDefaultsSaveResult> {
     return { success: true, changed: false }
   }
 
-  try {
-    const response = await configApi.saveTextStyleDefaults(draftDefaults.value)
-    if (!response.success || !response.defaults) {
-      const error = response.error || '保存文本默认值失败'
-      errorMessage.value = error
-      return { success: false, changed: false, error }
-    }
-
-    const normalized = normalizeTextStyleSettings(response.defaults)
-    draftDefaults.value = normalized
-    loadedDefaults.value = normalized
-    resetRequested.value = false
-    userTouched.value = false
-    errorMessage.value = ''
-    return { success: true, changed: true }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '保存文本默认值失败'
-    errorMessage.value = message
-    return { success: false, changed: false, error: message }
-  }
+  const normalized = normalizeTextStyleSettings(draftDefaults.value)
+  settingsStore.updateTextStyle(normalized)
+  draftDefaults.value = normalized
+  loadedDefaults.value = normalized
+  resetRequested.value = false
+  userTouched.value = false
+  errorMessage.value = ''
+  return { success: true, changed: true }
 }
 
 </script>

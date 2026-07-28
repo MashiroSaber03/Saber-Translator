@@ -1,104 +1,92 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const configMocks = vi.hoisted(() => ({
-  getUserSettings: vi.fn(),
+const settingsApiMocks = vi.hoisted(() => ({
+  getV2Settings: vi.fn(),
+  saveV2SettingsTransaction: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  getUserSettings: configMocks.getUserSettings,
+vi.mock('@/api/v2/settings', () => ({
+  getV2Settings: settingsApiMocks.getV2Settings,
+  saveV2SettingsTransaction: settingsApiMocks.saveV2SettingsTransaction,
 }))
 
 import { useSettingsStore } from './settings'
 import { createDefaultSettings } from './settings/defaults'
 
-describe('useSettingsStore backend schema loading', () => {
+describe('useSettingsStore backend-first loading', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    configMocks.getUserSettings.mockReset()
+    settingsApiMocks.getV2Settings.mockReset()
+    settingsApiMocks.saveV2SettingsTransaction.mockReset()
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('ignores backend settings without the current schema version', async () => {
-    const nonCurrentProviderSettingsKey = 'provider' + 'Settings'
-    configMocks.getUserSettings.mockResolvedValue({
-      success: true,
-      settings: {
-        modelProvider: 'siliconflow',
-        hqTranslateProvider: 'siliconflow',
-        [nonCurrentProviderSettingsKey]: {
-          modelProvider: {
-            siliconflow: {},
-          },
-        },
-      },
-    })
+  it('blocks backend writes while authoritative settings are unavailable', async () => {
+    settingsApiMocks.getV2Settings.mockRejectedValue(new Error('offline'))
 
     const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
-
-    expect(loaded).toBe(false)
-    expect(store.providerConfigs.translation.siliconflow).toBeUndefined()
+    expect(await store.loadFromBackend()).toBe(false)
+    expect(await store.saveToBackend()).toBe(false)
+    expect(store.backendError).toContain('后端设置尚未加载')
   })
 
-  it('loads current schema settings and provider configs', async () => {
+  it('loads provider memory without hydrating stored secrets into the browser', async () => {
     const settings = createDefaultSettings()
     settings.translation = {
       ...settings.translation,
       provider: 'custom',
-      apiKey: 'translation-key',
+      apiKey: '',
       modelName: 'translation-model',
       customBaseUrl: 'https://translation.example.com/v1',
-      openaiOptions: {
-        request: { forceJsonOutput: true },
-        execution: {
-          useStream: true,
-          rpmLimit: 12,
-          transportRetries: 2,
-          businessRetries: 4,
-        },
-      },
     }
+    localStorage.setItem('translationSettings', JSON.stringify({ apiKey: 'retired-key' }))
+    localStorage.setItem('providerConfigs', JSON.stringify({ apiKey: 'retired-key' }))
 
-    configMocks.getUserSettings.mockResolvedValue({
-      success: true,
-      settings: {
-        ...settings,
-        providerConfigs: {
-          translation: {
-            custom: {
-              apiKey: 'cached-key',
-              modelName: 'cached-model',
-              customBaseUrl: 'https://cached.example.com/v1',
-              openaiOptions: {
-                request: { forceJsonOutput: true },
-                execution: {
-                  useStream: true,
-                  rpmLimit: 10,
-                  transportRetries: 3,
-                  businessRetries: 5,
-                },
-              },
-            },
-          },
-          hqTranslation: {},
-          pluginAgent: {},
-          aiVisionOcr: {},
+    settingsApiMocks.getV2Settings.mockResolvedValue({
+      settings: [{
+        domain: 'translation',
+        revision: 4,
+        schemaVersion: 3,
+        payload: settings,
+      }],
+      bookSettings: [],
+      providerSettings: [{
+        domain: 'translation',
+        provider: 'custom',
+        revision: 2,
+        schemaVersion: 1,
+        credentialVersionId: 'version-1',
+        payload: {
+          modelName: 'cached-model',
+          customBaseUrl: 'https://cached.example.com/v1',
+          openaiOptions: settings.translation.openaiOptions,
         },
-      },
+      }],
+      credentials: [{
+        credentialId: 'credential-1',
+        credentialVersionId: 'version-1',
+        currentVersion: 1,
+        domain: 'translation',
+        hasKey: true,
+        provider: 'custom',
+        revision: 1,
+      }],
     })
 
     const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
+    store.initSettings()
+    expect(await store.loadFromBackend()).toBe(true)
 
-    expect(loaded).toBe(true)
     expect(store.settings.translation.provider).toBe('custom')
-    expect(store.settings.translation.openaiOptions.execution.businessRetries).toBe(4)
-    expect(store.settings.boxExpand.ratio).toBe(0)
+    expect(store.settings.translation.apiKey).toBe('')
     expect(store.providerConfigs.translation.custom?.modelName).toBe('cached-model')
+    expect(store.credentialSummaries[0]?.hasKey).toBe(true)
+    expect(localStorage.getItem('translationSettings')).toBeNull()
+    expect(localStorage.getItem('providerConfigs')).toBeNull()
   })
 })

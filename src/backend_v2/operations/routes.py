@@ -11,11 +11,13 @@ from src.backend_v2.operations.repository import (
     OperationNotFound,
     OperationRepository,
 )
+from src.backend_v2.settings.resolver import SettingsResolver
 
 
 def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
     blueprint = Blueprint("operations_v2", __name__, url_prefix="/api/v2")
     repository = OperationRepository(engine)
+    settings = SettingsResolver(engine)
     from src.backend_v2.operations.repair import PageRepairService
 
     repairs = PageRepairService(
@@ -46,16 +48,24 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
+        if payload:
+            raise ValueError(
+                "page operation settings are resolved by the backend"
+            )
+        kind = str(body.get("kind", ""))
         response, replayed = repository.create_page_operation(
             page_id=page_id,
-            kind=str(body.get("kind", "")),
+            kind=kind,
             base_revision=int(body.get("baseRevision", 0)),
             bubble_id=(
                 str(body["bubbleId"])
                 if body.get("bubbleId") is not None
                 else None
             ),
-            payload=payload,
+            payload=settings.resolve_page_operation(
+                page_id=page_id,
+                kind=kind,
+            ),
             idempotency_key=_require_idempotency_key(),
         )
         result = jsonify(response)

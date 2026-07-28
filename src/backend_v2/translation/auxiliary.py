@@ -14,6 +14,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
+from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.schema import (
     books,
     assets,
@@ -53,19 +54,29 @@ class AuxiliaryTranslationCommands:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
+        self.settings = SettingsResolver(engine)
 
     def create_detect_job(
         self,
         *,
         chapter_id: str,
         page_ids: list[str] | None,
-        detector: Mapping[str, Any],
         idempotency_key: str,
     ) -> dict[str, object]:
         chapter, ordered = self._chapter_pages(chapter_id, page_ids)
+        resolved = self.settings.resolve_translation(
+            chapter_id=chapter_id,
+            command={
+                "mode": "standard",
+                "executionMode": "parallel",
+                "skipCompleted": False,
+                "reuseExistingBubbles": False,
+            },
+        )
         config = {
-            "detector": dict(detector),
+            "detector": dict(resolved["detector"]),
             "executionMode": "parallel",
+            "settingsSnapshot": dict(resolved["settingsSnapshot"]),
         }
         return self.jobs.create_batch(
             kind="detect",

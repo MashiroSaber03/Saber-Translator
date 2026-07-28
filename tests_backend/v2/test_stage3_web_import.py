@@ -10,12 +10,23 @@ from sqlalchemy import select
 
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.storage.platform_repositories import (
+    CredentialEdit,
+    ProviderSettingMutation,
+    SettingMutation,
+    SettingsRepository,
+)
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
 )
-from src.backend_v2.storage.schema import metadata, pages
+from src.backend_v2.storage.schema import (
+    job_config_snapshots,
+    job_credential_snapshots,
+    metadata,
+    pages,
+)
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.web_import.commands import WebImportCommandService
 from src.backend_v2.web_import.worker import WebImportWorkerService
@@ -136,4 +147,106 @@ def test_web_extract_draft_selection_and_commit_survive_the_browser(
             ).scalars()
         )
     assert imported == ["20.png"]
+    engine.dispose()
+
+
+def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Agent Book")
+    chapter = content.create_chapter(book_id=str(book["id"]), title="Chapter")
+    settings = SettingsRepository(engine)
+    settings.save_transaction(
+        settings=(
+            SettingMutation(
+                domain="web_import",
+                payload={
+                    "agent": {
+                        "provider": "custom",
+                        "useStream": False,
+                        "forceJsonOutput": True,
+                        "maxRetries": 2,
+                        "timeout": 60,
+                    },
+                    "download": {
+                        "timeout": 30,
+                        "retries": 2,
+                        "delay": 0,
+                        "useReferer": True,
+                    },
+                    "extraction": {"prompt": "extract", "maxIterations": 4},
+                },
+                base_revision=1,
+            ),
+        ),
+        credentials_edits=(
+            CredentialEdit(
+                domain="web_import_agent",
+                provider="custom",
+                secret={"api_key": "agent-secret"},
+                base_revision=0,
+                client_ref="agent",
+            ),
+            CredentialEdit(
+                domain="web_import_firecrawl",
+                provider="firecrawl",
+                secret={"api_key": "firecrawl-secret"},
+                base_revision=0,
+                client_ref="firecrawl",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="web_import_agent",
+                provider="custom",
+                payload={
+                    "modelName": "agent-model",
+                    "customBaseUrl": "https://agent.example/v1",
+                },
+                base_revision=0,
+                credential_edit_ref="agent",
+            ),
+            ProviderSettingMutation(
+                domain="web_import_firecrawl",
+                provider="firecrawl",
+                payload={},
+                base_revision=0,
+                credential_edit_ref="firecrawl",
+            ),
+        ),
+    )
+    accepted = WebImportCommandService(
+        data_root=data_root,
+        engine=engine,
+    ).create_draft(
+        chapter_id=str(chapter["id"]),
+        source_url="https://example.test/chapter",
+        requested_engine="ai-agent",
+        config={},
+        idempotency_key="agent-draft",
+    )
+    job_id = str(accepted["jobIds"][0])
+    with engine.connect() as connection:
+        config_json = connection.execute(
+            select(job_config_snapshots.c.payload_json).where(
+                job_config_snapshots.c.job_id == job_id
+            )
+        ).scalar_one()
+        credential_count = len(
+            connection.execute(
+                select(job_credential_snapshots.c.credential_version_id).where(
+                    job_credential_snapshots.c.job_id == job_id
+                )
+            ).scalars().all()
+        )
+    assert "agent-secret" not in config_json
+    assert "firecrawl-secret" not in config_json
+    assert '"model_name":"agent-model"' in config_json
+    assert credential_count == 2
     engine.dispose()

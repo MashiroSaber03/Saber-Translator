@@ -1,4 +1,4 @@
-"""Worker-side saved OCR, color, and detection operations."""
+"""Saved editor operations executed outside the browser lifecycle."""
 
 from __future__ import annotations
 
@@ -17,7 +17,13 @@ from src.backend_v2.operations.repository import (
     RenderRequestRepository,
 )
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.schema import assets, bubbles, page_assets, pages
+from src.backend_v2.storage.schema import (
+    assets,
+    bubbles,
+    credential_versions,
+    page_assets,
+    pages,
+)
 from src.backend_v2.translation.pipeline import (
     LegacyTranslationAlgorithms,
     TranslationAlgorithms,
@@ -53,8 +59,10 @@ class InteractivePageOperationService:
             result = self._bubble_color(fence, operation)
         elif kind == "page_detect":
             result = self._page_detect(fence, operation)
+        elif kind == "bubble_translate":
+            result = self._bubble_translate(fence, operation)
         else:
-            raise ValueError(f"unsupported Worker page operation: {kind}")
+            raise ValueError(f"unsupported page operation: {kind}")
         return {**result, "__already_published__": True}
 
     def _bubble_ocr(
@@ -69,7 +77,7 @@ class InteractivePageOperationService:
             result = self.algorithms.ocr(
                 image,
                 [dict(rows[index]["payload"])],
-                self._payload(operation),
+                self._with_credential(self._payload(operation)),
             )
         finally:
             image.close()
@@ -96,6 +104,66 @@ class InteractivePageOperationService:
         response = {
             "bubbleId": operation["bubbleId"],
             "originalText": texts[0],
+            "documentRevision": new_revision,
+        }
+        self.repository.complete(fence, result=response, publisher=publish)
+        return response
+
+    def _bubble_translate(
+        self,
+        fence: OperationFence,
+        operation: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        page, rows = self._snapshot(str(operation["pageId"]))
+        index = self._bubble_index(rows, str(operation["bubbleId"]))
+        payload = dict(rows[index]["payload"])
+        original_text = str(payload.get("originalText", "")).strip()
+        if not original_text:
+            raise ValueError("bubble has no original text")
+        config = self._with_credential(self._payload(operation))
+        translated = self.algorithms.translate(
+            [original_text],
+            config,
+            mode="single",
+        )
+        values = list(translated.get("translated", []))
+        textbox = list(translated.get("textbox", []))
+        if len(values) != 1:
+            raise RuntimeError(
+                "single-bubble translation returned an invalid result count"
+            )
+        payload["translatedText"] = str(values[0])
+        if textbox:
+            payload["textboxText"] = str(textbox[0])
+        new_revision = int(page["document_revision"]) + 1
+
+        def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
+            self._update_one_bubble(
+                connection,
+                page_id=str(operation["pageId"]),
+                bubble_id=str(operation["bubbleId"]),
+                base_revision=int(page["document_revision"]),
+                new_revision=new_revision,
+                payload=payload,
+                render_changed=True,
+            )
+            has_translated = connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == operation["pageId"],
+                    page_assets.c.role == "translated",
+                )
+            ).scalar_one_or_none()
+            if has_translated is not None:
+                self.renders.upsert(
+                    connection,
+                    page_id=str(operation["pageId"]),
+                    requested_revision=new_revision,
+                    existing_chain=True,
+                )
+
+        response = {
+            "bubbleId": operation["bubbleId"],
+            "translatedText": str(values[0]),
             "documentRevision": new_revision,
         }
         self.repository.complete(fence, result=response, publisher=publish)
@@ -304,6 +372,27 @@ class InteractivePageOperationService:
             return {}
         payload = request.get("payload")
         return dict(payload) if isinstance(payload, Mapping) else {}
+
+    def _with_credential(
+        self,
+        section: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        result = dict(section)
+        version_id = result.pop("credentialVersionId", None)
+        if not version_id:
+            return result
+        with self.engine.connect() as connection:
+            value = connection.execute(
+                select(credential_versions.c.secret_json).where(
+                    credential_versions.c.id == version_id
+                )
+            ).scalar_one_or_none()
+        if value is None:
+            raise RuntimeError("frozen credential version no longer exists")
+        secret = json.loads(value)
+        if isinstance(secret, dict):
+            result.update(secret)
+        return result
 
     @staticmethod
     def _update_one_bubble(

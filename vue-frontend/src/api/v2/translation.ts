@@ -10,9 +10,8 @@ export interface V2TranslationBatchAccepted {
 export interface TranslationJobConfig {
   executionMode: 'parallel' | 'sequential'
   mode: 'hq' | 'proofread' | 'remove_text' | 'standard'
+  reuseExistingBubbles?: boolean
   skipCompleted?: boolean
-  sourceLanguage: string
-  targetLanguage: string
 }
 
 export async function createChapterTranslationJob(
@@ -23,6 +22,17 @@ export async function createChapterTranslationJob(
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/translation-jobs`,
     { config, pageIds },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export async function createChapterDetectJob(
+  chapterId: string,
+  pageIds?: string[],
+): Promise<V2TranslationBatchAccepted> {
+  return apiClient.post<V2TranslationBatchAccepted>(
+    `/api/v2/chapters/${encodeURIComponent(chapterId)}/detect-jobs`,
+    pageIds ? { pageIds } : {},
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

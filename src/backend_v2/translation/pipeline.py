@@ -127,6 +127,7 @@ class LegacyTranslationAlgorithms:
             "ai_vision_prompt_mode",
             "custom_ai_vision_base_url",
             "ai_vision_min_image_size",
+            "ai_vision_openai_options",
             "enable_hybrid_ocr",
             "secondary_ocr_engine",
             "hybrid_ocr_threshold",

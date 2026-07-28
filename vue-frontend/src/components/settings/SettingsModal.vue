@@ -83,7 +83,13 @@
         variant="dialog"
       >
         <UiButton variant="secondary" @click="handleClose">取消</UiButton>
-        <UiButton variant="primary" @click="handleSave">保存设置</UiButton>
+        <UiButton
+          variant="primary"
+          :disabled="!settingsStore.isBackendReady"
+          @click="handleSave"
+        >
+          保存设置
+        </UiButton>
       </ProductActionRow>
     </template>
   </BaseModal>
@@ -92,6 +98,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import type { ProviderConfigsCache } from '@/stores/settings'
+import type { TranslationSettings as TranslationSettingsModel } from '@/types/settings'
+import { deepClone } from '@/utils/deepClone'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -146,6 +155,9 @@ const activeTab = ref<SettingsTabId>('ocr')
 const textDefaultsSaveRequestId = ref(0)
 let textDefaultsSavePromise: Promise<TextDefaultsSaveResult> | null = null
 let resolveTextDefaultsSave: ((result: TextDefaultsSaveResult) => void) | null = null
+let settingsSnapshot: TranslationSettingsModel | null = null
+let providerSnapshot: ProviderConfigsCache | null = null
+let closeAfterSave = false
 
 const tabs = [
   { id: 'ocr', label: 'OCR识别' },
@@ -189,13 +201,23 @@ watch(isOpen, (newVal) => {
   }
 })
 
-function handleOpen() {
+async function handleOpen() {
+  await settingsStore.loadFromBackend()
+  settingsSnapshot = deepClone(settingsStore.settings)
+  providerSnapshot = deepClone(settingsStore.providerConfigs)
   if (props.initialTab && isSettingsTabId(props.initialTab)) {
     activeTab.value = props.initialTab
   }
 }
 
 function handleClose() {
+  if (!closeAfterSave && settingsSnapshot && providerSnapshot) {
+    settingsStore.settings = deepClone(settingsSnapshot)
+    settingsStore.providerConfigs = deepClone(providerSnapshot)
+  }
+  closeAfterSave = false
+  settingsSnapshot = null
+  providerSnapshot = null
   isOpen.value = false
   emit('update:modelValue', false)
 }
@@ -225,15 +247,14 @@ async function handleSave() {
     return
   }
 
-  settingsStore.saveToStorage()
-
-  try {
-    await settingsStore.saveToBackend()
-  } catch {
-    showToast('设置已保存到本地，后端同步失败', 'warning')
+  const saved = await settingsStore.saveToBackend()
+  if (!saved) {
+    showToast(settingsStore.backendError || '设置保存失败', 'error')
+    return
   }
 
   emit('save', { textDefaultsChanged: textDefaultsResult.changed })
+  closeAfterSave = true
   handleClose()
 }
 </script>

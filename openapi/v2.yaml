@@ -499,6 +499,21 @@ paths:
           $ref: "#/components/responses/Locked"
         "422":
           $ref: "#/components/responses/ValidationError"
+  /pages/{page_id}:
+    parameters:
+      - $ref: "#/components/parameters/PageId"
+    get:
+      tags: [content]
+      operationId: getPageSummary
+      responses:
+        "200":
+          description: Current metadata and immutable asset URLs for one page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /chapters/{chapter_id}/import-leases:
     post:
       tags: [content]

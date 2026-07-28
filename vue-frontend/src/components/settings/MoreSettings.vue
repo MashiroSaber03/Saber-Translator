@@ -3,17 +3,6 @@
     <ParallelSettings />
 
     <ProductFormSection>
-      <template #title>自动保存设置</template>
-      <UiField
-        variant="settings"
-        control="checkbox"
-        hint="开启后，在书架模式下翻译时会自动保存进度（翻译一张保存一张），防止意外关闭导致数据丢失。注意：此功能仅在书架模式下生效，快速翻译模式不支持。"
-      >
-        <UiCheckbox v-model="localSettings.autoSaveInBookshelfMode" label="书架模式自动保存" />
-      </UiField>
-    </ProductFormSection>
-
-    <ProductFormSection>
       <template #title>消除文字模式</template>
       <UiField
         variant="settings"
@@ -47,22 +36,6 @@
     </ProductFormSection>
 
     <ProductFormSection>
-      <template #title>PDF处理设置</template>
-      <UiField
-        variant="settings"
-        label="PDF处理方式"
-        control-id="settingsPdfProcessingMethod"
-        hint="前端处理速度更快，后端处理适配性更好"
-      >
-        <UiSelect
-          id="settingsPdfProcessingMethod"
-          v-model="localSettings.pdfProcessingMethod"
-          :options="pdfMethodOptions"
-        />
-      </UiField>
-    </ProductFormSection>
-
-    <ProductFormSection>
       <template #title>字体设置</template>
       <UiField variant="settings" label="系统字体列表">
         <UiButton variant="secondary" @click="refreshFontList" :disabled="isLoadingFonts">
@@ -73,14 +46,14 @@
       <UiField
         variant="settings"
         label="上传自定义字体"
-        hint="支持 .ttf, .ttc, .otf 格式"
+        hint="支持 .ttf、.otf、.woff、.woff2 格式"
       >
         <div class="more-settings__font-upload-row">
           <UiFileInput
             ref="fontInput"
             data-testid="font-upload-input"
             class="more-settings__hidden-file-input"
-            accept=".ttf,.ttc,.otf"
+            accept=".ttf,.otf,.woff,.woff2"
             @files-change="handleFontUpload"
           />
           <UiButton
@@ -144,42 +117,31 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { configApi } from '@/api/config'
-import * as systemApi from '@/api/system'
+import {
+  cleanV2DebugFiles,
+  cleanV2TempFiles,
+  listV2Fonts,
+  uploadV2Font,
+  type V2Font,
+} from '@/api/v2/settings'
 import { useToast } from '@/utils/toast'
 import ParallelSettings from './ParallelSettings.vue'
-
-const pdfMethodOptions = [
-  { label: '前端 pdf.js (推荐)', value: 'frontend' },
-  { label: '后端 PyMuPDF', value: 'backend' }
-]
 
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
 const isLoadingFonts = ref(false)
-const fontList = ref<import('@/types').FontInfo[]>([])
+const fontList = ref<V2Font[]>([])
 const isCleaning = ref(false)
 const fontInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const selectedFontFileName = ref('')
 
 const localSettings = ref({
-  pdfProcessingMethod: settingsStore.settings.pdfProcessingMethod || 'frontend',
-  autoSaveInBookshelfMode: settingsStore.settings.autoSaveInBookshelfMode || false,
   removeTextWithOcr: settingsStore.settings.removeTextWithOcr || false,
   enableVerboseLogs: settingsStore.settings.enableVerboseLogs || false,
   lamaDisableResize: settingsStore.settings.lamaDisableResize || false
-})
-
-watch(() => localSettings.value.pdfProcessingMethod, (val) => {
-  settingsStore.setPdfProcessingMethod(val as 'frontend' | 'backend')
-})
-
-watch(() => localSettings.value.autoSaveInBookshelfMode, (val) => {
-  settingsStore.setAutoSaveInBookshelfMode(val)
 })
 
 watch(() => localSettings.value.removeTextWithOcr, (val) => {
@@ -197,8 +159,7 @@ watch(() => localSettings.value.lamaDisableResize, (val) => {
 async function refreshFontList() {
   isLoadingFonts.value = true
   try {
-    const result = await configApi.getFontList()
-    fontList.value = result.fonts || []
+    fontList.value = await listV2Fonts()
     toast.success(`获取到 ${fontList.value.length} 个字体`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '获取字体列表失败'
@@ -217,22 +178,18 @@ async function handleFontUpload(files: File[]) {
   if (!file) return
   selectedFontFileName.value = file.name
 
-  const validExtensions = ['.ttf', '.ttc', '.otf']
+  const validExtensions = ['.ttf', '.otf', '.woff', '.woff2']
   const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
   if (!validExtensions.includes(ext)) {
-    toast.error('不支持的字体格式，请上传 .ttf, .ttc 或 .otf 文件')
+    toast.error('不支持的字体格式，请上传 .ttf、.otf、.woff 或 .woff2 文件')
     fontInput.value?.clear()
     return
   }
 
   try {
-    const result = await configApi.uploadFont(file)
-    if (result.success) {
-      toast.success(`字体 "${result.fontPath || file.name}" 上传成功`)
-      await refreshFontList()
-    } else {
-      toast.error(result.error || '字体上传失败')
-    }
+    await uploadV2Font(file)
+    toast.success(`字体 "${file.name}" 上传成功`)
+    await refreshFontList()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '字体上传失败'
     toast.error(errorMessage)
@@ -244,12 +201,8 @@ async function handleFontUpload(files: File[]) {
 async function cleanDebugFiles() {
   isCleaning.value = true
   try {
-    const result = await systemApi.cleanDebugFiles() as { success: boolean; deleted_count?: number; error?: string }
-    if (result.success) {
-      toast.success(`已清理 ${result.deleted_count || 0} 个调试文件`)
-    } else {
-      toast.error(result.error || '清理失败')
-    }
+    const result = await cleanV2DebugFiles()
+    toast.success(`已清理 ${result.removed} 个调试文件`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '清理失败'
     toast.error(errorMessage)
@@ -261,12 +214,8 @@ async function cleanDebugFiles() {
 async function cleanTempFiles() {
   isCleaning.value = true
   try {
-    const result = await systemApi.cleanTempFiles() as { success: boolean; deleted_count?: number; error?: string }
-    if (result.success) {
-      toast.success(`已清理 ${result.deleted_count || 0} 个临时文件`)
-    } else {
-      toast.error(result.error || '清理失败')
-    }
+    const result = await cleanV2TempFiles()
+    toast.success(`已恢复或清理 ${result.recovered} 个临时记录`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '清理失败'
     toast.error(errorMessage)

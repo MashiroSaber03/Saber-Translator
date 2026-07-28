@@ -237,6 +237,42 @@ def test_page_listing_is_cursor_paginated_metadata_only(content_platform) -> Non
     assert [item["ordinal"] for item in second["items"]] == [3]
     assert "base64" not in str(first).lower()
 
+    page_id = str(first["items"][0]["id"])
+    summary = repository.get_page_summary(page_id)
+    assert summary == first["items"][0]
+    assert summary["sourceUrl"].startswith("/api/v2/assets/")
+
+
+def test_single_page_summary_route_returns_only_requested_page(content_platform) -> None:
+    root, engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((14, 21)),
+        logical_path="single.png",
+        key="single-summary",
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=root,
+            identity=RuntimeIdentity(
+                epoch_id="test-page-summary-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    response = app.test_client().get(f"/api/v2/pages/{imported['page']['id']}")
+    assert response.status_code == 200
+    summary = response.get_json()
+    assert summary["id"] == imported["page"]["id"]
+    assert summary["sourceUrl"] == imported["page"]["sourceUrl"]
+    assert summary["thumbnailSourceUrl"] == imported["page"]["thumbnailSourceUrl"]
+    assert summary["renderStatus"] == "not_rendered"
+    assert "base64" not in response.get_data(as_text=True).lower()
+
 
 def test_import_lease_and_chapter_order_cas_enforce_backend_ownership(
     content_platform,

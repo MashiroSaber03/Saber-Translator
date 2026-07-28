@@ -2,19 +2,24 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { TranslationSettings } from '@/types/settings'
 import {
-  STORAGE_KEY_TRANSLATION_SETTINGS,
-  STORAGE_KEY_THEME,
   STORAGE_KEY_PROVIDER_CONFIGS,
+  STORAGE_KEY_THEME,
+  STORAGE_KEY_TRANSLATION_SETTINGS,
 } from '@/constants'
-import { normalizeProviderId } from '@/config/aiProviders'
-import { getUserSettings, saveUserSettings } from '@/api/config'
-import { cloneOpenAiOptions } from '@/utils/openaiOptions'
+import {
+  getV2Settings,
+  saveV2SettingsTransaction,
+  type V2CredentialEdit,
+  type V2CredentialSummary,
+  type V2ProviderSettingMutation,
+  type V2SettingsDocument,
+} from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
 import { normalizeSettings } from './normalizeSettings'
-import { parseCurrentProviderConfigs, parseCurrentSettings } from './schema'
+import { parseCurrentSettings } from './schema'
 import { useThemePreference } from './useThemePreference'
 import {
   useOcrSettings,
@@ -24,124 +29,98 @@ import {
   usePluginAgentSettings,
   useProofreadingSettings,
   usePromptsSettings,
-  useMiscSettings
+  useMiscSettings,
 } from './modules'
+
+type ProviderCacheDomain = keyof ProviderConfigsCache
+
+const PROVIDER_DOMAIN_BY_CACHE: Record<ProviderCacheDomain, string> = {
+  translation: 'translation',
+  hqTranslation: 'hq',
+  pluginAgent: 'plugin_agent',
+  aiVisionOcr: 'ai_vision_ocr',
+}
+
+const CACHE_BY_PROVIDER_DOMAIN = Object.fromEntries(
+  Object.entries(PROVIDER_DOMAIN_BY_CACHE).map(([cache, domain]) => [domain, cache]),
+) as Record<string, ProviderCacheDomain>
+
+function emptyProviderConfigs(): ProviderConfigsCache {
+  return {
+    translation: {},
+    hqTranslation: {},
+    pluginAgent: {},
+    aiVisionOcr: {},
+  }
+}
+
+function withoutApiKey<T extends Record<string, unknown>>(value: T): Omit<T, 'apiKey'> {
+  const { apiKey: _apiKey, ...payload } = value
+  return payload
+}
+
+function sanitizedSettingsPayload(value: TranslationSettings): Record<string, unknown> {
+  const payload = deepClone(value) as TranslationSettings
+  payload.translation.apiKey = ''
+  payload.hqTranslation.apiKey = ''
+  payload.pluginAgent.apiKey = ''
+  payload.aiVisionOcr.apiKey = ''
+  payload.baiduOcr.apiKey = ''
+  payload.baiduOcr.secretKey = ''
+  payload.proofreading.rounds.forEach((round) => {
+    round.apiKey = ''
+  })
+  payload.settingsSchemaVersion = 3
+  return payload as unknown as Record<string, unknown>
+}
+
+function credentialIdentity(domain: string, provider: string): string {
+  return `${domain}\u0000${provider}`
+}
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<TranslationSettings>(createDefaultSettings())
   const themePreference = useThemePreference(STORAGE_KEY_THEME)
   const { theme, effectiveTheme, setTheme, toggleTheme, loadThemeFromStorage } = themePreference
-  const providerConfigs = ref<ProviderConfigsCache>({
-    translation: {},
-    hqTranslation: {},
-    pluginAgent: {},
-    aiVisionOcr: {}
-  })
+  const providerConfigs = ref<ProviderConfigsCache>(emptyProviderConfigs())
+  const credentialSummaries = ref<V2CredentialSummary[]>([])
+  const isBackendReady = ref(false)
+  const backendError = ref<string | null>(null)
 
-  function saveToStorage(): void {
+  let settingsRevision = 0
+  let providerRevisions = new Map<string, number>()
+  let loadPromise: Promise<boolean> | null = null
+
+  // Business settings and credentials are backend facts. These compatibility
+  // functions intentionally do not persist browser copies.
+  function saveToStorage(): void {}
+  function saveProviderConfigsToStorage(): void {}
+
+  function clearRetiredBusinessStorage(): void {
     try {
-      const data = JSON.stringify(settings.value)
-      localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, data)
+      localStorage.removeItem(STORAGE_KEY_TRANSLATION_SETTINGS)
+      localStorage.removeItem(STORAGE_KEY_PROVIDER_CONFIGS)
     } catch {
-      return
-    }
-  }
-
-  function saveProviderConfigsToStorage(): void {
-    try {
-      const data = JSON.stringify(providerConfigs.value)
-      localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, data)
-    } catch {
-      return
-    }
-  }
-
-  function savePluginAgentSettingsToStorage(): void {
-    try {
-      const defaults = createDefaultSettings()
-      const stored = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
-      const parsedSettings = stored ? parseCurrentSettings(JSON.parse(stored)) : null
-      const baseSettings = parsedSettings ? deepClone(parsedSettings) : defaults
-
-      baseSettings.pluginAgent = deepClone(settings.value.pluginAgent)
-      localStorage.setItem(STORAGE_KEY_TRANSLATION_SETTINGS, JSON.stringify(baseSettings))
-    } catch {
-      return
-    }
-  }
-
-  function savePluginAgentProviderConfigsToStorage(): void {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
-      const parsed = stored
-        ? parseCurrentProviderConfigs(JSON.parse(stored))
-        : null
-
-      const nextProviderConfigs: ProviderConfigsCache = {
-        translation: parsed?.translation || {},
-        hqTranslation: parsed?.hqTranslation || {},
-        pluginAgent: deepClone(providerConfigs.value.pluginAgent),
-        aiVisionOcr: parsed?.aiVisionOcr || {}
-      }
-
-      localStorage.setItem(STORAGE_KEY_PROVIDER_CONFIGS, JSON.stringify(nextProviderConfigs))
-    } catch {
-      return
+      // Storage may be unavailable; backend loading remains authoritative.
     }
   }
 
   function loadFromStorage(): void {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY_TRANSLATION_SETTINGS)
-
-      if (data) {
-        const parsed = parseCurrentSettings(JSON.parse(data))
-        if (!parsed) {
-          return
-        }
-        settings.value = parsed
-        normalizeSettings(settings.value)
-
-        // 确保 translatePrompt 与当前翻译模式和 JSON 模式同步（4个独立存储字段之一）
-        const t = settings.value.translation
-        if (t.translationMode === 'single') {
-          settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
-        } else {
-          settings.value.translatePrompt = t.openaiOptions.request.forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
-        }
-      }
-    } catch {
-      return
-    }
-  }
-
-  function loadProviderConfigsFromStorage(): void {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY_PROVIDER_CONFIGS)
-      if (data) {
-        const parsed = parseCurrentProviderConfigs(JSON.parse(data))
-        if (!parsed) {
-          return
-        }
-        providerConfigs.value = parsed
-      }
-    } catch {
-      return
-    }
+    clearRetiredBusinessStorage()
   }
 
   const ocrModule = useOcrSettings(
     settings,
     providerConfigs,
     saveToStorage,
-    saveProviderConfigsToStorage
+    saveProviderConfigsToStorage,
   )
 
   const translationModule = useTranslationSettings(
     settings,
     providerConfigs,
     saveToStorage,
-    saveProviderConfigsToStorage
+    saveProviderConfigsToStorage,
   )
 
   const detectionModule = useDetectionSettings(settings, saveToStorage)
@@ -150,163 +129,227 @@ export const useSettingsStore = defineStore('settings', () => {
     settings,
     providerConfigs,
     saveToStorage,
-    saveProviderConfigsToStorage
+    saveProviderConfigsToStorage,
   )
 
   const pluginAgentModule = usePluginAgentSettings(
     settings,
     providerConfigs,
     saveToStorage,
-    saveProviderConfigsToStorage
+    saveProviderConfigsToStorage,
   )
 
   const proofreadingModule = useProofreadingSettings(settings, saveToStorage)
-
   const promptsModule = usePromptsSettings(settings, saveToStorage)
-
   const miscModule = useMiscSettings(settings, saveToStorage)
 
   function initSettings(): void {
-    loadFromStorage()
-    loadProviderConfigsFromStorage()
+    clearRetiredBusinessStorage()
     loadThemeFromStorage()
+    void loadFromBackend()
   }
 
   function resetToDefaults(): void {
     settings.value = createDefaultSettings()
-    saveToStorage()
+  }
+
+  function applyBackendDocument(document: V2SettingsDocument): void {
+    const translationEntry = document.settings.find(row => row.domain === 'translation')
+    settingsRevision = translationEntry?.revision ?? 0
+    const parsed = translationEntry
+      ? parseCurrentSettings(translationEntry.payload)
+      : null
+    settings.value = parsed ?? createDefaultSettings()
+    normalizeSettings(settings.value)
+
+    providerConfigs.value = emptyProviderConfigs()
+    providerRevisions = new Map()
+    for (const row of document.providerSettings) {
+      const cacheDomain = CACHE_BY_PROVIDER_DOMAIN[row.domain]
+      if (cacheDomain) {
+        providerConfigs.value[cacheDomain][row.provider] = {
+          ...deepClone(row.payload),
+          apiKey: '',
+        }
+      }
+      providerRevisions.set(credentialIdentity(row.domain, row.provider), row.revision)
+    }
+    credentialSummaries.value = document.credentials
+
+    translationModule.restoreTranslationProviderConfig(settings.value.translation.provider)
+    hqTranslationModule.restoreHqProviderConfig(settings.value.hqTranslation.provider)
+    pluginAgentModule.restorePluginAgentProviderConfig(settings.value.pluginAgent.provider)
+    ocrModule.restoreAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
+
+    // A credential summary deliberately never hydrates a secret into the form.
+    settings.value.translation.apiKey = ''
+    settings.value.hqTranslation.apiKey = ''
+    settings.value.pluginAgent.apiKey = ''
+    settings.value.aiVisionOcr.apiKey = ''
+    settings.value.baiduOcr.apiKey = ''
+    settings.value.baiduOcr.secretKey = ''
+    settings.value.proofreading.rounds.forEach((round) => {
+      round.apiKey = ''
+    })
   }
 
   async function loadFromBackend(): Promise<boolean> {
-    try {
-      const response = await getUserSettings()
-
-      if (response.success && response.settings) {
-        const backendSettings = response.settings
-        if (!applyBackendSettings(backendSettings)) {
-          return false
-        }
-        normalizeSettings(settings.value)
-
-        // 编辑侧栏文字设置始终使用当前默认值，不从后端恢复。
-        const defaults = createDefaultSettings()
-        settings.value.textStyle = { ...defaults.textStyle }
-
-        saveToStorage()
-        saveProviderConfigsToStorage()
+    if (loadPromise) return loadPromise
+    loadPromise = (async () => {
+      try {
+        applyBackendDocument(await getV2Settings())
+        backendError.value = null
+        isBackendReady.value = true
         return true
-      }
-      return false
-    } catch {
-      return false
-    }
-  }
-
-  function applyBackendSettings(backendSettings: Record<string, unknown>): boolean {
-    const schemaVersion = backendSettings.settingsSchemaVersion
-    if (schemaVersion !== 3) {
-      return false
-    }
-
-    const { providerConfigs: nestedProviderConfigs, ...settingsPayload } = backendSettings
-    const parsedSettings = parseCurrentSettings(settingsPayload)
-    if (!parsedSettings) {
-      return false
-    }
-
-    let parsedProviderConfigs: ProviderConfigsCache | null = null
-
-    if (nestedProviderConfigs && typeof nestedProviderConfigs === 'object') {
-      parsedProviderConfigs = parseCurrentProviderConfigs(nestedProviderConfigs)
-      if (!parsedProviderConfigs) {
+      } catch (error) {
+        isBackendReady.value = false
+        backendError.value = error instanceof Error ? error.message : '设置加载失败'
         return false
       }
+    })()
+    try {
+      return await loadPromise
+    } finally {
+      loadPromise = null
     }
-
-    settings.value = parsedSettings
-
-    if (parsedProviderConfigs) {
-      providerConfigs.value = parsedProviderConfigs
-    }
-
-    return true
   }
 
-  function buildProviderSettingsForBackend(): ProviderConfigsCache {
-    return deepClone(providerConfigs.value)
+  function currentCredential(
+    domain: string,
+    provider: string,
+  ): V2CredentialSummary | undefined {
+    return credentialSummaries.value.find(
+      row => row.domain === domain && row.provider === provider,
+    )
+  }
+
+  function addProviderMutation(
+    providerSettings: V2ProviderSettingMutation[],
+    credentialEdits: V2CredentialEdit[],
+    {
+      domain,
+      provider,
+      rawPayload,
+      secret,
+    }: {
+      domain: string
+      provider: string
+      rawPayload: Record<string, unknown>
+      secret: Record<string, unknown>
+    },
+  ): void {
+    const nonEmptySecret = Object.fromEntries(
+      Object.entries(secret).filter(([, value]) => value !== '' && value != null),
+    )
+    const existingCredential = currentCredential(domain, provider)
+    const clientRef = `credential:${domain}:${provider}`
+    const mutation: V2ProviderSettingMutation = {
+      domain,
+      provider,
+      payload: withoutApiKey(rawPayload),
+      baseRevision: providerRevisions.get(credentialIdentity(domain, provider)) ?? 0,
+      schemaVersion: 1,
+    }
+    if (Object.keys(nonEmptySecret).length > 0) {
+      credentialEdits.push({
+        domain,
+        provider,
+        secret: nonEmptySecret,
+        baseRevision: existingCredential?.revision ?? 0,
+        credentialId: existingCredential?.credentialId,
+        clientRef,
+      })
+      mutation.credentialEditRef = clientRef
+    } else if (existingCredential) {
+      mutation.credentialVersionId = existingCredential.credentialVersionId
+    }
+    providerSettings.push(mutation)
+  }
+
+  function buildSettingsTransaction() {
+    translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
+    hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
+    pluginAgentModule.savePluginAgentProviderConfig(settings.value.pluginAgent.provider)
+    ocrModule.saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
+
+    const providerSettings: V2ProviderSettingMutation[] = []
+    const credentialEdits: V2CredentialEdit[] = []
+    for (const [cacheDomain, domain] of Object.entries(PROVIDER_DOMAIN_BY_CACHE) as Array<
+      [ProviderCacheDomain, string]
+    >) {
+      for (const [provider, rawConfig] of Object.entries(providerConfigs.value[cacheDomain])) {
+        const config = deepClone(rawConfig) as Record<string, unknown>
+        addProviderMutation(providerSettings, credentialEdits, {
+          domain,
+          provider,
+          rawPayload: config,
+          secret: {
+            [domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key']:
+              config.apiKey,
+          },
+        })
+      }
+    }
+
+    addProviderMutation(providerSettings, credentialEdits, {
+      domain: 'ocr',
+      provider: 'baidu',
+      rawPayload: {
+        version: settings.value.baiduOcr.version,
+        sourceLanguage: settings.value.baiduOcr.sourceLanguage,
+      },
+      secret: {
+        baidu_api_key: settings.value.baiduOcr.apiKey,
+        baidu_secret_key: settings.value.baiduOcr.secretKey,
+      },
+    })
+
+    settings.value.proofreading.rounds.forEach((round, index) => {
+      const config = deepClone(round) as unknown as Record<string, unknown>
+      addProviderMutation(providerSettings, credentialEdits, {
+        domain: `proofreading_${index}`,
+        provider: round.provider,
+        rawPayload: config,
+        secret: { api_key: round.apiKey },
+      })
+    })
+
+    return {
+      settings: [{
+        domain: 'translation',
+        payload: sanitizedSettingsPayload(settings.value),
+        baseRevision: settingsRevision,
+        schemaVersion: 3,
+      }],
+      providerSettings,
+      credentialEdits,
+    }
   }
 
   async function saveToBackend(): Promise<boolean> {
-    try {
-      translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
-      hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
-      pluginAgentModule.savePluginAgentProviderConfig(settings.value.pluginAgent.provider)
-      ocrModule.saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
-
-      const backendSettings: Record<string, unknown> = deepClone(settings.value)
-      backendSettings.settingsSchemaVersion = 3
-      backendSettings.providerConfigs = buildProviderSettingsForBackend()
-
-      const response = await saveUserSettings(backendSettings)
-
-      if (response.success) {
-        return true
-      }
+    if (!isBackendReady.value) {
+      backendError.value = '后端设置尚未加载，已阻止覆盖保存'
       return false
-    } catch {
+    }
+    try {
+      await saveV2SettingsTransaction(buildSettingsTransaction())
+      return await loadFromBackend()
+    } catch (error) {
+      backendError.value = error instanceof Error ? error.message : '设置保存失败'
       return false
     }
   }
 
   async function savePluginAgentSettings(): Promise<boolean> {
-    try {
-      const currentProvider = normalizeProviderId(settings.value.pluginAgent.provider)
-      providerConfigs.value.pluginAgent[currentProvider] = {
-        apiKey: settings.value.pluginAgent.apiKey,
-        modelName: settings.value.pluginAgent.modelName,
-        customBaseUrl: settings.value.pluginAgent.customBaseUrl,
-        openaiOptions: cloneOpenAiOptions(settings.value.pluginAgent.openaiOptions)
-      }
-
-      savePluginAgentSettingsToStorage()
-      savePluginAgentProviderConfigsToStorage()
-
-      let backendSettings: Record<string, unknown> = {}
-
-      try {
-        const response = await getUserSettings()
-        if (response.success && response.settings && typeof response.settings === 'object') {
-          backendSettings = deepClone(response.settings)
-        }
-      } catch {
-        // Backend settings are best-effort; saving proceeds with the current plugin Agent state.
-      }
-
-      backendSettings.pluginAgent = deepClone(settings.value.pluginAgent)
-      const backendProviderConfigs = (
-        backendSettings.providerConfigs && typeof backendSettings.providerConfigs === 'object'
-          ? deepClone(backendSettings.providerConfigs)
-          : {}
-      ) as Record<string, unknown>
-      backendProviderConfigs.pluginAgent = deepClone(providerConfigs.value.pluginAgent)
-      backendSettings.providerConfigs = backendProviderConfigs
-
-      backendSettings.settingsSchemaVersion = 3
-
-      const saveResponse = await saveUserSettings(backendSettings)
-      if (saveResponse.success) {
-        return true
-      }
-
-      return false
-    } catch {
-      return false
-    }
+    return saveToBackend()
   }
 
   return {
     settings,
     providerConfigs,
+    credentialSummaries,
+    isBackendReady,
+    backendError,
     theme,
     effectiveTheme,
 
@@ -385,7 +428,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     loadFromBackend,
     saveToBackend,
-    savePluginAgentSettings
+    savePluginAgentSettings,
   }
 })
 

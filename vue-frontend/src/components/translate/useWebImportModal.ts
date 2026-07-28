@@ -253,17 +253,11 @@ export function useWebImportModal() {
         bookId: typeof route.query.book === 'string' ? route.query.book : undefined,
         chapterId: typeof route.query.chapter === 'string' ? route.query.chapter : undefined,
       })
-      const download = webImportStore.settings.download
       const accepted = await createWebImportDraft({
         chapterId: bootstrap.chapter.id,
         sourceUrl: url,
         engine: selectedEngine.value,
-        config: {
-          delay: download.delay,
-          referer: download.useReferer ? url : undefined,
-          retries: download.retries,
-          timeout: download.timeout,
-        },
+        config: {},
       })
       activeDraftId.value = accepted.draftId
       webImportStore.addLog({

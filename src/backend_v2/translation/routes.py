@@ -66,10 +66,12 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
     @blueprint.post("/chapters/<chapter_id>/detect-jobs")
     def create_detect_job(chapter_id: str):
         body = _json_body()
-        detector = body.get("detector", {})
         page_ids = body.get("pageIds")
-        if not isinstance(detector, dict):
-            raise ValueError("detector must be an object")
+        unknown = set(body) - {"pageIds"}
+        if unknown:
+            raise ValueError(
+                "detect settings are resolved by the backend"
+            )
         if page_ids is not None and (
             not isinstance(page_ids, list)
             or not all(isinstance(value, str) for value in page_ids)
@@ -80,7 +82,6 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
                 auxiliary.create_detect_job(
                     chapter_id=chapter_id,
                     page_ids=page_ids,
-                    detector=detector,
                     idempotency_key=_require_idempotency_key(),
                 )
             ),

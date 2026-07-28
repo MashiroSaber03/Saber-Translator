@@ -174,3 +174,10 @@ export function hasPendingPageDocument(pageId: string): boolean {
   const state = states.get(pageId)
   return Boolean(state?.saving || state?.lastError)
 }
+
+export async function flushPageDocument(pageId: string): Promise<void> {
+  const state = states.get(pageId)
+  if (!state) return
+  if (state.promise) await state.promise
+  if (state.lastError) throw state.lastError
+}

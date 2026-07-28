@@ -22,6 +22,7 @@ from src.backend_v2.storage.schema import (
     credential_versions,
     credentials,
     fonts,
+    idempotency_records,
     plugin_current_versions,
     plugin_versions,
     plugins,
@@ -65,6 +66,7 @@ class ProviderSettingMutation:
     payload: dict[str, Any]
     base_revision: int
     credential_version_id: str | None = None
+    credential_edit_ref: str | None = None
     schema_version: int = 1
 
 
@@ -75,6 +77,7 @@ class CredentialEdit:
     secret: dict[str, Any]
     base_revision: int
     credential_id: str | None = None
+    client_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,26 +102,159 @@ class SettingsRepository:
         credentials_edits: tuple[CredentialEdit, ...] = (),
     ) -> dict[str, list[dict[str, object]]]:
         with immediate_transaction(self.engine) as connection:
-            setting_results = [
-                self._save_setting(connection, mutation) for mutation in settings
-            ]
-            book_setting_results = [
-                self._save_book_setting(connection, mutation)
-                for mutation in book_settings_edits
-            ]
-            provider_results = [
-                self._save_provider_setting(connection, mutation)
-                for mutation in providers
-            ]
-            credential_results = [
-                self._save_credential(connection, edit) for edit in credentials_edits
-            ]
+            return self._save_transaction(
+                connection,
+                settings=settings,
+                book_settings_edits=book_settings_edits,
+                providers=providers,
+                credentials_edits=credentials_edits,
+            )
+
+    def save_transaction_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        request_body: dict[str, Any],
+        settings: tuple[SettingMutation, ...] = (),
+        book_settings_edits: tuple[BookSettingMutation, ...] = (),
+        providers: tuple[ProviderSettingMutation, ...] = (),
+        credentials_edits: tuple[CredentialEdit, ...] = (),
+    ) -> tuple[dict[str, list[dict[str, object]]], bool]:
+        now = _utcnow()
+        request_hash = hashlib.sha256(
+            _canonical_json(request_body).encode("utf-8")
+        ).hexdigest()
+        scope = "settings-transaction"
+        with immediate_transaction(self.engine) as connection:
+            replay = connection.execute(
+                select(
+                    idempotency_records.c.request_hash,
+                    idempotency_records.c.response_json,
+                ).where(
+                    idempotency_records.c.scope == scope,
+                    idempotency_records.c.key == idempotency_key,
+                    idempotency_records.c.expires_at > now,
+                )
+            ).mappings().one_or_none()
+            if replay is not None:
+                if replay["request_hash"] != request_hash:
+                    raise RevisionConflict(
+                        "Idempotency-Key was reused for a different settings transaction"
+                    )
+                return json.loads(replay["response_json"]), True
+            result = self._save_transaction(
+                connection,
+                settings=settings,
+                book_settings_edits=book_settings_edits,
+                providers=providers,
+                credentials_edits=credentials_edits,
+            )
+            connection.execute(
+                insert(idempotency_records).values(
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    http_status=200,
+                    response_json=_canonical_json(result),
+                    resource_type="settings",
+                    expires_at=now + timedelta(hours=24),
+                )
+            )
+            return result, False
+
+    def _save_transaction(
+        self,
+        connection: object,
+        *,
+        settings: tuple[SettingMutation, ...],
+        book_settings_edits: tuple[BookSettingMutation, ...],
+        providers: tuple[ProviderSettingMutation, ...],
+        credentials_edits: tuple[CredentialEdit, ...],
+    ) -> dict[str, list[dict[str, object]]]:
+        self._validate_transaction_keys(
+            settings=settings,
+            book_settings_edits=book_settings_edits,
+            providers=providers,
+            credentials_edits=credentials_edits,
+        )
+        setting_results = [
+            self._save_setting(connection, mutation) for mutation in settings
+        ]
+        book_setting_results = [
+            self._save_book_setting(connection, mutation)
+            for mutation in book_settings_edits
+        ]
+        credential_results = [
+            self._save_credential(connection, edit) for edit in credentials_edits
+        ]
+        created_versions = {
+            edit.client_ref: str(result["credentialVersionId"])
+            for edit, result in zip(credentials_edits, credential_results, strict=True)
+            if edit.client_ref is not None
+        }
+        provider_results = []
+        for mutation in providers:
+            credential_version_id = mutation.credential_version_id
+            if mutation.credential_edit_ref is not None:
+                credential_version_id = created_versions[mutation.credential_edit_ref]
+            provider_results.append(
+                self._save_provider_setting(
+                    connection,
+                    mutation,
+                    credential_version_id=credential_version_id,
+                )
+            )
         return {
             "settings": setting_results,
             "bookSettings": book_setting_results,
             "providerSettings": provider_results,
             "credentials": credential_results,
         }
+
+    @staticmethod
+    def _validate_transaction_keys(
+        *,
+        settings: tuple[SettingMutation, ...],
+        book_settings_edits: tuple[BookSettingMutation, ...],
+        providers: tuple[ProviderSettingMutation, ...],
+        credentials_edits: tuple[CredentialEdit, ...],
+    ) -> None:
+        def require_unique(values: list[object], label: str) -> None:
+            if len(values) != len(set(values)):
+                raise ValueError(f"{label} contains duplicate identities")
+
+        require_unique([row.domain for row in settings], "settings")
+        require_unique(
+            [(row.book_id, row.domain) for row in book_settings_edits],
+            "book settings",
+        )
+        require_unique(
+            [(row.domain, row.provider) for row in providers],
+            "provider settings",
+        )
+        require_unique(
+            [(row.domain, row.provider) for row in credentials_edits],
+            "credential edits",
+        )
+        client_refs = [
+            row.client_ref for row in credentials_edits if row.client_ref is not None
+        ]
+        require_unique(client_refs, "credential edit references")
+        known_refs = set(client_refs)
+        for provider in providers:
+            if (
+                provider.credential_version_id is not None
+                and provider.credential_edit_ref is not None
+            ):
+                raise ValueError(
+                    "provider setting cannot specify both credentialVersionId "
+                    "and credentialEditRef"
+                )
+            if (
+                provider.credential_edit_ref is not None
+                and provider.credential_edit_ref not in known_refs
+            ):
+                raise ValueError("provider setting references an unknown credential edit")
 
     def load(
         self,
@@ -245,6 +381,8 @@ class SettingsRepository:
     def _save_provider_setting(
         connection: object,
         mutation: ProviderSettingMutation,
+        *,
+        credential_version_id: str | None = None,
     ) -> dict[str, object]:
         if mutation.base_revision < 0 or mutation.schema_version < 1:
             raise ValueError("provider setting revisions must be non-negative")
@@ -258,10 +396,28 @@ class SettingsRepository:
         current = connection.execute(  # type: ignore[attr-defined]
             select(provider_settings.c.revision).where(key)
         ).scalar_one_or_none()
+        if credential_version_id is not None:
+            owner = connection.execute(  # type: ignore[attr-defined]
+                select(credentials.c.domain, credentials.c.provider)
+                .join(
+                    credential_versions,
+                    credential_versions.c.credential_id == credentials.c.id,
+                )
+                .where(credential_versions.c.id == credential_version_id)
+            ).mappings().one_or_none()
+            if owner is None:
+                raise ValueError("credential version does not exist")
+            if (
+                owner["domain"] != mutation.domain
+                or owner["provider"] != mutation.provider
+            ):
+                raise ValueError(
+                    "credential version domain/provider does not match provider setting"
+                )
         values = {
             "payload_json": payload_json,
             "schema_version": mutation.schema_version,
-            "credential_version_id": mutation.credential_version_id,
+            "credential_version_id": credential_version_id,
         }
         if current is None:
             if mutation.base_revision != 0:

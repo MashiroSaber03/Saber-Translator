@@ -415,6 +415,16 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 provider="fake",
                 secret={"apiKey": "never-return-me"},
                 base_revision=0,
+                client_ref="translation-fake",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="fake",
+                payload={"model": "fake-model"},
+                base_revision=0,
+                credential_edit_ref="translation-fake",
             ),
         ),
     )
@@ -431,6 +441,52 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
             )
         ).scalar_one()
     assert settings.resolve_secret(version_id) == {"apiKey": "never-return-me"}
+    loaded = settings.load(domains=("translation",))
+    assert loaded["providerSettings"] == [
+        {
+            "domain": "translation",
+            "provider": "fake",
+            "revision": 1,
+            "schemaVersion": 1,
+            "credentialVersionId": version_id,
+            "payload": {"model": "fake-model"},
+        }
+    ]
+
+    idempotent_body = {
+        "settings": [
+            {
+                "domain": "proofreading",
+                "payload": {"enabled": True},
+                "baseRevision": 0,
+            }
+        ]
+    }
+    first, first_replayed = settings.save_transaction_idempotent(
+        idempotency_key="settings-save-1",
+        request_body=idempotent_body,
+        settings=(
+            SettingMutation(
+                domain="proofreading",
+                payload={"enabled": True},
+                base_revision=0,
+            ),
+        ),
+    )
+    second, second_replayed = settings.save_transaction_idempotent(
+        idempotency_key="settings-save-1",
+        request_body=idempotent_body,
+        settings=(
+            SettingMutation(
+                domain="proofreading",
+                payload={"enabled": True},
+                base_revision=0,
+            ),
+        ),
+    )
+    assert first == second
+    assert first_replayed is False
+    assert second_replayed is True
 
     with pytest.raises(RevisionConflict):
         settings.save_transaction(

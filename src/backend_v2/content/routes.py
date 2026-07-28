@@ -228,6 +228,10 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             )
         )
 
+    @blueprint.get("/pages/<page_id>")
+    def get_page(page_id: str) -> Response:
+        return jsonify(repository.get_page_summary(page_id))
+
     @blueprint.put("/chapters/<chapter_id>/pages/order")
     def reorder_pages(chapter_id: str) -> Response:
         _require_idempotency_key()

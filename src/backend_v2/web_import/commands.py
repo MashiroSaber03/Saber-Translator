@@ -28,6 +28,7 @@ from src.backend_v2.storage.schema import (
     web_import_draft_pages,
     web_import_drafts,
 )
+from src.backend_v2.settings.resolver import SettingsResolver
 
 
 WEB_ENGINES = {"auto", "gallery-dl", "ai-agent"}
@@ -56,6 +57,7 @@ class WebImportCommandService:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.storage = AssetStorageService(data_root, engine)
+        self.settings = SettingsResolver(engine)
 
     def create_draft(
         self,
@@ -70,17 +72,25 @@ class WebImportCommandService:
         if requested_engine not in WEB_ENGINES:
             raise ValueError("engine must be auto, gallery-dl, or ai-agent")
         _reject_plaintext_secrets(config)
+        if config:
+            raise ValueError(
+                "web import options are resolved from backend settings; "
+                "browser overrides are not accepted"
+            )
         chapter = self._chapter(chapter_id)
         draft_id = str(uuid.uuid4())
         temp_relative = (
             Path("temp") / "web-import" / draft_id
         ).as_posix()
+        resolved_options = self.settings.resolve_web_import(
+            source_url=normalized_url,
+        )
         frozen_config = {
             "draftId": draft_id,
             "sourceUrl": normalized_url,
             "requestedEngine": requested_engine,
             "actualEngine": None,
-            "options": dict(config),
+            "options": resolved_options,
             "executionMode": "sequential",
         }
         now = utcnow()
@@ -130,7 +140,7 @@ class WebImportCommandService:
                 "chapterId": chapter_id,
                 "sourceUrl": normalized_url,
                 "engine": requested_engine,
-                "config": dict(config),
+                "config": resolved_options,
             },
             transaction_initializer=initialize,
         )

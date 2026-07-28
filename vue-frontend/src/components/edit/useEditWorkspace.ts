@@ -1,28 +1,25 @@
 import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
+import { getPageDocument } from '@/api/v2/content'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { useSessionStore } from '@/stores/sessionStore'
 import { useImageViewer } from '@/composables/useImageViewer'
 import { useBrush, type BrushSurface } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
-import { useEditWorkspaceExit } from '@/composables/edit/useEditWorkspaceExit'
 import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWorkspaceKeyboardShortcuts'
 import { useEditWorkspaceProcessingActions } from '@/composables/edit/useEditWorkspaceProcessingActions'
 import { useEditWorkspaceResizeActions } from '@/composables/edit/useEditWorkspaceResizeActions'
 import {
-  forceInitializeBookshelfSession,
-  isBookshelfSessionInitialized,
-  saveBookshelfPageProgress
-} from '@/composables/translation/core/saveStep'
+  queuePageDocumentSave,
+  registerPageDocument,
+} from '@/services/pageDocumentPersistence'
 import { deepClone } from '@/utils/deepClone'
 import { showToast } from '@/utils/toast'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import { confirmProductAction } from '@/composables/useProductConfirm'
 
 export interface EditWorkspaceProps {
   isEditModeActive: boolean
@@ -35,7 +32,6 @@ export type EditWorkspaceEmit = {
 export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceEmit) {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
-  const sessionStore = useSessionStore()
 
   const {
     reRenderFullImage
@@ -111,15 +107,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     hasBubbles,
     hasSelection
   } = storeToRefs(bubbleStore)
-
-  const {
-    isBookshelfMode,
-    currentBookId,
-    currentChapterId,
-    isSaving: isSessionSaving,
-    loadingProgress: sessionLoadingProgress,
-    error: sessionSaveError,
-  } = storeToRefs(sessionStore)
 
   const currentImageWidth = computed(() => currentImage.value?.width || 0)
 
@@ -249,14 +236,34 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  function prepareForNavigation(): void {
+  async function persistCurrentDocument(): Promise<void> {
+    const image = currentImage.value
+    if (!image || image.documentRevision === undefined) return
+    saveBubbleStatesToImage()
+    await queuePageDocumentSave(
+      image.id,
+      image.documentRevision,
+      bubbles.value,
+    )
+  }
+
+  async function prepareForNavigation(): Promise<void> {
     if (brushMode.value) {
       exitBrushMode()
     }
-    if (exitDialogState.value !== 'saving') {
-      closeExitDialog()
+    await persistCurrentDocument()
+  }
+
+  async function navigateAfterPersist(navigate: () => void): Promise<void> {
+    try {
+      await prepareForNavigation()
+      navigate()
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : '保存当前页失败，无法切换图片',
+        'error',
+      )
     }
-    saveBubbleStatesToImage()
   }
 
   function selectFirstBubbleIfExists(): void {
@@ -265,24 +272,21 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
   }
 
-  function goToPreviousImage(): void {
+  async function goToPreviousImage(): Promise<void> {
     if (canGoPrevious.value) {
-      prepareForNavigation()
-      imageStore.goToPrevious()
+      await navigateAfterPersist(() => imageStore.goToPrevious())
     }
   }
 
-  function goToNextImage(): void {
+  async function goToNextImage(): Promise<void> {
     if (canGoNext.value) {
-      prepareForNavigation()
-      imageStore.goToNext()
+      await navigateAfterPersist(() => imageStore.goToNext())
     }
   }
 
-  function switchToImage(index: number): void {
+  async function switchToImage(index: number): Promise<void> {
     if (index !== currentImageIndex.value && index >= 0 && index < imageCount.value) {
-      prepareForNavigation()
-      imageStore.setCurrentImageIndex(index)
+      await navigateAfterPersist(() => imageStore.setCurrentImageIndex(index))
     }
   }
 
@@ -302,41 +306,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   const {
-    exitDialogState,
-    exitDialogError,
-    shouldPromptSaveOnExit,
-    exitSaveCurrent,
-    exitSaveTotal,
-    exitSaveHasProgress,
-    exitSaveProgressPercent,
-    exitSaveMessage,
-    closeExitDialog,
-    openExitDialog,
-    exitEditMode,
-    exitWithoutSaving,
-    saveAndExit,
-  } = useEditWorkspaceExit({
-    isBookshelfMode,
-    currentBookId,
-    currentChapterId,
-    isSessionSaving,
-    sessionLoadingProgress,
-    sessionSaveError,
-    saveBubbleStatesToImage,
-    saveChapterSession: sessionStore.saveChapterSession,
-    emitExit: () => emit('exit'),
-  })
-
-  const {
     handleKeyDown,
     handleKeyUp,
   } = useEditWorkspaceKeyboardShortcuts({
-    exitDialogState,
     brushMode,
     hasSelection,
     isBrushKeyDown,
-    closeExitDialog,
-    exitEditMode,
+    exitEditMode: handleExitToolbarAction,
     deleteSelectedBubbles,
     goToPreviousImage,
     goToNextImage,
@@ -348,6 +324,9 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     resetZoom,
   })
 
+  let pageDocumentRequest = 0
+  let pageDocumentAbortController: AbortController | null = null
+
   function loadBubbleStatesFromImage(): void {
     if (currentImage.value?.bubbleStates) {
       // skipSync=true 避免冗余同步（数据已经在 imageStore 中）
@@ -358,7 +337,32 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
       bubbleStore.clearBubblesLocal()
     }
     selectFirstBubbleIfExists()
-    // 切图时保持当前缩放和位置，不自动 fitToScreen
+    const pageId = currentImage.value?.id
+    if (!pageId) return
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = new AbortController()
+    const request = ++pageDocumentRequest
+    void getPageDocument(pageId, pageDocumentAbortController.signal)
+      .then(document => {
+        if (
+          request !== pageDocumentRequest
+          || currentImage.value?.id !== pageId
+        ) return
+        const loaded = registerPageDocument(document)
+        imageStore.updateCurrentImage({
+          bubbleStates: loaded,
+          documentRevision: document.documentRevision,
+          hasUnsavedChanges: false,
+        })
+        bubbleStore.setBubbles(loaded, true)
+        selectFirstBubbleIfExists()
+      })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (request === pageDocumentRequest) {
+          showToast('加载当前页编辑数据失败', 'error')
+        }
+      })
   }
 
   const {
@@ -376,8 +380,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     currentImage,
     currentImageIndex,
     bubbles,
-    reRenderFullImage,
-    loadBubbleStatesFromImage,
     selectFirstBubbleIfExists,
   })
 
@@ -660,17 +662,16 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     reRenderFullImage()
   }
 
-  function handleExitToolbarAction(): void {
-    if (exitDialogState.value === 'saving') {
-      return
+  async function handleExitToolbarAction(): Promise<void> {
+    try {
+      await persistCurrentDocument()
+      emit('exit')
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : '保存当前页失败，无法退出编辑',
+        'error',
+      )
     }
-
-    if (shouldPromptSaveOnExit.value) {
-      openExitDialog()
-      return
-    }
-
-    exitEditMode()
   }
 
   function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
@@ -702,7 +703,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     bubbleStore.updateBubble(index, clonedState)
     showToast('气泡已重置', 'success')
 
-    reRenderFullImage()
+    void reRenderFullImage()
   }
 
   async function handleOcrRecognize(index: number): Promise<void> {
@@ -742,9 +743,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
 
   async function applyAndNext(): Promise<void> {
-    if (exitDialogState.value !== 'saving') {
-      closeExitDialog()
-    }
     saveBubbleStatesToImage()
 
     // 等待渲染完成后再切图，避免下一张读取到未落盘的画面。
@@ -752,40 +750,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     if (!renderSucceeded) {
       showToast('应用失败，已停留在当前图片，请重试', 'warning')
       return
-    }
-
-    const sourceImageIndex = currentImageIndex.value
-    const targetImageIndex = canGoNext.value ? sourceImageIndex + 1 : sourceImageIndex
-
-    if (isBookshelfMode.value) {
-      try {
-        let initialized = await isBookshelfSessionInitialized()
-        if (!initialized) {
-          const shouldInitialize = await confirmProductAction({
-            title: '初始化章节存档',
-            message: '当前章节尚未初始化存档。首次使用“应用并下一张”需要先保存整章原图和基础元数据，是否继续？',
-            confirmText: '继续',
-            cancelText: '取消',
-          })
-          if (!shouldInitialize) {
-            return
-          }
-
-          initialized = await forceInitializeBookshelfSession()
-          if (!initialized) {
-            showToast('初始化章节存档失败，未跳转到下一张', 'error')
-            return
-          }
-        }
-
-        await saveBookshelfPageProgress(sourceImageIndex, targetImageIndex)
-      } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : '当前页保存失败，未跳转到下一张'
-        showToast(message, 'error')
-        return
-      }
     }
 
     if (canGoNext.value) {
@@ -843,6 +807,9 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     document.removeEventListener('mouseup', stopDividerDrag)
     document.removeEventListener('mousemove', handlePanelResize)
     document.removeEventListener('mouseup', stopPanelResize)
+    pageDocumentRequest += 1
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = null
     clearDelayedFitTimers()
   })
 
@@ -862,16 +829,11 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
           fitToScreen()
         }, 100)
       })
-    } else if (exitDialogState.value !== 'saving') {
-      closeExitDialog()
     }
   })
 
   watch(currentImageIndex, () => {
     if (props.isEditModeActive) {
-      if (exitDialogState.value !== 'saving') {
-        closeExitDialog()
-      }
       loadBubbleStatesFromImage()
     }
   })
@@ -952,17 +914,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     progressText,
     progressCurrent,
     progressTotal,
-    exitDialogState,
-    exitSaveMessage,
-    exitDialogError,
-    exitSaveProgressPercent,
-    exitSaveHasProgress,
-    exitSaveCurrent,
-    exitSaveTotal,
-    openExitDialog,
-    closeExitDialog,
-    exitWithoutSaving,
-    saveAndExit,
     startDividerDrag,
     startPanelResize,
     zoomIn,

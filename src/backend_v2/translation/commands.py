@@ -13,6 +13,7 @@ from src.backend_v2.jobs.repository import (
     JobSpec,
 )
 from src.backend_v2.storage.schema import books, chapters, pages
+from src.backend_v2.settings.resolver import SettingsResolver
 
 
 ALLOWED_MODES = frozenset({"standard", "hq", "proofread", "remove_text"})
@@ -21,14 +22,8 @@ ALLOWED_CONFIG_KEYS = frozenset(
     {
         "mode",
         "executionMode",
-        "sourceLanguage",
-        "targetLanguage",
-        "detector",
-        "ocr",
-        "translation",
-        "inpainting",
-        "render",
         "skipCompleted",
+        "reuseExistingBubbles",
     }
 )
 
@@ -37,6 +32,7 @@ class TranslationJobCommandService:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
+        self.settings = SettingsResolver(engine)
 
     def create_chapter_job(
         self,
@@ -46,12 +42,16 @@ class TranslationJobCommandService:
         page_ids: Sequence[str] | None,
         idempotency_key: str,
     ) -> dict[str, object]:
-        normalized = normalize_translation_config(config)
+        command = normalize_translation_command(config)
         chapter, ordered_pages = self._resolve_chapter_pages(
             chapter_id=chapter_id,
             requested_page_ids=page_ids,
         )
-        mode = str(normalized["mode"])
+        normalized = self.settings.resolve_translation(
+            chapter_id=chapter_id,
+            command=command,
+        )
+        mode = str(command["mode"])
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         spec = JobSpec(
             kind=job_kind,
@@ -61,7 +61,12 @@ class TranslationJobCommandService:
             items=tuple(
                 JobItemSpec(
                     page_id=page_id,
-                    step_kinds=step_kinds_for_mode(mode),
+                    step_kinds=step_kinds_for_mode(
+                        mode,
+                        reuse_existing_bubbles=bool(
+                            command["reuseExistingBubbles"]
+                        ),
+                    ),
                 )
                 for page_id in ordered_pages
             ),
@@ -94,14 +99,18 @@ class TranslationJobCommandService:
     ) -> dict[str, object]:
         if not chapter_ids or len(set(chapter_ids)) != len(chapter_ids):
             raise ValueError("chapterIds must contain unique chapter IDs")
-        normalized = normalize_translation_config(config)
-        mode = str(normalized["mode"])
+        command = normalize_translation_command(config)
+        mode = str(command["mode"])
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         specs: list[JobSpec] = []
         for chapter_id in chapter_ids:
             chapter, ordered_pages = self._resolve_chapter_pages(
                 chapter_id=chapter_id,
                 requested_page_ids=None,
+            )
+            normalized = self.settings.resolve_translation(
+                chapter_id=chapter_id,
+                command=command,
             )
             specs.append(
                 JobSpec(
@@ -112,7 +121,12 @@ class TranslationJobCommandService:
                     items=tuple(
                         JobItemSpec(
                             page_id=page_id,
-                            step_kinds=step_kinds_for_mode(mode),
+                            step_kinds=step_kinds_for_mode(
+                                mode,
+                                reuse_existing_bubbles=bool(
+                                    command["reuseExistingBubbles"]
+                                ),
+                            ),
                         )
                         for page_id in ordered_pages
                     ),
@@ -135,7 +149,7 @@ class TranslationJobCommandService:
             idempotency_key=idempotency_key,
             idempotency_payload={
                 "chapterIds": list(chapter_ids),
-                "config": normalized,
+                "config": command,
             },
         )
 
@@ -179,7 +193,7 @@ class TranslationJobCommandService:
         return chapter, [str(page_id) for page_id in ordered]
 
 
-def normalize_translation_config(config: Mapping[str, Any]) -> dict[str, Any]:
+def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
     unknown = set(config) - ALLOWED_CONFIG_KEYS
     if unknown:
         raise ValueError(
@@ -191,43 +205,21 @@ def normalize_translation_config(config: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unsupported translation mode: {mode}")
     if execution_mode not in ALLOWED_EXECUTION_MODES:
         raise ValueError(f"unsupported execution mode: {execution_mode}")
-    sections = {
-        "detector": _object(config.get("detector")),
-        "ocr": _object(config.get("ocr")),
-        "translation": _object(config.get("translation")),
-        "inpainting": _object(config.get("inpainting")),
-        "render": _object(config.get("render")),
-    }
-    forbidden_secret_keys = {
-        "apiKey",
-        "api_key",
-        "secretKey",
-        "secret_key",
-        "baidu_api_key",
-        "baidu_secret_key",
-        "ai_vision_api_key",
-    }
-    for section_name, section in sections.items():
-        leaked = forbidden_secret_keys & section.keys()
-        if leaked:
-            raise ValueError(
-                f"{section_name} must reference credentialVersionId; "
-                f"plaintext secret fields are forbidden: {', '.join(sorted(leaked))}"
-            )
-    normalized: dict[str, Any] = {
+    return {
         "mode": mode,
         "executionMode": execution_mode,
-        "sourceLanguage": str(config.get("sourceLanguage", "japanese")),
-        "targetLanguage": str(config.get("targetLanguage", "zh")),
-        **sections,
         "skipCompleted": bool(config.get("skipCompleted", False)),
+        "reuseExistingBubbles": bool(config.get("reuseExistingBubbles", False)),
     }
-    return normalized
 
 
-def step_kinds_for_mode(mode: str) -> tuple[str, ...]:
+def step_kinds_for_mode(
+    mode: str,
+    *,
+    reuse_existing_bubbles: bool = False,
+) -> tuple[str, ...]:
     if mode == "standard":
-        return (
+        steps = (
             "detect",
             "ocr",
             "color",
@@ -236,6 +228,7 @@ def step_kinds_for_mode(mode: str) -> tuple[str, ...]:
             "repair",
             "render",
         )
+        return steps[1:] if reuse_existing_bubbles else steps
     if mode == "hq":
         return (
             "detect",
@@ -251,11 +244,3 @@ def step_kinds_for_mode(mode: str) -> tuple[str, ...]:
     if mode == "remove_text":
         return ("detect", "ocr", "repair", "publish_clean")
     raise ValueError(f"unsupported translation mode: {mode}")
-
-
-def _object(value: object) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError("translation config sections must be objects")
-    return dict(value)

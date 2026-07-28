@@ -23,6 +23,7 @@ from src.backend_v2.storage.schema import (
     chapter_write_locks,
     idempotency_records,
     operation_asset_inputs,
+    operation_credential_snapshots,
     operations,
     page_assets,
     pages,
@@ -89,6 +90,36 @@ def _json(value: object) -> str:
 
 def _load_json(value: str | None, default: object) -> object:
     return json.loads(value) if value else default
+
+
+def _credential_version_references(
+    value: Mapping[str, Any],
+) -> dict[str, str]:
+    references: dict[str, str] = {}
+
+    def visit(current: object, path: tuple[str, ...]) -> None:
+        if isinstance(current, Mapping):
+            for key, child in current.items():
+                key_text = str(key)
+                next_path = (*path, key_text)
+                if (
+                    key_text == "credentialVersionId"
+                    and isinstance(child, str)
+                ):
+                    role = ".".join(path) or "default"
+                    if len(role) > 64:
+                        role = hashlib.sha256(
+                            role.encode("utf-8")
+                        ).hexdigest()
+                    references[role] = child
+                else:
+                    visit(child, next_path)
+        elif isinstance(current, (list, tuple)):
+            for index, child in enumerate(current):
+                visit(child, (*path, str(index)))
+
+    visit(value, ())
+    return references
 
 
 class OperationRepository:
@@ -193,6 +224,21 @@ class OperationRepository:
                 page_id=page_id,
                 roles=self._input_roles(kind),
             )
+            credential_refs = _credential_version_references(
+                request_payload
+            )
+            if credential_refs:
+                connection.execute(
+                    insert(operation_credential_snapshots),
+                    [
+                        {
+                            "operation_id": operation_id,
+                            "credential_version_id": version_id,
+                            "role": role,
+                        }
+                        for role, version_id in credential_refs.items()
+                    ],
+                )
             response = {
                 "operationId": operation_id,
                 "kind": kind,

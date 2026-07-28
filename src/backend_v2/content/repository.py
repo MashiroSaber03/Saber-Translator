@@ -1462,36 +1462,9 @@ class ContentRepository:
     ) -> dict[str, object]:
         if limit < 1 or limit > 200:
             raise ValueError("page limit must be between 1 and 200")
-        asset_aliases = {}
-        for role in (
-            "source",
-            "thumbnail_source",
-            "clean",
-            "translated",
-            "thumbnail_translated",
-        ):
-            asset_aliases[role] = page_assets.alias(name=f"pa_{role}")
-
-        statement = select(
-            pages,
-            *[
-                asset_aliases[role].c.asset_id.label(f"{role}_asset_id")
-                for role in asset_aliases
-            ],
-            assets.c.width.label("source_width"),
-            assets.c.height.label("source_height"),
-        ).where(
+        statement = self._page_summary_statement().where(
             pages.c.chapter_id == chapter_id,
             pages.c.ordinal > after_ordinal,
-        )
-        for role, alias in asset_aliases.items():
-            statement = statement.outerjoin(
-                alias,
-                and_(alias.c.page_id == pages.c.id, alias.c.role == role),
-            )
-        statement = statement.outerjoin(
-            assets,
-            assets.c.id == asset_aliases["source"].c.asset_id,
         )
         statement = statement.order_by(pages.c.ordinal)
         if not all_pages:
@@ -1512,6 +1485,15 @@ class ContentRepository:
             "nextCursor": visible[-1]["ordinal"] if has_more and visible else None,
             "pageOrderRevision": chapter_revision,
         }
+
+    def get_page_summary(self, page_id: str) -> dict[str, object]:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                self._page_summary_statement().where(pages.c.id == page_id)
+            ).mappings().one_or_none()
+        if row is None:
+            raise ContentNotFound("page not found")
+        return self._page_summary(row)
 
     def get_page_document(self, page_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:
@@ -1972,6 +1954,37 @@ class ContentRepository:
                 "textAlign",
             }
             & fields.keys()
+        )
+
+    @staticmethod
+    def _page_summary_statement():
+        asset_aliases = {
+            role: page_assets.alias(name=f"pa_{role}")
+            for role in (
+                "source",
+                "thumbnail_source",
+                "clean",
+                "translated",
+                "thumbnail_translated",
+            )
+        }
+        statement = select(
+            pages,
+            *[
+                alias.c.asset_id.label(f"{role}_asset_id")
+                for role, alias in asset_aliases.items()
+            ],
+            assets.c.width.label("source_width"),
+            assets.c.height.label("source_height"),
+        )
+        for role, alias in asset_aliases.items():
+            statement = statement.outerjoin(
+                alias,
+                and_(alias.c.page_id == pages.c.id, alias.c.role == role),
+            )
+        return statement.outerjoin(
+            assets,
+            assets.c.id == asset_aliases["source"].c.asset_id,
         )
 
     @staticmethod

@@ -1,10 +1,7 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import EditThumbnailPanel from '@/components/edit/EditThumbnailPanel.vue'
-import ProductHorizontalScrollStrip from '@/components/product/ProductHorizontalScrollStrip.vue'
 import type { ImageData } from '@/types/image'
 
 const images: ImageData[] = [
@@ -13,17 +10,20 @@ const images: ImageData[] = [
     name: 'page-1.png',
     originalDataURL: 'data:image/png;base64,page1',
     translatedDataURL: '',
+    thumbnailSourceUrl: '/api/v2/assets/page-1-thumb',
   },
   {
     id: 'page-2',
     name: 'page-2.png',
     originalDataURL: 'data:image/png;base64,page2',
     translatedDataURL: 'data:image/png;base64,page2-translated',
+    thumbnailSourceUrl: '/api/v2/assets/page-2-source-thumb',
+    thumbnailTranslatedUrl: '/api/v2/assets/page-2-translated-thumb',
   },
 ]
 
 describe('EditThumbnailPanel', () => {
-  it('renders edit thumbnails through the shared product thumbnail grid', async () => {
+  it('renders only thumbnail assets with lazy asynchronous decoding', async () => {
     const wrapper = mount(EditThumbnailPanel, {
       props: {
         visible: true,
@@ -32,53 +32,46 @@ describe('EditThumbnailPanel', () => {
       },
     })
 
-    const firstThumbnail = wrapper.get('[data-product-thumbnail-id="0"]')
+    const thumbnails = wrapper.findAll('.edit-thumbnails-panel__item')
+    const firstThumbnail = thumbnails[0]
     expect(firstThumbnail.element.tagName).toBe('BUTTON')
     expect(firstThumbnail.attributes('aria-label')).toBe('切换到图片 1')
-    expect(firstThumbnail.attributes('aria-pressed')).toBe('false')
 
-    const activeThumbnail = wrapper.get('[data-product-thumbnail-id="1"]')
-    expect(activeThumbnail.attributes('aria-pressed')).toBe('true')
-    expect(activeThumbnail.classes()).toContain('product-thumbnail-grid__item--selected')
+    const activeThumbnail = thumbnails[1]
+    expect(activeThumbnail.attributes('aria-current')).toBe('page')
+    expect(activeThumbnail.classes()).toContain('edit-thumbnails-panel__item--selected')
+    const renderedImages = wrapper.findAll('img')
+    expect(renderedImages.map(image => image.attributes('src'))).toEqual([
+      '/api/v2/assets/page-1-thumb',
+      '/api/v2/assets/page-2-translated-thumb',
+    ])
+    for (const image of renderedImages) {
+      expect(image.attributes('loading')).toBe('lazy')
+      expect(image.attributes('decoding')).toBe('async')
+      expect(image.attributes('src')).not.toContain('data:image')
+    }
 
     await firstThumbnail.trigger('click')
     expect(wrapper.emitted('switch-to-image')?.[0]).toEqual([0])
   })
 
-  it('keeps only the edit strip shell local while delegating thumbnail items to the product primitive', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/edit/EditThumbnailPanel.vue'),
-      'utf8',
-    )
-
-    expect(source).toContain("import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'")
-    expect(source).toContain('edit-thumbnails-panel__grid')
-    expect(source).not.toContain("import UiButton from '@/components/ui/UiButton.vue'")
-    expect(source).not.toContain('edit-thumbnail-item')
-    expect(source).not.toContain('thumb-index')
-    expect(source).not.toMatch(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/)
-    expect(source).toContain('--edit-thumbnail-panel-background: color-mix')
-  })
-
-  it('delegates horizontal scrolling to the product scroll-strip primitive', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/edit/EditThumbnailPanel.vue'),
-      'utf8',
-    )
-
-    expect(source).toContain("import ProductHorizontalScrollStrip from '@/components/product/ProductHorizontalScrollStrip.vue'")
-    expect(source).not.toContain('class="thumbnails-scroll"')
-    expect(source).not.toContain('::-webkit-scrollbar')
-
+  it('keeps the DOM window bounded for a thousand-page chapter', () => {
+    const manyImages = Array.from({ length: 1_000 }, (_, index): ImageData => ({
+      id: `page-${index}`,
+      name: `page-${index}.png`,
+      originalDataURL: `/api/v2/assets/source-${index}`,
+      translatedDataURL: '',
+      thumbnailSourceUrl: `/api/v2/assets/thumb-${index}`,
+    }))
     const wrapper = mount(EditThumbnailPanel, {
       props: {
         visible: true,
-        images,
+        images: manyImages,
         currentImageIndex: 0,
       },
     })
 
-    const strip = wrapper.getComponent(ProductHorizontalScrollStrip)
-    expect(strip.props('ariaLabel')).toBe('编辑模式缩略图滚动条')
+    expect(wrapper.findAll('.edit-thumbnails-panel__item').length).toBeLessThanOrEqual(32)
+    expect(wrapper.get('.edit-thumbnails-panel__track').attributes('style')).toContain('70000px')
   })
 })

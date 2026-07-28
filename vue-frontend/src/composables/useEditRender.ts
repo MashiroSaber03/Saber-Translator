@@ -1,14 +1,16 @@
 import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { getPageSummary } from '@/api/v2/content'
+import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
+import {
+  queuePageDocumentSave,
+} from '@/services/pageDocumentPersistence'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settings'
-import { executeRender } from '@/composables/translation/core/steps'
-import { buildEditRenderInput } from '@/composables/edit/editRenderRequest'
 
 export interface EditRenderCallbacks {
   onRenderStart?: () => void
-  onRenderSuccess?: (translatedDataURL: string) => void
+  onRenderSuccess?: (translatedUrl: string) => void
   onRenderError?: (error: string) => void
   onRenderEnd?: () => void
 }
@@ -16,20 +18,13 @@ export interface EditRenderCallbacks {
 export function useEditRender(callbacks?: EditRenderCallbacks) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
-  const settingsStore = useSettingsStore()
-
   const { bubbles } = storeToRefs(bubbleStore)
   const { currentImage } = storeToRefs(imageStore)
 
   const isRendering = ref(false)
   const renderError = ref('')
-
   let currentRenderToken: symbol | null = null
   let isOwnerDisposed = false
-
-  function isSameCurrentImage(expectedImageId: string): boolean {
-    return !isOwnerDisposed && currentImage.value?.id === expectedImageId
-  }
 
   if (getCurrentInstance()) {
     onUnmounted(() => {
@@ -39,104 +34,89 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     })
   }
 
-  function getCleanImageBase64(): string | null {
-    const image = currentImage.value
-    if (!image) return null
+  function applyPageSummary(pageId: string, summary: ReturnType<typeof pageSummaryToImage>): void {
+    const index = imageStore.images.findIndex(image => image.id === pageId)
+    if (index < 0) return
+    imageStore.updateImageByIndex(index, {
+      cleanImageData: summary.cleanImageData,
+      documentRevision: summary.documentRevision,
+      originalDataURL: summary.originalDataURL,
+      renderedRevision: summary.renderedRevision,
+      sourceAssetUrl: summary.sourceAssetUrl,
+      sourceRevision: summary.sourceRevision,
+      thumbnailSourceUrl: summary.thumbnailSourceUrl,
+      thumbnailTranslatedUrl: summary.thumbnailTranslatedUrl,
+      translatedAssetUrl: summary.translatedAssetUrl,
+      translatedDataURL: summary.translatedDataURL,
+      translationFailed: summary.translationFailed,
+      translationStatus: summary.translationStatus,
+    })
+  }
 
-    if (image.cleanImageData) {
-      return image.cleanImageData
-    }
-
-    if (image.originalDataURL) {
-      const base64Match = image.originalDataURL.match(/^data:image\/[^;]+;base64,(.+)$/)
-      if (base64Match && base64Match[1]) {
-        return base64Match[1]
+  async function refreshUntilRendered(
+    pageId: string,
+    token: symbol,
+  ): Promise<string | null> {
+    const deadline = Date.now() + 30_000
+    while (!isOwnerDisposed && currentRenderToken === token) {
+      const page = await getPageSummary(pageId)
+      applyPageSummary(pageId, pageSummaryToImage(page))
+      if (
+        page.renderedRevision === page.documentRevision
+        && page.renderStatus === 'ready'
+      ) {
+        return page.translatedUrl ?? null
       }
+      if (page.renderStatus === 'render_failed') {
+        throw new Error('后端渲染失败')
+      }
+      if (
+        page.renderStatus === 'not_rendered'
+        && !bubbles.value.some(bubble => bubble.translatedText?.trim())
+      ) {
+        return page.translatedUrl ?? null
+      }
+      if (Date.now() >= deadline) {
+        throw new Error('后端渲染仍在继续，可稍后刷新查看结果')
+      }
+      await new Promise(resolve => setTimeout(resolve, 300))
     }
-
     return null
   }
 
   async function reRenderFullImage(silentMode = false): Promise<boolean> {
     const image = currentImage.value
-    if (!image) {
+    if (
+      !image
+      || !image.chapterId
+      || image.documentRevision === undefined
+    ) {
       return false
     }
-    const expectedImageId = image.id
-
-    if (bubbles.value.length === 0) {
-      // 无气泡时仍展示当前干净背景图，保证笔刷处理结果可见。
-      const cleanBase64 = getCleanImageBase64()
-      if (cleanBase64) {
-        if (!isSameCurrentImage(expectedImageId)) {
-          return false
-        }
-        const translatedDataURL = `data:image/png;base64,${cleanBase64}`
-        imageStore.updateCurrentImage({ translatedDataURL })
-        if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
-      }
-      return true
-    }
-
-    const cleanBase64 = getCleanImageBase64()
-
-    if (!cleanBase64) {
-      renderError.value = '缺少图像数据'
-      if (!silentMode) callbacks?.onRenderError?.('缺少图像数据')
-      return false
-    }
-
-    const renderToken = Symbol('render')
-    currentRenderToken = renderToken
-
+    const token = Symbol('backend-render')
+    currentRenderToken = token
     isRendering.value = true
     renderError.value = ''
     if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
-      const bubbleStates = bubbles.value
-      const response = await executeRender(buildEditRenderInput({
-        imageIndex: imageStore.currentImageIndex,
-        cleanImage: cleanBase64,
-        bubbleStates,
-        settings: settingsStore.settings,
-      }))
-
-      if (currentRenderToken !== renderToken) {
-        return false
-      }
-
-      if (!isSameCurrentImage(expectedImageId)) {
-        return false
-      }
-
-      if (response.finalImage) {
-        const translatedDataURL = `data:image/png;base64,${response.finalImage}`
-        imageStore.updateCurrentImage({
-          translatedDataURL,
-          bubbleStates: response.bubbleStates,
-          hasUnsavedChanges: true,
-        })
-
-        if (!silentMode) callbacks?.onRenderSuccess?.(translatedDataURL)
-        return true
-      } else {
-        const errorMsg = '渲染失败'
-        renderError.value = errorMsg
-        if (!silentMode) callbacks?.onRenderError?.(errorMsg)
-        return false
-      }
+      await queuePageDocumentSave(
+        image.id,
+        image.documentRevision,
+        bubbles.value,
+      )
+      const url = await refreshUntilRendered(image.id, token)
+      if (currentRenderToken !== token || isOwnerDisposed) return false
+      if (!silentMode) callbacks?.onRenderSuccess?.(url ?? image.originalDataURL)
+      return true
     } catch (error) {
-      if (currentRenderToken !== renderToken) {
-        return false
-      }
-
-      const errorMsg = error instanceof Error ? error.message : '渲染请求失败'
-      renderError.value = errorMsg
-      if (!silentMode) callbacks?.onRenderError?.(errorMsg)
+      if (currentRenderToken !== token || isOwnerDisposed) return false
+      const message = error instanceof Error ? error.message : '后端渲染请求失败'
+      renderError.value = message
+      if (!silentMode) callbacks?.onRenderError?.(message)
       return false
     } finally {
-      if (currentRenderToken === renderToken) {
+      if (currentRenderToken === token) {
         isRendering.value = false
         if (!silentMode) callbacks?.onRenderEnd?.()
       }
@@ -152,6 +132,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     isRendering,
     renderError,
     reRenderFullImage,
-    cancelRender
+    cancelRender,
   }
 }

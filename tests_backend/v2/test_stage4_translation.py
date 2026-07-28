@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
 from pathlib import Path
 from typing import Any, Mapping
 import uuid
@@ -12,11 +13,21 @@ from sqlalchemy import select
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.storage.platform_repositories import (
+    CredentialEdit,
+    ProviderSettingMutation,
+    SettingMutation,
+    SettingsRepository,
+)
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
     bubbles,
+    job_config_snapshots,
+    job_credential_snapshots,
+    job_items,
+    job_steps,
     metadata,
     page_assets,
     pages,
@@ -24,7 +35,7 @@ from src.backend_v2.storage.schema import (
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.translation.commands import (
     TranslationJobCommandService,
-    normalize_translation_config,
+    normalize_translation_command,
 )
 from src.backend_v2.translation.pipeline import TranslationPipelineService
 
@@ -184,9 +195,9 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     }.issubset(roles)
 
 
-def test_translation_snapshot_rejects_plaintext_secrets() -> None:
-    with pytest.raises(ValueError, match="credentialVersionId"):
-        normalize_translation_config(
+def test_translation_command_rejects_browser_supplied_provider_config() -> None:
+    with pytest.raises(ValueError, match="unknown translation config fields"):
+        normalize_translation_command(
             {
                 "translation": {
                     "provider": "openai",
@@ -194,3 +205,97 @@ def test_translation_snapshot_rejects_plaintext_secrets() -> None:
                 }
             }
         )
+
+
+def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    settings = SettingsRepository(platform["engine"])
+    settings.save_transaction(
+        settings=(
+            SettingMutation(
+                domain="translation",
+                payload={
+                    "settingsSchemaVersion": 3,
+                    "sourceLanguage": "japanese",
+                    "targetLanguage": "zh",
+                    "translation": {
+                        "provider": "custom",
+                        "translationMode": "batch",
+                        "batchNormalPrompt": "backend prompt",
+                        "batchJsonPrompt": "backend json prompt",
+                        "singleNormalPrompt": "single",
+                        "singleJsonPrompt": "single json",
+                        "openaiOptions": {
+                            "request": {"forceJsonOutput": False},
+                            "execution": {},
+                        },
+                    },
+                },
+                base_revision=1,
+                schema_version=3,
+            ),
+        ),
+        credentials_edits=(
+            CredentialEdit(
+                domain="translation",
+                provider="custom",
+                secret={"api_key": "backend-only-secret"},
+                base_revision=0,
+                client_ref="translation",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="custom",
+                payload={
+                    "modelName": "backend-model",
+                    "customBaseUrl": "https://backend.example/v1",
+                },
+                base_revision=0,
+                credential_edit_ref="translation",
+            ),
+        ),
+    )
+    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={
+            "mode": "standard",
+            "executionMode": "sequential",
+            "reuseExistingBubbles": True,
+        },
+        page_ids=[platform["page_id"]],
+        idempotency_key="manual-bubbles",
+    )
+    job_id = str(accepted["jobIds"][0])
+    with platform["engine"].connect() as connection:
+        frozen = json.loads(
+            connection.execute(
+                select(job_config_snapshots.c.payload_json).where(
+                    job_config_snapshots.c.job_id == job_id
+                )
+            ).scalar_one()
+        )
+        steps = list(
+            connection.execute(
+                select(job_steps.c.kind)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(job_items.c.job_id == job_id)
+                .order_by(job_steps.c.ordinal)
+            ).scalars()
+        )
+        credential_count = len(
+            connection.execute(
+                select(job_credential_snapshots.c.credential_version_id).where(
+                    job_credential_snapshots.c.job_id == job_id
+                )
+            ).scalars().all()
+        )
+    assert frozen["translation"]["model_name"] == "backend-model"
+    assert frozen["translation"]["prompt_content"] == "backend prompt"
+    assert "backend-only-secret" not in json.dumps(frozen)
+    assert steps[0] == "ocr"
+    assert "detect" not in steps
+    assert credential_count == 1
