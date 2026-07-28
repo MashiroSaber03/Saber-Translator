@@ -17,6 +17,7 @@ import { triggerBlobDownload } from '@/utils/browserDownload'
 const insightStore = useInsightStore()
 
 const pageAnalysis = ref<PageAnalysisData | null>(null)
+const loadedImageUrl = ref('')
 const isLoading = ref(false)
 const isReanalyzing = ref(false)
 const pendingReanalyzePage = ref<number | null>(null)
@@ -40,35 +41,12 @@ const hasNextPage = computed(() => {
 
 const pageImageUrl = computed(() => {
   if (!insightStore.currentBookId || !selectedPageNum.value) return ''
-  return insightApi.getPageImageUrl(insightStore.currentBookId, selectedPageNum.value)
-})
-
-const dialogues = computed(() => {
-  if (!pageAnalysis.value?.panels) return []
-  const result: Array<{ speaker: string; text: string; originalText?: string }> = []
-  for (const panel of pageAnalysis.value.panels) {
-    if (panel.dialogues) {
-      for (const d of panel.dialogues) {
-        const text = d.translated_text || d.text
-        if (text) {
-          result.push({
-            speaker: d.speaker_name || d.character || '未知',
-            text: text,
-            originalText: d.text !== d.translated_text ? d.text : undefined
-          })
-        }
-      }
-    }
-  }
-  return result
+  return loadedImageUrl.value
 })
 
 const isPageAnalyzed = computed(() => {
   return pageAnalysis.value?.analyzed === true || !!pageAnalysis.value?.page_summary
 })
-
-const sceneDescription = computed(() => pageAnalysis.value?.scene || '')
-const moodDescription = computed(() => pageAnalysis.value?.mood || '')
 
 const isReanalyzeTaskRunning = computed(() => {
   return (
@@ -100,6 +78,7 @@ async function loadPageDetail(): Promise<void> {
 
     if (response.success) {
       pageAnalysis.value = response.analysis ?? response.page ?? null
+      loadedImageUrl.value = response.source_url ?? ''
     } else {
       pageAnalysis.value = null
       if (response.error) {
@@ -109,6 +88,7 @@ async function loadPageDetail(): Promise<void> {
   } catch (error) {
     if (!isCurrentPageDetailRequest(requestId, bookId, pageNum)) return
     pageAnalysis.value = null
+    loadedImageUrl.value = ''
     errorMessage.value = error instanceof Error ? error.message : '加载失败'
   } finally {
     if (isCurrentPageDetailRequest(requestId, bookId, pageNum)) {
@@ -217,30 +197,10 @@ async function exportPageData(): Promise<void> {
   isExporting.value = true
 
   try {
-    let markdown = `# 第 ${selectedPageNum.value} 页分析数据\n\n`
-
-    if (pageAnalysis.value.page_summary) {
-      markdown += `## 页面摘要\n\n${pageAnalysis.value.page_summary}\n\n`
-    }
-
-    if (pageAnalysis.value.scene) {
-      markdown += `## 场景\n\n${pageAnalysis.value.scene}\n\n`
-    }
-    if (pageAnalysis.value.mood) {
-      markdown += `## 氛围\n\n${pageAnalysis.value.mood}\n\n`
-    }
-
-    if (dialogues.value.length > 0) {
-      markdown += `## 对话内容\n\n`
-      for (const d of dialogues.value) {
-        markdown += `**${d.speaker}**: ${d.text}\n\n`
-        if (d.originalText) {
-          markdown += `> 原文: ${d.originalText}\n\n`
-        }
-      }
-    }
-
-    const blob = new Blob([markdown], { type: 'text/markdown' })
+    const blob = await insightApi.downloadPageAnalysis(
+      insightStore.currentBookId,
+      selectedPageNum.value,
+    )
     triggerBlobDownload(blob, `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`)
 
   } catch {
@@ -251,6 +211,7 @@ async function exportPageData(): Promise<void> {
 }
 
 watch(selectedPageNum, () => {
+  loadedImageUrl.value = ''
   loadPageDetail()
 }, { immediate: true })
 
@@ -394,45 +355,42 @@ onUnmounted(() => {
           点击下方按钮开始分析。
         </ProductStatusBanner>
 
-        <div v-if="sceneDescription || moodDescription" class="page-detail-panel__scene-mood">
-          <div v-if="sceneDescription" class="page-detail-panel__info-item">
-            <span class="page-detail-panel__info-label">场景：</span>
-            <span class="page-detail-panel__info-value">{{ sceneDescription }}</span>
-          </div>
-          <div v-if="moodDescription" class="page-detail-panel__info-item">
-            <span class="page-detail-panel__info-label">氛围：</span>
-            <span class="page-detail-panel__info-value">{{ moodDescription }}</span>
-          </div>
-        </div>
-
-        <div v-if="dialogues.length > 0" class="page-detail-panel__dialogues">
+        <div v-if="pageAnalysis?.key_events?.length" class="page-detail-panel__dialogues">
           <h5 class="page-detail-panel__dialogues-title">
-            <UiIcon name="message" />
-            <span>对话内容 ({{ dialogues.length }})</span>
+            <UiIcon name="sparkles" />
+            <span>关键事件 ({{ pageAnalysis.key_events.length }})</span>
           </h5>
           <div
-            v-for="(dialogue, index) in dialogues"
+            v-for="(event, index) in pageAnalysis.key_events"
             :key="index"
             class="page-detail-panel__dialogue-item"
           >
-            <div class="page-detail-panel__dialogue-speaker">
-              {{ dialogue.speaker }}
-            </div>
-            <div class="page-detail-panel__dialogue-text">{{ dialogue.text }}</div>
-            <div v-if="dialogue.originalText" class="page-detail-panel__dialogue-original">
-              <span class="page-detail-panel__original-label">原文：</span>{{ dialogue.originalText }}
-            </div>
+            <div class="page-detail-panel__dialogue-speaker">{{ event.importance }}</div>
+            <div class="page-detail-panel__dialogue-text">{{ event.summary }}</div>
           </div>
         </div>
+
         <ProductStatusBanner
-          v-else-if="isPageAnalyzed"
+          v-if="pageAnalysis?.continuity_notes"
           class="page-detail-panel__dialogue-feedback"
-          icon-name="message"
+          icon-name="link"
           role="note"
-          title="此页没有检测到对话内容"
+          title="连续性说明"
           tone="neutral"
         >
-          此页已完成分析，但没有识别到可展示的对话。
+          {{ pageAnalysis.continuity_notes }}
+        </ProductStatusBanner>
+
+        <ProductStatusBanner
+          v-for="warning in pageAnalysis?.warnings || []"
+          :key="warning.code + warning.message"
+          class="page-detail-panel__dialogue-feedback"
+          icon-name="alert-triangle"
+          role="note"
+          :title="warning.code"
+          tone="warning"
+        >
+          {{ warning.message }}
         </ProductStatusBanner>
 
         <div class="page-detail-panel__actions">

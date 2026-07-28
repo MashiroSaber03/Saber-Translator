@@ -480,7 +480,7 @@ describe('settings provider select contracts', () => {
 
     const wrapper = mount(HqTranslationSettings, globalMountOptions(pinia))
     wrapper.getComponent(UiModelPicker).vm.$emit('fetch')
-    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'hq')
 
     const providerSelect = findSelectByOptionValues(wrapper, ['siliconflow', 'deepseek'])
     expect(providerSelect).toBeTruthy()
@@ -506,7 +506,7 @@ describe('settings provider select contracts', () => {
 
     const wrapper = mount(OcrSettings, globalMountOptions(pinia))
     wrapper.getComponent(UiModelPicker).vm.$emit('fetch')
-    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'ai_vision_ocr')
 
     const providerSelect = findSelectByOptionValues(wrapper, ['siliconflow', 'gemini'])
     expect(providerSelect).toBeTruthy()
@@ -550,7 +550,7 @@ describe('settings provider select contracts', () => {
 
     const wrapper = mount(ProofreadingSettings, globalMountOptions(pinia))
     wrapper.getComponent(UiModelPicker).vm.$emit('fetch')
-    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'proofreading_0')
 
     const providerSelect = findSelectByOptionValues(wrapper, ['siliconflow', 'deepseek'])
     expect(providerSelect).toBeTruthy()

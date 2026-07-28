@@ -164,23 +164,15 @@ export function useInsightConfigManager(
   providerConfigs: Ref<ProviderConfigsCache>
 ) {
   function saveToStorage(): void {
-    const payload: ProviderConfigsStoragePayload = {
-      insightProviderConfigSchemaVersion: INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION,
-      ...providerConfigs.value,
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // Backend settings are authoritative; legacy cleanup is best-effort.
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }
 
   function loadFromStorage(): void {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      try {
-        const parsed = parseProviderConfigsStorage(JSON.parse(stored) as unknown)
-        if (parsed) providerConfigs.value = parsed
-      } catch {
-        return
-      }
-    }
+    saveToStorage()
   }
 
   function createProviderManager<T extends ProviderFieldMap>(

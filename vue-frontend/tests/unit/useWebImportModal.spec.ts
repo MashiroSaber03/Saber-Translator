@@ -4,23 +4,50 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick } from 'vue'
 
 import { useWebImportModal } from '@/components/translate/useWebImportModal'
-import { useImageStore } from '@/stores/imageStore'
 import { useWebImportStore } from '@/stores/webImportStore'
 
-const { checkGalleryDLSupportMock, fetchModelsMock, getGalleryDLImagesMock, showToastMock } = vi.hoisted(() => ({
-  checkGalleryDLSupportMock: vi.fn(),
+const {
+  checkWebImportSupportMock,
+  commitWebImportDraftMock,
+  createWebImportDraftMock,
+  fetchModelsMock,
+  getTranslationBootstrapMock,
+  getWebImportDraftMock,
+  listAllWebImportDraftPagesMock,
+  showToastMock,
+  updateWebImportSelectionMock,
+} = vi.hoisted(() => ({
+  checkWebImportSupportMock: vi.fn(),
+  commitWebImportDraftMock: vi.fn(),
+  createWebImportDraftMock: vi.fn(),
   fetchModelsMock: vi.fn(),
-  getGalleryDLImagesMock: vi.fn(),
+  getTranslationBootstrapMock: vi.fn(),
+  getWebImportDraftMock: vi.fn(),
+  listAllWebImportDraftPagesMock: vi.fn(),
   showToastMock: vi.fn(),
+  updateWebImportSelectionMock: vi.fn(),
 }))
 
 vi.mock('@/api/webImport', () => ({
-  checkGalleryDLSupport: checkGalleryDLSupportMock,
-  downloadImages: vi.fn(),
-  extractImages: vi.fn(),
-  getGalleryDLImages: getGalleryDLImagesMock,
   testAgentConnection: vi.fn(),
   testFirecrawlConnection: vi.fn(),
+}))
+
+vi.mock('@/api/v2/webImport', () => ({
+  checkWebImportSupport: checkWebImportSupportMock,
+  commitWebImportDraft: commitWebImportDraftMock,
+  createWebImportDraft: createWebImportDraftMock,
+  getWebImportDraft: getWebImportDraftMock,
+  listAllWebImportDraftPages: listAllWebImportDraftPagesMock,
+  updateWebImportSelection: updateWebImportSelectionMock,
+}))
+
+vi.mock('@/api/v2/content', () => ({
+  getTranslationBootstrap: getTranslationBootstrapMock,
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
 }))
 
 vi.mock('@/api/config', () => ({
@@ -40,10 +67,18 @@ describe('useWebImportModal', () => {
     vi.useFakeTimers()
     setActivePinia(createPinia())
     localStorage.clear()
-    checkGalleryDLSupportMock.mockReset()
-    checkGalleryDLSupportMock.mockResolvedValue({ available: true, supported: true })
+    checkWebImportSupportMock.mockReset()
+    checkWebImportSupportMock.mockResolvedValue({
+      galleryDlAvailable: true,
+      galleryDlSupported: true,
+    })
+    commitWebImportDraftMock.mockReset()
+    createWebImportDraftMock.mockReset()
+    getTranslationBootstrapMock.mockReset()
+    getWebImportDraftMock.mockReset()
+    listAllWebImportDraftPagesMock.mockReset()
+    updateWebImportSelectionMock.mockReset()
     fetchModelsMock.mockReset()
-    getGalleryDLImagesMock.mockReset()
     showToastMock.mockReset()
   })
 
@@ -60,7 +95,7 @@ describe('useWebImportModal', () => {
     exposed.wrapper.unmount()
     await vi.advanceTimersByTimeAsync(600)
 
-    expect(checkGalleryDLSupportMock).not.toHaveBeenCalled()
+    expect(checkWebImportSupportMock).not.toHaveBeenCalled()
   })
 
   it('clears pending input focus work when the owner unmounts', async () => {
@@ -93,9 +128,9 @@ describe('useWebImportModal', () => {
   })
 
   it('ignores stale URL support responses after the source URL changes', async () => {
-    const firstSupport = deferred<{ available: boolean; supported: boolean }>()
-    const secondSupport = deferred<{ available: boolean; supported: boolean }>()
-    checkGalleryDLSupportMock
+    const firstSupport = deferred<{ galleryDlAvailable: boolean; galleryDlSupported: boolean }>()
+    const secondSupport = deferred<{ galleryDlAvailable: boolean; galleryDlSupported: boolean }>()
+    checkWebImportSupportMock
       .mockReturnValueOnce(firstSupport.promise)
       .mockReturnValueOnce(secondSupport.promise)
     const exposed = mountComposableHost()
@@ -108,12 +143,12 @@ describe('useWebImportModal', () => {
     await nextTick()
     await vi.advanceTimersByTimeAsync(500)
 
-    secondSupport.resolve({ available: true, supported: true })
+    secondSupport.resolve({ galleryDlAvailable: true, galleryDlSupported: true })
     await flushPromises()
     expect(exposed.api.galleryDLAvailable.value).toBe(true)
     expect(exposed.api.galleryDLSupported.value).toBe(true)
 
-    firstSupport.resolve({ available: false, supported: false })
+    firstSupport.resolve({ galleryDlAvailable: false, galleryDlSupported: false })
     await flushPromises()
 
     expect(exposed.api.galleryDLAvailable.value).toBe(true)
@@ -142,45 +177,51 @@ describe('useWebImportModal', () => {
     expect(showToastMock).not.toHaveBeenCalledWith('获取到 1 个模型', 'success')
   })
 
-  it('imports the selected gallery-dl page numbers instead of the first downloaded images', async () => {
+  it('commits the selected backend draft page ids without loading image payloads', async () => {
     const exposed = mountComposableHost()
-    const imageStore = useImageStore()
     const webImportStore = useWebImportStore()
-    webImportStore.setExtractResult({
-      success: true,
-      comicTitle: 'Chapter',
-      chapterTitle: 'Episode',
-      sourceUrl: 'https://example.com/chapter',
-      totalPages: 4,
-      engine: 'gallery-dl',
-      pages: [
-        { pageNumber: 1, imageUrl: '/api/web-import/static/temp/gallery_dl/001.webp' },
-        { pageNumber: 2, imageUrl: '/api/web-import/static/temp/gallery_dl/002.webp' },
-        { pageNumber: 3, imageUrl: '/api/web-import/static/temp/gallery_dl/003.webp' },
-        { pageNumber: 4, imageUrl: '/api/web-import/static/temp/gallery_dl/004.webp' },
-      ],
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
     })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-1',
+      status: 'queued',
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+    })
+    getWebImportDraftMock.mockResolvedValue({
+      id: 'draft-1',
+      sourceUrl: 'https://example.com/chapter',
+      status: 'ready',
+      revision: 2,
+      candidateCount: 4,
+      failedCount: 0,
+      actualEngine: 'gallery-dl',
+    })
+    listAllWebImportDraftPagesMock.mockResolvedValue([
+      { id: 'page-1', error: null, thumbnailUrl: '/thumb/1', sourceMediaUrl: '/media/1' },
+      { id: 'page-2', error: null, thumbnailUrl: '/thumb/2', sourceMediaUrl: '/media/2' },
+      { id: 'page-3', error: null, thumbnailUrl: '/thumb/3', sourceMediaUrl: '/media/3' },
+      { id: 'page-4', error: null, thumbnailUrl: '/thumb/4', sourceMediaUrl: '/media/4' },
+    ])
+    updateWebImportSelectionMock.mockResolvedValue({ revision: 3 })
+    commitWebImportDraftMock.mockResolvedValue({
+      status: 'queued',
+      batchId: 'batch-2',
+      jobIds: ['job-2'],
+    })
+
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await exposed.api.handleExtract()
     webImportStore.togglePageSelection(1)
     webImportStore.togglePageSelection(3)
-    getGalleryDLImagesMock.mockResolvedValue({
-      success: true,
-      total: 4,
-      images: [
-        { filename: '001.webp', data: 'data:image/webp;base64,page1' },
-        { filename: '002.webp', data: 'data:image/webp;base64,page2' },
-        { filename: '003.webp', data: 'data:image/webp;base64,page3' },
-        { filename: '004.webp', data: 'data:image/webp;base64,page4' },
-      ],
-    })
 
     await exposed.api.handleImport()
 
-    expect(imageStore.images.map((image) => image.fileName)).toEqual(['002.webp', '004.webp'])
-    expect(imageStore.images.map((image) => image.originalDataURL)).toEqual([
-      'data:image/webp;base64,page2',
-      'data:image/webp;base64,page4',
-    ])
-    expect(showToastMock).toHaveBeenCalledWith('成功导入 2 张图片', 'success')
+    expect(updateWebImportSelectionMock).toHaveBeenCalledWith('draft-1', 2, ['page-2', 'page-4'])
+    expect(commitWebImportDraftMock).toHaveBeenCalledWith('draft-1', 3)
+    expect(showToastMock).toHaveBeenCalledWith('入库任务已进入后端任务中心，可安全关闭页面', 'success')
   })
 
   it('keeps store and internal workflow helpers private to the modal owner', () => {

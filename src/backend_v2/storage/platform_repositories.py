@@ -652,6 +652,51 @@ class SettingsRepository:
             ).scalar_one()
         return _require_object(json.loads(value), "stored credential secret")
 
+    def resolve_current_secret(self, credential_id: str) -> dict[str, Any]:
+        with self.engine.connect() as connection:
+            value = connection.execute(
+                select(credential_versions.c.secret_json)
+                .join(
+                    credential_current_versions,
+                    credential_current_versions.c.credential_version_id
+                    == credential_versions.c.id,
+                )
+                .where(
+                    credential_current_versions.c.credential_id
+                    == credential_id
+                )
+            ).scalar_one_or_none()
+        if value is None:
+            raise LookupError("credential not found")
+        return _require_object(json.loads(value), "stored credential secret")
+
+    def resolve_provider_secret(
+        self,
+        *,
+        domain: str,
+        provider: str,
+    ) -> dict[str, Any]:
+        with self.engine.connect() as connection:
+            value = connection.execute(
+                select(credential_versions.c.secret_json)
+                .select_from(
+                    provider_settings.join(
+                        credential_versions,
+                        credential_versions.c.id
+                        == provider_settings.c.credential_version_id,
+                    )
+                )
+                .where(
+                    provider_settings.c.domain == domain,
+                    provider_settings.c.provider == provider,
+                )
+            ).scalar_one_or_none()
+        if value is None:
+            raise LookupError(
+                f"no stored credential for {domain}/{provider}"
+            )
+        return _require_object(json.loads(value), "stored credential secret")
+
     def delete_credential(self, credential_id: str) -> None:
         try:
             with immediate_transaction(self.engine) as connection:

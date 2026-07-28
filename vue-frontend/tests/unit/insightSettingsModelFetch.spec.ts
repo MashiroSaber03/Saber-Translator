@@ -21,12 +21,14 @@ import UiPasswordField from '@/components/ui/UiPasswordField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
 
-const { fetchModelsMock } = vi.hoisted(() => ({
+const { fetchModelsMock, hasInsightCredentialMock } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
+  hasInsightCredentialMock: vi.fn(() => false),
 }))
 
 vi.mock('@/api/insight', () => ({
   fetchModels: fetchModelsMock,
+  hasInsightCredential: hasInsightCredentialMock,
   testVlmConnection: vi.fn(),
   testLlmConnection: vi.fn(),
   testEmbeddingConnection: vi.fn(),
@@ -51,6 +53,7 @@ type SettingsFetchCase = {
   name: string
   component: Component
   switchProvider: string
+  domain: 'insight_chat' | 'insight_embedding' | 'insight_reranker' | 'insight_vlm'
   configureStore: (store: ReturnType<typeof useInsightStore>) => void
   expectedInitialProvider: string
   expectedCredentialId: string
@@ -71,6 +74,7 @@ const settingsFetchCases: SettingsFetchCase[] = [
     name: 'VLM',
     component: VlmSettingsTab,
     switchProvider: 'ollama',
+    domain: 'insight_vlm',
     expectedInitialProvider: 'gemini',
     expectedCredentialId: 'insight-vlm-api-key',
     expectedProviderInputId: 'insight-vlm-provider',
@@ -97,6 +101,7 @@ const settingsFetchCases: SettingsFetchCase[] = [
     name: 'LLM',
     component: LlmSettingsTab,
     switchProvider: 'ollama',
+    domain: 'insight_chat',
     expectedInitialProvider: 'gemini',
     expectedCredentialId: 'insight-llm-api-key',
     expectedProviderInputId: 'insight-llm-provider',
@@ -121,6 +126,7 @@ const settingsFetchCases: SettingsFetchCase[] = [
     name: 'Embedding',
     component: EmbeddingSettingsTab,
     switchProvider: 'ollama',
+    domain: 'insight_embedding',
     expectedInitialProvider: 'openai',
     expectedCredentialId: 'insight-embedding-api-key',
     expectedProviderInputId: 'insight-embedding-provider',
@@ -146,6 +152,7 @@ const settingsFetchCases: SettingsFetchCase[] = [
     name: 'Reranker',
     component: RerankerSettingsTab,
     switchProvider: 'jina',
+    domain: 'insight_reranker',
     expectedInitialProvider: 'qwen',
     expectedCredentialId: 'reranker-api-key',
     expectedProviderInputId: 'reranker-provider',
@@ -214,7 +221,12 @@ describe('Insight settings model fetch ownership', () => {
 
     wrapper.getComponent(UiModelPicker).vm.$emit('fetch')
     await flushPromises()
-    expect(fetchModelsMock).toHaveBeenCalledWith(testCase.expectedInitialProvider, 'model-key', undefined)
+    expect(fetchModelsMock).toHaveBeenCalledWith(
+      testCase.expectedInitialProvider,
+      'model-key',
+      undefined,
+      testCase.domain,
+    )
 
     const providerSelect = wrapper.findComponent(UiSelect)
     providerSelect.vm.$emit('update:modelValue', testCase.switchProvider)

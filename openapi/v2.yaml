@@ -9,6 +9,7 @@ servers:
   - url: /api/v2
 tags:
   - name: system
+  - name: settings
   - name: content
   - name: pages
   - name: operations
@@ -28,6 +29,373 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /system/server-info:
+    get:
+      tags: [system]
+      operationId: getServerInfo
+      responses:
+        "200":
+          description: LAN address advertised by the single local API instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfo"
+  /settings:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      parameters:
+        - name: domains
+          in: query
+          schema: {type: string}
+        - name: book_id
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Backend-authoritative settings and credential summaries.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingsDocument"}
+  /provider-settings:
+    get:
+      tags: [settings]
+      operationId: getProviderSettings
+      parameters:
+        - name: domains
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: Provider configuration memories without secrets.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/ProviderSettingEntry"}
+  /credentials:
+    get:
+      tags: [settings]
+      operationId: listCredentials
+      responses:
+        "200":
+          description: Secret-free credential summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/CredentialSummary"}
+  /credentials/{credential_id}:
+    delete:
+      tags: [settings]
+      operationId: deleteCredential
+      parameters:
+        - name: credential_id
+          in: path
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Credential deleted when no history references it.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResponse"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /settings/transactions:
+    put:
+      tags: [settings]
+      operationId: saveSettingsTransaction
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SettingsTransaction"}
+      responses:
+        "200":
+          description: All settings, provider memories, and credentials committed atomically.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingsTransactionResult"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /settings/workflow-preferences:
+    patch:
+      tags: [settings]
+      operationId: updateWorkflowPreferences
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [payload, baseRevision]
+              properties:
+                payload: {type: object, additionalProperties: true}
+                baseRevision: {type: integer, minimum: 0}
+      responses:
+        "200":
+          description: Workflow preference setting after revision CAS.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingEntry"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /prompts:
+    get:
+      tags: [settings]
+      operationId: listPrompts
+      parameters:
+        - name: type
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: Unified prompt library.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PromptList"}
+    post:
+      tags: [settings]
+      operationId: createPrompt
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, name, content]
+              properties:
+                type: {type: string}
+                name: {type: string, minLength: 1}
+                content: {type: string}
+      responses:
+        "201":
+          description: Prompt created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PromptResource"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /prompts/{prompt_id}:
+    put:
+      tags: [settings]
+      operationId: updatePrompt
+      parameters:
+        - $ref: "#/components/parameters/PromptId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, content, baseRevision]
+              properties:
+                name: {type: string, minLength: 1}
+                content: {type: string}
+                baseRevision: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Prompt updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PromptResource"}
+        "409": {$ref: "#/components/responses/Conflict"}
+    delete:
+      tags: [settings]
+      operationId: deletePrompt
+      parameters:
+        - $ref: "#/components/parameters/PromptId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Non-factory prompt deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResponse"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /prompts/{prompt_id}/reset:
+    post:
+      tags: [settings]
+      operationId: resetPrompt
+      parameters:
+        - $ref: "#/components/parameters/PromptId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseRevision]
+              properties:
+                baseRevision: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Factory prompt reset.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PromptResource"}
+  /model-catalog:
+    post:
+      tags: [settings]
+      operationId: fetchModelCatalog
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProviderDiagnosticRequest"}
+      responses:
+        "200":
+          description: Provider model catalog; result is not persisted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ModelCatalogResponse"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /connection-tests/{kind}:
+    post:
+      tags: [settings]
+      operationId: runConnectionTest
+      x-command-mode: transient
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - ollama
+              - sakura
+              - lama_repair
+              - baidu_ocr
+              - ai_vision_ocr
+              - baidu_translate
+              - youdao_translate
+              - ai_translate
+              - firecrawl
+              - web_import_agent
+              - vlm
+              - llm
+              - embedding
+              - reranker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProviderDiagnosticRequest"}
+      responses:
+        "200":
+          description: Transient connection result.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ConnectionTestResponse"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /fonts:
+    get:
+      tags: [settings]
+      operationId: listFonts
+      responses:
+        "200":
+          description: Built-in and uploaded backend fonts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/FontList"}
+    post:
+      tags: [settings]
+      operationId: uploadFont
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+                displayName: {type: string}
+      responses:
+        "201":
+          description: Immutable font asset registered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, assetUrl]
+                properties:
+                  id: {$ref: "#/components/schemas/Uuid"}
+                  assetUrl: {type: string}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /fonts/{font_id}:
+    delete:
+      tags: [settings]
+      operationId: deleteFont
+      parameters:
+        - name: font_id
+          in: path
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Unreferenced uploaded font deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResponse"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /maintenance/clean-temp:
+    post:
+      tags: [settings]
+      operationId: cleanTemporaryAssets
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Asset journal recovery result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recovered]
+                properties:
+                  recovered: {type: integer, minimum: 0}
+  /maintenance/clean-debug:
+    post:
+      tags: [settings]
+      operationId: cleanDebugAssets
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Debug asset cleanup result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed]
+                properties:
+                  removed: {type: integer, minimum: 0}
   /pages/{page_id}/document/batch:
     patch:
       tags: [pages]
@@ -1468,6 +1836,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    PromptId:
+      name: prompt_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
     PluginId:
       name: plugin_id
       in: path
@@ -1558,6 +1932,235 @@ components:
         dataRootFingerprint:
           type: string
           pattern: "^[a-f0-9]{16}$"
+    ServerInfo:
+      type: object
+      additionalProperties: false
+      required: [hostname, host, port, lanUrl]
+      properties:
+        hostname: {type: string}
+        host: {type: string}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        lanUrl: {type: string, format: uri}
+    SettingEntry:
+      type: object
+      additionalProperties: false
+      required: [domain, payload, revision, schemaVersion]
+      properties:
+        domain: {type: string}
+        payload: {type: object, additionalProperties: true}
+        revision: {type: integer, minimum: 1}
+        schemaVersion: {type: integer, minimum: 1}
+    BookSettingEntry:
+      allOf:
+        - $ref: "#/components/schemas/SettingEntry"
+        - type: object
+          required: [bookId]
+          properties:
+            bookId: {$ref: "#/components/schemas/Uuid"}
+    ProviderSettingEntry:
+      allOf:
+        - $ref: "#/components/schemas/SettingEntry"
+        - type: object
+          required: [provider, credentialVersionId]
+          properties:
+            provider: {type: string}
+            credentialVersionId:
+              oneOf:
+                - $ref: "#/components/schemas/Uuid"
+                - type: "null"
+    CredentialSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - credentialId
+        - credentialVersionId
+        - domain
+        - provider
+        - hasKey
+        - currentVersion
+        - revision
+      properties:
+        credentialId: {$ref: "#/components/schemas/Uuid"}
+        credentialVersionId: {$ref: "#/components/schemas/Uuid"}
+        domain: {type: string}
+        provider: {type: string}
+        hasKey: {type: boolean, const: true}
+        currentVersion: {type: integer, minimum: 1}
+        revision: {type: integer, minimum: 1}
+    SettingsDocument:
+      type: object
+      additionalProperties: false
+      required: [settings, bookSettings, providerSettings, credentials]
+      properties:
+        settings:
+          type: array
+          items: {$ref: "#/components/schemas/SettingEntry"}
+        bookSettings:
+          type: array
+          items: {$ref: "#/components/schemas/BookSettingEntry"}
+        providerSettings:
+          type: array
+          items: {$ref: "#/components/schemas/ProviderSettingEntry"}
+        credentials:
+          type: array
+          items: {$ref: "#/components/schemas/CredentialSummary"}
+    SettingMutation:
+      type: object
+      additionalProperties: false
+      required: [domain, payload, baseRevision]
+      properties:
+        domain: {type: string}
+        payload: {type: object, additionalProperties: true}
+        baseRevision: {type: integer, minimum: 0}
+        schemaVersion: {type: integer, minimum: 1, default: 1}
+    BookSettingMutation:
+      allOf:
+        - $ref: "#/components/schemas/SettingMutation"
+        - type: object
+          required: [bookId]
+          properties:
+            bookId: {$ref: "#/components/schemas/Uuid"}
+    ProviderSettingMutation:
+      allOf:
+        - $ref: "#/components/schemas/SettingMutation"
+        - type: object
+          required: [provider]
+          properties:
+            provider: {type: string}
+            credentialVersionId: {$ref: "#/components/schemas/Uuid"}
+            credentialEditRef: {type: string}
+    CredentialEdit:
+      type: object
+      additionalProperties: false
+      required: [domain, provider, secret, baseRevision, clientRef]
+      properties:
+        domain: {type: string}
+        provider: {type: string}
+        secret: {type: object, additionalProperties: true, writeOnly: true}
+        baseRevision: {type: integer, minimum: 0}
+        credentialId: {$ref: "#/components/schemas/Uuid"}
+        clientRef: {type: string}
+    SettingsTransaction:
+      type: object
+      additionalProperties: false
+      properties:
+        settings:
+          type: array
+          items: {$ref: "#/components/schemas/SettingMutation"}
+        bookSettings:
+          type: array
+          items: {$ref: "#/components/schemas/BookSettingMutation"}
+        providerSettings:
+          type: array
+          items: {$ref: "#/components/schemas/ProviderSettingMutation"}
+        credentialEdits:
+          type: array
+          items: {$ref: "#/components/schemas/CredentialEdit"}
+    SettingMutationResult:
+      type: object
+      additionalProperties: true
+      required: [domain, revision]
+      properties:
+        domain: {type: string}
+        provider: {type: string}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+    SettingsTransactionResult:
+      type: object
+      additionalProperties: false
+      required: [settings, bookSettings, providerSettings, credentials]
+      properties:
+        settings:
+          type: array
+          items: {$ref: "#/components/schemas/SettingMutationResult"}
+        bookSettings:
+          type: array
+          items: {$ref: "#/components/schemas/SettingMutationResult"}
+        providerSettings:
+          type: array
+          items: {$ref: "#/components/schemas/SettingMutationResult"}
+        credentials:
+          type: array
+          items: {$ref: "#/components/schemas/CredentialSummary"}
+    PromptResource:
+      type: object
+      additionalProperties: false
+      required: [id, type, name, content, revision, isFactoryDefault]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        type: {type: string}
+        name: {type: string}
+        content: {type: string}
+        revision: {type: integer, minimum: 1}
+        isFactoryDefault: {type: boolean}
+    PromptList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/PromptResource"}
+    ProviderDiagnosticRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider: {type: string}
+        domain: {type: string}
+        credentialId: {$ref: "#/components/schemas/Uuid"}
+        secret:
+          type: object
+          additionalProperties: {type: string}
+          writeOnly: true
+        model: {type: string}
+        baseUrl: {type: string, format: uri}
+        prompt: {type: string}
+    ModelCatalogResponse:
+      type: object
+      additionalProperties: false
+      required: [success, models]
+      properties:
+        success: {type: boolean, const: true}
+        models:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id: {type: string}
+              name: {type: string}
+    ConnectionTestResponse:
+      type: object
+      additionalProperties: false
+      required: [success]
+      properties:
+        success: {type: boolean}
+        message: {type: string}
+    FontResource:
+      type: object
+      additionalProperties: false
+      required: [id, kind, displayName, builtinKey, assetUrl]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        kind: {type: string, enum: [builtin, uploaded]}
+        displayName: {type: string}
+        builtinKey: {type: [string, "null"]}
+        assetUrl: {type: [string, "null"]}
+    FontList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/FontResource"}
+    DeletedResponse:
+      type: object
+      additionalProperties: false
+      required: [deleted]
+      properties:
+        deleted: {type: boolean, const: true}
     JobStatus:
       type: string
       enum:

@@ -215,11 +215,8 @@ async function exportAnalysisData(): Promise<void> {
   try {
     const response = await insightApi.exportAnalysis(insightStore.currentBookId)
 
-    if (response.success && response.markdown) {
-      const blob = new Blob([response.markdown], { type: 'text/markdown' })
-      triggerBlobDownload(blob, `${insightStore.currentBookId}_analysis.md`)
-
-      showToast('导出成功', 'success')
+    if (response.success) {
+      showToast('完整导出已进入任务中心，完成后可下载', 'success')
     } else {
       showToast('导出失败: ' + (response.error || '未知错误'), 'error')
     }
@@ -230,20 +227,26 @@ async function exportAnalysisData(): Promise<void> {
   }
 }
 
-function exportCurrentOverview(): void {
+async function exportCurrentOverview(): Promise<void> {
   if (!overviewContent.value) {
     showToast('暂无内容可导出', 'warning')
     return
   }
 
-  const template = templateOptions.find(t => t.value === currentTemplate.value)
-  const fileName = `${insightStore.currentBookId}_${currentTemplate.value}.md`
-
-  const content = `# ${template?.label || currentTemplate.value}\n\n${overviewContent.value}`
-
-  const blob = new Blob([content], { type: 'text/markdown' })
-  triggerBlobDownload(blob, fileName)
-  showToast('导出成功', 'success')
+  if (!insightStore.currentBookId) return
+  try {
+    const blob = await insightApi.downloadCurrentOverview(
+      insightStore.currentBookId,
+      currentTemplate.value,
+    )
+    triggerBlobDownload(
+      blob,
+      `${insightStore.currentBookId}_${currentTemplate.value}.md`,
+    )
+    showToast('导出成功', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '导出失败', 'error')
+  }
 }
 
 async function loadRecentAnalyzedPages(bookId = insightStore.currentBookId): Promise<void> {

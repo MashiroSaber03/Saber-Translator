@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getMock, postMock, putMock, deleteMock } = vi.hoisted(() => ({
+const { getMock, postMock, putMock, deleteMock, uploadMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   postMock: vi.fn(),
   putMock: vi.fn(),
   deleteMock: vi.fn(),
+  uploadMock: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -13,52 +14,103 @@ vi.mock('@/api/client', () => ({
     post: postMock,
     put: putMock,
     delete: deleteMock,
+    upload: uploadMock,
   },
 }))
 
-describe('bookshelf api path contracts', () => {
+vi.mock('@/api/v2/content', () => ({
+  newIdempotencyKey: () => 'bookshelf-idempotency-key',
+}))
+
+const book = {
+  id: 'book/id one',
+  title: 'Book',
+  chapterOrderRevision: 3,
+  tags: [],
+  chapters: [],
+}
+
+const constraints = {
+  bookId: book.id,
+  revision: 2,
+  payload: {
+    glossary: {},
+    nonTranslate: {},
+  },
+}
+
+const commandConfig = {
+  headers: {
+    'Idempotency-Key': 'bookshelf-idempotency-key',
+  },
+}
+
+describe('bookshelf v2 api contracts', () => {
   beforeEach(() => {
-    getMock.mockReset().mockResolvedValue({ success: true })
-    postMock.mockReset().mockResolvedValue({ success: true })
-    putMock.mockReset().mockResolvedValue({ success: true })
-    deleteMock.mockReset().mockResolvedValue({ success: true })
+    vi.resetModules()
+    getMock.mockReset().mockImplementation((url: string) => {
+      if (url.endsWith('/translation-constraints')) {
+        return Promise.resolve(constraints)
+      }
+      if (url === '/api/v2/tags') return Promise.resolve({ items: [] })
+      return Promise.resolve(book)
+    })
+    postMock.mockReset()
+    putMock.mockReset()
+    deleteMock.mockReset().mockResolvedValue({ deleted: true })
+    uploadMock.mockReset()
   })
 
-  it('routes book and chapter endpoints through encoded path helpers', async () => {
-    const {
-      deleteBook,
-      deleteChapter,
-      getBookDetail,
-      getChapterImages,
-      getChapters,
-      reorderChapters,
-      updateBook,
-      updateChapter,
-    } = await import('@/api/bookshelf')
+  it('loads book details and constraints from encoded v2 resources', async () => {
+    const { getBookDetail } = await import('@/api/bookshelf')
 
-    const bookId = 'book/id one'
-    const chapterId = 'chapter/id one'
-    const encodedBook = '/api/bookshelf/books/book%2Fid%20one'
-    const encodedChapter = `${encodedBook}/chapters/chapter%2Fid%20one`
+    const result = await getBookDetail(book.id)
 
-    await getBookDetail(bookId)
-    await updateBook(bookId, { title: 'Updated' })
-    await deleteBook(bookId)
-    await getChapters(bookId)
-    await updateChapter(bookId, chapterId, 'Updated Chapter')
-    await deleteChapter(bookId, chapterId)
-    await reorderChapters(bookId, ['chapter/id one', 'chapter two'])
-    await getChapterImages(bookId, chapterId)
-
-    expect(getMock).toHaveBeenNthCalledWith(1, encodedBook)
-    expect(putMock).toHaveBeenNthCalledWith(1, encodedBook, { title: 'Updated' })
-    expect(deleteMock).toHaveBeenNthCalledWith(1, encodedBook)
-    expect(getMock).toHaveBeenNthCalledWith(2, `${encodedBook}/chapters`)
-    expect(putMock).toHaveBeenNthCalledWith(2, encodedChapter, { title: 'Updated Chapter' })
-    expect(deleteMock).toHaveBeenNthCalledWith(2, encodedChapter)
-    expect(postMock).toHaveBeenNthCalledWith(1, `${encodedBook}/chapters/reorder`, {
-      chapter_ids: ['chapter/id one', 'chapter two'],
+    expect(getMock).toHaveBeenCalledWith('/api/v2/books/book%2Fid%20one')
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/books/book%2Fid%20one/translation-constraints',
+    )
+    expect(result.book?.translation_constraints).toEqual({
+      glossary: {},
+      non_translate: {},
     })
-    expect(getMock).toHaveBeenNthCalledWith(3, `${encodedChapter}/images`)
+  })
+
+  it('uses direct chapter resources and idempotency headers', async () => {
+    putMock.mockResolvedValue({
+      id: 'chapter/id one',
+      title: 'Updated Chapter',
+    })
+    const { deleteChapter, updateChapter } = await import('@/api/bookshelf')
+
+    await updateChapter(book.id, 'chapter/id one', 'Updated Chapter')
+    await deleteChapter(book.id, 'chapter/id one')
+
+    expect(putMock).toHaveBeenCalledWith(
+      '/api/v2/chapters/chapter%2Fid%20one',
+      { title: 'Updated Chapter' },
+      commandConfig,
+    )
+    expect(deleteMock).toHaveBeenCalledWith(
+      '/api/v2/chapters/chapter%2Fid%20one',
+      commandConfig,
+    )
+  })
+
+  it('reorders chapters with the authoritative book revision', async () => {
+    putMock.mockResolvedValue({ chapterOrderRevision: 4 })
+    const { getBookDetail, reorderChapters } = await import('@/api/bookshelf')
+    await getBookDetail(book.id)
+
+    await reorderChapters(book.id, ['chapter/id one', 'chapter two'])
+
+    expect(putMock).toHaveBeenCalledWith(
+      '/api/v2/books/book%2Fid%20one/chapters/order',
+      {
+        baseRevision: 3,
+        orderedIds: ['chapter/id one', 'chapter two'],
+      },
+      commandConfig,
+    )
   })
 })

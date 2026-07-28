@@ -129,6 +129,12 @@ export const useWebImportStore = defineStore('webImport', () => {
     syncDraftFromCommitted()
   }
 
+  function hasCredential(domain: string, provider: string): boolean {
+    return credentialSummaries.value.some(
+      row => row.domain === domain && row.provider === provider && row.hasKey,
+    )
+  }
+
   async function loadFromBackend(): Promise<boolean> {
     try {
       const response = await getV2Settings(['web_import', 'web_import_agent', 'web_import_firecrawl', 'web_import_http'])
@@ -501,6 +507,7 @@ export const useWebImportStore = defineStore('webImport', () => {
     hasUnsavedSettings,
     isSavingSettings,
     isInitializingSettings,
+    hasCredential,
     saveToStorage,
     loadFromStorage,
     loadFromBackend,

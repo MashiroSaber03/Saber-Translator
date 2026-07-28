@@ -93,6 +93,31 @@ def _import(
         )
 
 
+def test_server_info_uses_the_configured_v2_api_port(content_platform) -> None:
+    data_root, engine, *_rest = content_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+            host="0.0.0.0",
+            port=5123,
+        )
+    )
+
+    response = app.test_client().get("/api/v2/system/server-info")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["host"] == "0.0.0.0"
+    assert payload["port"] == 5123
+    assert payload["lanUrl"].endswith(":5123")
+
+
 def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
     content_platform,
 ) -> None:

@@ -68,14 +68,30 @@ describe('web import api streams', () => {
       config: { agent: { provider: 'deepseek' } },
       engine: 'ai-agent',
     })
-    expect(postMock).toHaveBeenNthCalledWith(2, '/api/web-import/test-firecrawl', {
-      apiKey: 'firecrawl-key',
+    expect(postMock).toHaveBeenNthCalledWith(2, '/api/v2/connection-tests/firecrawl', {
+      secret: { apiKey: 'firecrawl-key' },
     })
-    expect(postMock).toHaveBeenNthCalledWith(3, '/api/web-import/test-agent', {
+    expect(postMock).toHaveBeenNthCalledWith(3, '/api/v2/connection-tests/web_import_agent', {
       provider: 'deepseek',
-      apiKey: 'agent-key',
-      customBaseUrl: '',
-      modelName: 'deepseek-chat',
+      model: 'deepseek-chat',
+      secret: { apiKey: 'agent-key' },
+    })
+  })
+
+  it('lets backend diagnostics resolve stored web-import credentials', async () => {
+    postMock.mockResolvedValue({ success: true })
+    const { testAgentConnection, testFirecrawlConnection } = await import('@/api/webImport')
+
+    await testFirecrawlConnection('')
+    await testAgentConnection('deepseek', '', '', 'deepseek-chat')
+
+    expect(postMock).toHaveBeenNthCalledWith(1, '/api/v2/connection-tests/firecrawl', {
+      domain: 'web_import_firecrawl',
+    })
+    expect(postMock).toHaveBeenNthCalledWith(2, '/api/v2/connection-tests/web_import_agent', {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      domain: 'web_import_agent',
     })
   })
 

@@ -7,6 +7,7 @@ import { SUPPORTED_FETCH_PROVIDERS } from './types'
 type MessageType = 'success' | 'error'
 
 type ModelFetchOptions = {
+  domain: 'insight_chat' | 'insight_embedding' | 'insight_reranker' | 'insight_vlm'
   provider: Ref<string>
   apiKey: Ref<string>
   baseUrl: Ref<string>
@@ -25,11 +26,16 @@ export function useInsightModelFetch(options: ModelFetchOptions) {
       provider: options.provider.value,
       apiKey: options.apiKey.value,
       baseUrl: options.baseUrl.value,
+      hasStoredCredential: insightApi.hasInsightCredential(
+        options.domain,
+        options.provider.value,
+      ),
     }),
     fetcher: (provider, apiKey, baseUrl) => insightApi.fetchModels(
       provider,
       apiKey,
       baseUrl || undefined,
+      options.domain,
     ),
     notify: (message, type) => options.emitMessage(message, type === 'warning' ? 'error' : type),
     supportsProvider: provider => SUPPORTED_FETCH_PROVIDERS.includes(provider),

@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import type { Ref } from 'vue'
 import type { NoteData, NoteType } from '@/types/insight'
-import { filterValidInsightNotes, mapInsightApiNote } from '@/stores/insight/insightNotesModels'
+import { mapInsightApiNote } from '@/stores/insight/insightNotesModels'
 import * as insightApi from '@/api/insight'
 
 export interface UseInsightNotesOptions {
@@ -30,37 +30,22 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     return notes.value.filter(note => note.type === noteTypeFilter.value)
   })
 
-  function getStorageKey(): string | null {
-    return currentBookId.value ? `manga_notes_${currentBookId.value}` : null
-  }
-
   function isActiveNotesLoad(requestId: number, requestedBookId: string): boolean {
     return requestId === notesLoadRequestId && currentBookId.value === requestedBookId
   }
 
   function saveNotesToStorage(): void {
-    const storageKey = getStorageKey()
-    if (!storageKey) return
     try {
-      localStorage.setItem(storageKey, JSON.stringify(notes.value))
+      if (currentBookId.value) {
+        localStorage.removeItem(`manga_notes_${currentBookId.value}`)
+      }
     } catch {
       return
     }
   }
 
   function loadNotesFromStorage(): void {
-    const storageKey = getStorageKey()
-    if (!storageKey) {
-      notes.value = []
-      return
-    }
-    try {
-      const stored = localStorage.getItem(storageKey)
-      const parsed = stored ? JSON.parse(stored) : []
-      notes.value = Array.isArray(parsed) ? filterValidInsightNotes(parsed) : []
-    } catch {
-      notes.value = []
-    }
+    saveNotesToStorage()
   }
 
   async function loadNotes(): Promise<void> {
@@ -71,6 +56,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       return
     }
 
+    saveNotesToStorage()
     isLoading.value = true
     error.value = null
 
@@ -79,17 +65,14 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
       if (!response.success) {
         error.value = response.error || '加载笔记失败'
-        loadNotesFromStorage()
         return
       }
       if (response.notes) {
         notes.value = response.notes.map(mapInsightApiNote)
-        saveNotesToStorage()
       }
     } catch (e) {
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
       error.value = e instanceof Error ? e.message : '加载笔记失败'
-      loadNotesFromStorage()
     } finally {
       if (requestId === notesLoadRequestId) {
         isLoading.value = false
@@ -115,7 +98,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       updatedAt: note.updatedAt || new Date().toISOString()
     }
     notes.value.unshift(optimisticNote)
-    saveNotesToStorage()
 
     if (note.id) {
       return optimisticNote
@@ -123,7 +105,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
     function rollbackOptimisticNote(): void {
       notes.value = notes.value.filter(existing => existing.id !== optimisticNote.id)
-      saveNotesToStorage()
     }
 
     try {
@@ -147,7 +128,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         } else {
           notes.value.unshift(newNote)
         }
-        saveNotesToStorage()
         return newNote
       }
       error.value = response.error || '添加笔记失败'
@@ -177,7 +157,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         const index = notes.value.findIndex(n => n.id === noteId)
         if (index !== -1) {
           notes.value[index] = { ...notes.value[index], ...updates, updatedAt: new Date().toISOString() }
-          saveNotesToStorage()
         }
         return true
       }
@@ -195,7 +174,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
       if (response.success) {
         notes.value = notes.value.filter(n => n.id !== noteId)
-        saveNotesToStorage()
         return true
       }
     } catch (e) {

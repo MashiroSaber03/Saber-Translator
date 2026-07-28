@@ -53,6 +53,7 @@ const {
   fetchModels,
   selectModel,
 } = useInsightModelFetch({
+  domain: 'insight_vlm',
   provider,
   apiKey,
   baseUrl,

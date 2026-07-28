@@ -18,6 +18,8 @@ import type { WebImportSettingsActions } from './webImportSettingsActions'
 defineProps<{
   agentProviderOptions: UiSelectOption[]
   draftSettings: WebImportSettings
+  hasAgentCredential?: boolean
+  hasFirecrawlCredential?: boolean
   isFetchingModels: boolean
   modelList: string[]
   modelListOptions: UiSelectOption[]
@@ -54,7 +56,7 @@ defineEmits<{
     <ProductActionRow aria-label="Firecrawl 操作" justify="start">
       <UiButton
         variant="secondary"
-        :disabled="testingFirecrawl || !draftSettings.firecrawl.apiKey"
+        :disabled="testingFirecrawl || (!draftSettings.firecrawl.apiKey && !hasFirecrawlCredential)"
         @click="$emit('test-firecrawl')"
       >
         {{ testingFirecrawl ? '测试中...' : '测试连接' }}
@@ -124,7 +126,7 @@ defineEmits<{
       <UiButton
         variant="secondary"
         block
-        :disabled="testingAgent || (providerRequiresApiKey(draftSettings.agent.provider) && !draftSettings.agent.apiKey)"
+        :disabled="testingAgent || (providerRequiresApiKey(draftSettings.agent.provider) && !draftSettings.agent.apiKey && !hasAgentCredential)"
         @click="$emit('test-agent')"
       >
         {{ testingAgent ? '测试中...' : '测试 Agent 连接' }}

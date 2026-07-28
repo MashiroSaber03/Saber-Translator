@@ -962,6 +962,7 @@ class InsightRepository:
         cursor: str | None = None,
         limit: int = 50,
         kind: str | None = None,
+        include_content: bool = False,
     ) -> dict[str, Any]:
         if not 1 <= limit <= 200:
             raise ValueError("note limit must be between 1 and 200")
@@ -994,7 +995,11 @@ class InsightRepository:
             has_more = len(rows) > limit
             selected_rows = rows[:limit]
             items = [
-                self._note_dto(connection, row, summary=True)
+                self._note_dto(
+                    connection,
+                    row,
+                    summary=not include_content,
+                )
                 for row in selected_rows
             ]
         return {

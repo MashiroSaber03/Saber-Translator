@@ -223,6 +223,10 @@ export const useSettingsStore = defineStore('settings', () => {
     )
   }
 
+  function hasCredential(domain: string, provider: string): boolean {
+    return Boolean(currentCredential(domain, provider)?.hasKey)
+  }
+
   function addProviderMutation(
     providerSettings: V2ProviderSettingMutation[],
     credentialEdits: V2CredentialEdit[],
@@ -348,6 +352,7 @@ export const useSettingsStore = defineStore('settings', () => {
     settings,
     providerConfigs,
     credentialSummaries,
+    hasCredential,
     isBackendReady,
     backendError,
     theme,

@@ -935,10 +935,12 @@ describe('PluginAgentModal', () => {
     expect(modelPicker.props('modelValue')).toBe('')
     expect(modelPicker.props('modelCount')).toBe(0)
 
+    wrapper.getComponent(UiPasswordField).vm.$emit('update:modelValue', 'model-key')
+    await flushPromises()
     modelPicker.vm.$emit('fetch')
     await flushPromises()
 
-    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', '', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'plugin_agent')
     const updatedModelPicker = wrapper.getComponent(UiModelPicker)
     expect(updatedModelPicker.props('modelCount')).toBe(2)
     expect(updatedModelPicker.props('options')).toEqual(expect.arrayContaining([
@@ -966,8 +968,10 @@ describe('PluginAgentModal', () => {
     })
     await flushPromises()
 
+    wrapper.getComponent(UiPasswordField).vm.$emit('update:modelValue', 'model-key')
+    await flushPromises()
     wrapper.getComponent(UiModelPicker).vm.$emit('fetch')
-    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', '', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'plugin_agent')
 
     const providerSelect = wrapper.getComponent(UiSelect)
     providerSelect.vm.$emit('change', 'deepseek')

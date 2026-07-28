@@ -499,6 +499,12 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
         limit=1,
     )
     assert page["items"][0]["content"] is None
+    detail_page = repository.list_notes(
+        book_id=str(platform["book"]["id"]),
+        limit=1,
+        include_content=True,
+    )
+    assert detail_page["items"][0]["content"] == "新内容"
     assert repository.get_note(note_id=note["noteId"])["content"] == "新内容"
 
 

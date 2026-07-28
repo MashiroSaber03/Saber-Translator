@@ -20,6 +20,262 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/server-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getServerInfo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/provider-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getProviderSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["saveSettingsTransaction"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/workflow-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateWorkflowPreferences"];
+        trace?: never;
+    };
+    "/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPrompts"];
+        put?: never;
+        post: operations["createPrompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/{prompt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updatePrompt"];
+        post?: never;
+        delete: operations["deletePrompt"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prompts/{prompt_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resetPrompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["fetchModelCatalog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connection-tests/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["runConnectionTest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fonts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listFonts"];
+        put?: never;
+        post: operations["uploadFont"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fonts/{font_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteFont"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maintenance/clean-temp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cleanTemporaryAssets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maintenance/clean-debug": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cleanDebugAssets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{page_id}/document/batch": {
         parameters: {
             query?: never;
@@ -1085,6 +1341,141 @@ export interface components {
             epochId: string;
             dataRootFingerprint: string;
         };
+        ServerInfo: {
+            hostname: string;
+            host: string;
+            port: number;
+            /** Format: uri */
+            lanUrl: string;
+        };
+        SettingEntry: {
+            domain: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            revision: number;
+            schemaVersion: number;
+        };
+        BookSettingEntry: components["schemas"]["SettingEntry"] & {
+            bookId: components["schemas"]["Uuid"];
+        };
+        ProviderSettingEntry: components["schemas"]["SettingEntry"] & {
+            provider: string;
+            credentialVersionId: components["schemas"]["Uuid"] | null;
+        };
+        CredentialSummary: {
+            credentialId: components["schemas"]["Uuid"];
+            credentialVersionId: components["schemas"]["Uuid"];
+            domain: string;
+            provider: string;
+            /** @constant */
+            hasKey: true;
+            currentVersion: number;
+            revision: number;
+        };
+        SettingsDocument: {
+            settings: components["schemas"]["SettingEntry"][];
+            bookSettings: components["schemas"]["BookSettingEntry"][];
+            providerSettings: components["schemas"]["ProviderSettingEntry"][];
+            credentials: components["schemas"]["CredentialSummary"][];
+        };
+        SettingMutation: {
+            domain: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            baseRevision: number;
+            /** @default 1 */
+            schemaVersion: number;
+        };
+        BookSettingMutation: components["schemas"]["SettingMutation"] & {
+            bookId: components["schemas"]["Uuid"];
+        };
+        ProviderSettingMutation: components["schemas"]["SettingMutation"] & {
+            provider: string;
+            credentialVersionId?: components["schemas"]["Uuid"];
+            credentialEditRef?: string;
+        };
+        CredentialEdit: {
+            domain: string;
+            provider: string;
+            secret: {
+                [key: string]: unknown;
+            };
+            baseRevision: number;
+            credentialId?: components["schemas"]["Uuid"];
+            clientRef: string;
+        };
+        SettingsTransaction: {
+            settings?: components["schemas"]["SettingMutation"][];
+            bookSettings?: components["schemas"]["BookSettingMutation"][];
+            providerSettings?: components["schemas"]["ProviderSettingMutation"][];
+            credentialEdits?: components["schemas"]["CredentialEdit"][];
+        };
+        SettingMutationResult: {
+            domain: string;
+            provider?: string;
+            bookId?: components["schemas"]["Uuid"];
+            revision: number;
+        } & {
+            [key: string]: unknown;
+        };
+        SettingsTransactionResult: {
+            settings: components["schemas"]["SettingMutationResult"][];
+            bookSettings: components["schemas"]["SettingMutationResult"][];
+            providerSettings: components["schemas"]["SettingMutationResult"][];
+            credentials: components["schemas"]["CredentialSummary"][];
+        };
+        PromptResource: {
+            id: components["schemas"]["Uuid"];
+            type: string;
+            name: string;
+            content: string;
+            revision: number;
+            isFactoryDefault: boolean;
+        };
+        PromptList: {
+            items: components["schemas"]["PromptResource"][];
+        };
+        ProviderDiagnosticRequest: {
+            provider?: string;
+            domain?: string;
+            credentialId?: components["schemas"]["Uuid"];
+            secret?: {
+                [key: string]: string;
+            };
+            model?: string;
+            /** Format: uri */
+            baseUrl?: string;
+            prompt?: string;
+        };
+        ModelCatalogResponse: {
+            /** @constant */
+            success: true;
+            models: {
+                id: string;
+                name: string;
+            }[];
+        };
+        ConnectionTestResponse: {
+            success: boolean;
+            message?: string;
+        };
+        FontResource: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            kind: "builtin" | "uploaded";
+            displayName: string;
+            builtinKey: string | null;
+            assetUrl: string | null;
+        };
+        FontList: {
+            items: components["schemas"]["FontResource"][];
+        };
+        DeletedResponse: {
+            /** @constant */
+            deleted: true;
+        };
         /** @enum {string} */
         JobStatus: "queued" | "running" | "pausing" | "paused" | "cancelling" | "cancelled" | "completed" | "completed_with_errors" | "failed" | "interrupted";
         /** @enum {string} */
@@ -1692,6 +2083,7 @@ export interface components {
         ChapterId: components["schemas"]["Uuid"];
         LeaseId: components["schemas"]["Uuid"];
         AssetId: components["schemas"]["Uuid"];
+        PromptId: components["schemas"]["Uuid"];
         PluginId: string;
         PluginAgentSessionId: string;
         ImportLeaseId: components["schemas"]["Uuid"];
@@ -1721,6 +2113,512 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    getServerInfo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description LAN address advertised by the single local API instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerInfo"];
+                };
+            };
+        };
+    };
+    getSettings: {
+        parameters: {
+            query?: {
+                domains?: string;
+                book_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend-authoritative settings and credential summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsDocument"];
+                };
+            };
+        };
+    };
+    getProviderSettings: {
+        parameters: {
+            query?: {
+                domains?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider configuration memories without secrets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProviderSettingEntry"][];
+                    };
+                };
+            };
+        };
+    };
+    listCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Secret-free credential summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CredentialSummary"][];
+                    };
+                };
+            };
+        };
+    };
+    deleteCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                credential_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential deleted when no history references it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    saveSettingsTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsTransaction"];
+            };
+        };
+        responses: {
+            /** @description All settings, provider memories, and credentials committed atomically. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsTransactionResult"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateWorkflowPreferences: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    payload: {
+                        [key: string]: unknown;
+                    };
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Workflow preference setting after revision CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingEntry"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listPrompts: {
+        parameters: {
+            query?: {
+                type?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unified prompt library. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptList"];
+                };
+            };
+        };
+    };
+    createPrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    type: string;
+                    name: string;
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Prompt created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResource"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updatePrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                prompt_id: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    content: string;
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Prompt updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResource"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deletePrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                prompt_id: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Non-factory prompt deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    resetPrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                prompt_id: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Factory prompt reset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResource"];
+                };
+            };
+        };
+    };
+    fetchModelCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderDiagnosticRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider model catalog; result is not persisted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalogResponse"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    runConnectionTest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "ollama" | "sakura" | "lama_repair" | "baidu_ocr" | "ai_vision_ocr" | "baidu_translate" | "youdao_translate" | "ai_translate" | "firecrawl" | "web_import_agent" | "vlm" | "llm" | "embedding" | "reranker";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderDiagnosticRequest"];
+            };
+        };
+        responses: {
+            /** @description Transient connection result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTestResponse"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    listFonts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Built-in and uploaded backend fonts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontList"];
+                };
+            };
+        };
+    };
+    uploadFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    displayName?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable font asset registered. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: components["schemas"]["Uuid"];
+                        assetUrl: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    deleteFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                font_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unreferenced uploaded font deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cleanTemporaryAssets: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset journal recovery result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        recovered: number;
+                    };
+                };
+            };
+        };
+    };
+    cleanDebugAssets: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Debug asset cleanup result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        removed: number;
+                    };
                 };
             };
         };

@@ -45,6 +45,7 @@ const {
   fetchModels,
   selectModel,
 } = useInsightModelFetch({
+  domain: 'insight_reranker',
   provider,
   apiKey,
   baseUrl,

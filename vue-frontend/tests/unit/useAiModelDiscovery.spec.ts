@@ -62,6 +62,30 @@ describe('useAiModelDiscovery', () => {
     expect(notify).toHaveBeenCalledWith('获取到 2 个模型', 'success')
   })
 
+  it('allows model discovery through a credential already stored by the backend', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      success: true,
+      models: [{ id: 'stored-model', name: 'Stored Model' }],
+    } satisfies FetchModelsResponse)
+    const discovery = useAiModelDiscovery({
+      source: () => ({
+        provider: 'deepseek',
+        apiKey: '',
+        baseUrl: '',
+        hasStoredCredential: true,
+      }),
+      fetcher,
+      notify: vi.fn(),
+    })
+
+    await discovery.fetchModels()
+
+    expect(fetcher).toHaveBeenCalledWith('deepseek', '', undefined)
+    expect(discovery.models.value).toEqual([
+      { id: 'stored-model', name: 'Stored Model' },
+    ])
+  })
+
   it('ignores a response after the provider snapshot changes', async () => {
     const provider = ref('openai')
     const request = deferred<FetchModelsResponse>()

@@ -37,6 +37,8 @@ def run_api(args: object) -> int:
             identity=identity,
             epoch_healthy=lambda: not fenced.is_set(),
             engine=engine,
+            host=str(getattr(args, "host", "0.0.0.0")),
+            port=int(getattr(args, "port", 5000)),
         )
     )
 

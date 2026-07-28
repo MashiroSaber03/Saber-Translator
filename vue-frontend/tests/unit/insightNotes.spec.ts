@@ -42,10 +42,10 @@ describe('useInsightNotes', () => {
     expect(result).toBeNull()
     expect(notesState.notes.value).toEqual([])
     expect(notesState.error.value).toBe('create failed')
-    expect(localStorage.getItem('manga_notes_book-1')).toBe('[]')
+    expect(localStorage.getItem('manga_notes_book-1')).toBeNull()
   })
 
-  it('ignores malformed local notes cache records', async () => {
+  it('removes obsolete local note caches without hydrating them', async () => {
     localStorage.setItem('manga_notes_book-1', JSON.stringify([
       {
         id: 'note-1',
@@ -67,16 +67,8 @@ describe('useInsightNotes', () => {
 
     notesState.loadNotesFromStorage()
 
-    expect(notesState.notes.value).toEqual([
-      {
-        id: 'note-1',
-        type: 'text',
-        content: 'valid note',
-        pageNum: 3,
-        createdAt: '2026-06-23T00:00:00.000Z',
-        updatedAt: '2026-06-23T00:00:00.000Z',
-      },
-    ])
+    expect(notesState.notes.value).toEqual([])
+    expect(localStorage.getItem('manga_notes_book-1')).toBeNull()
   })
 
   it('ignores stale note loads after the selected book changes', async () => {
@@ -108,7 +100,7 @@ describe('useInsightNotes', () => {
     expect(localStorage.getItem('manga_notes_book-2')).toBeNull()
   })
 
-  it('falls back to local notes when the notes API returns an error response', async () => {
+  it('does not resurrect local notes when the backend returns an error response', async () => {
     localStorage.setItem('manga_notes_book-1', JSON.stringify([
       {
         id: 'cached-note',
@@ -129,15 +121,8 @@ describe('useInsightNotes', () => {
     await notesState.loadNotes()
 
     expect(notesState.error.value).toBe('notes service unavailable')
-    expect(notesState.notes.value).toEqual([
-      {
-        id: 'cached-note',
-        type: 'text',
-        content: 'cached note',
-        createdAt: '2026-06-25T00:00:00.000Z',
-        updatedAt: '2026-06-25T00:00:00.000Z',
-      },
-    ])
+    expect(notesState.notes.value).toEqual([])
+    expect(localStorage.getItem('manga_notes_book-1')).toBeNull()
   })
 
   it('maps API note payloads through a typed current-schema mapper', async () => {
@@ -181,7 +166,7 @@ describe('useInsightNotes', () => {
 
     const source = readFileSync(resolve(process.cwd(), 'src/stores/insight/useInsightNotes.ts'), 'utf8')
     expect(source).toContain(
-      "import { filterValidInsightNotes, mapInsightApiNote } from '@/stores/insight/insightNotesModels'"
+      "import { mapInsightApiNote } from '@/stores/insight/insightNotesModels'"
     )
     expect(source).not.toContain('function isNoteData')
     expect(source).not.toContain('function mapApiNote')

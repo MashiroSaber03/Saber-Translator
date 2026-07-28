@@ -84,6 +84,7 @@ def test_api_probe_loads_only_v2_routes_and_no_worker_modules(tmp_path: Path) ->
     assert result["forbiddenModules"] == []
     routes = result["routes"]
     assert "/api/v2/health" in routes
+    assert "/api/v2/system/server-info" in routes
     assert "/api/v2/openapi.json" in routes
     assert all(route.startswith("/api/v2/") for route in routes)
 

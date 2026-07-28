@@ -10,6 +10,10 @@ from fontTools.ttLib import TTFont
 from sqlalchemy import Engine
 
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.settings.diagnostics import (
+    CONNECTION_TEST_KINDS,
+    ProviderDiagnostics,
+)
 from src.backend_v2.storage.platform_repositories import (
     BookSettingMutation,
     CredentialEdit,
@@ -28,6 +32,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     prompt_repository = PromptRepository(engine)
     font_repository = FontRepository(engine)
     storage = AssetStorageService(data_root, engine)
+    diagnostics = ProviderDiagnostics(settings)
 
     @blueprint.errorhandler(RevisionConflict)
     def conflict(error: RevisionConflict):
@@ -160,6 +165,16 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             )
         )
         return jsonify(result["settings"][0])
+
+    @blueprint.post("/model-catalog")
+    def model_catalog() -> Response:
+        return jsonify(diagnostics.model_catalog(_json_body()))
+
+    @blueprint.post("/connection-tests/<kind>")
+    def connection_test(kind: str) -> Response:
+        if kind not in CONNECTION_TEST_KINDS:
+            raise ValueError("unsupported connection test kind")
+        return jsonify(diagnostics.connection_test(kind, _json_body()))
 
     @blueprint.get("/prompts")
     def list_prompts() -> Response:

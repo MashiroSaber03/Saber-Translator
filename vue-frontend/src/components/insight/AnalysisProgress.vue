@@ -15,7 +15,6 @@ import { useInsightStore, type AnalysisMode } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { ApiError } from '@/types'
 import { confirmProductAction } from '@/composables/useProductConfirm'
-import { triggerBlobDownload } from '@/utils/browserDownload'
 
 const analysisModeOptions = [
   { label: '全书', value: 'full' },
@@ -286,9 +285,8 @@ async function exportAnalysis(): Promise<void> {
   try {
     const response = await insightApi.exportAnalysis(insightStore.currentBookId)
 
-    if (response.success && response.markdown) {
-      const blob = new Blob([response.markdown], { type: 'text/markdown' })
-      triggerBlobDownload(blob, `${insightStore.currentBookId}_analysis.md`)
+    if (response.success) {
+      errorMessage.value = '导出任务已进入任务中心，完成后可在那里下载'
     } else {
       errorMessage.value = response.error || '导出失败'
     }

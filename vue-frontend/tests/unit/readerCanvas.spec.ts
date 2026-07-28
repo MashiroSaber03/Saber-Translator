@@ -1,17 +1,36 @@
 import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 const pageImage = {
-  page_num: 1,
-  original: 'data:image/png;base64,original',
-  translated: 'data:image/png;base64,translated',
+  id: 'page-1',
+  chapterId: 'chapter-1',
+  ordinal: 1,
+  logicalSourcePath: 'page.png',
+  sourceRevision: 1,
+  documentRevision: 1,
+  sourceUrl: '/api/v2/assets/source',
+  thumbnailSourceUrl: '/api/v2/assets/thumb',
+  translatedUrl: '/api/v2/assets/translated',
+  width: 800,
+  height: 1200,
 }
+
+const VirtualPageStreamStub = defineComponent({
+  name: 'VirtualPageStream',
+  props: {
+    items: { type: Array, default: () => [] },
+    overscanScreens: { type: Number, default: 0 },
+  },
+  emits: ['visibleChange'],
+  template: '<div class="virtual-page-stream-stub" />',
+})
 
 function readScopedStyle(filePath: string): string {
   const source = readFileSync(resolve(process.cwd(), filePath), 'utf8')
@@ -19,35 +38,31 @@ function readScopedStyle(filePath: string): string {
 }
 
 describe('ReaderCanvas', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('clears delayed page recalculation when unmounted', async () => {
-    vi.useFakeTimers()
-    const pageChangeSpy = vi.fn()
-    const querySelectorAllSpy = vi.spyOn(document, 'querySelectorAll')
+  it('passes only immutable current-page URLs into the virtual stream', async () => {
     const wrapper = mount(ReaderCanvas, {
       props: {
-        images: [],
+        images: [pageImage],
         viewMode: 'translated',
         isLoading: false,
-        onPageChange: pageChangeSpy,
+      },
+      global: {
+        stubs: { VirtualPageStream: VirtualPageStreamStub },
       },
     })
 
-    try {
-      await wrapper.setProps({ images: [pageImage] })
-      expect(vi.getTimerCount()).toBe(1)
-      wrapper.unmount()
+    const stream = wrapper.getComponent(VirtualPageStreamStub)
+    expect(stream.props('overscanScreens')).toBe(2)
+    expect(stream.props('items')).toEqual([expect.objectContaining({
+      id: 'page-1',
+      url: '/api/v2/assets/translated',
+      width: 800,
+      height: 1200,
+    })])
 
-      vi.advanceTimersByTime(100)
-
-      expect(querySelectorAllSpy).not.toHaveBeenCalled()
-      expect(pageChangeSpy).not.toHaveBeenCalled()
-    } finally {
-      querySelectorAllSpy.mockRestore()
-    }
+    await wrapper.setProps({ viewMode: 'original' })
+    expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
+      expect.objectContaining({ url: '/api/v2/assets/source' }),
+    ])
   })
 
   it('renders loading feedback through the shared spinner primitive', () => {
@@ -132,13 +147,13 @@ describe('ReaderCanvas', () => {
       'reader-canvas__loading-state',
       'reader-canvas__loading-text',
       'reader-canvas__empty-state',
-      'reader-canvas__images',
-      'reader-canvas__image-wrapper',
-      'reader-canvas__image',
-      'reader-canvas__image-index',
+      'reader-canvas__stream',
     ]) {
       expect(source).toContain(currentHook)
     }
+
+    expect(source).toContain('VirtualPageStream')
+    expect(source).not.toContain('<img')
 
     for (const oldHook of [
       'reader-main',

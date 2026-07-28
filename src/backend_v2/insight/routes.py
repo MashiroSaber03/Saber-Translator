@@ -463,6 +463,7 @@ def create_insight_blueprint(
                 cursor=request.args.get("cursor"),
                 limit=int(request.args.get("limit", "50")),
                 kind=request.args.get("kind"),
+                include_content=request.args.get("detail") == "1",
             )
         )
 

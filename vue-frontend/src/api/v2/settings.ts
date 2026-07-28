@@ -83,6 +83,30 @@ export interface V2Font {
   kind: 'builtin' | 'uploaded'
 }
 
+export interface V2Prompt {
+  content: string
+  id: string
+  isFactoryDefault: boolean
+  name: string
+  revision: number
+  type: string
+}
+
+export interface V2DiagnosticRequest {
+  baseUrl?: string
+  credentialId?: string
+  domain?: string
+  model?: string
+  prompt?: string
+  provider?: string
+  secret?: Record<string, string>
+}
+
+export interface V2ConnectionTestResult {
+  message?: string
+  success: boolean
+}
+
 export function getV2Settings(
   domains: string[] = [],
   bookId?: string,
@@ -122,6 +146,87 @@ export function uploadV2Font(file: File): Promise<{ assetUrl: string; id: string
   return apiClient.upload<{ assetUrl: string; id: string }>(
     '/api/v2/fonts',
     form,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function deleteV2Font(fontId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(
+    `/api/v2/fonts/${encodeURIComponent(fontId)}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export async function listV2Prompts(type?: string): Promise<V2Prompt[]> {
+  const result = await apiClient.get<{ items: V2Prompt[] }>(
+    '/api/v2/prompts',
+    { params: type ? { type } : {} },
+  )
+  return result.items
+}
+
+export function createV2Prompt(
+  type: string,
+  name: string,
+  content: string,
+): Promise<V2Prompt> {
+  return apiClient.post<V2Prompt>(
+    '/api/v2/prompts',
+    { type, name, content },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function updateV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
+  return apiClient.put<V2Prompt>(
+    `/api/v2/prompts/${encodeURIComponent(prompt.id)}`,
+    {
+      name: prompt.name,
+      content: prompt.content,
+      baseRevision: prompt.revision,
+    },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function deleteV2Prompt(promptId: string): Promise<{ deleted: boolean }> {
+  return apiClient.delete<{ deleted: boolean }>(
+    `/api/v2/prompts/${encodeURIComponent(promptId)}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function resetV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
+  return apiClient.post<V2Prompt>(
+    `/api/v2/prompts/${encodeURIComponent(prompt.id)}/reset`,
+    { baseRevision: prompt.revision },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function fetchV2ModelCatalog(
+  request: V2DiagnosticRequest,
+): Promise<{ models: Array<{ id: string; name: string }>; success: boolean }> {
+  return apiClient.post('/api/v2/model-catalog', request)
+}
+
+export function runV2ConnectionTest(
+  kind: string,
+  request: V2DiagnosticRequest = {},
+): Promise<V2ConnectionTestResult> {
+  return apiClient.post(
+    `/api/v2/connection-tests/${encodeURIComponent(kind)}`,
+    request,
+  )
+}
+
+export function updateV2WorkflowPreferences(
+  payload: Record<string, unknown>,
+  baseRevision: number,
+): Promise<V2SettingEntry> {
+  return apiClient.patch<V2SettingEntry>(
+    '/api/v2/settings/workflow-preferences',
+    { payload, baseRevision },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

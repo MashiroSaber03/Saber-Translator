@@ -188,8 +188,6 @@ async function saveSettings(): Promise<void> {
 
 async function loadConfig(): Promise<void> {
   try {
-    insightStore.loadConfigFromStorage()
-
     const response = await insightApi.getGlobalConfig()
     if (response.success && response.config) {
       insightStore.setConfigFromApi(response.config as Record<string, unknown>)
@@ -197,7 +195,7 @@ async function loadConfig(): Promise<void> {
 
     requestTabsSyncFromStore()
   } catch {
-    showMessage('加载配置失败，将使用本地配置', 'error')
+    showMessage('加载后端配置失败', 'error')
     requestTabsSyncFromStore()
   }
 }

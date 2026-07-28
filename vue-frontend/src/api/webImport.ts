@@ -1,6 +1,7 @@
 import { apiClient } from '@/api/client'
 import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
+import { runV2ConnectionTest } from '@/api/v2/settings'
 import type {
   AgentLog,
   ComicPage,
@@ -115,7 +116,9 @@ export async function downloadImages(
 }
 
 export async function testFirecrawlConnection(apiKey: string): Promise<{ success: boolean; message?: string; error?: string }> {
-  return apiClient.post(webImportEndpoint('/test-firecrawl'), { apiKey })
+  return runV2ConnectionTest('firecrawl', apiKey
+    ? { secret: { apiKey } }
+    : { domain: 'web_import_firecrawl' })
 }
 
 export async function testAgentConnection(
@@ -124,10 +127,12 @@ export async function testAgentConnection(
   customBaseUrl: string,
   modelName: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
-  return apiClient.post(webImportEndpoint('/test-agent'), {
+  return runV2ConnectionTest('web_import_agent', {
     provider,
-    apiKey,
-    customBaseUrl,
-    modelName,
+    baseUrl: customBaseUrl || undefined,
+    model: modelName,
+    ...(apiKey
+      ? { secret: { apiKey } }
+      : { domain: 'web_import_agent' }),
   })
 }

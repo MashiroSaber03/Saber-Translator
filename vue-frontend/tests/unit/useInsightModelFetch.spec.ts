@@ -4,12 +4,14 @@ import { ref } from 'vue'
 
 import { useInsightModelFetch } from '@/components/insight/settings/useInsightModelFetch'
 
-const { fetchModelsMock } = vi.hoisted(() => ({
+const { fetchModelsMock, hasInsightCredentialMock } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
+  hasInsightCredentialMock: vi.fn(() => false),
 }))
 
 vi.mock('@/api/insight', () => ({
   fetchModels: fetchModelsMock,
+  hasInsightCredential: hasInsightCredentialMock,
 }))
 
 function createDeferred<T>() {
@@ -25,6 +27,7 @@ describe('useInsightModelFetch', () => {
     fetchModelsMock.mockReset()
     const messages: Array<[string, 'success' | 'error']> = []
     const modelFetch = useInsightModelFetch({
+      domain: 'insight_vlm',
       provider: ref('openai'),
       apiKey: ref(''),
       baseUrl: ref(''),
@@ -50,6 +53,7 @@ describe('useInsightModelFetch', () => {
     const provider = ref('gemini')
     const messages: Array<[string, 'success' | 'error']> = []
     const modelFetch = useInsightModelFetch({
+      domain: 'insight_vlm',
       provider,
       apiKey: ref('model-key'),
       baseUrl: ref(''),
@@ -82,6 +86,7 @@ describe('useInsightModelFetch', () => {
     const model = ref('')
     const messages: Array<[string, 'success' | 'error']> = []
     const modelFetch = useInsightModelFetch({
+      domain: 'insight_vlm',
       provider: ref('gemini'),
       apiKey: ref('model-key'),
       baseUrl: ref(''),
@@ -91,7 +96,12 @@ describe('useInsightModelFetch', () => {
 
     await modelFetch.fetchModels()
 
-    expect(fetchModelsMock).toHaveBeenCalledWith('gemini', 'model-key', undefined)
+    expect(fetchModelsMock).toHaveBeenCalledWith(
+      'gemini',
+      'model-key',
+      undefined,
+      'insight_vlm',
+    )
     expect(modelFetch.modelCount.value).toBe(1)
     expect(modelFetch.modelOptions.value).toEqual([
       { label: '-- 选择模型 --', value: '' },

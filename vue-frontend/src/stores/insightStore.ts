@@ -9,11 +9,6 @@ import {
   normalizeInsightImageGenConfig,
   normalizeInsightRerankerConfig,
 } from './insight/insightConfigDefaults'
-import {
-  INSIGHT_CONFIG_STORAGE_KEY,
-  buildInsightConfigStoragePayload,
-  parseInsightConfigStorage,
-} from './insight/insightConfigStorage'
 import { applyInsightProviderSettingsFromApi } from './insight/insightProviderSettingsHydration'
 import { applyActiveInsightConfigFromApi } from './insight/insightConfigApiHydration'
 
@@ -269,24 +264,14 @@ export const useInsightStore = defineStore('insight', () => {
   }
   function saveConfigToStorage(): void {
     try {
-      localStorage.setItem(INSIGHT_CONFIG_STORAGE_KEY, JSON.stringify(
-        buildInsightConfigStoragePayload(config.value),
-      ))
+      localStorage.removeItem('manga_insight_config')
+      localStorage.removeItem('mangaInsightProviderConfigs')
     } catch {
       return
     }
   }
   function loadConfigFromStorage(): void {
-    try {
-      configManager.loadFromStorage()
-      const stored = localStorage.getItem(INSIGHT_CONFIG_STORAGE_KEY)
-      if (stored) {
-        const parsed = parseInsightConfigStorage(JSON.parse(stored) as unknown)
-        if (parsed) config.value = parsed
-      }
-    } catch {
-      return
-    }
+    saveConfigToStorage()
   }
 
   function getConfigForApi(): Record<string, unknown> {
@@ -295,9 +280,7 @@ export const useInsightStore = defineStore('insight', () => {
 
   function setConfigFromApi(apiConfig: Record<string, unknown>): void {
     applyActiveInsightConfigFromApi(config.value, apiConfig)
-    if (applyInsightProviderSettingsFromApi(providerConfigs.value, apiConfig.provider_settings)) {
-      configManager.saveToStorage()
-    }
+    applyInsightProviderSettingsFromApi(providerConfigs.value, apiConfig.provider_settings)
     if (apiConfig.prompts) config.value.prompts = apiConfig.prompts as Record<string, string>
     saveConfigToStorage()
     configManager.vlmManager.save(config.value.vlm.provider, config.value.vlm)

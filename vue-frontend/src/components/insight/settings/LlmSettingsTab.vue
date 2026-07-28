@@ -51,6 +51,7 @@ const {
   fetchModels,
   selectModel,
 } = useInsightModelFetch({
+  domain: 'insight_chat',
   provider,
   apiKey,
   baseUrl,

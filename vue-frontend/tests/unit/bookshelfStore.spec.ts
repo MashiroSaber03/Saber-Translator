@@ -130,8 +130,7 @@ describe('bookshelfStore', () => {
     expect(store.getBookById('book-partial-reorder')?.chapters?.map(chapter => chapter.order)).toEqual([0, 1, 2])
   })
 
-  it('projects filtered and sorted books through a focused list helper', async () => {
-    const { projectBookshelfBooks } = await import('@/stores/bookshelfListProjection')
+  it('treats the backend response as the list projection', () => {
     const books: BookData[] = [
       {
         id: 'book-b',
@@ -159,24 +158,21 @@ describe('bookshelfStore', () => {
       },
     ]
 
-    expect(projectBookshelfBooks(books, {
-      searchKeyword: 'fantasy',
-      selectedTagNames: ['fantasy'],
-      sortBy: 'title',
-      sortOrder: 'asc',
-    }).map(book => book.id)).toEqual(['book-a', 'book-b'])
-
     const store = useBookshelfStore()
     store.setBooks(books)
     store.setSearchKeyword('fantasy')
     store.setTagFilter(['fantasy'])
     store.setSort('updatedAt', 'desc')
 
-    expect(store.filteredBooks.map(book => book.id)).toEqual(['book-a', 'book-b'])
+    expect(store.filteredBooks.map(book => book.id)).toEqual([
+      'book-b',
+      'book-a',
+      'book-c',
+    ])
 
     const source = readFileSync(resolve(process.cwd(), 'src/stores/bookshelfStore.ts'), 'utf8')
-    expect(source).toContain('projectBookshelfBooks')
-    expect(source).toContain("'@/stores/bookshelfListProjection'")
+    expect(source).not.toContain('projectBookshelfBooks')
+    expect(source).not.toContain("'@/stores/bookshelfListProjection'")
     expect(source).not.toContain('return books.value.filter(book =>')
   })
 })

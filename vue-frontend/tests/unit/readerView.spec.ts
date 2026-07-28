@@ -5,10 +5,10 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReaderView from '@/views/ReaderView.vue'
 
-const { routerPushMock, getBookDetailMock, getChapterImagesMock, toastErrorMock } = vi.hoisted(() => ({
+const { routerPushMock, getBookMock, listChapterPagesMock, toastErrorMock } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
-  getBookDetailMock: vi.fn(),
-  getChapterImagesMock: vi.fn(),
+  getBookMock: vi.fn(),
+  listChapterPagesMock: vi.fn(),
   toastErrorMock: vi.fn(),
 }))
 
@@ -16,9 +16,9 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPushMock }),
 }))
 
-vi.mock('@/api/bookshelf', () => ({
-  getBookDetail: getBookDetailMock,
-  getChapterImages: getChapterImagesMock,
+vi.mock('@/api/v2/content', () => ({
+  getBook: getBookMock,
+  listChapterPages: listChapterPagesMock,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -65,7 +65,7 @@ const ReaderCanvasStub = defineComponent({
       default: () => [],
     },
   },
-  template: '<div class="reader-canvas-stub">{{ images.map(image => image.original).join(",") }}</div>',
+  template: '<div class="reader-canvas-stub">{{ images.map(image => image.sourceUrl).join(",") }}</div>',
 })
 
 const ReaderControlsContractStub = defineComponent({
@@ -78,17 +78,21 @@ describe('ReaderView', () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     routerPushMock.mockReset()
     toastErrorMock.mockReset()
-    getBookDetailMock.mockReset().mockResolvedValue({
-      success: true,
-      book: {
-        id: 'book-1',
-        title: 'Book',
-        chapters: [{ id: 'chapter-1', title: 'Chapter', startPage: 1, endPage: 1 }],
-      },
+    getBookMock.mockReset().mockResolvedValue({
+      id: 'book-1',
+      title: 'Book',
+      chapterOrderRevision: 1,
+      chapters: [{
+        id: 'chapter-1',
+        title: 'Chapter',
+        ordinal: 1,
+        pageOrderRevision: 1,
+      }],
     })
-    getChapterImagesMock.mockReset().mockResolvedValue({
-      success: true,
-      images: [],
+    listChapterPagesMock.mockReset().mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      pageOrderRevision: 1,
     })
   })
 
@@ -136,7 +140,7 @@ describe('ReaderView', () => {
 
   it('cancels the delayed failure redirect when the view unmounts', async () => {
     vi.useFakeTimers()
-    getBookDetailMock.mockRejectedValueOnce(new Error('network down'))
+    getBookMock.mockRejectedValueOnce(new Error('network down'))
 
     const wrapper = mount(ReaderView, {
       props: {
@@ -176,10 +180,10 @@ describe('ReaderView', () => {
       ],
     }
 
-    getBookDetailMock
+    getBookMock
       .mockReturnValueOnce(firstBook.promise)
       .mockReturnValueOnce(secondBook.promise)
-    getChapterImagesMock
+    listChapterPagesMock
       .mockReturnValueOnce(firstImages.promise)
       .mockReturnValueOnce(secondImages.promise)
 
@@ -200,19 +204,41 @@ describe('ReaderView', () => {
 
     await wrapper.setProps({ chapterId: 'chapter-2' })
 
-    secondBook.resolve({ success: true, book })
+    secondBook.resolve(book)
     secondImages.resolve({
-      success: true,
-      images: [{ page_num: 2, original: 'chapter-2-page', translated: 'chapter-2-translated' }],
+      items: [{
+        id: 'page-2',
+        chapterId: 'chapter-2',
+        ordinal: 1,
+        logicalSourcePath: '2.png',
+        sourceRevision: 1,
+        documentRevision: 1,
+        sourceUrl: 'chapter-2-page',
+        thumbnailSourceUrl: 'chapter-2-thumb',
+        translatedUrl: 'chapter-2-translated',
+      }],
+      nextCursor: null,
+      pageOrderRevision: 1,
     })
     await flushPromises()
 
     expect(wrapper.text()).toContain('chapter-2-page')
 
-    firstBook.resolve({ success: true, book })
+    firstBook.resolve(book)
     firstImages.resolve({
-      success: true,
-      images: [{ page_num: 1, original: 'chapter-1-page', translated: 'chapter-1-translated' }],
+      items: [{
+        id: 'page-1',
+        chapterId: 'chapter-1',
+        ordinal: 1,
+        logicalSourcePath: '1.png',
+        sourceRevision: 1,
+        documentRevision: 1,
+        sourceUrl: 'chapter-1-page',
+        thumbnailSourceUrl: 'chapter-1-thumb',
+        translatedUrl: 'chapter-1-translated',
+      }],
+      nextCursor: null,
+      pageOrderRevision: 1,
     })
     await flushPromises()
 

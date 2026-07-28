@@ -321,7 +321,17 @@ const remoteModelDiscovery = useAiModelDiscovery({
     provider: localSettings.value.modelProvider,
     apiKey: localSettings.value.apiKey,
     baseUrl: localSettings.value.customBaseUrl,
+    hasStoredCredential: settingsStore.hasCredential(
+      'translation',
+      localSettings.value.modelProvider,
+    ),
   }),
+  fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+    provider,
+    apiKey,
+    baseUrl,
+    'translation',
+  ),
   notify: notifyModelDiscovery,
   supportsProvider: provider => (
     providerSupportsCapability(provider, 'modelFetch') && !isLocalProviderId(provider)
@@ -648,7 +658,11 @@ async function testCloudConnection() {
   const apiKey = localSettings.value.apiKey?.trim()
   const modelName = localSettings.value.modelName?.trim()
   const baseUrl = localSettings.value.customBaseUrl?.trim()
-  if (!apiKey) {
+  if (
+    providerRequiresApiKey(provider)
+    && !apiKey
+    && !settingsStore.hasCredential('translation', provider)
+  ) {
     toast.warning('请先填写 API Key')
     return
   }
@@ -677,6 +691,7 @@ async function testCloudConnection() {
           apiKey,
           modelName,
           baseUrl,
+          domain: 'translation',
         })
     }
     if (result.success) {

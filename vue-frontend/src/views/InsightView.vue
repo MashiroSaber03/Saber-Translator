@@ -461,23 +461,23 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
             </UiIconButton>
           </template>
 
-          <div v-show="activeTab === 'overview' && hasSelectedBook" class="insight-view__tab-content">
+          <div v-if="activeTab === 'overview' && hasSelectedBook" class="insight-view__tab-content">
             <OverviewPanel />
           </div>
 
-          <div v-show="activeTab === 'qa' && hasSelectedBook" class="insight-view__tab-content">
+          <div v-else-if="activeTab === 'qa' && hasSelectedBook" class="insight-view__tab-content">
             <QAPanel />
           </div>
 
-          <div v-show="activeTab === 'timeline' && hasSelectedBook" class="insight-view__tab-content">
+          <div v-else-if="activeTab === 'timeline' && hasSelectedBook" class="insight-view__tab-content">
             <TimelinePanel />
           </div>
 
-          <div v-show="activeTab === 'continuation' && hasSelectedBook" class="insight-view__tab-content">
+          <div v-else-if="activeTab === 'continuation' && hasSelectedBook" class="insight-view__tab-content">
             <ContinuationPanel />
           </div>
 
-          <div v-show="activeTab === 'character_studio' && hasSelectedBook" class="insight-view__tab-content">
+          <div v-else-if="activeTab === 'character_studio' && hasSelectedBook" class="insight-view__tab-content">
             <CharacterStudioEntryPanel />
           </div>
 

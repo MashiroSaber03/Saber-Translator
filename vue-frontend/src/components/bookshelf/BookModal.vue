@@ -6,10 +6,9 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { showToast } from '@/utils/toast'
-import { readBlobAsDataUrl } from '@/utils/dataUrl'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
@@ -30,7 +29,9 @@ const emit = defineEmits<{
 const bookshelfStore = useBookshelfStore()
 
 const title = ref('')
-const coverData = ref<string | null>(null)
+const coverFile = ref<File | undefined>()
+const coverPreview = ref<string | null>(null)
+let ownedCoverPreview: string | null = null
 const selectedTags = ref<string[]>([])
 const tagInput = ref('')
 const showTagSuggestions = ref(false)
@@ -59,7 +60,7 @@ onMounted(() => {
     const book = bookshelfStore.books.find(b => b.id === props.bookId)
     if (book) {
       title.value = book.title
-      coverData.value = book.cover || null
+      coverPreview.value = book.cover || null
       if (book.tags && book.tags.length > 0) {
         selectedTags.value = [...book.tags]
       }
@@ -76,12 +77,15 @@ async function handleCoverSelect(files: File[]) {
     return
   }
 
-  try {
-    coverData.value = await readBlobAsDataUrl(file, '读取封面失败')
-  } catch {
-    showToast('读取封面失败', 'error')
-  }
+  if (ownedCoverPreview) URL.revokeObjectURL(ownedCoverPreview)
+  coverFile.value = file
+  ownedCoverPreview = URL.createObjectURL(file)
+  coverPreview.value = ownedCoverPreview
 }
+
+onUnmounted(() => {
+  if (ownedCoverPreview) URL.revokeObjectURL(ownedCoverPreview)
+})
 
 function addTag(tagName: string) {
   if (!selectedTags.value.includes(tagName)) {
@@ -127,7 +131,7 @@ async function saveBook() {
     if (isEditing.value && props.bookId) {
       const success = await bookshelfStore.updateBookApi(props.bookId, {
         title: title.value.trim(),
-        cover: coverData.value || undefined,
+        cover: coverFile.value,
         tags: tagNames,
       })
       if (success) {
@@ -140,7 +144,7 @@ async function saveBook() {
       const book = await bookshelfStore.createBook(
         title.value.trim(),
         undefined,
-        coverData.value || undefined,
+        coverFile.value,
         tagNames.length > 0 ? tagNames : undefined
       )
       if (book) {
@@ -188,9 +192,9 @@ async function saveBook() {
         >
           <div class="book-modal__cover-preview">
             <img
-              v-if="coverData"
+              v-if="coverPreview"
               class="book-modal__cover-image"
-              :src="coverData"
+              :src="coverPreview"
               alt="封面预览"
             >
             <div v-else class="book-modal__cover-placeholder">

@@ -46,6 +46,7 @@ const {
   fetchModels,
   selectModel,
 } = useInsightModelFetch({
+  domain: 'insight_embedding',
   provider,
   apiKey,
   baseUrl,

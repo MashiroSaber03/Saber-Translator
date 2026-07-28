@@ -3,18 +3,13 @@ import { computed, ref } from 'vue'
 import * as bookshelfApi from '@/api/bookshelf'
 import type { BookData, ChapterData, TagData } from '@/types/api'
 import { normalizeBookData, normalizeChapterData } from '@/utils/bookshelfModels'
-import {
-  projectBookshelfBooks,
-  type BookSortBy,
-  type SortOrder,
-} from '@/stores/bookshelfListProjection'
 
-export type { BookSortBy, SortOrder } from '@/stores/bookshelfListProjection'
+export type BookSortBy = 'title' | 'createdAt' | 'updatedAt'
+export type SortOrder = 'asc' | 'desc'
 
 interface BookUpdatePayload {
   title?: string
-  description?: string
-  cover?: string
+  cover?: File
   tags?: string[]
 }
 
@@ -32,14 +27,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
-  const filteredBooks = computed(() =>
-    projectBookshelfBooks(books.value, {
-      searchKeyword: searchKeyword.value,
-      selectedTagNames: selectedTagNames.value,
-      sortBy: sortBy.value,
-      sortOrder: sortOrder.value,
-    }),
-  )
+  const filteredBooks = computed(() => books.value)
   const bookCount = computed(() => books.value.length)
   const filteredBookCount = computed(() => filteredBooks.value.length)
   const expandedBook = computed(() => {
@@ -259,6 +247,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   function setSort(by: BookSortBy, order: SortOrder = 'desc'): void {
     sortBy.value = by
     sortOrder.value = order
+    void loadBooks()
   }
 
   function enterBatchMode(): void {
@@ -322,7 +311,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     setLoading(true)
     setError(null)
     try {
-      const params: { search?: string; tags?: string[] } = {}
+      const params: bookshelfApi.GetBooksParams = {}
 
       if (searchKeyword.value.trim()) {
         params.search = searchKeyword.value.trim()
@@ -330,6 +319,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       if (selectedTagNames.value.length > 0) {
         params.tags = selectedTagNames.value
       }
+      params.sortBy = sortBy.value
+      params.sortOrder = sortOrder.value
 
       const response = await bookshelfApi.getBooks(params)
       if (response.success && response.books) {
@@ -371,7 +362,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   async function createBook(
     title: string,
     description?: string,
-    cover?: string,
+    cover?: File,
     tags?: string[],
   ): Promise<BookData | null> {
     try {

@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 
 import pytest
+from flask import Flask
 from sqlalchemy import insert, select, text
 
 from src.backend_v2.storage.assets import AssetStorageService
@@ -58,6 +59,8 @@ from src.backend_v2.storage.single_instance import (
     DataRootAlreadyLocked,
     DataRootLock,
 )
+from src.backend_v2.settings.diagnostics import ProviderDiagnostics
+from src.backend_v2.settings.routes import create_settings_blueprint
 
 
 @pytest.fixture()
@@ -441,6 +444,13 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
             )
         ).scalar_one()
     assert settings.resolve_secret(version_id) == {"apiKey": "never-return-me"}
+    assert settings.resolve_current_secret(credential_id) == {
+        "apiKey": "never-return-me"
+    }
+    assert settings.resolve_provider_secret(
+        domain="translation",
+        provider="fake",
+    ) == {"apiKey": "never-return-me"}
     loaded = settings.load(domains=("translation",))
     assert loaded["providerSettings"] == [
         {
@@ -550,3 +560,89 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
         rpm_limit=1,
     )
     assert first.allowed and not second.allowed and second.retry_after_seconds > 0
+
+
+def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
+    platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root, engine = platform
+    settings = SettingsRepository(engine)
+    settings.save_transaction(
+        credentials_edits=(
+            CredentialEdit(
+                domain="translation",
+                provider="openai",
+                secret={"apiKey": "stored-only-on-server"},
+                base_revision=0,
+                client_ref="openai-key",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="openai",
+                payload={"model": "gpt-test"},
+                base_revision=0,
+                credential_edit_ref="openai-key",
+            ),
+        ),
+    )
+    diagnostics = ProviderDiagnostics(settings)
+    captured: dict[str, object] = {}
+
+    def list_models(request):
+        captured["api_key"] = request.api_key
+        return [{"id": "gpt-test", "name": "gpt-test"}]
+
+    monkeypatch.setattr(diagnostics.chat, "list_models", list_models)
+    assert diagnostics.model_catalog(
+        {
+            "provider": "openai",
+            "domain": "translation",
+        }
+    ) == {
+        "success": True,
+        "models": [{"id": "gpt-test", "name": "gpt-test"}],
+    }
+    assert captured == {"api_key": "stored-only-on-server"}
+
+    monkeypatch.setattr(
+        ProviderDiagnostics,
+        "model_catalog",
+        lambda _self, body: {
+            "success": True,
+            "models": [{"id": str(body["provider"]), "name": "model"}],
+        },
+    )
+    monkeypatch.setattr(
+        ProviderDiagnostics,
+        "connection_test",
+        lambda _self, kind, _body: {
+            "success": True,
+            "message": f"{kind} ok",
+        },
+    )
+    app = Flask("settings-diagnostics-test")
+    app.register_blueprint(
+        create_settings_blueprint(data_root=data_root, engine=engine)
+    )
+    client = app.test_client()
+
+    catalog = client.post(
+        "/api/v2/model-catalog",
+        json={"provider": "openai", "domain": "translation"},
+    )
+    assert catalog.status_code == 200
+    assert catalog.get_json()["models"][0]["id"] == "openai"
+    tested = client.post(
+        "/api/v2/connection-tests/llm",
+        json={"provider": "openai", "domain": "translation"},
+    )
+    assert tested.status_code == 200
+    assert tested.get_json() == {"success": True, "message": "llm ok"}
+    unsupported = client.post(
+        "/api/v2/connection-tests/not-real",
+        json={},
+    )
+    assert unsupported.status_code == 422

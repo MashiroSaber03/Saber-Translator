@@ -6,20 +6,26 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 
 const {
-  extractImagesMock,
-  downloadImagesMock,
-  checkGalleryDLSupportMock,
-  getGalleryDLImagesMock,
+  checkWebImportSupportMock,
+  commitWebImportDraftMock,
+  createWebImportDraftMock,
   fetchModelsMock,
+  getTranslationBootstrapMock,
+  getWebImportDraftMock,
+  listAllWebImportDraftPagesMock,
+  updateWebImportSelectionMock,
   testFirecrawlConnectionMock,
   testAgentConnectionMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
-  extractImagesMock: vi.fn(),
-  downloadImagesMock: vi.fn(),
-  checkGalleryDLSupportMock: vi.fn(),
-  getGalleryDLImagesMock: vi.fn(),
+  checkWebImportSupportMock: vi.fn(),
+  commitWebImportDraftMock: vi.fn(),
+  createWebImportDraftMock: vi.fn(),
   fetchModelsMock: vi.fn(),
+  getTranslationBootstrapMock: vi.fn(),
+  getWebImportDraftMock: vi.fn(),
+  listAllWebImportDraftPagesMock: vi.fn(),
+  updateWebImportSelectionMock: vi.fn(),
   testFirecrawlConnectionMock: vi.fn(),
   testAgentConnectionMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
@@ -29,14 +35,27 @@ vi.mock('@/api/webImport', async () => {
   const actual = await vi.importActual<typeof import('@/api/webImport')>('@/api/webImport')
   return {
     ...actual,
-    extractImages: extractImagesMock,
-    downloadImages: downloadImagesMock,
-    checkGalleryDLSupport: checkGalleryDLSupportMock,
-    getGalleryDLImages: getGalleryDLImagesMock,
     testFirecrawlConnection: testFirecrawlConnectionMock,
     testAgentConnection: testAgentConnectionMock,
   }
 })
+
+vi.mock('@/api/v2/webImport', () => ({
+  checkWebImportSupport: checkWebImportSupportMock,
+  commitWebImportDraft: commitWebImportDraftMock,
+  createWebImportDraft: createWebImportDraftMock,
+  getWebImportDraft: getWebImportDraftMock,
+  listAllWebImportDraftPages: listAllWebImportDraftPagesMock,
+  updateWebImportSelection: updateWebImportSelectionMock,
+}))
+
+vi.mock('@/api/v2/content', () => ({
+  getTranslationBootstrap: getTranslationBootstrapMock,
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
+}))
 
 vi.mock('@/api/config', async () => {
   const actual = await vi.importActual<typeof import('@/api/config')>('@/api/config')
@@ -73,7 +92,6 @@ vi.mock('@/components/common/BaseModal.vue', () => ({
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import ProductCollapsibleSection from '@/components/product/ProductCollapsibleSection.vue'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
-import { useImageStore } from '@/stores/imageStore'
 import { useWebImportStore } from '@/stores/webImportStore'
 
 function createDeferred<T>() {
@@ -101,22 +119,55 @@ describe('WebImportModal', () => {
     setActivePinia(createPinia())
     localStorage.clear()
 
-    extractImagesMock.mockReset()
-    downloadImagesMock.mockReset()
-    checkGalleryDLSupportMock.mockReset()
-    getGalleryDLImagesMock.mockReset()
+    checkWebImportSupportMock.mockReset()
+    commitWebImportDraftMock.mockReset()
+    createWebImportDraftMock.mockReset()
     fetchModelsMock.mockReset()
+    getTranslationBootstrapMock.mockReset()
+    getWebImportDraftMock.mockReset()
+    listAllWebImportDraftPagesMock.mockReset()
+    updateWebImportSelectionMock.mockReset()
     testFirecrawlConnectionMock.mockReset()
     testAgentConnectionMock.mockReset()
     confirmProductActionMock.mockReset()
 
-    checkGalleryDLSupportMock.mockResolvedValue({ available: true, supported: false })
-    downloadImagesMock.mockResolvedValue({
-      success: true,
-      images: [{ index: 0, filename: 'page_0001.jpg', dataUrl: 'data:image/jpeg;base64,abc', size: 3 }],
-      failedCount: 0,
+    checkWebImportSupportMock.mockResolvedValue({
+      galleryDlAvailable: true,
+      galleryDlSupported: false,
     })
-    getGalleryDLImagesMock.mockResolvedValue({ success: true, images: [], total: 0 })
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
+    })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-1',
+      status: 'queued',
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+    })
+    getWebImportDraftMock.mockResolvedValue({
+      id: 'draft-1',
+      sourceUrl: 'https://example.com/chapter-1',
+      status: 'ready',
+      revision: 1,
+      candidateCount: 1,
+      failedCount: 0,
+      actualEngine: 'ai-agent',
+    })
+    listAllWebImportDraftPagesMock.mockResolvedValue([
+      {
+        id: 'draft-page-1',
+        error: null,
+        thumbnailUrl: '/api/v2/assets/thumb-1',
+        sourceMediaUrl: '/api/v2/assets/media-1',
+      },
+    ])
+    updateWebImportSelectionMock.mockResolvedValue({ revision: 2 })
+    commitWebImportDraftMock.mockResolvedValue({
+      status: 'queued',
+      batchId: 'batch-2',
+      jobIds: ['job-2'],
+    })
     fetchModelsMock.mockResolvedValue({
       success: true,
       models: [
@@ -129,33 +180,14 @@ describe('WebImportModal', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => undefined)
     vi.spyOn(window, 'confirm').mockImplementation(() => true)
 
-    extractImagesMock.mockImplementation(
-      async (
-        _url: string,
-        _config: unknown,
-        _onLog: unknown,
-        onResult: (result: unknown) => void,
-      ) => {
-        onResult({
-          success: true,
-          comicTitle: 'Comic',
-          chapterTitle: 'Chapter',
-          pages: [{ pageNumber: 1, imageUrl: 'https://img.example/1.jpg' }],
-          totalPages: 1,
-          sourceUrl: 'https://example.com/chapter-1',
-          engine: 'ai-agent',
-        })
-      }
-    )
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('auto-imports extracted pages when autoImport is enabled', async () => {
+  it('auto-commits a ready backend draft when autoImport is enabled', async () => {
     const webImportStore = useWebImportStore()
-    const imageStore = useImageStore()
     webImportStore.modalVisible = true
     webImportStore.settings.ui.autoImport = true
     webImportStore.draftSettings.ui.autoImport = true
@@ -166,8 +198,8 @@ describe('WebImportModal', () => {
     await wrapper.get('form[aria-label="网页导入提取"]').trigger('submit')
     await flushPromises()
 
-    expect(downloadImagesMock).toHaveBeenCalledTimes(1)
-    expect(imageStore.imageCount).toBe(1)
+    expect(updateWebImportSelectionMock).toHaveBeenCalledWith('draft-1', 1, ['draft-page-1'])
+    expect(commitWebImportDraftMock).toHaveBeenCalledWith('draft-1', 2)
     expect(webImportStore.status).toBe('idle')
   })
 
@@ -187,7 +219,7 @@ describe('WebImportModal', () => {
     await fetchButton!.trigger('click')
     await flushPromises()
 
-    expect(fetchModelsMock).toHaveBeenCalledWith('openai', 'test-key', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('openai', 'test-key', '', 'web_import_agent')
 
     const modelCombobox = wrapper.getComponent(UiCombobox)
     expect(modelCombobox.props('options')).toEqual(expect.arrayContaining([
@@ -213,7 +245,7 @@ describe('WebImportModal', () => {
     expect(fetchButton).toBeTruthy()
 
     await fetchButton!.trigger('click')
-    expect(fetchModelsMock).toHaveBeenCalledWith('openai', 'test-key', '')
+    expect(fetchModelsMock).toHaveBeenCalledWith('openai', 'test-key', '', 'web_import_agent')
 
     webImportStore.draftSettings.agent.provider = 'deepseek'
     await flushPromises()
@@ -240,10 +272,9 @@ describe('WebImportModal', () => {
 
     expect(confirmProductActionMock).toHaveBeenCalledWith({
       title: '关闭网页导入',
-      message: '正在处理中，确定要关闭吗？',
+      message: '后端任务会继续运行。确定关闭此窗口吗？',
       confirmText: '关闭',
-      cancelText: '继续处理',
-      tone: 'danger',
+      cancelText: '继续查看',
     })
     expect(window.confirm).not.toHaveBeenCalled()
     expect(webImportStore.modalVisible).toBe(true)

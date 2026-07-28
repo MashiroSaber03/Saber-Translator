@@ -159,7 +159,17 @@ export async function cleanTempFiles(): Promise<ApiResponse> {
 }
 
 export async function getServerInfo(): Promise<ServerInfoResponse> {
-  return apiClient.get<ServerInfoResponse>('/api/server-info')
+  const result = await apiClient.get<{
+    hostname: string
+    host: string
+    port: number
+    lanUrl: string
+  }>('/api/v2/system/server-info')
+  return {
+    success: true,
+    lan_url: result.lanUrl,
+    port: result.port,
+  }
 }
 
 export async function cleanupGpu(): Promise<GpuCleanupResponse> {

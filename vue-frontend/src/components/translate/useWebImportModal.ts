@@ -18,6 +18,7 @@ import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
 import { useAiModelDiscovery } from '@/composables/useAiModelDiscovery'
+import { configApi } from '@/api/config'
 import type { WebImportSettingsActions } from './web-import/webImportSettingsActions'
 
 export function useWebImportModal() {
@@ -80,12 +81,27 @@ export function useWebImportModal() {
   const error = computed(() => webImportStore.error)
   const isProcessing = computed(() => webImportStore.isProcessing)
   const draftSettings = computed(() => webImportStore.draftSettings)
+  const hasAgentCredential = computed(() => webImportStore.hasCredential(
+    'web_import_agent',
+    draftSettings.value.agent.provider,
+  ))
+  const hasFirecrawlCredential = computed(() => webImportStore.hasCredential(
+    'web_import_firecrawl',
+    'firecrawl',
+  ))
   const modelDiscovery = useAiModelDiscovery({
     source: () => ({
       provider: draftSettings.value.agent.provider,
       apiKey: draftSettings.value.agent.apiKey,
       baseUrl: draftSettings.value.agent.customBaseUrl,
+      hasStoredCredential: hasAgentCredential.value,
     }),
+    fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+      provider,
+      apiKey,
+      baseUrl,
+      'web_import_agent',
+    ),
     notify: showToast,
     emptyBaseUrl: '',
   })
@@ -408,7 +424,7 @@ export function useWebImportModal() {
   const showCustomUrl = computed(() => normalizeProviderId(draftSettings.value.agent.provider) === 'custom')
 
   async function handleTestFirecrawl() {
-    if (!draftSettings.value.firecrawl.apiKey) {
+    if (!draftSettings.value.firecrawl.apiKey && !hasFirecrawlCredential.value) {
       showToast('请输入 Firecrawl API Key', 'warning')
       return
     }
@@ -419,7 +435,7 @@ export function useWebImportModal() {
       if (result.success) {
         showToast('Firecrawl 连接成功', 'success')
       } else {
-        showToast(`连接失败: ${result.error}`, 'error')
+        showToast(`连接失败: ${result.message || result.error || '未知错误'}`, 'error')
       }
     } catch (e) {
       showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
@@ -429,7 +445,11 @@ export function useWebImportModal() {
   }
 
   async function handleTestAgent() {
-    if (providerRequiresApiKey(draftSettings.value.agent.provider) && !draftSettings.value.agent.apiKey) {
+    if (
+      providerRequiresApiKey(draftSettings.value.agent.provider)
+      && !draftSettings.value.agent.apiKey
+      && !hasAgentCredential.value
+    ) {
       showToast('请输入 AI Agent API Key', 'warning')
       return
     }
@@ -445,7 +465,7 @@ export function useWebImportModal() {
       if (result.success) {
         showToast('AI Agent 连接成功', 'success')
       } else {
-        showToast(`连接失败: ${result.error}`, 'error')
+        showToast(`连接失败: ${result.message || result.error || '未知错误'}`, 'error')
       }
     } catch (e) {
       showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
@@ -509,6 +529,8 @@ export function useWebImportModal() {
     isProcessing,
     draftSettings,
     hasUnsavedSettings,
+    hasAgentCredential,
+    hasFirecrawlCredential,
     isSavingSettings,
     showAgentLogs,
     agentProviderOptions,

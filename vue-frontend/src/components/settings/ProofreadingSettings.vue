@@ -315,8 +315,17 @@ function getRoundModelDiscovery(index: number): ReturnType<typeof useAiModelDisc
         provider: round?.provider ?? '',
         apiKey: round?.apiKey ?? '',
         baseUrl: round?.customBaseUrl ?? '',
+        hasStoredCredential: round
+          ? settingsStore.hasCredential(`proofreading_${index}`, round.provider)
+          : false,
       }
     },
+    fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+      provider,
+      apiKey,
+      baseUrl,
+      `proofreading_${index}`,
+    ),
     notify: notifyRoundModelDiscovery,
     successMessage: count => `轮次 ${index + 1}: 获取到 ${count} 个模型`,
     emptyBaseUrl: '',
@@ -362,7 +371,11 @@ async function testRoundConnection(index: number) {
   const modelName = round.modelName?.trim()
   const baseUrl = round.customBaseUrl?.trim()
 
-  if (providerRequiresApiKey(provider) && !apiKey) {
+  if (
+    providerRequiresApiKey(provider)
+    && !apiKey
+    && !settingsStore.hasCredential(`proofreading_${index}`, provider)
+  ) {
     toast.warning('请先填写 API Key')
     return
   }
@@ -380,7 +393,8 @@ async function testRoundConnection(index: number) {
       provider,
       apiKey,
       modelName,
-      baseUrl
+      baseUrl,
+      domain: `proofreading_${index}`,
     })
 
     if (result.success) {

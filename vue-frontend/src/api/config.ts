@@ -1,5 +1,21 @@
+import textStyleDefaultsJson from '../../../src/shared/text_style_defaults_factory.json'
 import { apiClient } from './client'
 import { normalizeProviderId } from '@/config/aiProviders'
+import {
+  createV2Prompt,
+  deleteV2Prompt,
+  fetchV2ModelCatalog,
+  getV2Settings,
+  listV2Fonts,
+  listV2Prompts,
+  resetV2Prompt,
+  runV2ConnectionTest,
+  saveV2SettingsTransaction,
+  updateV2Prompt,
+  updateV2WorkflowPreferences,
+  uploadV2Font,
+  type V2Prompt,
+} from '@/api/v2/settings'
 import type {
   ApiResponse,
   ConnectionTestResponse,
@@ -9,42 +25,6 @@ import type {
 } from '@/types'
 import type { TextStyleSettings } from '@/types/settings'
 import type { WorkflowMode } from '@/types/workflow'
-
-const CONFIG_ENDPOINTS = {
-  prompts: '/api/get_prompts',
-  promptContent: '/api/get_prompt_content',
-  savePrompt: '/api/save_prompt',
-  deletePrompt: '/api/delete_prompt',
-  resetPrompt: '/api/reset_prompt_to_default',
-  textboxPrompts: '/api/get_textbox_prompts',
-  textboxPromptContent: '/api/get_textbox_prompt_content',
-  saveTextboxPrompt: '/api/save_textbox_prompt',
-  deleteTextboxPrompt: '/api/delete_textbox_prompt',
-  resetTextboxPrompt: '/api/reset_textbox_prompt_to_default',
-  fetchModels: '/api/fetch_models',
-  ollamaConnection: '/api/test_ollama_connection',
-  sakuraConnection: '/api/test_sakura_connection',
-  baiduOcrConnection: '/api/test_baidu_ocr_connection',
-  lamaRepair: '/api/test_lama_repair',
-  aiVisionOcrConnection: '/api/test_ai_vision_ocr',
-  aiTranslateConnection: '/api/test_ai_translate_connection',
-  baiduTranslateConnection: '/api/test_baidu_translate_connection',
-  youdaoTranslateConnection: '/api/test_youdao_translate',
-  fontList: '/api/get_font_list',
-  uploadFont: '/api/upload_font',
-  testParams: '/api/test_params',
-  userSettings: '/api/get_settings',
-  saveUserSettings: '/api/save_settings',
-  textStyleDefaults: '/api/config/text-style-defaults',
-  resetTextStyleDefaults: '/api/config/text-style-defaults/reset',
-  translateWorkflowPreferences: '/api/config/translate-workflow-preferences',
-} as const
-
-interface PromptPayload {
-  type?: string
-  prompt_name: string
-  prompt_content?: string
-}
 
 export interface PromptContentResponse {
   success?: boolean
@@ -58,6 +38,7 @@ export interface AiVisionOcrTestParams {
   modelName: string
   customBaseUrl?: string
   prompt?: string
+  domain?: string
 }
 
 export interface AiTranslateTestParams {
@@ -65,6 +46,7 @@ export interface AiTranslateTestParams {
   apiKey: string
   modelName?: string
   baseUrl?: string
+  domain?: string
 }
 
 export interface FontUploadResponse {
@@ -102,188 +84,283 @@ export interface TranslateWorkflowPreferencesResponse {
   error?: string
 }
 
-function promptPayload(name: string, content?: string, type?: string): PromptPayload {
+const promptCache = new Map<string, V2Prompt[]>()
+const settingRevisions = new Map<string, number>()
+
+async function promptsFor(type: string, refresh = false): Promise<V2Prompt[]> {
+  if (!refresh && promptCache.has(type)) return promptCache.get(type)!
+  const prompts = await listV2Prompts(type)
+  promptCache.set(type, prompts)
+  return prompts
+}
+
+async function promptByName(type: string, name: string): Promise<V2Prompt> {
+  const prompt = (await promptsFor(type, true)).find(item => item.name === name)
+  if (!prompt) throw new Error(`提示词不存在：${name}`)
+  return prompt
+}
+
+function cachePrompt(type: string, prompt: V2Prompt): void {
+  const current = promptCache.get(type) || []
+  promptCache.set(type, [
+    ...current.filter(item => item.id !== prompt.id),
+    prompt,
+  ].sort((left, right) => left.name.localeCompare(right.name)))
+}
+
+async function loadSetting(domain: string): Promise<Record<string, unknown>> {
+  const document = await getV2Settings([domain])
+  const row = document.settings.find(item => item.domain === domain)
+  settingRevisions.set(domain, row?.revision ?? 0)
+  return row?.payload || {}
+}
+
+async function saveSetting(
+  domain: string,
+  payload: Record<string, unknown>,
+  schemaVersion = 1,
+): Promise<void> {
+  if (!settingRevisions.has(domain)) await loadSetting(domain)
+  const result = await saveV2SettingsTransaction({
+    settings: [{
+      domain,
+      payload,
+      baseRevision: settingRevisions.get(domain) ?? 0,
+      schemaVersion,
+    }],
+  })
+  const mutation = result.settings.find(item => item.domain === domain)
+  if (mutation) settingRevisions.set(domain, mutation.revision)
+}
+
+function secretOrDomain(
+  domain: string,
+  secret: Record<string, string>,
+): { domain?: string; secret?: Record<string, string> } {
+  const present = Object.fromEntries(
+    Object.entries(secret).filter(([, value]) => value.trim().length > 0),
+  )
+  return Object.keys(present).length > 0 ? { secret: present } : { domain }
+}
+
+export async function getPrompts(type = 'translate'): Promise<PromptListResponse> {
+  const prompts = await promptsFor(type, true)
   return {
-    ...(type ? { type } : {}),
-    prompt_name: name,
-    ...(content !== undefined ? { prompt_content: content } : {}),
+    success: true,
+    prompt_names: prompts.map(item => item.name),
+    default_prompt_content: prompts.find(item => item.isFactoryDefault)?.content,
   }
 }
 
-export async function getPrompts(type?: string): Promise<PromptListResponse> {
-  return apiClient.get<PromptListResponse>(CONFIG_ENDPOINTS.prompts, {
-    params: type ? { type } : {},
-  })
-}
-
 export async function getPromptContent(type: string, name: string): Promise<PromptContentResponse> {
-  return apiClient.get<PromptContentResponse>(CONFIG_ENDPOINTS.promptContent, {
-    params: { type, prompt_name: name },
-  })
+  const prompt = await promptByName(type, name)
+  return { success: true, prompt_content: prompt.content }
 }
 
 export async function savePrompt(type: string, name: string, content: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(CONFIG_ENDPOINTS.savePrompt, promptPayload(name, content, type))
+  const existing = (await promptsFor(type, true)).find(item => item.name === name)
+  const saved = existing
+    ? await updateV2Prompt({ ...existing, content })
+    : await createV2Prompt(type, name, content)
+  cachePrompt(type, saved)
+  return { success: true }
 }
 
 export async function deletePrompt(type: string, name: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(CONFIG_ENDPOINTS.deletePrompt, promptPayload(name, undefined, type))
+  const prompt = await promptByName(type, name)
+  await deleteV2Prompt(prompt.id)
+  promptCache.set(type, (promptCache.get(type) || []).filter(item => item.id !== prompt.id))
+  return { success: true }
 }
 
 export async function resetPromptToDefault(name: string): Promise<PromptContentResponse> {
-  return apiClient.post<PromptContentResponse>(CONFIG_ENDPOINTS.resetPrompt, promptPayload(name))
+  const prompt = await promptByName('translate', name)
+  const reset = await resetV2Prompt(prompt)
+  cachePrompt('translate', reset)
+  return { success: true, prompt_content: reset.content }
 }
 
-export async function getTextboxPrompts(): Promise<PromptListResponse> {
-  return apiClient.get<PromptListResponse>(CONFIG_ENDPOINTS.textboxPrompts)
+export function getTextboxPrompts(): Promise<PromptListResponse> {
+  return getPrompts('textbox')
 }
 
-export async function getTextboxPromptContent(name: string): Promise<PromptContentResponse> {
-  return apiClient.get<PromptContentResponse>(CONFIG_ENDPOINTS.textboxPromptContent, {
-    params: { prompt_name: name },
-  })
+export function getTextboxPromptContent(name: string): Promise<PromptContentResponse> {
+  return getPromptContent('textbox', name)
 }
 
-export async function saveTextboxPrompt(name: string, content: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(CONFIG_ENDPOINTS.saveTextboxPrompt, promptPayload(name, content))
+export function saveTextboxPrompt(name: string, content: string): Promise<ApiResponse> {
+  return savePrompt('textbox', name, content)
 }
 
-export async function deleteTextboxPrompt(name: string): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(CONFIG_ENDPOINTS.deleteTextboxPrompt, promptPayload(name))
+export function deleteTextboxPrompt(name: string): Promise<ApiResponse> {
+  return deletePrompt('textbox', name)
 }
 
 export async function resetTextboxPromptToDefault(name: string): Promise<PromptContentResponse> {
-  return apiClient.post<PromptContentResponse>(CONFIG_ENDPOINTS.resetTextboxPrompt, promptPayload(name))
+  const prompt = await promptByName('textbox', name)
+  const reset = await resetV2Prompt(prompt)
+  cachePrompt('textbox', reset)
+  return { success: true, prompt_content: reset.content }
 }
 
 export async function fetchModels(
   provider: string,
   apiKey: string,
-  baseUrl?: string
+  baseUrl?: string,
+  domain = 'translation',
 ): Promise<FetchModelsResponse> {
-  return apiClient.post<FetchModelsResponse>(CONFIG_ENDPOINTS.fetchModels, {
+  return fetchV2ModelCatalog({
     provider: normalizeProviderId(provider),
-    api_key: apiKey,
-    base_url: baseUrl || '',
+    baseUrl: baseUrl || undefined,
+    ...secretOrDomain(domain, { apiKey }),
   })
 }
 
-export async function testOllamaConnection(baseUrl?: string): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.ollamaConnection, {
-    base_url: baseUrl,
-  })
+export function testOllamaConnection(baseUrl?: string): Promise<ConnectionTestResponse> {
+  return runV2ConnectionTest('ollama', { baseUrl, domain: 'translation' })
 }
 
-export async function testSakuraConnection(baseUrl?: string): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.sakuraConnection, {
-    base_url: baseUrl,
-  })
+export function testSakuraConnection(baseUrl?: string): Promise<ConnectionTestResponse> {
+  return runV2ConnectionTest('sakura', { baseUrl, domain: 'translation' })
 }
 
-export async function testBaiduOcrConnection(
+export function testBaiduOcrConnection(
   apiKey: string,
-  secretKey: string
+  secretKey: string,
 ): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.baiduOcrConnection, {
-    api_key: apiKey,
-    secret_key: secretKey,
+  return runV2ConnectionTest('baidu_ocr', {
+    ...secretOrDomain('ocr', { apiKey, secretKey }),
   })
 }
 
-export async function testLamaRepair(): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.lamaRepair)
+export function testLamaRepair(): Promise<ConnectionTestResponse> {
+  return runV2ConnectionTest('lama_repair')
 }
 
-export async function testAiVisionOcrConnection(
-  params: AiVisionOcrTestParams
+export function testAiVisionOcrConnection(
+  params: AiVisionOcrTestParams,
 ): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.aiVisionOcrConnection, {
+  return runV2ConnectionTest('ai_vision_ocr', {
     provider: normalizeProviderId(params.provider),
-    api_key: params.apiKey,
-    model_name: params.modelName,
-    custom_ai_vision_base_url: params.customBaseUrl,
-    prompt: params.prompt || '',
+    model: params.modelName,
+    baseUrl: params.customBaseUrl || undefined,
+    prompt: params.prompt || undefined,
+    ...secretOrDomain(params.domain || 'ai_vision_ocr', { apiKey: params.apiKey }),
   })
 }
 
-export async function testAiTranslateConnection(
-  params: AiTranslateTestParams
+export function testAiTranslateConnection(
+  params: AiTranslateTestParams,
 ): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.aiTranslateConnection, {
+  return runV2ConnectionTest('ai_translate', {
     provider: normalizeProviderId(params.provider),
-    api_key: params.apiKey,
-    model_name: params.modelName || '',
-    base_url: params.baseUrl || '',
+    model: params.modelName || undefined,
+    baseUrl: params.baseUrl || undefined,
+    ...secretOrDomain(params.domain || 'translation', { apiKey: params.apiKey }),
   })
 }
 
-export async function testBaiduTranslateConnection(
+export function testBaiduTranslateConnection(
   appId: string,
-  appKey: string
+  appKey: string,
 ): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.baiduTranslateConnection, {
-    app_id: appId,
-    app_key: appKey,
+  return runV2ConnectionTest('baidu_translate', {
+    provider: 'baidu_translate',
+    ...secretOrDomain('translation', { appId, appKey }),
   })
 }
 
-export async function testYoudaoTranslateConnection(
+export function testYoudaoTranslateConnection(
   appKey: string,
-  appSecret: string
+  appSecret: string,
 ): Promise<ConnectionTestResponse> {
-  return apiClient.post<ConnectionTestResponse>(CONFIG_ENDPOINTS.youdaoTranslateConnection, {
-    appKey,
-    appSecret,
+  return runV2ConnectionTest('youdao_translate', {
+    provider: 'youdao_translate',
+    ...secretOrDomain('translation', { appKey, appSecret }),
   })
 }
 
 export async function getFontList(): Promise<FontListResponse> {
-  return apiClient.get<FontListResponse>(CONFIG_ENDPOINTS.fontList)
+  const fonts = await listV2Fonts()
+  return {
+    success: true,
+    fonts: fonts.map(font => ({
+      id: font.id,
+      kind: font.kind,
+      file_name: font.builtinKey || font.displayName,
+      display_name: font.displayName,
+      path: font.id,
+      is_default: font.kind === 'builtin',
+    })),
+    default_fonts: Object.fromEntries(
+      fonts
+        .filter(font => font.kind === 'builtin')
+        .map(font => [font.displayName, font.id]),
+    ),
+  }
 }
 
 export async function uploadFont(file: File): Promise<FontUploadResponse> {
-  const formData = new FormData()
-  formData.append('font', file)
-  return apiClient.upload<FontUploadResponse>(CONFIG_ENDPOINTS.uploadFont, formData)
-}
-
-export async function testParams(params: Record<string, unknown>): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(CONFIG_ENDPOINTS.testParams, params)
+  const uploaded = await uploadV2Font(file)
+  return { success: true, fontPath: uploaded.id }
 }
 
 export async function getUserSettings(): Promise<UserSettingsResponse> {
-  return apiClient.get<UserSettingsResponse>(CONFIG_ENDPOINTS.userSettings)
+  return { success: true, settings: await loadSetting('translation') }
 }
 
 export async function getTextStyleDefaults(): Promise<TextStyleDefaultsResponse> {
-  return apiClient.get<TextStyleDefaultsResponse>(CONFIG_ENDPOINTS.textStyleDefaults)
+  return {
+    success: true,
+    defaults: await loadSetting('text_style_defaults') as unknown as TextStyleSettings,
+  }
 }
 
 export async function saveTextStyleDefaults(
-  defaults: TextStyleSettings
+  defaults: TextStyleSettings,
 ): Promise<SaveTextStyleDefaultsResponse> {
-  return apiClient.post<SaveTextStyleDefaultsResponse>(CONFIG_ENDPOINTS.textStyleDefaults, { defaults })
+  await saveSetting(
+    'text_style_defaults',
+    defaults as unknown as Record<string, unknown>,
+  )
+  return { success: true, defaults }
 }
 
 export async function resetTextStyleDefaults(): Promise<SaveTextStyleDefaultsResponse> {
-  return apiClient.post<SaveTextStyleDefaultsResponse>(CONFIG_ENDPOINTS.resetTextStyleDefaults)
+  const defaults = structuredClone(textStyleDefaultsJson) as TextStyleSettings
+  return saveTextStyleDefaults(defaults)
 }
 
 export async function getTranslateWorkflowPreferences(): Promise<TranslateWorkflowPreferencesResponse> {
-  return apiClient.get<TranslateWorkflowPreferencesResponse>(CONFIG_ENDPOINTS.translateWorkflowPreferences)
+  const payload = await loadSetting('workflow_preferences')
+  return {
+    success: true,
+    preferences: {
+      rememberWorkflowModeEnabled: Boolean(payload.rememberWorkflowModeEnabled),
+      lastWorkflowMode: String(payload.lastWorkflowMode || 'standard') as WorkflowMode,
+    },
+  }
 }
 
 export async function saveTranslateWorkflowPreferences(
-  preferences: TranslateWorkflowPreferences
+  preferences: TranslateWorkflowPreferences,
 ): Promise<TranslateWorkflowPreferencesResponse> {
-  return apiClient.post<TranslateWorkflowPreferencesResponse>(
-    CONFIG_ENDPOINTS.translateWorkflowPreferences,
-    preferences
+  if (!settingRevisions.has('workflow_preferences')) {
+    await loadSetting('workflow_preferences')
+  }
+  const updated = await updateV2WorkflowPreferences(
+    preferences as unknown as Record<string, unknown>,
+    settingRevisions.get('workflow_preferences') ?? 0,
   )
+  settingRevisions.set('workflow_preferences', updated.revision)
+  return { success: true, preferences }
 }
 
-export async function saveUserSettings(settings: Record<string, unknown>): Promise<ApiResponse> {
-  return apiClient.post<ApiResponse>(CONFIG_ENDPOINTS.saveUserSettings, { settings })
+export async function saveUserSettings(
+  settings: Record<string, unknown>,
+): Promise<ApiResponse> {
+  await saveSetting('translation', settings, 3)
+  return { success: true }
 }
 
 export const configApi = {
@@ -308,7 +385,6 @@ export const configApi = {
   testYoudaoTranslateConnection,
   getFontList,
   uploadFont,
-  testParams,
   getUserSettings,
   getTextStyleDefaults,
   saveTextStyleDefaults,

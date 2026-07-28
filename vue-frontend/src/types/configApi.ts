@@ -1,4 +1,6 @@
 export interface FontInfo {
+  id?: string
+  kind?: 'builtin' | 'uploaded'
   file_name: string
   display_name: string
   path: string

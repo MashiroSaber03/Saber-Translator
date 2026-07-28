@@ -25,6 +25,7 @@ import {
 } from '@/api/pluginAgent'
 import { useSettingsStore } from '@/stores/settings'
 import type { PluginAgentProvider } from '@/types/settings'
+import { providerRequiresApiKey } from '@/config/aiProviders'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { useToast } from '@/utils/toast'
 import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
@@ -107,9 +108,19 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       provider: localAgentSettings.value.provider,
       apiKey: localAgentSettings.value.apiKey,
       baseUrl: localAgentSettings.value.customBaseUrl,
+      hasStoredCredential: settingsStore.hasCredential(
+        'plugin_agent',
+        localAgentSettings.value.provider,
+      ),
     }),
+    fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+      provider,
+      apiKey,
+      baseUrl,
+      'plugin_agent',
+    ),
     notify: notifyModelDiscovery,
-    requiresApiKey: () => false,
+    requiresApiKey: provider => providerRequiresApiKey(provider),
     emptyBaseUrl: '',
     errorMessage: error => error instanceof Error ? error.message : '获取模型失败',
   })
@@ -689,6 +700,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
         apiKey: localAgentSettings.value.apiKey,
         modelName: localAgentSettings.value.modelName,
         baseUrl: localAgentSettings.value.customBaseUrl,
+        domain: 'plugin_agent',
       })
       if (result.success) {
         toast.success(result.message || '连接成功')

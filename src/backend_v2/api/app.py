@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import socket
 from typing import Any, Callable
 
 from flask import Blueprint, Flask, Response, jsonify
@@ -23,6 +24,8 @@ class ApiSettings:
     identity: RuntimeIdentity
     epoch_healthy: Callable[[], bool] = lambda: True
     engine: Engine | None = None
+    host: str = "0.0.0.0"
+    port: int = 5000
 
 
 @dataclass(slots=True)
@@ -72,6 +75,22 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
         return Response(
             json.dumps(_load_openapi_document(), ensure_ascii=False),
             content_type="application/json; charset=utf-8",
+        )
+
+    @blueprint.get("/system/server-info")
+    def server_info() -> Response:
+        hostname = socket.gethostname()
+        try:
+            lan_address = socket.gethostbyname(hostname)
+        except OSError:
+            lan_address = "127.0.0.1"
+        return jsonify(
+            {
+                "hostname": hostname,
+                "host": settings.host,
+                "port": settings.port,
+                "lanUrl": f"http://{lan_address}:{settings.port}",
+            }
         )
 
     return blueprint

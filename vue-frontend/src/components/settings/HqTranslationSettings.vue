@@ -226,7 +226,14 @@ const modelDiscovery = useAiModelDiscovery({
     provider: hqSettings.value.provider,
     apiKey: localHqSettings.value.apiKey,
     baseUrl: localHqSettings.value.customBaseUrl,
+    hasStoredCredential: settingsStore.hasCredential('hq', hqSettings.value.provider),
   }),
+  fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+    provider,
+    apiKey,
+    baseUrl,
+    'hq',
+  ),
   notify: notifyModelDiscovery,
   emptyBaseUrl: '',
 })
@@ -270,7 +277,11 @@ async function testConnection() {
   const modelName = localHqSettings.value.modelName?.trim()
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
-  if (providerRequiresApiKey(provider) && !apiKey) {
+  if (
+    providerRequiresApiKey(provider)
+    && !apiKey
+    && !settingsStore.hasCredential('hq', provider)
+  ) {
     toast.warning('请先填写 API Key')
     return
   }
@@ -293,7 +304,8 @@ async function testConnection() {
       provider,
       apiKey,
       modelName,
-      baseUrl
+      baseUrl,
+      domain: 'hq',
     })
 
     if (result.success) {

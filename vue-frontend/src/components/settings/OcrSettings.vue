@@ -384,7 +384,17 @@ const aiVisionModelDiscovery = useAiModelDiscovery({
     provider: settingsStore.settings.aiVisionOcr.provider,
     apiKey: localAiVisionOcr.value.apiKey,
     baseUrl: localAiVisionOcr.value.customBaseUrl,
+    hasStoredCredential: settingsStore.hasCredential(
+      'ai_vision_ocr',
+      settingsStore.settings.aiVisionOcr.provider,
+    ),
   }),
+  fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+    provider,
+    apiKey,
+    baseUrl,
+    'ai_vision_ocr',
+  ),
   notify: notifyModelDiscovery,
   emptyBaseUrl: '',
 })
@@ -539,7 +549,10 @@ function handlePaddleOcrVlLangChange(langCode: string) {
 async function testBaiduOcr() {
   const apiKey = localBaiduOcr.value.apiKey?.trim()
   const secretKey = localBaiduOcr.value.secretKey?.trim()
-  if (!apiKey || !secretKey) {
+  if (
+    (!apiKey || !secretKey)
+    && !settingsStore.hasCredential('ocr', 'baidu')
+  ) {
     toast.warning('请填写百度OCR的API Key和Secret Key')
     return
   }
@@ -567,7 +580,8 @@ async function testAiVisionOcr() {
       apiKey: localAiVisionOcr.value.apiKey,
       modelName: localAiVisionOcr.value.modelName,
       customBaseUrl: localAiVisionOcr.value.customBaseUrl,
-      prompt: localAiVisionOcr.value.prompt
+      prompt: localAiVisionOcr.value.prompt,
+      domain: 'ai_vision_ocr',
     })
     if (result.success) {
       toast.success('AI视觉OCR连接成功')

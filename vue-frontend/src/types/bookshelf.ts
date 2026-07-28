@@ -16,6 +16,7 @@ export interface BookData {
   updatedAt?: string
   created_at?: string
   updated_at?: string
+  chapterOrderRevision?: number
 }
 
 export interface ChapterData {
@@ -28,9 +29,12 @@ export interface ChapterData {
   hasSession?: boolean
   has_session?: boolean
   session_path?: string
+  ordinal?: number
+  pageOrderRevision?: number
 }
 
 export interface TagData {
+  id?: string
   name: string
   color?: string
   book_count?: number

@@ -17,6 +17,8 @@ defineProps<{
   agentProviderOptions: UiSelectOption[]
   draftSettings: WebImportSettings
   hasUnsavedSettings: boolean
+  hasAgentCredential?: boolean
+  hasFirecrawlCredential?: boolean
   isFetchingModels: boolean
   isSavingSettings: boolean
   modelList: string[]
@@ -108,6 +110,8 @@ function updateSettingsTab(tabId: string): void {
       <WebImportBasicSettingsPanel
         :agent-provider-options="agentProviderOptions"
         :draft-settings="draftSettings"
+        :has-agent-credential="hasAgentCredential"
+        :has-firecrawl-credential="hasFirecrawlCredential"
         :is-fetching-models="isFetchingModels"
         :model-list="modelList"
         :model-list-options="modelListOptions"
