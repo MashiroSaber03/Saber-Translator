@@ -49,6 +49,7 @@ models/
 
 # --- 用户数据 ---
 data/
+data-v2/
 
 # --- 配置文件 ---
 /config/
@@ -68,7 +69,9 @@ Thumbs.db
 .ipynb_checkpoints/
 
 # --- 文档 ---
-docs/
+docs/*
+!docs/refactor/
+!docs/refactor/**
 !vue-frontend/docs/
 !vue-frontend/docs/**
 

@@ -1,0 +1,903 @@
+openapi: 3.1.0
+info:
+  title: Saber Translator Backend-First API
+  version: 2.0.0-dev
+  description: >-
+    Contract-first API for the backend-owned v2 architecture. This document is
+    intentionally introduced before v2 feature handlers.
+servers:
+  - url: /api/v2
+tags:
+  - name: system
+  - name: content
+  - name: pages
+  - name: operations
+  - name: jobs
+  - name: studio
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getV2Health
+      responses:
+        "200":
+          description: Process health and epoch identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /pages/{page_id}/document/batch:
+    patch:
+      tags: [pages]
+      operationId: batchMutatePageDocument
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageDocumentBatchMutation"
+      responses:
+        "200":
+          description: The complete authoritative page document after one CAS.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageDocument"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /pages/{page_id}/repairs:
+    post:
+      tags: [operations]
+      operationId: createPageRepairOperation
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/BubbleRepairCommand"
+                - $ref: "#/components/schemas/MaskRepairCommand"
+              discriminator:
+                propertyName: target
+                mapping:
+                  bubble: "#/components/schemas/BubbleRepairCommand"
+                  mask: "#/components/schemas/MaskRepairCommand"
+      responses:
+        "202":
+          description: Repair operation was durably created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationAccepted"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /operations/{operation_id}:
+    get:
+      tags: [operations]
+      operationId: getOperation
+      parameters:
+        - $ref: "#/components/parameters/OperationId"
+      responses:
+        "200":
+          description: Current durable operation state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{job_id}/resume:
+    post:
+      tags: [jobs]
+      operationId: resumePausedJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A paused job was returned to queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+  /jobs/{job_id}/continue:
+    post:
+      tags: [jobs]
+      operationId: continueInterruptedJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: An interrupted job was returned to queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+  /studio/chat/sessions/{session_id}/messages:
+    post:
+      tags: [studio]
+      operationId: createStudioChatMessage
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioMessageCommand"
+      responses:
+        "202":
+          description: User message and remote operation were atomically created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationAccepted"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "423":
+          $ref: "#/components/responses/Locked"
+  /books:
+    get:
+      tags: [content]
+      operationId: listBooks
+      parameters:
+        - name: search
+          in: query
+          schema: {type: string}
+        - name: tagIds
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: Library books only; the quick workspace is hidden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookList"
+    post:
+      tags: [content]
+      operationId: createBook
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties:
+                title: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        "201":
+          description: Book created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /books/{book_id}/chapters:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [content]
+      operationId: listBookChapters
+      responses:
+        "200":
+          description: Ordered chapter metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChapterList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [content]
+      operationId: createChapter
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties:
+                title: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        "201":
+          description: Chapter appended by the backend.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+  /books/{book_id}/chapters/order:
+    put:
+      tags: [content]
+      operationId: reorderChapters
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseRevision, orderedIds]
+              properties:
+                baseRevision: {type: integer, minimum: 1}
+                orderedIds:
+                  type: array
+                  uniqueItems: true
+                  items: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: New chapter order revision.
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /chapters/{chapter_id}/pages:
+    parameters:
+      - $ref: "#/components/parameters/ChapterId"
+    get:
+      tags: [content]
+      operationId: listChapterPages
+      parameters:
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: all
+          in: query
+          schema: {type: integer, enum: [1]}
+      responses:
+        "200":
+          description: Page metadata and immutable URLs only; no image bytes or Base64.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageList"
+    post:
+      tags: [content]
+      operationId: importChapterPage
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ImportLeaseId"
+        - $ref: "#/components/parameters/ImportLeaseToken"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file, logicalPath]
+              properties:
+                file: {type: string, format: binary}
+                logicalPath: {type: string, minLength: 1}
+      responses:
+        "201":
+          description: Source, thumbnail and page were durably published.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageImportResult"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /chapters/{chapter_id}/import-leases:
+    post:
+      tags: [content]
+      operationId: createChapterImportLease
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Owner token is returned once and only its hash is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportLease"
+        "423":
+          $ref: "#/components/responses/Locked"
+  /chapters/{chapter_id}/import-leases/{lease_id}:
+    delete:
+      tags: [content]
+      operationId: releaseChapterImportLease
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/LeaseId"
+        - $ref: "#/components/parameters/ImportLeaseToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Lease released.
+        "423":
+          $ref: "#/components/responses/Locked"
+  /pages/{page_id}/document:
+    get:
+      tags: [pages]
+      operationId: getPageDocument
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+      responses:
+        "200":
+          description: Aggregated relational page document.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageDocument"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /assets/{asset_id}:
+    get:
+      tags: [content]
+      operationId: getImmutableAsset
+      parameters:
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "200":
+          description: Streamed immutable file with conditional-cache headers.
+          content:
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /quick-workspace/reset:
+    post:
+      tags: [content]
+      operationId: resetQuickWorkspace
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: A new empty quick chapter was created.
+        "423":
+          $ref: "#/components/responses/Locked"
+  /quick-workspace/promote:
+    post:
+      tags: [content]
+      operationId: promoteQuickWorkspace
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [chapterTitle]
+              properties:
+                chapterTitle: {type: string, minLength: 1, maxLength: 500}
+                newBookTitle: {type: string, minLength: 1, maxLength: 500}
+                targetBookId: {$ref: "#/components/schemas/Uuid"}
+              oneOf:
+                - required: [newBookTitle]
+                - required: [targetBookId]
+      responses:
+        "200":
+          description: Chapter relations moved and a new empty quick chapter created.
+        "423":
+          $ref: "#/components/responses/Locked"
+components:
+  parameters:
+    PageId:
+      name: page_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    OperationId:
+      name: operation_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    BookId:
+      name: book_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ChapterId:
+      name: chapter_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    LeaseId:
+      name: lease_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    AssetId:
+      name: asset_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ImportLeaseId:
+      name: Import-Lease-Id
+      in: header
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ImportLeaseToken:
+      name: Import-Lease-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 32
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Stable key for this normalized command and target scope.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 200
+  responses:
+    Conflict:
+      description: Revision, idempotency, or active-operation conflict.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InvalidTransition:
+      description: The command is invalid for the current durable state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Locked:
+      description: A chapter intent/lock, import lease, or active task blocks the command.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ValidationError:
+      description: Input failed the closed business schema.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: The resource does not exist or is no longer visible.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, role, schemaVersion, epochId, dataRootFingerprint]
+      properties:
+        status:
+          type: string
+          const: ok
+        role:
+          type: string
+          const: api
+        schemaVersion:
+          type: string
+          const: v2
+        epochId:
+          type: string
+        dataRootFingerprint:
+          type: string
+          pattern: "^[a-f0-9]{16}$"
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - pausing
+        - paused
+        - cancelling
+        - cancelled
+        - completed
+        - completed_with_errors
+        - failed
+        - interrupted
+    JobKind:
+      type: string
+      enum:
+        - translation
+        - remove_text
+        - detect
+        - style_apply
+        - text_import
+        - container_import
+        - web_extract
+        - web_import_commit
+        - export
+        - insight_analysis
+        - insight_export
+        - vector_rebuild
+        - continuation
+        - plugin_agent
+    Job:
+      type: object
+      additionalProperties: false
+      required: [jobId, kind, status, queueRank, createdAt]
+      properties:
+        jobId:
+          $ref: "#/components/schemas/Uuid"
+        kind:
+          $ref: "#/components/schemas/JobKind"
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        queueRank:
+          type: integer
+          minimum: 1
+        blockedReason:
+          type:
+            - string
+            - "null"
+          enum:
+            - null
+            - blocked_by_job
+            - blocked_by_import_lease
+            - draining_immediate_writes
+        createdAt:
+          type: string
+          format: date-time
+    OperationStatus:
+      type: string
+      enum: [pending, running, completed, failed, cancelled]
+    OperationKind:
+      type: string
+      enum:
+        - bubble_ocr
+        - bubble_color
+        - page_detect
+        - page_repair
+        - bubble_translate
+        - studio_generate
+        - studio_chat
+        - studio_summary
+    Operation:
+      type: object
+      additionalProperties: false
+      required: [operationId, kind, status, createdAt]
+      properties:
+        operationId:
+          $ref: "#/components/schemas/Uuid"
+        kind:
+          $ref: "#/components/schemas/OperationKind"
+        status:
+          $ref: "#/components/schemas/OperationStatus"
+        result:
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorDetail"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+    OperationAccepted:
+      type: object
+      additionalProperties: false
+      required: [operationId, status]
+      properties:
+        operationId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: pending
+    BubbleMutation:
+      type: object
+      additionalProperties: false
+      required: [op, bubbleId]
+      properties:
+        op:
+          type: string
+          enum: [create, patch, delete, reset]
+        bubbleId:
+          $ref: "#/components/schemas/Uuid"
+        fields:
+          type: object
+          additionalProperties: true
+    PageDocumentBatchMutation:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, mutations]
+      properties:
+        baseRevision:
+          type: integer
+          minimum: 1
+        mutations:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/BubbleMutation"
+    BubbleDocument:
+      type: object
+      additionalProperties: false
+      required: [bubbleId, ordinal, payload]
+      properties:
+        bubbleId:
+          $ref: "#/components/schemas/Uuid"
+        ordinal:
+          type: integer
+          minimum: 1
+        fontId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        payload:
+          type: object
+          additionalProperties: true
+    PageDocument:
+      type: object
+      additionalProperties: false
+      required: [pageId, documentRevision, bubbles]
+      properties:
+        pageId:
+          $ref: "#/components/schemas/Uuid"
+        documentRevision:
+          type: integer
+          minimum: 1
+        bubbles:
+          type: array
+          items:
+            $ref: "#/components/schemas/BubbleDocument"
+    RepairMethod:
+      type: string
+      enum: [solid, lama_mpe, litelama, restore_source]
+    BubbleRepairCommand:
+      type: object
+      additionalProperties: false
+      required: [target, bubble_id, base_revision, method]
+      properties:
+        target:
+          type: string
+          const: bubble
+        bubble_id:
+          $ref: "#/components/schemas/Uuid"
+        base_revision:
+          type: integer
+          minimum: 1
+        method:
+          $ref: "#/components/schemas/RepairMethod"
+        fill_color:
+          type:
+            - string
+            - "null"
+          pattern: "^#[0-9A-Fa-f]{6}$"
+    MaskRepairCommand:
+      type: object
+      additionalProperties: false
+      required: [target, mask, base_revision, method]
+      properties:
+        target:
+          type: string
+          const: mask
+        mask:
+          type: string
+          format: binary
+          contentMediaType: image/png
+        base_revision:
+          type: integer
+          minimum: 1
+        method:
+          $ref: "#/components/schemas/RepairMethod"
+        fill_color:
+          type:
+            - string
+            - "null"
+          pattern: "^#[0-9A-Fa-f]{6}$"
+    StudioMessageCommand:
+      type: object
+      additionalProperties: false
+      required: [baseSessionRevision, baseSessionGeneration, content]
+      properties:
+        baseSessionRevision:
+          type: integer
+          minimum: 1
+        baseSessionGeneration:
+          type: integer
+          minimum: 1
+        content:
+          type: string
+          minLength: 1
+          maxLength: 100000
+        attachmentAssetIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Uuid"
+    Book:
+      type: object
+      additionalProperties: false
+      required: [id, title, chapterOrderRevision]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        chapterOrderRevision: {type: integer, minimum: 1}
+        coverAssetUrl: {type: [string, "null"]}
+        chapterCount: {type: integer, minimum: 0}
+        pageCount: {type: integer, minimum: 0}
+        tags:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, color]
+            properties:
+              id: {$ref: "#/components/schemas/Uuid"}
+              name: {type: string}
+              color: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    BookList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Book"}
+    Chapter:
+      type: object
+      additionalProperties: false
+      required: [id, ordinal, title, pageOrderRevision]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        title: {type: string}
+        pageCount: {type: integer, minimum: 0}
+        pageOrderRevision: {type: integer, minimum: 1}
+    ChapterList:
+      type: object
+      additionalProperties: false
+      required: [book, chapters]
+      properties:
+        book:
+          type: object
+          additionalProperties: true
+        chapters:
+          type: array
+          items: {$ref: "#/components/schemas/Chapter"}
+    PageSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - chapterId
+        - ordinal
+        - logicalSourcePath
+        - sourceRevision
+        - documentRevision
+        - sourceUrl
+        - thumbnailSourceUrl
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        logicalSourcePath: {type: string}
+        sourceRevision: {type: integer, minimum: 1}
+        documentRevision: {type: integer, minimum: 1}
+        renderedRevision: {type: [integer, "null"], minimum: 1}
+        renderStatus: {type: string}
+        detectionState: {type: string}
+        sourceUrl: {type: string}
+        thumbnailSourceUrl: {type: string}
+        cleanUrl: {type: [string, "null"]}
+        translatedUrl: {type: [string, "null"]}
+        thumbnailTranslatedUrl: {type: [string, "null"]}
+        width: {type: [integer, "null"], minimum: 1}
+        height: {type: [integer, "null"], minimum: 1}
+    PageList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, pageOrderRevision]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/PageSummary"}
+        nextCursor: {type: [integer, "null"], minimum: 1}
+        pageOrderRevision: {type: integer, minimum: 1}
+    PageImportResult:
+      type: object
+      additionalProperties: false
+      required: [page, pageOrderRevision]
+      properties:
+        page: {$ref: "#/components/schemas/PageSummary"}
+        pageOrderRevision: {type: integer, minimum: 1}
+    ImportLease:
+      type: object
+      additionalProperties: false
+      required: [leaseId, ownerToken, expiresAt]
+      properties:
+        leaseId: {$ref: "#/components/schemas/Uuid"}
+        ownerToken: {type: string, minLength: 32}
+        expiresAt: {type: string, format: date-time}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - revision_conflict
+            - idempotency_conflict
+            - operation_active
+            - invalid_job_transition
+            - chapter_write_pending
+            - chapter_locked
+            - import_in_progress
+            - session_busy
+            - validation_error
+            - not_found
+        message:
+          type: string
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: string
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorDetail"

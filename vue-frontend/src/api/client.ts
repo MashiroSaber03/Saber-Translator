@@ -26,10 +26,13 @@ export class ApiClientError extends Error implements ApiError {
 function createApiError(error: AxiosError): ApiError {
   const response = error.response
   const data = response?.data as Record<string, unknown> | undefined
+  const structuredError = data?.error && typeof data.error === 'object'
+    ? data.error as Record<string, unknown>
+    : undefined
 
   return new ApiClientError({
-    code: (data?.code as string) || (data?.error_code as string) || error.code || 'UNKNOWN_ERROR',
-    message: (data?.error as string) || (data?.message as string) || error.message,
+    code: (structuredError?.code as string) || (data?.code as string) || (data?.error_code as string) || error.code || 'UNKNOWN_ERROR',
+    message: (structuredError?.message as string) || (data?.error as string) || (data?.message as string) || error.message,
     status: response?.status || 500,
     details: data?.details as Record<string, unknown> | undefined,
   })
@@ -68,6 +71,11 @@ class ApiClient {
 
   async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.instance.put<T>(url, data, config)
+    return response.data
+  }
+
+  async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.instance.patch<T>(url, data, config)
     return response.data
   }
 

@@ -1,0 +1,440 @@
+from __future__ import annotations
+
+from io import BytesIO
+from pathlib import Path
+
+from PIL import Image
+import pytest
+from sqlalchemy import insert, select, update
+
+from src.backend_v2.api.app import ApiSettings, create_api_app
+from src.backend_v2.content.image_import import ImageImportService
+from src.backend_v2.content.repository import (
+    ContentConflict,
+    ContentLocked,
+    ContentRepository,
+    IdempotencyConflict,
+)
+from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.schema import (
+    assets,
+    books,
+    chapter_write_locks,
+    chapters,
+    jobs,
+    metadata,
+    page_assets,
+    pages,
+)
+from src.backend_v2.storage.seeding import seed_system_records
+from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
+
+
+@pytest.fixture()
+def content_platform(tmp_path: Path):
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    repository = ContentRepository(engine)
+    book = repository.create_book(title="Book")
+    chapter = repository.create_chapter(book_id=str(book["id"]), title="Chapter")
+    storage = AssetStorageService(data_root, engine)
+    importer = ImageImportService(
+        data_root=data_root,
+        repository=repository,
+        storage=storage,
+    )
+    try:
+        yield data_root, engine, repository, storage, importer, book, chapter
+    finally:
+        engine.dispose()
+
+
+def _image_bytes(
+    size: tuple[int, int],
+    *,
+    image_format: str = "PNG",
+    color: tuple[int, int, int] = (20, 40, 60),
+) -> bytes:
+    output = BytesIO()
+    with Image.new("RGB", size, color) as image:
+        image.save(output, format=image_format)
+    return output.getvalue()
+
+
+def _import(
+    repository: ContentRepository,
+    importer: ImageImportService,
+    *,
+    chapter_id: str,
+    payload: bytes,
+    logical_path: str,
+    key: str,
+):
+    lease = repository.create_import_lease(chapter_id)
+    try:
+        return importer.import_page(
+            chapter_id=chapter_id,
+            logical_path=logical_path,
+            upload=BytesIO(payload),
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+            idempotency_key=key,
+        )
+    finally:
+        repository.release_import_lease(
+            chapter_id=chapter_id,
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+        )
+
+
+def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
+    content_platform,
+) -> None:
+    data_root, engine, repository, storage, importer, _book, chapter = content_platform
+    result, replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((1200, 800)),
+        logical_path="folder/page 1.png",
+        key="page-1",
+    )
+    assert not replayed
+    page = result["page"]
+    assert page["width"] == 1200 and page["height"] == 800
+    assert page["sourceUrl"].startswith("/api/v2/assets/")
+    assert page["thumbnailSourceUrl"].startswith("/api/v2/assets/")
+    assert "base64" not in str(result).lower()
+
+    with engine.connect() as connection:
+        asset_rows = list(
+            connection.execute(
+                select(
+                    page_assets.c.role,
+                    assets.c.relative_path,
+                    assets.c.width,
+                    assets.c.height,
+                    assets.c.mime_type,
+                )
+                .join(assets, assets.c.id == page_assets.c.asset_id)
+                .where(page_assets.c.page_id == page["id"])
+                .order_by(page_assets.c.role)
+            )
+        )
+    assert {row.role for row in asset_rows} == {"source", "thumbnail_source"}
+    thumbnail = next(row for row in asset_rows if row.role == "thumbnail_source")
+    assert thumbnail.mime_type == "image/webp"
+    assert (thumbnail.width, thumbnail.height) == (320, 213)
+    with Image.open(storage.resolve_relative_path(thumbnail.relative_path)) as decoded:
+        assert decoded.format == "WEBP"
+        assert decoded.size == (320, 213)
+
+
+def test_long_strip_thumbnail_uses_width_cap_and_top_crop(content_platform) -> None:
+    _root, engine, repository, _storage, importer, _book, chapter = content_platform
+    result, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((500, 5000)),
+        logical_path="webtoon.png",
+        key="webtoon",
+    )
+    with engine.connect() as connection:
+        thumbnail_id = connection.execute(
+            select(page_assets.c.asset_id).where(
+                page_assets.c.page_id == result["page"]["id"],
+                page_assets.c.role == "thumbnail_source",
+            )
+        ).scalar_one()
+        dimensions = connection.execute(
+            select(assets.c.width, assets.c.height).where(assets.c.id == thumbnail_id)
+        ).one()
+    assert dimensions == (320, 1280)
+
+
+def test_import_is_idempotent_and_duplicate_names_are_server_deduplicated(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, importer, _book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    payload = _image_bytes((30, 40))
+    first, _ = _import(
+        repository,
+        importer,
+        chapter_id=chapter_id,
+        payload=payload,
+        logical_path="page.png",
+        key="same",
+    )
+    lease = repository.create_import_lease(chapter_id)
+    try:
+        replay, replayed = importer.import_page(
+            chapter_id=chapter_id,
+            logical_path="page.png",
+            upload=BytesIO(payload),
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+            idempotency_key="same",
+        )
+        assert replayed and replay == first
+        with pytest.raises(IdempotencyConflict):
+            importer.import_page(
+                chapter_id=chapter_id,
+                logical_path="page.png",
+                upload=BytesIO(_image_bytes((31, 40))),
+                lease_id=lease.id,
+                owner_token=lease.owner_token,
+                idempotency_key="same",
+            )
+    finally:
+        repository.release_import_lease(
+            chapter_id=chapter_id,
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+        )
+
+    second, _ = _import(
+        repository,
+        importer,
+        chapter_id=chapter_id,
+        payload=payload,
+        logical_path="page.png",
+        key="different",
+    )
+    assert second["page"]["logicalSourcePath"] == "page (2).png"
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(pages.c.id).where(pages.c.chapter_id == chapter_id)
+        ).all().__len__() == 2
+
+
+def test_page_listing_is_cursor_paginated_metadata_only(content_platform) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    for index in range(3):
+        _import(
+            repository,
+            importer,
+            chapter_id=chapter_id,
+            payload=_image_bytes((10 + index, 20)),
+            logical_path=f"{index}.png",
+            key=f"key-{index}",
+        )
+    first = repository.list_pages(chapter_id=chapter_id, limit=2)
+    second = repository.list_pages(
+        chapter_id=chapter_id,
+        after_ordinal=int(first["nextCursor"]),
+        limit=2,
+    )
+    assert [item["ordinal"] for item in first["items"]] == [1, 2]
+    assert [item["ordinal"] for item in second["items"]] == [3]
+    assert "base64" not in str(first).lower()
+
+
+def test_import_lease_and_chapter_order_cas_enforce_backend_ownership(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, _importer, book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    lease = repository.create_import_lease(chapter_id)
+    with pytest.raises(ContentLocked):
+        repository.create_import_lease(chapter_id)
+    with pytest.raises(ContentLocked):
+        repository.release_import_lease(
+            chapter_id=chapter_id,
+            lease_id=lease.id,
+            owner_token="wrong",
+        )
+    repository.release_import_lease(
+        chapter_id=chapter_id,
+        lease_id=lease.id,
+        owner_token=lease.owner_token,
+    )
+
+    second = repository.create_chapter(book_id=str(book["id"]), title="Second")
+    revision = repository.list_chapters(str(book["id"]))["book"][
+        "chapter_order_revision"
+    ]
+    updated = repository.reorder_chapters(
+        book_id=str(book["id"]),
+        ordered_ids=[str(second["id"]), chapter_id],
+        base_revision=int(revision),
+    )
+    assert updated == int(revision) + 1
+    with pytest.raises(ContentConflict):
+        repository.reorder_chapters(
+            book_id=str(book["id"]),
+            ordered_ids=[chapter_id, str(second["id"])],
+            base_revision=int(revision),
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(jobs).values(
+                id="lock-job",
+                kind="translation",
+                status="queued",
+                chapter_id=chapter_id,
+                config_json="{}",
+            )
+        )
+        connection.execute(
+            insert(chapter_write_locks).values(
+                chapter_id=chapter_id,
+                job_id="lock-job",
+                lock_generation=1,
+            )
+        )
+    with pytest.raises(ContentLocked):
+        repository.create_import_lease(chapter_id)
+
+
+def test_media_api_streams_immutable_asset_and_honors_conditional_get(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, importer, _book, chapter = content_platform
+    result, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((20, 20)),
+        logical_path="media.png",
+        key="media",
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    first = client.get(result["page"]["thumbnailSourceUrl"])
+    assert first.status_code == 200
+    assert first.content_type == "image/webp"
+    assert "immutable" in first.headers["Cache-Control"]
+    assert first.headers["ETag"]
+    conditional = client.get(
+        result["page"]["thumbnailSourceUrl"],
+        headers={"If-None-Match": first.headers["ETag"]},
+    )
+    assert conditional.status_code == 304
+
+
+def test_page_document_uses_stable_bubble_ids_and_revision_cas(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((50, 50)),
+        logical_path="document.png",
+        key="document",
+    )
+    page_id = str(imported["page"]["id"])
+    bubble_id = "00000000-0000-0000-0000-000000000111"
+    created = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "bubbleId": bubble_id,
+                "fields": {"text": "hello", "fontSize": 24},
+            }
+        ],
+    )
+    assert created["documentRevision"] == 2
+    assert created["bubbles"][0]["bubbleId"] == bubble_id
+    patched = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=2,
+        mutations=[
+            {
+                "op": "patch",
+                "bubbleId": bubble_id,
+                "fields": {"text": "translated"},
+            }
+        ],
+    )
+    assert patched["bubbles"][0]["payload"]["text"] == "translated"
+    with pytest.raises(ContentConflict):
+        repository.mutate_page_document(
+            page_id=page_id,
+            base_revision=2,
+            mutations=[
+                {
+                    "op": "delete",
+                    "bubbleId": bubble_id,
+                }
+            ],
+        )
+
+
+def test_quick_workspace_promote_moves_relations_without_moving_assets(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, importer, _book, _chapter = content_platform
+    quick = repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)
+    quick_chapter_id = str(quick["chapters"][0]["id"])
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=quick_chapter_id,
+        payload=_image_bytes((40, 60)),
+        logical_path="quick.png",
+        key="quick",
+    )
+    with engine.connect() as connection:
+        source_path_before = connection.execute(
+            select(assets.c.relative_path)
+            .join(page_assets, page_assets.c.asset_id == assets.c.id)
+            .where(
+                page_assets.c.page_id == imported["page"]["id"],
+                page_assets.c.role == "source",
+            )
+        ).scalar_one()
+
+    promoted = repository.promote_quick_workspace(
+        chapter_title="Saved Chapter",
+        new_book_title="Saved Book",
+    )
+    assert promoted["chapterId"] == quick_chapter_id
+    with engine.connect() as connection:
+        moved = connection.execute(
+            select(chapters.c.book_id, chapters.c.title).where(
+                chapters.c.id == quick_chapter_id
+            )
+        ).one()
+        source_path_after = connection.execute(
+            select(assets.c.relative_path)
+            .join(page_assets, page_assets.c.asset_id == assets.c.id)
+            .where(
+                page_assets.c.page_id == imported["page"]["id"],
+                page_assets.c.role == "source",
+            )
+        ).scalar_one()
+    assert moved == (promoted["bookId"], "Saved Chapter")
+    assert source_path_after == source_path_before
+    assert repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)["chapters"] == [
+        {
+            "id": promoted["quickChapterId"],
+            "ordinal": 1,
+            "title": "快速翻译",
+            "pageCount": 0,
+            "pageOrderRevision": 1,
+        }
+    ]

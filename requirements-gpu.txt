@@ -16,6 +16,12 @@
 # Flask related
 flask
 flask-cors
+waitress>=3.0,<4
+
+# Backend-first v2 persistence
+SQLAlchemy>=2.0,<2.1
+alembic>=1.18,<2
+psutil>=7.0,<8
 
 # Base tools
 pyyaml

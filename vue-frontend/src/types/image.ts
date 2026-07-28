@@ -19,6 +19,10 @@ export interface ImageSourceFields {
   originalDataURL: string
   translatedDataURL: string | null
   cleanImageData: string | null
+  sourceAssetUrl?: string
+  thumbnailSourceUrl?: string
+  translatedAssetUrl?: string | null
+  thumbnailTranslatedUrl?: string | null
 }
 
 export interface ImageDetectionFields {

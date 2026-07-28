@@ -5,6 +5,7 @@ import ProductFolderCard from '@/components/product/ProductFolderCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
+import VirtualThumbnailList from '@/components/virtual/VirtualThumbnailList.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { useImageStore } from '@/stores/imageStore'
@@ -111,7 +112,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   const statusType = getStatusType(image)
   return {
     id: index,
-    src: image.originalDataURL ?? '',
+    src: image.thumbnailSourceUrl ?? image.originalDataURL ?? '',
     alt: image.fileName,
     label: String(index + 1),
     selected: index === currentIndex.value,
@@ -208,10 +209,10 @@ onMounted(() => {
         ref="containerRef"
         class="thumbnail-sidebar__list"
       >
-        <ProductThumbnailGrid
+        <VirtualThumbnailList
           class="thumbnail-sidebar__grid"
           aria-label="图片缩略图导航"
-          :columns="1"
+          :active-id="currentIndex"
           :items="flatThumbnailItems"
           @select="handleThumbnailSelect"
         />
