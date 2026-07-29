@@ -19,6 +19,7 @@ from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.rendering.fonts import materialize_render_payloads
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.backend_v2.storage.schema import (
     assets,
     books,
@@ -615,6 +616,76 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
                 }
             ],
         )
+
+
+def test_page_document_route_persists_editor_mutations_and_optional_font(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, importer, _book, chapter = (
+        content_platform
+    )
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((80, 120)),
+        logical_path="editor-route.png",
+        key="editor-route",
+    )
+    page_id = str(imported["page"]["id"])
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-editor-route-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    bubble_id = "00000000-0000-0000-0000-000000000112"
+
+    mutation_response = client.patch(
+        f"/api/v2/pages/{page_id}/document",
+        headers={"Idempotency-Key": "editor-route-mutation"},
+        json={
+            "baseRevision": 1,
+            "mutations": [
+                {
+                    "op": "create",
+                    "bubbleId": bubble_id,
+                    "fields": {
+                        "translatedText": "编辑写入",
+                        "coords": [5, 6, 50, 60],
+                        "fontSize": 20,
+                    },
+                }
+            ],
+        },
+    )
+
+    assert mutation_response.status_code == 200
+    mutated = mutation_response.get_json()
+    assert mutated["documentRevision"] == 2
+    assert mutated["bubbles"][0]["bubbleId"] == bubble_id
+    assert mutated["bubbles"][0]["payload"]["translatedText"] == "编辑写入"
+
+    font_response = client.patch(
+        f"/api/v2/pages/{page_id}/document",
+        headers={"Idempotency-Key": "editor-route-default-font"},
+        json={
+            "baseRevision": 2,
+            "mutations": [],
+            "defaultFontId": DEFAULT_FONT_ID,
+        },
+    )
+
+    assert font_response.status_code == 200
+    updated = font_response.get_json()
+    assert updated["documentRevision"] == 3
+    assert updated["defaultFontId"] == DEFAULT_FONT_ID
 
 
 def test_page_document_command_is_idempotent_and_propagates_style(

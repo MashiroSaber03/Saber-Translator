@@ -358,7 +358,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             ),
             mutations=mutations,
             idempotency_key=idempotency_key,
-            default_font_id=default_font_id,
             page_style_defaults_patch=_optional_object(
                 body,
                 "pageStyleDefaultsPatch",
