@@ -314,6 +314,11 @@ onMounted(() => {
 }
 
 .thumbnail-sidebar__list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 0;
   margin: 0;
 }
@@ -321,6 +326,9 @@ onMounted(() => {
 .thumbnail-sidebar__grid {
   --product-thumbnail-grid-min-size: 100%;
   --product-thumbnail-grid-aspect-ratio: 3 / 4;
+
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 @media (--breakpoint-md-down) {

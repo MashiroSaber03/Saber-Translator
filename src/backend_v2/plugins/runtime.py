@@ -30,6 +30,7 @@ from src.backend_v2.plugins.contract import (
     validate_hook_data,
 )
 from src.backend_v2.plugins.package import directory_checksum
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
@@ -341,7 +342,7 @@ class _PluginLoader:
                     .values(
                         state="error",
                         runtime_enabled=False,
-                        error_message=str(exc)[:20_000],
+                        error_message=redact_sensitive_text(exc)[:20_000],
                     )
                 )
             return _FailedPluginLoad()
@@ -724,7 +725,7 @@ def _execute_hooks(
                         "hook": hook,
                         "scope": scope,
                         "continued": True,
-                        "message": str(exc),
+                        "message": redact_sensitive_text(exc),
                     },
                 )
                 continue
@@ -732,7 +733,7 @@ def _execute_hooks(
                 plugin_id=manifest.plugin_id,
                 hook=hook,
                 scope=scope,
-                message=str(exc),
+                message=redact_sensitive_text(exc),
             ) from exc
         logger = _PluginLogger(
             emit,
@@ -760,7 +761,7 @@ def _execute_hooks(
                     "hook": hook,
                     "scope": scope,
                     "continued": manifest.failure_policy == "continue",
-                    "message": str(exc)[:20_000],
+                    "message": redact_sensitive_text(exc)[:20_000],
                 },
             )
             if manifest.failure_policy == "continue":
@@ -769,7 +770,7 @@ def _execute_hooks(
                 plugin_id=manifest.plugin_id,
                 hook=hook,
                 scope=scope,
-                message=str(exc),
+                message=redact_sensitive_text(exc),
             ) from exc
         emit(
             "plugin_hook_completed",

@@ -13,7 +13,7 @@ from PIL import Image
 from sqlalchemy import inspect, insert, select
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
-from src.backend_v2.content.repository import ContentRepository
+from src.backend_v2.content.repository import ContentLocked, ContentRepository
 from src.backend_v2.operations.repository import (
     OperationFenced,
     OperationRepository,
@@ -194,6 +194,52 @@ def test_document_is_canonical_and_revision_cas_is_enforced(
             title="Saber",
             document=changed,
         )
+
+
+def test_book_delete_rejects_active_studio_work_then_preserves_terminal_history(
+    studio_platform,
+) -> None:
+    content = ContentRepository(studio_platform["engine"])
+    studio = StudioRepository(studio_platform["engine"])
+    document = studio.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="Protected",
+    )
+    accepted = studio.create_generate_operation(
+        document_id=str(document["id"]),
+        base_revision=1,
+        section="identity",
+        config={},
+        idempotency_key="protected-generate",
+    )
+
+    with pytest.raises(ContentLocked):
+        content.delete_book(str(studio_platform["book"]["id"]))
+
+    operations = OperationRepository(studio_platform["engine"])
+    claimed = operations.claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_generate",),
+    )
+    assert claimed is not None
+    operations.fail(
+        claimed[0],
+        code="TEST_TERMINAL",
+        message="terminal",
+    )
+    content.delete_book(str(studio_platform["book"]["id"]))
+
+    stored = operations.get(str(accepted["operationId"]))
+    assert stored["status"] == "failed"
+    assert stored["studioDocumentId"] is None
+    assert stored["request"]["document"]["identity"]["name"] == "Protected"
+    with studio_platform["engine"].connect() as connection:
+        assert connection.execute(
+            select(studio_documents.c.id).where(
+                studio_documents.c.id == document["id"]
+            )
+        ).scalar_one_or_none() is None
 
 
 def test_chat_operation_persists_reply_after_request_lifecycle(

@@ -16,6 +16,7 @@ from flask import (
 )
 from sqlalchemy import Engine
 
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.insight.derived import InsightDerivedRepository
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.studio.repository import (
@@ -752,7 +753,7 @@ def create_studio_blueprint(
                 yield (
                     "event: error\ndata: "
                     + json.dumps(
-                        {"message": str(exc)},
+                        {"message": redact_sensitive_text(exc)},
                         ensure_ascii=False,
                         separators=(",", ":"),
                     )

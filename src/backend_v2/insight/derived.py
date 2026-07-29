@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Protocol
 import uuid
 
@@ -315,11 +316,19 @@ class LegacyDerivedAlgorithms:
         return asyncio.run(execute())
 
 
+@dataclass(frozen=True, slots=True)
+class VectorCollectionInspection:
+    expected: tuple[str, ...]
+    actual: tuple[str, ...]
+    missing: tuple[str, ...]
+    orphaned: tuple[str, ...]
+
+
 class InsightVectorStore:
     """Generation-isolated Chroma collections owned exclusively by Worker."""
 
     def __init__(self, data_root: Path) -> None:
-        self.path = data_root / "vectors" / "chroma"
+        self.path = data_root / "chroma"
 
     @staticmethod
     def names(book_id: str, generation: int) -> tuple[str, str]:
@@ -389,6 +398,73 @@ class InsightVectorStore:
                 except Exception:
                     pass
             raise
+
+    def expected_collection_names(self, engine: Engine) -> set[str]:
+        expected: set[str] = set()
+        with engine.connect() as connection:
+            rows = connection.execute(
+                select(
+                    vector_generations.c.book_id,
+                    vector_generations.c.generation,
+                ).where(vector_generations.c.status != "failed")
+            )
+            for book_id, generation in rows:
+                expected.update(self.names(str(book_id), int(generation)))
+        return expected
+
+    def inspect_collections(self, engine: Engine) -> VectorCollectionInspection:
+        expected = self.expected_collection_names(engine)
+        if not self.path.exists() or not any(self.path.iterdir()):
+            return VectorCollectionInspection(
+                expected=tuple(sorted(expected)),
+                actual=(),
+                missing=tuple(sorted(expected)),
+                orphaned=(),
+            )
+        try:
+            import chromadb
+            from chromadb.config import Settings
+        except ImportError as exc:
+            raise InsightConflict("ChromaDB is not installed") from exc
+        client = chromadb.PersistentClient(
+            path=str(self.path),
+            settings=Settings(anonymized_telemetry=False),
+        )
+        actual = {
+            str(getattr(collection, "name", collection))
+            for collection in client.list_collections()
+        }
+        managed = {
+            name
+            for name in actual
+            if re.fullmatch(r"b[0-9a-f]{20}_g[1-9][0-9]*_(?:pages|events)", name)
+        }
+        return VectorCollectionInspection(
+            expected=tuple(sorted(expected)),
+            actual=tuple(sorted(actual)),
+            missing=tuple(sorted(expected - actual)),
+            orphaned=tuple(sorted(managed - expected)),
+        )
+
+    def collect_orphan_collections(self, engine: Engine) -> int:
+        inspection = self.inspect_collections(engine)
+        if not inspection.orphaned:
+            return 0
+        import chromadb
+        from chromadb.config import Settings
+
+        client = chromadb.PersistentClient(
+            path=str(self.path),
+            settings=Settings(anonymized_telemetry=False),
+        )
+        deleted = 0
+        for name in inspection.orphaned:
+            try:
+                client.delete_collection(name)
+            except Exception:
+                continue
+            deleted += 1
+        return deleted
 
 
 class InsightDerivedRepository:

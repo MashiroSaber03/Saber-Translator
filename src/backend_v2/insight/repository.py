@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy import Engine, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
@@ -300,7 +301,12 @@ class InsightRepository:
             )
             .values(
                 status="failed",
-                error_json=_json({"code": code, "message": message}),
+                error_json=_json(
+                    {
+                        "code": code,
+                        "message": redact_sensitive_text(message),
+                    }
+                ),
             )
         )
         if changed.rowcount:

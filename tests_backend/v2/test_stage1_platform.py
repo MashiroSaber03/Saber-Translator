@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from datetime import timedelta
 import json
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 
 import pytest
 from flask import Flask
 from sqlalchemy import insert, select, text
 
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.consistency import ConsistencyChecker
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
@@ -61,6 +65,7 @@ from src.backend_v2.storage.single_instance import (
 )
 from src.backend_v2.settings.diagnostics import ProviderDiagnostics
 from src.backend_v2.settings.routes import create_settings_blueprint
+from src.backend_v2.worker.maintenance import WorkerMaintenance
 
 
 @pytest.fixture()
@@ -81,9 +86,9 @@ def test_launcher_migration_seeds_one_persistent_quick_workspace(
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
     first = migrate_database(data_root)
-    assert first.upgraded_to == "0011"
+    assert first.upgraded_to == "0012"
     assert not first.backup_created
-    assert schema_smoke_test(first.database_path) == "0011"
+    assert schema_smoke_test(first.database_path) == "0012"
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:
@@ -233,6 +238,78 @@ def test_worker_recovery_is_idempotent_and_preserves_chapter_lock(platform) -> N
     assert lock_count == 1
 
 
+@pytest.mark.parametrize(
+    "initial_status,expected_status,lock_is_retained",
+    [
+        ("pausing", "interrupted", True),
+        ("cancelling", "cancelled", False),
+    ],
+)
+def test_worker_recovery_resolves_drain_transition_states(
+    platform,
+    initial_status: str,
+    expected_status: str,
+    lock_is_retained: bool,
+) -> None:
+    _data_root, engine = platform
+    repository = ProcessEpochRepository(engine)
+    registration = EpochRegistration(
+        f"worker-{initial_status}",
+        f"token-{initial_status}",
+        "worker",
+        456,
+    )
+    repository.register(registration)
+    now = utcnow()
+    with engine.begin() as connection:
+        connection.execute(
+            insert(books).values(id="book", kind="library", title="Book")
+        )
+        connection.execute(
+            insert(chapters).values(
+                id="chapter",
+                book_id="book",
+                ordinal=1,
+                title="Chapter",
+            )
+        )
+        connection.execute(
+            insert(jobs).values(
+                id="job",
+                kind="translation",
+                status=initial_status,
+                chapter_id="chapter",
+                config_json="{}",
+                worker_epoch_id=registration.epoch_id,
+                attempt_id="attempt",
+                lease_token="attempt-token",
+                lease_expires_at=now + timedelta(minutes=1),
+            )
+        )
+        connection.execute(
+            insert(chapter_write_locks).values(
+                chapter_id="chapter",
+                job_id="job",
+                lock_generation=1,
+                owner_attempt_id="attempt",
+                lease_token="attempt-token",
+            )
+        )
+
+    result = repository.reconcile_dead_worker(registration.epoch_id)
+    with engine.connect() as connection:
+        status = connection.execute(
+            select(jobs.c.status).where(jobs.c.id == "job")
+        ).scalar_one()
+        lock = connection.execute(
+            select(chapter_write_locks.c.job_id)
+        ).scalar_one_or_none()
+    assert status == expected_status
+    assert (lock is not None) is lock_is_retained
+    assert result.jobs_interrupted == int(expected_status == "interrupted")
+    assert result.jobs_cancelled == int(expected_status == "cancelled")
+
+
 def test_api_recovery_fails_remote_work_and_requeues_safe_render(platform) -> None:
     _data_root, engine = platform
     repository = ProcessEpochRepository(engine)
@@ -330,43 +407,58 @@ def test_expired_or_replaced_epoch_cannot_be_renewed(platform) -> None:
     assert not repository.renew(role="worker", epoch_id="worker", token="wrong")
 
 
-def test_asset_publication_failure_windows_are_recoverable(platform) -> None:
+@pytest.mark.parametrize(
+    "crash_point,committed",
+    [
+        ("staging_fsynced", False),
+        ("journal_staged", False),
+        ("file_published", False),
+        ("journal_file_published", False),
+        ("database_before_commit", False),
+        ("database_committed", True),
+    ],
+)
+def test_asset_publication_failure_windows_are_recoverable(
+    platform,
+    crash_point: str,
+    committed: bool,
+) -> None:
     data_root, engine = platform
     storage = AssetStorageService(data_root, engine)
 
-    def fail_after_file(point: str) -> None:
-        if point == "database_before_commit":
-            raise RuntimeError("injected crash")
+    def crash(point: str) -> None:
+        if point == crash_point:
+            raise RuntimeError(f"injected crash at {point}")
 
-    with pytest.raises(RuntimeError, match="injected crash"):
+    with pytest.raises(RuntimeError, match=crash_point):
         storage.publish_bytes(
-            b"orphan",
+            f"payload-{crash_point}".encode(),
             extension="bin",
             mime_type="application/octet-stream",
-            failpoint=fail_after_file,
+            failpoint=crash,
         )
-    with engine.connect() as connection:
-        assert connection.execute(select(assets.c.id)).all() == []
-        journal = connection.execute(select(object_commit_journal)).mappings().one()
-    assert storage.resolve_relative_path(journal["final_relative_path"]).exists()
+
     storage.recover_journal(orphan_grace_seconds=0)
     with engine.connect() as connection:
+        stored_assets = list(
+            connection.execute(select(assets)).mappings()
+        )
         assert connection.execute(select(object_commit_journal)).all() == []
-
-    def fail_before_journal(point: str) -> None:
-        if point == "staging_fsynced":
-            raise RuntimeError("injected pre-journal crash")
-
-    with pytest.raises(RuntimeError):
-        storage.publish_bytes(
-            b"staging",
-            extension="bin",
-            mime_type="application/octet-stream",
-            failpoint=fail_before_journal,
-        )
-    assert list((data_root / "temp" / "staging").glob("*.part"))
-    storage.recover_journal(orphan_grace_seconds=0)
+    assert len(stored_assets) == int(committed)
     assert not list((data_root / "temp" / "staging").glob("*.part"))
+    object_files = [
+        path
+        for path in (data_root / "objects").rglob("*")
+        if path.is_file()
+    ]
+    assert len(object_files) == int(committed)
+    if committed:
+        stored_path = storage.resolve_relative_path(
+            str(stored_assets[0]["relative_path"])
+        )
+        assert stored_path.read_bytes() == (
+            f"payload-{crash_point}".encode()
+        )
 
 
 def test_integrity_scan_and_two_pass_gc_never_delete_referenced_assets(
@@ -399,6 +491,126 @@ def test_integrity_scan_and_two_pass_gc_never_delete_referenced_assets(
         remaining = set(connection.execute(select(assets.c.id)).scalars())
     assert unreferenced.id not in remaining
     assert referenced.id in remaining
+
+
+def test_orphan_object_reconciliation_honors_database_journal_and_grace(
+    platform,
+) -> None:
+    data_root, engine = platform
+    storage = AssetStorageService(data_root, engine)
+    referenced = storage.publish_bytes(
+        b"referenced",
+        extension="bin",
+        mime_type="application/octet-stream",
+    )
+    old_orphan = data_root / "objects" / "orphan.bin"
+    young_orphan = data_root / "objects" / "young.bin"
+    old_orphan.write_bytes(b"old")
+    young_orphan.write_bytes(b"young")
+    old_timestamp = (utcnow() - timedelta(hours=2)).timestamp()
+    os.utime(old_orphan, (old_timestamp, old_timestamp))
+
+    result = storage.reconcile_orphan_objects(grace_seconds=3600)
+
+    assert result.scanned == 3
+    assert result.deleted == 1
+    assert result.protected == 1
+    assert result.grace_retained == 1
+    assert not old_orphan.exists()
+    assert young_orphan.exists()
+    assert storage.resolve_relative_path(referenced.relative_path).exists()
+
+
+def test_consistency_checker_and_cli_report_storage_divergence(
+    platform,
+) -> None:
+    data_root, engine = platform
+    storage = AssetStorageService(data_root, engine)
+    missing = storage.publish_bytes(
+        b"missing",
+        extension="bin",
+        mime_type="application/octet-stream",
+    )
+    storage.resolve_relative_path(missing.relative_path).unlink()
+    orphan = data_root / "objects" / "orphan.bin"
+    orphan.write_bytes(b"orphan")
+
+    report = ConsistencyChecker(
+        data_root=data_root,
+        engine=engine,
+    ).check(include_vectors=False)
+    assert report.ok is False
+    assert report.missing_asset_files == (missing.id,)
+    assert report.integrity_status_mismatches == (missing.id,)
+    assert report.orphan_object_files == ("objects/orphan.bin",)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.check_v2_consistency",
+            "--data-dir",
+            str(data_root),
+            "--skip-vectors",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 1
+    payload = json.loads(completed.stdout)
+    assert payload["ok"] is False
+    assert payload["missing_asset_files"] == [missing.id]
+
+
+def test_worker_maintenance_runs_only_when_due(platform) -> None:
+    data_root, engine = platform
+    current = [100.0]
+    maintenance = WorkerMaintenance(
+        data_root=data_root,
+        engine=engine,
+        interval_seconds=60,
+        clock=lambda: current[0],
+    )
+
+    assert maintenance.run_if_due(force=True) is True
+    assert maintenance.run_if_due() is False
+    current[0] += 60
+    assert maintenance.run_if_due() is True
+
+
+def test_worker_maintenance_is_best_effort_and_reports_failed_actions(
+    platform,
+    monkeypatch,
+) -> None:
+    data_root, engine = platform
+    maintenance = WorkerMaintenance(
+        data_root=data_root,
+        engine=engine,
+        interval_seconds=60,
+    )
+    completed: list[str] = []
+
+    def fail_recovery():
+        raise RuntimeError("broken journal fixture")
+
+    monkeypatch.setattr(maintenance.storage, "recover_journal", fail_recovery)
+    monkeypatch.setattr(
+        maintenance.storage,
+        "scan_integrity",
+        lambda: completed.append("scan_integrity"),
+    )
+    monkeypatch.setattr(
+        maintenance.vector_store,
+        "collect_orphan_collections",
+        lambda _engine: completed.append("vector_gc"),
+    )
+
+    assert maintenance.run_if_due(force=True) is True
+    assert maintenance.last_errors == ("recover_journal",)
+    assert completed == ["scan_integrity", "vector_gc"]
 
 
 def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None:

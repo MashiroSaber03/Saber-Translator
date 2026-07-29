@@ -211,7 +211,10 @@ class InsightAnalysisWorkerService:
         except AttemptFenced:
             raise
         except Exception as exc:
-            message = str(exc) or exc.__class__.__name__
+            message = self.jobs.redact_attempt_message(
+                fence,
+                str(exc) or exc.__class__.__name__,
+            )
 
             def publish_failure(connection) -> None:
                 InsightRepository.publish_page_failure(
@@ -301,7 +304,10 @@ class InsightAnalysisWorkerService:
         except AttemptFenced:
             raise
         except Exception as exc:
-            message = str(exc) or exc.__class__.__name__
+            message = self.jobs.redact_attempt_message(
+                fence,
+                str(exc) or exc.__class__.__name__,
+            )
 
             def publish_failure(connection) -> None:
                 InsightRepository.mark_run_failed(

@@ -77,6 +77,7 @@ def test_manual_model_release_is_durable_and_worker_fenced(
         repository,
         worker_epoch_id=worker_epoch_id,
         release_callbacks=(lambda: released.append("plugins"),),
+        include_loaded_model_modules=False,
     )
     assert lifecycle.run_pending_release() is True
     assert released == ["plugins"]
@@ -133,6 +134,7 @@ def test_idle_model_cache_is_released_once_after_ten_minutes(
         worker_epoch_id=worker_epoch_id,
         idle_timeout_seconds=600,
         release_callbacks=(lambda: released.append("plugins"),),
+        include_loaded_model_modules=False,
         monotonic=lambda: clock[0],
     )
 

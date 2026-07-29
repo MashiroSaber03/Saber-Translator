@@ -15,6 +15,7 @@ import uuid
 from sqlalchemy import Engine, case, delete, insert, select, update
 
 from src.backend_v2.jobs.repository import utcnow
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.plugins.contract import (
     PluginContractError,
     default_config,
@@ -509,7 +510,9 @@ class PluginRegistry:
                     parse_manifest(raw_manifest)
                 except Exception as exc:
                     failed += 1
-                    failed_plugins[str(row["plugin_id"])] = str(exc)
+                    failed_plugins[str(row["plugin_id"])] = (
+                        redact_sensitive_text(exc)
+                    )
             for plugin_id, message in failed_plugins.items():
                 connection.execute(
                     update(plugins)

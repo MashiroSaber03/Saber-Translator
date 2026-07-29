@@ -15,6 +15,10 @@ from sqlalchemy import Engine, delete, exists, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.redaction import (
+    redact_sensitive_value,
+    secret_values_from_json,
+)
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import (
@@ -22,6 +26,7 @@ from src.backend_v2.storage.schema import (
     bubbles,
     chapter_write_intents,
     chapter_write_locks,
+    credential_versions,
     idempotency_records,
     operation_asset_inputs,
     operation_credential_snapshots,
@@ -123,6 +128,27 @@ def _credential_version_references(
 
     visit(value, ())
     return references
+
+
+def _operation_secret_values(
+    connection: Connection,
+    operation_id: str,
+) -> tuple[str, ...]:
+    values: set[str] = set()
+    secret_rows = connection.execute(
+        select(credential_versions.c.secret_json)
+        .join(
+            operation_credential_snapshots,
+            operation_credential_snapshots.c.credential_version_id
+            == credential_versions.c.id,
+        )
+        .where(
+            operation_credential_snapshots.c.operation_id == operation_id
+        )
+    ).scalars()
+    for secret_json in secret_rows:
+        values.update(secret_values_from_json(str(secret_json)))
+    return tuple(sorted(values, key=len, reverse=True))
 
 
 class OperationRepository:
@@ -600,7 +626,9 @@ class OperationRepository:
                 insert(operation_events).values(
                     operation_id=fence.operation_id,
                     type=event_type,
-                    payload_json=_json(dict(payload)),
+                    payload_json=_json(
+                        redact_sensitive_value(dict(payload))
+                    ),
                     created_at=now,
                 )
             ).inserted_primary_key[0]
@@ -761,6 +789,26 @@ class OperationRepository:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             row = self._assert_fence(connection, fence, now)
+            secret_values = _operation_secret_values(
+                connection,
+                fence.operation_id,
+            )
+            safe_result = (
+                redact_sensitive_value(
+                    dict(result),
+                    secret_values=secret_values,
+                )
+                if result is not None
+                else None
+            )
+            safe_error = (
+                redact_sensitive_value(
+                    dict(error),
+                    secret_values=secret_values,
+                )
+                if error is not None
+                else None
+            )
             if row["page_id"] is not None and row["base_revision"] is not None:
                 revision = connection.execute(
                     select(pages.c.document_revision).where(
@@ -792,8 +840,16 @@ class OperationRepository:
                 )
                 .values(
                     status=status,
-                    result_json=_json(dict(result)) if result is not None else None,
-                    error_json=_json(dict(error)) if error is not None else None,
+                    result_json=(
+                        _json(safe_result)
+                        if safe_result is not None
+                        else None
+                    ),
+                    error_json=(
+                        _json(safe_error)
+                        if safe_error is not None
+                        else None
+                    ),
                     executor_epoch_id=None,
                     attempt_id=None,
                     lease_token=None,
@@ -816,9 +872,9 @@ class OperationRepository:
                         {
                             "status": status,
                             **(
-                                {"result": dict(result)}
-                                if result is not None
-                                else {"error": dict(error or {})}
+                                {"result": safe_result}
+                                if safe_result is not None
+                                else {"error": safe_error or {}}
                             ),
                         }
                     ),
@@ -1251,7 +1307,11 @@ class RenderRequestRepository:
                 )
                 .values(
                     status="failed",
-                    error_json=_json({"code": code, "message": message}),
+                    error_json=_json(
+                        redact_sensitive_value(
+                            {"code": code, "message": message}
+                        )
+                    ),
                     executor_epoch_id=None,
                     attempt_id=None,
                     lease_token=None,

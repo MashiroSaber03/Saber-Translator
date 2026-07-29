@@ -235,5 +235,9 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     app.register_blueprint(create_web_blueprint())
 
-    assert_api_import_boundary()
+    # Unit tests may share a pytest process with legacy suites that deliberately
+    # import Torch and old interfaces. Production roles still enforce the
+    # process-wide guard; the isolated API probe verifies test-mode import graphs.
+    if not settings.identity.test_mode:
+        assert_api_import_boundary()
     return app

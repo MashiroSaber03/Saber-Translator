@@ -38,6 +38,7 @@ from src.backend_v2.storage.schema import (
     operation_credential_snapshots,
     page_assets,
     pages,
+    process_epochs,
     render_requests,
 )
 from src.backend_v2.storage.seeding import seed_system_records
@@ -219,6 +220,39 @@ def test_worker_operation_runner_applies_injected_plugin_runtime(
     }
 
 
+def test_zero_row_operation_renewal_fences_all_late_writes(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="page_detect",
+        base_revision=1,
+        bubble_id=None,
+        payload={},
+        idempotency_key="renewal-fence",
+    )
+    claimed = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("page_detect",),
+    )
+    assert claimed is not None
+    fence, _operation = claimed
+    assert repository.renew(fence) is not None
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(process_epochs)
+            .where(process_epochs.c.id == platform["worker_epoch_id"])
+            .values(status="lost")
+        )
+    assert repository.renew(fence) is None
+    with pytest.raises(OperationFenced):
+        repository.complete(fence, result={"late": True})
+    assert repository.get(str(accepted["operationId"]))["status"] == "running"
+
+
 def test_operation_creation_obeys_revision_and_write_intent(
     operation_platform,
 ) -> None:
@@ -368,6 +402,82 @@ def test_bubble_translate_freezes_credential_and_publishes_document(
     assert payload["translatedText"] == "译文"
     assert revision == 2
     assert repository.get(str(accepted["operationId"]))["status"] == "completed"
+
+
+def test_operation_errors_and_events_never_expose_frozen_credentials(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    canary = "CANARY-OPERATION-API-KEY-92741"
+    credential_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            insert(credentials).values(
+                id=credential_id,
+                domain="translation",
+                provider="canary",
+            )
+        )
+        connection.execute(
+            insert(credential_versions).values(
+                id=version_id,
+                credential_id=credential_id,
+                version=1,
+                secret_json=json.dumps({"apiKey": canary}),
+                key_fingerprint="1" * 64,
+            )
+        )
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_translate",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={
+            "provider": "canary",
+            "credentialVersionId": version_id,
+        },
+        idempotency_key="credential-redaction",
+    )
+    claimed = repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("bubble_translate",),
+    )
+    assert claimed is not None
+    fence, _operation = claimed
+    repository.append_event(
+        fence,
+        event_type="provider_debug",
+        payload={
+            "apiKey": canary,
+            "header": f"Authorization: Bearer {canary}",
+        },
+    )
+    repository.fail(
+        fence,
+        code="PROVIDER_FAILED",
+        message=(
+            f"upstream rejected {canary}; "
+            f"Authorization: Bearer {canary}; "
+            r"C:\Users\developer\private\trace.txt"
+        ),
+    )
+
+    exposed = json.dumps(
+        {
+            "operation": repository.get(str(accepted["operationId"])),
+            "events": repository.events_after(
+                str(accepted["operationId"])
+            ),
+        },
+        ensure_ascii=False,
+    )
+    assert canary not in exposed
+    assert r"C:\Users\developer" not in exposed
+    assert "[REDACTED]" in exposed
+    assert "[LOCAL_PATH]" in exposed
 
 
 def test_render_request_coalesces_and_old_revision_cannot_publish(

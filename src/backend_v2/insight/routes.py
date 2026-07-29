@@ -12,6 +12,7 @@ from typing import Any
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 from sqlalchemy import Engine
 
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.insight.commands import InsightAnalysisCommandService
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
@@ -358,7 +359,10 @@ def create_insight_blueprint(
             except Exception as exc:
                 yield _qa_sse(
                     "error",
-                    {"code": "QA_FAILED", "message": str(exc)},
+                    {
+                        "code": "QA_FAILED",
+                        "message": redact_sensitive_text(exc),
+                    },
                 )
             finally:
                 cancelled.set()

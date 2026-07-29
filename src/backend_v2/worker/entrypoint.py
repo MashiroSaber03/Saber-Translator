@@ -134,6 +134,7 @@ def run_worker(args: object) -> int:
                 WorkerModelControlRepository,
                 WorkerModelLifecycle,
             )
+            from src.backend_v2.worker.maintenance import WorkerMaintenance
 
             job_repository = JobQueueRepository(engine)
             translation = TranslationPipelineService(
@@ -308,8 +309,15 @@ def run_worker(args: object) -> int:
                     plugin_operation_runtime.release_cached_instances,
                 ),
             )
+            maintenance = WorkerMaintenance(
+                data_root=data_root,
+                engine=engine,
+            )
+            maintenance.run_if_due(force=True)
 
             def run_immediate_work() -> bool:
+                if maintenance.run_if_due():
+                    return True
                 if model_lifecycle.run_pending_release():
                     return True
                 if operation_runner.run_one() or qa_runner.run_one():

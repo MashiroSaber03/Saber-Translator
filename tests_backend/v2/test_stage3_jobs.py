@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -23,8 +27,15 @@ from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
+    assets,
     chapter_write_intents,
     chapter_write_locks,
+    credentials,
+    credential_versions,
+    job_artifacts,
+    job_batches,
+    job_config_snapshots,
+    job_events,
     job_items,
     job_steps,
     jobs,
@@ -255,6 +266,32 @@ def test_bad_attempt_token_cannot_publish_checkpoint(job_platform) -> None:
         )
 
 
+def test_zero_row_attempt_renewal_fences_all_late_writes(job_platform) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    assert repository.renew_attempt(fence) is not None
+    with engine.begin() as connection:
+        from src.backend_v2.storage.schema import process_epochs
+
+        connection.execute(
+            update(process_epochs)
+            .where(process_epochs.c.id == worker_epoch_id)
+            .values(status="lost")
+        )
+    assert repository.renew_attempt(fence) is None
+    with pytest.raises(AttemptFenced):
+        repository.complete_step(
+            fence,
+            step_id=str(step["stepId"]),
+            checkpoint={"late": True},
+        )
+    assert repository.get_job(job_id)["status"] == "running"
+
+
 def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
     _engine, repository, _book, _chapter, worker_epoch_id = job_platform
     job_id = _create_job(repository, steps=("one", "two"))
@@ -285,6 +322,103 @@ def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
             .where(job_items.c.job_id == job_id)
             .order_by(job_steps.c.ordinal)
         ).scalars().all() == ["completed", "completed"]
+
+
+def test_worker_rss_remains_bounded_for_large_durable_job_graphs(
+    tmp_path: Path,
+) -> None:
+    measurements: list[dict[str, object]] = []
+    for item_count in (100, 500, 1000):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "tests_backend.v2.worker_memory_probe",
+                str(item_count),
+                str(tmp_path / f"worker-memory-{item_count}.sqlite3"),
+            ],
+            cwd=Path(__file__).resolve().parents[2],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=210,
+        )
+        measurements.append(json.loads(result.stdout.strip()))
+
+    mib = 1024 * 1024
+    for measurement in measurements:
+        assert measurement["status"] == "completed"
+        assert measurement["workerStopped"] is True
+        assert int(measurement["peakDelta"]) < 96 * mib
+
+    five_hundred = measurements[1]
+    one_thousand = measurements[2]
+    assert (
+        int(one_thousand["peakDelta"]) - int(five_hundred["peakDelta"])
+        < 32 * mib
+    )
+
+
+def test_job_failures_never_expose_frozen_credentials(job_platform) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    canary = "CANARY-JOB-API-KEY-18462"
+    credential_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            insert(credentials).values(
+                id=credential_id,
+                domain="translation",
+                provider="canary",
+            )
+        )
+        connection.execute(
+            insert(credential_versions).values(
+                id=version_id,
+                credential_id=credential_id,
+                version=1,
+                secret_json=json.dumps({"apiKey": canary}),
+                key_fingerprint="2" * 64,
+            )
+        )
+    batch = repository.create_batch(
+        kind="export",
+        display_name="redaction",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"credentialVersionId": version_id},
+                items=(
+                    JobItemSpec(
+                        page_id=None,
+                        step_kinds=("package",),
+                    ),
+                ),
+            )
+        ],
+    )
+    job_id = str(batch["jobIds"][0])
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    repository.fail_step(
+        fence,
+        step_id=str(step["stepId"]),
+        code="PROVIDER_FAILED",
+        message=f"provider rejected {canary}",
+    )
+    assert repository.finish_if_complete(fence) == "completed_with_errors"
+
+    exposed = json.dumps(
+        {
+            "job": repository.get_job(job_id),
+            "events": repository.events_after(job_id=job_id),
+        },
+        ensure_ascii=False,
+    )
+    assert canary not in exposed
+    assert "[REDACTED]" in exposed
 
 
 def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
@@ -483,6 +617,155 @@ def test_clear_history_deletes_retry_children_before_sources_and_protects_live_l
     assert repository.clear_history() == 2
     with pytest.raises(LookupError):
         repository.get_job(source_id)
+
+
+def test_history_retains_latest_200_batches_and_cascades_old_members(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    base = datetime(2025, 1, 1, tzinfo=timezone.utc).replace(tzinfo=None)
+    terminal_batches: list[str] = []
+    terminal_jobs: list[str] = []
+    with engine.begin() as connection:
+        interrupted_batch = str(uuid.uuid4())
+        interrupted_job = str(uuid.uuid4())
+        connection.execute(
+            insert(job_batches).values(
+                id=interrupted_batch,
+                kind="export",
+                display_name="interrupted",
+                status_summary_json='{"interrupted":1,"total":1}',
+                created_at=base,
+                updated_at=base,
+            )
+        )
+        connection.execute(
+            insert(jobs).values(
+                id=interrupted_job,
+                batch_id=interrupted_batch,
+                kind="export",
+                status="interrupted",
+                config_json="{}",
+                created_at=base,
+                updated_at=base,
+            )
+        )
+        for index in range(205):
+            batch_id = str(uuid.uuid4())
+            job_id = str(uuid.uuid4())
+            created_at = base + timedelta(seconds=index + 1)
+            terminal_batches.append(batch_id)
+            terminal_jobs.append(job_id)
+            connection.execute(
+                insert(job_batches).values(
+                    id=batch_id,
+                    kind="export",
+                    display_name=f"history-{index}",
+                    status_summary_json='{"completed":1,"total":1}',
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+            connection.execute(
+                insert(jobs).values(
+                    id=job_id,
+                    batch_id=batch_id,
+                    kind="export",
+                    status="completed",
+                    config_json="{}",
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+            connection.execute(
+                insert(job_config_snapshots).values(
+                    job_id=job_id,
+                    payload_json="{}",
+                    schema_version=1,
+                )
+            )
+            connection.execute(
+                insert(job_events).values(
+                    id=index + 1,
+                    job_id=job_id,
+                    event_type="job_completed",
+                    payload_json="{}",
+                    created_at=created_at,
+                )
+            )
+
+    assert repository.prune_history() == 5
+    with engine.connect() as connection:
+        remaining_batches = set(
+            connection.execute(select(job_batches.c.id)).scalars()
+        )
+        remaining_jobs = set(
+            connection.execute(select(jobs.c.id)).scalars()
+        )
+        event_job_ids = set(
+            connection.execute(select(job_events.c.job_id)).scalars()
+        )
+        snapshot_job_ids = set(
+            connection.execute(
+                select(job_config_snapshots.c.job_id)
+            ).scalars()
+        )
+    assert interrupted_batch in remaining_batches
+    assert interrupted_job in remaining_jobs
+    assert set(terminal_batches[:5]).isdisjoint(remaining_batches)
+    assert set(terminal_jobs[:5]).isdisjoint(remaining_jobs)
+    assert len(set(terminal_batches) & remaining_batches) == 200
+    assert len(set(terminal_jobs) & remaining_jobs) == 200
+    assert event_job_ids == set(terminal_jobs[5:])
+    assert snapshot_job_ids == set(terminal_jobs[5:])
+
+
+def test_history_clear_preserves_unexpired_download_artifacts(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    asset_id = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+        hours=1
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(status="completed", queue_rank=None)
+        )
+        connection.execute(
+            insert(assets).values(
+                id=asset_id,
+                relative_path=f"objects/aa/{asset_id}.zip",
+                mime_type="application/zip",
+                checksum="3" * 64,
+                byte_size=1,
+            )
+        )
+        connection.execute(
+            insert(job_artifacts).values(
+                job_id=job_id,
+                kind="download",
+                asset_id=asset_id,
+                expires_at=expires_at,
+            )
+        )
+    assert repository.clear_history() == 0
+    assert repository.get_job(job_id)["status"] == "completed"
+    with engine.begin() as connection:
+        connection.execute(
+            update(job_artifacts)
+            .where(job_artifacts.c.job_id == job_id)
+            .values(
+                expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                - timedelta(seconds=1)
+            )
+        )
+    assert repository.clear_history() == 1
+    with pytest.raises(LookupError):
+        repository.get_job(job_id)
 
 
 def test_parallel_worker_uses_serial_stage_pools_with_cross_stage_overlap(

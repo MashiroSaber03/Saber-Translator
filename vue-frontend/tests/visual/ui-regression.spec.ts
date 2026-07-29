@@ -783,6 +783,19 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
     return
   }
 
+  if (path === '/api/v2/settings/workflow-preferences' && method === 'PATCH') {
+    const body = route.request().postDataJSON() as {
+      payload?: Record<string, unknown>
+    }
+    await fulfillJson({
+      domain: 'workflow_preferences',
+      payload: body.payload ?? {},
+      revision: 2,
+      schemaVersion: 1,
+    })
+    return
+  }
+
   if (path === '/api/v2/fonts') {
     await fulfillJson({
       items: [
@@ -913,10 +926,10 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
               runId: 'demo-run',
               status: 'completed',
             },
-            analyzedPageCount: 2,
+            analyzedPageCount: fixturePages.length,
             bookId: 'demo-book',
             coverUrl: '/api/v2/assets/demo-cover',
-            pageCount: 2,
+            pageCount: fixturePages.length,
             title: 'Demo Manga',
           }],
       qa: { available: true, reason: '' },
@@ -927,10 +940,15 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   if (path === '/api/v2/insight/books/demo-book/chapters') {
     await fulfillJson({
       items: [{
-        analysisCounts: { ready: 2, stale: 0, failed: 0, running: 0 },
+        analysisCounts: {
+          ready: fixturePages.length,
+          stale: 0,
+          failed: 0,
+          running: 0,
+        },
         chapterId: 'demo-chapter',
         ordinal: 1,
-        pageCount: 2,
+        pageCount: fixturePages.length,
         title: 'Chapter 1',
       }],
     })
@@ -1218,7 +1236,7 @@ async function sampleBrowserMemory(browser: Browser): Promise<BrowserMemorySnaps
     return JSON.parse(execFileSync(
       pythonExecutable,
       ['-c', processMemoryScript, processIds.join(',')],
-      { encoding: 'utf8' },
+      { encoding: 'utf8', timeout: 10_000 },
     )) as BrowserMemorySnapshot
   } finally {
     await session.detach()
@@ -1344,6 +1362,257 @@ test('100/500/1000-page reader keeps requests, DOM, heap, and process memory bou
   expect(oneThousand.workingSetDeltaMb - fiveHundred.workingSetDeltaMb).toBeLessThan(80)
 
   await test.info().attach('reader-memory-trend.json', {
+    body: Buffer.from(JSON.stringify(measurements, null, 2)),
+    contentType: 'application/json',
+  })
+})
+
+test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded', async () => {
+  test.setTimeout(process.env.PW_MEMORY_SURFACE ? 90_000 : 360_000)
+  type Surface = {
+    name: string
+    setup: (page: Page) => Promise<{
+      horizontal?: boolean
+      itemSelector: string
+      viewportSelector: string
+    }>
+  }
+  type Measurement = {
+    domNodes: number
+    imageRequests: number
+    jsHeapMb: number
+    maxRenderedItems: number
+    pageCount: number
+    privateDeltaMb: number
+    surface: string
+    thumbnailRequests: number
+    viewportHeight: number
+    viewportScrollHeight: number
+    workingSetDeltaMb: number
+  }
+
+  const surfaces: Surface[] = [
+    {
+      name: 'translate-sidebar',
+      setup: async page => {
+        await page.goto('http://127.0.0.1:5173/translate?book=demo-book&chapter=demo-chapter')
+        await expect(page.getByTestId('translation-result-display')).toBeVisible()
+        return {
+          itemSelector: '[data-product-thumbnail-id]',
+          viewportSelector: '.thumbnail-sidebar .virtual-thumbnail-list',
+        }
+      },
+    },
+    {
+      name: 'translate-edit-sidebar',
+      setup: async page => {
+        await page.goto('http://127.0.0.1:5173/translate?book=demo-book&chapter=demo-chapter')
+        await expect(page.getByTestId('translation-result-display')).toBeVisible()
+        await page.getByRole('button', { name: '切换编辑模式' }).click()
+        await expect(page.locator('.edit-workspace')).toBeVisible()
+        await page.getByRole('button', {
+          name: '显示或隐藏缩略图',
+        }).first().click()
+        return {
+          horizontal: true,
+          itemSelector: '.edit-thumbnails-panel__item',
+          viewportSelector: '.edit-thumbnails-panel__viewport',
+        }
+      },
+    },
+    {
+      name: 'page-selection',
+      setup: async page => {
+        await page.goto('http://127.0.0.1:5173/translate?book=demo-book&chapter=demo-chapter')
+        await expect(page.getByTestId('translation-result-display')).toBeVisible()
+        await page.locator('#workflowModeSelect').click()
+        await page.getByRole('option', {
+          name: '翻译所有图片',
+        }).click()
+        await page.locator(
+          '.page-selection-section .product-collapsible-section__header',
+        ).click()
+        const selectionSwitch = page.getByRole('switch', {
+          name: '启用指定翻译页码',
+        })
+        await expect(selectionSwitch).toBeEnabled()
+        await selectionSwitch.click()
+        await page.getByRole('button', { name: '选择页码' }).click()
+        await expect(page.locator('.page-selection-modal')).toBeVisible()
+        return {
+          itemSelector: '[data-product-thumbnail-id]',
+          viewportSelector: '.page-selection-modal .virtual-thumbnail-grid',
+        }
+      },
+    },
+    {
+      name: 'insight-pages-tree',
+      setup: async page => {
+        await page.goto('http://127.0.0.1:5173/insight?book=demo-book')
+        await expect(page.locator('.pages-tree-panel')).toBeVisible()
+        return {
+          itemSelector: '[data-product-thumbnail-id]',
+          viewportSelector: (
+            '.pages-tree-panel__pages-grid.virtual-thumbnail-grid'
+          ),
+        }
+      },
+    },
+  ]
+  const measurements: Measurement[] = []
+  const selectedSurfaces = process.env.PW_MEMORY_SURFACE
+    ? surfaces.filter(
+        surface => surface.name === process.env.PW_MEMORY_SURFACE,
+      )
+    : surfaces
+
+  for (const surface of selectedSurfaces) {
+    for (const pageCount of [100, 500, 1000]) {
+      const browser = await chromium.launch({
+        args: [
+          '--enable-precise-memory-info',
+          '--js-flags=--expose-gc',
+        ],
+        headless: true,
+      })
+      try {
+        const context = await browser.newContext({
+          viewport: { width: 1440, height: 1000 },
+        })
+        const page = await context.newPage()
+        await page.goto('about:blank')
+        const baseline = await sampleBrowserMemory(browser)
+        const imageRequests = new Set<string>()
+        const thumbnailRequests = new Set<string>()
+        page.on('request', request => {
+          const path = new URL(request.url()).pathname
+          if (
+            /^\/api\/v2\/assets\/demo-(?:source|clean|rendered)-\d+$/.test(path)
+          ) {
+            imageRequests.add(path)
+          }
+          if (
+            /^\/api\/v2\/assets\/demo-(?:source|rendered)-thumb-\d+$/.test(path)
+          ) {
+            thumbnailRequests.add(path)
+          }
+        })
+        await prepareVisualPage(page, {
+          pages: createDemoV2Pages(pageCount),
+        })
+        const surfaceState = await surface.setup(page)
+        const viewport = page.locator(surfaceState.viewportSelector)
+        await expect(viewport).toBeAttached()
+        const viewportGeometry = await viewport.evaluate(element => ({
+          height: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+        }))
+
+        const renderedCounts = [
+          await viewport.locator(surfaceState.itemSelector).count(),
+        ]
+        for (const ratio of [0.5, 1]) {
+          await viewport.evaluate(
+            (element, state) => {
+              if (state.horizontal) {
+                element.scrollLeft = (
+                  element.scrollWidth - element.clientWidth
+                ) * state.ratio
+              } else {
+                element.scrollTop = (
+                  element.scrollHeight - element.clientHeight
+                ) * state.ratio
+              }
+              element.dispatchEvent(new Event('scroll'))
+            },
+            {
+              horizontal: Boolean(surfaceState.horizontal),
+              ratio,
+            },
+          )
+          await page.waitForTimeout(250)
+          renderedCounts.push(
+            await viewport.locator(surfaceState.itemSelector).count(),
+          )
+        }
+        await page.evaluate(() => {
+          const collectGarbage = (globalThis as typeof globalThis & {
+            gc?: () => void
+          }).gc
+          collectGarbage?.()
+        })
+        const pageSession = await context.newCDPSession(page)
+        await pageSession.send('Performance.enable')
+        const performance = await pageSession.send(
+          'Performance.getMetrics',
+        ) as {
+          metrics: Array<{ name: string, value: number }>
+        }
+        const dom = await pageSession.send('Memory.getDOMCounters') as {
+          nodes: number
+        }
+        await pageSession.detach()
+        const current = await sampleBrowserMemory(browser)
+        const heapBytes = performance.metrics.find(
+          metric => metric.name === 'JSHeapUsedSize',
+        )?.value ?? 0
+        const toMb = (bytes: number) => bytes / 1024 / 1024
+        measurements.push({
+          domNodes: dom.nodes,
+          imageRequests: imageRequests.size,
+          jsHeapMb: toMb(heapBytes),
+          maxRenderedItems: Math.max(...renderedCounts),
+          pageCount,
+          privateDeltaMb: Math.max(
+            0,
+            toMb(current.privateBytes - baseline.privateBytes),
+          ),
+          surface: surface.name,
+          thumbnailRequests: thumbnailRequests.size,
+          viewportHeight: viewportGeometry.height,
+          viewportScrollHeight: viewportGeometry.scrollHeight,
+          workingSetDeltaMb: Math.max(
+            0,
+            toMb(current.workingSetBytes - baseline.workingSetBytes),
+          ),
+        })
+      } finally {
+        await browser.close()
+      }
+    }
+  }
+
+  for (const measurement of measurements) {
+    expect(
+      measurement.maxRenderedItems,
+      JSON.stringify(measurement),
+    ).toBeLessThanOrEqual(64)
+    expect(measurement.imageRequests).toBeLessThanOrEqual(12)
+    expect(measurement.thumbnailRequests).toBeLessThanOrEqual(128)
+    expect(measurement.domNodes).toBeLessThan(7000)
+    expect(measurement.jsHeapMb).toBeLessThan(140)
+    expect(measurement.privateDeltaMb).toBeLessThan(300)
+    expect(measurement.workingSetDeltaMb).toBeLessThan(300)
+  }
+  for (const surface of selectedSurfaces) {
+    const fiveHundred = measurements.find(
+      item => item.surface === surface.name && item.pageCount === 500,
+    )!
+    const oneThousand = measurements.find(
+      item => item.surface === surface.name && item.pageCount === 1000,
+    )!
+    expect(
+      oneThousand.jsHeapMb - fiveHundred.jsHeapMb,
+    ).toBeLessThan(25)
+    expect(
+      oneThousand.privateDeltaMb - fiveHundred.privateDeltaMb,
+    ).toBeLessThan(100)
+    expect(
+      oneThousand.workingSetDeltaMb - fiveHundred.workingSetDeltaMb,
+    ).toBeLessThan(100)
+  }
+
+  await test.info().attach('thumbnail-surfaces-memory-trend.json', {
     body: Buffer.from(JSON.stringify(measurements, null, 2)),
     contentType: 'application/json',
   })

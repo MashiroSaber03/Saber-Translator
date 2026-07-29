@@ -28,6 +28,10 @@ from src.backend_v2.insight.repository import (
     InsightNotFound,
     utcnow,
 )
+from src.backend_v2.redaction import (
+    redact_sensitive_value,
+    secret_values_from_json,
+)
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
@@ -247,12 +251,20 @@ class TransientRequestRepository:
     ) -> None:
         now = utcnow()
         with self.engine.begin() as connection:
+            secret_values = self._secret_values(
+                connection,
+                fence.request_id,
+            )
+            safe_result = redact_sensitive_value(
+                dict(result),
+                secret_values=secret_values,
+            )
             changed = connection.execute(
                 update(transient_requests)
                 .where(*self._fence_predicates(fence, now=now))
                 .values(
                     status="completed",
-                    result_json=_json(dict(result)),
+                    result_json=_json(safe_result),
                     completed_at=now,
                     lease_expires_at=None,
                     updated_at=now,
@@ -264,6 +276,14 @@ class TransientRequestRepository:
     def fail(self, fence: TransientFence, *, message: str) -> None:
         now = utcnow()
         with self.engine.begin() as connection:
+            secret_values = self._secret_values(
+                connection,
+                fence.request_id,
+            )
+            safe_message = redact_sensitive_value(
+                message,
+                secret_values=secret_values,
+            )
             changed = connection.execute(
                 update(transient_requests)
                 .where(*self._fence_predicates(fence, now=now))
@@ -273,7 +293,7 @@ class TransientRequestRepository:
                         {
                             "error": {
                                 "code": "VECTOR_QUERY_FAILED",
-                                "message": message,
+                                "message": safe_message,
                             }
                         }
                     ),
@@ -284,6 +304,36 @@ class TransientRequestRepository:
             )
         if changed.rowcount != 1:
             raise QAFenced("transient vector query failure was fenced")
+
+    @staticmethod
+    def _secret_values(
+        connection,
+        request_id: str,
+    ) -> tuple[str, ...]:
+        request_json = connection.execute(
+            select(transient_requests.c.request_json).where(
+                transient_requests.c.id == request_id
+            )
+        ).scalar_one_or_none()
+        request = _object(_load(str(request_json), {}))
+        config = _object(request.get("config"))
+        version_ids = {
+            str(version_id)
+            for section in config.values()
+            if isinstance(section, Mapping)
+            for version_id in [section.get("credentialVersionId")]
+            if version_id
+        }
+        if not version_ids:
+            return ()
+        values: set[str] = set()
+        for secret_json in connection.execute(
+            select(credential_versions.c.secret_json).where(
+                credential_versions.c.id.in_(version_ids)
+            )
+        ).scalars():
+            values.update(secret_values_from_json(str(secret_json)))
+        return tuple(sorted(values, key=len, reverse=True))
 
     def poll(
         self,

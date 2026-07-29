@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backend_v2.plugins.package import build_archive, parse_archive
+from src.backend_v2.redaction import redact_sensitive_text
 
 
 class PluginAgentWorktreeTools:
@@ -165,7 +166,10 @@ class PluginAgentWorktreeTools:
                 "python_files": len(python_files),
             }
         except Exception as exc:
-            return {"success": False, "error": str(exc)}
+            return {
+                "success": False,
+                "error": redact_sensitive_text(exc),
+            }
 
     def _path(self, relative: str) -> Path:
         if self.is_cancelled():

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from io import BytesIO
+import gc
 import json
 from pathlib import Path
+import sys
 from typing import Any, Mapping
 import uuid
 import zipfile
@@ -25,6 +27,7 @@ from src.backend_v2.insight.derived import (
     InsightDerivedCommandService,
     InsightDerivedRepository,
     InsightDerivedWorkerService,
+    InsightVectorStore,
 )
 from src.backend_v2.insight.exports import (
     InsightExportCommandService,
@@ -70,6 +73,20 @@ from src.backend_v2.storage.schema import (
     vector_generations,
 )
 from src.backend_v2.storage.seeding import seed_system_records
+
+
+@pytest.fixture()
+def isolated_chromadb_modules():
+    """Keep the real Chroma probe out of later API import-boundary tests."""
+
+    modules_before = set(sys.modules)
+    try:
+        yield
+    finally:
+        gc.collect()
+        for module_name in set(sys.modules) - modules_before:
+            if module_name == "chromadb" or module_name.startswith("chromadb."):
+                sys.modules.pop(module_name, None)
 
 
 class FakeInsightAlgorithms:
@@ -604,6 +621,56 @@ def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
     status = repository.qa_status(book_id=str(platform["book"]["id"]))
     assert status["available"]
     assert status["coverage"] == {"pages": 2, "events": 2}
+
+
+def test_vector_store_reports_and_removes_only_unowned_collections(
+    insight_platform,
+    isolated_chromadb_modules,
+) -> None:
+    platform = insight_platform
+    book_id = str(platform["book"]["id"])
+    store = InsightVectorStore(platform["data_root"])
+    assert store.path == platform["data_root"] / "chroma"
+    store.publish(
+        book_id=book_id,
+        generation=1,
+        page_records=(),
+        page_embeddings=(),
+        event_records=(),
+        event_embeddings=(),
+    )
+    store.publish(
+        book_id=book_id,
+        generation=2,
+        page_records=(),
+        page_embeddings=(),
+        event_records=(),
+        event_embeddings=(),
+    )
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            vector_generations.insert().values(
+                id=str(uuid.uuid4()),
+                book_id=book_id,
+                generation=1,
+                status="ready",
+                dependency_fingerprint="a" * 64,
+                is_active=True,
+            )
+        )
+
+    expected = set(store.names(book_id, 1))
+    orphaned = set(store.names(book_id, 2))
+    inspection = store.inspect_collections(platform["engine"])
+    assert set(inspection.expected) == expected
+    assert set(inspection.missing) == set()
+    assert set(inspection.orphaned) == orphaned
+
+    assert store.collect_orphan_collections(platform["engine"]) == 2
+    after = store.inspect_collections(platform["engine"])
+    assert set(after.actual) == expected
+    assert after.missing == ()
+    assert after.orphaned == ()
 
 
 def test_page_analysis_schema_rejects_missing_or_mismatched_pages() -> None:

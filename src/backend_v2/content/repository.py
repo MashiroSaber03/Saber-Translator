@@ -35,6 +35,8 @@ from src.backend_v2.storage.schema import (
     operations,
     page_assets,
     pages,
+    studio_chat_sessions,
+    studio_documents,
     tags,
     translation_constraints,
     web_import_drafts,
@@ -2479,6 +2481,9 @@ class ContentRepository:
         book_id: str,
         chapter_ids: list[str],
     ) -> None:
+        session_document = studio_documents.alias(
+            "content_guard_session_document"
+        )
         active_job = connection.execute(  # type: ignore[attr-defined]
             select(jobs.c.id).where(
                 jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
@@ -2491,9 +2496,32 @@ class ContentRepository:
         active_operation = connection.execute(  # type: ignore[attr-defined]
             select(operations.c.id)
             .join(pages, pages.c.id == operations.c.page_id, isouter=True)
+            .join(
+                studio_documents,
+                studio_documents.c.id == operations.c.studio_document_id,
+                isouter=True,
+            )
+            .join(
+                studio_chat_sessions,
+                studio_chat_sessions.c.id == operations.c.studio_session_id,
+                isouter=True,
+            )
+            .join(
+                session_document,
+                session_document.c.id == studio_chat_sessions.c.document_id,
+                isouter=True,
+            )
             .where(
                 operations.c.status.in_(ACTIVE_OPERATION_STATUSES),
-                pages.c.chapter_id.in_(chapter_ids) if chapter_ids else False,
+                or_(
+                    (
+                        pages.c.chapter_id.in_(chapter_ids)
+                        if chapter_ids
+                        else False
+                    ),
+                    studio_documents.c.book_id == book_id,
+                    session_document.c.book_id == book_id,
+                ),
             ).limit(1)
         ).scalar_one_or_none()
         active_import = connection.execute(  # type: ignore[attr-defined]

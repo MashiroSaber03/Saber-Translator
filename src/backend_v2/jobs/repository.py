@@ -34,6 +34,11 @@ from src.backend_v2.domain.state_machines import (
     JobStatus,
     transition_job,
 )
+from src.backend_v2.redaction import (
+    redact_sensitive_text,
+    redact_sensitive_value,
+    secret_values_from_json,
+)
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     CURRENT_JOB_STATUSES,
@@ -42,6 +47,7 @@ from src.backend_v2.storage.schema import (
     chapter_write_intents,
     chapter_write_locks,
     chapters,
+    credential_versions,
     import_leases,
     idempotency_records,
     assets,
@@ -75,6 +81,8 @@ TERMINAL_JOB_STATUSES = (
     "completed_with_errors",
     "failed",
 )
+HISTORY_JOB_STATUSES = (*TERMINAL_JOB_STATUSES, "interrupted")
+HISTORY_BATCH_LIMIT = 200
 WRITE_JOB_KINDS = frozenset(
     {
         "translation",
@@ -196,6 +204,22 @@ def _credential_version_references(
 
     visit(value, ())
     return references
+
+
+def _job_secret_values(connection: Connection, job_id: str) -> tuple[str, ...]:
+    values: set[str] = set()
+    secret_rows = connection.execute(
+        select(credential_versions.c.secret_json)
+        .join(
+            job_credential_snapshots,
+            job_credential_snapshots.c.credential_version_id
+            == credential_versions.c.id,
+        )
+        .where(job_credential_snapshots.c.job_id == job_id)
+    ).scalars()
+    for secret_json in secret_rows:
+        values.update(secret_values_from_json(str(secret_json)))
+    return tuple(sorted(values, key=len, reverse=True))
 
 
 class JobQueueRepository:
@@ -1008,6 +1032,7 @@ class JobQueueRepository:
         return {"continued": len(updated_jobs), "jobs": updated_jobs}
 
     def clear_history(self) -> int:
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
             candidates = {
                 str(value)
@@ -1019,6 +1044,169 @@ class JobQueueRepository:
             }
             if not candidates:
                 return 0
+            return self._delete_history_jobs(
+                connection,
+                candidates=candidates,
+                now=now,
+            )
+
+    def prune_history(self, *, max_batches: int = HISTORY_BATCH_LIMIT) -> int:
+        if max_batches < 1:
+            raise ValueError("history batch limit must be positive")
+        with immediate_transaction(self.engine) as connection:
+            return self._prune_history_batches(
+                connection,
+                now=utcnow(),
+                max_batches=max_batches,
+            )
+
+    @staticmethod
+    def _delete_history_jobs(
+        connection: Any,
+        *,
+        candidates: set[str],
+        now: datetime,
+    ) -> int:
+        if not candidates:
+            return 0
+        protected = {
+            str(value)
+            for value in connection.execute(
+                select(job_artifacts.c.job_id).where(
+                    job_artifacts.c.job_id.in_(candidates),
+                    or_(
+                        job_artifacts.c.expires_at.is_(None),
+                        job_artifacts.c.expires_at > now,
+                    ),
+                )
+            ).scalars()
+        }
+        retry_edges = [
+            (str(child_id), str(source_id))
+            for child_id, source_id in connection.execute(
+                select(jobs.c.id, jobs.c.retry_of_job_id).where(
+                    jobs.c.retry_of_job_id.is_not(None)
+                )
+            )
+        ]
+        protected.update(
+            source_id
+            for child_id, source_id in retry_edges
+            if source_id in candidates and child_id not in candidates
+        )
+        changed = True
+        while changed:
+            changed = False
+            for child_id, source_id in retry_edges:
+                if (
+                    child_id in protected
+                    and source_id in candidates
+                    and source_id not in protected
+                ):
+                    protected.add(source_id)
+                    changed = True
+        remaining = candidates - protected
+        removable_count = len(remaining)
+        while remaining:
+            referenced = {
+                source_id
+                for child_id, source_id in retry_edges
+                if child_id in remaining and source_id in remaining
+            }
+            leaves = remaining - referenced
+            if not leaves:
+                raise JobConflict("job retry lineage contains a cycle")
+            connection.execute(delete(jobs).where(jobs.c.id.in_(leaves)))
+            remaining -= leaves
+        connection.execute(
+            delete(job_batches).where(
+                ~exists(
+                    select(jobs.c.id).where(
+                        jobs.c.batch_id == job_batches.c.id
+                    )
+                )
+            )
+        )
+        return removable_count
+
+    @staticmethod
+    def _prune_history_batches(
+        connection: Any,
+        *,
+        now: datetime,
+        max_batches: int = HISTORY_BATCH_LIMIT,
+    ) -> int:
+        member = jobs.alias("history_member")
+        nonhistory_member = jobs.alias("nonhistory_member")
+        history_batch_ids = [
+            str(value)
+            for value in connection.execute(
+                select(job_batches.c.id)
+                .where(
+                    exists(
+                        select(member.c.id).where(
+                            member.c.batch_id == job_batches.c.id
+                        )
+                    ),
+                    ~exists(
+                        select(nonhistory_member.c.id).where(
+                            nonhistory_member.c.batch_id == job_batches.c.id,
+                            nonhistory_member.c.status.not_in(
+                                HISTORY_JOB_STATUSES
+                            ),
+                        )
+                    ),
+                )
+                .order_by(
+                    job_batches.c.created_at.desc(),
+                    job_batches.c.id.desc(),
+                )
+            ).scalars()
+        ]
+        old_batch_ids = set(history_batch_ids[max_batches:])
+        if not old_batch_ids:
+            return 0
+        interrupted_batches = {
+            str(value)
+            for value in connection.execute(
+                select(jobs.c.batch_id).where(
+                    jobs.c.batch_id.in_(old_batch_ids),
+                    jobs.c.status == "interrupted",
+                )
+            ).scalars()
+        }
+        deletable_batches = old_batch_ids - interrupted_batches
+        if not deletable_batches:
+            return 0
+        candidates = {
+            str(value)
+            for value in connection.execute(
+                select(jobs.c.id).where(
+                    jobs.c.batch_id.in_(deletable_batches),
+                    jobs.c.status.in_(TERMINAL_JOB_STATUSES),
+                )
+            ).scalars()
+        }
+        if not candidates:
+            return 0
+
+        # A protected job retains its complete batch. Re-evaluate because
+        # retaining a retry child can in turn protect an older source batch.
+        while True:
+            protected: set[str] = set()
+            artifact_protected = {
+                str(value)
+                for value in connection.execute(
+                    select(job_artifacts.c.job_id).where(
+                        job_artifacts.c.job_id.in_(candidates),
+                        or_(
+                            job_artifacts.c.expires_at.is_(None),
+                            job_artifacts.c.expires_at > now,
+                        ),
+                    )
+                ).scalars()
+            }
+            protected.update(artifact_protected)
             retry_edges = [
                 (str(child_id), str(source_id))
                 for child_id, source_id in connection.execute(
@@ -1027,37 +1215,52 @@ class JobQueueRepository:
                     )
                 )
             ]
-            protected = {
+            protected.update(
                 source_id
                 for child_id, source_id in retry_edges
-                if child_id not in candidates
-            }
+                if source_id in candidates and child_id not in candidates
+            )
             changed = True
             while changed:
                 changed = False
                 for child_id, source_id in retry_edges:
-                    if child_id in protected and source_id not in protected:
+                    if (
+                        child_id in protected
+                        and source_id in candidates
+                        and source_id not in protected
+                    ):
                         protected.add(source_id)
                         changed = True
-            remaining = candidates - protected
-            removable_count = len(remaining)
-            while remaining:
-                referenced = {
-                    source_id
-                    for child_id, source_id in retry_edges
-                    if child_id in remaining and source_id in remaining
-                }
-                leaves = remaining - referenced
-                if not leaves:
-                    raise JobConflict("job retry lineage contains a cycle")
-                connection.execute(delete(jobs).where(jobs.c.id.in_(leaves)))
-                remaining -= leaves
-            connection.execute(
-                delete(job_batches).where(
-                    ~exists(select(jobs.c.id).where(jobs.c.batch_id == job_batches.c.id))
-                )
-            )
-            return removable_count
+            if not protected:
+                break
+            protected_batches = {
+                str(value)
+                for value in connection.execute(
+                    select(jobs.c.batch_id).where(
+                        jobs.c.id.in_(protected),
+                        jobs.c.batch_id.is_not(None),
+                    )
+                ).scalars()
+            }
+            next_candidates = {
+                str(row["id"])
+                for row in connection.execute(
+                    select(jobs.c.id, jobs.c.batch_id).where(
+                        jobs.c.id.in_(candidates)
+                    )
+                ).mappings()
+                if str(row["batch_id"]) not in protected_batches
+            }
+            if next_candidates == candidates:
+                break
+            candidates = next_candidates
+            if not candidates:
+                return 0
+        return JobQueueRepository._delete_history_jobs(
+            connection,
+            candidates=candidates,
+            now=now,
+        )
 
     def claim_next(self, *, worker_epoch_id: str) -> AttemptFence | None:
         """Claim the next executable job or advance its write-intent barrier."""
@@ -1264,6 +1467,24 @@ class JobQueueRepository:
             raise JobConflict("job configuration snapshot is invalid")
         return loaded
 
+    def redact_attempt_message(
+        self,
+        fence: AttemptFence,
+        message: object,
+    ) -> str:
+        """Scrub an exception before a domain publisher persists it."""
+
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            secret_values = _job_secret_values(connection, fence.job_id)
+        return redact_sensitive_text(message, secret_values=secret_values)
+
     def append_plugin_event(
         self,
         fence: AttemptFence,
@@ -1444,7 +1665,11 @@ class JobQueueRepository:
             )
             if claimed.rowcount != 1:
                 raise AttemptFenced("step was claimed by another attempt")
-            snapshot = self._progress_snapshot(connection, fence.job_id)
+            snapshot = self._progress_after_step_started(
+                connection,
+                fence.job_id,
+                row,
+            )
             connection.execute(
                 update(jobs)
                 .where(
@@ -1605,7 +1830,14 @@ class JobQueueRepository:
                         "stepKind": row["step_kind"],
                     }
                 )
-            snapshot = self._progress_snapshot(connection, fence.job_id)
+            snapshot = self._load_progress_snapshot(connection, fence.job_id)
+            for row in rows:
+                if not self._mutate_progress_step_started(snapshot, row):
+                    snapshot = self._progress_snapshot(
+                        connection,
+                        fence.job_id,
+                    )
+                    break
             connection.execute(
                 update(jobs)
                 .where(
@@ -2085,6 +2317,10 @@ class JobQueueRepository:
                 now,
                 allowed_statuses=("running", "pausing"),
             )
+            message = redact_sensitive_text(
+                message,
+                secret_values=_job_secret_values(connection, fence.job_id),
+            )
             failed_progress = self._progress_snapshot(
                 connection,
                 fence.job_id,
@@ -2149,18 +2385,43 @@ class JobQueueRepository:
                 now,
                 allowed_statuses=("running", "pausing", "cancelling"),
             )
+            secret_values = (
+                _job_secret_values(connection, fence.job_id)
+                if error is not None
+                else ()
+            )
+            safe_checkpoint = (
+                redact_sensitive_value(
+                    dict(checkpoint),
+                    secret_values=secret_values,
+                )
+                if checkpoint is not None
+                else None
+            )
+            safe_error = (
+                redact_sensitive_value(
+                    dict(error),
+                    secret_values=secret_values,
+                )
+                if error is not None
+                else None
+            )
             step = connection.execute(
-                select(job_steps.c.job_item_id).where(
+                select(
+                    job_steps.c.job_item_id,
+                    job_steps.c.kind,
+                    job_steps.c.ordinal.label("step_ordinal"),
+                    job_items.c.ordinal.label("item_ordinal"),
+                    job_items.c.page_id,
+                )
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
                     job_steps.c.id == step_id,
                     job_steps.c.status == "running",
                     job_steps.c.attempt_id == fence.attempt_id,
-                    job_steps.c.job_item_id.in_(
-                        select(job_items.c.id).where(
-                            job_items.c.job_id == fence.job_id
-                        )
-                    ),
+                    job_items.c.job_id == fence.job_id,
                 )
-            ).scalar_one_or_none()
+            ).mappings().one_or_none()
             if step is None:
                 raise AttemptFenced("step completion was fenced")
             if publisher is not None:
@@ -2174,17 +2435,26 @@ class JobQueueRepository:
                 .values(
                     status=status,
                     input_fingerprint=input_fingerprint,
-                    checkpoint_json=_json(dict(checkpoint)) if checkpoint else None,
-                    error_json=_json(dict(error)) if error else None,
+                    checkpoint_json=(
+                        _json(safe_checkpoint)
+                        if safe_checkpoint
+                        else None
+                    ),
+                    error_json=_json(safe_error) if safe_error else None,
                     updated_at=now,
                 )
             )
-            item_id = str(step)
+            item_id = str(step["job_item_id"])
+            item_completed = False
             if status == "failed":
                 connection.execute(
                     update(job_items)
                     .where(job_items.c.id == item_id)
-                    .values(status="failed", error_json=_json(dict(error or {})), updated_at=now)
+                    .values(
+                        status="failed",
+                        error_json=_json(safe_error or {}),
+                        updated_at=now,
+                    )
                 )
                 connection.execute(
                     update(job_steps)
@@ -2207,19 +2477,31 @@ class JobQueueRepository:
                     ).scalar_one()
                 )
                 if pending == 0:
+                    item_completed = True
                     connection.execute(
                         update(job_items)
                         .where(job_items.c.id == item_id)
                         .values(
                             status="completed",
-                            result_json=_json({"lastCheckpoint": dict(checkpoint or {})}),
+                            result_json=_json(
+                                {"lastCheckpoint": safe_checkpoint or {}}
+                            ),
                             updated_at=now,
                         )
                     )
                     event_type = "page_completed"
                 else:
                     event_type = "step_completed"
-            snapshot = self._progress_snapshot(connection, fence.job_id)
+            if status == "completed":
+                snapshot = self._progress_after_step_finished(
+                    connection,
+                    fence.job_id,
+                    step_id=step_id,
+                    step=step,
+                    item_completed=item_completed,
+                )
+            else:
+                snapshot = self._progress_snapshot(connection, fence.job_id)
             connection.execute(
                 update(jobs)
                 .where(
@@ -2833,6 +3115,163 @@ class JobQueueRepository:
             )
 
     @staticmethod
+    def _load_progress_snapshot(
+        connection: Any,
+        job_id: str,
+    ) -> dict[str, Any]:
+        value = connection.execute(
+            select(jobs.c.latest_progress_json).where(jobs.c.id == job_id)
+        ).scalar_one()
+        loaded = _load_json(value, {})
+        return dict(loaded) if isinstance(loaded, Mapping) else {}
+
+    @staticmethod
+    def _refresh_current_step(snapshot: dict[str, Any]) -> bool:
+        pools = snapshot.get("pools")
+        if not isinstance(pools, list):
+            return False
+        current_steps: list[dict[str, Any]] = []
+        for pool in pools:
+            if not isinstance(pool, dict) or not isinstance(
+                pool.get("kind"),
+                str,
+            ):
+                return False
+            current = pool.get("current")
+            if not isinstance(current, list):
+                return False
+            for value in current:
+                if not isinstance(value, dict):
+                    return False
+                try:
+                    item_ordinal = int(value["itemOrdinal"])
+                    step_ordinal = int(value["stepOrdinal"])
+                except (KeyError, TypeError, ValueError):
+                    return False
+                current_steps.append(
+                    {
+                        "kind": pool["kind"],
+                        **value,
+                        "_sort": (item_ordinal, step_ordinal),
+                    }
+                )
+        if current_steps:
+            first = min(current_steps, key=lambda value: value["_sort"])
+            first.pop("_sort", None)
+            snapshot["currentStep"] = first
+        else:
+            snapshot.pop("currentStep", None)
+        return True
+
+    @staticmethod
+    def _mutate_progress_step_started(
+        snapshot: dict[str, Any],
+        step: Mapping[str, Any],
+    ) -> bool:
+        pools = snapshot.get("pools")
+        if not isinstance(pools, list):
+            return False
+        kind = str(step["step_kind"])
+        pool = next(
+            (
+                value
+                for value in pools
+                if isinstance(value, dict) and value.get("kind") == kind
+            ),
+            None,
+        )
+        if pool is None or not isinstance(pool.get("current"), list):
+            return False
+        try:
+            waiting = int(pool["waiting"])
+            processing = int(pool["processing"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if waiting < 1:
+            return False
+        pool["waiting"] = waiting - 1
+        pool["processing"] = processing + 1
+        pool["current"].append(
+            {
+                "itemId": str(step["item_id"]),
+                "pageId": (
+                    str(step["page_id"])
+                    if step.get("page_id") is not None
+                    else None
+                ),
+                "itemOrdinal": int(step["item_ordinal"]),
+                "stepId": str(step["step_id"]),
+                "stepOrdinal": int(step["step_ordinal"]),
+            }
+        )
+        return JobQueueRepository._refresh_current_step(snapshot)
+
+    @staticmethod
+    def _progress_after_step_started(
+        connection: Any,
+        job_id: str,
+        step: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        snapshot = JobQueueRepository._load_progress_snapshot(
+            connection,
+            job_id,
+        )
+        if JobQueueRepository._mutate_progress_step_started(snapshot, step):
+            return snapshot
+        return JobQueueRepository._progress_snapshot(connection, job_id)
+
+    @staticmethod
+    def _progress_after_step_finished(
+        connection: Any,
+        job_id: str,
+        *,
+        step_id: str,
+        step: Mapping[str, Any],
+        item_completed: bool,
+    ) -> dict[str, Any]:
+        snapshot = JobQueueRepository._load_progress_snapshot(
+            connection,
+            job_id,
+        )
+        pools = snapshot.get("pools")
+        if not isinstance(pools, list):
+            return JobQueueRepository._progress_snapshot(connection, job_id)
+        kind = str(step["kind"])
+        pool = next(
+            (
+                value
+                for value in pools
+                if isinstance(value, dict) and value.get("kind") == kind
+            ),
+            None,
+        )
+        if pool is None or not isinstance(pool.get("current"), list):
+            return JobQueueRepository._progress_snapshot(connection, job_id)
+        try:
+            processing = int(pool["processing"])
+            completed = int(pool["completed"])
+            completed_items = int(snapshot["completedItems"])
+        except (KeyError, TypeError, ValueError):
+            return JobQueueRepository._progress_snapshot(connection, job_id)
+        if processing < 1:
+            return JobQueueRepository._progress_snapshot(connection, job_id)
+        current = [
+            value
+            for value in pool["current"]
+            if isinstance(value, dict) and str(value.get("stepId")) != step_id
+        ]
+        if len(current) == len(pool["current"]):
+            return JobQueueRepository._progress_snapshot(connection, job_id)
+        pool["current"] = current
+        pool["processing"] = processing - 1
+        pool["completed"] = completed + 1
+        if item_completed:
+            snapshot["completedItems"] = completed_items + 1
+        if not JobQueueRepository._refresh_current_step(snapshot):
+            return JobQueueRepository._progress_snapshot(connection, job_id)
+        return snapshot
+
+    @staticmethod
     def _progress_snapshot(
         connection: Any,
         job_id: str,
@@ -3125,7 +3564,7 @@ class JobQueueRepository:
                 id=event_id,
                 job_id=job_id,
                 event_type=event_type,
-                payload_json=_json(dict(payload)),
+                payload_json=_json(redact_sensitive_value(dict(payload))),
                 payload_schema_version=1,
                 created_at=now,
             )
@@ -3172,4 +3611,8 @@ class JobQueueRepository:
                 ),
                 updated_at=now,
             )
+        )
+        JobQueueRepository._prune_history_batches(
+            connection,
+            now=now,
         )

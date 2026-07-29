@@ -7,7 +7,7 @@ import threading
 from typing import Any, Mapping
 import uuid
 
-from PIL import Image, ImageDraw
+from PIL import Image
 import pytest
 from sqlalchemy import select, update
 
@@ -27,6 +27,8 @@ from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import default_translation_settings
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
+    app_settings,
+    assets,
     bubbles,
     job_config_snapshots,
     job_credential_snapshots,
@@ -47,103 +49,21 @@ from src.backend_v2.translation.pipeline import (
     TranslationPipelineService,
     _validate_stable_batch_result,
 )
+from src.backend_v2.testing.fake_provider import (
+    DETERMINISTIC_FAKE_PROVIDER_ID,
+    DeterministicFakeProvider,
+    registered_deterministic_fake_provider,
+)
 
 
-class FakeAlgorithms:
-    def __init__(
-        self,
-        *,
-        fail_batch_calls: set[int] | None = None,
-        on_batch=None,
-    ) -> None:
-        self.batch_calls: list[dict[str, Any]] = []
-        self.fail_batch_calls = set(fail_batch_calls or ())
-        self.on_batch = on_batch
+class FakeAlgorithms(DeterministicFakeProvider):
+    """Compatibility alias for failure-injection tests in this module."""
 
-    def detect(self, _image: Image.Image, _config: Mapping[str, Any]):
-        return {
-            "coords": [[5, 5, 40, 50]],
-            "polygons": [[[5, 5], [40, 5], [40, 50], [5, 50]]],
-            "angles": [0],
-            "auto_directions": ["v"],
-            "textlines_per_bubble": [[]],
-            "raw_mask": Image.new("L", (64, 64), 255),
-        }
 
-    def ocr(self, _image, _payloads, _config):
-        return {"texts": ["こんにちは"], "results": [{"confidence": 0.99}]}
-
-    def colors(self, _image, _payloads):
-        return [
-            {
-                "fg_color": [10, 20, 30],
-                "bg_color": [245, 246, 247],
-                "confidence": 0.9,
-            }
-        ]
-
-    def translate(self, texts, _config, *, mode):
-        assert texts == ["こんにちは"]
-        return {"translated": ["你好"], "textbox": ["你好"], "mode": mode}
-
-    def translate_batch(self, pages, _images, config, *, mode):
-        self.batch_calls.append(
-            {
-                "mode": mode,
-                "model": config.get("model_name"),
-                "pageIds": [page["pageId"] for page in pages],
-                "bubbleIds": [
-                    bubble["bubbleId"]
-                    for page in pages
-                    for bubble in page["bubbles"]
-                ],
-            }
-        )
-        call_number = len(self.batch_calls)
-        if self.on_batch is not None:
-            self.on_batch(call_number)
-        if call_number in self.fail_batch_calls:
-            raise RuntimeError(f"intentional batch failure {call_number}")
-        suffix = str(config.get("model_name", mode))
-        parsed = {
-            page["pageId"]: {
-                bubble["bubbleId"]: (
-                    f"{bubble.get('translatedText') or bubble.get('originalText')}|{suffix}"
-                )
-                for bubble in page["bubbles"]
-            }
-            for page in pages
-        }
-        return {
-            "rawContent": json.dumps(
-                {
-                    "pages": [
-                        {
-                            "pageId": page_id,
-                            "bubbles": [
-                                {
-                                    "bubbleId": bubble_id,
-                                    "translatedText": translated,
-                                }
-                                for bubble_id, translated in page_result.items()
-                            ],
-                        }
-                        for page_id, page_result in parsed.items()
-                    ]
-                },
-                ensure_ascii=False,
-            ),
-            "pages": parsed,
-            "mode": mode,
-        }
-
-    def repair(self, image, _payloads, _config):
-        return image.copy()
-
-    def render(self, clean_image, _payloads, _config):
-        rendered = clean_image.copy()
-        ImageDraw.Draw(rendered).rectangle((5, 5, 10, 10), fill=(0, 0, 0))
-        return rendered
+@pytest.fixture(autouse=True)
+def deterministic_provider_registration():
+    with registered_deterministic_fake_provider():
+        yield
 
 
 @pytest.fixture()
@@ -153,11 +73,28 @@ def translation_platform(tmp_path: Path):
     engine = create_sqlite_engine(data_root / "saber.sqlite3")
     metadata.create_all(engine)
     seed_system_records(engine)
+    settings_payload = default_translation_settings()
+    settings_payload["translation"] = {
+        **settings_payload["translation"],
+        "provider": DETERMINISTIC_FAKE_PROVIDER_ID,
+    }
+    with engine.begin() as connection:
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "translation")
+            .values(
+                payload_json=json.dumps(
+                    settings_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+        )
     SettingsRepository(engine).save_transaction(
         credentials_edits=(
             CredentialEdit(
                 domain="translation",
-                provider="siliconflow",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 secret={"api_key": "fixture-secret"},
                 base_revision=0,
                 client_ref="fixture-translation",
@@ -166,7 +103,7 @@ def translation_platform(tmp_path: Path):
         providers=(
             ProviderSettingMutation(
                 domain="translation",
-                provider="siliconflow",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 payload={"modelName": "fixture-model"},
                 base_revision=0,
                 credential_edit_ref="fixture-translation",
@@ -686,7 +623,12 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
     assert credential_count == 1
 
 
-def _import_extra_page(platform: Mapping[str, Any], name: str) -> str:
+def _import_extra_page(
+    platform: Mapping[str, Any],
+    name: str,
+    *,
+    chapter_id: str | None = None,
+) -> str:
     content = ContentRepository(platform["engine"])
     importer = ImageImportService(
         data_root=platform["data_root"],
@@ -696,11 +638,11 @@ def _import_extra_page(platform: Mapping[str, Any], name: str) -> str:
     payload = BytesIO()
     with Image.new("RGB", (64, 64), (255, 255, 255)) as image:
         image.save(payload, format="PNG")
-    chapter_id = str(platform["chapter"]["id"])
-    lease = content.create_import_lease(chapter_id)
+    target_chapter_id = chapter_id or str(platform["chapter"]["id"])
+    lease = content.create_import_lease(target_chapter_id)
     try:
         imported, _ = importer.import_page(
-            chapter_id=chapter_id,
+            chapter_id=target_chapter_id,
             logical_path=name,
             upload=BytesIO(payload.getvalue()),
             lease_id=lease.id,
@@ -709,7 +651,7 @@ def _import_extra_page(platform: Mapping[str, Any], name: str) -> str:
         )
     finally:
         content.release_import_lease(
-            chapter_id=chapter_id,
+            chapter_id=target_chapter_id,
             lease_id=lease.id,
             owner_token=lease.owner_token,
         )
@@ -720,7 +662,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
     payload = default_translation_settings()
     payload["hqTranslation"] = {
         **payload["hqTranslation"],
-        "provider": "siliconflow",
+        "provider": DETERMINISTIC_FAKE_PROVIDER_ID,
         "modelName": "hq-model",
         "batchSize": 2,
     }
@@ -754,7 +696,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
         credentials_edits=tuple(
             CredentialEdit(
                 domain=domain,
-                provider="siliconflow",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 secret={"api_key": f"{domain}-secret"},
                 base_revision=0,
                 client_ref=domain,
@@ -764,7 +706,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
         providers=tuple(
             ProviderSettingMutation(
                 domain=domain,
-                provider="siliconflow",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 payload={"modelName": model},
                 base_revision=0,
                 credential_edit_ref=domain,
@@ -819,6 +761,105 @@ def _run_translation_job(
         },
     )._run_attempt(fence, threading.Event())
     return fence.job_id
+
+
+def _translation_result_snapshot(
+    platform: Mapping[str, Any],
+    *,
+    page_id: str,
+    job_id: str,
+) -> dict[str, Any]:
+    with platform["engine"].connect() as connection:
+        document = connection.execute(
+            select(
+                pages.c.source_revision,
+                pages.c.document_revision,
+                pages.c.rendered_revision,
+                pages.c.render_status,
+            ).where(pages.c.id == page_id)
+        ).one()
+        bubble_payloads = [
+            json.loads(payload)
+            for payload in connection.execute(
+                select(bubbles.c.payload_json)
+                .where(bubbles.c.page_id == page_id)
+                .order_by(bubbles.c.ordinal)
+            ).scalars()
+        ]
+        asset_structure = [
+            tuple(row)
+            for row in connection.execute(
+                select(
+                    page_assets.c.role,
+                    assets.c.mime_type,
+                    assets.c.width,
+                    assets.c.height,
+                )
+                .join(assets, assets.c.id == page_assets.c.asset_id)
+                .where(page_assets.c.page_id == page_id)
+                .order_by(page_assets.c.role)
+            )
+        ]
+        step_sequence = list(
+            connection.execute(
+                select(job_steps.c.kind)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(job_items.c.job_id == job_id)
+                .order_by(job_items.c.ordinal, job_steps.c.ordinal)
+            ).scalars()
+        )
+    return {
+        "document": tuple(document),
+        "bubbles": bubble_payloads,
+        "assets": asset_structure,
+        "steps": step_sequence,
+    }
+
+
+def test_sequential_and_parallel_pipeline_results_are_equivalent(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    commands = TranslationJobCommandService(platform["engine"])
+    sequential = commands.create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="equivalence-sequential",
+    )
+    sequential_job_id = _run_translation_job(platform, FakeAlgorithms())
+    assert sequential_job_id == sequential["jobIds"][0]
+    sequential_result = _translation_result_snapshot(
+        platform,
+        page_id=platform["page_id"],
+        job_id=sequential_job_id,
+    )
+
+    content = ContentRepository(platform["engine"])
+    parallel_chapter = content.create_chapter(
+        book_id=str(platform["book"]["id"]),
+        title="Parallel equivalent",
+    )
+    parallel_page_id = _import_extra_page(
+        platform,
+        "parallel.png",
+        chapter_id=str(parallel_chapter["id"]),
+    )
+    parallel = commands.create_chapter_job(
+        chapter_id=str(parallel_chapter["id"]),
+        config={"mode": "standard", "executionMode": "parallel"},
+        page_ids=None,
+        idempotency_key="equivalence-parallel",
+    )
+    parallel_job_id = _run_translation_job(platform, FakeAlgorithms())
+    assert parallel_job_id == parallel["jobIds"][0]
+    parallel_result = _translation_result_snapshot(
+        platform,
+        page_id=parallel_page_id,
+        job_id=parallel_job_id,
+    )
+
+    assert parallel_result == sequential_result
 
 
 def test_hq_and_multiround_proofreading_use_durable_stable_id_batches(

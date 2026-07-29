@@ -26,6 +26,7 @@ from src.backend_v2.storage.schema import (
     chapters,
     jobs,
     metadata,
+    operations,
     page_assets,
     pages,
 )
@@ -861,3 +862,151 @@ def test_quick_workspace_promote_rejects_duplicate_destinations(
             chapter_title="Chapter",
             target_book_id=str(book["id"]),
         )
+
+
+@pytest.mark.parametrize("blocker", ("job", "operation", "import_lease"))
+def test_quick_workspace_reset_and_promote_reject_every_active_work_kind(
+    content_platform,
+    blocker: str,
+) -> None:
+    _root, engine, repository, _storage, importer, _book, _chapter = (
+        content_platform
+    )
+    quick_chapter_id = str(
+        repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)["chapters"][0][
+            "id"
+        ]
+    )
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=quick_chapter_id,
+        payload=_image_bytes((32, 48)),
+        logical_path=f"{blocker}.png",
+        key=f"quick-{blocker}",
+    )
+    if blocker == "job":
+        with engine.begin() as connection:
+            connection.execute(
+                insert(jobs).values(
+                    id="quick-active-job",
+                    kind="export",
+                    status="queued",
+                    book_id=QUICK_WORKSPACE_BOOK_ID,
+                    chapter_id=quick_chapter_id,
+                    config_json="{}",
+                )
+            )
+    elif blocker == "operation":
+        with engine.begin() as connection:
+            connection.execute(
+                insert(operations).values(
+                    id="quick-active-operation",
+                    kind="page_detect",
+                    executor_role="worker",
+                    status="pending",
+                    page_id=imported["page"]["id"],
+                    base_revision=1,
+                    request_json="{}",
+                )
+            )
+    else:
+        repository.create_import_lease(quick_chapter_id)
+
+    with pytest.raises(ContentLocked):
+        repository.reset_quick_workspace()
+    with pytest.raises(ContentLocked):
+        repository.promote_quick_workspace(
+            chapter_title="Blocked",
+            new_book_title="Blocked Book",
+        )
+
+
+def test_quick_workspace_reset_clears_pages_and_constraints(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, _chapter = (
+        content_platform
+    )
+    quick_chapter_id = str(
+        repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)["chapters"][0][
+            "id"
+        ]
+    )
+    _import(
+        repository,
+        importer,
+        chapter_id=quick_chapter_id,
+        payload=_image_bytes((32, 48)),
+        logical_path="reset.png",
+        key="quick-reset",
+    )
+    repository.update_constraints(
+        book_id=QUICK_WORKSPACE_BOOK_ID,
+        payload={
+            "glossary": [{"source": "Saber", "target": "阿尔托莉雅"}],
+            "nonTranslate": ["Excalibur"],
+        },
+        base_revision=1,
+    )
+
+    reset = repository.reset_quick_workspace()
+
+    assert reset["chapterId"] != quick_chapter_id
+    assert repository.list_pages(chapter_id=reset["chapterId"])["items"] == []
+    assert repository.get_constraints(QUICK_WORKSPACE_BOOK_ID)["payload"] == {
+        "glossary": [],
+        "nonTranslate": [],
+    }
+
+
+def test_promote_to_existing_book_keeps_destination_constraints_and_resets_quick(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, book, _chapter = (
+        content_platform
+    )
+    quick_chapter_id = str(
+        repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)["chapters"][0][
+            "id"
+        ]
+    )
+    _import(
+        repository,
+        importer,
+        chapter_id=quick_chapter_id,
+        payload=_image_bytes((32, 48)),
+        logical_path="existing.png",
+        key="quick-existing",
+    )
+    repository.update_constraints(
+        book_id=QUICK_WORKSPACE_BOOK_ID,
+        payload={
+            "glossary": [{"source": "Quick", "target": "快速"}],
+            "nonTranslate": [],
+        },
+        base_revision=1,
+    )
+    repository.update_constraints(
+        book_id=str(book["id"]),
+        payload={
+            "glossary": [{"source": "Library", "target": "书架"}],
+            "nonTranslate": ["Keep"],
+        },
+        base_revision=1,
+    )
+
+    promoted = repository.promote_quick_workspace(
+        chapter_title="Imported",
+        target_book_id=str(book["id"]),
+    )
+
+    assert promoted["chapterId"] == quick_chapter_id
+    assert repository.get_constraints(str(book["id"]))["payload"] == {
+        "glossary": [{"source": "Library", "target": "书架"}],
+        "nonTranslate": ["Keep"],
+    }
+    assert repository.get_constraints(QUICK_WORKSPACE_BOOK_ID)["payload"] == {
+        "glossary": [],
+        "nonTranslate": [],
+    }

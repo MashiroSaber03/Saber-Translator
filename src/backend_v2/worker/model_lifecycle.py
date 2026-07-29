@@ -330,12 +330,14 @@ class WorkerModelLifecycle:
         worker_epoch_id: str,
         idle_timeout_seconds: float = 600,
         release_callbacks: Sequence[Callable[[], object]] = (),
+        include_loaded_model_modules: bool = True,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.repository = repository
         self.worker_epoch_id = worker_epoch_id
         self.idle_timeout_seconds = max(0.0, idle_timeout_seconds)
         self.release_callbacks = tuple(release_callbacks)
+        self.include_loaded_model_modules = include_loaded_model_modules
         self.monotonic = monotonic
         self.last_activity = monotonic()
         self.released_since_activity = False
@@ -356,7 +358,8 @@ class WorkerModelLifecycle:
         command_id = str(command["commandId"])
         try:
             result = unload_loaded_models(
-                release_callbacks=self.release_callbacks
+                release_callbacks=self.release_callbacks,
+                include_loaded_model_modules=self.include_loaded_model_modules,
             )
             self.repository.complete(
                 command_id=command_id,
@@ -384,7 +387,10 @@ class WorkerModelLifecycle:
             < self.idle_timeout_seconds
         ):
             return False
-        unload_loaded_models(release_callbacks=self.release_callbacks)
+        unload_loaded_models(
+            release_callbacks=self.release_callbacks,
+            include_loaded_model_modules=self.include_loaded_model_modules,
+        )
         self.released_since_activity = True
         return True
 
@@ -392,6 +398,7 @@ class WorkerModelLifecycle:
 def unload_loaded_models(
     *,
     release_callbacks: Sequence[Callable[[], object]] = (),
+    include_loaded_model_modules: bool = True,
 ) -> dict[str, object]:
     """Unload only modules already imported by this Worker process."""
 
@@ -429,19 +436,20 @@ def unload_loaded_models(
             "lama_mpe",
         ),
     )
-    for module_name, function_name, label in resetters:
-        module = sys.modules.get(module_name)
-        resetter = (
-            getattr(module, function_name, None)
-            if module is not None
-            else None
-        )
-        if callable(resetter):
-            try:
-                resetter()
-                released.append(label)
-            except Exception as exc:
-                failures.append(f"{label}: {exc}")
+    if include_loaded_model_modules:
+        for module_name, function_name, label in resetters:
+            module = sys.modules.get(module_name)
+            resetter = (
+                getattr(module, function_name, None)
+                if module is not None
+                else None
+            )
+            if callable(resetter):
+                try:
+                    resetter()
+                    released.append(label)
+                except Exception as exc:
+                    failures.append(f"{label}: {exc}")
     for index, callback in enumerate(release_callbacks):
         label = f"runtime_cache_{index + 1}"
         try:
@@ -450,11 +458,12 @@ def unload_loaded_models(
         except Exception as exc:
             failures.append(f"{label}: {exc}")
     gc.collect()
-    torch_module = sys.modules.get("torch")
-    cuda = getattr(torch_module, "cuda", None)
-    if cuda is not None and callable(getattr(cuda, "is_available", None)):
-        if cuda.is_available():
-            cuda.empty_cache()
+    if include_loaded_model_modules:
+        torch_module = sys.modules.get("torch")
+        cuda = getattr(torch_module, "cuda", None)
+        if cuda is not None and callable(getattr(cuda, "is_available", None)):
+            if cuda.is_available():
+                cuda.empty_cache()
     if failures:
         raise RuntimeError(
             "some model caches could not be released: "

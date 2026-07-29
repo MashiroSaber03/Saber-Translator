@@ -146,7 +146,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   const statusType = getStatusType(image)
   return {
     id: index,
-    src: image.sourceAssetUrl,
+    src: image.thumbnailSourceUrl ?? '',
     alt: image.fileName,
     label: String(page),
     selected,
@@ -346,7 +346,8 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   --product-thumbnail-grid-min-size: 150px;
   --product-thumbnail-grid-aspect-ratio: 3 / 4;
 
-  flex: 1;
+  flex: 0 1 auto;
+  max-height: 100%;
   min-height: 0;
   padding-right: 4px;
 }

@@ -700,6 +700,12 @@ job_events = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
 )
 Index("ix_job_events_job_cursor", job_events.c.job_id, job_events.c.id)
+Index(
+    "ix_job_items_job_status_ordinal",
+    job_items.c.job_id,
+    job_items.c.status,
+    job_items.c.ordinal,
+)
 
 job_config_snapshots = Table(
     "job_config_snapshots",
@@ -919,7 +925,7 @@ studio_documents = Table(
     Column(
         "avatar_asset_id",
         String(UUID_LENGTH),
-        ForeignKey("assets.id", ondelete="SET NULL"),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
     ),
     Column("tags_json", Text, nullable=False, server_default="[]"),
     Column("is_favorite", Boolean, nullable=False, server_default="0"),
@@ -1589,17 +1595,17 @@ continuation_character_forms = Table(
     Column(
         "reference_asset_id",
         String(UUID_LENGTH),
-        ForeignKey("assets.id", ondelete="SET NULL"),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
     ),
     Column(
         "reference_thumbnail_asset_id",
         String(UUID_LENGTH),
-        ForeignKey("assets.id", ondelete="SET NULL"),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
     ),
     Column(
         "adopted_asset_id",
         String(UUID_LENGTH),
-        ForeignKey("assets.id", ondelete="SET NULL"),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
     ),
     Column("payload_json", Text, nullable=False, server_default="{}"),
     Column("revision", Integer, nullable=False, server_default="1"),
@@ -1678,15 +1684,27 @@ operations = Table(
         name="kind_executor_shape",
     ),
     CheckConstraint(
-        "(kind IN ('bubble_ocr','bubble_color','bubble_translate') "
-        "AND page_id IS NOT NULL AND bubble_id IS NOT NULL "
-        "AND studio_document_id IS NULL AND studio_session_id IS NULL) OR "
+        "((kind IN ('bubble_ocr','bubble_color','bubble_translate') "
+        "AND studio_document_id IS NULL AND studio_session_id IS NULL "
+        "AND ((status IN ('pending','running') "
+        "AND page_id IS NOT NULL AND bubble_id IS NOT NULL) "
+        "OR status IN ('completed','failed','cancelled'))) OR "
         "(kind IN ('page_detect','page_repair') "
-        "AND page_id IS NOT NULL AND studio_document_id IS NULL AND studio_session_id IS NULL) OR "
-        "(kind = 'studio_generate' AND studio_document_id IS NOT NULL "
-        "AND page_id IS NULL AND bubble_id IS NULL AND studio_session_id IS NULL) OR "
-        "(kind IN ('studio_chat','studio_summary') AND studio_session_id IS NOT NULL "
-        "AND page_id IS NULL AND bubble_id IS NULL AND studio_document_id IS NULL)",
+        "AND bubble_id IS NULL AND studio_document_id IS NULL "
+        "AND studio_session_id IS NULL "
+        "AND ((status IN ('pending','running') AND page_id IS NOT NULL) "
+        "OR status IN ('completed','failed','cancelled'))) OR "
+        "(kind = 'studio_generate' AND page_id IS NULL AND bubble_id IS NULL "
+        "AND studio_session_id IS NULL "
+        "AND ((status IN ('pending','running') "
+        "AND studio_document_id IS NOT NULL) "
+        "OR status IN ('completed','failed','cancelled'))) OR "
+        "(kind IN ('studio_chat','studio_summary') "
+        "AND page_id IS NULL AND bubble_id IS NULL "
+        "AND studio_document_id IS NULL "
+        "AND ((status IN ('pending','running') "
+        "AND studio_session_id IS NOT NULL) "
+        "OR status IN ('completed','failed','cancelled'))))",
         name="kind_target_shape",
     ),
 )
@@ -1964,3 +1982,84 @@ idempotency_records = Table(
     CheckConstraint("http_status >= 200 AND http_status < 300", name="successful_status"),
 )
 Index("ix_idempotency_records_expires_at", idempotency_records.c.expires_at)
+
+# SQLite does not create indexes for foreign-key columns. Besides making
+# reverse lookups predictable, these indexes keep parent DELETE/SET NULL
+# checks from scanning entire child tables. A composite index counts only
+# when the foreign-key column is its leading column.
+_FOREIGN_KEY_LOOKUP_INDEXES = (
+    ("ix_plugin_versions_plugin_id", plugin_versions.c.plugin_id),
+    ("ix_fonts_asset_id", fonts.c.asset_id),
+    ("ix_books_cover_asset_id", books.c.cover_asset_id),
+    ("ix_pages_default_font_id", pages.c.default_font_id),
+    ("ix_chapter_navigation_state_last_page", chapter_navigation_state.c.last_visited_page_id),
+    ("ix_bubbles_font_id", bubbles.c.font_id),
+    ("ix_provider_settings_credential_version", provider_settings.c.credential_version_id),
+    ("ix_web_import_drafts_book_id", web_import_drafts.c.book_id),
+    ("ix_web_import_draft_pages_thumbnail_asset", web_import_draft_pages.c.thumbnail_asset_id),
+    ("ix_jobs_book_id", jobs.c.book_id),
+    ("ix_jobs_page_id", jobs.c.page_id),
+    ("ix_jobs_analysis_run_id", jobs.c.analysis_run_id),
+    ("ix_jobs_continuation_project_id", jobs.c.continuation_project_id),
+    ("ix_jobs_blocked_by_job_id", jobs.c.blocked_by_job_id),
+    ("ix_jobs_blocked_by_import_lease_id", jobs.c.blocked_by_import_lease_id),
+    ("ix_jobs_worker_epoch_id", jobs.c.worker_epoch_id),
+    ("ix_job_items_page_id", job_items.c.page_id),
+    ("ix_job_drain_acks_last_step_id", job_drain_acks.c.last_step_id),
+    ("ix_job_asset_inputs_job_item_id", job_asset_inputs.c.job_item_id),
+    ("ix_job_step_asset_outputs_asset_id", job_step_asset_outputs.c.asset_id),
+    ("ix_job_artifacts_asset_id", job_artifacts.c.asset_id),
+    ("ix_worker_commands_worker_epoch_id", worker_commands.c.worker_epoch_id),
+    ("ix_studio_documents_book_id", studio_documents.c.book_id),
+    ("ix_studio_documents_avatar_asset_id", studio_documents.c.avatar_asset_id),
+    ("ix_studio_chat_sessions_summary_message", studio_chat_sessions.c.summary_through_message_id),
+    ("ix_analysis_run_targets_chapter_id", analysis_run_targets.c.chapter_id),
+    ("ix_analysis_run_targets_source_asset_id", analysis_run_targets.c.source_asset_id),
+    ("ix_analysis_page_results_source_asset_id", analysis_page_results.c.source_asset_id),
+    ("ix_analysis_heads_active_run_id", analysis_heads.c.active_run_id),
+    ("ix_analysis_heads_active_result_id", analysis_heads.c.active_result_id),
+    ("ix_analysis_layer_results_chapter_id", analysis_layer_results.c.chapter_id),
+    ("ix_analysis_layer_result_pages_page_id", analysis_layer_result_pages.c.page_id),
+    ("ix_analysis_artifacts_run_id", analysis_artifacts.c.run_id),
+    ("ix_analysis_artifacts_asset_id", analysis_artifacts.c.asset_id),
+    ("ix_timeline_versions_run_id", timeline_versions.c.run_id),
+    ("ix_vector_generations_run_id", vector_generations.c.run_id),
+    ("ix_note_citations_page_id", note_citations.c.page_id),
+    ("ix_note_citations_source_analysis_id", note_citations.c.source_analysis_id),
+    ("ix_continuation_projects_source_run_id", continuation_projects.c.source_run_id),
+    ("ix_continuation_scripts_project_id", continuation_scripts.c.project_id),
+    ("ix_continuation_image_versions_asset_id", continuation_image_versions.c.asset_id),
+    ("ix_continuation_image_versions_thumbnail_asset_id", continuation_image_versions.c.thumbnail_asset_id),
+    ("ix_continuation_project_reference_assets_asset_id", continuation_project_reference_assets.c.asset_id),
+    ("ix_continuation_character_forms_reference_asset_id", continuation_character_forms.c.reference_asset_id),
+    ("ix_continuation_character_forms_reference_thumbnail_asset_id", continuation_character_forms.c.reference_thumbnail_asset_id),
+    ("ix_continuation_character_forms_adopted_asset_id", continuation_character_forms.c.adopted_asset_id),
+    ("ix_continuation_form_image_versions_asset_id", continuation_form_image_versions.c.asset_id),
+    ("ix_continuation_form_image_versions_thumbnail_asset_id", continuation_form_image_versions.c.thumbnail_asset_id),
+    ("ix_operations_page_id", operations.c.page_id),
+    ("ix_operations_bubble_id", operations.c.bubble_id),
+    ("ix_operations_executor_epoch_id", operations.c.executor_epoch_id),
+    ("ix_operation_asset_inputs_asset_id", operation_asset_inputs.c.asset_id),
+    ("ix_operation_artifacts_asset_id", operation_artifacts.c.asset_id),
+    ("ix_operation_artifacts_page_id", operation_artifacts.c.page_id),
+    ("ix_transient_requests_worker_epoch_id", transient_requests.c.worker_epoch_id),
+    ("ix_render_requests_executor_epoch_id", render_requests.c.executor_epoch_id),
+    ("ix_page_assets_asset_id", page_assets.c.asset_id),
+    ("ix_page_assets_parent_asset_id", page_assets.c.parent_asset_id),
+    ("ix_page_assets_producer_job_step_id", page_assets.c.producer_job_step_id),
+    ("ix_page_assets_producer_operation_id", page_assets.c.producer_operation_id),
+    ("ix_page_assets_producer_render_request_id", page_assets.c.producer_render_request_id),
+)
+
+for _index_name, _column in _FOREIGN_KEY_LOOKUP_INDEXES:
+    Index(_index_name, _column)
+
+# Named hot-path composites required by the architecture contract.
+Index("ix_jobs_chapter_status", jobs.c.chapter_id, jobs.c.status)
+Index("ix_jobs_batch_status", jobs.c.batch_id, jobs.c.status)
+Index(
+    "ix_web_import_drafts_chapter_status_expiry",
+    web_import_drafts.c.chapter_id,
+    web_import_drafts.c.status,
+    web_import_drafts.c.expires_at,
+)
