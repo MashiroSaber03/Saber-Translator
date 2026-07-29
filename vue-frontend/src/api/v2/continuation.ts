@@ -1,87 +1,19 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { newIdempotencyKey } from './content'
 import { jobsApi, type V2JobDetail } from './jobs'
 
 const ROOT = '/api/v2/insight'
 
-export interface V2ContinuationImageVersion {
-  active?: boolean
-  adopted?: boolean
-  assetId: string
-  assetUrl: string
-  thumbnailUrl: string
-  version: number
-}
-
-export interface V2ContinuationPage {
-  continuationPageId: string
-  imageVersions: V2ContinuationImageVersion[]
-  ordinal: number
-  payload: Record<string, unknown>
-  revision: number
-}
-
-export interface V2ContinuationCharacter {
-  aliases: string[]
-  characterId: string
-  enabled: boolean
-  name: string
-  payload: Record<string, unknown>
-  projectId: string
-  revision: number
-}
-
-export interface V2ContinuationForm {
-  adoptedAssetId: string | null
-  characterId: string
-  formId: string
-  imageVersions: V2ContinuationImageVersion[]
-  name: string
-  payload: Record<string, unknown>
-  referenceAssetId: string | null
-  referenceAssetUrl: string | null
-  referenceThumbnailUrl: string | null
-  revision: number
-}
-
-export interface V2ContinuationProject {
-  bookId: string
-  characters: V2ContinuationCharacter[]
-  config: {
-    direction?: string
-    pageCount?: number
-    styleReferencePages?: number
-  }
-  pages: V2ContinuationPage[]
-  projectId: string
-  referenceAssets: Array<{
-    assetId: string
-    assetUrl: string
-    thumbnailUrl: string
-  }>
-  revision: number
-  script: {
-    content: string
-    projectId?: string
-    revision: number
-    scriptId: string
-  } | null
-  sourceRunId: string
-}
-
-export interface V2ContinuationState {
-  activeRunId: string | null
-  bookId: string
-  missing: string[]
-  project: V2ContinuationProject | null
-  ready: boolean
-}
-
-export interface V2ContinuationAccepted {
-  batchId: string
-  jobIds: string[]
-  status: 'queued'
-}
+export type V2ContinuationAccepted = components['schemas']['JobBatchAccepted']
+export type V2ContinuationCharacter = components['schemas']['ContinuationCharacter']
+export type V2ContinuationForm = components['schemas']['ContinuationForm']
+export type V2ContinuationFormAdoption = components['schemas']['ContinuationFormAdoption']
+export type V2ContinuationImageActivation = components['schemas']['ContinuationImageActivation']
+export type V2ContinuationImageVersion = components['schemas']['ContinuationImageVersion']
+export type V2ContinuationPage = components['schemas']['ContinuationPage']
+export type V2ContinuationProject = components['schemas']['ContinuationProject']
+export type V2ContinuationState = components['schemas']['ContinuationState']
 
 export function getV2Continuation(bookId: string): Promise<V2ContinuationState> {
   return apiClient.get(`${ROOT}/books/${encodeURIComponent(bookId)}/continuation`)
@@ -91,6 +23,7 @@ export function syncV2Continuation(bookId: string): Promise<V2ContinuationProjec
   return apiClient.post(
     `${ROOT}/books/${encodeURIComponent(bookId)}/continuation/sync`,
     {},
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -102,7 +35,7 @@ export function updateV2ContinuationProject(
   return apiClient.patch(`${ROOT}/continuation/projects/${encodeURIComponent(projectId)}`, {
     baseRevision,
     config,
-  })
+  }, { headers: { 'Idempotency-Key': newIdempotencyKey() } })
 }
 
 export function setV2ContinuationReferences(
@@ -113,6 +46,7 @@ export function setV2ContinuationReferences(
   return apiClient.put(
     `${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/references`,
     { baseRevision, assetIds },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -144,6 +78,7 @@ export function createV2ContinuationCharacter(
   return apiClient.post(
     `${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/characters`,
     command,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -160,6 +95,7 @@ export function updateV2ContinuationCharacter(
   return apiClient.patch(
     `${ROOT}/continuation/characters/${encodeURIComponent(characterId)}`,
     command,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -169,6 +105,7 @@ export function deleteV2ContinuationCharacter(
 ): Promise<{ deleted: boolean }> {
   return apiClient.delete(
     `${ROOT}/continuation/characters/${encodeURIComponent(characterId)}?baseRevision=${baseRevision}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -179,6 +116,7 @@ export function createV2ContinuationForm(
   return apiClient.post(
     `${ROOT}/continuation/characters/${encodeURIComponent(characterId)}/forms`,
     command,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -193,6 +131,7 @@ export function updateV2ContinuationForm(
   return apiClient.patch(
     `${ROOT}/continuation/forms/${encodeURIComponent(formId)}`,
     command,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -202,6 +141,7 @@ export function deleteV2ContinuationForm(
 ): Promise<{ deleted: boolean }> {
   return apiClient.delete(
     `${ROOT}/continuation/forms/${encodeURIComponent(formId)}?baseRevision=${baseRevision}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -216,6 +156,7 @@ export function uploadV2ContinuationReference(
   return apiClient.upload(
     `${ROOT}/continuation/forms/${encodeURIComponent(formId)}/reference`,
     form,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -225,6 +166,7 @@ export function deleteV2ContinuationReference(
 ): Promise<V2ContinuationForm> {
   return apiClient.delete(
     `${ROOT}/continuation/forms/${encodeURIComponent(formId)}/reference?baseRevision=${baseRevision}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -232,10 +174,11 @@ export function adoptV2ContinuationFormImage(
   formId: string,
   version: number,
   baseRevision: number,
-): Promise<V2ContinuationForm> {
+): Promise<V2ContinuationFormAdoption> {
   return apiClient.post(
     `${ROOT}/continuation/forms/${encodeURIComponent(formId)}/image-versions/${version}/adopt`,
     { baseRevision },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -247,6 +190,7 @@ export function updateV2ContinuationScript(
   return apiClient.patch(
     `${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/script`,
     { baseRevision, content },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -258,16 +202,18 @@ export function updateV2ContinuationPage(
   return apiClient.patch(
     `${ROOT}/continuation/pages/${encodeURIComponent(pageId)}`,
     { baseRevision, payload },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
 export function activateV2ContinuationImage(
   pageId: string,
   version: number,
-): Promise<V2ContinuationPage> {
+): Promise<V2ContinuationImageActivation> {
   return apiClient.post(
     `${ROOT}/continuation/pages/${encodeURIComponent(pageId)}/image-versions/${version}/activate`,
     {},
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -288,7 +234,10 @@ export function createV2ContinuationJob(
 }
 
 export function clearV2Continuation(bookId: string): Promise<{ deleted: boolean }> {
-  return apiClient.delete(`${ROOT}/books/${encodeURIComponent(bookId)}/continuation`)
+  return apiClient.delete(
+    `${ROOT}/books/${encodeURIComponent(bookId)}/continuation`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
 }
 
 export function getV2ContinuationJob(jobId: string): Promise<V2JobDetail> {

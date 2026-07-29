@@ -1,53 +1,16 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { newIdempotencyKey } from './content'
 import { runV2ConnectionTest } from './settings'
 
 const ROOT = '/api/v2/web-import'
 
-export interface WebImportSupport {
-  galleryDlAvailable: boolean
-  galleryDlSupported: boolean
-  recommendedEngine: string
-  sourceUrl: string
-}
-
-export interface WebImportDraftAccepted {
-  batchId: string
-  draftId: string
-  jobIds: string[]
-  status: 'queued'
-}
-
-export interface WebImportDraft {
-  actualEngine: string | null
-  candidateCount: number
-  chapterId: string
-  expiresAt: string
-  failedCount: number
-  id: string
-  jobs: Array<{ id: string; kind: string; status: string }>
-  requestedEngine: string
-  revision: number
-  selectedCount: number
-  sourceUrl: string
-  status: 'committing' | 'completed' | 'extracting' | 'failed' | 'ready'
-}
-
-export interface WebImportDraftPage {
-  checksum: string | null
-  error: Record<string, unknown> | null
-  id: string
-  ordinal: number
-  selected: boolean
-  sourceMediaUrl: string | null
-  sourceUrl: string
-  thumbnailUrl: string | null
-}
-
-export interface WebImportDraftPageList {
-  items: WebImportDraftPage[]
-  nextCursor: number | null
-}
+export type WebImportDraft = components['schemas']['WebImportDraft']
+export type WebImportDraftAccepted = components['schemas']['WebImportDraftAccepted']
+export type WebImportDraftPage = components['schemas']['WebImportDraftPage']
+export type WebImportDraftPageList = components['schemas']['WebImportDraftPageList']
+export type WebImportSelection = components['schemas']['WebImportSelection']
+export type WebImportSupport = components['schemas']['WebImportSupport']
 
 export function checkWebImportSupport(sourceUrl: string): Promise<WebImportSupport> {
   return apiClient.post(`${ROOT}/support-checks`, { sourceUrl })
@@ -89,7 +52,7 @@ export function updateWebImportSelection(
   draftId: string,
   baseRevision: number,
   selectedPageIds: string[],
-): Promise<{ draftId: string; revision: number; selectedPageIds: string[] }> {
+): Promise<WebImportSelection> {
   return apiClient.put(
     `${ROOT}/drafts/${encodeURIComponent(draftId)}/selection`,
     { baseRevision, selectedPageIds },
@@ -100,7 +63,7 @@ export function updateWebImportSelection(
 export function commitWebImportDraft(
   draftId: string,
   baseRevision: number,
-): Promise<{ batchId: string; jobIds: string[]; status: 'queued' }> {
+): Promise<WebImportDraftAccepted> {
   return apiClient.post(
     `${ROOT}/drafts/${encodeURIComponent(draftId)}/commit`,
     { baseRevision },

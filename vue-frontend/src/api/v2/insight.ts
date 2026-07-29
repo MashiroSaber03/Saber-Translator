@@ -1,101 +1,18 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { jobsApi } from './jobs'
 import { newIdempotencyKey } from './content'
 
 const ROOT = '/api/v2/insight'
 
-export interface V2InsightBootstrap {
-  activeJobs: Array<{
-    bookId: string | null
-    jobId: string
-    progress: Record<string, unknown>
-    status: string
-  }>
-  books: Array<{
-    activeRun: { publishedAt: string | null; runId: string; status: string } | null
-    analyzedPageCount: number
-    bookId: string
-    coverUrl: string | null
-    pageCount: number
-    title: string
-  }>
-  qa: { available: boolean; reason: string }
-}
-
-export interface V2InsightChapter {
-  analysisCounts: Record<string, number>
-  chapterId: string
-  ordinal: number
-  pageCount: number
-  title: string
-}
-
-export interface V2InsightPageSummary {
-  activeAnalysisId: string | null
-  analysisState: 'failed' | 'not_analyzed' | 'ready' | 'running' | 'stale'
-  chapterId: string
-  displayPageNumber: number
-  pageId: string
-  sourceAssetId: string
-  thumbnailUrl: string | null
-}
-
-export interface V2InsightPageDetail {
-  analysis: Record<string, unknown> | null
-  analysisState: string
-  bookId: string
-  chapterId: string
-  chapterTitle: string
-  displayPageNumber: number
-  generatedAt: string | null
-  pageId: string
-  preview: boolean
-  runId: string | null
-  sourceAssetId: string
-  sourceUrl: string
-  staleReasons: string[]
-}
-
-export interface V2InsightArtifact {
-  artifactId: string
-  bookId: string
-  kind: string
-  payload: Record<string, unknown>
-  revision: number
-  runId: string | null
-  status: string
-  template: string
-}
-
-export interface V2InsightNote {
-  bookId: string
-  citations: Array<{
-    excerpt: string
-    pageId: string | null
-    pageIdSnapshot: string
-    pageNumberSnapshot: number
-    score: number | null
-    sourceAnalysisId: string | null
-  }>
-  commentCount: number
-  comments?: Array<Record<string, unknown> | string>
-  content: string | null
-  createdAt: string
-  excerpt: string | null
-  kind: 'qa' | 'text'
-  noteId: string
-  revision: number
-  tags: string[]
-  title: string
-  updatedAt: string
-}
-
-export interface V2AcceptedJob {
-  batchId: string
-  jobIds: string[]
-  runId?: string
-  status: 'queued'
-}
+export type V2AcceptedJob = components['schemas']['JobBatchAccepted']
+  & Partial<Pick<components['schemas']['InsightAnalysisJobAccepted'], 'runId'>>
+export type V2InsightArtifact = components['schemas']['InsightArtifact']
+export type V2InsightBootstrap = components['schemas']['InsightBootstrap']
+export type V2InsightChapter = components['schemas']['InsightChapter']
+export type V2InsightNote = components['schemas']['InsightNote']
+export type V2InsightPageDetail = components['schemas']['InsightPageDetail']
+export type V2InsightPageSummary = components['schemas']['InsightPageSummary']
 
 export function getInsightBootstrap(): Promise<V2InsightBootstrap> {
   return apiClient.get(`${ROOT}/bootstrap`)

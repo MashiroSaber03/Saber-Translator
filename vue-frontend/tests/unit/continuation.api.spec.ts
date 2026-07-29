@@ -229,9 +229,11 @@ describe('continuation v2 api facade', () => {
           enabled: true,
         },
       },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
     )
     expect(deleteMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/characters/character-1?baseRevision=3',
+      { headers: { 'Idempotency-Key': expect.any(String) } },
     )
   })
 
@@ -278,10 +280,12 @@ describe('continuation v2 api facade', () => {
           styleReferencePages: 2,
         },
       },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
     )
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/projects/project-1/references',
       { baseRevision: 6, assetIds: ['reference-1'] },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
     )
     expect(postMock).toHaveBeenNthCalledWith(
       1,

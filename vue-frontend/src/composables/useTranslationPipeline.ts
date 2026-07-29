@@ -185,7 +185,9 @@ export function useTranslation() {
       const batch = await createChapterTranslationJob(chapterId, pageIds, {
         executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
         mode: mode === 'removeText' ? 'remove_text' : mode,
-        reuseExistingBubbles: options.reuseExistingBubbles,
+        ...(options.reuseExistingBubbles === undefined
+          ? {}
+          : { reuseExistingBubbles: options.reuseExistingBubbles }),
       })
       const jobId = batch.jobIds[0]
       if (!jobId) throw new Error('后端没有返回任务')

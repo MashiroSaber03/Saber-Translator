@@ -6,22 +6,8 @@ import type { BookTranslationConstraints } from '@/types/bookTranslationConstrai
 
 type V2Book = components['schemas']['Book']
 type V2Chapter = components['schemas']['Chapter']
-
-interface V2Tag {
-  id: string
-  name: string
-  color: string
-  bookCount?: number
-}
-
-interface V2ConstraintDocument {
-  bookId: string
-  revision: number
-  payload: {
-    glossary?: unknown
-    nonTranslate?: unknown
-  }
-}
+type V2ConstraintDocument = components['schemas']['TranslationConstraintDocument']
+type V2Tag = components['schemas']['Tag']
 
 const BOOKS_ENDPOINT = '/api/v2/books'
 const TAGS_ENDPOINT = '/api/v2/tags'

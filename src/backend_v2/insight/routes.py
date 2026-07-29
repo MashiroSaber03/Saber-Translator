@@ -528,16 +528,19 @@ def create_insight_blueprint(
 
     @blueprint.post("/books/<book_id>/continuation/sync")
     def sync_continuation(book_id: str) -> Response:
+        _require_idempotency_key()
         _json_body()
         return jsonify(continuation.sync_latest(book_id=book_id))
 
     @blueprint.post("/books/<book_id>/continuation/sync-analysis")
     def sync_continuation_analysis(book_id: str) -> Response:
+        _require_idempotency_key()
         _json_body()
         return jsonify(continuation.sync_latest(book_id=book_id))
 
     @blueprint.patch("/continuation/projects/<project_id>")
     def update_continuation_project(project_id: str) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         config = body.get("config")
         if not isinstance(config, dict):
@@ -552,6 +555,7 @@ def create_insight_blueprint(
 
     @blueprint.put("/continuation/projects/<project_id>/references")
     def set_continuation_references(project_id: str) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         asset_ids = _string_list(body, "assetIds")
         return jsonify(
@@ -564,6 +568,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/continuation/projects/<project_id>/characters")
     def create_continuation_character(project_id: str):
+        _require_idempotency_key()
         body = _json_body()
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
@@ -583,6 +588,7 @@ def create_insight_blueprint(
 
     @blueprint.patch("/continuation/characters/<character_id>")
     def update_continuation_character(character_id: str) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
@@ -600,6 +606,7 @@ def create_insight_blueprint(
 
     @blueprint.delete("/continuation/characters/<character_id>")
     def delete_continuation_character(character_id: str) -> Response:
+        _require_idempotency_key()
         continuation.delete_character(
             character_id=character_id,
             base_revision=_base_revision(),
@@ -608,6 +615,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/continuation/characters/<character_id>/forms")
     def create_continuation_form(character_id: str):
+        _require_idempotency_key()
         body = _json_body()
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
@@ -635,6 +643,7 @@ def create_insight_blueprint(
 
     @blueprint.patch("/continuation/forms/<form_id>")
     def update_continuation_form(form_id: str) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
@@ -650,6 +659,7 @@ def create_insight_blueprint(
 
     @blueprint.delete("/continuation/forms/<form_id>")
     def delete_continuation_form(form_id: str) -> Response:
+        _require_idempotency_key()
         continuation.delete_form(
             form_id=form_id,
             base_revision=_base_revision(),
@@ -658,6 +668,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/continuation/forms/<form_id>/reference")
     def upload_continuation_reference(form_id: str) -> Response:
+        _require_idempotency_key()
         if image_import is None:
             raise RuntimeError("image storage is unavailable")
         upload = request.files.get("file")
@@ -678,6 +689,7 @@ def create_insight_blueprint(
 
     @blueprint.delete("/continuation/forms/<form_id>/reference")
     def delete_continuation_reference(form_id: str) -> Response:
+        _require_idempotency_key()
         return jsonify(
             continuation.bind_form_reference(
                 form_id=form_id,
@@ -710,6 +722,7 @@ def create_insight_blueprint(
         form_id: str,
         version: int,
     ) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         return jsonify(
             continuation.adopt_form_image(
@@ -778,6 +791,7 @@ def create_insight_blueprint(
 
     @blueprint.patch("/continuation/projects/<project_id>/script")
     def update_continuation_script(project_id: str) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         return jsonify(
             continuation.update_script(
@@ -809,6 +823,7 @@ def create_insight_blueprint(
 
     @blueprint.patch("/continuation/pages/<page_id>")
     def update_continuation_page(page_id: str) -> Response:
+        _require_idempotency_key()
         body = _json_body()
         payload = body.get("payload")
         if not isinstance(payload, dict):
@@ -860,6 +875,7 @@ def create_insight_blueprint(
         page_id: str,
         version: int,
     ) -> Response:
+        _require_idempotency_key()
         _json_body()
         return jsonify(
             continuation.switch_image_version(
@@ -870,6 +886,7 @@ def create_insight_blueprint(
 
     @blueprint.delete("/books/<book_id>/continuation")
     def clear_continuation(book_id: str) -> Response:
+        _require_idempotency_key()
         continuation.clear(book_id=book_id)
         return jsonify({"deleted": True})
 

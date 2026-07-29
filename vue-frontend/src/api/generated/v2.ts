@@ -549,6 +549,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{job_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["downloadJobArtifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/studio/books/{book_id}/index": {
         parameters: {
             query?: never;
@@ -951,6 +967,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/books/batch-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batchDeleteBooks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/books/batch-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batchUpdateBookTags"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/books/{book_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getBook"];
+        put: operations["updateBook"];
+        post?: never;
+        delete: operations["deleteBook"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/books/{book_id}/translation-constraints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getBookTranslationConstraints"];
+        put: operations["updateBookTranslationConstraints"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/books/{book_id}/chapters": {
         parameters: {
             query?: never;
@@ -979,6 +1063,216 @@ export interface paths {
         get?: never;
         put: operations["reorderChapters"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateChapter"];
+        post?: never;
+        delete: operations["deleteChapter"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/pages/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["reorderChapterPages"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/settings-memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateChapterSettingsMemory"];
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/last-visited-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateChapterLastVisitedPage"];
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/translation-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createChapterTranslationJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/job-batches/translation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createTranslationJobBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/detect-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createChapterDetectJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/style-apply-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createChapterStyleApplyJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/container-import-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContainerImportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/export-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createChapterExportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/text-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportChapterText"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/text-import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewChapterTextImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/text-import/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["commitChapterTextImport"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1015,6 +1309,22 @@ export interface paths {
         get: operations["getPageSummary"];
         put?: never;
         post?: never;
+        delete: operations["deletePage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{page_id}/replace-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["replacePageSource"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1066,7 +1376,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["updatePageDocument"];
         trace?: never;
     };
     "/assets/{asset_id}": {
@@ -1127,6 +1437,774 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["promoteQuickWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTags"];
+        put?: never;
+        post: operations["createTag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/{tag_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateTag"];
+        post?: never;
+        delete: operations["deleteTag"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/support-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["checkWebImportSupport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createWebImportDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getWebImportDraft"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteWebImportDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/drafts/{draft_id}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listWebImportDraftPages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/drafts/{draft_id}/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateWebImportDraftSelection"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/drafts/{draft_id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["commitWebImportDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/web-import/drafts/{draft_id}/pages/{page_id}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWebImportDraftPageMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInsightBootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listInsightChapters"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listInsightPages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/pages/{page_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInsightPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInsightRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/analysis-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createInsightAnalysisJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/artifacts/overviews/{template}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getInsightOverview"];
+        put?: never;
+        post: operations["rebuildInsightOverview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInsightTimeline"];
+        put?: never;
+        post: operations["rebuildInsightTimeline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/compressed-context/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rebuildInsightCompressedContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/vector-rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rebuildInsightVectors"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/qa/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInsightQaStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/qa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["askInsightQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/pages/{page_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportInsightPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/export/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportCurrentInsightBook"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createInsightExportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listInsightNotes"];
+        put?: never;
+        post: operations["createInsightNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getInsightNote"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteInsightNote"];
+        options?: never;
+        head?: never;
+        patch: operations["updateInsightNote"];
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getContinuationProject"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteContinuationProject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["syncContinuationProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/sync-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["syncContinuationAnalysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateContinuationProject"];
+        trace?: never;
+    };
+    "/insight/continuation/projects/{project_id}/references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateContinuationReferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/projects/{project_id}/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationCharacter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/characters/{character_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                character_id: components["parameters"]["CharacterId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteContinuationCharacter"];
+        options?: never;
+        head?: never;
+        patch: operations["updateContinuationCharacter"];
+        trace?: never;
+    };
+    "/insight/continuation/characters/{character_id}/forms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationForm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/projects/{project_id}/forms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listContinuationForms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/forms/{form_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteContinuationForm"];
+        options?: never;
+        head?: never;
+        patch: operations["updateContinuationForm"];
+        trace?: never;
+    };
+    "/insight/continuation/forms/{form_id}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["uploadContinuationFormReference"];
+        delete: operations["deleteContinuationFormReference"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/forms/{form_id}/image-versions/{version}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adoptContinuationFormImageVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/character-sheet-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationCharacterSheetJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/script-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationScriptJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationRunJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/projects/{project_id}/script": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateContinuationScript"];
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/page-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationPageJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/pages/{page_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateContinuationPage"];
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/image-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationImageJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/books/{book_id}/continuation/export-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createContinuationExportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/continuation/pages/{page_id}/image-versions/{version}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["activateContinuationPageImageVersion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1401,8 +2479,7 @@ export interface components {
                 [key: string]: unknown;
             };
             baseRevision: number;
-            /** @default 1 */
-            schemaVersion: number;
+            schemaVersion?: number;
         };
         BookSettingMutation: components["schemas"]["SettingMutation"] & {
             bookId: components["schemas"]["Uuid"];
@@ -1441,6 +2518,10 @@ export interface components {
             bookSettings: components["schemas"]["SettingMutationResult"][];
             providerSettings: components["schemas"]["SettingMutationResult"][];
             credentials: components["schemas"]["CredentialSummary"][];
+        };
+        WorkflowPreferences: {
+            lastWorkflowMode: string;
+            rememberWorkflowModeEnabled: boolean;
         };
         PromptResource: {
             id: components["schemas"]["Uuid"];
@@ -1556,6 +2637,12 @@ export interface components {
             baseRevision: number;
             orderedJobIds: components["schemas"]["Uuid"][];
         };
+        CancelledCount: {
+            cancelled: number;
+        };
+        RemovedCount: {
+            removed: number;
+        };
         JobBatch: {
             batchId: components["schemas"]["Uuid"];
             kind: string;
@@ -1566,6 +2653,45 @@ export interface components {
             jobs: components["schemas"]["Job"][];
             /** Format: date-time */
             createdAt: string | null;
+        };
+        JobBatchAccepted: {
+            batchId: components["schemas"]["Uuid"];
+            jobIds: components["schemas"]["Uuid"][];
+            /** @constant */
+            status: "queued";
+        };
+        TranslationJobConfig: {
+            /** @enum {string} */
+            mode?: "standard" | "hq" | "proofread" | "remove_text";
+            /** @enum {string} */
+            executionMode?: "sequential" | "parallel";
+            skipCompleted?: boolean;
+            reuseExistingBubbles?: boolean;
+        };
+        OptionalPageSelectionCommand: {
+            pageIds?: components["schemas"]["Uuid"][];
+        };
+        ChapterTranslationJobCommand: {
+            config: components["schemas"]["TranslationJobConfig"];
+            pageIds?: components["schemas"]["Uuid"][];
+        };
+        TranslationJobBatchCommand: {
+            chapterIds: components["schemas"]["Uuid"][];
+            config: components["schemas"]["TranslationJobConfig"];
+        };
+        StyleApplyJobCommand: {
+            sourcePageId: components["schemas"]["Uuid"];
+            sourceDocumentRevision: number;
+            selectedFields: string[];
+        };
+        ChapterExportJobCommand: {
+            /** @enum {string} */
+            format: "cbz" | "pdf" | "zip";
+            pageIds?: components["schemas"]["Uuid"][];
+        };
+        FileUploadCommand: {
+            /** Format: binary */
+            file: string;
         };
         /** @enum {string} */
         OperationStatus: "pending" | "running" | "completed" | "failed" | "cancelled";
@@ -1730,8 +2856,38 @@ export interface components {
             bookId: components["schemas"]["Uuid"];
             title: string;
             revision: number;
-            avatarAssetId?: components["schemas"]["Uuid"] | null;
-            avatarUrl?: string | null;
+            avatarAssetId: components["schemas"]["Uuid"] | null;
+            avatarUrl: string | null;
+            origin: {
+                [key: string]: unknown;
+            };
+            status: {
+                [key: string]: unknown;
+            };
+            meta: {
+                [key: string]: unknown;
+            };
+            avatar: {
+                [key: string]: unknown;
+            };
+            identity: {
+                [key: string]: unknown;
+            };
+            coreMessages: {
+                [key: string]: unknown;
+            };
+            lorebook: {
+                [key: string]: unknown;
+            };
+            regexScripts: unknown[];
+            stateTasks: unknown[];
+            exportArtifacts: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string | null;
+            /** Format: date-time */
+            updatedAt: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -1749,14 +2905,26 @@ export interface components {
         };
         StudioIndex: {
             bookId: components["schemas"]["Uuid"];
-            documents: {
-                [key: string]: unknown;
-            }[];
-            candidateStatus: {
-                [key: string]: unknown;
-            };
-        } & {
-            [key: string]: unknown;
+            documents: components["schemas"]["StudioDocumentSummary"][];
+            candidateStatus: components["schemas"]["StudioCandidateStatus"];
+        };
+        StudioCandidateStatus: {
+            available: boolean;
+            reason: string | null;
+        };
+        StudioDocumentSummary: {
+            documentId: components["schemas"]["Uuid"];
+            title: string;
+            /** @enum {string} */
+            kind: "analysis" | "imported" | "manual";
+            revision: number;
+            avatarAssetId: components["schemas"]["Uuid"] | null;
+            hasAvatar: boolean;
+            sourceCharacter: string | null;
+            tags: string[];
+            isFavorite: boolean;
+            /** Format: date-time */
+            updatedAt: string;
         };
         StudioCandidate: {
             characterId: components["schemas"]["Uuid"];
@@ -1785,6 +2953,13 @@ export interface components {
             role: "system" | "user" | "assistant";
             content: string;
             attachments: components["schemas"]["StudioAttachment"][];
+            runtimeLog?: unknown[];
+            variablesSnapshot?: {
+                [key: string]: unknown;
+            };
+            generationMeta?: {
+                [key: string]: unknown;
+            };
         } & {
             [key: string]: unknown;
         };
@@ -1795,20 +2970,50 @@ export interface components {
             revision: number;
             generation: number;
             archived: boolean;
+            title: string;
+            greetingSource: {
+                [key: string]: unknown;
+            };
+            variables: {
+                [key: string]: unknown;
+            };
+            summaryBlocks: {
+                [key: string]: unknown;
+            }[];
+            summaryThroughMessageId: components["schemas"]["Uuid"] | null;
+            summaryGeneration: number;
+            runtimeState: {
+                [key: string]: unknown;
+            };
             messages: components["schemas"]["StudioMessage"][];
+        } & {
+            [key: string]: unknown;
+        };
+        StudioSessionSummary: {
+            sessionId: components["schemas"]["Uuid"];
+            title: string;
+            revision: number;
+            generation: number;
+            archived: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        StudioGreeting: {
+            greetingId: string;
+            label: string;
+            content: string;
+            source: {
+                [key: string]: unknown;
+            };
         } & {
             [key: string]: unknown;
         };
         StudioChatState: {
             documentId: components["schemas"]["Uuid"];
             indexRevision: number;
-            sessions: {
-                [key: string]: unknown;
-            }[];
+            sessions: components["schemas"]["StudioSessionSummary"][];
             activeSession: components["schemas"]["StudioChatSession"] | null;
-            availableGreetings: {
-                [key: string]: unknown;
-            }[];
+            availableGreetings: components["schemas"]["StudioGreeting"][];
         } & {
             [key: string]: unknown;
         };
@@ -2013,6 +3218,42 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
+        BookDetail: components["schemas"]["Book"] & {
+            chapters: components["schemas"]["Chapter"][];
+            tags: components["schemas"]["Tag"][];
+        };
+        BookUpdateCommand: {
+            title: string;
+            tagIds?: components["schemas"]["Uuid"][];
+            /** @default false */
+            clearCover: boolean;
+        };
+        BookBatchDeleteCommand: {
+            bookIds: components["schemas"]["Uuid"][];
+        };
+        BookDeleteRejection: {
+            bookId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            reason: "locked" | "not_found";
+            message: string;
+        };
+        BookBatchDeleteResult: {
+            deleted: components["schemas"]["Uuid"][];
+            rejected: components["schemas"]["BookDeleteRejection"][];
+        };
+        BookBatchTagsCommand: {
+            bookIds: components["schemas"]["Uuid"][];
+            tagIds: components["schemas"]["Uuid"][];
+            /** @enum {string} */
+            action: "add" | "remove";
+        };
+        DeletedResult: {
+            /** @constant */
+            deleted: true;
+        };
+        UpdatedCount: {
+            updated: number;
+        };
         BookList: {
             items: components["schemas"]["Book"][];
         };
@@ -2023,6 +3264,45 @@ export interface components {
             title: string;
             pageCount?: number;
             pageOrderRevision: number;
+        };
+        TitleUpdateCommand: {
+            title: string;
+        };
+        ChapterTitleResult: {
+            id: components["schemas"]["Uuid"];
+            title: string;
+        };
+        OrderedIdsCommand: {
+            baseRevision: number;
+            orderedIds: components["schemas"]["Uuid"][];
+        };
+        PageOrderRevisionResult: {
+            pageOrderRevision: number;
+        };
+        RevisionCommand: {
+            baseRevision: number;
+        };
+        RevisionedPayloadCommand: {
+            baseRevision: number;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        ChapterSettingsMemory: {
+            chapterId: components["schemas"]["Uuid"];
+            revision: number;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        LastVisitedPageCommand: {
+            pageId: components["schemas"]["Uuid"];
+            baseRevision: number;
+        };
+        ChapterNavigation: {
+            chapterId: components["schemas"]["Uuid"];
+            lastVisitedPageId: components["schemas"]["Uuid"];
+            revision: number;
         };
         ChapterList: {
             book: {
@@ -2112,6 +3392,566 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
+        ReplacePageSourceCommand: {
+            /** Format: binary */
+            file: string;
+            baseSourceRevision: number;
+        };
+        QuickWorkspaceContext: {
+            bookId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
+        };
+        QuickWorkspacePromotion: {
+            bookId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
+            quickChapterId: components["schemas"]["Uuid"];
+        };
+        Tag: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            color: string;
+            bookCount?: number;
+        };
+        TagList: {
+            items: components["schemas"]["Tag"][];
+        };
+        TagCommand: {
+            name: string;
+            color: string;
+        };
+        TranslationConstraintPayload: {
+            glossary?: unknown[];
+            nonTranslate?: unknown[];
+        };
+        TranslationConstraintDocument: {
+            bookId: components["schemas"]["Uuid"];
+            revision: number;
+            payload: components["schemas"]["TranslationConstraintPayload"];
+        };
+        TranslationConstraintUpdateCommand: {
+            baseRevision: number;
+            payload: components["schemas"]["TranslationConstraintPayload"];
+        };
+        ChapterTextExportBubble: {
+            bubble_id: components["schemas"]["Uuid"];
+            original_text: string;
+            translated_text: string;
+            textbox_text: string;
+            text_direction: string;
+        };
+        ChapterTextExportPage: {
+            page_id: components["schemas"]["Uuid"];
+            page_number: number;
+            source_checksum: string;
+            document_revision: number;
+            bubbles: components["schemas"]["ChapterTextExportBubble"][];
+        };
+        ChapterTextExport: {
+            /** @constant */
+            schema_version: 1;
+            book_id: components["schemas"]["Uuid"];
+            chapter_id: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            exported_at: string;
+            pages: components["schemas"]["ChapterTextExportPage"][];
+        };
+        TextImportDifference: {
+            before: unknown;
+            after: unknown;
+        };
+        TextImportChange: {
+            bubbleId: components["schemas"]["Uuid"];
+            fields: {
+                [key: string]: string;
+            };
+            differences: {
+                [key: string]: components["schemas"]["TextImportDifference"];
+            };
+        };
+        TextImportPreviewPage: {
+            pageId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "match" | "conflict";
+            issues: string[];
+            baseDocumentRevision: number | null;
+            sourceChecksum: string | null;
+            sourceAssetId: components["schemas"]["Uuid"] | null;
+            changes: components["schemas"]["TextImportChange"][];
+        };
+        TextImportPreview: {
+            /** @constant */
+            schemaVersion: 1;
+            chapterId: components["schemas"]["Uuid"];
+            pages: components["schemas"]["TextImportPreviewPage"][];
+            matchedPages: number;
+            conflictedPages: number;
+        };
+        TextImportCommitCommand: {
+            confirmedPages: components["schemas"]["TextImportPreviewPage"][];
+        };
+        EmptyCommand: Record<string, never>;
+        BookIdCommand: {
+            bookId: components["schemas"]["Uuid"];
+        };
+        /** @enum {string} */
+        InsightAnalysisState: "ready" | "stale" | "running" | "failed" | "not_analyzed";
+        InsightActiveRun: {
+            runId: components["schemas"]["Uuid"];
+            status: string;
+            /** Format: date-time */
+            publishedAt: string | null;
+        };
+        InsightBookSummary: {
+            bookId: components["schemas"]["Uuid"];
+            title: string;
+            coverUrl: string | null;
+            pageCount: number;
+            analyzedPageCount: number;
+            activeRun: components["schemas"]["InsightActiveRun"] | null;
+        };
+        InsightActiveJob: {
+            jobId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"] | null;
+            status: components["schemas"]["JobStatus"];
+            progress: {
+                [key: string]: unknown;
+            };
+        };
+        InsightBootstrap: {
+            books: components["schemas"]["InsightBookSummary"][];
+            activeJobs: components["schemas"]["InsightActiveJob"][];
+            qa: {
+                available: boolean;
+                reason: string | null;
+            };
+        };
+        InsightChapter: {
+            chapterId: components["schemas"]["Uuid"];
+            title: string;
+            ordinal: number;
+            pageCount: number;
+            analysisCounts: {
+                [key: string]: number;
+            };
+        };
+        InsightChapterList: {
+            items: components["schemas"]["InsightChapter"][];
+        };
+        InsightPageSummary: {
+            pageId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
+            displayPageNumber: number;
+            sourceAssetId: components["schemas"]["Uuid"];
+            thumbnailUrl: string | null;
+            analysisState: components["schemas"]["InsightAnalysisState"];
+            activeAnalysisId: components["schemas"]["Uuid"] | null;
+        };
+        InsightPageList: {
+            items: components["schemas"]["InsightPageSummary"][];
+            nextCursor: number | null;
+        };
+        InsightPageDetail: {
+            pageId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
+            chapterTitle: string;
+            displayPageNumber: number;
+            sourceAssetId: components["schemas"]["Uuid"];
+            sourceUrl: string;
+            analysisState: components["schemas"]["InsightAnalysisState"];
+            staleReasons: string[];
+            preview: boolean;
+            analysis: {
+                [key: string]: unknown;
+            } | null;
+            runId: components["schemas"]["Uuid"] | null;
+            /** Format: date-time */
+            generatedAt: string | null;
+        };
+        InsightRunTarget: {
+            pageId: components["schemas"]["Uuid"];
+            pageNumber: number;
+            /** @enum {string} */
+            status: "pending" | "completed" | "failed" | "conflict";
+            error: {
+                [key: string]: unknown;
+            } | null;
+        };
+        InsightRun: {
+            runId: components["schemas"]["Uuid"];
+            jobId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            scope: "full" | "incremental" | "chapter" | "page";
+            status: string;
+            targetCount: number;
+            successCount: number;
+            failedCount: number;
+            missingPageIds: components["schemas"]["Uuid"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            publishedAt: string | null;
+            targets: components["schemas"]["InsightRunTarget"][];
+        };
+        InsightAnalysisJobCommand: {
+            bookId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            scope: "full" | "incremental" | "chapter" | "page";
+            chapterId?: components["schemas"]["Uuid"];
+            chapterIds?: components["schemas"]["Uuid"][];
+            pageId?: components["schemas"]["Uuid"];
+            pageIds?: components["schemas"]["Uuid"][];
+            force?: boolean;
+        };
+        InsightAnalysisJobAccepted: components["schemas"]["JobBatchAccepted"] & {
+            runId: components["schemas"]["Uuid"];
+        };
+        InsightArtifact: {
+            artifactId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"] | null;
+            kind: string;
+            template: string;
+            status: string;
+            revision: number;
+            dependencyFingerprint: string;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        InsightTimelineEntry: {
+            eventId: components["schemas"]["Uuid"];
+        } & {
+            [key: string]: unknown;
+        };
+        InsightTimelineCharacter: {
+            characterId: components["schemas"]["Uuid"];
+        } & {
+            [key: string]: unknown;
+        };
+        InsightTimeline: {
+            timelineVersionId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"] | null;
+            /** @enum {string} */
+            mode: "enhanced" | "simple";
+            status: string;
+            content: {
+                [key: string]: unknown;
+            };
+            events: components["schemas"]["InsightTimelineEntry"][];
+            characters: components["schemas"]["InsightTimelineCharacter"][];
+            eventPage: components["schemas"]["IntegerCursorPage"];
+            characterPage: components["schemas"]["StringCursorPage"];
+            dependencyFingerprint: string;
+        };
+        IntegerCursorPage: {
+            nextCursor: number | null;
+        };
+        StringCursorPage: {
+            nextCursor: string | null;
+        };
+        InsightQaStatus: {
+            available: boolean;
+            reason: string | null;
+            /** @enum {string} */
+            repairAction?: "analyze" | "vector_rebuild";
+            generation?: number;
+            coverage?: {
+                pages: number;
+                events: number;
+            };
+        };
+        InsightQaCommand: {
+            question: string;
+            /** @enum {string} */
+            mode?: "exact" | "global";
+            topK?: number;
+            threshold?: number;
+            useParentChild?: boolean;
+            useReasoning?: boolean;
+            useReranker?: boolean;
+        };
+        InsightCitation: {
+            pageId: components["schemas"]["Uuid"] | null;
+            pageIdSnapshot: components["schemas"]["Uuid"];
+            pageNumberSnapshot: number;
+            sourceAnalysisId: components["schemas"]["Uuid"] | null;
+            excerpt: string;
+            score: number | null;
+        };
+        InsightNote: {
+            noteId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            title: string;
+            content: string | null;
+            excerpt: string | null;
+            /** @enum {string} */
+            kind: "text" | "qa";
+            tags: string[];
+            comments: unknown[];
+            commentCount: number;
+            revision: number;
+            citations: components["schemas"]["InsightCitation"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        InsightNoteList: {
+            items: components["schemas"]["InsightNote"][];
+            nextCursor: string | null;
+        };
+        InsightNoteCreateCommand: {
+            bookId: components["schemas"]["Uuid"];
+            title: string;
+            content: string;
+            citations: unknown[];
+            /** @enum {string} */
+            kind: "text" | "qa";
+            tags: string[];
+            comments: unknown[];
+        };
+        InsightNoteUpdateCommand: {
+            baseRevision: number;
+            title: string;
+            content: string;
+            citations: unknown[];
+            /** @enum {string} */
+            kind: "text" | "qa";
+            tags: string[];
+            comments: unknown[];
+        };
+        ContinuationImageVersion: {
+            version: number;
+            assetId: components["schemas"]["Uuid"];
+            assetUrl: string;
+            thumbnailUrl: string;
+            active?: boolean;
+            adopted?: boolean;
+        };
+        ContinuationPage: {
+            continuationPageId: components["schemas"]["Uuid"];
+            ordinal: number;
+            revision: number;
+            payload: {
+                [key: string]: unknown;
+            };
+            imageVersions: components["schemas"]["ContinuationImageVersion"][];
+        };
+        ContinuationCharacter: {
+            characterId: components["schemas"]["Uuid"];
+            projectId: components["schemas"]["Uuid"];
+            name: string;
+            aliases: string[];
+            enabled: boolean;
+            payload: {
+                [key: string]: unknown;
+            };
+            revision: number;
+        };
+        ContinuationForm: {
+            formId: components["schemas"]["Uuid"];
+            characterId: components["schemas"]["Uuid"];
+            name: string;
+            revision: number;
+            payload: {
+                [key: string]: unknown;
+            };
+            referenceAssetId: components["schemas"]["Uuid"] | null;
+            referenceAssetUrl: string | null;
+            referenceThumbnailUrl: string | null;
+            adoptedAssetId: components["schemas"]["Uuid"] | null;
+            imageVersions: components["schemas"]["ContinuationImageVersion"][];
+        };
+        ContinuationScript: {
+            scriptId: components["schemas"]["Uuid"];
+            projectId?: components["schemas"]["Uuid"];
+            revision: number;
+            content: string;
+        };
+        ContinuationReferenceAsset: {
+            assetId: components["schemas"]["Uuid"];
+            assetUrl: string;
+            thumbnailUrl: string;
+        };
+        ContinuationProjectConfig: {
+            pageCount?: number;
+            styleReferencePages?: number;
+            direction?: string;
+        };
+        ContinuationProject: {
+            projectId: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            sourceRunId: components["schemas"]["Uuid"];
+            revision: number;
+            config: components["schemas"]["ContinuationProjectConfig"];
+            script: components["schemas"]["ContinuationScript"] | null;
+            pages: components["schemas"]["ContinuationPage"][];
+            referenceAssets: components["schemas"]["ContinuationReferenceAsset"][];
+            characters: components["schemas"]["ContinuationCharacter"][];
+        };
+        ContinuationState: {
+            bookId: components["schemas"]["Uuid"];
+            ready: boolean;
+            activeRunId: components["schemas"]["Uuid"] | null;
+            missing: ("analysis" | "story_summary" | "compressed_context" | "timeline")[];
+            project: components["schemas"]["ContinuationProject"] | null;
+        };
+        ContinuationFormList: {
+            items: components["schemas"]["ContinuationForm"][];
+            nextCursor: number | null;
+        };
+        ContinuationProjectUpdateCommand: {
+            baseRevision: number;
+            config: components["schemas"]["ContinuationProjectConfig"];
+        };
+        ContinuationReferencesCommand: {
+            baseRevision: number;
+            assetIds: components["schemas"]["Uuid"][];
+        };
+        ContinuationCharacterCreateCommand: {
+            name: string;
+            aliases: string[];
+            enabled: boolean;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        ContinuationCharacterUpdateCommand: components["schemas"]["ContinuationCharacterCreateCommand"] & {
+            baseRevision: number;
+        };
+        ContinuationFormCreateCommand: {
+            name: string;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        ContinuationFormUpdateCommand: {
+            baseRevision: number;
+            name: string;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        ContinuationReferenceUploadCommand: {
+            /** Format: binary */
+            file: string;
+            baseRevision: number;
+        };
+        ContinuationFormAdoption: {
+            formId: components["schemas"]["Uuid"];
+            version: number;
+            assetId: components["schemas"]["Uuid"];
+            revision: number;
+        };
+        ContinuationCharacterSheetJobCommand: {
+            formId: components["schemas"]["Uuid"];
+        };
+        ContinuationOrdinalsCommand: {
+            ordinals?: number[];
+        };
+        ContinuationExportJobCommand: {
+            /** @enum {string} */
+            format: "zip" | "pdf";
+        };
+        ContinuationJobCommand: {
+            /** @enum {string} */
+            kind: "script" | "pages" | "images" | "export" | "character_sheet";
+            ordinals?: number[];
+            /** @enum {string} */
+            format?: "zip" | "pdf";
+            formId?: components["schemas"]["Uuid"];
+        };
+        ContinuationScriptUpdateCommand: {
+            baseRevision: number;
+            content: string;
+        };
+        ContinuationPageUpdateCommand: {
+            baseRevision: number;
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        ContinuationImageActivation: {
+            continuationPageId: components["schemas"]["Uuid"];
+            version: number;
+            assetId: components["schemas"]["Uuid"];
+        };
+        WebImportSupportCommand: {
+            /** Format: uri */
+            sourceUrl: string;
+        };
+        WebImportSupport: {
+            /** Format: uri */
+            sourceUrl: string;
+            galleryDlAvailable: boolean;
+            galleryDlSupported: boolean;
+            /** @enum {string} */
+            recommendedEngine: "auto" | "gallery-dl";
+        };
+        WebImportDraftCreateCommand: {
+            chapterId: components["schemas"]["Uuid"];
+            /** Format: uri */
+            sourceUrl: string;
+            /** @enum {string} */
+            engine?: "auto" | "gallery-dl" | "ai-agent";
+            config?: Record<string, never>;
+        };
+        WebImportDraftAccepted: components["schemas"]["JobBatchAccepted"] & {
+            draftId: components["schemas"]["Uuid"];
+        };
+        WebImportDraftJob: {
+            id: components["schemas"]["Uuid"];
+            kind: components["schemas"]["JobKind"];
+            status: components["schemas"]["JobStatus"];
+        };
+        WebImportDraft: {
+            id: components["schemas"]["Uuid"];
+            bookId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "extracting" | "ready" | "committing" | "completed" | "failed";
+            revision: number;
+            /** Format: uri */
+            sourceUrl: string;
+            /** @enum {string} */
+            requestedEngine: "auto" | "gallery-dl" | "ai-agent";
+            actualEngine: string | null;
+            candidateCount: number;
+            selectedCount: number;
+            failedCount: number;
+            /** Format: date-time */
+            expiresAt: string;
+            jobs: components["schemas"]["WebImportDraftJob"][];
+        };
+        WebImportDraftPage: {
+            id: components["schemas"]["Uuid"];
+            ordinal: number;
+            selected: boolean;
+            /** Format: uri */
+            sourceUrl: string;
+            checksum: string | null;
+            error: {
+                [key: string]: unknown;
+            } | null;
+            sourceMediaUrl: string | null;
+            thumbnailUrl: string | null;
+        };
+        WebImportDraftPageList: {
+            items: components["schemas"]["WebImportDraftPage"][];
+            nextCursor: number | null;
+        };
+        WebImportSelectionCommand: {
+            baseRevision: number;
+            selectedPageIds: components["schemas"]["Uuid"][];
+        };
+        WebImportSelection: {
+            draftId: components["schemas"]["Uuid"];
+            revision: number;
+            selectedPageIds: components["schemas"]["Uuid"][];
+        };
         ErrorDetail: {
             /** @enum {string} */
             code: "revision_conflict" | "idempotency_conflict" | "operation_active" | "invalid_job_transition" | "chapter_write_pending" | "chapter_locked" | "import_in_progress" | "session_busy" | "validation_error" | "not_found";
@@ -2186,6 +4026,14 @@ export interface components {
         ChapterId: components["schemas"]["Uuid"];
         LeaseId: components["schemas"]["Uuid"];
         AssetId: components["schemas"]["Uuid"];
+        DraftId: components["schemas"]["Uuid"];
+        RunId: components["schemas"]["Uuid"];
+        NoteId: components["schemas"]["Uuid"];
+        ProjectId: components["schemas"]["Uuid"];
+        CharacterId: components["schemas"]["Uuid"];
+        FormId: components["schemas"]["Uuid"];
+        ImageVersion: number;
+        BaseRevisionQuery: number;
         PromptId: components["schemas"]["Uuid"];
         PluginId: string;
         PluginAgentSessionId: string;
@@ -3095,7 +4943,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CancelledCount"];
+                };
             };
         };
     };
@@ -3116,7 +4966,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RemovedCount"];
+                };
             };
         };
     };
@@ -3167,6 +5019,31 @@ export interface operations {
                 };
             };
             409: components["responses"]["InvalidTransition"];
+        };
+    };
+    downloadJobArtifact: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stream one durable job artifact. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     getStudioIndex: {
@@ -4031,6 +5908,203 @@ export interface operations {
             422: components["responses"]["ValidationError"];
         };
     };
+    batchDeleteBooks: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookBatchDeleteCommand"];
+            };
+        };
+        responses: {
+            /** @description Books deleted or rejected independently. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookBatchDeleteResult"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    batchUpdateBookTags: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookBatchTagsCommand"];
+            };
+        };
+        responses: {
+            /** @description Number of books whose tag relation was updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdatedCount"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getBook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Book detail with ordered chapters and tags. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateBook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated book detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    deleteBook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Book deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    getBookTranslationConstraints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current translation constraints and revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationConstraintDocument"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateBookTranslationConstraints: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationConstraintUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated translation constraints. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationConstraintDocument"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
     listBookChapters: {
         parameters: {
             query?: never;
@@ -4114,6 +6188,433 @@ export interface operations {
                 content?: never;
             };
             409: components["responses"]["Conflict"];
+        };
+    };
+    updateChapter: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TitleUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated chapter title. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterTitleResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    deleteChapter: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chapter deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    reorderChapterPages: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderedIdsCommand"];
+            };
+        };
+        responses: {
+            /** @description New page-order revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOrderRevisionResult"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    updateChapterSettingsMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionedPayloadCommand"];
+            };
+        };
+        responses: {
+            /** @description Persisted chapter-scoped settings memory. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterSettingsMemory"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateChapterLastVisitedPage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LastVisitedPageCommand"];
+            };
+        };
+        responses: {
+            /** @description Last-write-wins chapter navigation state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterNavigation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createChapterTranslationJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterTranslationJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Translation job batch accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createTranslationJobBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationJobBatchCommand"];
+            };
+        };
+        responses: {
+            /** @description Multi-chapter translation batch accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createChapterDetectJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OptionalPageSelectionCommand"];
+            };
+        };
+        responses: {
+            /** @description Detection job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createChapterStyleApplyJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StyleApplyJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Style application job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContainerImportJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUploadCommand"];
+            };
+        };
+        responses: {
+            /** @description Container import job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createChapterExportJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterExportJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Export job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    exportChapterText: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chapter text export. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterTextExport"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    previewChapterTextImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUploadCommand"];
+            };
+        };
+        responses: {
+            /** @description Conflict-aware preview of the uploaded text document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextImportPreview"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    commitChapterTextImport: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TextImportCommitCommand"];
+            };
+        };
+        responses: {
+            /** @description Text import job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
         };
     };
     listChapterPages: {
@@ -4202,6 +6703,67 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    deletePage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    replacePageSource: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ReplacePageSourceCommand"];
+            };
+        };
+        responses: {
+            /** @description New immutable source and thumbnail were published. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageImportResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
     createChapterImportLease: {
         parameters: {
             query?: never;
@@ -4277,6 +6839,39 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    updatePageDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageDocumentBatchMutation"];
+            };
+        };
+        responses: {
+            /** @description Updated page document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocument"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
     getImmutableAsset: {
         parameters: {
             query?: never;
@@ -4344,7 +6939,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["QuickWorkspaceContext"];
+                };
             };
             423: components["responses"]["Locked"];
         };
@@ -4374,9 +6971,1712 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["QuickWorkspacePromotion"];
+                };
             };
             423: components["responses"]["Locked"];
+        };
+    };
+    listTags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All book tags with usage counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagList"];
+                };
+            };
+        };
+    };
+    createTag: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagCommand"];
+            };
+        };
+        responses: {
+            /** @description Tag created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateTag: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                tag_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagCommand"];
+            };
+        };
+        responses: {
+            /** @description Tag updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    deleteTag: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                tag_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tag deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    checkWebImportSupport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebImportSupportCommand"];
+            };
+        };
+        responses: {
+            /** @description Side-effect-free extractor support result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebImportSupport"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createWebImportDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebImportDraftCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description Extraction draft job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebImportDraftAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getWebImportDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resumable web-import draft state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebImportDraft"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteWebImportDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listWebImportDraftPages: {
+        parameters: {
+            query?: {
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cursor-paged draft image candidates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebImportDraftPageList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateWebImportDraftSelection: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebImportSelectionCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated draft selection and revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebImportSelection"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    commitWebImportDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft commit job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebImportDraftAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getWebImportDraftPageMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: components["parameters"]["DraftId"];
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Streamed draft image bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getInsightBootstrap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Insight books, active durable jobs, and QA availability. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightBootstrap"];
+                };
+            };
+        };
+    };
+    listInsightChapters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chapter-level analysis state counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightChapterList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listInsightPages: {
+        parameters: {
+            query?: {
+                chapterId?: components["schemas"]["Uuid"];
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cursor-paged Insight page summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightPageList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getInsightPage: {
+        parameters: {
+            query?: {
+                run_id?: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published or run-preview page analysis. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightPageDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getInsightRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable analysis run and frozen targets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightRun"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createInsightAnalysisJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsightAnalysisJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Insight analysis run accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightAnalysisJobAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getInsightOverview: {
+        parameters: {
+            query: {
+                bookId: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path: {
+                template: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active overview artifact. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightArtifact"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    rebuildInsightOverview: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                template: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookIdCommand"];
+            };
+        };
+        responses: {
+            /** @description Overview rebuild job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getInsightTimeline: {
+        parameters: {
+            query: {
+                bookId: components["schemas"]["Uuid"];
+                eventCursor?: number;
+                eventLimit?: number;
+                characterCursor?: string;
+                characterLimit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active timeline with independently paged events and characters. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightTimeline"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    rebuildInsightTimeline: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookIdCommand"];
+            };
+        };
+        responses: {
+            /** @description Timeline rebuild job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    rebuildInsightCompressedContext: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Compressed-context rebuild accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    rebuildInsightVectors: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Vector rebuild accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getInsightQaStatus: {
+        parameters: {
+            query: {
+                bookId: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend-authoritative QA readiness and repair action. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightQaStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    askInsightQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsightQaCommand"];
+            };
+        };
+        responses: {
+            /** @description Transient QA stream; disconnect cancels the request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    exportInsightPage: {
+        parameters: {
+            query?: {
+                format?: "markdown" | "json";
+            };
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Markdown export for one analyzed page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    exportCurrentInsightBook: {
+        parameters: {
+            query: {
+                template: string;
+                format?: "markdown" | "json";
+            };
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current deterministic Insight export. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createInsightExportJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Full Insight export job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    listInsightNotes: {
+        parameters: {
+            query: {
+                bookId: components["schemas"]["Uuid"];
+                cursor?: string;
+                limit?: number;
+                kind?: "text" | "qa";
+                detail?: 1;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cursor-paged Insight notes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightNoteList"];
+                };
+            };
+        };
+    };
+    createInsightNote: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsightNoteCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description Note created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightNote"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getInsightNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full note detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightNote"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteInsightNote: {
+        parameters: {
+            query: {
+                baseRevision: number;
+            };
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Note deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateInsightNote: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsightNoteUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated note. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightNote"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getContinuationProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Continuation readiness and current project. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationState"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteContinuationProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Continuation project deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    syncContinuationProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Project synchronized with the active analysis. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationProject"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    syncContinuationAnalysis: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Project synchronized with the active analysis. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationProject"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateContinuationProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationProjectUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated continuation project. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationProject"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateContinuationReferences: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationReferencesCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated style-reference asset selection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationProject"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationCharacter: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationCharacterCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description Character created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationCharacter"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    deleteContinuationCharacter: {
+        parameters: {
+            query: {
+                baseRevision: components["parameters"]["BaseRevisionQuery"];
+            };
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                character_id: components["parameters"]["CharacterId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Character deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateContinuationCharacter: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                character_id: components["parameters"]["CharacterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationCharacterUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Character updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationCharacter"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationForm: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                character_id: components["parameters"]["CharacterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationFormCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description Character form created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationForm"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    listContinuationForms: {
+        parameters: {
+            query?: {
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cursor-paged character forms. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationFormList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteContinuationForm: {
+        parameters: {
+            query: {
+                baseRevision: components["parameters"]["BaseRevisionQuery"];
+            };
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Character form deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateContinuationForm: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationFormUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Character form updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationForm"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    uploadContinuationFormReference: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ContinuationReferenceUploadCommand"];
+            };
+        };
+        responses: {
+            /** @description Reference source and thumbnail bound to the form. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationForm"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    deleteContinuationFormReference: {
+        parameters: {
+            query: {
+                baseRevision: components["parameters"]["BaseRevisionQuery"];
+            };
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Form reference removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationForm"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adoptContinuationFormImageVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                form_id: components["parameters"]["FormId"];
+                version: components["parameters"]["ImageVersion"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RevisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Generated form image adopted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationFormAdoption"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createContinuationCharacterSheetJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationCharacterSheetJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Character-sheet generation job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationScriptJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Script generation job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationRunJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Continuation job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateContinuationScript: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationScriptUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Continuation script updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationScript"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationPageJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationOrdinalsCommand"];
+            };
+        };
+        responses: {
+            /** @description Page-generation job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    updateContinuationPage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationPageUpdateCommand"];
+            };
+        };
+        responses: {
+            /** @description Continuation page updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationPage"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationImageJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationOrdinalsCommand"];
+            };
+        };
+        responses: {
+            /** @description Image-generation job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createContinuationExportJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinuationExportJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Continuation export job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    activateContinuationPageImageVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+                version: components["parameters"]["ImageVersion"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EmptyCommand"];
+            };
+        };
+        responses: {
+            /** @description Active page image switched. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuationImageActivation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
         };
     };
     listPlugins: {

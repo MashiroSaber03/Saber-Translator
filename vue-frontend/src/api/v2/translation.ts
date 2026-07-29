@@ -1,40 +1,11 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { newIdempotencyKey } from './content'
 
-export interface V2TranslationBatchAccepted {
-  batchId: string
-  jobIds: string[]
-  status: 'queued'
-}
-
-export interface V2TextImportPreviewPage {
-  baseDocumentRevision: number | null
-  changes: Array<{
-    bubbleId: string
-    differences: Record<string, { after: unknown; before: unknown }>
-    fields: Record<string, string>
-  }>
-  issues: string[]
-  pageId: string
-  sourceAssetId: string | null
-  sourceChecksum: string | null
-  status: 'conflict' | 'match'
-}
-
-export interface V2TextImportPreview {
-  chapterId: string
-  conflictedPages: number
-  matchedPages: number
-  pages: V2TextImportPreviewPage[]
-  schemaVersion: number
-}
-
-export interface TranslationJobConfig {
-  executionMode: 'parallel' | 'sequential'
-  mode: 'hq' | 'proofread' | 'remove_text' | 'standard'
-  reuseExistingBubbles?: boolean
-  skipCompleted?: boolean
-}
+export type TranslationJobConfig = components['schemas']['TranslationJobConfig']
+export type V2TextImportPreview = components['schemas']['TextImportPreview']
+export type V2TextImportPreviewPage = components['schemas']['TextImportPreviewPage']
+export type V2TranslationBatchAccepted = components['schemas']['JobBatchAccepted']
 
 export async function createChapterTranslationJob(
   chapterId: string,

@@ -6,11 +6,7 @@ export type V2JobDetail = components['schemas']['JobDetail']
 export type V2JobEvent = components['schemas']['JobEvent']
 export type V2JobBatch = components['schemas']['JobBatch']
 export type V2JobStatus = components['schemas']['JobStatus']
-
-export interface JobListResponse {
-  items: V2Job[]
-  queueRevision: number
-}
+export type JobListResponse = components['schemas']['JobList']
 
 function commandHeaders(): Record<string, string> {
   return { 'Idempotency-Key': crypto.randomUUID() }

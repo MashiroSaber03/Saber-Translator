@@ -14,6 +14,9 @@ tags:
   - name: pages
   - name: operations
   - name: jobs
+  - name: insight
+  - name: web-import
+  - name: transfer
   - name: studio
   - name: plugins
   - name: plugin-agent
@@ -674,6 +677,9 @@ paths:
       responses:
         "200":
           description: All currently queued jobs were atomically cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CancelledCount"}
   /jobs/history/clear:
     post:
       tags: [jobs]
@@ -683,6 +689,9 @@ paths:
       responses:
         "200":
           description: Terminal history removed; interrupted jobs are retained.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RemovedCount"}
   /job-batches/{batch_id}:
     get:
       tags: [jobs]
@@ -713,6 +722,22 @@ paths:
                 $ref: "#/components/schemas/Job"
         "409":
           $ref: "#/components/responses/InvalidTransition"
+  /jobs/{job_id}/download:
+    get:
+      tags: [jobs]
+      operationId: downloadJobArtifact
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: kind
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: Stream one durable job artifact.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
   /studio/books/{book_id}/index:
     get:
       tags: [studio]
@@ -1260,6 +1285,123 @@ paths:
                 $ref: "#/components/schemas/Book"
         "422":
           $ref: "#/components/responses/ValidationError"
+  /books/batch-delete:
+    post:
+      tags: [content]
+      operationId: batchDeleteBooks
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BookBatchDeleteCommand"}
+      responses:
+        "200":
+          description: Books deleted or rejected independently.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BookBatchDeleteResult"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /books/batch-tags:
+    post:
+      tags: [content]
+      operationId: batchUpdateBookTags
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BookBatchTagsCommand"}
+      responses:
+        "200":
+          description: Number of books whose tag relation was updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UpdatedCount"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /books/{book_id}:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [content]
+      operationId: getBook
+      responses:
+        "200":
+          description: Book detail with ordered chapters and tags.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BookDetail"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [content]
+      operationId: updateBook
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BookUpdateCommand"}
+      responses:
+        "200":
+          description: Updated book detail.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BookDetail"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [content]
+      operationId: deleteBook
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Book deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /books/{book_id}/translation-constraints:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [content]
+      operationId: getBookTranslationConstraints
+      responses:
+        "200":
+          description: Current translation constraints and revision.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TranslationConstraintDocument"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      tags: [content]
+      operationId: updateBookTranslationConstraints
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TranslationConstraintUpdateCommand"}
+      responses:
+        "200":
+          description: Updated translation constraints.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TranslationConstraintDocument"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /books/{book_id}/chapters:
     parameters:
       - $ref: "#/components/parameters/BookId"
@@ -1323,6 +1465,282 @@ paths:
           description: New chapter order revision.
         "409":
           $ref: "#/components/responses/Conflict"
+  /chapters/{chapter_id}:
+    parameters:
+      - $ref: "#/components/parameters/ChapterId"
+    put:
+      tags: [content]
+      operationId: updateChapter
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TitleUpdateCommand"}
+      responses:
+        "200":
+          description: Updated chapter title.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChapterTitleResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [content]
+      operationId: deleteChapter
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Chapter deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /chapters/{chapter_id}/pages/order:
+    put:
+      tags: [content]
+      operationId: reorderChapterPages
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OrderedIdsCommand"}
+      responses:
+        "200":
+          description: New page-order revision.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageOrderRevisionResult"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/settings-memory:
+    patch:
+      tags: [content]
+      operationId: updateChapterSettingsMemory
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RevisionedPayloadCommand"}
+      responses:
+        "200":
+          description: Persisted chapter-scoped settings memory.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChapterSettingsMemory"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/last-visited-page:
+    patch:
+      tags: [content]
+      operationId: updateChapterLastVisitedPage
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LastVisitedPageCommand"}
+      responses:
+        "200":
+          description: Last-write-wins chapter navigation state.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChapterNavigation"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/translation-jobs:
+    post:
+      tags: [jobs]
+      operationId: createChapterTranslationJob
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChapterTranslationJobCommand"}
+      responses:
+        "202":
+          description: Translation job batch accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /job-batches/translation:
+    post:
+      tags: [jobs]
+      operationId: createTranslationJobBatch
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TranslationJobBatchCommand"}
+      responses:
+        "202":
+          description: Multi-chapter translation batch accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/detect-jobs:
+    post:
+      tags: [jobs]
+      operationId: createChapterDetectJob
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OptionalPageSelectionCommand"}
+      responses:
+        "202":
+          description: Detection job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/style-apply-jobs:
+    post:
+      tags: [jobs]
+      operationId: createChapterStyleApplyJob
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/StyleApplyJobCommand"}
+      responses:
+        "202":
+          description: Style application job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/container-import-jobs:
+    post:
+      tags: [transfer]
+      operationId: createContainerImportJob
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/FileUploadCommand"}
+      responses:
+        "202":
+          description: Container import job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/export-jobs:
+    post:
+      tags: [transfer]
+      operationId: createChapterExportJob
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChapterExportJobCommand"}
+      responses:
+        "202":
+          description: Export job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/text-export:
+    get:
+      tags: [transfer]
+      operationId: exportChapterText
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+      responses:
+        "200":
+          description: Chapter text export.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChapterTextExport"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /chapters/{chapter_id}/text-import/preview:
+    post:
+      tags: [transfer]
+      operationId: previewChapterTextImport
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/FileUploadCommand"}
+      responses:
+        "200":
+          description: Conflict-aware preview of the uploaded text document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TextImportPreview"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/text-import/commit:
+    post:
+      tags: [transfer]
+      operationId: commitChapterTextImport
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TextImportCommitCommand"}
+      responses:
+        "202":
+          description: Text import job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /chapters/{chapter_id}/pages:
     parameters:
       - $ref: "#/components/parameters/ChapterId"
@@ -1390,6 +1808,42 @@ paths:
                 $ref: "#/components/schemas/PageSummary"
         "404":
           $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [content]
+      operationId: deletePage
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Page deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+  /pages/{page_id}/replace-source:
+    post:
+      tags: [content]
+      operationId: replacePageSource
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/ReplacePageSourceCommand"}
+      responses:
+        "200":
+          description: New immutable source and thumbnail were published.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageImportResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /chapters/{chapter_id}/import-leases:
     post:
       tags: [content]
@@ -1435,6 +1889,27 @@ paths:
                 $ref: "#/components/schemas/PageDocument"
         "404":
           $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [pages]
+      operationId: updatePageDocument
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PageDocumentBatchMutation"}
+      responses:
+        "200":
+          description: Updated page document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageDocument"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /assets/{asset_id}:
     get:
       tags: [content]
@@ -1478,6 +1953,9 @@ paths:
       responses:
         "200":
           description: A new empty quick chapter was created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/QuickWorkspaceContext"}
         "423":
           $ref: "#/components/responses/Locked"
   /quick-workspace/promote:
@@ -1504,8 +1982,1115 @@ paths:
       responses:
         "200":
           description: Chapter relations moved and a new empty quick chapter created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/QuickWorkspacePromotion"}
         "423":
           $ref: "#/components/responses/Locked"
+  /tags:
+    get:
+      tags: [content]
+      operationId: listTags
+      responses:
+        "200":
+          description: All book tags with usage counts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TagList"}
+    post:
+      tags: [content]
+      operationId: createTag
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TagCommand"}
+      responses:
+        "201":
+          description: Tag created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Tag"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /tags/{tag_id}:
+    parameters:
+      - name: tag_id
+        in: path
+        required: true
+        schema: {$ref: "#/components/schemas/Uuid"}
+    put:
+      tags: [content]
+      operationId: updateTag
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TagCommand"}
+      responses:
+        "200":
+          description: Tag updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Tag"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [content]
+      operationId: deleteTag
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Tag deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /web-import/support-checks:
+    post:
+      tags: [web-import]
+      operationId: checkWebImportSupport
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/WebImportSupportCommand"}
+      responses:
+        "200":
+          description: Side-effect-free extractor support result.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WebImportSupport"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /web-import/drafts:
+    post:
+      tags: [web-import]
+      operationId: createWebImportDraft
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/WebImportDraftCreateCommand"}
+      responses:
+        "202":
+          description: Extraction draft job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WebImportDraftAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /web-import/drafts/{draft_id}:
+    parameters:
+      - $ref: "#/components/parameters/DraftId"
+    get:
+      tags: [web-import]
+      operationId: getWebImportDraft
+      responses:
+        "200":
+          description: Resumable web-import draft state.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WebImportDraft"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [web-import]
+      operationId: deleteWebImportDraft
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Draft deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /web-import/drafts/{draft_id}/pages:
+    get:
+      tags: [web-import]
+      operationId: listWebImportDraftPages
+      parameters:
+        - $ref: "#/components/parameters/DraftId"
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+      responses:
+        "200":
+          description: Cursor-paged draft image candidates.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WebImportDraftPageList"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /web-import/drafts/{draft_id}/selection:
+    put:
+      tags: [web-import]
+      operationId: updateWebImportDraftSelection
+      parameters:
+        - $ref: "#/components/parameters/DraftId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/WebImportSelectionCommand"}
+      responses:
+        "200":
+          description: Updated draft selection and revision.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WebImportSelection"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /web-import/drafts/{draft_id}/commit:
+    post:
+      tags: [web-import]
+      operationId: commitWebImportDraft
+      parameters:
+        - $ref: "#/components/parameters/DraftId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RevisionCommand"}
+      responses:
+        "202":
+          description: Draft commit job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/WebImportDraftAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /web-import/drafts/{draft_id}/pages/{page_id}/media:
+    get:
+      tags: [web-import]
+      operationId: getWebImportDraftPageMedia
+      parameters:
+        - $ref: "#/components/parameters/DraftId"
+        - $ref: "#/components/parameters/PageId"
+      responses:
+        "200":
+          description: Streamed draft image bytes.
+          content:
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/bootstrap:
+    get:
+      tags: [insight]
+      operationId: getInsightBootstrap
+      responses:
+        "200":
+          description: Insight books, active durable jobs, and QA availability.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightBootstrap"}
+  /insight/books/{book_id}/chapters:
+    get:
+      tags: [insight]
+      operationId: listInsightChapters
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Chapter-level analysis state counts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightChapterList"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/books/{book_id}/pages:
+    get:
+      tags: [insight]
+      operationId: listInsightPages
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: chapterId
+          in: query
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 100}
+      responses:
+        "200":
+          description: Cursor-paged Insight page summaries.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightPageList"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/pages/{page_id}:
+    get:
+      tags: [insight]
+      operationId: getInsightPage
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - name: run_id
+          in: query
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: Published or run-preview page analysis.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightPageDetail"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/runs/{run_id}:
+    get:
+      tags: [insight]
+      operationId: getInsightRun
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Durable analysis run and frozen targets.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightRun"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/analysis-jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createInsightAnalysisJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InsightAnalysisJobCommand"}
+      responses:
+        "202":
+          description: Insight analysis run accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightAnalysisJobAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/artifacts/overviews/{template}:
+    parameters:
+      - name: template
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+    get:
+      tags: [insight]
+      operationId: getInsightOverview
+      parameters:
+        - name: bookId
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: Active overview artifact.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightArtifact"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    post:
+      tags: [insight, jobs]
+      operationId: rebuildInsightOverview
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BookIdCommand"}
+      responses:
+        "202":
+          description: Overview rebuild job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/timeline:
+    get:
+      tags: [insight]
+      operationId: getInsightTimeline
+      parameters:
+        - name: bookId
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: eventCursor
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: eventLimit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200}
+        - name: characterCursor
+          in: query
+          schema: {type: string}
+        - name: characterLimit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200}
+      responses:
+        "200":
+          description: Active timeline with independently paged events and characters.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightTimeline"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    post:
+      tags: [insight, jobs]
+      operationId: rebuildInsightTimeline
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BookIdCommand"}
+      responses:
+        "202":
+          description: Timeline rebuild job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/compressed-context/rebuild:
+    post:
+      tags: [insight, jobs]
+      operationId: rebuildInsightCompressedContext
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "202":
+          description: Compressed-context rebuild accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/vector-rebuild:
+    post:
+      tags: [insight, jobs]
+      operationId: rebuildInsightVectors
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "202":
+          description: Vector rebuild accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/qa/status:
+    get:
+      tags: [insight]
+      operationId: getInsightQaStatus
+      parameters:
+        - name: bookId
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: Backend-authoritative QA readiness and repair action.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightQaStatus"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/books/{book_id}/qa:
+    post:
+      tags: [insight]
+      operationId: askInsightQuestion
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InsightQaCommand"}
+      responses:
+        "200":
+          description: Transient QA stream; disconnect cancels the request.
+          content:
+            text/event-stream:
+              schema: {type: string}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/pages/{page_id}/export:
+    get:
+      tags: [insight]
+      operationId: exportInsightPage
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - name: format
+          in: query
+          schema: {type: string, enum: [markdown, json]}
+      responses:
+        "200":
+          description: Markdown export for one analyzed page.
+          content:
+            text/markdown:
+              schema: {type: string}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/books/{book_id}/export/current:
+    get:
+      tags: [insight]
+      operationId: exportCurrentInsightBook
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: template
+          in: query
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: format
+          in: query
+          schema: {type: string, enum: [markdown, json]}
+      responses:
+        "200":
+          description: Current deterministic Insight export.
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/books/{book_id}/exports:
+    post:
+      tags: [insight, jobs]
+      operationId: createInsightExportJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "202":
+          description: Full Insight export job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/notes:
+    get:
+      tags: [insight]
+      operationId: listInsightNotes
+      parameters:
+        - name: bookId
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200}
+        - name: kind
+          in: query
+          schema: {type: string, enum: [text, qa]}
+        - name: detail
+          in: query
+          schema: {type: integer, enum: [1]}
+      responses:
+        "200":
+          description: Cursor-paged Insight notes.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightNoteList"}
+    post:
+      tags: [insight]
+      operationId: createInsightNote
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InsightNoteCreateCommand"}
+      responses:
+        "201":
+          description: Note created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightNote"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/notes/{note_id}:
+    parameters:
+      - $ref: "#/components/parameters/NoteId"
+    get:
+      tags: [insight]
+      operationId: getInsightNote
+      responses:
+        "200":
+          description: Full note detail.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightNote"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    patch:
+      tags: [insight]
+      operationId: updateInsightNote
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InsightNoteUpdateCommand"}
+      responses:
+        "200":
+          description: Updated note.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightNote"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [insight]
+      operationId: deleteInsightNote
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: baseRevision
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Note deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /insight/books/{book_id}/continuation:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [insight]
+      operationId: getContinuationProject
+      responses:
+        "200":
+          description: Continuation readiness and current project.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationState"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    delete:
+      tags: [insight]
+      operationId: deleteContinuationProject
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Continuation project deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /insight/books/{book_id}/continuation/sync:
+    post:
+      tags: [insight]
+      operationId: syncContinuationProject
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "200":
+          description: Project synchronized with the active analysis.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationProject"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/continuation/sync-analysis:
+    post:
+      tags: [insight]
+      operationId: syncContinuationAnalysis
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "200":
+          description: Project synchronized with the active analysis.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationProject"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/projects/{project_id}:
+    patch:
+      tags: [insight]
+      operationId: updateContinuationProject
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationProjectUpdateCommand"}
+      responses:
+        "200":
+          description: Updated continuation project.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationProject"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/projects/{project_id}/references:
+    put:
+      tags: [insight]
+      operationId: updateContinuationReferences
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationReferencesCommand"}
+      responses:
+        "200":
+          description: Updated style-reference asset selection.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationProject"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/projects/{project_id}/characters:
+    post:
+      tags: [insight]
+      operationId: createContinuationCharacter
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationCharacterCreateCommand"}
+      responses:
+        "201":
+          description: Character created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationCharacter"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/characters/{character_id}:
+    parameters:
+      - $ref: "#/components/parameters/CharacterId"
+    patch:
+      tags: [insight]
+      operationId: updateContinuationCharacter
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationCharacterUpdateCommand"}
+      responses:
+        "200":
+          description: Character updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationCharacter"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [insight]
+      operationId: deleteContinuationCharacter
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/BaseRevisionQuery"
+      responses:
+        "200":
+          description: Character deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /insight/continuation/characters/{character_id}/forms:
+    post:
+      tags: [insight]
+      operationId: createContinuationForm
+      parameters:
+        - $ref: "#/components/parameters/CharacterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationFormCreateCommand"}
+      responses:
+        "201":
+          description: Character form created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationForm"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/projects/{project_id}/forms:
+    get:
+      tags: [insight]
+      operationId: listContinuationForms
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200}
+      responses:
+        "200":
+          description: Cursor-paged character forms.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationFormList"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /insight/continuation/forms/{form_id}:
+    parameters:
+      - $ref: "#/components/parameters/FormId"
+    patch:
+      tags: [insight]
+      operationId: updateContinuationForm
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationFormUpdateCommand"}
+      responses:
+        "200":
+          description: Character form updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationForm"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [insight]
+      operationId: deleteContinuationForm
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/BaseRevisionQuery"
+      responses:
+        "200":
+          description: Character form deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeletedResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /insight/continuation/forms/{form_id}/reference:
+    parameters:
+      - $ref: "#/components/parameters/FormId"
+    post:
+      tags: [insight]
+      operationId: uploadContinuationFormReference
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/ContinuationReferenceUploadCommand"}
+      responses:
+        "200":
+          description: Reference source and thumbnail bound to the form.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationForm"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [insight]
+      operationId: deleteContinuationFormReference
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/BaseRevisionQuery"
+      responses:
+        "200":
+          description: Form reference removed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationForm"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /insight/continuation/forms/{form_id}/image-versions/{version}/adopt:
+    post:
+      tags: [insight]
+      operationId: adoptContinuationFormImageVersion
+      parameters:
+        - $ref: "#/components/parameters/FormId"
+        - $ref: "#/components/parameters/ImageVersion"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RevisionCommand"}
+      responses:
+        "200":
+          description: Generated form image adopted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationFormAdoption"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /insight/books/{book_id}/continuation/character-sheet-jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createContinuationCharacterSheetJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationCharacterSheetJobCommand"}
+      responses:
+        "202":
+          description: Character-sheet generation job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/continuation/script-jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createContinuationScriptJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "202":
+          description: Script generation job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/continuation/jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createContinuationRunJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationJobCommand"}
+      responses:
+        "202":
+          description: Continuation job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/projects/{project_id}/script:
+    patch:
+      tags: [insight]
+      operationId: updateContinuationScript
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationScriptUpdateCommand"}
+      responses:
+        "200":
+          description: Continuation script updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationScript"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/continuation/page-jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createContinuationPageJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationOrdinalsCommand"}
+      responses:
+        "202":
+          description: Page-generation job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/pages/{page_id}:
+    patch:
+      tags: [insight]
+      operationId: updateContinuationPage
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationPageUpdateCommand"}
+      responses:
+        "200":
+          description: Continuation page updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationPage"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/continuation/image-jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createContinuationImageJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationOrdinalsCommand"}
+      responses:
+        "202":
+          description: Image-generation job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/books/{book_id}/continuation/export-jobs:
+    post:
+      tags: [insight, jobs]
+      operationId: createContinuationExportJob
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ContinuationExportJobCommand"}
+      responses:
+        "202":
+          description: Continuation export job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/continuation/pages/{page_id}/image-versions/{version}/activate:
+    post:
+      tags: [insight]
+      operationId: activateContinuationPageImageVersion
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/ImageVersion"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EmptyCommand"}
+      responses:
+        "200":
+          description: Active page image switched.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuationImageActivation"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /plugins:
     get:
       tags: [plugins]
@@ -1855,6 +3440,56 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    DraftId:
+      name: draft_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    NoteId:
+      name: note_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    CharacterId:
+      name: character_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    FormId:
+      name: form_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ImageVersion:
+      name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    BaseRevisionQuery:
+      name: baseRevision
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     PromptId:
       name: prompt_id
       in: path
@@ -2031,7 +3666,7 @@ components:
         domain: {type: string}
         payload: {type: object, additionalProperties: true}
         baseRevision: {type: integer, minimum: 0}
-        schemaVersion: {type: integer, minimum: 1, default: 1}
+        schemaVersion: {type: integer, minimum: 1}
     BookSettingMutation:
       allOf:
         - $ref: "#/components/schemas/SettingMutation"
@@ -2101,6 +3736,13 @@ components:
         credentials:
           type: array
           items: {$ref: "#/components/schemas/CredentialSummary"}
+    WorkflowPreferences:
+      type: object
+      additionalProperties: false
+      required: [lastWorkflowMode, rememberWorkflowModeEnabled]
+      properties:
+        lastWorkflowMode: {type: string}
+        rememberWorkflowModeEnabled: {type: boolean}
     PromptResource:
       type: object
       additionalProperties: false
@@ -2335,6 +3977,18 @@ components:
           uniqueItems: true
           minItems: 1
           items: {$ref: "#/components/schemas/Uuid"}
+    CancelledCount:
+      type: object
+      additionalProperties: false
+      required: [cancelled]
+      properties:
+        cancelled: {type: integer, minimum: 0}
+    RemovedCount:
+      type: object
+      additionalProperties: false
+      required: [removed]
+      properties:
+        removed: {type: integer, minimum: 0}
     JobBatch:
       type: object
       additionalProperties: false
@@ -2348,6 +4002,93 @@ components:
           type: array
           items: {$ref: "#/components/schemas/Job"}
         createdAt: {type: [string, "null"], format: date-time}
+    JobBatchAccepted:
+      type: object
+      additionalProperties: false
+      required: [batchId, jobIds, status]
+      properties:
+        batchId: {$ref: "#/components/schemas/Uuid"}
+        jobIds:
+          type: array
+          minItems: 1
+          items: {$ref: "#/components/schemas/Uuid"}
+        status:
+          type: string
+          const: queued
+    TranslationJobConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [standard, hq, proofread, remove_text]
+        executionMode:
+          type: string
+          enum: [sequential, parallel]
+        skipCompleted: {type: boolean}
+        reuseExistingBubbles: {type: boolean}
+    OptionalPageSelectionCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        pageIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    ChapterTranslationJobCommand:
+      type: object
+      additionalProperties: false
+      required: [config]
+      properties:
+        config: {$ref: "#/components/schemas/TranslationJobConfig"}
+        pageIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    TranslationJobBatchCommand:
+      type: object
+      additionalProperties: false
+      required: [chapterIds, config]
+      properties:
+        chapterIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        config: {$ref: "#/components/schemas/TranslationJobConfig"}
+    StyleApplyJobCommand:
+      type: object
+      additionalProperties: false
+      required: [sourcePageId, sourceDocumentRevision, selectedFields]
+      properties:
+        sourcePageId: {$ref: "#/components/schemas/Uuid"}
+        sourceDocumentRevision: {type: integer, minimum: 1}
+        selectedFields:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+    ChapterExportJobCommand:
+      type: object
+      additionalProperties: false
+      required: [format]
+      properties:
+        format:
+          type: string
+          enum: [cbz, pdf, zip]
+        pageIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    FileUploadCommand:
+      type: object
+      additionalProperties: false
+      required: [file]
+      properties:
+        file: {type: string, format: binary}
     OperationStatus:
       type: string
       enum: [pending, running, completed, failed, cancelled]
@@ -2691,7 +4432,25 @@ components:
     StudioDocument:
       type: object
       additionalProperties: true
-      required: [id, bookId, title, revision]
+      required:
+        - id
+        - bookId
+        - title
+        - revision
+        - avatarAssetId
+        - avatarUrl
+        - origin
+        - status
+        - meta
+        - avatar
+        - identity
+        - coreMessages
+        - lorebook
+        - regexScripts
+        - stateTasks
+        - exportArtifacts
+        - createdAt
+        - updatedAt
       properties:
         id: {$ref: "#/components/schemas/Uuid"}
         bookId: {$ref: "#/components/schemas/Uuid"}
@@ -2702,6 +4461,22 @@ components:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
         avatarUrl: {type: [string, "null"]}
+        origin: {type: object, additionalProperties: true}
+        status: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}
+        avatar: {type: object, additionalProperties: true}
+        identity: {type: object, additionalProperties: true}
+        coreMessages: {type: object, additionalProperties: true}
+        lorebook: {type: object, additionalProperties: true}
+        regexScripts:
+          type: array
+          items: {}
+        stateTasks:
+          type: array
+          items: {}
+        exportArtifacts: {type: object, additionalProperties: true}
+        createdAt: {type: [string, "null"], format: date-time}
+        updatedAt: {type: [string, "null"], format: date-time}
     StudioDocumentMutation:
       type: object
       additionalProperties: false
@@ -2722,14 +4497,51 @@ components:
             [identity, greetings, lorebook, regex, state-tasks, translate, full, review]
     StudioIndex:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required: [bookId, documents, candidateStatus]
       properties:
         bookId: {$ref: "#/components/schemas/Uuid"}
         documents:
           type: array
-          items: {type: object, additionalProperties: true}
-        candidateStatus: {type: object, additionalProperties: true}
+          items: {$ref: "#/components/schemas/StudioDocumentSummary"}
+        candidateStatus: {$ref: "#/components/schemas/StudioCandidateStatus"}
+    StudioCandidateStatus:
+      type: object
+      additionalProperties: false
+      required: [available, reason]
+      properties:
+        available: {type: boolean}
+        reason: {type: [string, "null"]}
+    StudioDocumentSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - documentId
+        - title
+        - kind
+        - revision
+        - avatarAssetId
+        - hasAvatar
+        - sourceCharacter
+        - tags
+        - isFavorite
+        - updatedAt
+      properties:
+        documentId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        kind: {type: string, enum: [analysis, imported, manual]}
+        revision: {type: integer, minimum: 1}
+        avatarAssetId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        hasAvatar: {type: boolean}
+        sourceCharacter: {type: [string, "null"]}
+        tags:
+          type: array
+          items: {type: string}
+        isFavorite: {type: boolean}
+        updatedAt: {type: string, format: date-time}
     StudioCandidate:
       type: object
       additionalProperties: false
@@ -2788,11 +4600,29 @@ components:
         attachments:
           type: array
           items: {$ref: "#/components/schemas/StudioAttachment"}
+        runtimeLog:
+          type: array
+          items: {}
+        variablesSnapshot: {type: object, additionalProperties: true}
+        generationMeta: {type: object, additionalProperties: true}
     StudioChatSession:
       type: object
       additionalProperties: true
       required:
-        [sessionId, documentId, indexRevision, revision, generation, archived, messages]
+        - sessionId
+        - documentId
+        - indexRevision
+        - title
+        - revision
+        - generation
+        - greetingSource
+        - variables
+        - summaryBlocks
+        - summaryThroughMessageId
+        - summaryGeneration
+        - runtimeState
+        - archived
+        - messages
       properties:
         sessionId: {$ref: "#/components/schemas/Uuid"}
         documentId: {$ref: "#/components/schemas/Uuid"}
@@ -2800,9 +4630,42 @@ components:
         revision: {type: integer, minimum: 1}
         generation: {type: integer, minimum: 1}
         archived: {type: boolean}
+        title: {type: string}
+        greetingSource: {type: object, additionalProperties: true}
+        variables: {type: object, additionalProperties: true}
+        summaryBlocks:
+          type: array
+          items: {type: object, additionalProperties: true}
+        summaryThroughMessageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        summaryGeneration: {type: integer, minimum: 0}
+        runtimeState: {type: object, additionalProperties: true}
         messages:
           type: array
           items: {$ref: "#/components/schemas/StudioMessage"}
+    StudioSessionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [sessionId, title, revision, generation, archived, updatedAt]
+      properties:
+        sessionId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        revision: {type: integer, minimum: 1}
+        generation: {type: integer, minimum: 1}
+        archived: {type: boolean}
+        updatedAt: {type: string, format: date-time}
+    StudioGreeting:
+      type: object
+      additionalProperties: true
+      required: [greetingId, label, content, source]
+      properties:
+        greetingId: {type: string}
+        label: {type: string}
+        content: {type: string}
+        source: {type: object, additionalProperties: true}
     StudioChatState:
       type: object
       additionalProperties: true
@@ -2813,14 +4676,14 @@ components:
         indexRevision: {type: integer, minimum: 1}
         sessions:
           type: array
-          items: {type: object, additionalProperties: true}
+          items: {$ref: "#/components/schemas/StudioSessionSummary"}
         activeSession:
           oneOf:
             - $ref: "#/components/schemas/StudioChatSession"
             - type: "null"
         availableGreetings:
           type: array
-          items: {type: object, additionalProperties: true}
+          items: {$ref: "#/components/schemas/StudioGreeting"}
     StudioSessionIndexCommand:
       type: object
       additionalProperties: false
@@ -3216,6 +5079,86 @@ components:
               color: {type: string}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    BookDetail:
+      allOf:
+        - $ref: "#/components/schemas/Book"
+        - type: object
+          additionalProperties: false
+          required: [chapters, tags]
+          properties:
+            chapters:
+              type: array
+              items: {$ref: "#/components/schemas/Chapter"}
+            tags:
+              type: array
+              items: {$ref: "#/components/schemas/Tag"}
+    BookUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+        tagIds:
+          type: array
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        clearCover: {type: boolean, default: false}
+    BookBatchDeleteCommand:
+      type: object
+      additionalProperties: false
+      required: [bookIds]
+      properties:
+        bookIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    BookDeleteRejection:
+      type: object
+      additionalProperties: false
+      required: [bookId, reason, message]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        reason: {type: string, enum: [locked, not_found]}
+        message: {type: string}
+    BookBatchDeleteResult:
+      type: object
+      additionalProperties: false
+      required: [deleted, rejected]
+      properties:
+        deleted:
+          type: array
+          items: {$ref: "#/components/schemas/Uuid"}
+        rejected:
+          type: array
+          items: {$ref: "#/components/schemas/BookDeleteRejection"}
+    BookBatchTagsCommand:
+      type: object
+      additionalProperties: false
+      required: [bookIds, tagIds, action]
+      properties:
+        bookIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        tagIds:
+          type: array
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        action: {type: string, enum: [add, remove]}
+    DeletedResult:
+      type: object
+      additionalProperties: false
+      required: [deleted]
+      properties:
+        deleted: {type: boolean, const: true}
+    UpdatedCount:
+      type: object
+      additionalProperties: false
+      required: [updated]
+      properties:
+        updated: {type: integer, minimum: 0}
     BookList:
       type: object
       additionalProperties: false
@@ -3235,6 +5178,71 @@ components:
         title: {type: string}
         pageCount: {type: integer, minimum: 0}
         pageOrderRevision: {type: integer, minimum: 1}
+    TitleUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+    ChapterTitleResult:
+      type: object
+      additionalProperties: false
+      required: [id, title]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+    OrderedIdsCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, orderedIds]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        orderedIds:
+          type: array
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    PageOrderRevisionResult:
+      type: object
+      additionalProperties: false
+      required: [pageOrderRevision]
+      properties:
+        pageOrderRevision: {type: integer, minimum: 1}
+    RevisionCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+    RevisionedPayloadCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, payload]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        payload: {type: object, additionalProperties: true}
+    ChapterSettingsMemory:
+      type: object
+      additionalProperties: false
+      required: [chapterId, revision, payload]
+      properties:
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+        payload: {type: object, additionalProperties: true}
+    LastVisitedPageCommand:
+      type: object
+      additionalProperties: false
+      required: [pageId, baseRevision]
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        baseRevision: {type: integer, minimum: 0}
+    ChapterNavigation:
+      type: object
+      additionalProperties: false
+      required: [chapterId, lastVisitedPageId, revision]
+      properties:
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        lastVisitedPageId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
     ChapterList:
       type: object
       additionalProperties: false
@@ -3389,6 +5397,1044 @@ components:
         leaseId: {$ref: "#/components/schemas/Uuid"}
         ownerToken: {type: string, minLength: 32}
         expiresAt: {type: string, format: date-time}
+    ReplacePageSourceCommand:
+      type: object
+      additionalProperties: false
+      required: [file, baseSourceRevision]
+      properties:
+        file: {type: string, format: binary}
+        baseSourceRevision: {type: integer, minimum: 1}
+    QuickWorkspaceContext:
+      type: object
+      additionalProperties: false
+      required: [bookId, chapterId]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+    QuickWorkspacePromotion:
+      type: object
+      additionalProperties: false
+      required: [bookId, chapterId, quickChapterId]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        quickChapterId: {$ref: "#/components/schemas/Uuid"}
+    Tag:
+      type: object
+      additionalProperties: false
+      required: [id, name, color]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        name: {type: string}
+        color: {type: string, pattern: "^#[0-9A-F]{6}$"}
+        bookCount: {type: integer, minimum: 0}
+    TagList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Tag"}
+    TagCommand:
+      type: object
+      additionalProperties: false
+      required: [name, color]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        color: {type: string}
+    TranslationConstraintPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        glossary:
+          type: array
+          items: {}
+        nonTranslate:
+          type: array
+          items: {}
+    TranslationConstraintDocument:
+      type: object
+      additionalProperties: false
+      required: [bookId, revision, payload]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+        payload: {$ref: "#/components/schemas/TranslationConstraintPayload"}
+    TranslationConstraintUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, payload]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        payload: {$ref: "#/components/schemas/TranslationConstraintPayload"}
+    ChapterTextExportBubble:
+      type: object
+      additionalProperties: false
+      required:
+        [bubble_id, original_text, translated_text, textbox_text, text_direction]
+      properties:
+        bubble_id: {$ref: "#/components/schemas/Uuid"}
+        original_text: {type: string}
+        translated_text: {type: string}
+        textbox_text: {type: string}
+        text_direction: {type: string}
+    ChapterTextExportPage:
+      type: object
+      additionalProperties: false
+      required:
+        [page_id, page_number, source_checksum, document_revision, bubbles]
+      properties:
+        page_id: {$ref: "#/components/schemas/Uuid"}
+        page_number: {type: integer, minimum: 1}
+        source_checksum: {type: string}
+        document_revision: {type: integer, minimum: 1}
+        bubbles:
+          type: array
+          items: {$ref: "#/components/schemas/ChapterTextExportBubble"}
+    ChapterTextExport:
+      type: object
+      additionalProperties: false
+      required: [schema_version, book_id, chapter_id, exported_at, pages]
+      properties:
+        schema_version: {type: integer, const: 1}
+        book_id: {$ref: "#/components/schemas/Uuid"}
+        chapter_id: {$ref: "#/components/schemas/Uuid"}
+        exported_at: {type: string, format: date-time}
+        pages:
+          type: array
+          items: {$ref: "#/components/schemas/ChapterTextExportPage"}
+    TextImportDifference:
+      type: object
+      additionalProperties: false
+      required: [before, after]
+      properties:
+        before: {}
+        after: {}
+    TextImportChange:
+      type: object
+      additionalProperties: false
+      required: [bubbleId, fields, differences]
+      properties:
+        bubbleId: {$ref: "#/components/schemas/Uuid"}
+        fields:
+          type: object
+          additionalProperties: {type: string}
+        differences:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TextImportDifference"
+    TextImportPreviewPage:
+      type: object
+      additionalProperties: false
+      required:
+        - pageId
+        - status
+        - issues
+        - baseDocumentRevision
+        - sourceChecksum
+        - sourceAssetId
+        - changes
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        status: {type: string, enum: [match, conflict]}
+        issues:
+          type: array
+          items: {type: string}
+        baseDocumentRevision: {type: [integer, "null"], minimum: 1}
+        sourceChecksum: {type: [string, "null"]}
+        sourceAssetId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        changes:
+          type: array
+          items: {$ref: "#/components/schemas/TextImportChange"}
+    TextImportPreview:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, chapterId, pages, matchedPages, conflictedPages]
+      properties:
+        schemaVersion: {type: integer, const: 1}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        pages:
+          type: array
+          items: {$ref: "#/components/schemas/TextImportPreviewPage"}
+        matchedPages: {type: integer, minimum: 0}
+        conflictedPages: {type: integer, minimum: 0}
+    TextImportCommitCommand:
+      type: object
+      additionalProperties: false
+      required: [confirmedPages]
+      properties:
+        confirmedPages:
+          type: array
+          minItems: 1
+          items: {$ref: "#/components/schemas/TextImportPreviewPage"}
+    EmptyCommand:
+      type: object
+      additionalProperties: false
+    BookIdCommand:
+      type: object
+      additionalProperties: false
+      required: [bookId]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+    InsightAnalysisState:
+      type: string
+      enum: [ready, stale, running, failed, not_analyzed]
+    InsightActiveRun:
+      type: object
+      additionalProperties: false
+      required: [runId, status, publishedAt]
+      properties:
+        runId: {$ref: "#/components/schemas/Uuid"}
+        status: {type: string}
+        publishedAt: {type: [string, "null"], format: date-time}
+    InsightBookSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [bookId, title, coverUrl, pageCount, analyzedPageCount, activeRun]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        coverUrl: {type: [string, "null"]}
+        pageCount: {type: integer, minimum: 0}
+        analyzedPageCount: {type: integer, minimum: 0}
+        activeRun:
+          oneOf:
+            - $ref: "#/components/schemas/InsightActiveRun"
+            - type: "null"
+    InsightActiveJob:
+      type: object
+      additionalProperties: false
+      required: [jobId, bookId, status, progress]
+      properties:
+        jobId: {$ref: "#/components/schemas/Uuid"}
+        bookId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        status: {$ref: "#/components/schemas/JobStatus"}
+        progress: {type: object, additionalProperties: true}
+    InsightBootstrap:
+      type: object
+      additionalProperties: false
+      required: [books, activeJobs, qa]
+      properties:
+        books:
+          type: array
+          items: {$ref: "#/components/schemas/InsightBookSummary"}
+        activeJobs:
+          type: array
+          items: {$ref: "#/components/schemas/InsightActiveJob"}
+        qa:
+          type: object
+          additionalProperties: false
+          required: [available, reason]
+          properties:
+            available: {type: boolean}
+            reason: {type: [string, "null"]}
+    InsightChapter:
+      type: object
+      additionalProperties: false
+      required: [chapterId, title, ordinal, pageCount, analysisCounts]
+      properties:
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        ordinal: {type: integer, minimum: 1}
+        pageCount: {type: integer, minimum: 0}
+        analysisCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+    InsightChapterList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/InsightChapter"}
+    InsightPageSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - pageId
+        - chapterId
+        - displayPageNumber
+        - sourceAssetId
+        - thumbnailUrl
+        - analysisState
+        - activeAnalysisId
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        displayPageNumber: {type: integer, minimum: 1}
+        sourceAssetId: {$ref: "#/components/schemas/Uuid"}
+        thumbnailUrl: {type: [string, "null"]}
+        analysisState: {$ref: "#/components/schemas/InsightAnalysisState"}
+        activeAnalysisId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+    InsightPageList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/InsightPageSummary"}
+        nextCursor: {type: [integer, "null"], minimum: 1}
+    InsightPageDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - pageId
+        - bookId
+        - chapterId
+        - chapterTitle
+        - displayPageNumber
+        - sourceAssetId
+        - sourceUrl
+        - analysisState
+        - staleReasons
+        - preview
+        - analysis
+        - runId
+        - generatedAt
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        chapterTitle: {type: string}
+        displayPageNumber: {type: integer, minimum: 1}
+        sourceAssetId: {$ref: "#/components/schemas/Uuid"}
+        sourceUrl: {type: string}
+        analysisState: {$ref: "#/components/schemas/InsightAnalysisState"}
+        staleReasons:
+          type: array
+          items: {type: string}
+        preview: {type: boolean}
+        analysis:
+          type: [object, "null"]
+          additionalProperties: true
+        runId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        generatedAt: {type: [string, "null"], format: date-time}
+    InsightRunTarget:
+      type: object
+      additionalProperties: false
+      required: [pageId, pageNumber, status, error]
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        pageNumber: {type: integer, minimum: 1}
+        status: {type: string, enum: [pending, completed, failed, conflict]}
+        error:
+          type: [object, "null"]
+          additionalProperties: true
+    InsightRun:
+      type: object
+      additionalProperties: false
+      required:
+        - runId
+        - jobId
+        - bookId
+        - scope
+        - status
+        - targetCount
+        - successCount
+        - failedCount
+        - missingPageIds
+        - createdAt
+        - publishedAt
+        - targets
+      properties:
+        runId: {$ref: "#/components/schemas/Uuid"}
+        jobId: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        scope: {type: string, enum: [full, incremental, chapter, page]}
+        status: {type: string}
+        targetCount: {type: integer, minimum: 0}
+        successCount: {type: integer, minimum: 0}
+        failedCount: {type: integer, minimum: 0}
+        missingPageIds:
+          type: array
+          items: {$ref: "#/components/schemas/Uuid"}
+        createdAt: {type: string, format: date-time}
+        publishedAt: {type: [string, "null"], format: date-time}
+        targets:
+          type: array
+          items: {$ref: "#/components/schemas/InsightRunTarget"}
+    InsightAnalysisJobCommand:
+      type: object
+      additionalProperties: false
+      required: [bookId, scope]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        scope: {type: string, enum: [full, incremental, chapter, page]}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        chapterIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        pageIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        force: {type: boolean}
+    InsightAnalysisJobAccepted:
+      allOf:
+        - $ref: "#/components/schemas/JobBatchAccepted"
+        - type: object
+          required: [runId]
+          properties:
+            runId: {$ref: "#/components/schemas/Uuid"}
+    InsightArtifact:
+      type: object
+      additionalProperties: false
+      required:
+        - artifactId
+        - bookId
+        - runId
+        - kind
+        - template
+        - status
+        - revision
+        - dependencyFingerprint
+        - payload
+      properties:
+        artifactId: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        runId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        kind: {type: string}
+        template: {type: string}
+        status: {type: string}
+        revision: {type: integer, minimum: 1}
+        dependencyFingerprint: {type: string}
+        payload: {type: object, additionalProperties: true}
+    InsightTimelineEntry:
+      type: object
+      required: [eventId]
+      properties:
+        eventId: {$ref: "#/components/schemas/Uuid"}
+      additionalProperties: true
+    InsightTimelineCharacter:
+      type: object
+      required: [characterId]
+      properties:
+        characterId: {$ref: "#/components/schemas/Uuid"}
+      additionalProperties: true
+    InsightTimeline:
+      type: object
+      additionalProperties: false
+      required:
+        - timelineVersionId
+        - bookId
+        - runId
+        - mode
+        - status
+        - content
+        - events
+        - characters
+        - eventPage
+        - characterPage
+        - dependencyFingerprint
+      properties:
+        timelineVersionId: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        runId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        mode: {type: string, enum: [enhanced, simple]}
+        status: {type: string}
+        content: {type: object, additionalProperties: true}
+        events:
+          type: array
+          items: {$ref: "#/components/schemas/InsightTimelineEntry"}
+        characters:
+          type: array
+          items: {$ref: "#/components/schemas/InsightTimelineCharacter"}
+        eventPage:
+          $ref: "#/components/schemas/IntegerCursorPage"
+        characterPage:
+          $ref: "#/components/schemas/StringCursorPage"
+        dependencyFingerprint: {type: string}
+    IntegerCursorPage:
+      type: object
+      additionalProperties: false
+      required: [nextCursor]
+      properties:
+        nextCursor: {type: [integer, "null"], minimum: 1}
+    StringCursorPage:
+      type: object
+      additionalProperties: false
+      required: [nextCursor]
+      properties:
+        nextCursor: {type: [string, "null"]}
+    InsightQaStatus:
+      type: object
+      additionalProperties: false
+      required: [available, reason]
+      properties:
+        available: {type: boolean}
+        reason: {type: [string, "null"]}
+        repairAction: {type: string, enum: [analyze, vector_rebuild]}
+        generation: {type: integer, minimum: 1}
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [pages, events]
+          properties:
+            pages: {type: integer, minimum: 0}
+            events: {type: integer, minimum: 0}
+    InsightQaCommand:
+      type: object
+      additionalProperties: false
+      required: [question]
+      properties:
+        question: {type: string, minLength: 1, maxLength: 4000}
+        mode: {type: string, enum: [exact, global]}
+        topK: {type: integer, minimum: 1, maximum: 20}
+        threshold: {type: number, minimum: 0, maximum: 1}
+        useParentChild: {type: boolean}
+        useReasoning: {type: boolean}
+        useReranker: {type: boolean}
+    InsightCitation:
+      type: object
+      additionalProperties: false
+      required:
+        - pageId
+        - pageIdSnapshot
+        - pageNumberSnapshot
+        - sourceAnalysisId
+        - excerpt
+        - score
+      properties:
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        pageIdSnapshot: {$ref: "#/components/schemas/Uuid"}
+        pageNumberSnapshot: {type: integer, minimum: 1}
+        sourceAnalysisId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        excerpt: {type: string}
+        score: {type: [number, "null"]}
+    InsightNote:
+      type: object
+      additionalProperties: false
+      required:
+        - noteId
+        - bookId
+        - title
+        - content
+        - excerpt
+        - kind
+        - tags
+        - comments
+        - commentCount
+        - revision
+        - citations
+        - createdAt
+        - updatedAt
+      properties:
+        noteId: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string}
+        content: {type: [string, "null"]}
+        excerpt: {type: [string, "null"]}
+        kind: {type: string, enum: [text, qa]}
+        tags:
+          type: array
+          items: {type: string}
+        comments:
+          type: array
+          items: {}
+        commentCount: {type: integer, minimum: 0}
+        revision: {type: integer, minimum: 1}
+        citations:
+          type: array
+          items: {$ref: "#/components/schemas/InsightCitation"}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    InsightNoteList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/InsightNote"}
+        nextCursor: {type: [string, "null"]}
+    InsightNoteCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [bookId, title, content, citations, kind, tags, comments]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string, minLength: 1, maxLength: 500}
+        content: {type: string, maxLength: 1000000}
+        citations:
+          type: array
+          items: {}
+        kind: {type: string, enum: [text, qa]}
+        tags:
+          type: array
+          items: {type: string}
+        comments:
+          type: array
+          items: {}
+    InsightNoteUpdateCommand:
+      type: object
+      additionalProperties: false
+      required:
+        [baseRevision, title, content, citations, kind, tags, comments]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 500}
+        content: {type: string, maxLength: 1000000}
+        citations:
+          type: array
+          items: {}
+        kind: {type: string, enum: [text, qa]}
+        tags:
+          type: array
+          items: {type: string}
+        comments:
+          type: array
+          items: {}
+    ContinuationImageVersion:
+      type: object
+      additionalProperties: false
+      required: [version, assetId, assetUrl, thumbnailUrl]
+      properties:
+        version: {type: integer, minimum: 1}
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        assetUrl: {type: string}
+        thumbnailUrl: {type: string}
+        active: {type: boolean}
+        adopted: {type: boolean}
+    ContinuationPage:
+      type: object
+      additionalProperties: false
+      required:
+        [continuationPageId, ordinal, revision, payload, imageVersions]
+      properties:
+        continuationPageId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        revision: {type: integer, minimum: 1}
+        payload: {type: object, additionalProperties: true}
+        imageVersions:
+          type: array
+          items: {$ref: "#/components/schemas/ContinuationImageVersion"}
+    ContinuationCharacter:
+      type: object
+      additionalProperties: false
+      required:
+        [characterId, projectId, name, aliases, enabled, payload, revision]
+      properties:
+        characterId: {$ref: "#/components/schemas/Uuid"}
+        projectId: {$ref: "#/components/schemas/Uuid"}
+        name: {type: string}
+        aliases:
+          type: array
+          items: {type: string}
+        enabled: {type: boolean}
+        payload: {type: object, additionalProperties: true}
+        revision: {type: integer, minimum: 1}
+    ContinuationForm:
+      type: object
+      additionalProperties: false
+      required:
+        - formId
+        - characterId
+        - name
+        - revision
+        - payload
+        - referenceAssetId
+        - referenceAssetUrl
+        - referenceThumbnailUrl
+        - adoptedAssetId
+        - imageVersions
+      properties:
+        formId: {$ref: "#/components/schemas/Uuid"}
+        characterId: {$ref: "#/components/schemas/Uuid"}
+        name: {type: string}
+        revision: {type: integer, minimum: 1}
+        payload: {type: object, additionalProperties: true}
+        referenceAssetId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        referenceAssetUrl: {type: [string, "null"]}
+        referenceThumbnailUrl: {type: [string, "null"]}
+        adoptedAssetId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        imageVersions:
+          type: array
+          items: {$ref: "#/components/schemas/ContinuationImageVersion"}
+    ContinuationScript:
+      type: object
+      additionalProperties: false
+      required: [scriptId, revision, content]
+      properties:
+        scriptId: {$ref: "#/components/schemas/Uuid"}
+        projectId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+        content: {type: string}
+    ContinuationReferenceAsset:
+      type: object
+      additionalProperties: false
+      required: [assetId, assetUrl, thumbnailUrl]
+      properties:
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        assetUrl: {type: string}
+        thumbnailUrl: {type: string}
+    ContinuationProjectConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        pageCount: {type: integer, minimum: 1, maximum: 100}
+        styleReferencePages: {type: integer, minimum: 1, maximum: 20}
+        direction: {type: string}
+    ContinuationProject:
+      type: object
+      additionalProperties: false
+      required:
+        - projectId
+        - bookId
+        - sourceRunId
+        - revision
+        - config
+        - script
+        - pages
+        - referenceAssets
+        - characters
+      properties:
+        projectId: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        sourceRunId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+        config: {$ref: "#/components/schemas/ContinuationProjectConfig"}
+        script:
+          oneOf:
+            - $ref: "#/components/schemas/ContinuationScript"
+            - type: "null"
+        pages:
+          type: array
+          items: {$ref: "#/components/schemas/ContinuationPage"}
+        referenceAssets:
+          type: array
+          items: {$ref: "#/components/schemas/ContinuationReferenceAsset"}
+        characters:
+          type: array
+          items: {$ref: "#/components/schemas/ContinuationCharacter"}
+    ContinuationState:
+      type: object
+      additionalProperties: false
+      required: [bookId, ready, activeRunId, missing, project]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        ready: {type: boolean}
+        activeRunId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        missing:
+          type: array
+          items:
+            type: string
+            enum: [analysis, story_summary, compressed_context, timeline]
+        project:
+          oneOf:
+            - $ref: "#/components/schemas/ContinuationProject"
+            - type: "null"
+    ContinuationFormList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ContinuationForm"}
+        nextCursor: {type: [integer, "null"], minimum: 1}
+    ContinuationProjectUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, config]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        config: {$ref: "#/components/schemas/ContinuationProjectConfig"}
+    ContinuationReferencesCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, assetIds]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        assetIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    ContinuationCharacterCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [name, aliases, enabled, payload]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 500}
+        aliases:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: {type: string, maxLength: 500}
+        enabled: {type: boolean}
+        payload: {type: object, additionalProperties: true}
+    ContinuationCharacterUpdateCommand:
+      allOf:
+        - $ref: "#/components/schemas/ContinuationCharacterCreateCommand"
+        - type: object
+          required: [baseRevision]
+          properties:
+            baseRevision: {type: integer, minimum: 1}
+    ContinuationFormCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [name, payload]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 500}
+        payload: {type: object, additionalProperties: true}
+    ContinuationFormUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, name, payload]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 500}
+        payload: {type: object, additionalProperties: true}
+    ContinuationReferenceUploadCommand:
+      type: object
+      additionalProperties: false
+      required: [file, baseRevision]
+      properties:
+        file: {type: string, format: binary}
+        baseRevision: {type: integer, minimum: 1}
+    ContinuationFormAdoption:
+      type: object
+      additionalProperties: false
+      required: [formId, version, assetId, revision]
+      properties:
+        formId: {$ref: "#/components/schemas/Uuid"}
+        version: {type: integer, minimum: 1}
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+    ContinuationCharacterSheetJobCommand:
+      type: object
+      additionalProperties: false
+      required: [formId]
+      properties:
+        formId: {$ref: "#/components/schemas/Uuid"}
+    ContinuationOrdinalsCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        ordinals:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: integer, minimum: 1}
+    ContinuationExportJobCommand:
+      type: object
+      additionalProperties: false
+      required: [format]
+      properties:
+        format: {type: string, enum: [zip, pdf]}
+    ContinuationJobCommand:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [script, pages, images, export, character_sheet]
+        ordinals:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: integer, minimum: 1}
+        format: {type: string, enum: [zip, pdf]}
+        formId: {$ref: "#/components/schemas/Uuid"}
+    ContinuationScriptUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, content]
+      properties:
+        baseRevision: {type: integer, minimum: 0}
+        content: {type: string, minLength: 1}
+    ContinuationPageUpdateCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, payload]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        payload: {type: object, additionalProperties: true}
+    ContinuationImageActivation:
+      type: object
+      additionalProperties: false
+      required: [continuationPageId, version, assetId]
+      properties:
+        continuationPageId: {$ref: "#/components/schemas/Uuid"}
+        version: {type: integer, minimum: 1}
+        assetId: {$ref: "#/components/schemas/Uuid"}
+    WebImportSupportCommand:
+      type: object
+      additionalProperties: false
+      required: [sourceUrl]
+      properties:
+        sourceUrl: {type: string, format: uri}
+    WebImportSupport:
+      type: object
+      additionalProperties: false
+      required:
+        [sourceUrl, galleryDlAvailable, galleryDlSupported, recommendedEngine]
+      properties:
+        sourceUrl: {type: string, format: uri}
+        galleryDlAvailable: {type: boolean}
+        galleryDlSupported: {type: boolean}
+        recommendedEngine: {type: string, enum: [auto, gallery-dl]}
+    WebImportDraftCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [chapterId, sourceUrl]
+      properties:
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        sourceUrl: {type: string, format: uri}
+        engine:
+          type: string
+          enum: [auto, gallery-dl, ai-agent]
+        config:
+          type: object
+          additionalProperties: false
+    WebImportDraftAccepted:
+      allOf:
+        - $ref: "#/components/schemas/JobBatchAccepted"
+        - type: object
+          required: [draftId]
+          properties:
+            draftId: {$ref: "#/components/schemas/Uuid"}
+    WebImportDraftJob:
+      type: object
+      additionalProperties: false
+      required: [id, kind, status]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        kind: {$ref: "#/components/schemas/JobKind"}
+        status: {$ref: "#/components/schemas/JobStatus"}
+    WebImportDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bookId
+        - chapterId
+        - status
+        - revision
+        - sourceUrl
+        - requestedEngine
+        - actualEngine
+        - candidateCount
+        - selectedCount
+        - failedCount
+        - expiresAt
+        - jobs
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        status:
+          type: string
+          enum: [extracting, ready, committing, completed, failed]
+        revision: {type: integer, minimum: 1}
+        sourceUrl: {type: string, format: uri}
+        requestedEngine: {type: string, enum: [auto, gallery-dl, ai-agent]}
+        actualEngine: {type: [string, "null"]}
+        candidateCount: {type: integer, minimum: 0}
+        selectedCount: {type: integer, minimum: 0}
+        failedCount: {type: integer, minimum: 0}
+        expiresAt: {type: string, format: date-time}
+        jobs:
+          type: array
+          items: {$ref: "#/components/schemas/WebImportDraftJob"}
+    WebImportDraftPage:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - ordinal
+        - selected
+        - sourceUrl
+        - checksum
+        - error
+        - sourceMediaUrl
+        - thumbnailUrl
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        selected: {type: boolean}
+        sourceUrl: {type: string, format: uri}
+        checksum: {type: [string, "null"]}
+        error:
+          type: [object, "null"]
+          additionalProperties: true
+        sourceMediaUrl: {type: [string, "null"]}
+        thumbnailUrl: {type: [string, "null"]}
+    WebImportDraftPageList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/WebImportDraftPage"}
+        nextCursor: {type: [integer, "null"], minimum: 1}
+    WebImportSelectionCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, selectedPageIds]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+        selectedPageIds:
+          type: array
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+    WebImportSelection:
+      type: object
+      additionalProperties: false
+      required: [draftId, revision, selectedPageIds]
+      properties:
+        draftId: {$ref: "#/components/schemas/Uuid"}
+        revision: {type: integer, minimum: 1}
+        selectedPageIds:
+          type: array
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
     ErrorDetail:
       type: object
       additionalProperties: false

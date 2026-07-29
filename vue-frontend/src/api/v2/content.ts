@@ -2,7 +2,10 @@ import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
 
 export type V2Book = components['schemas']['Book']
+export type V2BookDetail = components['schemas']['BookDetail']
 export type V2Chapter = components['schemas']['Chapter']
+export type V2ChapterNavigation = components['schemas']['ChapterNavigation']
+export type V2ContainerImportAccepted = components['schemas']['JobBatchAccepted']
 export type V2ImportLease = components['schemas']['ImportLease']
 export type V2PageDocument = components['schemas']['PageDocument']
 export type V2PageDocumentBatchMutation = components['schemas']['PageDocumentBatchMutation']
@@ -27,23 +30,6 @@ export interface SequentialImportProgress {
   currentPath: string
   result: V2PageImportResult
   total: number
-}
-
-export interface V2BookDetail extends V2Book {
-  chapters: V2Chapter[]
-  tags?: Array<{ color: string; id: string; name: string }>
-}
-
-export interface V2ContainerImportAccepted {
-  batchId: string
-  jobIds: string[]
-  status: 'queued'
-}
-
-export interface V2ChapterNavigation {
-  chapterId: string
-  lastVisitedPageId: string
-  revision: number
 }
 
 export function newIdempotencyKey(): string {

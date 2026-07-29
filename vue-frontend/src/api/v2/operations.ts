@@ -1,38 +1,11 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { newIdempotencyKey } from './content'
 
-export type PageOperationKind =
-  | 'bubble_color'
-  | 'bubble_ocr'
-  | 'bubble_translate'
-  | 'page_detect'
-
-export type OperationStatus =
-  | 'cancelled'
-  | 'completed'
-  | 'failed'
-  | 'pending'
-  | 'running'
-
-export interface V2Operation {
-  baseRevision: number | null
-  bubbleId: string | null
-  error: { code?: string; message?: string } | null
-  executorRole: 'api' | 'worker'
-  finishedAt: string | null
-  kind: string
-  operationId: string
-  pageId: string | null
-  result: Record<string, unknown> | null
-  startedAt: string | null
-  status: OperationStatus
-}
-
-export interface PageOperationCommand {
-  baseRevision: number
-  bubbleId?: string
-  kind: PageOperationKind
-}
+export type OperationStatus = components['schemas']['OperationStatus']
+export type PageOperationCommand = components['schemas']['PageOperationCommand']
+export type PageOperationKind = PageOperationCommand['kind']
+export type V2Operation = components['schemas']['Operation']
 
 export async function createPageOperation(
   pageId: string,

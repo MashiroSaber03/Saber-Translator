@@ -1,116 +1,23 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { newIdempotencyKey } from './content'
 
-export interface V2SettingEntry {
-  domain: string
-  payload: Record<string, unknown>
-  revision: number
-  schemaVersion: number
-}
+export type V2BookSettingEntry = components['schemas']['BookSettingEntry']
+export type V2CredentialEdit = components['schemas']['CredentialEdit']
+export type V2CredentialSummary = components['schemas']['CredentialSummary']
+export type V2DiagnosticRequest = components['schemas']['ProviderDiagnosticRequest']
+export type V2ConnectionTestResult = components['schemas']['ConnectionTestResponse']
+export type V2Font = components['schemas']['FontResource']
+export type V2Prompt = components['schemas']['PromptResource']
+export type V2ProviderSettingEntry = components['schemas']['ProviderSettingEntry']
+export type V2ProviderSettingMutation = components['schemas']['ProviderSettingMutation']
+export type V2SettingEntry = components['schemas']['SettingEntry']
+export type V2SettingMutation = components['schemas']['SettingMutation']
+export type V2SettingsDocument = components['schemas']['SettingsDocument']
+export type V2SettingsTransaction = components['schemas']['SettingsTransaction']
+export type V2SettingsTransactionResult = components['schemas']['SettingsTransactionResult']
 
-export interface V2BookSettingEntry extends V2SettingEntry {
-  bookId: string
-}
-
-export interface V2ProviderSettingEntry extends V2SettingEntry {
-  credentialVersionId: string | null
-  provider: string
-}
-
-export interface V2CredentialSummary {
-  credentialId: string
-  credentialVersionId: string
-  currentVersion: number
-  domain: string
-  hasKey: boolean
-  provider: string
-  revision: number
-}
-
-export interface V2SettingsDocument {
-  settings: V2SettingEntry[]
-  bookSettings: V2BookSettingEntry[]
-  providerSettings: V2ProviderSettingEntry[]
-  credentials: V2CredentialSummary[]
-}
-
-export interface V2SettingMutation {
-  baseRevision: number
-  domain: string
-  payload: Record<string, unknown>
-  schemaVersion?: number
-}
-
-export interface V2ProviderSettingMutation extends V2SettingMutation {
-  credentialEditRef?: string
-  credentialVersionId?: string
-  provider: string
-}
-
-export interface V2CredentialEdit {
-  baseRevision: number
-  clientRef: string
-  credentialId?: string
-  domain: string
-  provider: string
-  secret: Record<string, unknown>
-}
-
-export interface V2SettingsTransaction {
-  settings?: V2SettingMutation[]
-  bookSettings?: Array<V2SettingMutation & { bookId: string }>
-  providerSettings?: V2ProviderSettingMutation[]
-  credentialEdits?: V2CredentialEdit[]
-}
-
-interface V2MutationResult {
-  domain: string
-  revision: number
-}
-
-export interface V2SettingsTransactionResult {
-  settings: V2MutationResult[]
-  bookSettings: Array<V2MutationResult & { bookId: string }>
-  providerSettings: Array<V2MutationResult & { provider: string }>
-  credentials: V2CredentialSummary[]
-}
-
-export interface V2Font {
-  assetUrl: string | null
-  builtinKey: string | null
-  displayName: string
-  id: string
-  kind: 'builtin' | 'uploaded'
-}
-
-export interface V2Prompt {
-  content: string
-  id: string
-  isFactoryDefault: boolean
-  name: string
-  revision: number
-  type: string
-}
-
-export interface V2WorkflowPreferences {
-  lastWorkflowMode: string
-  rememberWorkflowModeEnabled: boolean
-}
-
-export interface V2DiagnosticRequest {
-  baseUrl?: string
-  credentialId?: string
-  domain?: string
-  model?: string
-  prompt?: string
-  provider?: string
-  secret?: Record<string, string>
-}
-
-export interface V2ConnectionTestResult {
-  message?: string
-  success: boolean
-}
+export type V2WorkflowPreferences = components['schemas']['WorkflowPreferences']
 
 export function getV2Settings(
   domains: string[] = [],

@@ -1,76 +1,15 @@
 import { apiClient } from '@/api/client'
+import type { components } from '@/api/generated/v2'
 import { newIdempotencyKey } from './content'
 
 const ROOT = '/api/v2/studio'
 
-export interface V2StudioDocument extends Record<string, unknown> {
-  avatarAssetId: string | null
-  avatarUrl: string | null
-  bookId: string
-  createdAt: string | null
-  id: string
-  revision: number
-  title: string
-  updatedAt: string | null
-}
-
-export interface V2StudioIndex {
-  bookId: string
-  candidateStatus: {
-    available: boolean
-    reason: string | null
-  }
-  documents: Array<{
-    avatarAssetId: string | null
-    documentId: string
-    hasAvatar?: boolean
-    isFavorite?: boolean
-    kind: string
-    revision: number
-    sourceCharacter?: string | null
-    tags?: string[]
-    title: string
-    updatedAt: string
-  }>
-}
-
-export interface V2StudioCandidate {
-  aliases: string[]
-  characterId: string
-  description: string
-  firstAppearancePage: number | null
-  keyMomentCount: number
-  name: string
-  personality: string
-  relatedPageCount: number
-  relatedPageNumbers: number[]
-}
-
-export interface V2StudioSession extends Record<string, unknown> {
-  archived: boolean
-  documentId: string
-  generation: number
-  indexRevision: number
-  messages: Array<Record<string, unknown>>
-  revision: number
-  sessionId: string
-  summaryBlocks: Array<Record<string, unknown>>
-  title: string
-  variables: Record<string, unknown>
-}
-
-export interface V2StudioChatState {
-  activeSession: V2StudioSession | null
-  availableGreetings?: Array<Record<string, unknown>>
-  documentId: string
-  indexRevision: number
-  sessions: Array<Record<string, unknown>>
-}
-
-export interface V2StudioOperationAccepted {
-  operationId: string
-  status: string
-}
+export type V2StudioCandidate = components['schemas']['StudioCandidate']
+export type V2StudioChatState = components['schemas']['StudioChatState']
+export type V2StudioDocument = components['schemas']['StudioDocument']
+export type V2StudioIndex = components['schemas']['StudioIndex']
+export type V2StudioOperationAccepted = components['schemas']['OperationAccepted']
+export type V2StudioSession = components['schemas']['StudioChatSession']
 
 function commandHeaders(): Record<string, string> {
   return { 'Idempotency-Key': newIdempotencyKey() }
