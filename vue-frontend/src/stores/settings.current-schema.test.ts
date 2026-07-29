@@ -174,6 +174,58 @@ describe('useSettingsStore backend-first loading', () => {
     expect(store.hasCredential('translation', 'deepseek')).toBe(true)
   })
 
+  it('does not restore a stale chapter snapshot after saving parallel mode', async () => {
+    const initialSettings = createDefaultSettings()
+    const persistedSettings = createDefaultSettings()
+    persistedSettings.parallel.enabled = true
+    persistedSettings.parallel.deepLearningLockSize = 2
+    settingsApiMocks.getV2Settings
+      .mockResolvedValueOnce({
+        settings: [{
+          domain: 'translation',
+          revision: 0,
+          schemaVersion: 3,
+          payload: initialSettings,
+        }],
+        bookSettings: [],
+        providerSettings: [],
+        credentials: [],
+      })
+      .mockResolvedValueOnce({
+        settings: [{
+          domain: 'translation',
+          revision: 1,
+          schemaVersion: 3,
+          payload: persistedSettings,
+        }],
+        bookSettings: [],
+        providerSettings: [],
+        credentials: [],
+      })
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
+
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.hydrateChapterWorkState('chapter-1', {
+      parallel: { enabled: false, deepLearningLockSize: 1 },
+    })).toBe(true)
+
+    store.updateSettings({
+      parallel: { enabled: true, deepLearningLockSize: 2 },
+    })
+
+    expect(await store.saveToBackend()).toBe(true)
+    expect(store.settings.parallel).toEqual({
+      enabled: true,
+      deepLearningLockSize: 2,
+    })
+  })
+
   it('does not submit a partial Baidu OCR credential replacement', async () => {
     const settings = createDefaultSettings()
     settingsApiMocks.getV2Settings.mockResolvedValue({

@@ -28,6 +28,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Initialize the selected role, print a JSON smoke result, and exit.",
     )
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        help="Console log level. Detailed DEBUG logs are always kept in log files.",
+    )
     return parser
 
 

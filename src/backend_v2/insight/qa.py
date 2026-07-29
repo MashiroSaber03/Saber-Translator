@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 import hashlib
 import json
+import logging
 from pathlib import Path
 import queue
 import re
 import secrets
 import threading
+import time
 from typing import Any, Protocol
 import uuid
 
@@ -47,6 +49,7 @@ from src.backend_v2.storage.schema import (
 
 
 ACTIVE_TRANSIENT_STATUSES = ("pending", "running", "completed")
+LOGGER = logging.getLogger("saber.worker.insight_qa")
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u9fff]{2,}")
 _QUESTION_WORDS = frozenset(
     {
@@ -561,6 +564,8 @@ class InsightQAWorkerService:
         )
         if fence is None:
             return False
+        started_at = time.monotonic()
+        LOGGER.info("Insight QA 检索开始：request=%s", fence.request_id[:8])
         with TransientHeartbeat(self.repository, fence) as heartbeat:
             try:
                 request_payload = self.repository.request(fence)
@@ -569,12 +574,27 @@ class InsightQAWorkerService:
                     raise QAFenced("transient vector query lost its lease")
                 self.repository.complete(fence, result=result)
             except QAFenced:
+                LOGGER.warning(
+                    "Insight QA 检索被 fencing 中断：request=%s",
+                    fence.request_id[:8],
+                )
                 return True
             except Exception as exc:
+                LOGGER.exception(
+                    "Insight QA 检索失败：request=%s duration=%.2fs",
+                    fence.request_id[:8],
+                    time.monotonic() - started_at,
+                )
                 try:
                     self.repository.fail(fence, message=str(exc))
                 except QAFenced:
                     pass
+            else:
+                LOGGER.info(
+                    "Insight QA 检索完成：request=%s duration=%.2fs",
+                    fence.request_id[:8],
+                    time.monotonic() - started_at,
+                )
         return True
 
     def _retrieve(self, request_payload: Mapping[str, Any]) -> dict[str, Any]:

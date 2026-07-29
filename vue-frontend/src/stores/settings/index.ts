@@ -219,6 +219,13 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function applyBackendDocument(document: V2SettingsDocument): void {
+    // Reloading the global document must not roll an active chapter back to the
+    // snapshot captured when the translation page first opened. Settings edited
+    // in the modal are already the current chapter work state, while the
+    // debounced chapter-memory write may still be in flight.
+    const currentChapterWorkState = activeChapterWorkState
+      ? chapterWorkStatePayload()
+      : null
     const translationEntry = document.settings.find(row => row.domain === 'translation')
     const textStyleDefaultsEntry = document.settings.find(
       row => row.domain === 'text_style_defaults',
@@ -280,8 +287,9 @@ export const useSettingsStore = defineStore('settings', () => {
     settings.value.proofreading.rounds.forEach((round) => {
       round.apiKey = ''
     })
-    if (activeChapterWorkState) {
-      applyChapterWorkState(activeChapterWorkState.payload)
+    if (activeChapterWorkState && currentChapterWorkState) {
+      activeChapterWorkState.payload = deepClone(currentChapterWorkState)
+      applyChapterWorkState(currentChapterWorkState)
     }
   }
 

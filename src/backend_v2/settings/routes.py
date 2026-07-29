@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import logging
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
@@ -25,6 +26,8 @@ from src.backend_v2.storage.platform_repositories import (
     SettingsRepository,
 )
 
+LOGGER = logging.getLogger("saber.api.settings")
+
 
 def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     blueprint = Blueprint("settings_v2", __name__, url_prefix="/api/v2")
@@ -36,14 +39,17 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.errorhandler(RevisionConflict)
     def conflict(error: RevisionConflict):
+        LOGGER.warning("设置保存发生版本冲突：%s", error)
         return _error("revision_conflict", str(error), 409)
 
     @blueprint.errorhandler(LookupError)
     def not_found(error: LookupError):
+        LOGGER.warning("设置资源不存在：%s", error)
         return _error("not_found", str(error), 404)
 
     @blueprint.errorhandler(ValueError)
     def validation(error: ValueError):
+        LOGGER.warning("设置请求校验失败：%s", error)
         return _error("validation_error", str(error), 422)
 
     @blueprint.get("/settings")
@@ -84,6 +90,10 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     def save_settings_transaction() -> Response:
         idempotency_key = _require_idempotency_key()
         body = _json_body()
+        setting_rows = _object_array(body, "settings")
+        book_setting_rows = _object_array(body, "bookSettings")
+        provider_rows = _object_array(body, "providerSettings")
+        credential_rows = _object_array(body, "credentialEdits")
         result, replayed = settings.save_transaction_idempotent(
             idempotency_key=idempotency_key,
             request_body=body,
@@ -94,7 +104,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     base_revision=int(row.get("baseRevision", 0)),
                     schema_version=int(row.get("schemaVersion", 1)),
                 )
-                for row in _object_array(body, "settings")
+                for row in setting_rows
             ),
             book_settings_edits=tuple(
                 BookSettingMutation(
@@ -104,7 +114,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     base_revision=int(row.get("baseRevision", 0)),
                     schema_version=int(row.get("schemaVersion", 1)),
                 )
-                for row in _object_array(body, "bookSettings")
+                for row in book_setting_rows
             ),
             providers=tuple(
                 ProviderSettingMutation(
@@ -124,7 +134,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     ),
                     schema_version=int(row.get("schemaVersion", 1)),
                 )
-                for row in _object_array(body, "providerSettings")
+                for row in provider_rows
             ),
             credentials_edits=tuple(
                 CredentialEdit(
@@ -143,8 +153,25 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                         else None
                     ),
                 )
-                for row in _object_array(body, "credentialEdits")
+                for row in credential_rows
             ),
+        )
+        LOGGER.info(
+            "设置事务已保存：domains=%s book_settings=%s providers=%s "
+            "credentials=%s replayed=%s",
+            ",".join(str(row.get("domain", "?")) for row in setting_rows) or "-",
+            len(book_setting_rows),
+            ",".join(
+                f"{row.get('domain', '?')}:{row.get('provider', '?')}"
+                for row in provider_rows
+            )
+            or "-",
+            ",".join(
+                f"{row.get('domain', '?')}:{row.get('provider', '?')}"
+                for row in credential_rows
+            )
+            or "-",
+            replayed,
         )
         response = jsonify(result)
         if replayed:

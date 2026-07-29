@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 from pathlib import Path
 import socket
+import time
 from typing import Any, Callable
 
-from flask import Blueprint, Flask, Response, jsonify
+from flask import Blueprint, Flask, Response, g, jsonify, request
 from flask_cors import CORS
 from sqlalchemy import Engine
 import yaml
@@ -16,6 +18,9 @@ import yaml
 from src.backend_v2.import_guard import assert_api_import_boundary
 from src.backend_v2.paths import data_root_fingerprint, project_root
 from src.backend_v2.runtime_identity import RuntimeIdentity
+
+
+LOGGER = logging.getLogger("saber.api.http")
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +101,59 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
     return blueprint
 
 
+def _install_request_logging(app: Flask) -> None:
+    """Record useful API timings without logging bodies, queries, or secrets."""
+
+    @app.before_request
+    def start_request_timer() -> None:
+        g.saber_request_started_at = time.perf_counter()
+
+    @app.after_request
+    def log_request(response: Response) -> Response:
+        started_at = getattr(g, "saber_request_started_at", None)
+        duration_ms = (
+            (time.perf_counter() - started_at) * 1000
+            if isinstance(started_at, float)
+            else 0.0
+        )
+        path = request.path
+        quiet_read = request.method == "GET" and (
+            path == "/api/v2/health"
+            or "/assets/" in path
+            or path.endswith("/media")
+            or path.endswith("/events")
+        )
+        if response.status_code >= 500:
+            level = logging.ERROR
+        elif response.status_code >= 400 or duration_ms >= 1000:
+            level = logging.WARNING
+        elif quiet_read:
+            level = logging.DEBUG
+        else:
+            level = logging.INFO
+        LOGGER.log(
+            level,
+            "HTTP %s %s -> %s (%.1f ms, client=%s)",
+            request.method,
+            path,
+            response.status_code,
+            duration_ms,
+            request.remote_addr or "-",
+        )
+        response.headers["X-Response-Time"] = f"{duration_ms / 1000:.3f}s"
+        return response
+
+    @app.teardown_request
+    def log_unhandled_request_error(error: BaseException | None) -> None:
+        if error is not None:
+            LOGGER.error(
+                "HTTP %s %s raised an unhandled exception",
+                request.method,
+                request.path,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+
 def create_api_app(settings: ApiSettings) -> Flask:
     app = Flask("saber_translator_v2", static_folder=None)
     app.config.update(
@@ -105,6 +163,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
     )
     CORS(app)
+    _install_request_logging(app)
     app.register_blueprint(_create_v2_blueprint(settings))
     from src.backend_v2.content.routes import create_content_blueprint
     from src.backend_v2.jobs.events import JobEventBroadcaster

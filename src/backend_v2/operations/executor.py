@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+import logging
 import threading
+import time
 from typing import Any
 
 from src.backend_v2.operations.repository import (
@@ -21,6 +23,11 @@ OperationHandler = Callable[
     Mapping[str, Any],
 ]
 RenderHandler = Callable[[RenderFence], Callable[[Any], None]]
+LOGGER = logging.getLogger("saber.operations")
+
+
+def _short(value: object) -> str:
+    return str(value)[:8]
 
 
 class _LeaseHeartbeat:
@@ -121,6 +128,14 @@ class DurableOperationExecutor:
         fence: OperationFence,
         operation: Mapping[str, Any],
     ) -> None:
+        started_at = time.monotonic()
+        kind = str(operation.get("kind", "unknown"))
+        LOGGER.info(
+            "操作开始：role=%s operation=%s kind=%s",
+            self.executor_role,
+            _short(fence.operation_id),
+            kind,
+        )
         heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
         heartbeat.start()
         try:
@@ -132,8 +147,18 @@ class DurableOperationExecutor:
             ):
                 self.repository.complete(fence, result=result)
         except OperationFenced:
-            pass
+            LOGGER.warning(
+                "操作被 fencing 中断：operation=%s kind=%s",
+                _short(fence.operation_id),
+                kind,
+            )
         except Exception as exc:
+            LOGGER.exception(
+                "操作失败：operation=%s kind=%s duration=%.2fs",
+                _short(fence.operation_id),
+                kind,
+                time.monotonic() - started_at,
+            )
             if not heartbeat.fenced.is_set():
                 try:
                     self.repository.fail(
@@ -146,6 +171,13 @@ class DurableOperationExecutor:
         finally:
             heartbeat.stop()
             self._admission.release()
+        if not heartbeat.fenced.is_set():
+            LOGGER.info(
+                "操作结束：operation=%s kind=%s duration=%.2fs",
+                _short(fence.operation_id),
+                kind,
+                time.monotonic() - started_at,
+            )
 
 
 class WorkerOperationRunner:
@@ -173,6 +205,13 @@ class WorkerOperationRunner:
         if claimed is None:
             return False
         fence, operation = claimed
+        started_at = time.monotonic()
+        kind = str(operation.get("kind", "unknown"))
+        LOGGER.info(
+            "Worker 操作开始：operation=%s kind=%s",
+            _short(fence.operation_id),
+            kind,
+        )
         heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
         heartbeat.start()
         try:
@@ -197,8 +236,18 @@ class WorkerOperationRunner:
             ):
                 self.repository.complete(fence, result=result)
         except OperationFenced:
-            pass
+            LOGGER.warning(
+                "Worker 操作被 fencing 中断：operation=%s kind=%s",
+                _short(fence.operation_id),
+                kind,
+            )
         except Exception as exc:
+            LOGGER.exception(
+                "Worker 操作失败：operation=%s kind=%s duration=%.2fs",
+                _short(fence.operation_id),
+                kind,
+                time.monotonic() - started_at,
+            )
             if not heartbeat.fenced.is_set():
                 try:
                     self.repository.fail(
@@ -210,6 +259,13 @@ class WorkerOperationRunner:
                     pass
         finally:
             heartbeat.stop()
+        if not heartbeat.fenced.is_set():
+            LOGGER.info(
+                "Worker 操作结束：operation=%s kind=%s duration=%.2fs",
+                _short(fence.operation_id),
+                kind,
+                time.monotonic() - started_at,
+            )
         return True
 
 
@@ -254,6 +310,13 @@ class DurableRenderExecutor:
                 return
             if fence is None:
                 continue
+            started_at = time.monotonic()
+            LOGGER.debug(
+                "渲染开始：request=%s page=%s revision=%s",
+                _short(fence.render_request_id),
+                _short(fence.page_id),
+                fence.rendering_revision,
+            )
             heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
             heartbeat.start()
             try:
@@ -261,8 +324,18 @@ class DurableRenderExecutor:
                 if not heartbeat.fenced.is_set():
                     self.repository.complete(fence, publisher=publisher)
             except OperationFenced:
-                pass
+                LOGGER.warning(
+                    "渲染被 fencing 中断：request=%s page=%s",
+                    _short(fence.render_request_id),
+                    _short(fence.page_id),
+                )
             except Exception as exc:
+                LOGGER.exception(
+                    "渲染失败：request=%s page=%s duration=%.2fs",
+                    _short(fence.render_request_id),
+                    _short(fence.page_id),
+                    time.monotonic() - started_at,
+                )
                 if not heartbeat.fenced.is_set():
                     try:
                         self.repository.fail(
@@ -274,3 +347,10 @@ class DurableRenderExecutor:
                         pass
             finally:
                 heartbeat.stop()
+            if not heartbeat.fenced.is_set():
+                LOGGER.debug(
+                    "渲染结束：request=%s page=%s duration=%.2fs",
+                    _short(fence.render_request_id),
+                    _short(fence.page_id),
+                    time.monotonic() - started_at,
+                )

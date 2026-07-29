@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 import signal
 import threading
 
+from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 from src.backend_v2.storage.epochs import ProcessEpochRepository
+
+
+LOGGER = logging.getLogger("saber.worker")
 
 
 def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
@@ -35,6 +40,18 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
 
 def run_worker(args: object) -> int:
     data_root = ensure_data_root(resolve_data_root(getattr(args, "data_dir", None)))
+    if not getattr(args, "probe", False):
+        log_path = configure_backend_logging(
+            role="worker",
+            data_root=data_root,
+            console_level=getattr(args, "log_level", None),
+        )
+        LOGGER.info(
+            "Worker 进程启动：pid=%s，data_root=%s，日志=%s",
+            os.getpid(),
+            data_root,
+            log_path,
+        )
     identity = RuntimeIdentity.for_worker(test_mode=bool(getattr(args, "test_mode", False)))
     engine = None
     repository = None
@@ -66,6 +83,10 @@ def run_worker(args: object) -> int:
         return 0
 
     _write_ready_marker(data_root, identity)
+    LOGGER.info(
+        "Worker 租约验证完成：epoch=%s，ready marker 已写入",
+        identity.epoch_id[:8],
+    )
     stop_event = threading.Event()
     heartbeat = (
         EpochHeartbeat(
@@ -79,6 +100,7 @@ def run_worker(args: object) -> int:
     )
 
     def request_stop(_signum: int, _frame: object) -> None:
+        LOGGER.info("Worker 收到终止信号")
         stop_event.set()
 
     signal.signal(signal.SIGINT, request_stop)
@@ -314,6 +336,11 @@ def run_worker(args: object) -> int:
                 engine=engine,
             )
             maintenance.run_if_due(force=True)
+            LOGGER.info(
+                "Worker 服务初始化完成：任务步骤处理器=%s，批处理器=2，操作处理器=4",
+                len(job_handlers),
+            )
+            LOGGER.info("Worker 调度循环已就绪，开始从 SQLite 队列领取任务")
 
             def run_immediate_work() -> bool:
                 if maintenance.run_if_due():
@@ -336,10 +363,15 @@ def run_worker(args: object) -> int:
                 safe_point=run_immediate_work,
                 plugin_runtime=plugin_job_runtime,
             ).run(stop_event)
+    except BaseException:
+        LOGGER.exception("Worker 运行失败")
+        raise
     finally:
+        LOGGER.info("Worker 正在关闭")
         if heartbeat is not None:
             heartbeat.stop()
         if engine is not None:
             engine.dispose()
+        LOGGER.info("Worker 已关闭")
 
     return 75 if heartbeat is not None and not heartbeat.healthy else 0

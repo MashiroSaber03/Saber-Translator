@@ -46,6 +46,7 @@ def ensure_data_root(path: Path) -> Path:
         "chroma",
         "plugins",
         "runtime",
+        "logs",
     ):
         (resolved / relative).mkdir(parents=True, exist_ok=True)
     return resolved

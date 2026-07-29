@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -16,6 +17,7 @@ from urllib.request import urlopen
 import uuid
 import webbrowser
 
+from src.backend_v2.logging_config import LOG_LEVEL_ENV, configure_backend_logging
 from src.backend_v2.paths import (
     DATA_ROOT_ENV,
     data_root_fingerprint,
@@ -41,6 +43,7 @@ from src.backend_v2.storage.single_instance import DataRootLock
 
 
 MAX_CONSECUTIVE_RESTARTS = 3
+LOGGER = logging.getLogger("saber.launcher")
 
 
 @dataclass(slots=True)
@@ -84,9 +87,13 @@ def _child_environment(
     data_root: Path,
     role: str,
     registration: EpochRegistration | None = None,
+    *,
+    log_level: str | None = None,
 ) -> dict[str, str]:
     environment = os.environ.copy()
     environment[DATA_ROOT_ENV] = str(data_root)
+    if log_level:
+        environment[LOG_LEVEL_ENV] = log_level
     identity = registration or _new_registration(role)
     if identity.role != role:
         raise ValueError("child role and epoch registration role differ")
@@ -176,6 +183,7 @@ def _wait_for_worker(
 def _stop_children(children: list[subprocess.Popen[str]]) -> None:
     for child in children:
         if child.poll() is None:
+            LOGGER.info("正在停止子进程 pid=%s", child.pid)
             child.terminate()
     deadline = time.monotonic() + 5.0
     for child in children:
@@ -183,6 +191,7 @@ def _stop_children(children: list[subprocess.Popen[str]]) -> None:
         try:
             child.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
+            LOGGER.warning("子进程 pid=%s 未按时退出，执行强制停止", child.pid)
             child.kill()
             child.wait(timeout=2.0)
 
@@ -214,13 +223,26 @@ def _start_child(
     repository: ProcessEpochRepository,
     child_job: ChildProcessJob,
     restart_count: int,
+    log_level: str | None = None,
 ) -> ManagedChild:
     registration = _new_registration(role)
     repository.register(registration)
+    started_at = time.monotonic()
+    LOGGER.info(
+        "正在启动 %s 子进程（epoch=%s，restart=%s）",
+        role.upper(),
+        registration.epoch_id[:8],
+        restart_count,
+    )
     try:
         process = _spawn(
             _role_command(role, data_root=data_root, host=host, port=port),
-            _child_environment(data_root, role, registration),
+            _child_environment(
+                data_root,
+                role,
+                registration,
+                log_level=log_level,
+            ),
         )
         if not repository.bind_pid(registration, process.pid):
             process.terminate()
@@ -240,11 +262,23 @@ def _start_child(
                 child=process,
             )
     except BaseException:
+        LOGGER.exception(
+            "%s 子进程启动失败（epoch=%s）",
+            role.upper(),
+            registration.epoch_id[:8],
+        )
         if role == "api":
             repository.reconcile_dead_api(registration.epoch_id)
         else:
             repository.reconcile_dead_worker(registration.epoch_id)
         raise
+    LOGGER.info(
+        "%s 子进程已就绪：pid=%s，epoch=%s，耗时=%.2fs",
+        role.upper(),
+        process.pid,
+        registration.epoch_id[:8],
+        time.monotonic() - started_at,
+    )
     return ManagedChild(
         role=role,
         process=process,
@@ -262,8 +296,32 @@ def run_launcher(args: object) -> int:
         print(json.dumps(_probe_payload(data_root, host, port), sort_keys=True))
         return 0
 
+    log_level = getattr(args, "log_level", None)
+    log_path = configure_backend_logging(
+        role="launcher",
+        data_root=data_root,
+        console_level=log_level,
+    )
+    LOGGER.info(
+        "Saber-Translator Backend-First V2 启动中：pid=%s，Python=%s",
+        os.getpid(),
+        sys.version.split()[0],
+    )
+    LOGGER.info(
+        "运行参数：data_root=%s，监听=%s:%s，日志=%s",
+        data_root,
+        host,
+        port,
+        log_path,
+    )
     with DataRootLock(data_root):
-        migrate_database(data_root)
+        LOGGER.info("已取得数据目录单实例锁")
+        migration = migrate_database(data_root)
+        LOGGER.info(
+            "数据库迁移与完整性检查完成：revision=%s，升级前备份=%s",
+            migration.upgraded_to,
+            "是" if migration.backup_created else "否",
+        )
         engine = create_sqlite_engine(database_path_for(data_root))
         repository = ProcessEpochRepository(engine)
         object_storage = AssetStorageService(data_root, engine)
@@ -272,8 +330,16 @@ def run_launcher(args: object) -> int:
         children: dict[str, ManagedChild] = {}
         try:
             _reconcile_all_previous_epochs(repository)
-            object_storage.recover_journal()
-            object_storage.scan_integrity()
+            LOGGER.info("已完成历史进程租约与中断任务恢复")
+            recovered = object_storage.recover_journal()
+            integrity = object_storage.scan_integrity()
+            LOGGER.info(
+                "对象存储检查完成：恢复日志=%s，检查对象=%s，缺失=%s，恢复=%s",
+                recovered,
+                integrity.checked,
+                integrity.missing,
+                integrity.restored,
+            )
 
             with ChildProcessJob() as child_job:
                 try:
@@ -286,16 +352,33 @@ def run_launcher(args: object) -> int:
                             repository=repository,
                             child_job=child_job,
                             restart_count=0,
+                            log_level=log_level,
                         )
 
                     if not getattr(args, "no_browser", False):
                         webbrowser.open_new(f"http://127.0.0.1:{port}/")
+                        LOGGER.info(
+                            "已请求打开浏览器：http://127.0.0.1:%s/",
+                            port,
+                        )
+                    LOGGER.info(
+                        "后端全部就绪：本机 http://127.0.0.1:%s/，局域网监听 %s:%s",
+                        port,
+                        host,
+                        port,
+                    )
 
                     while True:
                         for role, managed in list(children.items()):
                             return_code = managed.process.poll()
                             if return_code is None:
                                 continue
+                            LOGGER.warning(
+                                "%s 子进程意外退出：pid=%s，exit_code=%s",
+                                role.upper(),
+                                managed.process.pid,
+                                return_code,
+                            )
                             if role == "api":
                                 repository.reconcile_dead_api(
                                     managed.registration.epoch_id
@@ -318,9 +401,11 @@ def run_launcher(args: object) -> int:
                                 repository=repository,
                                 child_job=child_job,
                                 restart_count=restart_count,
+                                log_level=log_level,
                             )
                         time.sleep(0.25)
                 except KeyboardInterrupt:
+                    LOGGER.info("收到终止信号，准备关闭后端")
                     return 0
                 finally:
                     _stop_children(
@@ -328,6 +413,10 @@ def run_launcher(args: object) -> int:
                     )
                     for managed in children.values():
                         repository.close(managed.registration)
+        except BaseException:
+            LOGGER.exception("Launcher 运行失败")
+            raise
         finally:
             repository.close(launcher_registration)
             engine.dispose()
+            LOGGER.info("Launcher 已关闭")

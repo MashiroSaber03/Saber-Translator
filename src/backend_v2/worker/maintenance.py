@@ -41,6 +41,8 @@ class WorkerMaintenance:
         now = self.clock()
         if not force and now < self._next_run:
             return False
+        started_at = time.monotonic()
+        LOGGER.info("Worker 后台维护开始")
         errors: list[str] = []
         actions = (
             ("recover_journal", self.storage.recover_journal),
@@ -54,10 +56,22 @@ class WorkerMaintenance:
         )
         for name, action in actions:
             try:
-                action()
+                result = action()
+                LOGGER.debug("后台维护完成：action=%s result=%s", name, result)
             except Exception:
                 errors.append(name)
                 LOGGER.exception("Worker maintenance action failed: %s", name)
         self.last_errors = tuple(errors)
         self._next_run = now + self.interval_seconds
+        if errors:
+            LOGGER.warning(
+                "Worker 后台维护结束：duration=%.2fs failed=%s",
+                time.monotonic() - started_at,
+                ",".join(errors),
+            )
+        else:
+            LOGGER.info(
+                "Worker 后台维护结束：duration=%.2fs",
+                time.monotonic() - started_at,
+            )
         return True

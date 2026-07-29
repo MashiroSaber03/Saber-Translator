@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 import gc
 import json
+import logging
 import sys
 import time
 from typing import Any
@@ -24,6 +25,8 @@ from src.backend_v2.storage.schema import (
     transient_requests,
     worker_commands,
 )
+
+LOGGER = logging.getLogger("saber.worker.models")
 
 
 LOCAL_MODEL_JOB_STEPS = frozenset({"detect", "ocr", "color", "repair"})
@@ -51,6 +54,12 @@ def _json(value: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def _log_list(value: object) -> str:
+    if not isinstance(value, list) or not value:
+        return "-"
+    return ",".join(str(item) for item in value)
 
 
 class WorkerModelControlRepository:
@@ -356,6 +365,7 @@ class WorkerModelLifecycle:
         if command is None:
             return False
         command_id = str(command["commandId"])
+        LOGGER.info("开始执行手动模型释放：command=%s", command_id[:8])
         try:
             result = unload_loaded_models(
                 release_callbacks=self.release_callbacks,
@@ -366,7 +376,14 @@ class WorkerModelLifecycle:
                 worker_epoch_id=self.worker_epoch_id,
                 result=result,
             )
+            LOGGER.info(
+                "手动模型释放完成：command=%s released=%s failures=%s",
+                command_id[:8],
+                _log_list(result.get("released")),
+                _log_list(result.get("failures")),
+            )
         except Exception as exc:
+            LOGGER.exception("手动模型释放失败：command=%s", command_id[:8])
             self.repository.fail(
                 command_id=command_id,
                 worker_epoch_id=self.worker_epoch_id,
@@ -390,6 +407,10 @@ class WorkerModelLifecycle:
         unload_loaded_models(
             release_callbacks=self.release_callbacks,
             include_loaded_model_modules=self.include_loaded_model_modules,
+        )
+        LOGGER.info(
+            "Worker 空闲 %.0fs，已自动释放本地模型与运行时缓存",
+            self.monotonic() - self.last_activity,
         )
         self.released_since_activity = True
         return True
