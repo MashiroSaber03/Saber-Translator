@@ -103,6 +103,10 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     useStream: settingsStore.settings.pluginAgent.openaiOptions.execution.useStream,
     extraBody: settingsStore.settings.pluginAgent.openaiOptions.request.extraBody,
   })
+  const hasStoredAgentCredential = computed(() => settingsStore.hasCredential(
+    'plugin_agent',
+    localAgentSettings.value.provider,
+  ))
   function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
     toast[tone](message)
   }
@@ -111,10 +115,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       provider: localAgentSettings.value.provider,
       apiKey: localAgentSettings.value.apiKey,
       baseUrl: localAgentSettings.value.customBaseUrl,
-      hasStoredCredential: settingsStore.hasCredential(
-        'plugin_agent',
-        localAgentSettings.value.provider,
-      ),
+      hasStoredCredential: hasStoredAgentCredential.value,
     }),
     fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
       provider,
@@ -777,6 +778,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     isSavingAgentSettings,
     isAwaitingPlanningReply,
     localAgentSettings,
+    hasStoredAgentCredential,
     messages,
     modelListOptions,
     timelineItems,

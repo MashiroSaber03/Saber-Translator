@@ -646,3 +646,65 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
         json={},
     )
     assert unsupported.status_code == 422
+
+
+def test_settings_http_transaction_persists_secret_without_returning_it(
+    platform,
+) -> None:
+    data_root, engine = platform
+    app = Flask("settings-credential-persistence-test")
+    app.register_blueprint(
+        create_settings_blueprint(data_root=data_root, engine=engine)
+    )
+    client = app.test_client()
+    secret = "sk-must-never-return-to-browser"
+
+    saved = client.put(
+        "/api/v2/settings/transactions",
+        headers={"Idempotency-Key": "save-translation-credential"},
+        json={
+            "settings": [],
+            "bookSettings": [],
+            "providerSettings": [{
+                "domain": "translation",
+                "provider": "deepseek",
+                "payload": {"modelName": "deepseek-chat"},
+                "baseRevision": 0,
+                "credentialEditRef": "translation-deepseek",
+            }],
+            "credentialEdits": [{
+                "domain": "translation",
+                "provider": "deepseek",
+                "secret": {"api_key": secret},
+                "baseRevision": 0,
+                "clientRef": "translation-deepseek",
+            }],
+        },
+    )
+    assert saved.status_code == 200
+    assert secret not in saved.get_data(as_text=True)
+
+    loaded = client.get("/api/v2/settings?domains=translation")
+    assert loaded.status_code == 200
+    document = loaded.get_json()
+    assert secret not in loaded.get_data(as_text=True)
+    assert document["credentials"] == [
+        {
+            "credentialId": document["credentials"][0]["credentialId"],
+            "credentialVersionId": document["credentials"][0][
+                "credentialVersionId"
+            ],
+            "currentVersion": 1,
+            "domain": "translation",
+            "hasKey": True,
+            "provider": "deepseek",
+            "revision": 1,
+        }
+    ]
+    assert document["providerSettings"][0]["credentialVersionId"] == (
+        document["credentials"][0]["credentialVersionId"]
+    )
+    assert SettingsRepository(engine).resolve_provider_secret(
+        domain="translation",
+        provider="deepseek",
+    ) == {"api_key": secret}

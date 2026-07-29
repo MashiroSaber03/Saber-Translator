@@ -15,6 +15,12 @@ from src.backend_v2.jobs.repository import (
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import books, chapters, pages
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.shared.ai_providers import (
+    HQ_TRANSLATION_CAPABILITY,
+    TRANSLATION_CAPABILITY,
+    VISION_OCR_CAPABILITY,
+    get_provider_manifest,
+)
 
 
 ALLOWED_MODES = frozenset({"standard", "hq", "proofread", "remove_text"})
@@ -54,6 +60,11 @@ class TranslationJobCommandService:
         )
         plugin_snapshots = self._plugin_snapshots()
         mode = str(command["mode"])
+        step_kinds = step_kinds_for_mode(
+            mode,
+            reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
+        )
+        validate_translation_job_requirements(normalized, step_kinds)
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         spec = JobSpec(
             kind=job_kind,
@@ -63,12 +74,7 @@ class TranslationJobCommandService:
             items=tuple(
                 JobItemSpec(
                     page_id=page_id,
-                    step_kinds=step_kinds_for_mode(
-                        mode,
-                        reuse_existing_bubbles=bool(
-                            command["reuseExistingBubbles"]
-                        ),
-                    ),
+                    step_kinds=step_kinds,
                 )
                 for page_id in ordered_pages
             ),
@@ -116,6 +122,11 @@ class TranslationJobCommandService:
                 chapter_id=chapter_id,
                 command=command,
             )
+            step_kinds = step_kinds_for_mode(
+                mode,
+                reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
+            )
+            validate_translation_job_requirements(normalized, step_kinds)
             specs.append(
                 JobSpec(
                     kind=job_kind,
@@ -125,12 +136,7 @@ class TranslationJobCommandService:
                     items=tuple(
                         JobItemSpec(
                             page_id=page_id,
-                            step_kinds=step_kinds_for_mode(
-                                mode,
-                                reuse_existing_bubbles=bool(
-                                    command["reuseExistingBubbles"]
-                                ),
-                            ),
+                            step_kinds=step_kinds,
                         )
                         for page_id in ordered_pages
                     ),
@@ -253,3 +259,85 @@ def step_kinds_for_mode(
     if mode == "remove_text":
         return ("detect", "ocr", "repair", "publish_clean")
     raise ValueError(f"unsupported translation mode: {mode}")
+
+
+def validate_translation_job_requirements(
+    config: Mapping[str, Any],
+    step_kinds: Sequence[str],
+) -> None:
+    """Reject incomplete backend settings before a durable job is admitted."""
+
+    steps = set(step_kinds)
+    translation_step = next(
+        (
+            step
+            for step in ("translate", "hq_translate", "proofread")
+            if step in steps
+        ),
+        None,
+    )
+    if translation_step is not None:
+        capability = (
+            TRANSLATION_CAPABILITY
+            if translation_step == "translate"
+            else HQ_TRANSLATION_CAPABILITY
+        )
+        _validate_ai_provider_section(
+            config.get("translation"),
+            capability=capability,
+            label="翻译服务",
+        )
+
+    if "ocr" in steps:
+        _validate_ocr_section(config.get("ocr"))
+
+
+def _validate_ai_provider_section(
+    value: object,
+    *,
+    capability: str,
+    label: str,
+) -> None:
+    section = dict(value) if isinstance(value, Mapping) else {}
+    provider = str(
+        section.get("provider", section.get("model_provider", ""))
+    ).strip()
+    if not provider:
+        raise ValueError(f"{label}未选择服务商，请先在设置中完成配置")
+    manifest = get_provider_manifest(provider)
+    if capability not in manifest.capabilities:
+        raise ValueError(f"{label}服务商 {manifest.display_name} 不支持当前任务")
+    if manifest.requires_api_key and not section.get("credentialVersionId"):
+        raise ValueError(
+            f"{label}缺少已保存的 API Key，请先在设置中填写并保存"
+        )
+    model_name = str(section.get("model_name", "")).strip()
+    if manifest.requires_model and not model_name:
+        raise ValueError(f"{label}缺少模型名称，请先在设置中填写并保存")
+    base_url = str(section.get("custom_base_url", "")).strip()
+    if manifest.requires_base_url and not base_url:
+        raise ValueError(f"{label}缺少 Base URL，请先在设置中填写并保存")
+
+
+def _validate_ocr_section(value: object) -> None:
+    section = dict(value) if isinstance(value, Mapping) else {}
+    engine = str(section.get("ocr_engine", "manga_ocr"))
+    if engine == "baidu_ocr":
+        if not section.get("credentialVersionId"):
+            raise ValueError(
+                "百度 OCR 缺少已保存的 API Key 和 Secret Key，"
+                "请先在设置中填写并保存"
+            )
+        return
+    if engine != "ai_vision":
+        return
+    _validate_ai_provider_section(
+        {
+            "provider": section.get("ai_vision_provider"),
+            "model_name": section.get("ai_vision_model_name"),
+            "custom_base_url": section.get("custom_ai_vision_base_url"),
+            "credentialVersionId": section.get("credentialVersionId"),
+        },
+        capability=VISION_OCR_CAPABILITY,
+        label="AI 视觉 OCR",
+    )

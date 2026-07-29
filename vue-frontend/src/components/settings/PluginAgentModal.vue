@@ -57,6 +57,7 @@
               base-url-input-id="pluginAgentBaseUrl"
               :disabled="unref(isRunning)"
               :show-base-url="true"
+              :has-stored-credential="unref(hasStoredAgentCredential)"
               field-class="plugin-agent-field"
               api-key-placeholder="请输入 API Key"
               api-key-show-label="显示插件 Agent API Key"
@@ -427,6 +428,7 @@ const {
   isSavingAgentSettings,
   isAwaitingPlanningReply,
   localAgentSettings,
+  hasStoredAgentCredential,
   messages,
   modelListOptions,
   timelineItems,

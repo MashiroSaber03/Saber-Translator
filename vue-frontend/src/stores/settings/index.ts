@@ -342,6 +342,11 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     }
 
+    const baiduApiKey = settings.value.baiduOcr.apiKey.trim()
+    const baiduSecretKey = settings.value.baiduOcr.secretKey.trim()
+    if (Boolean(baiduApiKey) !== Boolean(baiduSecretKey)) {
+      throw new Error('更换百度 OCR 凭据时必须同时填写 API Key 和 Secret Key')
+    }
     addProviderMutation(providerSettings, credentialEdits, {
       domain: 'ocr',
       provider: 'baidu',
@@ -350,8 +355,8 @@ export const useSettingsStore = defineStore('settings', () => {
         sourceLanguage: settings.value.baiduOcr.sourceLanguage,
       },
       secret: {
-        baidu_api_key: settings.value.baiduOcr.apiKey,
-        baidu_secret_key: settings.value.baiduOcr.secretKey,
+        baidu_api_key: baiduApiKey,
+        baidu_secret_key: baiduSecretKey,
       },
     })
 

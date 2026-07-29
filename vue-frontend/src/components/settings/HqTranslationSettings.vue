@@ -18,6 +18,10 @@
           :show-base-url="false"
           :include-base-url="false"
           api-key-placeholder="请输入API Key"
+          :has-stored-credential="settingsStore.hasCredential(
+            'hq',
+            hqSettings.provider,
+          )"
           api-key-show-label="显示高质量翻译 API Key"
           api-key-hide-label="隐藏高质量翻译 API Key"
           @update:api-key="localHqSettings.apiKey = $event"

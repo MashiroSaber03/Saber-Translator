@@ -54,4 +54,22 @@ describe('AI provider fields', () => {
     expect(wrapper.emitted('update:apiKey')).toEqual([['next-secret']])
     expect(wrapper.emitted('update:baseUrl')).toEqual([['https://next.test/v1']])
   })
+
+  it('shows that an intentionally blank secret is already stored by the backend', () => {
+    const wrapper = mount(AiProviderCredentialFields, {
+      props: {
+        apiKey: '',
+        apiKeyInputId: 'stored-api-key',
+        baseUrl: '',
+        baseUrlInputId: 'stored-base-url',
+        hasStoredCredential: true,
+      },
+    })
+
+    const apiKeyField = wrapper.findAllComponents(UiField)
+      .find(field => field.props('label') === 'API Key')
+    expect(apiKeyField?.props('hint')).toContain('已安全保存在后端')
+    expect(wrapper.getComponent(UiPasswordField).props('placeholder'))
+      .toContain('已保存在后端')
+  })
 })

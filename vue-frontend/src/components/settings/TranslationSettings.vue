@@ -20,6 +20,10 @@
           :include-base-url="false"
           :api-key-label="apiKeyLabel"
           :api-key-placeholder="apiKeyPlaceholder"
+          :has-stored-credential="settingsStore.hasCredential(
+            'translation',
+            localSettings.modelProvider,
+          )"
           api-key-show-label="显示翻译 API Key"
           api-key-hide-label="隐藏翻译 API Key"
           @update:api-key="localSettings.apiKey = $event"

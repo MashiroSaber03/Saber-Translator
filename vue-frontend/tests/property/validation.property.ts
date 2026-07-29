@@ -18,6 +18,22 @@ function constantFromList<T>(values: T[]): fc.Arbitrary<T> {
   return fc.constantFrom(...(values as [T, ...T[]]))
 }
 
+function addStoredCredential(
+  store: ReturnType<typeof useSettingsStore>,
+  domain: string,
+  provider: string,
+): void {
+  store.credentialSummaries.push({
+    credentialId: `credential-${domain}-${provider}`,
+    credentialVersionId: `version-${domain}-${provider}`,
+    currentVersion: 1,
+    domain,
+    hasKey: true,
+    provider,
+    revision: 1,
+  })
+}
+
 const translationProviderIds = AI_PROVIDER_MANIFEST
   .filter(provider => provider.capabilities.includes('translation'))
   .map(provider => provider.id as TranslationProvider)
@@ -152,6 +168,73 @@ describe('validation properties', () => {
       ),
       { numRuns: 100 },
     )
+  })
+
+  it('accepts backend-stored credentials when secret fields are intentionally blank', () => {
+    const settingsStore = useSettingsStore()
+    const {
+      validateTranslationConfig,
+      validateHqTranslationConfig,
+      validateProofreadingConfig,
+      validateOcrConfig,
+    } = useValidation()
+
+    settingsStore.updateTranslationService({
+      provider: 'deepseek',
+      apiKey: '',
+      modelName: 'deepseek-chat',
+    })
+    addStoredCredential(settingsStore, 'translation', 'deepseek')
+    expect(validateTranslationConfig().valid).toBe(true)
+
+    settingsStore.updateHqTranslation({
+      provider: 'deepseek',
+      apiKey: '',
+      modelName: 'deepseek-chat',
+    })
+    addStoredCredential(settingsStore, 'hq', 'deepseek')
+    expect(validateHqTranslationConfig().valid).toBe(true)
+
+    const proofreadingRound: ProofreadingRound = {
+      name: '第一轮',
+      provider: 'deepseek',
+      apiKey: '',
+      modelName: 'deepseek-chat',
+      customBaseUrl: '',
+      batchSize: 5,
+      rpmLimit: 0,
+      forceJsonOutput: false,
+      prompt: '',
+    }
+    addStoredCredential(settingsStore, 'proofreading_0', 'deepseek')
+    expect(validateProofreadingConfig([proofreadingRound]).valid).toBe(true)
+
+    settingsStore.setOcrEngine('ai_vision')
+    settingsStore.updateAiVisionOcr({
+      provider: 'gemini',
+      apiKey: '',
+      modelName: 'gemini-2.5-flash',
+    })
+    addStoredCredential(settingsStore, 'ai_vision_ocr', 'gemini')
+    expect(validateOcrConfig().valid).toBe(true)
+
+    settingsStore.setOcrEngine('baidu_ocr')
+    settingsStore.updateBaiduOcr({ apiKey: '', secretKey: '' })
+    addStoredCredential(settingsStore, 'ocr', 'baidu')
+    expect(validateOcrConfig().valid).toBe(true)
+  })
+
+  it('rejects partial replacement of a backend-stored Baidu OCR credential', () => {
+    const settingsStore = useSettingsStore()
+    const { validateOcrConfig } = useValidation()
+    settingsStore.setOcrEngine('baidu_ocr')
+    addStoredCredential(settingsStore, 'ocr', 'baidu')
+
+    settingsStore.updateBaiduOcr({ apiKey: 'replacement-key', secretKey: '' })
+
+    const result = validateOcrConfig()
+    expect(result.valid).toBe(false)
+    expect(result.message).toContain('Secret Key')
   })
 
   it('rejects local translation providers without a model name', () => {

@@ -856,6 +856,10 @@ class ContentRepository:
         page_id: str,
         base_revision: int,
     ) -> dict[str, object]:
+        # Navigation is an independent last-write-wins preference. The
+        # revision lets clients observe writes, but stale tabs must not turn
+        # ordinary page navigation into a CAS conflict.
+        del base_revision
         with immediate_transaction(self.engine) as connection:
             if connection.execute(
                 select(pages.c.id).where(
@@ -870,8 +874,6 @@ class ContentRepository:
                 )
             ).scalar_one_or_none()
             if current is None:
-                if base_revision != 0:
-                    raise ContentConflict("chapter navigation revision changed")
                 connection.execute(
                     insert(chapter_navigation_state).values(
                         chapter_id=chapter_id,
@@ -881,21 +883,16 @@ class ContentRepository:
                 )
                 revision = 1
             else:
-                if current != base_revision:
-                    raise ContentConflict("chapter navigation revision changed")
+                revision = int(current) + 1
                 connection.execute(
                     update(chapter_navigation_state)
-                    .where(
-                        chapter_navigation_state.c.chapter_id == chapter_id,
-                        chapter_navigation_state.c.revision == base_revision,
-                    )
+                    .where(chapter_navigation_state.c.chapter_id == chapter_id)
                     .values(
                         last_visited_page_id=page_id,
-                        revision=base_revision + 1,
+                        revision=revision,
                         updated_at=_utcnow(),
                     )
                 )
-                revision = base_revision + 1
         return {
             "chapterId": chapter_id,
             "lastVisitedPageId": page_id,

@@ -38,6 +38,9 @@ const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 10)
 const timeoutSeconds = ref(insightStore.config.embedding.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
+const hasStoredCredential = computed(() => (
+  insightApi.hasInsightCredential('insight_embedding', provider.value)
+))
 const {
   isFetchingModels,
   modelOptions,
@@ -132,6 +135,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
       v-model:base-url="baseUrl"
       :provider-options="EMBEDDING_PROVIDER_OPTIONS"
       :show-api-key="providerRequiresApiKey(provider)"
+      :has-stored-credential="hasStoredCredential"
       credential-id="insight-embedding-api-key"
       provider-input-id="insight-embedding-provider"
       model-input-id="insight-embedding-model"

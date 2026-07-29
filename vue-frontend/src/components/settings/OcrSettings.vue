@@ -84,20 +84,30 @@
     <ProductFormSection v-show="settings.ocrEngine === 'baidu_ocr'">
       <template #title>百度OCR 设置</template>
       <UiFormGrid>
-        <UiField variant="settings" label="API Key" control-id="settingsBaiduApiKey">
+        <UiField
+          variant="settings"
+          label="API Key"
+          control-id="settingsBaiduApiKey"
+          :hint="baiduStoredCredentialHint"
+        >
           <UiPasswordField
             input-id="settingsBaiduApiKey"
             v-model="localBaiduOcr.apiKey"
-            placeholder="请输入百度OCR API Key"
+            :placeholder="baiduStoredCredentialPlaceholder || '请输入百度OCR API Key'"
             show-label="显示百度 API Key"
             hide-label="隐藏百度 API Key"
           />
         </UiField>
-        <UiField variant="settings" label="Secret Key" control-id="settingsBaiduSecretKey">
+        <UiField
+          variant="settings"
+          label="Secret Key"
+          control-id="settingsBaiduSecretKey"
+          :hint="baiduStoredCredentialHint"
+        >
           <UiPasswordField
             input-id="settingsBaiduSecretKey"
             v-model="localBaiduOcr.secretKey"
-            placeholder="请输入Secret Key"
+            :placeholder="baiduStoredCredentialPlaceholder || '请输入Secret Key'"
             show-label="显示百度 Secret Key"
             hide-label="隐藏百度 Secret Key"
           />
@@ -147,6 +157,10 @@
           :show-base-url="false"
           :include-base-url="false"
           api-key-placeholder="请输入API Key"
+          :has-stored-credential="settingsStore.hasCredential(
+            'ai_vision_ocr',
+            settings.aiVisionOcr.provider,
+          )"
           api-key-show-label="显示 AI 视觉 API Key"
           api-key-hide-label="隐藏 AI 视觉 API Key"
           @update:api-key="localAiVisionOcr.apiKey = $event"
@@ -337,6 +351,19 @@ const localAiVisionOcr = ref({
   minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
 })
 const settings = computed(() => settingsStore.settings)
+const hasStoredBaiduCredential = computed(() => (
+  settingsStore.hasCredential('ocr', 'baidu')
+))
+const baiduStoredCredentialHint = computed(() => (
+  hasStoredBaiduCredential.value
+  && !localBaiduOcr.value.apiKey
+  && !localBaiduOcr.value.secretKey
+    ? '百度 OCR 凭据已安全保存在后端；留空表示保持不变，更换时必须同时填写两项'
+    : ''
+))
+const baiduStoredCredentialPlaceholder = computed(() => (
+  baiduStoredCredentialHint.value ? '已保存在后端，留空保持不变' : ''
+))
 watch(() => localBaiduOcr.value.apiKey, (val) => {
   settingsStore.updateBaiduOcr({ apiKey: val })
 })

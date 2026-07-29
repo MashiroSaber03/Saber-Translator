@@ -8,6 +8,7 @@ import { createDefaultSettings } from '@/stores/settings/defaults'
 const mocks = vi.hoisted(() => ({
   getPageDocument: vi.fn(),
   getTranslationBootstrap: vi.fn(),
+  updateLastVisitedPage: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/api/v2/content', () => ({
   getPageDocument: mocks.getPageDocument,
   getTranslationBootstrap: mocks.getTranslationBootstrap,
+  updateLastVisitedPage: mocks.updateLastVisitedPage,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -120,6 +122,13 @@ describe('useTranslateInit', () => {
       renderedRevision: null,
       sourceRevision: 1,
     })
+    mocks.updateLastVisitedPage.mockImplementation(
+      async (chapterId: string, pageId: string, baseRevision: number) => ({
+        chapterId,
+        lastVisitedPageId: pageId,
+        revision: baseRevision + 1,
+      }),
+    )
   })
 
   it('hydrates page metadata with backend URLs and loads only the current page document', async () => {
@@ -153,6 +162,41 @@ describe('useTranslateInit', () => {
     expect(state.isBookshelfMode.value).toBe(true)
     expect(state.currentBookId.value).toBe('book-1')
     expect(state.currentChapterId.value).toBe('chapter-1')
+  })
+
+  it('serializes last-visited page writes with the backend navigation revision', async () => {
+    const payload = bootstrap('quick', 'quick-chapter', 'quick_workspace')
+    payload.pages.items.push({
+      ...payload.pages.items[0]!,
+      id: 'page-2',
+      logicalSourcePath: '002.png',
+      ordinal: 1,
+      sourceUrl: '/api/v2/assets/source-2',
+      thumbnailSourceUrl: '/api/v2/assets/thumb-2',
+    })
+    payload.pages.total = 2
+    mocks.getTranslationBootstrap.mockResolvedValue(payload)
+
+    const state = useTranslateInit()
+    await state.initializeApp()
+    await state.switchImage(1)
+    await state.switchImage(0)
+
+    await vi.waitFor(() => {
+      expect(mocks.updateLastVisitedPage).toHaveBeenCalledTimes(2)
+    })
+    expect(mocks.updateLastVisitedPage).toHaveBeenNthCalledWith(
+      1,
+      'quick-chapter',
+      'page-2',
+      1,
+    )
+    expect(mocks.updateLastVisitedPage).toHaveBeenNthCalledWith(
+      2,
+      'quick-chapter',
+      'page-1',
+      2,
+    )
   })
 
   it('ignores a stale bootstrap response after navigation changes', async () => {

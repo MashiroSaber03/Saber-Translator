@@ -10,6 +10,7 @@ import type { V2Font } from '@/api/v2/settings'
 import {
   getPageDocument,
   getTranslationBootstrap,
+  updateLastVisitedPage,
 } from '@/api/v2/content'
 import {
   pageSummaryToImage,
@@ -61,6 +62,8 @@ export function useTranslateInit() {
   let bookContextRequestId = 0
   let pageDocumentRequestId = 0
   let pageDocumentAbortController: AbortController | null = null
+  let navigationRevision = 0
+  let navigationWriteChain = Promise.resolve()
 
   function clearSwitchImageFlagTimer(): void {
     if (switchImageFlagTimer) {
@@ -153,13 +156,14 @@ export function useTranslateInit() {
         bootstrap.constraints.payload as Partial<BookTranslationConstraints>,
       )
       imageStore.setImages(bootstrap.pages.items.map(pageSummaryToImage))
+      navigationRevision = bootstrap.navigation.revision
 
       const lastVisitedIndex = bootstrap.navigation.lastVisitedPageId
         ? imageStore.images.findIndex(image => image.id === bootstrap.navigation.lastVisitedPageId)
         : -1
       const initialIndex = lastVisitedIndex >= 0 ? lastVisitedIndex : 0
       if (imageStore.imageCount > 0) {
-        await switchImage(initialIndex)
+        await switchImage(initialIndex, false)
       } else {
         bubbleStore.clearBubblesLocal()
       }
@@ -174,7 +178,32 @@ export function useTranslateInit() {
     }
   }
 
-  async function switchImage(index: number): Promise<void> {
+  function queueLastVisitedPageWrite(chapterId: string, pageId: string): void {
+    navigationWriteChain = navigationWriteChain
+      .then(async () => {
+        if (!isOwnerAlive || currentChapterId.value !== chapterId) return
+        const updated = await updateLastVisitedPage(
+          chapterId,
+          pageId,
+          navigationRevision,
+        )
+        if (isOwnerAlive && currentChapterId.value === chapterId) {
+          navigationRevision = updated.revision
+        }
+      })
+      .catch(error => {
+        if (!isOwnerAlive || currentChapterId.value !== chapterId) return
+        showToast(
+          `记录最后访问页失败：${error instanceof Error ? error.message : '未知错误'}`,
+          'warning',
+        )
+      })
+  }
+
+  async function switchImage(
+    index: number,
+    persistNavigation: boolean = true,
+  ): Promise<void> {
     if (index < 0 || index >= imageStore.imageCount) {
       return
     }
@@ -217,6 +246,9 @@ export function useTranslateInit() {
     if (!newImage) {
       resetSwitchImageFlag()
       return
+    }
+    if (persistNavigation && currentChapterId.value) {
+      queueLastVisitedPageWrite(currentChapterId.value, newImage.id)
     }
 
     bubbleStore.clearBubblesLocal()

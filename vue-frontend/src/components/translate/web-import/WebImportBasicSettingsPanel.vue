@@ -15,7 +15,7 @@ import type { UiSelectOption } from '@/components/ui/selectTypes'
 import type { WebImportSettings } from '@/types/webImport'
 import type { WebImportSettingsActions } from './webImportSettingsActions'
 
-defineProps<{
+const props = defineProps<{
   agentProviderOptions: UiSelectOption[]
   draftSettings: WebImportSettings
   hasAgentCredential?: boolean
@@ -41,16 +41,27 @@ defineEmits<{
 function applyNumber(action: (value: number) => void, value: number | null): void {
   if (value !== null) action(value)
 }
+
+const storedCredentialHint = '凭据已安全保存在后端；留空表示保持不变，输入新值可替换'
 </script>
 
 <template>
   <ProductFormSection>
     <template #title>Firecrawl 配置</template>
-    <UiField variant="settings" label="API Key" control-id="webImportFirecrawlApiKey">
+    <UiField
+      variant="settings"
+      label="API Key"
+      control-id="webImportFirecrawlApiKey"
+      :hint="!draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential
+        ? storedCredentialHint
+        : ''"
+    >
       <UiPasswordField
         input-id="webImportFirecrawlApiKey"
         :model-value="draftSettings.firecrawl.apiKey"
-        placeholder="fc-xxxxxxxxxxxxxxxx"
+        :placeholder="!draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential
+          ? '已保存在后端，留空保持不变'
+          : 'fc-xxxxxxxxxxxxxxxx'"
         show-label="显示 Firecrawl API Key"
         hide-label="隐藏 Firecrawl API Key"
         @update:model-value="settingsActions.setFirecrawlApiKey"
@@ -85,6 +96,7 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
       base-url-input-id="webImportAgentBaseUrl"
       :show-api-key="providerRequiresApiKey(draftSettings.agent.provider)"
       :show-base-url="showCustomUrl"
+      :has-stored-credential="hasAgentCredential"
       api-key-placeholder="sk-xxxxxxxxxxxxxxxx"
       api-key-show-label="显示 AI Agent API Key"
       api-key-hide-label="隐藏 AI Agent API Key"

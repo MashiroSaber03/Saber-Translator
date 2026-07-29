@@ -78,6 +78,10 @@
               :show-base-url="false"
               :include-base-url="false"
               api-key-placeholder="请输入API Key"
+              :has-stored-credential="settingsStore.hasCredential(
+                `proofreading_${index}`,
+                round.provider,
+              )"
               :api-key-show-label="`显示${round.name} API Key`"
               :api-key-hide-label="`隐藏${round.name} API Key`"
               @update:api-key="round.apiKey = $event"

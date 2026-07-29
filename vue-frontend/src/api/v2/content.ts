@@ -40,6 +40,12 @@ export interface V2ContainerImportAccepted {
   status: 'queued'
 }
 
+export interface V2ChapterNavigation {
+  chapterId: string
+  lastVisitedPageId: string
+  revision: number
+}
+
 export function newIdempotencyKey(): string {
   return crypto.randomUUID()
 }
@@ -210,6 +216,18 @@ export async function resetQuickWorkspace(): Promise<V2TranslationBootstrap> {
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
   return getTranslationBootstrap()
+}
+
+export function updateLastVisitedPage(
+  chapterId: string,
+  pageId: string,
+  baseRevision: number,
+): Promise<V2ChapterNavigation> {
+  return apiClient.patch<V2ChapterNavigation>(
+    `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/last-visited-page`,
+    { pageId, baseRevision },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
 }
 
 export async function getPageDocument(

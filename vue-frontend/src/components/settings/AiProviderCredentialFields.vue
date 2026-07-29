@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiPasswordField from '@/components/ui/UiPasswordField.vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   apiKey: string
   apiKeyInputId: string
   baseUrl: string
@@ -18,6 +19,8 @@ withDefaults(defineProps<{
   apiKeyHideLabel?: string
   baseUrlLabel?: string
   baseUrlPlaceholder?: string
+  hasStoredCredential?: boolean
+  storedCredentialHint?: string
   disabled?: boolean
   fieldClass?: string
 }>(), {
@@ -31,6 +34,8 @@ withDefaults(defineProps<{
   apiKeyHideLabel: '隐藏 API Key',
   baseUrlLabel: 'Base URL',
   baseUrlPlaceholder: '自定义 API 地址',
+  hasStoredCredential: false,
+  storedCredentialHint: '凭据已安全保存在后端；留空表示保持不变，输入新值可替换',
   disabled: false,
   fieldClass: '',
 })
@@ -43,6 +48,18 @@ const emit = defineEmits<{
 function asString(value: string | number | boolean): string {
   return String(value)
 }
+
+const storedCredentialMessage = computed(() => (
+  !props.apiKey && props.hasStoredCredential
+    ? props.storedCredentialHint
+    : ''
+))
+
+const resolvedApiKeyPlaceholder = computed(() => (
+  storedCredentialMessage.value
+    ? '已保存在后端，留空保持不变'
+    : props.apiKeyPlaceholder
+))
 </script>
 
 <template>
@@ -53,11 +70,12 @@ function asString(value: string | number | boolean): string {
     variant="settings"
     :label="apiKeyLabel"
     :control-id="apiKeyInputId"
+    :hint="storedCredentialMessage"
   >
     <UiPasswordField
       :model-value="apiKey"
       :input-id="apiKeyInputId"
-      :placeholder="apiKeyPlaceholder"
+      :placeholder="resolvedApiKeyPlaceholder"
       :disabled="disabled"
       :show-label="apiKeyShowLabel"
       :hide-label="apiKeyHideLabel"

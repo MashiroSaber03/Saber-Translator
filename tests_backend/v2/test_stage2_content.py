@@ -368,6 +368,52 @@ def test_single_page_summary_route_returns_only_requested_page(content_platform)
     assert "base64" not in response.get_data(as_text=True).lower()
 
 
+def test_last_visited_page_is_independent_last_write_wins(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, book, chapter = (
+        content_platform
+    )
+    first, _replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((120, 180)),
+        logical_path="001.png",
+        key="navigation-first",
+    )
+    second, _replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((120, 180), color=(60, 40, 20)),
+        logical_path="002.png",
+        key="navigation-second",
+    )
+
+    initial = repository.update_last_visited_page(
+        chapter_id=str(chapter["id"]),
+        page_id=str(first["page"]["id"]),
+        base_revision=0,
+    )
+    stale_tab = repository.update_last_visited_page(
+        chapter_id=str(chapter["id"]),
+        page_id=str(second["page"]["id"]),
+        base_revision=0,
+    )
+    bootstrap = repository.translation_bootstrap(
+        book_id=str(book["id"]),
+        chapter_id=str(chapter["id"]),
+    )
+
+    assert initial["revision"] == 1
+    assert stale_tab["revision"] == 2
+    assert bootstrap["navigation"] == {
+        "lastVisitedPageId": str(second["page"]["id"]),
+        "revision": 2,
+    }
+
+
 def test_import_lease_and_chapter_order_cas_enforce_backend_ownership(
     content_platform,
 ) -> None:

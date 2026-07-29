@@ -21,6 +21,7 @@ from src.backend_v2.storage.platform_repositories import (
 )
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.defaults import default_translation_settings
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
     bubbles,
@@ -83,6 +84,26 @@ def translation_platform(tmp_path: Path):
     engine = create_sqlite_engine(data_root / "saber.sqlite3")
     metadata.create_all(engine)
     seed_system_records(engine)
+    SettingsRepository(engine).save_transaction(
+        credentials_edits=(
+            CredentialEdit(
+                domain="translation",
+                provider="siliconflow",
+                secret={"api_key": "fixture-secret"},
+                base_revision=0,
+                client_ref="fixture-translation",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="siliconflow",
+                payload={"modelName": "fixture-model"},
+                base_revision=0,
+                credential_edit_ref="fixture-translation",
+            ),
+        ),
+    )
     content = ContentRepository(engine)
     book = content.create_book(title="Book")
     chapter = content.create_chapter(book_id=str(book["id"]), title="Chapter")
@@ -205,6 +226,50 @@ def test_translation_command_rejects_browser_supplied_provider_config() -> None:
                 }
             }
         )
+
+
+def test_translation_job_rejects_missing_backend_credential_before_admission(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    payload = default_translation_settings()
+    payload["translation"] = {
+        **payload["translation"],
+        "provider": "custom",
+        "modelName": "must-not-be-trusted-from-app-payload",
+        "customBaseUrl": "https://custom.example/v1",
+    }
+    SettingsRepository(platform["engine"]).save_transaction(
+        settings=(
+            SettingMutation(
+                domain="translation",
+                payload=payload,
+                base_revision=1,
+                schema_version=3,
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="custom",
+                payload={
+                    "modelName": "custom-model",
+                    "customBaseUrl": "https://custom.example/v1",
+                },
+                base_revision=0,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="缺少已保存的 API Key"):
+        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+            chapter_id=str(platform["chapter"]["id"]),
+            config={"mode": "standard"},
+            page_ids=None,
+            idempotency_key="missing-credential",
+        )
+
+    assert JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"] == []
 
 
 def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
