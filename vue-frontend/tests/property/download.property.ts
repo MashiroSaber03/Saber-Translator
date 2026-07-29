@@ -85,7 +85,7 @@ describe('download export property contracts', () => {
             store.addImage(config.fileName, config.hasOriginal ? dataURL : '')
             const image = store.images.at(-1)
             if (image && config.hasTranslated) {
-              image.translatedDataURL = dataURL
+              image.translatedAssetUrl = dataURL
             }
           }
 
@@ -116,7 +116,7 @@ describe('download export property contracts', () => {
         store.addImage(fileName, dataURL)
         const image = store.images[0]
         if (image) {
-          image.translatedDataURL = dataURL
+          image.translatedAssetUrl = dataURL
         }
 
         expect(collectDownloadImageEntries(store.images)).toEqual([

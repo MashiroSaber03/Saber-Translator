@@ -82,17 +82,15 @@ async function refreshCurrentChapter(imageStore: ReturnType<typeof useImageStore
     const mapped = pageSummaryToImage(summary)
     imageStore.updateImageByIndex(index, {
       chapterId: mapped.chapterId,
-      cleanImageData: mapped.cleanImageData,
+      cleanAssetUrl: mapped.cleanAssetUrl,
       documentRevision: mapped.documentRevision,
       height: mapped.height,
-      originalDataURL: mapped.originalDataURL,
       renderedRevision: mapped.renderedRevision,
       sourceAssetUrl: mapped.sourceAssetUrl,
       sourceRevision: mapped.sourceRevision,
       thumbnailSourceUrl: mapped.thumbnailSourceUrl,
       thumbnailTranslatedUrl: mapped.thumbnailTranslatedUrl,
       translatedAssetUrl: mapped.translatedAssetUrl,
-      translatedDataURL: mapped.translatedDataURL,
       translationFailed: mapped.translationFailed,
       translationStatus: mapped.translationStatus,
       width: mapped.width,

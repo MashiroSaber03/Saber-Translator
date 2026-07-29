@@ -80,7 +80,7 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
     <ProductChoiceCardGrid
       v-else
       class="character-studio-preview-modals__greeting-grid"
-      ariaLabel="选择开场白"
+      accessibility-label="选择开场白"
       :items="greetingItems"
       :model-value="selectedGreetingId"
       @update:model-value="$emit('update:selectedGreetingId', $event)"

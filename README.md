@@ -85,7 +85,7 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 | 功能 | 说明 |
 |------|------|
 | **编辑模式** | 翻译后精细调整：修改文本/字体/颜色/位置，内置标注功能可手动绘制/调整文本框 |
-| **会话管理** | 保存/加载完整工作进度 |
+| **后端持久化** | 图片导入后立即进入后端书籍/章节，任务和编辑结果持续落库 |
 | **文本导入导出** | JSON格式导入导出，便于协作校对 |
 
 ### 📚 书架系统
@@ -168,9 +168,9 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
     - 4群: 1074032394
 2.  **解压**: 将下载的压缩包解压到你希望存放程序的目录。
 3.  **运行程序**: 在解压后的目录中，找到 `Saber-Translator.exe` (Windows) 或对应名称的可执行文件，双击运行。
-4.  **开始翻译**: 程序启动后，通常会自动在你的默认浏览器中打开 Saber-Translator 的 Web 界面 (默认地址为 `http://127.0.0.1:5000/`)。如果未自动打开，请手动访问该地址。
+4.  **开始翻译**: Launcher 会启动相互隔离的 API 与 Worker，并自动打开 Web 界面（默认 `http://127.0.0.1:5000/`）。如果未自动打开，请手动访问该地址。
 5.  **上传与配置**: 通过拖拽或点击选择按钮上传你的漫画图片或 PDF 文件。并参考 [使用教程](http://www.mashirosaber.top) 完成翻译服务商配置。
-6.  **翻译**: 点击“翻译当前图片”或“翻译所有图片”按钮开始处理。
+6.  **翻译**: 点击“翻译当前图片”或“翻译所有图片”创建后端任务。关闭或刷新浏览器不会中断任务，可在任务中心查看、暂停、恢复、取消或重试。
 7.  **查看与下载**: 在主界面查看翻译结果，使用右侧缩略图切换图片，调整显示大小，并通过下载按钮获取翻译后的文件。
 8.  **详细教程**: 参考 [使用教程](http://www.mashirosaber.top) 获取更详细的步骤和技巧。
 
@@ -211,11 +211,10 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 
 如果你要修改项目实现，推荐从这些文档开始：
 
-- `docs/README.md`：文档索引，区分当前手册与历史资料
-- `docs/parallel-mode-development-guide.md`：翻译原子步骤与并行架构
-- `docs/save-load-development-guide.md`：保存/加载主链
-- `docs/text-settings-development-guide.md`：文字样式同步与渲染
-- `docs/OpenAI-Compatible主链开发手册.md`：OpenAI-compatible 共享能力
+- `docs/refactor/backend-first-architecture-plan.md`：完整的后端优先架构与功能裁决。
+- `docs/refactor/adr/`：进程、存储、fencing 和切换决策。
+- `openapi/v2.yaml`：唯一 HTTP 契约。
+- `vue-frontend/README.md`：前端职责、命令与数据边界。
 
 ### 书架系统
 
@@ -228,7 +227,7 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 *   **访问书架**: 点击导航栏的"书架"按钮进入书架管理界面.
 *   **创建书籍**: 点击"新建书籍"，输入书名，可选择上传封面图片和添加标签.
 *   **管理章节**: 进入书籍后，可以创建、编辑、删除和排序章节.
-*   **翻译章节**: 点击章节进入翻译工作区，翻译进度会自动保存到该章节.
+*   **翻译章节**: 点击章节进入翻译工作区；导入、翻译、分析和编辑结果都由后端强制持久化，不依赖浏览器自动保存。
 *   **阅读模式**: 完成翻译后，可以进入阅读器查看翻译成果.
 *   **标签管理**: 在书架页面可以创建和管理标签，为书籍分类整理.
 
@@ -308,6 +307,41 @@ Manga Insight 是一个基于 AI 的漫画内容深度理解引擎，它能够�
 *   **语义搜索**: 输入关键词或描述，快速定位相关内容。
 *   **重建向量**: 支持在更换 Embedding 模型后重新构建向量索引。
 
+## 🏗️ 当前运行架构
+
+Saber-Translator 采用后端优先架构：
+
+```text
+浏览器（交互、显示、缩略图懒加载）
+  ↕ REST / SSE / 媒体流
+API 进程（校验、查询、短操作、静态站点）
+  ↕ SQLite + 不可变资产
+Worker 进程（翻译、分析、导入、导出、插件、模型）
+  ↑
+Launcher（迁移、单实例、进程监护、崩溃恢复裁决）
+```
+
+- 浏览器只负责交互与展示，不执行跨页翻译、分析、PDF 解析或批量导出。
+- Worker 从持久队列领取任务，浏览器关闭后任务继续；检查点支持暂停、恢复和失败重试。
+- SQLite 保存业务元数据、版本、任务、事件和发布指针；原图、缩略图、译图与导出文件作为不可变资产保存。
+- 列表只加载缩略图并懒加载；当前编辑图和阅读器可见窗口才请求原图。
+- 快速翻译是后端中的固定工作区；“新建快速翻译”会明确重置该工作区。
+- 插件使用不可变 v3 revision 快照，由 Worker 在受控环境中执行。
+
+### 源码开发
+
+```powershell
+# 后端（项目根目录）
+.\venv\Scripts\python.exe saber_v2.py
+
+# 前端开发服务器（另一个终端）
+cd vue-frontend
+npm ci
+npm run dev
+```
+
+生产前端由 `npm run build:check` 输出到 `src/backend_v2/static/vue`，PyInstaller 使用 `app.spec` 打包统一 Launcher 入口。
+
 ## 🚀 路线图 (未来计划)
 
 我们计划在未来的版本中加入更多令人兴奋的功能：
@@ -366,8 +400,8 @@ Manga Insight 是一个基于 AI 的漫画内容深度理解引擎，它能够�
 
 ## 🛠️ 技术栈 (Tech Stack)
 
-*   **后端:** Python 3.10+, Flask, Flask-CORS, PyTorch, PaddlePaddle-OCR, MangaOCR, Pillow, OpenCV, NumPy, `openai` (SDK), `litelama` / `lama-mpe`, PyPDF2, Requests, PyYAML, Colorama.
-*   **前端:** **Vue 3**, **Vite**, **TypeScript**, **Pinia**, Axios, Canvas API, JSZip, jsPDF.
+*   **后端:** Python 3.12, Flask, Waitress, SQLAlchemy/Alembic, SQLite, PyTorch, MangaOCR/RapidOCR, Pillow, OpenCV, `openai`, LiteLAMA/LAMA-MPE, PyMuPDF.
+*   **前端:** **Vue 3**, **Vite**, **TypeScript**, **Pinia**, Axios；只承担交互、展示和媒体窗口加载。
 *   **文本检测:** Default (DBNet ResNet34), CTD (Comic Text Detector), YSGYolo.
 *   **图像修复:** LAMA-MPE, LiteLAMA.
 *   **向量检索:** Embedding, Reranker (用于 Manga Insight).

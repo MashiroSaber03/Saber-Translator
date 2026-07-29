@@ -32,11 +32,11 @@ describe('bubbleStore', () => {
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
   })
 
-  it('syncs the current image mirror when resetting to the initial bubbles', () => {
+  it('syncs the current image document when resetting to the initial bubbles', () => {
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
 
-    imageStore.addImage('page.png', 'data:image/png;base64,page')
+    imageStore.addImage('page.png', '/api/v2/assets/source-1')
     bubbleStore.setBubbles([
       createBubbleState({
         coords: [0, 0, 200, 100],
@@ -45,12 +45,11 @@ describe('bubbleStore', () => {
     ])
     bubbleStore.updateBubble(0, { translatedText: 'edited translation' })
 
-    expect(imageStore.currentImage?.bubbleTexts).toEqual(['edited translation'])
+    expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('edited translation')
 
     bubbleStore.resetToInitial()
 
     expect(bubbleStore.bubbles[0]?.translatedText).toBe('initial translation')
-    expect(imageStore.currentImage?.bubbleTexts).toEqual(['initial translation'])
     expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('initial translation')
   })
 
@@ -59,7 +58,7 @@ describe('bubbleStore', () => {
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
 
-    imageStore.addImage('page.png', 'data:image/png;base64,page')
+    imageStore.addImage('page.png', '/api/v2/assets/source-1')
     bubbleStore.setBubbles([
       createBubbleState({ coords: [0, 0, 200, 100] }),
       createBubbleState({ coords: [20, 20, 120, 220] }),

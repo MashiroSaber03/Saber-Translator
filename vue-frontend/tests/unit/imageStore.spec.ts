@@ -4,38 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useImageStore } from '@/stores/imageStore'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import { createBubbleState } from '@/utils/bubbleFactory'
-import type { ImageData, ImageDataLoadInput } from '@/types/image'
-
-function createTestImage(overrides: Partial<ImageData> = {}): ImageData {
-    return {
-        id: 'image-1',
-        fileName: 'page.png',
-        width: 0,
-        height: 0,
-        originalDataURL: 'data:image/png;base64,mockdata',
-        translatedDataURL: null,
-        cleanImageData: null,
-        bubbleStates: null,
-        translationStatus: 'pending',
-        translationFailed: false,
-        fontSize: TEXT_STYLE_DEFAULTS.fontSize,
-        autoFontSize: TEXT_STYLE_DEFAULTS.autoFontSize,
-        fontFamily: TEXT_STYLE_DEFAULTS.fontFamily,
-        layoutDirection: TEXT_STYLE_DEFAULTS.layoutDirection,
-        textColor: TEXT_STYLE_DEFAULTS.textColor,
-        fillColor: TEXT_STYLE_DEFAULTS.fillColor,
-        inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod,
-        strokeEnabled: TEXT_STYLE_DEFAULTS.strokeEnabled,
-        strokeColor: TEXT_STYLE_DEFAULTS.strokeColor,
-        strokeWidth: TEXT_STYLE_DEFAULTS.strokeWidth,
-        lineSpacing: TEXT_STYLE_DEFAULTS.lineSpacing,
-        textAlign: TEXT_STYLE_DEFAULTS.textAlign,
-        useAutoTextColor: TEXT_STYLE_DEFAULTS.useAutoTextColor,
-        hasUnsavedChanges: false,
-        ...overrides,
-    }
-}
+import type { ImageDataLoadInput } from '@/types/image'
 
 describe('imageStore', () => {
     beforeEach(() => {
@@ -46,7 +15,7 @@ describe('imageStore', () => {
         const source = readFileSync(resolve(process.cwd(), 'src/stores/imageStore.ts'), 'utf8')
 
         expect(source).toContain("import { naturalSortCompare } from '@/utils'")
-        expect(source).toContain("import { applyImageBubbleMirrors } from '@/stores/imageBubbleMirrors'")
+        expect(source).not.toContain('imageBubbleMirrors')
         expect(source).not.toContain('function applyBubbleStateMirrors')
         expect(source).not.toContain('localeCompare(' + 'pathB')
         for (const staleNarration of [
@@ -89,69 +58,22 @@ describe('imageStore', () => {
         expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
     })
 
-    it('keeps bubble mirror projection in a focused helper', async () => {
-        const { applyImageBubbleMirrors } = await import('@/stores/imageBubbleMirrors')
-        const target = createTestImage({
-            bubbleCoords: [[0, 0, 1, 1]],
-            bubbleAngles: [12],
-            originalTexts: ['old'],
-            bubbleTexts: ['old translation'],
-            textboxTexts: ['old box'],
-            textlinesPerBubble: [],
-            ocrResults: [],
-        })
-        const bubble = createBubbleState({
-            coords: [1, 2, 3, 4],
-            rotationAngle: 15,
-            originalText: '原文',
-            translatedText: 'translation',
-            textboxText: 'box text',
-            textlines: [{ polygon: [[1, 2]], direction: 'h', confidence: 0.9 }],
-            ocrResult: null,
-        })
-
-        applyImageBubbleMirrors(target, [bubble])
-
-        expect(target.bubbleStates).toEqual([bubble])
-        expect(target.bubbleCoords).toEqual([[1, 2, 3, 4]])
-        expect(target.bubbleAngles).toEqual([15])
-        expect(target.originalTexts).toEqual(['原文'])
-        expect(target.bubbleTexts).toEqual(['translation'])
-        expect(target.textboxTexts).toEqual(['box text'])
-        expect(target.textlinesPerBubble).toEqual([[{ polygon: [[1, 2]], direction: 'h', confidence: 0.9 }]])
-        expect(target.ocrResults?.[0]).toEqual({
-            text: '原文',
-            confidence: null,
-            confidenceSupported: false,
-            engine: '',
-            primaryEngine: '',
-            fallbackUsed: false,
-        })
-
-        applyImageBubbleMirrors(target, null)
-
-        expect(target.bubbleStates).toBeNull()
-        expect(target.bubbleCoords).toBeUndefined()
-        expect(target.originalTexts).toBeUndefined()
-        expect(target.ocrResults).toBeUndefined()
-    })
-
     describe('图片管理', () => {
         it('应该能添加图片', () => {
             const store = useImageStore()
-            const mockDataURL = 'data:image/png;base64,mockdata'
+            const sourceAssetUrl = '/api/v2/assets/source-1'
 
-            const image = store.addImage('test.png', mockDataURL)
+            const image = store.addImage('test.png', sourceAssetUrl)
 
             expect(image.fileName).toBe('test.png')
-            expect(image.originalDataURL).toBe(mockDataURL)
+            expect(image.sourceAssetUrl).toBe(sourceAssetUrl)
             expect(store.imageCount).toBe(1)
             expect(store.currentImageIndex).toBe(0)
         })
 
         it('应该能更新图片尺寸', () => {
             const store = useImageStore()
-            store.addImage('test.png', 'data:image/png;base64,mockdata')
+            store.addImage('test.png', '/api/v2/assets/source-1')
 
             store.updateCurrentImageDimensions(1920, 1080)
 
@@ -161,8 +83,8 @@ describe('imageStore', () => {
 
         it('应该在切换图片时更新 currentImage', () => {
             const store = useImageStore()
-            store.addImage('test1.png', 'data:image/png;base64,mockdata1')
-            store.addImage('test2.png', 'data:image/png;base64,mockdata2')
+            store.addImage('test1.png', '/api/v2/assets/source-1')
+            store.addImage('test2.png', '/api/v2/assets/source-2')
 
             expect(store.currentImage?.fileName).toBe('test1.png')
 
@@ -183,8 +105,8 @@ describe('imageStore', () => {
 
         it('删除当前图片后应该正确调整索引', () => {
             const store = useImageStore()
-            store.addImage('test1.png', 'data:image/png;base64,mockdata1')
-            store.addImage('test2.png', 'data:image/png;base64,mockdata2')
+            store.addImage('test1.png', '/api/v2/assets/source-1')
+            store.addImage('test2.png', '/api/v2/assets/source-2')
 
             store.deleteCurrentImage()
 
@@ -200,9 +122,9 @@ describe('imageStore', () => {
                 fileName: 'unstyled.png',
                 width: 0,
                 height: 0,
-                originalDataURL: 'data:image/png;base64,unstyled',
-                translatedDataURL: null,
-                cleanImageData: null,
+                sourceAssetUrl: '/api/v2/assets/unstyled',
+                translatedAssetUrl: null,
+                cleanAssetUrl: null,
                 bubbleStates: null,
                 translationStatus: 'pending',
                 translationFailed: false,
@@ -228,7 +150,7 @@ describe('imageStore', () => {
 
         it('从 failed 切回 processing 时应清除旧的错误信息', () => {
             const store = useImageStore()
-            store.addImage('test.png', 'data:image/png;base64,mockdata')
+            store.addImage('test.png', '/api/v2/assets/source-1')
 
             store.setTranslationStatus(0, 'failed', 'boom')
             expect(store.currentImage?.errorMessage).toBe('boom')
@@ -246,7 +168,7 @@ describe('imageStore', () => {
             nonFailedStatuses.forEach(status => {
                 setActivePinia(createPinia())
                 const store = useImageStore()
-                store.addImage('test.png', 'data:image/png;base64,mockdata')
+                store.addImage('test.png', '/api/v2/assets/source-1')
 
                 store.setTranslationStatus(0, 'failed', 'boom')
                 store.setTranslationStatus(0, status, 'stale error')
@@ -262,11 +184,11 @@ describe('imageStore', () => {
             const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
             try {
-                store.addImage('test1.png', 'data:image/png;base64,mockdata1')
-                store.addImages([{ fileName: 'test2.png', originalDataURL: 'data:image/png;base64,mockdata2' }])
+                store.addImage('test1.png', '/api/v2/assets/source-1')
+                store.addImages([{ fileName: 'test2.png', sourceAssetUrl: '/api/v2/assets/source-2' }])
                 store.sortImagesByFileName()
                 store.setCurrentImageIndex(1)
-                store.updateCurrentImage({ translatedDataURL: 'data:image/png;base64,translated' })
+                store.updateCurrentImage({ translatedAssetUrl: '/api/v2/assets/translated' })
                 store.updateImageByIndex(0, { translationStatus: 'processing' })
                 store.updateCurrentImageDimensions(800, 600)
                 store.setBatchTranslationInProgress(true)
@@ -284,7 +206,7 @@ describe('imageStore', () => {
     describe('尺寸管理', () => {
         it('新图片的尺寸默认为 0', () => {
             const store = useImageStore()
-            store.addImage('test.png', 'data:image/png;base64,mockdata')
+            store.addImage('test.png', '/api/v2/assets/source-1')
 
             expect(store.currentImage?.width).toBe(0)
             expect(store.currentImage?.height).toBe(0)
@@ -292,7 +214,7 @@ describe('imageStore', () => {
 
         it('更新尺寸后应该正确存储', () => {
             const store = useImageStore()
-            store.addImage('test.png', 'data:image/png;base64,mockdata')
+            store.addImage('test.png', '/api/v2/assets/source-1')
 
             store.updateCurrentImageDimensions(800, 600)
 

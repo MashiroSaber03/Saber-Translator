@@ -22,7 +22,7 @@ describe('ParallelSettings', () => {
     const wrapper = mount(ParallelSettings)
     const switchControl = wrapper.getComponent(UiSwitch)
 
-    expect(switchControl.props('ariaLabel')).toBe('启用并行模式')
+    expect(switchControl.props('accessibilityLabel')).toBe('启用并行模式')
     expect(switchControl.props('modelValue')).toBe(true)
 
     switchControl.vm.$emit('change', false)

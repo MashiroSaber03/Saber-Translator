@@ -42,7 +42,7 @@ describe('PageSelectionModal', () => {
     imageStore.addImage('004.png', 'data:image/png;base64,ddd')
     imageStore.updateImageByIndex(1, {
       translationStatus: 'completed',
-      translatedDataURL: 'data:image/png;base64,done',
+      translatedAssetUrl: '/api/v2/assets/done',
     })
     imageStore.updateImageByIndex(2, {
       translationStatus: 'failed',

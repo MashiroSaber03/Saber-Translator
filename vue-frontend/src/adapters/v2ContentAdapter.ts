@@ -27,11 +27,8 @@ export function pageSummaryToImage(page: V2PageSummary): ImageDataLoadInput {
     relativePath: page.logicalSourcePath,
     width: page.width ?? 0,
     height: page.height ?? 0,
-    // Compatibility fields now contain immutable backend URLs, never Data URLs.
-    originalDataURL: page.sourceUrl,
-    translatedDataURL: page.translatedUrl ?? null,
-    cleanImageData: page.cleanUrl ?? null,
     sourceAssetUrl: page.sourceUrl,
+    cleanAssetUrl: page.cleanUrl ?? null,
     thumbnailSourceUrl: page.thumbnailSourceUrl,
     translatedAssetUrl: page.translatedUrl ?? null,
     thumbnailTranslatedUrl: page.thumbnailTranslatedUrl ?? null,

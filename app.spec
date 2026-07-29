@@ -31,17 +31,15 @@ datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static'), os.path
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'resources'), os.path.join('src', 'backend_v2', 'resources')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
-datas.append((os.path.join(PROJECT_ROOT, 'src', 'core', 'plugin_agent', 'plugin_builder_skill.md'), os.path.join('src', 'core', 'plugin_agent')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'plugins', 'plugin_builder_skill.md'), os.path.join('src', 'backend_v2', 'plugins')))
 datas.append((os.path.join(PROJECT_ROOT, 'openapi', 'v2.yaml'), 'openapi'))
 datas.append((
     os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'storage', 'migrations'),
     os.path.join('src', 'backend_v2', 'storage', 'migrations'),
 ))
 
-# 2. 配置文件 - 不打包用户运行时配置
-# user_settings.json, prompts.json, model_history.json 等会在运行时自动生成
-# 不打包以避免泄露 API 密钥等敏感信息
-# config 目录会在运行时由程序自动创建
+# 2. 用户设置、提示词和凭据只存在于 v2 data root 的数据库中，
+# 不把任何运行时配置或密钥打进应用包。
 
 # 3. 模型文件 - 包含所有模型
 models_path = os.path.join(PROJECT_ROOT, 'models')
@@ -70,7 +68,6 @@ critical_packages = [
     'onnxruntime',           # ONNX 推理引擎 (GPU/CPU 模块名相同)
     'ultralytics',           # YOLO 检测器
     'chromadb',              # 向量数据库 (manga_insight)
-    'edge_tts',              # TTS (manga_insight)
     'gallery_dl',            # 网页导入 - Gallery-DL 引擎
 ]
 
@@ -116,22 +113,20 @@ hiddenimports += [
     # Worker 算法实现（仍由 v2 services 在 Worker 内按需导入）
     'src',
     'src.core', 'src.core.detection', 'src.core.ocr', 'src.core.translation', 'src.core.inpainting',
-    'src.core.rendering', 'src.core.session_manager', 'src.core.bookshelf_manager',
-    'src.core.config_models', 'src.core.types_enhanced', 'src.core.quadrilateral',
+    'src.core.rendering', 'src.core.config_models',
     'src.core.large_image_detection',  # 大图片检测包装器
     
-    # core.manga_insight (漫画分析核心模块)
-    'src.core.manga_insight', 'src.core.manga_insight.analyzer', 'src.core.manga_insight.change_detector',
-    'src.core.manga_insight.config_models', 'src.core.manga_insight.config_utils',
-    'src.core.manga_insight.embedding_client', 'src.core.manga_insight.incremental_analyzer',
-    'src.core.manga_insight.progress_broadcaster', 'src.core.manga_insight.qa',
-    'src.core.manga_insight.query_preprocessor', 'src.core.manga_insight.reranker_client',
-    'src.core.manga_insight.storage', 'src.core.manga_insight.task_manager',
-    'src.core.manga_insight.task_models', 'src.core.manga_insight.vector_store', 'src.core.manga_insight.vlm_client',
-    # core.manga_insight.features
-    'src.core.manga_insight.features', 'src.core.manga_insight.features.hierarchical_summary',
-    'src.core.manga_insight.features.timeline', 'src.core.manga_insight.features.timeline_enhanced',
-    'src.core.manga_insight.features.timeline_models',
+    # backend v2 仍复用的 Manga Insight 模型和传输适配器
+    'src.core.manga_insight', 'src.core.manga_insight.config_models',
+    'src.core.manga_insight.embedding_client', 'src.core.manga_insight.vlm_client',
+    'src.core.manga_insight.clients', 'src.core.manga_insight.clients.base_client',
+    'src.core.manga_insight.clients.image_gen_client',
+    'src.core.manga_insight.clients.provider_registry',
+    'src.core.manga_insight.config', 'src.core.manga_insight.config.serialization',
+    'src.core.manga_insight.utils', 'src.core.manga_insight.utils.json_parser',
+
+    # backend v2 immutable plugin agent metadata/controller
+    'src.core.plugin_agent', 'src.core.plugin_agent.controller', 'src.core.plugin_agent.models',
     
     # core.detector (关键 - 检测器框架)
     'src.core.detector', 'src.core.detector.registry', 'src.core.detector.base',
@@ -174,12 +169,9 @@ hiddenimports += [
     'src.interfaces.ctd.yolov5.yolo',
     
     # shared (完整)
-    'src.shared', 'src.shared.constants', 'src.shared.path_helpers', 'src.shared.config_loader',
+    'src.shared', 'src.shared.constants', 'src.shared.path_helpers',
     'src.shared.exceptions', 'src.shared.image_helpers', 'src.shared.performance', 'src.shared.types', 'src.shared.validators',
     'src.shared.openai_helpers',  # OpenAI 客户端辅助函数
-    
-    # plugins
-    'src.plugins', 'src.plugins.base', 'src.plugins.manager', 'src.plugins.hooks',
     
     # PyTorch
     'torch', 'torch.nn', 'torch.nn.functional', 'torch.utils', 'torch.utils.data', 'torch.jit', 'torch.cuda',
@@ -205,7 +197,7 @@ hiddenimports += [
     'accelerate', 'sentencepiece',
     
     # manga_insight 依赖
-    'chromadb', 'edge_tts',
+    'chromadb',
     
     # ultralytics/YOLO 相关
     'ultralytics', 'pandas', 'dill',

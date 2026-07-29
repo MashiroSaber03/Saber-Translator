@@ -59,8 +59,8 @@ function mountComparison() {
       currentImage: {
         id: 'page-1',
         name: 'page-1.png',
-        originalDataURL: 'data:image/png;base64,page1',
-        translatedDataURL: 'data:image/png;base64,page1-translated',
+        sourceAssetUrl: '/api/v2/assets/page1',
+        translatedAssetUrl: '/api/v2/assets/page1-translated',
       },
       bubbles: [baseBubble],
       selectedBubble: baseBubble,

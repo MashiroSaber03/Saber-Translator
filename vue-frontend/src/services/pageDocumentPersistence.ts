@@ -7,6 +7,7 @@ import { pageDocumentToBubbles } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleState } from '@/types/bubble'
+import { deepClone } from '@/utils/deepClone'
 
 interface PersistedPageState {
   debounceResolve: (() => void) | null
@@ -31,7 +32,9 @@ const PAGE_DOCUMENT_CACHE_SIZE = 3
 const states = new Map<string, PersistedPageState>()
 
 function cloneBubbles(bubbles: BubbleState[]): BubbleState[] {
-  return structuredClone(bubbles)
+  // Pinia/Vue exposes the current editor state as reactive proxies, which
+  // structuredClone rejects. Page documents are JSON values by contract.
+  return deepClone(bubbles)
 }
 
 function canonical(value: unknown): string {
@@ -39,7 +42,7 @@ function canonical(value: unknown): string {
 }
 
 function bubbleFields(bubble: BubbleState): Record<string, unknown> {
-  const fields = { ...structuredClone(bubble) } as Record<string, unknown>
+  const fields = { ...deepClone(bubble) } as Record<string, unknown>
   delete fields.backendBubbleId
   const fontId = typeof fields.fontFamily === 'string' ? fields.fontFamily : null
   delete fields.fontFamily
@@ -219,7 +222,7 @@ async function persistLoop(
       const sentVersion = state.desiredVersion
       const sent = cloneBubbles(state.desired)
       const mutations = mutationsFor(state.persisted, sent)
-      const sentStylePatch = structuredClone(state.desiredStylePatch)
+      const sentStylePatch = deepClone(state.desiredStylePatch)
       const sentPropagation = [...state.desiredPropagateStyleFields]
       const sentDefaultFont = state.desiredDefaultFontId
       const sentDefaultFontChanged = state.defaultFontChanged

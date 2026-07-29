@@ -3,9 +3,9 @@
     <ProductFormSection>
       <template #title>文本默认值</template>
       <ProductStatusBanner tone="info" role="note">
-        这里修改的是全局默认文字设置，会写入 <code class="text-style-defaults-settings__config-path">config/text_style_defaults.json</code>。
+        这里修改的是后端数据库中的全局默认文字设置。
         <br />
-        保存成功后会在下次启动时作为新的初始默认值使用。
+        保存成功后，新导入页面和后续任务会使用这些默认值。
       </ProductStatusBanner>
       <ProductActionRow aria-label="文本默认值操作" justify="start">
         <UiButton
@@ -464,9 +464,3 @@ async function saveDefaults(): Promise<TextDefaultsSaveResult> {
 }
 
 </script>
-
-<style scoped>
-.text-style-defaults-settings__config-path {
-  font-family: var(--font-mono);
-}
-</style>

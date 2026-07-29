@@ -13,7 +13,7 @@ describes the system as it is maintained now, not the history of its refactor.
   their styles in the same scoped SFC.
 - UI primitives own generic controls and expose typed props, events, slots,
   and documented CSS custom properties.
-- Stores own durable domain state. Focused helpers own schema parsing,
+- Stores project backend-owned domain state. Focused helpers own schema parsing,
   lifecycle listeners, model discovery, animation, or streaming when those
   responsibilities can be understood and tested independently.
 
@@ -22,7 +22,15 @@ prop/event plumbing. File size is a review signal, never the reason to split.
 
 ## State And Data Boundaries
 
-- Backend wire payloads remain snake_case at the API boundary.
+- `openapi/v2.yaml` is the only HTTP contract; generated clients keep wire
+  details at the API boundary.
+- Books, chapters, pages, documents, jobs, analyses, studio documents and
+  plugin revisions are backend facts. Pinia never becomes their durable owner.
+- The browser may persist only non-business UI preferences.
+- Translation, analysis, PDF parsing, export and plugin loops run in the
+  backend. The frontend creates commands and projects REST/SSE state.
+- Thumbnail collections are lazy. Full assets are limited to the active page
+  or reader visibility window and are released when they leave that window.
 - Stores and components use the current application schema; retired settings,
   provider, font, and localStorage compatibility shapes are not read.
 - Settings normalization and theme preference lifecycle live under
@@ -64,7 +72,5 @@ Run `npm test` for behavior changes and `npm run visual:test` for layout,
 theme, modal, form, token, or primitive changes. Before release, also run
 `npm run build`, `npm run lint:ui:audit`, and `git diff --check`.
 
-The production build may report the upstream `pdfjs-dist` eval warning. It is
-non-blocking while the application remains on the current PDF.js version; any
-additional dynamic/static import warning is an application architecture issue
-and must be investigated.
+Any dynamic/static import warning is an application architecture issue and
+must be investigated.

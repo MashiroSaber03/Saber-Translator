@@ -5,7 +5,7 @@ import { useImageStore } from '@/stores/imageStore'
 
 type ImageInput = {
   fileName: string
-  originalDataURL: string
+  sourceAssetUrl: string
 }
 
 function createStore(): ReturnType<typeof useImageStore> {
@@ -29,7 +29,7 @@ const base64DataUrlArbitrary = fc
 
 const imageInputArbitrary: fc.Arbitrary<ImageInput> = fc.record({
   fileName: fileNameArbitrary,
-  originalDataURL: base64DataUrlArbitrary,
+  sourceAssetUrl: base64DataUrlArbitrary,
 })
 
 describe('image store properties', () => {
@@ -52,14 +52,14 @@ describe('image store properties', () => {
     fc.assert(
       fc.property(imageInputArbitrary, imageInput => {
         const store = createStore()
-        const image = store.addImage(imageInput.fileName, imageInput.originalDataURL)
+        const image = store.addImage(imageInput.fileName, imageInput.sourceAssetUrl)
 
         expect(image.id).toEqual(expect.any(String))
         expect(image.id.length).toBeGreaterThan(0)
         expect(image.fileName).toBe(imageInput.fileName)
-        expect(image.originalDataURL).toBe(imageInput.originalDataURL)
-        expect(image.translatedDataURL).toBeNull()
-        expect(image.cleanImageData).toBeNull()
+        expect(image.sourceAssetUrl).toBe(imageInput.sourceAssetUrl)
+        expect(image.translatedAssetUrl).toBeNull()
+        expect(image.cleanAssetUrl).toBeNull()
         expect(image.bubbleStates).toBeNull()
         expect(image.translationStatus).toBe('pending')
         expect(image.translationFailed).toBe(false)
@@ -169,7 +169,7 @@ describe('image store properties', () => {
         fc.hexaString({ minLength: 6, maxLength: 6 }),
         (imageInput, fontSize, colorHex) => {
           const store = createStore()
-          store.addImage(imageInput.fileName, imageInput.originalDataURL)
+          store.addImage(imageInput.fileName, imageInput.sourceAssetUrl)
           const selectedId = store.currentImage?.id
           const textColor = `#${colorHex}`
 

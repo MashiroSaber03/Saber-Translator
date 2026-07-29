@@ -30,8 +30,8 @@ function seedEditor(): void {
     chapterId: 'chapter-1',
     documentRevision: 3,
     fileName: 'page-1.png',
-    originalDataURL: '/api/v2/assets/source-1',
-    translatedDataURL: null,
+    sourceAssetUrl: '/api/v2/assets/source-1',
+    translatedAssetUrl: null,
   }])
   useBubbleStore().setBubbles([
     createBubbleState({
@@ -84,7 +84,7 @@ describe('useEditRender backend-first orchestration', () => {
     expect(useImageStore().currentImage).toMatchObject({
       documentRevision: 4,
       renderedRevision: 4,
-      translatedDataURL: '/api/v2/assets/translated-1',
+      translatedAssetUrl: '/api/v2/assets/translated-1',
       thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
     })
   })

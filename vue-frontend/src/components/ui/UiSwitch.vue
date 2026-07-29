@@ -5,7 +5,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 
 const props = withDefaults(defineProps<{
   modelValue?: boolean
-  ariaLabel: string
+  accessibilityLabel: string
   title?: string
   disabled?: boolean
   size?: 'sm' | 'md'
@@ -41,7 +41,7 @@ function toggle(): void {
       { 'ui-switch--checked': modelValue },
     ]"
     role="switch"
-    :aria-label="ariaLabel"
+    :aria-label="accessibilityLabel"
     :aria-checked="checkedText"
     :title="title || undefined"
     :disabled="disabled"

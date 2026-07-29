@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { reactive } from 'vue'
 
 import { createBubbleState } from '@/utils/bubbleFactory'
 
@@ -100,7 +101,7 @@ describe('page document persistence coordinator', () => {
       propagateStyleFields: ['fontFamily', 'fontSize'],
     })
     const request = mutateMock.mock.calls[0]?.[1]
-    expect(JSON.stringify(request)).not.toContain('originalDataURL')
+    expect(JSON.stringify(request)).not.toContain('sourceAssetUrl')
     expect(JSON.stringify(request)).not.toContain('base64')
   })
 
@@ -185,6 +186,37 @@ describe('page document persistence coordinator', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('serializes reactive editor bubbles before queueing a backend CAS', async () => {
+    mutateMock.mockResolvedValue(serverDocument([], 2))
+    const {
+      queuePageDocumentSave,
+      registerPageDocument,
+    } = await import('@/services/pageDocumentPersistence')
+    registerPageDocument(serverDocument([], 1))
+    const bubbles = reactive([
+      createBubbleState({
+        backendBubbleId: 'bubble-1',
+        coords: [0, 0, 100, 80],
+        polygon: [],
+        translatedText: '来自响应式编辑器',
+      }),
+    ])
+
+    await queuePageDocumentSave('page-1', 1, bubbles)
+
+    expect(mutateMock).toHaveBeenCalledWith(
+      'page-1',
+      expect.objectContaining({
+        mutations: [
+          expect.objectContaining({
+            bubbleId: 'bubble-1',
+            op: 'create',
+          }),
+        ],
+      }),
+    )
   })
 
   it('keeps only the three most recently registered settled documents', async () => {

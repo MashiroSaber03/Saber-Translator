@@ -1142,7 +1142,7 @@ describe('UI primitives architecture contracts', () => {
     const wrapper = mount(UiSwitch, {
       props: {
         modelValue: true,
-        ariaLabel: '启用角色 Saber',
+        accessibilityLabel: '启用角色 Saber',
         size: 'sm',
       },
     })

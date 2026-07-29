@@ -818,7 +818,7 @@ describe('PluginManager', () => {
     await flushPromises()
 
     const stateSwitches = wrapper.findAllComponents(UiSwitch)
-    expect(stateSwitches.map(switchControl => switchControl.props('ariaLabel'))).toEqual([
+    expect(stateSwitches.map(switchControl => switchControl.props('accessibilityLabel'))).toEqual([
       '启用插件 Plugin One',
       '开启 Plugin One 默认启用状态',
     ])
@@ -837,7 +837,7 @@ describe('PluginManager', () => {
     await flushPromises()
 
     const configSwitch = wrapper.findAllComponents(UiSwitch).at(-1)
-    expect(configSwitch?.props('ariaLabel')).toBe('Feature enabled：启用')
+    expect(configSwitch?.props('accessibilityLabel')).toBe('Feature enabled：启用')
     configSwitch?.vm.$emit('change', true)
     await wrapper.findAll('button').find(button => button.text() === '保存')!.trigger('click')
     await flushPromises()

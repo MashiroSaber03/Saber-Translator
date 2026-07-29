@@ -13,6 +13,7 @@ import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useImageStore } from '@/stores/imageStore'
+import { createBubbleState } from '@/utils/bubbleFactory'
 
 const exportImportMock = vi.hoisted(() => ({
   state: {
@@ -207,9 +208,12 @@ describe('ImageResultDisplay', () => {
     expect(panelSource).not.toContain('icon-name="scan-text"')
 
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=', {
-      originalTexts: ['第一句原文。第二句原文。'],
-      bubbleTexts: ['第一句译文。第二句译文。'],
+    imageStore.addImage('page.png', '/api/v2/assets/source-1', {
+      bubbleStates: [{
+        ...createBubbleState(),
+        originalText: '第一句原文。第二句原文。',
+        translatedText: '第一句译文。第二句译文。',
+      }],
     })
 
     const wrapper = mount(ImageResultDisplay)

@@ -244,7 +244,7 @@ describe('product feedback components', () => {
   it('owns reusable exclusive choice-card selection semantics', async () => {
     const wrapper = mount(ProductChoiceCardGrid, {
       props: {
-        ariaLabel: '导出格式',
+        accessibilityLabel: '导出格式',
         modelValue: 'images',
         items: [
           { id: 'images', label: '图片 ZIP', description: '所有页面打包下载', iconName: 'image' },

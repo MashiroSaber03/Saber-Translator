@@ -45,7 +45,6 @@ describe('type source contracts', () => {
       'ApiResponse',
       'ApiError',
       'ReRenderResponse',
-      'SessionData',
       'BookData',
       'PluginData',
       'FetchModelsResponse',
@@ -56,7 +55,6 @@ describe('type source contracts', () => {
     for (const exportPath of [
       './apiCore',
       './translationApi',
-      './session',
       './bookshelf',
       './plugin',
       './diagnostics',
@@ -66,7 +64,6 @@ describe('type source contracts', () => {
 
     expect(source('src/types/apiCore.ts')).toContain('export interface ApiResponse')
     expect(source('src/types/translationApi.ts')).toContain('export interface ReRenderResponse')
-    expect(source('src/types/session.ts')).toContain('export interface SessionData')
     expect(source('src/types/bookshelf.ts')).toContain('export interface BookData')
     expect(source('src/types/plugin.ts')).toContain('export interface PluginData')
     expect(source('src/types/diagnostics.ts')).toContain('export interface FetchModelsResponse')
@@ -359,7 +356,6 @@ describe('type source contracts', () => {
     for (const ownerInterface of [
       'ImageSourceFields',
       'ImageDetectionFields',
-      'ImageMaskFields',
       'ImageWorkflowFields',
       'ImageTextStyleFields',
       'ImageUiFields',
@@ -371,6 +367,16 @@ describe('type source contracts', () => {
     expect(imageTypes).toMatch(/export interface ImageData\s+extends/)
     expect(imageTypes).toContain('ImageSourceFields')
     expect(imageTypes).toContain('ImageFolderFields')
+    for (const removedMirror of [
+      'originalDataURL',
+      'translatedDataURL',
+      'bubbleCoords',
+      'originalTexts',
+      'bubbleTexts',
+      'ocrResults',
+    ]) {
+      expect(imageTypes).not.toContain(removedMirror)
+    }
   })
 
   it('keeps cross-cutting barrel files free of mechanical narration', () => {

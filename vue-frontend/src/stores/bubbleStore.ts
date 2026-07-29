@@ -12,7 +12,6 @@ import { useSettingsStore } from '@/stores/settings'
 import {
   createBubbleState as createBubbleStateFromFactory,
   cloneBubbleStates,
-  getTextlinesPerBubbleFromStates,
   isValidBubbleState,
   detectTextDirection
 } from '@/utils/bubbleFactory'
@@ -57,20 +56,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     if (currentImage) {
       const clonedBubbles = cloneBubbleStates(bubbles.value)
       currentImage.bubbleStates = clonedBubbles
-      currentImage.bubbleCoords = clonedBubbles.map((bubble) => bubble.coords)
-      currentImage.bubbleAngles = clonedBubbles.map((bubble) => bubble.rotationAngle || 0)
-      currentImage.originalTexts = clonedBubbles.map((bubble) => bubble.originalText || '')
-      currentImage.bubbleTexts = clonedBubbles.map((bubble) => bubble.translatedText || '')
-      currentImage.textboxTexts = clonedBubbles.map((bubble) => bubble.textboxText || '')
-      currentImage.textlinesPerBubble = getTextlinesPerBubbleFromStates(clonedBubbles)
-      currentImage.ocrResults = clonedBubbles.map((bubble) => bubble.ocrResult || {
-        text: bubble.originalText || '',
-        confidence: null,
-        confidenceSupported: false,
-        engine: '',
-        primaryEngine: '',
-        fallbackUsed: false
-      })
       currentImage.hasUnsavedChanges = true
     }
   }

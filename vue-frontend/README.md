@@ -1,6 +1,6 @@
 # Saber-Translator 前端开发说明
 
-> 最后更新：2026-07-11
+> 最后更新：2026-07-29
 
 这是 Saber-Translator 的 Vue 3 + TypeScript + Vite 前端工程说明。
 
@@ -46,23 +46,15 @@ npm run typecheck
 ### 状态管理
 
 - `src/stores/`
-  - `imageStore`：图片与翻译状态
-  - `bubbleStore`：编辑模式气泡状态
-  - `sessionStore`：会话与书架章节保存/加载
-  - `settingsStore`：全局设置
+  - 页面、任务、编辑和设置状态均是后端事实的前端投影
+  - 允许保存主题、面板尺寸等纯 UI 偏好
+  - 禁止以 localStorage/Pinia 作为书籍、页面、任务或分析结果的事实源
 
-### 翻译主链
+### 后端 API
 
-- `src/composables/translation/core/`
-  - 当前翻译主链核心
-  - `pipeline.ts`：统一入口
-  - `pipelineRegistry.ts`：步骤链真相源
-  - `runtime.ts`：`TaskContext` / `PipelineRuntime`
-  - `atomicSteps.ts`：原子步骤入口
-  - `persistenceService.ts`：保存编排
-
-- `src/composables/translation/parallel/`
-  - 并行调度层
+- `src/api/v2/`：按内容、任务、设置、Insight、Studio 和插件领域组织的 v2 客户端
+- `src/api/generated/v2.ts`：由 `openapi/v2.yaml` 生成的契约类型
+- 页面使用 REST 获取快照，用 SSE 接收任务/operation 事件；断线后按事件序号补发
 
 ### 文字样式与编辑
 
@@ -78,22 +70,15 @@ npm run typecheck
 
 ## 4. 当前前端架构要点
 
-### 4.1 翻译执行架构
+### 4.1 浏览器职责边界
 
-当前前端不是“每种翻译模式各写一套流程”，而是：
+浏览器只负责交互和显示：
 
-```text
-useTranslationPipeline
-  -> usePipeline
-  -> SequentialPipeline / ParallelPipeline
-  -> atomic steps
-  -> taskProjector / persistenceService
-```
-
-如果你要改翻译流程，优先阅读：
-
-- [docs/parallel-mode-development-guide.md](../docs/parallel-mode-development-guide.md)
-- [docs/save-load-development-guide.md](../docs/save-load-development-guide.md)
+- 不在浏览器执行跨页翻译、分析、PDF 解析、插件或导出循环。
+- 用户命令创建后端 job/operation，前端投影状态并展示进度。
+- 列表、侧栏和页码选择器只请求缩略图并懒加载。
+- 主图/编辑图只加载当前页；阅读器只加载可见窗口并及时释放离屏资源。
+- 浏览器关闭或崩溃不会终止持久任务。
 
 ### 4.2 文字样式同步
 
@@ -103,15 +88,11 @@ useTranslationPipeline
 
 不要再把这部分逻辑直接塞回 `TranslateView.vue`。
 
-### 4.3 书架模式保存
+### 4.3 数据写入
 
-当前书架模式保存主链已经统一到：
-
-- `saveStep.ts`
-- `persistenceService.ts`
-- `sessionStore.ts`
-
-不要在统一主链之外新增整批前端保存 helper。
+- 图片导入后立即成为后端页面与不可变资产。
+- 编辑使用 revision/`If-Match` 乐观并发，不提供手动保存和可选自动保存。
+- 不得重新引入 Base64 图片事实、客户端绝对路径或浏览器生成的业务 ID。
 
 ---
 
@@ -119,10 +100,9 @@ useTranslationPipeline
 
 推荐先看：
 
-- [docs/README.md](../docs/README.md)
-- [docs/text-settings-development-guide.md](../docs/text-settings-development-guide.md)
-- [docs/parallel-mode-development-guide.md](../docs/parallel-mode-development-guide.md)
-- [docs/OpenAI-Compatible主链开发手册.md](../docs/OpenAI-Compatible主链开发手册.md)
+- [后端优先架构方案](../docs/refactor/backend-first-architecture-plan.md)
+- [架构决策记录](../docs/refactor/adr/)
+- [OpenAPI v2](../openapi/v2.yaml)
 
 ---
 

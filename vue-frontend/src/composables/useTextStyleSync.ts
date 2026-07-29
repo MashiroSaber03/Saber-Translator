@@ -179,7 +179,7 @@ export function useTextStyleSync() {
     }
     if (
       !Object.keys(pageStyleDefaultsPatch).some(field => RENDERED_STYLE_FIELDS.has(field))
-      || !image.translatedDataURL
+      || !image.translatedAssetUrl
     ) return
     void refreshRenderedAsset(image.id, baseRevision + 1)
   }
@@ -203,7 +203,6 @@ export function useTextStyleSync() {
           renderedRevision: summary.renderedRevision ?? undefined,
           thumbnailTranslatedUrl: summary.thumbnailTranslatedUrl,
           translatedAssetUrl: summary.translatedUrl,
-          translatedDataURL: summary.translatedUrl,
           translationStatus: 'completed',
         })
       }

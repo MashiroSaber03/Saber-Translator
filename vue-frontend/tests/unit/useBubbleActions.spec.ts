@@ -45,8 +45,8 @@ function seedEditor(): void {
     chapterId: 'chapter-1',
     documentRevision: 7,
     fileName: 'page.png',
-    originalDataURL: '/api/v2/assets/source-1',
-    translatedDataURL: null,
+    sourceAssetUrl: '/api/v2/assets/source-1',
+    translatedAssetUrl: null,
   }])
   const bubbleStore = useBubbleStore()
   bubbleStore.setBubbles([

@@ -500,7 +500,7 @@ describe('Insight card-like controls', () => {
     })
 
     const formatGrid = wrapper.getComponent(ProductChoiceCardGrid)
-    expect(formatGrid.props('ariaLabel')).toBe('导出格式')
+    expect(formatGrid.props('accessibilityLabel')).toBe('导出格式')
     expect(formatGrid.props('modelValue')).toBe('images')
     expect(formatGrid.props('items')).toEqual([
       { id: 'images', label: '图片 ZIP', description: '所有页面打包下载', iconName: 'image' },

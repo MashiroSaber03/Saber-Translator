@@ -12,6 +12,7 @@ from sqlalchemy import insert, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
+from src.backend_v2.operations.executor import WorkerOperationRunner
 from src.backend_v2.operations.repository import (
     OperationConflict,
     OperationFence,
@@ -167,6 +168,55 @@ def test_page_operation_is_idempotent_fenced_and_persistent(
     stored = repository.get(fence.operation_id)
     assert stored["status"] == "completed"
     assert stored["result"] == {"text": "hello"}
+
+
+def test_worker_operation_runner_applies_injected_plugin_runtime(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="page_detect",
+        base_revision=1,
+        bubble_id=None,
+        payload={},
+        idempotency_key="worker-plugin-runtime",
+    )
+    calls: list[tuple[str, object]] = []
+
+    class FakePluginRuntime:
+        def before(self, fence, operation):
+            calls.append(("before", fence.operation_id))
+            return {**operation, "pluginInput": True}
+
+        def after(self, fence, operation, result):
+            calls.append(("after", operation["pluginInput"]))
+            return {**result, "pluginOutput": True}
+
+    def handle(fence, operation):
+        calls.append(("handler", operation["pluginInput"]))
+        return {"operationId": fence.operation_id}
+
+    runner = WorkerOperationRunner(
+        repository,
+        worker_epoch_id=platform["worker_epoch_id"],
+        handlers={"page_detect": handle},
+        plugin_runtime=FakePluginRuntime(),
+    )
+
+    assert runner.run_one() is True
+    assert calls == [
+        ("before", accepted["operationId"]),
+        ("handler", True),
+        ("after", True),
+    ]
+    stored = repository.get(accepted["operationId"])
+    assert stored["status"] == "completed"
+    assert stored["result"] == {
+        "operationId": accepted["operationId"],
+        "pluginOutput": True,
+    }
 
 
 def test_operation_creation_obeys_revision_and_write_intent(

@@ -1,4 +1,13 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
+import {
+  chromium,
+  expect,
+  test,
+  type Browser,
+  type Page,
+  type Route,
+} from '@playwright/test'
 
 const jsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
@@ -89,40 +98,11 @@ const demoPageSvg = `
   <rect x="150" y="950" width="580" height="38" rx="19" fill="#2f3f5c"/>
 </svg>`
 
-const demoPageImage = 'data:image/svg+xml;utf8,' + encodeURIComponent(demoPageSvg)
-const demoPageImageBase64 = Buffer.from(demoPageSvg).toString('base64')
-let demoRenderImageBase64: string | null = null
-
-async function getDemoRenderImageBase64(page: Page): Promise<string> {
-  if (demoRenderImageBase64) {
-    return demoRenderImageBase64
-  }
-
-  demoRenderImageBase64 = await page.evaluate(async (svgText) => {
-    const image = new Image()
-    image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText)
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve()
-      image.onerror = () => reject(new Error('Failed to rasterize demo render fixture'))
-    })
-
-    const canvas = document.createElement('canvas')
-    canvas.width = 900
-    canvas.height = 1280
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('Canvas 2D context unavailable')
-    context.drawImage(image, 0, 0)
-    return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
-  }, demoPageSvg)
-
-  return demoRenderImageBase64
-}
-
 const demoBook = {
   id: 'demo-book',
   title: 'Demo Manga',
   description: 'Visual regression fixture',
-  cover: demoPageImage,
+  cover: '/api/v2/assets/demo-cover',
   total_pages: 20,
   tags: [],
   chapters: [
@@ -162,18 +142,6 @@ const demoBubbleState = {
   inpaintMethod: 'solid',
   textlines: [],
   ocrResult: null,
-}
-
-const demoStudioSummary = {
-  id: 'demo-doc',
-  title: '绫濑澪',
-  origin: 'analysis',
-  source_character: '绫濑澪',
-  updated_at: '2026-01-01T00:00:00Z',
-  tags: ['主角', '视觉回归'],
-  is_favorite: true,
-  has_avatar: false,
-  sample_pages: [1, 2],
 }
 
 const demoStudioDocument = {
@@ -354,438 +322,829 @@ const demoStudioChatSession = {
   last_prompt_preview: '角色: 绫濑澪\n场景: 校园祭前夜\n目标: 调查旧校舍异常',
 }
 
+const fixtureTimestamp = '2026-01-01T00:00:00Z'
+const demoV2Chapter = {
+  id: 'demo-chapter',
+  bookId: 'demo-book',
+  ordinal: 1,
+  title: 'Chapter 1',
+  pageCount: 2,
+  pageOrderRevision: 1,
+}
+const demoV2Book = {
+  id: 'demo-book',
+  title: 'Demo Manga',
+  chapterOrderRevision: 1,
+  coverAssetUrl: '/api/v2/assets/demo-cover',
+  chapterCount: 1,
+  pageCount: 2,
+  tags: [],
+  createdAt: fixtureTimestamp,
+  updatedAt: fixtureTimestamp,
+  chapters: [demoV2Chapter],
+}
+function createDemoV2Pages(pageCount: number) {
+  return Array.from({ length: pageCount }, (_, index) => {
+    const ordinal = index + 1
+    return {
+  id: `demo-page-${ordinal}`,
+  chapterId: 'demo-chapter',
+  ordinal,
+  logicalSourcePath: `${String(ordinal).padStart(3, '0')}.svg`,
+  sourceRevision: 1,
+  documentRevision: 1,
+  renderedRevision: 1,
+  renderStatus: 'ready',
+  detectionState: 'ready',
+  sourceUrl: `/api/v2/assets/demo-source-${ordinal}`,
+  thumbnailSourceUrl: `/api/v2/assets/demo-source-thumb-${ordinal}`,
+  cleanUrl: `/api/v2/assets/demo-clean-${ordinal}`,
+  translatedUrl: `/api/v2/assets/demo-rendered-${ordinal}`,
+  thumbnailTranslatedUrl: `/api/v2/assets/demo-rendered-thumb-${ordinal}`,
+  width: 900,
+  height: 1280,
+    }
+  })
+}
+
+const demoV2Pages = createDemoV2Pages(2)
+
+const fixtureTextStyle = {
+  fontSize: 26,
+  autoFontSize: true,
+  fontFamily: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
+  layoutDirection: 'auto',
+  textColor: '#000000',
+  fillColor: '#FFFFFF',
+  inpaintMethod: 'solid',
+  useAutoTextColor: false,
+  strokeEnabled: true,
+  strokeColor: '#FFFFFF',
+  strokeWidth: 3,
+  lineSpacing: 1,
+  textAlign: 'start',
+}
+
+function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
+  return {
+    request: { forceJsonOutput: false },
+    execution: {
+      useStream,
+      rpmLimit,
+      transportRetries: 1,
+      businessRetries: 3,
+    },
+  }
+}
+
+function createFixtureSettings() {
+  return {
+    settingsSchemaVersion: 3,
+    textStyle: { ...fixtureTextStyle },
+    ocrEngine: 'manga_ocr',
+    sourceLanguage: 'japanese',
+    textDetector: 'default',
+    minTextBlockAreaPercent: 0.05,
+    enableAuxYoloDetection: false,
+    auxYoloConfThreshold: 0.4,
+    auxYoloOverlapThreshold: 0.1,
+    enableSaberYoloRefine: true,
+    saberYoloRefineOverlapThreshold: 50,
+    baiduOcr: {
+      apiKey: '',
+      secretKey: '',
+      version: 'standard',
+      sourceLanguage: 'JAP',
+    },
+    paddleOcrVl: { sourceLanguage: 'japanese' },
+    aiVisionOcr: {
+      provider: 'gemini',
+      apiKey: '',
+      modelName: '',
+      prompt: '识别图像中的文字。',
+      promptMode: 'normal',
+      customBaseUrl: '',
+      openaiOptions: fixtureOpenAiOptions(false),
+      minImageSize: 32,
+    },
+    hybridOcr: {
+      enabled: false,
+      secondaryEngine: '48px_ocr',
+      confidenceThreshold: 0.2,
+    },
+    translation: {
+      provider: 'siliconflow',
+      apiKey: '',
+      modelName: '',
+      customBaseUrl: '',
+      openaiOptions: fixtureOpenAiOptions(true, 7),
+      translationMode: 'batch',
+      batchNormalPrompt: '翻译漫画文本。',
+      batchJsonPrompt: '以 JSON 翻译漫画文本。',
+      singleNormalPrompt: '翻译单个文本框。',
+      singleJsonPrompt: '以 JSON 翻译单个文本框。',
+    },
+    targetLanguage: 'zh',
+    translatePrompt: '翻译漫画文本。',
+    useTextboxPrompt: false,
+    textboxPrompt: '',
+    hqTranslation: {
+      provider: 'siliconflow',
+      apiKey: '',
+      modelName: '',
+      customBaseUrl: '',
+      openaiOptions: fixtureOpenAiOptions(true, 7),
+      batchSize: 3,
+      prompt: '高质量翻译漫画文本。',
+    },
+    pluginAgent: {
+      provider: 'siliconflow',
+      apiKey: '',
+      modelName: '',
+      customBaseUrl: '',
+      openaiOptions: fixtureOpenAiOptions(true),
+    },
+    proofreading: {
+      enabled: false,
+      rounds: [],
+      maxRetries: 3,
+    },
+    boxExpand: {
+      ratio: 0,
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+    },
+    preciseMask: {
+      dilateSize: 10,
+      boxExpandRatio: 20,
+    },
+    showDetectionDebug: false,
+    parallel: {
+      enabled: false,
+      deepLearningLockSize: 1,
+    },
+    removeTextWithOcr: false,
+    enableVerboseLogs: false,
+    lamaDisableResize: false,
+  }
+}
+
+function fixtureSettingsDocument() {
+  const settings = createFixtureSettings()
+  return {
+    settings: [
+      {
+        domain: 'translation',
+        payload: settings,
+        revision: 1,
+        schemaVersion: 3,
+      },
+      {
+        domain: 'text_style_defaults',
+        payload: settings.textStyle,
+        revision: 1,
+        schemaVersion: 1,
+      },
+      {
+        domain: 'workflow_preferences',
+        payload: {
+          rememberWorkflowModeEnabled: true,
+          lastWorkflowMode: 'translate-current',
+        },
+        revision: 1,
+        schemaVersion: 1,
+      },
+    ],
+    bookSettings: [],
+    providerSettings: [],
+    credentials: [],
+  }
+}
+
+function fixtureTranslationBootstrap(
+  loaded: boolean,
+  pages = demoV2Pages,
+) {
+  const bookId = loaded ? 'demo-book' : 'quick-workspace'
+  const chapterId = loaded ? 'demo-chapter' : 'quick-chapter'
+  return {
+    activeJobs: [],
+    activeWebImportDraft: null,
+    book: {
+      id: bookId,
+      title: loaded ? 'Demo Manga' : '快速翻译',
+      kind: loaded ? 'library' : 'quick_workspace',
+    },
+    chapter: {
+      id: chapterId,
+      title: loaded ? 'Chapter 1' : '快速翻译',
+      pageOrderRevision: 1,
+      settingsMemory: {},
+      settingsMemorySchemaVersion: 1,
+      settingsMemoryRevision: 1,
+    },
+    constraints: {
+      payload: { glossary: {}, non_translate: {} },
+      schemaVersion: 1,
+      revision: 1,
+    },
+    navigation: {
+      lastVisitedPageId: null,
+      revision: 1,
+    },
+    pages: {
+      items: loaded ? pages : [],
+      nextCursor: null,
+      pageOrderRevision: 1,
+    },
+    settings: fixtureSettingsDocument(),
+    fonts: [
+      {
+        id: 'font-source-han',
+        displayName: '思源黑体',
+        kind: 'builtin',
+        builtinKey: 'source-han-sans-k-bold',
+        assetUrl: null,
+      },
+    ],
+    prompts: [],
+  }
+}
+
+const demoV2StudioDocument = {
+  ...demoStudioDocument,
+  title: demoStudioDocument.meta.title,
+  revision: 3,
+  avatarAssetId: null,
+  avatarUrl: null,
+  createdAt: fixtureTimestamp,
+  updatedAt: fixtureTimestamp,
+}
+
+const demoV2StudioSession = {
+  sessionId: 'demo-session',
+  documentId: 'demo-doc',
+  indexRevision: 2,
+  revision: 4,
+  generation: 1,
+  archived: false,
+  title: demoStudioChatSession.title,
+  createdAt: fixtureTimestamp,
+  updatedAt: fixtureTimestamp,
+  greetingSource: { type: 'first_message' },
+  summaryBlocks: demoStudioChatSession.summary_blocks.map(block => ({
+    summaryId: block.summary_id,
+    content: block.content,
+    createdAt: block.created_at,
+    coveredMessageIds: block.covered_message_ids,
+  })),
+  messages: demoStudioChatSession.messages.map(message => ({
+    messageId: message.message_id,
+    role: message.role,
+    content: message.content,
+    attachments: [],
+    runtimeLog: message.runtime_log,
+    variablesSnapshot: message.variables_snapshot,
+    generationMeta: message.generation_meta,
+    createdAt: message.created_at,
+    updatedAt: message.updated_at,
+  })),
+  variables: demoStudioChatSession.variables,
+}
+
+const demoContinuationProject = {
+  bookId: 'demo-book',
+  characters: [
+    {
+      aliases: ['D'],
+      characterId: 'demo-character',
+      enabled: true,
+      name: 'Demo',
+      payload: { description: 'Visual fixture character' },
+      projectId: 'demo-project',
+      revision: 1,
+    },
+  ],
+  config: {
+    direction: '',
+    pageCount: 12,
+    styleReferencePages: 3,
+  },
+  pages: [],
+  projectId: 'demo-project',
+  referenceAssets: [],
+  revision: 1,
+  script: null,
+  sourceRunId: 'demo-run',
+}
+
 interface VisualFixtureOptions {
   books?: typeof demoBook[]
   studioDocuments?: boolean
   editBubbles?: boolean
+  pages?: typeof demoV2Pages
 }
 
-async function mockApi(route: Route, options: VisualFixtureOptions = {}, renderImageBase64 = demoPageImageBase64) {
+async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   const requestUrl = new URL(route.request().url())
   const path = requestUrl.pathname
-
-  if (path === '/api/server-info') {
+  const method = route.request().method()
+  const loadedTranslation = (
+    requestUrl.searchParams.get('bookId') === 'demo-book'
+    && requestUrl.searchParams.get('chapterId') === 'demo-chapter'
+  )
+  const fixturePages = options.pages ?? demoV2Pages
+  const fixtureChapter = {
+    ...demoV2Chapter,
+    pageCount: fixturePages.length,
+  }
+  const fixtureBook = {
+    ...demoV2Book,
+    chapters: [fixtureChapter],
+    pageCount: fixturePages.length,
+  }
+  const fulfillJson = async (body: unknown, status = 200) => {
     await route.fulfill({
+      status,
       headers: jsonHeaders,
-      body: JSON.stringify({ success: true, lan_url: 'http://192.168.1.100:5000' }),
+      body: JSON.stringify(body),
+    })
+  }
+
+  if (path === '/api/v2/jobs/events') {
+    await route.fulfill({
+      headers: {
+        'cache-control': 'no-cache',
+        'content-type': 'text/event-stream; charset=utf-8',
+      },
+      body: '',
     })
     return
   }
 
-  if (path === '/api/get_settings') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, settings: {} }),
+  if (path === '/api/v2/jobs') {
+    await fulfillJson({ items: [], queueRevision: 1 })
+    return
+  }
+
+  if (path === '/api/v2/system/server-info') {
+    await fulfillJson({
+      host: '0.0.0.0',
+      hostname: 'visual-fixture',
+      lanUrl: 'http://192.168.1.100:5000',
+      port: 5000,
     })
     return
   }
 
-  if (path === '/api/config/translate-workflow-preferences') {
+  if (path === '/api/v2/translation/bootstrap') {
+    await fulfillJson(fixtureTranslationBootstrap(loadedTranslation, fixturePages))
+    return
+  }
+
+  if (path.startsWith('/api/v2/assets/')) {
     await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        preferences: {
-          rememberWorkflowMode: true,
-          defaultWorkflowMode: 'upload',
+      headers: {
+        'cache-control': 'public, max-age=31536000, immutable',
+        'content-type': 'image/svg+xml',
+      },
+      body: demoPageSvg,
+    })
+    return
+  }
+
+  if (/^\/api\/v2\/pages\/demo-page-\d+\/document$/.test(path)) {
+    const pageId = path.split('/').at(-2) || 'demo-page-1'
+    const bubble = options.editBubbles && pageId === 'demo-page-1'
+      ? [{
+          bubbleId: 'demo-bubble-1',
+          ordinal: 1,
+          fontId: null,
+          payload: demoBubbleState,
+        }]
+      : []
+    await fulfillJson({
+      pageId,
+      chapterId: 'demo-chapter',
+      documentRevision: 1,
+      defaultFontId: null,
+      pageStyleDefaults: fixtureTextStyle,
+      pageStyleSchemaVersion: 1,
+      bubbles: bubble,
+    })
+    return
+  }
+
+  if (/^\/api\/v2\/pages\/demo-page-\d+$/.test(path)) {
+    const pageNumber = Number(path.split('-').at(-1) || 1)
+    await fulfillJson(fixturePages[pageNumber - 1] ?? fixturePages[0])
+    return
+  }
+
+  if (path === '/api/v2/books') {
+    await fulfillJson({
+      items: options.books?.length ? [fixtureBook] : [],
+    })
+    return
+  }
+
+  if (path === '/api/v2/books/demo-book') {
+    await fulfillJson(fixtureBook)
+    return
+  }
+
+  if (path === '/api/v2/books/demo-book/translation-constraints') {
+    await fulfillJson({
+      bookId: 'demo-book',
+      revision: 1,
+      payload: { glossary: {}, nonTranslate: {} },
+    })
+    return
+  }
+
+  if (path === '/api/v2/chapters/demo-chapter/pages') {
+    await fulfillJson({
+      items: fixturePages,
+      nextCursor: null,
+      pageOrderRevision: 1,
+    })
+    return
+  }
+
+  if (path === '/api/v2/tags') {
+    await fulfillJson({ items: [] })
+    return
+  }
+
+  if (path === '/api/v2/settings') {
+    await fulfillJson(fixtureSettingsDocument())
+    return
+  }
+
+  if (path === '/api/v2/fonts') {
+    await fulfillJson({
+      items: [
+        {
+          id: 'font-source-han',
+          displayName: '思源黑体',
+          kind: 'builtin',
+          builtinKey: 'source-han-sans-k-bold',
+          assetUrl: null,
         },
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/config/text-style-defaults') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        defaults: {
-          fontSize: 26,
-          autoFontSize: true,
-          fontFamily: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
-          layoutDirection: 'auto',
-          textColor: '#000000',
-          fillColor: '#ffffff',
-          strokeEnabled: true,
-          strokeColor: '#ffffff',
-          strokeWidth: 3,
-          inpaintMethod: 'solid',
-          useAutoTextColor: false,
-          lineSpacing: 1,
-          textAlign: 'start',
-        },
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/web-import/settings') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, hasStoredSettings: false }),
-    })
-    return
-  }
-
-  if (path === '/api/web-import/check-support') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ available: true, supported: true }),
-    })
-    return
-  }
-
-  if (path === '/api/web-import/extract') {
-    const log = {
-      timestamp: '2026-01-01T00:00:00Z',
-      type: 'info',
-      message: '已识别漫画页面并生成导入列表',
-    }
-    const result = {
-      success: true,
-      comicTitle: 'Demo Web Comic',
-      chapterTitle: 'Chapter 1',
-      totalPages: 2,
-      sourceUrl: 'https://example.com/chapter-1',
-      referer: 'https://example.com/chapter-1',
-      engine: 'ai-agent',
-      pages: [
-        { pageNumber: 1, imageUrl: demoPageImage },
-        { pageNumber: 2, imageUrl: demoPageImage },
       ],
-    }
+    })
+    return
+  }
+
+  if (path === '/api/v2/prompts') {
+    await fulfillJson({ items: [] })
+    return
+  }
+
+  if (path === '/api/v2/plugins') {
+    await fulfillJson({
+      items: [
+        {
+          pluginId: 'demo-plugin',
+          displayName: 'Demo Plugin',
+          author: 'Visual Fixture',
+          description: 'Visual fixture plugin',
+          state: 'enabled',
+          defaultEnabled: true,
+          runtimeEnabled: true,
+          config: { replacement: '导师' },
+          configRevision: 1,
+          errorMessage: null,
+          pluginVersionId: 'demo-plugin-version',
+          packageVersion: '1.0.0',
+          currentRevision: 1,
+          manifest: {
+            schema_version: 3,
+            plugin_id: 'demo-plugin',
+            display_name: 'Demo Plugin',
+            package_version: '1.0.0',
+            entrypoint: 'plugin.py',
+            hooks: ['after_translate'],
+            supported_steps: ['translate'],
+            supported_modes: ['standard'],
+            priority: 100,
+            failure_policy: 'continue',
+            author: 'Visual Fixture',
+            description: 'Visual fixture plugin',
+            default_enabled: true,
+            config_schema: {
+              replacement: { type: 'text', default: '导师' },
+            },
+          },
+          configSchema: {
+            replacement: { type: 'text', default: '导师' },
+          },
+        },
+      ],
+    })
+    return
+  }
+
+  if (path === '/api/v2/web-import/support-checks') {
+    await fulfillJson({
+      sourceUrl: 'https://example.com/chapter-1',
+      galleryDlAvailable: true,
+      galleryDlSupported: true,
+      recommendedEngine: 'gallery-dl',
+    })
+    return
+  }
+
+  if (path === '/api/v2/web-import/drafts' && method === 'POST') {
+    await fulfillJson({
+      batchId: 'demo-web-import-batch',
+      draftId: 'demo-web-import-draft',
+      jobIds: ['demo-web-import-job'],
+      status: 'queued',
+    }, 202)
+    return
+  }
+
+  if (path === '/api/v2/web-import/drafts/demo-web-import-draft') {
+    await fulfillJson({
+      actualEngine: 'ai-agent',
+      candidateCount: 2,
+      chapterId: 'quick-chapter',
+      expiresAt: '2026-01-02T00:00:00Z',
+      failedCount: 0,
+      id: 'demo-web-import-draft',
+      jobs: [{ id: 'demo-web-import-job', kind: 'web_import_extract', status: 'completed' }],
+      requestedEngine: 'auto',
+      revision: 1,
+      selectedCount: 2,
+      sourceUrl: 'https://example.com/chapter-1',
+      status: 'ready',
+    })
+    return
+  }
+
+  if (path === '/api/v2/web-import/drafts/demo-web-import-draft/pages') {
+    await fulfillJson({
+      items: [1, 2].map(ordinal => ({
+        checksum: `checksum-${ordinal}`,
+        error: null,
+        id: `demo-draft-page-${ordinal}`,
+        ordinal,
+        selected: true,
+        sourceMediaUrl: `/api/v2/assets/demo-web-source-${ordinal}`,
+        sourceUrl: `https://example.com/page-${ordinal}.jpg`,
+        thumbnailUrl: `/api/v2/assets/demo-web-thumb-${ordinal}`,
+      })),
+      nextCursor: null,
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/bootstrap') {
+    await fulfillJson({
+      activeJobs: [],
+      books: options.books?.length === 0
+        ? []
+        : [{
+            activeRun: {
+              publishedAt: fixtureTimestamp,
+              runId: 'demo-run',
+              status: 'completed',
+            },
+            analyzedPageCount: 2,
+            bookId: 'demo-book',
+            coverUrl: '/api/v2/assets/demo-cover',
+            pageCount: 2,
+            title: 'Demo Manga',
+          }],
+      qa: { available: true, reason: '' },
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/books/demo-book/chapters') {
+    await fulfillJson({
+      items: [{
+        analysisCounts: { ready: 2, stale: 0, failed: 0, running: 0 },
+        chapterId: 'demo-chapter',
+        ordinal: 1,
+        pageCount: 2,
+        title: 'Chapter 1',
+      }],
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/books/demo-book/pages') {
+    await fulfillJson({
+      items: fixturePages.map((page, index) => ({
+        activeAnalysisId: `demo-analysis-${index + 1}`,
+        analysisState: 'ready',
+        chapterId: page.chapterId,
+        displayPageNumber: index + 1,
+        pageId: page.id,
+        sourceAssetId: `demo-source-${index + 1}`,
+        thumbnailUrl: page.thumbnailSourceUrl,
+      })),
+      nextCursor: null,
+    })
+    return
+  }
+
+  if (/^\/api\/v2\/insight\/pages\/demo-page-\d+$/.test(path)) {
+    const pageNumber = Number(path.split('-').at(-1) || 1)
+    await fulfillJson({
+      analysis: {
+        page_num: pageNumber,
+        summary: `第 ${pageNumber} 页的视觉回归分析`,
+        dialogues: [],
+        characters: [],
+      },
+      analysisState: 'ready',
+      bookId: 'demo-book',
+      chapterId: 'demo-chapter',
+      chapterTitle: 'Chapter 1',
+      displayPageNumber: pageNumber,
+      generatedAt: fixtureTimestamp,
+      pageId: `demo-page-${pageNumber}`,
+      preview: false,
+      runId: 'demo-run',
+      sourceAssetId: `demo-source-${pageNumber}`,
+      sourceUrl: `/api/v2/assets/demo-source-${pageNumber}`,
+      staleReasons: [],
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/notes') {
+    await fulfillJson({ items: [], nextCursor: null })
+    return
+  }
+
+  if (path.startsWith('/api/v2/insight/artifacts/overviews/')) {
+    const template = decodeURIComponent(path.split('/').at(-1) || 'story_summary')
+    await fulfillJson({
+      artifactId: `demo-overview-${template}`,
+      bookId: 'demo-book',
+      kind: 'overview',
+      payload: {
+        content: template === 'story_summary'
+          ? '这是用于视觉回归的故事概览。'
+          : `已生成的 ${template} 概览。`,
+      },
+      revision: 1,
+      runId: 'demo-run',
+      status: 'ready',
+      template,
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/timeline') {
+    await fulfillJson({
+      mode: 'enhanced',
+      content: {},
+      events: [],
+      characters: [],
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/books/demo-book/qa') {
     await route.fulfill({
       headers: { 'content-type': 'text/event-stream; charset=utf-8' },
       body: [
-        `event: log\ndata: ${JSON.stringify(log)}\n\n`,
-        `event: result\ndata: ${JSON.stringify(result)}\n\n`,
+        'event: chunk\n',
+        `data: ${JSON.stringify({ text: '这是一个用于视觉回归的回答，包含稳定的排版和引用。' })}\n\n`,
+        'event: context\n',
+        `data: ${JSON.stringify({
+          mode: 'precise',
+          citations: [{
+            pageIdSnapshot: 'demo-page-1',
+            pageNumberSnapshot: 1,
+            excerpt: '视觉回归证据',
+          }],
+        })}\n\n`,
+        'event: done\n',
+        `data: ${JSON.stringify({ suggestedQuestions: [] })}\n\n`,
       ].join(''),
     })
     return
   }
 
-  if (path === '/api/bookshelf/books') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, books: options.books ?? [] }),
+  if (path === '/api/v2/insight/books/demo-book/continuation') {
+    await fulfillJson({
+      activeRunId: 'demo-run',
+      bookId: 'demo-book',
+      missing: [],
+      project: demoContinuationProject,
+      ready: true,
     })
     return
   }
 
-  if (path === '/api/bookshelf/books/demo-book') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, book: demoBook }),
-    })
-    return
-  }
-
-  if (path === '/api/bookshelf/books/demo-book/chapters/demo-chapter/images') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        images: [
-          { index: 0, original: demoPageImage, translated: demoPageImage, fileName: '001.svg' },
-          { index: 1, original: demoPageImage, translated: demoPageImage, fileName: '002.svg' },
-        ],
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/parallel/render') {
-    const requestBody = route.request().postDataJSON() as { bubble_states?: unknown[] } | null
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        final_image: renderImageBase64,
-        bubble_states: requestBody?.bubble_states ?? [],
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/sessions/load_by_path') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        session_data: {
-          name: 'demo-chapter',
-          version: '1.0',
-          savedAt: '2026-01-01T00:00:00Z',
-          imageCount: 2,
-          ui_settings: {},
-          currentImageIndex: 0,
-          images: [
-            {
-              originalDataURL: demoPageImage,
-              translatedDataURL: demoPageImage,
-              cleanImageData: options.editBubbles ? demoPageImageBase64 : undefined,
-              fileName: '001.svg',
-              translationStatus: 'completed',
-              bubbleStates: options.editBubbles ? [demoBubbleState] : undefined,
-            },
-            {
-              originalDataURL: demoPageImage,
-              translatedDataURL: demoPageImage,
-              fileName: '002.svg',
-              translationStatus: 'completed',
-            },
-          ],
+  if (path === '/api/v2/insight/continuation/projects/demo-project/forms') {
+    await fulfillJson({
+      items: [{
+        adoptedAssetId: null,
+        characterId: 'demo-character',
+        formId: 'demo-form',
+        imageVersions: [],
+        name: '默认',
+        payload: {
+          clientFormId: 'default',
+          description: '默认形态',
+          enabled: true,
         },
-      }),
+        referenceAssetId: null,
+        referenceAssetUrl: null,
+        referenceThumbnailUrl: null,
+        revision: 1,
+      }],
+      nextCursor: null,
     })
     return
   }
 
-  if (path === '/api/bookshelf/tags') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, tags: [] }),
+  if (path === '/api/v2/studio/books/demo-book/index') {
+    await fulfillJson({
+      bookId: 'demo-book',
+      candidateStatus: { available: true, reason: null },
+      documents: options.studioDocuments
+        ? [{
+            avatarAssetId: null,
+            documentId: 'demo-doc',
+            hasAvatar: false,
+            isFavorite: true,
+            kind: 'analysis',
+            revision: 3,
+            sourceCharacter: '绫濑澪',
+            tags: ['主角', '视觉回归'],
+            title: '绫濑澪',
+            updatedAt: fixtureTimestamp,
+          }]
+        : [],
     })
     return
   }
 
-  if (path === '/api/plugins') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        plugins: [
-          {
-            id: 'demo-plugin',
-            name: 'demo-plugin',
-            display_name: 'Demo Plugin',
-            version: '1.0.0',
-            description: 'Visual fixture plugin',
-            enabled: true,
-            supported_steps: ['translate'],
-            supported_modes: ['manual'],
-            has_config: true,
-          },
-        ],
-      }),
+  if (path === '/api/v2/studio/books/demo-book/candidates') {
+    await fulfillJson({ available: true, reason: null, items: [] })
+    return
+  }
+
+  if (path === '/api/v2/studio/documents/demo-doc') {
+    await fulfillJson(demoV2StudioDocument)
+    return
+  }
+
+  if (path === '/api/v2/studio/documents/demo-doc/chat') {
+    await fulfillJson({
+      activeSession: demoV2StudioSession,
+      availableGreetings: [{
+        greetingId: 'first_message',
+        label: '主问候',
+        content: demoStudioDocument.coreMessages.first_message,
+        source: { type: 'first_message' },
+      }],
+      documentId: 'demo-doc',
+      indexRevision: 2,
+      sessions: [{
+        sessionId: 'demo-session',
+        title: '视觉回归会话',
+        revision: 4,
+        archived: false,
+        updatedAt: fixtureTimestamp,
+      }],
     })
     return
   }
 
-  if (path === '/api/plugins/default_states') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, default_states: { 'demo-plugin': true } }),
-    })
+  if (path.startsWith('/api/v2/')) {
+    await fulfillJson({
+      error: {
+        code: 'visual_fixture_missing',
+        message: `Missing visual fixture for ${method} ${path}`,
+      },
+    }, 501)
     return
   }
 
-  if (path === '/api/plugins/agent/settings') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        overview: ['描述插件目标', '确认方案', '执行并验证'],
-        overview_sections: [
-          { title: '工作流程', items: ['描述需求', '锁定目标', '运行验证'] },
-        ],
-        prompt_examples: ['创建一个翻译前处理插件'],
-        providers: [
-          { value: 'siliconflow', label: 'SiliconFlow' },
-          { value: 'openai', label: 'OpenAI' },
-        ],
-        plugins: [],
-        session: null,
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/config') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, config: {} }),
-    })
-    return
-  }
-
-  if (
-    path.startsWith('/api/manga-insight/demo-book/thumbnail/') ||
-    path.startsWith('/api/manga-insight/demo-book/page-image/')
-  ) {
-    await route.fulfill({
-      headers: { 'content-type': 'image/svg+xml' },
-      body: decodeURIComponent(demoPageImage.replace('data:image/svg+xml;utf8,', '')),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/analyze/status') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        status: 'idle',
-        progress: { current: 0, total: 20, status: 'idle', message: '' },
-        total_pages: 20,
-        analyzed_pages: 0,
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/chat') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        answer: '这是一个用于视觉回归的回答，包含稳定的排版和引用。',
-        mode: 'precise',
-        citations: [{ page: 1, score: 0.95 }],
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/notes') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, notes: [] }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/continuation/prepare') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        ready: true,
-        message: 'ready',
-        story_summary_ready: true,
-        timeline_ready: true,
-        characters_added: 1,
-        total_characters: 1,
-        saved_data: {
-          script: null,
-          pages: [],
-          config: { page_count: 12, style_reference_pages: 3, continuation_direction: '' },
-          has_data: true,
-        },
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/continuation/characters') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        characters: [
-          {
-            name: 'Demo',
-            aliases: ['D'],
-            description: 'Visual fixture character',
-            reference_image: '',
-            enabled: true,
-            forms: [
-              {
-                form_id: 'default',
-                form_name: '默认',
-                description: '默认形态',
-                reference_image: '',
-                enabled: true,
-              },
-            ],
-          },
-        ],
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/character-studio/index') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        documents: options.studioDocuments ? [demoStudioSummary] : [],
-        candidates: [],
-        has_timeline: true,
-      }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/character-studio/documents/demo-doc') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, document: demoStudioDocument }),
-    })
-    return
-  }
-
-  if (path === '/api/manga-insight/demo-book/character-studio/documents/demo-doc/chat') {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        success: true,
-        doc_id: 'demo-doc',
-        active_session: demoStudioChatSession,
-        archived_sessions: [
-          {
-            session_id: 'archived-session',
-            title: '已归档会话',
-            message_count: 4,
-            updated_at: '2026-01-01T00:00:00Z',
-            archived_at: '2026-01-01T00:00:00Z',
-            last_message_excerpt: '旧校舍的谜题仍未结束。',
-          },
-        ],
-        available_greetings: [
-          {
-            greeting_id: 'first_message',
-            label: '主问候',
-            content: demoStudioDocument.coreMessages.first_message,
-            source: { type: 'first_message' },
-          },
-        ],
-        prompt_preview: demoStudioChatSession.last_prompt_preview,
-      }),
-    })
-    return
-  }
-
-  if (path.endsWith('/prompts/defaults')) {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, prompts: {} }),
-    })
-    return
-  }
-
-  if (path.endsWith('/prompts/library')) {
-    await route.fulfill({
-      headers: jsonHeaders,
-      body: JSON.stringify({ success: true, library: [] }),
-    })
-    return
-  }
-
-  await route.fulfill({
-    headers: jsonHeaders,
-    body: JSON.stringify({ success: true }),
-  })
+  await fulfillJson({
+    error: {
+      code: 'visual_fixture_missing',
+      message: `Unexpected non-v2 API request: ${method} ${path}`,
+    },
+  }, 501)
 }
 
 async function prepareVisualPage(page: Page, options: VisualFixtureOptions = {}) {
-  const renderImageBase64 = options.editBubbles ? await getDemoRenderImageBase64(page) : demoPageImageBase64
-
   await page.route('**/*', async route => {
     const requestUrl = new URL(route.request().url())
     if (requestUrl.pathname.startsWith('/api/')) {
-      await mockApi(route, options, renderImageBase64)
+      await mockApi(route, options)
       return
     }
     await route.continue()
@@ -803,10 +1162,191 @@ async function prepareVisualPage(page: Page, options: VisualFixtureOptions = {})
   page.on('pageerror', error => {
     console.log(`[browser:pageerror] ${error.message}`)
   })
+  page.on('response', response => {
+    if (response.status() >= 400) {
+      console.log(`[browser:http-${response.status()}] ${response.request().method()} ${response.url()}`)
+    }
+  })
 }
 
 test.beforeEach(async ({ page }) => {
   await prepareVisualPage(page)
+})
+
+interface BrowserMemorySnapshot {
+  privateBytes: number
+  workingSetBytes: number
+}
+
+const processMemoryScript = `
+import json
+import psutil
+import sys
+
+private_bytes = 0
+working_set_bytes = 0
+for raw_pid in sys.argv[1].split(","):
+    if not raw_pid:
+        continue
+    try:
+        info = psutil.Process(int(raw_pid)).memory_info()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        continue
+    private_bytes += int(getattr(info, "private", getattr(info, "rss", 0)))
+    working_set_bytes += int(info.rss)
+
+print(json.dumps({
+    "privateBytes": private_bytes,
+    "workingSetBytes": working_set_bytes,
+}))
+`
+
+async function sampleBrowserMemory(browser: Browser): Promise<BrowserMemorySnapshot> {
+  const session = await browser.newBrowserCDPSession()
+  try {
+    const result = await session.send('SystemInfo.getProcessInfo') as {
+      processInfo: Array<{ id: number }>
+    }
+    const processIds = result.processInfo.map(process => process.id)
+    const pythonExecutable = resolve(
+      process.cwd(),
+      '..',
+      'venv',
+      'Scripts',
+      'python.exe',
+    )
+    return JSON.parse(execFileSync(
+      pythonExecutable,
+      ['-c', processMemoryScript, processIds.join(',')],
+      { encoding: 'utf8' },
+    )) as BrowserMemorySnapshot
+  } finally {
+    await session.detach()
+  }
+}
+
+test('100/500/1000-page reader keeps requests, DOM, heap, and process memory bounded', async () => {
+  test.setTimeout(120_000)
+  const measurements: Array<{
+    domNodes: number
+    imageRequests: number
+    jsHeapMb: number
+    maxRenderedImages: number
+    pageCount: number
+    privateDeltaMb: number
+    thumbnailRequests: number
+    workingSetDeltaMb: number
+  }> = []
+
+  for (const pageCount of [100, 500, 1000]) {
+    const browser = await chromium.launch({
+      args: [
+        '--enable-precise-memory-info',
+        '--js-flags=--expose-gc',
+      ],
+      headless: true,
+    })
+    try {
+      const context = await browser.newContext({
+        viewport: { width: 1440, height: 1000 },
+      })
+      const page = await context.newPage()
+      await page.goto('about:blank')
+      const baseline = await sampleBrowserMemory(browser)
+      const sourceRequests = new Set<string>()
+      const thumbnailRequests = new Set<string>()
+
+      page.on('request', request => {
+        const path = new URL(request.url()).pathname
+        if (/^\/api\/v2\/assets\/demo-source-\d+$/.test(path)) {
+          sourceRequests.add(path)
+        }
+        if (/^\/api\/v2\/assets\/demo-(?:source|rendered)-thumb-\d+$/.test(path)) {
+          thumbnailRequests.add(path)
+        }
+      })
+      await prepareVisualPage(page, {
+        pages: createDemoV2Pages(pageCount),
+      })
+
+      const pageSession = await context.newCDPSession(page)
+      await pageSession.send('Performance.enable')
+      await page.goto(
+        'http://127.0.0.1:5173/reader?book=demo-book&chapter=demo-chapter',
+      )
+      await expect(page.locator('.reader-canvas__stream')).toBeVisible()
+
+      const stream = page.locator('.virtual-page-stream')
+      const renderedCounts = [
+        await page.locator('.virtual-page-stream__image').count(),
+      ]
+      for (const ratio of [0.5, 1]) {
+        await stream.evaluate((element, nextRatio) => {
+          element.scrollTop = (element.scrollHeight - element.clientHeight) * nextRatio
+          element.dispatchEvent(new Event('scroll'))
+        }, ratio)
+        await page.waitForTimeout(250)
+        renderedCounts.push(
+          await page.locator('.virtual-page-stream__image').count(),
+        )
+      }
+
+      await page.evaluate(() => {
+        const collectGarbage = (globalThis as typeof globalThis & {
+          gc?: () => void
+        }).gc
+        collectGarbage?.()
+      })
+      const performance = await pageSession.send('Performance.getMetrics') as {
+        metrics: Array<{ name: string, value: number }>
+      }
+      const dom = await pageSession.send('Memory.getDOMCounters') as {
+        nodes: number
+      }
+      const current = await sampleBrowserMemory(browser)
+      const heapBytes = performance.metrics.find(
+        metric => metric.name === 'JSHeapUsedSize',
+      )?.value ?? 0
+      const toMb = (bytes: number) => bytes / 1024 / 1024
+
+      measurements.push({
+        domNodes: dom.nodes,
+        imageRequests: sourceRequests.size,
+        jsHeapMb: toMb(heapBytes),
+        maxRenderedImages: Math.max(...renderedCounts),
+        pageCount,
+        privateDeltaMb: Math.max(0, toMb(current.privateBytes - baseline.privateBytes)),
+        thumbnailRequests: thumbnailRequests.size,
+        workingSetDeltaMb: Math.max(
+          0,
+          toMb(current.workingSetBytes - baseline.workingSetBytes),
+        ),
+      })
+    } finally {
+      await browser.close()
+    }
+  }
+
+  for (const measurement of measurements) {
+    expect(measurement.maxRenderedImages).toBeLessThanOrEqual(8)
+    expect(measurement.imageRequests).toBeLessThanOrEqual(24)
+    expect(measurement.thumbnailRequests).toBe(0)
+    expect(measurement.domNodes).toBeLessThan(5000)
+    expect(measurement.jsHeapMb).toBeLessThan(100)
+    expect(measurement.privateDeltaMb).toBeLessThan(300)
+    expect(measurement.workingSetDeltaMb).toBeLessThan(300)
+  }
+
+  const fiveHundred = measurements.find(item => item.pageCount === 500)!
+  const oneThousand = measurements.find(item => item.pageCount === 1000)!
+  expect(oneThousand.jsHeapMb - fiveHundred.jsHeapMb).toBeLessThan(15)
+  expect(oneThousand.privateDeltaMb - fiveHundred.privateDeltaMb).toBeLessThan(80)
+  expect(oneThousand.workingSetDeltaMb - fiveHundred.workingSetDeltaMb).toBeLessThan(80)
+
+  await test.info().attach('reader-memory-trend.json', {
+    body: Buffer.from(JSON.stringify(measurements, null, 2)),
+    contentType: 'application/json',
+  })
 })
 
 test('dark theme reaches every primary route surface without local overrides', async ({ page }) => {
@@ -1200,7 +1740,7 @@ test('insight overview action buttons keep their component styling', async ({ pa
   await expect(exportActions).toBeVisible()
   await expect(currentExportButton).toHaveCSS('border-radius', '8px')
   await expect(currentExportButton).toHaveCSS('padding-left', '12px')
-  await expect(currentExportButton).toHaveCSS('border-top-width', '1px')
+  await expect(currentExportButton).toHaveCSS('border-top-width', '0px')
   await expect(allExportButton).toHaveCSS('border-radius', '8px')
   await expect(allExportButton).toHaveCSS('padding-left', '12px')
   await expect(allExportButton).toHaveCSS('color', 'rgb(255, 255, 255)')
@@ -1253,7 +1793,7 @@ test('insight continuation add-character dialog keeps field layout contract', as
 test('reader loaded state keeps its layout contract', async ({ page }) => {
   await page.goto('/reader?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.reader-page')).toBeVisible()
-  await expect(page.locator('.reader-canvas__image')).toHaveCount(2)
+  await expect(page.locator('.reader-canvas__stream .virtual-page-stream__image')).toHaveCount(2)
   await expect(page.locator('.reader-header__book-title')).toHaveCSS('color', 'rgb(255, 255, 255)')
   await expect(page.locator('.reader-header__mode-button.product-header-action--active')).toHaveCSS('color', 'rgb(102, 126, 234)')
   await expect(page).toHaveScreenshot('reader-loaded.png', {

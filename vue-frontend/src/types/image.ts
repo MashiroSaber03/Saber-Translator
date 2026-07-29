@@ -1,12 +1,9 @@
 import type {
-  BubbleCoords,
   BubbleState,
-  BubbleTextline,
   InpaintMethod,
   TextAlign,
   TextDirection,
 } from './bubble'
-import type { OcrResult } from './ocr'
 import type { TranslationWarning } from './translationConstraints'
 
 export type TranslationStatus = 'pending' | 'processing' | 'completed' | 'failed'
@@ -20,29 +17,15 @@ export interface ImageSourceFields {
   fileName: string
   width?: number
   height?: number
-  originalDataURL: string
-  translatedDataURL: string | null
-  cleanImageData: string | null
-  sourceAssetUrl?: string
+  sourceAssetUrl: string
+  translatedAssetUrl: string | null
+  cleanAssetUrl: string | null
   thumbnailSourceUrl?: string
-  translatedAssetUrl?: string | null
   thumbnailTranslatedUrl?: string | null
 }
 
 export interface ImageDetectionFields {
   bubbleStates: BubbleState[] | null
-  bubbleCoords?: BubbleCoords[]
-  bubbleAngles?: number[]
-  originalTexts?: string[]
-  textlinesPerBubble?: BubbleTextline[][]
-  ocrResults?: OcrResult[]
-  bubbleTexts?: string[]
-  textboxTexts?: string[]
-}
-
-export interface ImageMaskFields {
-  textMask?: string | null
-  userMask?: string | null
   isManuallyAnnotated?: boolean
 }
 
@@ -71,7 +54,6 @@ export interface ImageTextStyleFields {
 
 export interface ImageUiFields {
   hasUnsavedChanges: boolean
-  isManualAnnotation?: boolean
   showOriginal?: boolean
 }
 
@@ -83,7 +65,6 @@ export interface ImageFolderFields {
 export interface ImageData
   extends ImageSourceFields,
     ImageDetectionFields,
-    ImageMaskFields,
     ImageWorkflowFields,
     ImageTextStyleFields,
     ImageUiFields,
@@ -92,7 +73,6 @@ export interface ImageData
 export interface ImageDataLoadInput
   extends ImageSourceFields,
     ImageDetectionFields,
-    ImageMaskFields,
     ImageWorkflowFields,
     Partial<ImageTextStyleFields>,
     ImageUiFields,

@@ -45,18 +45,18 @@ const hasImages = computed(() => imageStore.hasImages)
 
 const currentImage = computed(() => imageStore.currentImage)
 
-const hasTranslatedImage = computed(() => !!currentImage.value?.translatedDataURL)
+const hasTranslatedImage = computed(() => !!currentImage.value?.translatedAssetUrl)
 
 const hasDownloadableImage = computed(
-  () => !!(currentImage.value?.translatedDataURL || currentImage.value?.originalDataURL)
+  () => !!(currentImage.value?.translatedAssetUrl || currentImage.value?.sourceAssetUrl)
 )
 
 const displayImageUrl = computed(() => {
   if (!currentImage.value) return ''
-  if (showOriginal.value || !currentImage.value.translatedDataURL) {
-    return currentImage.value.originalDataURL
+  if (showOriginal.value || !currentImage.value.translatedAssetUrl) {
+    return currentImage.value.sourceAssetUrl
   }
-  return currentImage.value.translatedDataURL
+  return currentImage.value.translatedAssetUrl
 })
 
 const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
@@ -64,7 +64,7 @@ const failedImageCount = computed(() => imageStore.failedImageCount)
 
 const displayImageAlt = computed(() => {
   const fileName = currentImage.value?.fileName || '当前图片'
-  return showOriginal.value || !currentImage.value?.translatedDataURL
+  return showOriginal.value || !currentImage.value?.translatedAssetUrl
     ? `原图：${fileName}`
     : `翻译图：${fileName}`
 })
@@ -74,25 +74,11 @@ const useTextboxPrompt = computed(() => settingsStore.settings.useTextboxPrompt)
 const detectedTexts = computed<DetectedTextItem[]>(() => {
   if (!currentImage.value) return []
 
-  if (currentImage.value.bubbleStates && currentImage.value.bubbleStates.length > 0) {
-    return currentImage.value.bubbleStates.map(state => ({
-      original: state.originalText || '',
-      translated: useTextboxPrompt.value
-        ? state.textboxText || state.translatedText || ''
-        : state.translatedText || '',
-    }))
-  }
-
-  const originalTexts = currentImage.value.originalTexts || []
-  const translatedTexts = useTextboxPrompt.value
-    ? currentImage.value.textboxTexts || currentImage.value.bubbleTexts || []
-    : currentImage.value.bubbleTexts || []
-
-  if (originalTexts.length === 0) return []
-
-  return originalTexts.map((original, index) => ({
-    original: original || '',
-    translated: translatedTexts[index] || '',
+  return (currentImage.value.bubbleStates ?? []).map(state => ({
+    original: state.originalText || '',
+    translated: useTextboxPrompt.value
+      ? state.textboxText || state.translatedText || ''
+      : state.translatedText || '',
   }))
 })
 

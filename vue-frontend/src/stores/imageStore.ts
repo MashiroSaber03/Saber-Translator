@@ -8,7 +8,6 @@ import {
   normalizeImageTextStyleFields,
 } from '@/defaults/textStyleDefaults'
 import { naturalSortCompare } from '@/utils'
-import { applyImageBubbleMirrors } from '@/stores/imageBubbleMirrors'
 
 function generateId(): string {
   return `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
@@ -36,24 +35,9 @@ function getCurrentImageTextStyleSeed(
   }
 }
 
-export function getImageDimensionsFromDataURL(
-  dataURL: string,
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      resolve({ width: img.naturalWidth, height: img.naturalHeight })
-    }
-    img.onerror = () => {
-      reject(new Error('Failed to load image'))
-    }
-    img.src = dataURL
-  })
-}
-
 function createDefaultImageData(
   fileName: string,
-  originalDataURL: string,
+  sourceAssetUrl: string,
   overrides?: Partial<ImageData>,
   options?: { preferCurrentTextStyle?: boolean },
 ): ImageData {
@@ -63,9 +47,9 @@ function createDefaultImageData(
     fileName,
     width: 0,
     height: 0,
-    originalDataURL,
-    translatedDataURL: null,
-    cleanImageData: null,
+    sourceAssetUrl,
+    translatedAssetUrl: null,
+    cleanAssetUrl: null,
     bubbleStates: null,
     translationStatus: 'pending',
     translationFailed: false,
@@ -103,10 +87,10 @@ export const useImageStore = defineStore('image', () => {
 
   function addImage(
     fileName: string,
-    originalDataURL: string,
+    sourceAssetUrl: string,
     overrides?: Partial<ImageData>,
   ): ImageData {
-    const newImage = createDefaultImageData(fileName, originalDataURL, overrides, {
+    const newImage = createDefaultImageData(fileName, sourceAssetUrl, overrides, {
       preferCurrentTextStyle: true,
     })
     images.value.push(newImage)
@@ -121,12 +105,12 @@ export const useImageStore = defineStore('image', () => {
   function addImages(
     imageList: Array<{
       fileName: string
-      originalDataURL: string
+      sourceAssetUrl: string
       overrides?: Partial<ImageData>
     }>,
   ): ImageData[] {
-    const newImages = imageList.map(({ fileName, originalDataURL, overrides }) =>
-      createDefaultImageData(fileName, originalDataURL, overrides),
+    const newImages = imageList.map(({ fileName, sourceAssetUrl, overrides }) =>
+      createDefaultImageData(fileName, sourceAssetUrl, overrides),
     )
 
     const wasEmpty = images.value.length === 0
@@ -144,7 +128,7 @@ export const useImageStore = defineStore('image', () => {
       const normalizedTextStyle = normalizeImageTextStyleFields(img)
       return createDefaultImageData(
         img.fileName,
-        img.originalDataURL,
+        img.sourceAssetUrl,
         {
           ...pickDefinedValues(img as unknown as Record<string, unknown>),
           ...normalizedTextStyle,
@@ -237,9 +221,6 @@ export const useImageStore = defineStore('image', () => {
   function updateCurrentImage(updates: ImageDataUpdates): void {
     if (currentImage.value) {
       Object.assign(currentImage.value, updates)
-      if (updates.bubbleStates !== undefined) {
-        applyImageBubbleMirrors(currentImage.value, updates.bubbleStates)
-      }
     }
   }
 
@@ -248,16 +229,13 @@ export const useImageStore = defineStore('image', () => {
       const image = images.value[index]
       if (image) {
         Object.assign(image, updates)
-        if (updates.bubbleStates !== undefined) {
-          applyImageBubbleMirrors(image, updates.bubbleStates)
-        }
       }
     }
   }
 
   function updateCurrentBubbleStates(bubbleStates: BubbleState[] | null): void {
     if (currentImage.value) {
-      applyImageBubbleMirrors(currentImage.value, bubbleStates)
+      currentImage.value.bubbleStates = bubbleStates
       currentImage.value.hasUnsavedChanges = true
     }
   }
@@ -280,13 +258,13 @@ export const useImageStore = defineStore('image', () => {
   }
 
   function updateCurrentTranslationResult(
-    translatedDataURL: string,
-    cleanImageData?: string,
+    translatedAssetUrl: string,
+    cleanAssetUrl?: string,
   ): void {
     if (currentImage.value) {
-      currentImage.value.translatedDataURL = translatedDataURL
-      if (cleanImageData) {
-        currentImage.value.cleanImageData = cleanImageData
+      currentImage.value.translatedAssetUrl = translatedAssetUrl
+      if (cleanAssetUrl) {
+        currentImage.value.cleanAssetUrl = cleanAssetUrl
       }
       currentImage.value.translationStatus = 'completed'
       currentImage.value.translationFailed = false

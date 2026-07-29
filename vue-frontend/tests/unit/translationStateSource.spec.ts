@@ -26,7 +26,7 @@ describe('translation state property source contract', () => {
 
     expect(source).toContain('useImageStore')
     expect(source).toContain('expect(')
-    expect(source).toContain('store.addImage(imageInput.fileName, imageInput.originalDataURL)')
-    expect(source).not.toContain('store.addImage(imageData.originalDataURL, imageData.fileName)')
+    expect(source).toContain('store.addImage(imageInput.fileName, imageInput.sourceAssetUrl)')
+    expect(source).not.toContain('store.addImage(imageData.sourceAssetUrl, imageData.fileName)')
   })
 })

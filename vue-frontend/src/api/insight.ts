@@ -542,7 +542,7 @@ export function getThumbnailUrl(bookId: string, pageNum: number): string {
 }
 
 export async function getInsightChapters(bookId: string): Promise<InsightChapterListResponse> {
-  const [chapters, pages] = await Promise.all([
+  const [chapters] = await Promise.all([
     listInsightChapters(bookId),
     pagesForBook(bookId, true),
   ])

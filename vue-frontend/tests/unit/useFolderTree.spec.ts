@@ -9,9 +9,9 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
   return {
     id,
     fileName,
-    originalDataURL: `data:image/png;base64,${id}`,
-    translatedDataURL: null,
-    cleanImageData: null,
+    sourceAssetUrl: `/api/v2/assets/${id}`,
+    translatedAssetUrl: null,
+    cleanAssetUrl: null,
     bubbleStates: null,
     translationStatus: 'pending',
     translationFailed: false,

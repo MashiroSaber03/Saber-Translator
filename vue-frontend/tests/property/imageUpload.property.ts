@@ -55,9 +55,9 @@ describe('image upload store properties', () => {
           expect(addedImage).toBeDefined()
           expect(addedImage?.translationStatus).toBe('pending')
           expect(addedImage?.translationFailed).toBe(false)
-          expect(addedImage?.originalDataURL).toBe(dataURL)
+          expect(addedImage?.sourceAssetUrl).toBe(dataURL)
           expect(addedImage?.fileName).toBe(fileName)
-          expect(addedImage?.translatedDataURL).toBeNull()
+          expect(addedImage?.translatedAssetUrl).toBeNull()
           expect(addedImage?.hasUnsavedChanges).toBe(false)
         }
       ),

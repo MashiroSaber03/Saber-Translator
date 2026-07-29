@@ -1,14 +1,5 @@
-"""
-Manga Insight 漫画智能分析系统
+"""Shared Manga Insight model and transport adapters used by backend v2."""
 
-核心模块，提供漫画深度分析、智能问答等功能。
-"""
-
-import logging
-
-logger = logging.getLogger("MangaInsight")
-
-# 导出主要组件
 from .config_models import (
     MangaInsightConfig,
     VLMConfig,
@@ -20,16 +11,13 @@ from .config_models import (
     AnalysisDepth
 )
 
-from .task_models import (
-    AnalysisTask,
-    AnalysisProgress,
-    TaskStatus,
-    TaskType
-)
-
-from .task_manager import AnalysisTaskManager
-from .storage import AnalysisStorage
-from .config_utils import load_insight_config, save_insight_config
-
-# 版本号
-__version__ = "1.0.0"
+__all__ = [
+    "AnalysisDepth",
+    "AnalysisSettings",
+    "ChatLLMConfig",
+    "EmbeddingConfig",
+    "ImageGenConfig",
+    "MangaInsightConfig",
+    "RerankerConfig",
+    "VLMConfig",
+]

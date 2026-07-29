@@ -196,7 +196,23 @@ jobs:
           pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
 
       # --------------------------------------------------
-      # 7. 使用 PyInstaller 打包
+      # 7. 构建并校验 v2 Web 前端
+      # --------------------------------------------------
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: vue-frontend/package-lock.json
+
+      - name: Build v2 frontend
+        working-directory: vue-frontend
+        run: |
+          npm ci
+          npm run build:check
+
+      # --------------------------------------------------
+      # 8. 使用 PyInstaller 打包
       # --------------------------------------------------
       - name: Build with PyInstaller
         run: |
@@ -207,7 +223,7 @@ jobs:
           Get-ChildItem -Path dist/ | Select-Object Name
 
       # --------------------------------------------------
-      # 8. 验证 TorchScript 所需源码文件已随包生成
+      # 9. 验证 TorchScript 所需源码文件已随包生成
       # --------------------------------------------------
       - name: Verify TorchScript source files
         run: |
@@ -225,7 +241,7 @@ jobs:
           }
 
       # --------------------------------------------------
-      # 9. 7z 分卷压缩（最高压缩率）
+      # 10. 7z 分卷压缩（最高压缩率）
       # --------------------------------------------------
       - name: Package with 7z split (ultra compression)
         run: |
@@ -249,7 +265,7 @@ jobs:
           Get-ChildItem "$outputName.7z*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
 
       # --------------------------------------------------
-      # 10. 验证压缩文件
+      # 11. 验证压缩文件
       # --------------------------------------------------
       - name: Verify compressed archives
         run: |
@@ -278,7 +294,7 @@ jobs:
           }
 
       # --------------------------------------------------
-      # 11. 直接上传到 Release（不通过 artifacts）
+      # 12. 直接上传到 Release（不通过 artifacts）
       # --------------------------------------------------
       - name: Upload to Release
         env:
@@ -302,7 +318,7 @@ jobs:
           Write-Host "Upload completed for $variant version!"
 
       # --------------------------------------------------
-      # 12. 上传模型文件到 Release（仅 CPU 构建执行）
+      # 13. 上传模型文件到 Release（仅 CPU 构建执行）
       # --------------------------------------------------
       - name: Upload models to Release
         if: matrix.variant == 'cpu'

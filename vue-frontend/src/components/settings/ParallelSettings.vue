@@ -47,7 +47,7 @@ const lockSize = computed({
       >
         <UiSwitch
           :model-value="parallelEnabled"
-          ariaLabel="启用并行模式"
+          accessibility-label="启用并行模式"
           @change="parallelEnabled = $event"
         />
       </UiField>

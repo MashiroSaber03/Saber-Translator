@@ -90,7 +90,7 @@ interface PrepareResponse {
   saved_data?: SavedContinuationData
 }
 
-export interface SyncContinuationResponse extends PrepareResponse {}
+export type SyncContinuationResponse = PrepareResponse
 
 interface CharactersResponse {
   success: boolean

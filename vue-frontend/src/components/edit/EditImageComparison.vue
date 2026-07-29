@@ -127,15 +127,15 @@ defineExpose({
             :style="originalTransformStyle"
           >
             <img
-              v-if="currentImage?.originalDataURL"
+              v-if="currentImage?.sourceAssetUrl"
               ref="originalImageRef"
               class="edit-image-comparison__image"
-              :src="currentImage.originalDataURL"
+              :src="currentImage.sourceAssetUrl"
               alt="原图"
               @load="emit('imageLoad', 'original')"
             >
             <BubbleOverlay
-              v-if="currentImage?.originalDataURL"
+              v-if="currentImage?.sourceAssetUrl"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
@@ -207,15 +207,15 @@ defineExpose({
             :style="translatedTransformStyle"
           >
             <img
-              v-if="currentImage?.translatedDataURL || currentImage?.originalDataURL"
+              v-if="currentImage?.translatedAssetUrl || currentImage?.sourceAssetUrl"
               ref="translatedImageRef"
               class="edit-image-comparison__image"
-              :src="currentImage?.translatedDataURL || currentImage?.originalDataURL"
+              :src="currentImage?.translatedAssetUrl || currentImage?.sourceAssetUrl"
               alt="翻译图"
               @load="emit('imageLoad', 'translated')"
             >
             <BubbleOverlay
-              v-if="currentImage?.translatedDataURL || currentImage?.originalDataURL"
+              v-if="currentImage?.translatedAssetUrl || currentImage?.sourceAssetUrl"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"

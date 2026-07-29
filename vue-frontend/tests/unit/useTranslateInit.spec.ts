@@ -131,7 +131,7 @@ describe('useTranslateInit', () => {
       chapterId: undefined,
     })
     expect(imageStore.images).toHaveLength(1)
-    expect(imageStore.images[0]?.originalDataURL).toBe('/api/v2/assets/source-1')
+    expect(imageStore.images[0]?.sourceAssetUrl).toBe('/api/v2/assets/source-1')
     expect(imageStore.images[0]?.thumbnailSourceUrl).toBe('/api/v2/assets/thumb-1')
     expect(mocks.getPageDocument).toHaveBeenCalledTimes(1)
     expect(mocks.getPageDocument).toHaveBeenCalledWith('page-1', expect.any(AbortSignal))

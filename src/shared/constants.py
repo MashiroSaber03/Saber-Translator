@@ -3,7 +3,7 @@
 """
 import os
 from src.shared.text_style_defaults import (
-    reload_text_style_defaults,
+    get_text_style_factory_defaults,
 )
 
 
@@ -26,7 +26,7 @@ def refresh_text_style_runtime_defaults() -> None:
     global DEFAULT_STROKE_COLOR
     global DEFAULT_STROKE_WIDTH
 
-    _TEXT_STYLE_DEFAULTS = reload_text_style_defaults()
+    _TEXT_STYLE_DEFAULTS = get_text_style_factory_defaults()
 
     DEFAULT_FONT_RELATIVE_PATH = os.path.join(
         'src',
@@ -175,8 +175,6 @@ BATCH_TRANSLATE_MAX_CHARS_PER_REQUEST = 4000  # 单个请求的最大字符数 (
 
 # --- 模型与提示词 ---
 DEFAULT_MODEL_PROVIDER = 'siliconflow'
-PROMPTS_FILE = 'prompts.json'
-TEXTBOX_PROMPTS_FILE = 'textbox_prompts.json'
 
 # --- 翻译服务相关 ---
 # 百度翻译API引擎ID
@@ -474,11 +472,6 @@ DEFAULT_UNCLIP_RATIO = 2.2
 DEFAULT_TRANSLATION_MAX_RETRIES = 3  # 普通翻译默认重试次数
 DEFAULT_HQ_TRANSLATION_MAX_RETRIES = 3  # 高质量翻译默认重试次数
 DEFAULT_PROOFREADING_MAX_RETRIES = 2  # AI校对默认重试次数
-
-# --- 用户设置 ---
-USER_SETTINGS_FILE = 'user_settings.json'
-WEB_IMPORT_SETTINGS_FILE = 'web_import_settings.json'
-TRANSLATE_WORKFLOW_PREFERENCES_FILE = 'translate_workflow_preferences.json'
 
 # --- 超长图片处理 (Large Image Rearrange) ---
 # 当图片满足以下条件时自动启用切割检测:

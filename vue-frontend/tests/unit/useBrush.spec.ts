@@ -188,6 +188,6 @@ describe('useBrush', () => {
 
     expect(source).not.toContain('toDataURL')
     expect(source).not.toContain('base64')
-    expect(source).not.toContain('cleanImageData')
+    expect(source).not.toContain('cleanAssetUrl')
   })
 })

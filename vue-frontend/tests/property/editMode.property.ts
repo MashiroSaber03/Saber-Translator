@@ -59,13 +59,11 @@ describe('edit mode properties', () => {
           const firstBubbles = firstCoords.map(coords => makeBubble(coords))
           const secondBubbles = secondCoords.map(coords => makeBubble(coords))
 
-          imageStore.addImage('test1.png', 'data:image/png;base64,test1', {
+          imageStore.addImage('test1.png', '/api/v2/assets/source-1', {
             bubbleStates: firstBubbles,
-            bubbleCoords: firstCoords,
           })
-          imageStore.addImage('test2.png', 'data:image/png;base64,test2', {
+          imageStore.addImage('test2.png', '/api/v2/assets/source-2', {
             bubbleStates: secondBubbles,
-            bubbleCoords: secondCoords,
           })
 
           bubbleStore.setBubbles([...firstBubbles])

@@ -157,10 +157,12 @@ class WorkerOperationRunner:
         *,
         worker_epoch_id: str,
         handlers: Mapping[str, OperationHandler],
+        plugin_runtime: Any | None = None,
     ) -> None:
         self.repository = repository
         self.worker_epoch_id = worker_epoch_id
         self.handlers = dict(handlers)
+        self.plugin_runtime = plugin_runtime
 
     def run_one(self) -> bool:
         claimed = self.repository.claim_next(

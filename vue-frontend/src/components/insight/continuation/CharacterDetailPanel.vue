@@ -39,7 +39,7 @@
         >
           <UiSwitch
             :model-value="character.enabled !== false"
-            :ariaLabel="`启用角色 ${character.name}`"
+            :accessibility-label="`启用角色 ${character.name}`"
             title="启用/禁用角色"
             @change="$emit('toggle-character', $event)"
           />

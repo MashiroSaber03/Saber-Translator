@@ -18,6 +18,6 @@
 
 ## 后果
 
-- legacy `app.py` 在阶段 6 前继续作为独立行为对照入口，但不得被 v2 导入。
+- 阶段 6 已删除 legacy `app.py` 与 `src.app`；生产和开发统一从 `saber_v2.py` 进入。
 - 打包阶段收集 Worker 依赖不代表 API 运行时可以导入这些依赖；源码态与打包态都要运行 import-graph 探针。
 - 子进程异常恢复只能由 Launcher 裁决，API/Worker 不能自行抢占新 epoch。

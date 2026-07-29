@@ -117,7 +117,7 @@ describe('SettingsSidebar page selection workflow', () => {
     workflowModeSelect!.vm.$emit('change', 'translate-batch')
 
     const enableSwitch = wrapper.getComponent(UiSwitch)
-    expect(enableSwitch.props('ariaLabel')).toBe('启用指定翻译页码')
+    expect(enableSwitch.props('accessibilityLabel')).toBe('启用指定翻译页码')
     expect(enableSwitch.props('modelValue')).toBe(false)
     enableSwitch.vm.$emit('change', true)
     await wrapper.vm.$nextTick()

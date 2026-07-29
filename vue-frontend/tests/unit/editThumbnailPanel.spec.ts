@@ -8,15 +8,15 @@ const images: ImageData[] = [
   {
     id: 'page-1',
     name: 'page-1.png',
-    originalDataURL: 'data:image/png;base64,page1',
-    translatedDataURL: '',
+    sourceAssetUrl: '/api/v2/assets/page1',
+    translatedAssetUrl: null,
     thumbnailSourceUrl: '/api/v2/assets/page-1-thumb',
   },
   {
     id: 'page-2',
     name: 'page-2.png',
-    originalDataURL: 'data:image/png;base64,page2',
-    translatedDataURL: 'data:image/png;base64,page2-translated',
+    sourceAssetUrl: '/api/v2/assets/page2',
+    translatedAssetUrl: '/api/v2/assets/page2-translated',
     thumbnailSourceUrl: '/api/v2/assets/page-2-source-thumb',
     thumbnailTranslatedUrl: '/api/v2/assets/page-2-translated-thumb',
   },
@@ -59,8 +59,8 @@ describe('EditThumbnailPanel', () => {
     const manyImages = Array.from({ length: 1_000 }, (_, index): ImageData => ({
       id: `page-${index}`,
       name: `page-${index}.png`,
-      originalDataURL: `/api/v2/assets/source-${index}`,
-      translatedDataURL: '',
+      sourceAssetUrl: `/api/v2/assets/source-${index}`,
+      translatedAssetUrl: null,
       thumbnailSourceUrl: `/api/v2/assets/thumb-${index}`,
     }))
     const wrapper = mount(EditThumbnailPanel, {

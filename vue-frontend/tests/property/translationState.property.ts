@@ -6,7 +6,7 @@ import type { TranslationStatus } from '@/types/image'
 
 type ImageInput = {
   fileName: string
-  originalDataURL: string
+  sourceAssetUrl: string
 }
 
 type ImageStore = ReturnType<typeof useImageStore>
@@ -17,7 +17,7 @@ function createStore(): ImageStore {
 }
 
 function addImage(store: ImageStore, imageInput: ImageInput) {
-  return store.addImage(imageInput.fileName, imageInput.originalDataURL)
+  return store.addImage(imageInput.fileName, imageInput.sourceAssetUrl)
 }
 
 const fileNameArbitrary = fc
@@ -36,7 +36,7 @@ const base64DataUrlArbitrary = fc
 
 const imageInputArbitrary: fc.Arbitrary<ImageInput> = fc.record({
   fileName: fileNameArbitrary,
-  originalDataURL: base64DataUrlArbitrary,
+  sourceAssetUrl: base64DataUrlArbitrary,
 })
 
 const translationStatusArbitrary = fc.constantFrom<TranslationStatus>(
@@ -60,7 +60,7 @@ describe('translation state properties', () => {
         const image = addImage(store, imageInput)
 
         expect(image.fileName).toBe(imageInput.fileName)
-        expect(image.originalDataURL).toBe(imageInput.originalDataURL)
+        expect(image.sourceAssetUrl).toBe(imageInput.sourceAssetUrl)
         expect(image.translationStatus).toBe('pending')
         expect(image.translationFailed).toBe(false)
         expect(store.pendingImageCount).toBe(1)
@@ -160,7 +160,7 @@ describe('translation state properties', () => {
           const targetIndex = targetSeed % store.imageCount
           const snapshots = store.images.map(image => ({
             fileName: image.fileName,
-            originalDataURL: image.originalDataURL,
+            sourceAssetUrl: image.sourceAssetUrl,
             translationStatus: image.translationStatus,
             translationFailed: image.translationFailed,
           }))
@@ -170,7 +170,7 @@ describe('translation state properties', () => {
           store.images.forEach((image, index) => {
             const snapshot = snapshots[index]
             expect(image.fileName).toBe(snapshot?.fileName)
-            expect(image.originalDataURL).toBe(snapshot?.originalDataURL)
+            expect(image.sourceAssetUrl).toBe(snapshot?.sourceAssetUrl)
 
             if (index === targetIndex) {
               expect(image.translationStatus).toBe(nextStatus)

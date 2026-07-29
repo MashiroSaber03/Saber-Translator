@@ -13,7 +13,6 @@ from PIL import Image
 from shapely.geometry import Point, Polygon
 
 from src.shared import constants
-from src.shared.config_loader import load_json_config
 
 from .data_types import DetectionResult, TextBlock, TextLine
 from .registry import detect
@@ -21,25 +20,6 @@ from .smart_sort import sort_blocks_by_reading_order
 from .textline_merge import build_text_block_from_lines
 
 logger = logging.getLogger("SaberYoloRefinement")
-
-
-def _load_saber_yolo_refine_settings() -> dict:
-    settings = load_json_config(constants.USER_SETTINGS_FILE, default_value={})
-    return settings if isinstance(settings, dict) else {}
-
-
-def _load_saber_yolo_refine_enabled(settings: Optional[dict] = None) -> bool:
-    settings = settings or _load_saber_yolo_refine_settings()
-    value = settings.get('enableSaberYoloRefine')
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {'true', '1', 'yes', 'on'}:
-            return True
-        if lowered in {'false', '0', 'no', 'off'}:
-            return False
-    return constants.ENABLE_SABER_YOLO_REFINE
 
 
 def _normalize_overlap_threshold(value) -> float:
@@ -52,11 +32,6 @@ def _normalize_overlap_threshold(value) -> float:
         threshold = threshold / 100.0
     threshold = max(0.0, min(threshold, 1.0))
     return threshold
-
-
-def _load_saber_yolo_refine_overlap_threshold(settings: Optional[dict] = None) -> float:
-    settings = settings or _load_saber_yolo_refine_settings()
-    return _normalize_overlap_threshold(settings.get('saberYoloRefineOverlapThreshold'))
 
 
 def _block_polygon(block: TextBlock) -> Polygon:
@@ -213,14 +188,12 @@ def apply_saber_yolo_refinement(
     if detector_type == constants.DETECTOR_SABER_YOLO:
         return detection_result
 
-    settings = None
-    if enabled is None or reference_overlap_threshold is None:
-        settings = _load_saber_yolo_refine_settings()
-
     if enabled is None:
-        enabled = _load_saber_yolo_refine_enabled(settings)
+        enabled = constants.ENABLE_SABER_YOLO_REFINE
     if reference_overlap_threshold is None:
-        reference_overlap_threshold = _load_saber_yolo_refine_overlap_threshold(settings)
+        reference_overlap_threshold = (
+            constants.SABER_YOLO_REFINE_OVERLAP_THRESHOLD
+        )
     else:
         reference_overlap_threshold = _normalize_overlap_threshold(reference_overlap_threshold)
 

@@ -6,7 +6,6 @@ export type {
   OcrSingleBubbleResponse,
   ReRenderResponse,
 } from './translationApi'
-export type { SessionData, SessionListItem } from './session'
 export type { BookData, ChapterData, TagData } from './bookshelf'
 export type { PluginData } from './plugin'
 export type {

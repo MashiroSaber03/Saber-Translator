@@ -54,7 +54,7 @@
             <div class="plugin-manager__plugin-controls">
               <UiSwitch
                 :model-value="plugin.enabled"
-                :ariaLabel="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
+                :accessibility-label="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
                 @change="setPluginEnabled(plugin, $event)"
               />
               <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
@@ -95,7 +95,7 @@
         <span class="plugin-manager__plugin-name">{{ plugin.display_name }}</span>
         <UiSwitch
           :model-value="Boolean(defaultStates[plugin.id])"
-          :ariaLabel="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
+          :accessibility-label="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
           @change="updateDefaultState(plugin.id, $event)"
         />
       </div>
@@ -141,7 +141,7 @@
                 <UiSwitch
                   :id="'config-' + key"
                   :model-value="Boolean(configValues[key])"
-                  :ariaLabel="`${field.label || key}：${configValues[key] ? '禁用' : '启用'}`"
+                  :accessibility-label="`${field.label || key}：${configValues[key] ? '禁用' : '启用'}`"
                   @change="(value) => { configValues[key] = value }"
                 />
                 <span class="plugin-manager__config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>

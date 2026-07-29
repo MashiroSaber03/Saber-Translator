@@ -38,16 +38,14 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     const index = imageStore.images.findIndex(image => image.id === pageId)
     if (index < 0) return
     imageStore.updateImageByIndex(index, {
-      cleanImageData: summary.cleanImageData,
+      cleanAssetUrl: summary.cleanAssetUrl,
       documentRevision: summary.documentRevision,
-      originalDataURL: summary.originalDataURL,
       renderedRevision: summary.renderedRevision,
       sourceAssetUrl: summary.sourceAssetUrl,
       sourceRevision: summary.sourceRevision,
       thumbnailSourceUrl: summary.thumbnailSourceUrl,
       thumbnailTranslatedUrl: summary.thumbnailTranslatedUrl,
       translatedAssetUrl: summary.translatedAssetUrl,
-      translatedDataURL: summary.translatedDataURL,
       translationFailed: summary.translationFailed,
       translationStatus: summary.translationStatus,
     })
@@ -107,7 +105,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       )
       const url = await refreshUntilRendered(image.id, token)
       if (currentRenderToken !== token || isOwnerDisposed) return false
-      if (!silentMode) callbacks?.onRenderSuccess?.(url ?? image.originalDataURL)
+      if (!silentMode) callbacks?.onRenderSuccess?.(url ?? image.sourceAssetUrl)
       return true
     } catch (error) {
       if (currentRenderToken !== token || isOwnerDisposed) return false

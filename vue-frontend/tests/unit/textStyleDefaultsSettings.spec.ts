@@ -221,9 +221,8 @@ describe('TextStyleDefaultsSettings', () => {
   it('styles the config path through an explicit owner hook', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
 
-    expect(source).toContain('class="text-style-defaults-settings__config-path"')
-    expect(source).toContain('.text-style-defaults-settings__config-path')
-    expect(source).not.toContain('.text-style-defaults-settings code')
+    expect(source).toContain('后端数据库中的全局默认文字设置')
+    expect(source).not.toContain('config/text_style_defaults.json')
   })
 
   it('uses the shared color input primitive for default color fields', () => {

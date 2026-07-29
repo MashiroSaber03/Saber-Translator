@@ -42,8 +42,8 @@ export function resolveDownloadFileName(
 
 export function collectDownloadImageEntries(images: ImageData[]): DownloadImageEntry[] {
   return images.flatMap<DownloadImageEntry>((image, index) => {
-    if (image.translatedDataURL) return [{ index, type: 'translated' }]
-    if (image.originalDataURL) return [{ index, type: 'original' }]
+    if (image.translatedAssetUrl) return [{ index, type: 'translated' }]
+    if (image.sourceAssetUrl) return [{ index, type: 'original' }]
     return []
   })
 }
@@ -160,16 +160,13 @@ export function useExportImport() {
 
   function downloadCurrentImage(): void {
     const image = imageStore.currentImage
-    const assetUrl = image?.translatedAssetUrl
-      || image?.sourceAssetUrl
-      || image?.translatedDataURL
-      || image?.originalDataURL
+    const assetUrl = image?.translatedAssetUrl || image?.sourceAssetUrl
     if (!image || !assetUrl) {
       toast.warning('没有可下载的图片')
       return
     }
     const type: DownloadImageType = (
-      image.translatedAssetUrl || image.translatedDataURL
+      image.translatedAssetUrl
     ) ? 'translated' : 'original'
     const filename = resolveDownloadFileName(
       image.fileName,

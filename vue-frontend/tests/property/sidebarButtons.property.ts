@@ -74,7 +74,7 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
     const status: TranslationStatus = image.failed ? 'failed' : 'pending'
     return {
       fileName: `page-${index + 1}.png`,
-      originalDataURL: `data:image/png;base64,page${index + 1}`,
+      sourceAssetUrl: `/api/v2/assets/source-${index + 1}`,
       overrides: {
         translationStatus: status,
         translationFailed: image.failed,

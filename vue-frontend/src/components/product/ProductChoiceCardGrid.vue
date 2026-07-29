@@ -12,7 +12,7 @@ export type ProductChoiceCardItem = {
 }
 
 withDefaults(defineProps<{
-  ariaLabel: string
+  accessibilityLabel: string
   items: ProductChoiceCardItem[]
   modelValue: string
 }>(), {})
@@ -30,7 +30,7 @@ function selectItem(item: ProductChoiceCardItem): void {
 </script>
 
 <template>
-  <div class="product-choice-card-grid" role="radiogroup" :aria-label="ariaLabel">
+  <div class="product-choice-card-grid" role="radiogroup" :aria-label="accessibilityLabel">
     <UiButton
       v-for="item in items"
       :key="item.id"
