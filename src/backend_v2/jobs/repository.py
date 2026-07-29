@@ -1020,6 +1020,8 @@ class JobQueueRepository:
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
             prior_step = job_steps.alias("prior_step")
+            proofread_barrier_step = job_steps.alias("proofread_barrier_step")
+            proofread_barrier_item = job_items.alias("proofread_barrier_item")
             conditions = [
                 jobs.c.id == fence.job_id,
                 job_items.c.status.in_(("pending", "running")),
@@ -1030,6 +1032,27 @@ class JobQueueRepository:
                         prior_step.c.ordinal < job_steps.c.ordinal,
                         prior_step.c.status.in_(("pending", "running")),
                     )
+                ),
+                or_(
+                    job_steps.c.kind != "render",
+                    ~exists(
+                        select(proofread_barrier_step.c.id)
+                        .select_from(
+                            proofread_barrier_step.join(
+                                proofread_barrier_item,
+                                proofread_barrier_item.c.id
+                                == proofread_barrier_step.c.job_item_id,
+                            )
+                        )
+                        .where(
+                            proofread_barrier_item.c.job_id == jobs.c.id,
+                            proofread_barrier_step.c.kind == "proofread",
+                            proofread_barrier_step.c.status.in_(
+                                ("pending", "running")
+                            ),
+                        )
+                        .correlate(jobs)
+                    ),
                 ),
             ]
             if allowed_kinds:
@@ -1096,6 +1119,178 @@ class JobQueueRepository:
                 "stepKind": row["step_kind"],
             }
 
+    def next_step_batch(
+        self,
+        fence: AttemptFence,
+        *,
+        step_kind: str,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        """Claim one durable HQ/proofreading batch at a shared round boundary.
+
+        A partial batch is only released when no page with the same step ordinal
+        is still waiting on an upstream step. This gives the Worker bounded
+        buffering without using an in-memory page list as scheduler state.
+        """
+
+        if not step_kind or limit < 1 or limit > 10:
+            raise ValueError("step batch kind/limit is invalid")
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            prior_step = job_steps.alias("batch_prior_step")
+            ready_condition = ~exists(
+                select(prior_step.c.id).where(
+                    prior_step.c.job_item_id == job_steps.c.job_item_id,
+                    prior_step.c.ordinal < job_steps.c.ordinal,
+                    prior_step.c.status.in_(("pending", "running")),
+                )
+            )
+            base_conditions = (
+                jobs.c.id == fence.job_id,
+                job_items.c.status.in_(("pending", "running")),
+                job_steps.c.status == "pending",
+                job_steps.c.kind == step_kind,
+            )
+            first_ordinal = connection.execute(
+                select(func.min(job_steps.c.ordinal))
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .join(jobs, jobs.c.id == job_items.c.job_id)
+                .where(*base_conditions, ready_condition)
+            ).scalar_one_or_none()
+            if first_ordinal is None:
+                return []
+
+            rows = list(
+                connection.execute(
+                    select(
+                        job_steps.c.id.label("step_id"),
+                        job_steps.c.kind.label("step_kind"),
+                        job_steps.c.ordinal.label("step_ordinal"),
+                        job_items.c.id.label("item_id"),
+                        job_items.c.ordinal.label("item_ordinal"),
+                        job_items.c.page_id,
+                        jobs.c.kind.label("job_kind"),
+                        jobs.c.config_json,
+                    )
+                    .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                    .join(jobs, jobs.c.id == job_items.c.job_id)
+                    .where(
+                        *base_conditions,
+                        job_steps.c.ordinal == int(first_ordinal),
+                        ready_condition,
+                    )
+                    .order_by(job_items.c.ordinal)
+                    .limit(limit)
+                ).mappings()
+            )
+            if len(rows) < limit:
+                blocked_prior = job_steps.alias("blocked_prior_step")
+                blocked = int(
+                    connection.execute(
+                        select(func.count())
+                        .select_from(job_steps)
+                        .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                        .where(
+                            job_items.c.job_id == fence.job_id,
+                            job_items.c.status.in_(("pending", "running")),
+                            job_steps.c.status == "pending",
+                            job_steps.c.kind == step_kind,
+                            job_steps.c.ordinal == int(first_ordinal),
+                            exists(
+                                select(blocked_prior.c.id).where(
+                                    blocked_prior.c.job_item_id
+                                    == job_steps.c.job_item_id,
+                                    blocked_prior.c.ordinal < job_steps.c.ordinal,
+                                    blocked_prior.c.status.in_(("pending", "running")),
+                                )
+                            ),
+                        )
+                    ).scalar_one()
+                )
+                if blocked:
+                    return []
+
+            claimed_steps: list[dict[str, object]] = []
+            for row in rows:
+                connection.execute(
+                    update(job_items)
+                    .where(job_items.c.id == row["item_id"])
+                    .values(status="running", updated_at=now)
+                )
+                claimed = connection.execute(
+                    update(job_steps)
+                    .where(
+                        job_steps.c.id == row["step_id"],
+                        job_steps.c.status == "pending",
+                    )
+                    .values(
+                        status="running",
+                        attempt_id=fence.attempt_id,
+                        updated_at=now,
+                    )
+                )
+                if claimed.rowcount != 1:
+                    raise AttemptFenced("batch step was claimed by another attempt")
+                self._append_event(
+                    connection,
+                    job_id=fence.job_id,
+                    event_type="step_started",
+                    payload={
+                        "itemId": row["item_id"],
+                        "pageId": row["page_id"],
+                        "stepId": row["step_id"],
+                        "stepKind": row["step_kind"],
+                        "batchOrdinal": int(first_ordinal),
+                    },
+                    now=now,
+                )
+                claimed_steps.append(
+                    {
+                        "jobId": fence.job_id,
+                        "jobKind": row["job_kind"],
+                        "config": _load_json(row["config_json"], {}),
+                        "itemId": row["item_id"],
+                        "itemOrdinal": row["item_ordinal"],
+                        "pageId": row["page_id"],
+                        "stepId": row["step_id"],
+                        "stepOrdinal": row["step_ordinal"],
+                        "stepKind": row["step_kind"],
+                    }
+                )
+            return claimed_steps
+
+    def ready_step_ordinal(
+        self,
+        fence: AttemptFence,
+        *,
+        step_kind: str,
+    ) -> int | None:
+        """Return the earliest currently claimable round for a batch step."""
+
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            prior_step = job_steps.alias("ready_prior_step")
+            value = connection.execute(
+                select(func.min(job_steps.c.ordinal))
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
+                    job_items.c.job_id == fence.job_id,
+                    job_items.c.status.in_(("pending", "running")),
+                    job_steps.c.status == "pending",
+                    job_steps.c.kind == step_kind,
+                    ~exists(
+                        select(prior_step.c.id).where(
+                            prior_step.c.job_item_id == job_steps.c.job_item_id,
+                            prior_step.c.ordinal < job_steps.c.ordinal,
+                            prior_step.c.status.in_(("pending", "running")),
+                        )
+                    ),
+                )
+            ).scalar_one_or_none()
+        return int(value) if value is not None else None
+
     def complete_step(
         self,
         fence: AttemptFence,
@@ -1133,6 +1328,83 @@ class JobQueueRepository:
             input_fingerprint=None,
             publisher=publisher,
         )
+
+    def skip_remaining_item(
+        self,
+        fence: AttemptFence,
+        *,
+        step_id: str,
+        reason: str,
+    ) -> None:
+        """Skip the current step and every downstream step for one page item."""
+
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            job_status = self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            item_id = connection.execute(
+                select(job_steps.c.job_item_id).where(
+                    job_steps.c.id == step_id,
+                    job_steps.c.status == "running",
+                    job_steps.c.attempt_id == fence.attempt_id,
+                    job_steps.c.job_item_id.in_(
+                        select(job_items.c.id).where(
+                            job_items.c.job_id == fence.job_id
+                        )
+                    ),
+                )
+            ).scalar_one_or_none()
+            if item_id is None:
+                raise AttemptFenced("step skip was fenced")
+            connection.execute(
+                update(job_steps)
+                .where(
+                    job_steps.c.job_item_id == item_id,
+                    job_steps.c.status.in_(("pending", "running")),
+                )
+                .values(
+                    status="skipped",
+                    checkpoint_json=_json({"skipped": True, "reason": reason}),
+                    attempt_id=fence.attempt_id,
+                    updated_at=now,
+                )
+            )
+            connection.execute(
+                update(job_items)
+                .where(job_items.c.id == item_id)
+                .values(
+                    status="skipped",
+                    result_json=_json({"skipped": True, "reason": reason}),
+                    updated_at=now,
+                )
+            )
+            snapshot = self._progress_snapshot(connection, fence.job_id)
+            connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.lease_token == fence.lease_token,
+                    jobs.c.status == job_status,
+                )
+                .values(latest_progress_json=_json(snapshot), updated_at=now)
+            )
+            self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type="page_skipped",
+                payload={
+                    "itemId": str(item_id),
+                    "stepId": step_id,
+                    "reason": reason,
+                    "progress": snapshot,
+                },
+                now=now,
+            )
 
     def finish_if_complete(self, fence: AttemptFence) -> str | None:
         now = utcnow()
@@ -2020,6 +2292,7 @@ class JobQueueRepository:
             "totalItems": total,
             "completedItems": counts.get("completed", 0),
             "failedItems": counts.get("failed", 0),
+            "skippedItems": counts.get("skipped", 0),
             "cancelledItems": counts.get("cancelled", 0),
         }
 

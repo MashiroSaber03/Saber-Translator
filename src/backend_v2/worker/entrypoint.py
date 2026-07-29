@@ -296,6 +296,10 @@ def run_worker(args: object) -> int:
                 job_repository,
                 worker_epoch_id=identity.epoch_id,
                 handlers=job_handlers,
+                batch_handlers={
+                    "hq_translate": translation.batch_handler,
+                    "proofread": translation.batch_handler,
+                },
                 safe_point=run_immediate_work,
                 plugin_runtime=PluginJobRuntime(
                     data_root=data_root,

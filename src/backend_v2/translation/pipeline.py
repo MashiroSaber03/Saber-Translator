@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import base64
+import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
@@ -32,6 +34,7 @@ class PageSnapshot:
     document_revision: int
     render_status: str
     style_defaults: dict[str, Any]
+    bubble_ids: tuple[str, ...]
     bubbles: tuple[dict[str, Any], ...]
 
 
@@ -59,6 +62,15 @@ class TranslationAlgorithms(Protocol):
         mode: str,
     ) -> Mapping[str, Any]: ...
 
+    def translate_batch(
+        self,
+        pages: list[Mapping[str, Any]],
+        images: list[Image.Image],
+        config: Mapping[str, Any],
+        *,
+        mode: str,
+    ) -> Mapping[str, Any]: ...
+
     def repair(
         self,
         image: Image.Image,
@@ -72,6 +84,136 @@ class TranslationAlgorithms(Protocol):
         bubble_payloads: list[dict[str, Any]],
         config: Mapping[str, Any],
     ) -> Image.Image: ...
+
+
+def _openai_options(value: object):
+    from src.shared.openai_options import OpenAICompatibleOptions
+
+    source = dict(value) if isinstance(value, Mapping) else {}
+    request = dict(source.get("request", {})) if isinstance(
+        source.get("request"), Mapping
+    ) else {}
+    execution = dict(source.get("execution", {})) if isinstance(
+        source.get("execution"), Mapping
+    ) else {}
+    normalized = {
+        "request": {
+            "force_json_output": request.get(
+                "force_json_output",
+                request.get("forceJsonOutput", False),
+            ),
+            "temperature": request.get("temperature"),
+            "extra_body": request.get("extra_body", request.get("extraBody", {})),
+        },
+        "execution": {
+            "use_stream": execution.get(
+                "use_stream",
+                execution.get("useStream", False),
+            ),
+            "rpm_limit": execution.get(
+                "rpm_limit",
+                execution.get("rpmLimit", 0),
+            ),
+            "transport_retries": execution.get(
+                "transport_retries",
+                execution.get("transportRetries", 1),
+            ),
+            "business_retries": execution.get(
+                "business_retries",
+                execution.get("businessRetries", 0),
+            ),
+        },
+    }
+    return OpenAICompatibleOptions.from_dict(normalized)
+
+
+def _validate_stable_batch_result(
+    payload: object,
+    *,
+    expected_pages: list[Mapping[str, Any]],
+) -> dict[str, dict[str, str]]:
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("pages"), list):
+        raise ValueError("HQ response must be an object containing a pages array")
+    expected_by_page = {
+        str(page["pageId"]): {
+            str(bubble["bubbleId"]): bubble
+            for bubble in page.get("bubbles", [])
+        }
+        for page in expected_pages
+    }
+    if len(expected_by_page) != len(expected_pages):
+        raise ValueError("HQ request contains duplicate pageId values")
+
+    parsed: dict[str, dict[str, str]] = {}
+    for page in payload["pages"]:
+        if not isinstance(page, Mapping):
+            raise ValueError("HQ response page entries must be objects")
+        page_id = str(page.get("pageId", ""))
+        if not page_id or page_id in parsed:
+            raise ValueError("HQ response contains a missing or duplicate pageId")
+        if page_id not in expected_by_page:
+            raise ValueError(f"HQ response contains unknown pageId: {page_id}")
+        raw_bubbles = page.get("bubbles")
+        if not isinstance(raw_bubbles, list):
+            raise ValueError(f"HQ response page {page_id} has no bubbles array")
+        bubble_results: dict[str, str] = {}
+        for bubble in raw_bubbles:
+            if not isinstance(bubble, Mapping):
+                raise ValueError("HQ response bubble entries must be objects")
+            bubble_id = str(bubble.get("bubbleId", ""))
+            if not bubble_id or bubble_id in bubble_results:
+                raise ValueError(
+                    f"HQ response page {page_id} has a missing or duplicate bubbleId"
+                )
+            expected_bubble = expected_by_page[page_id].get(bubble_id)
+            if expected_bubble is None:
+                raise ValueError(
+                    f"HQ response page {page_id} contains unknown bubbleId: {bubble_id}"
+                )
+            translated = bubble.get("translatedText")
+            if not isinstance(translated, str):
+                raise ValueError(
+                    f"HQ response bubble {bubble_id} translatedText must be a string"
+                )
+            if (
+                str(expected_bubble.get("originalText", "")).strip()
+                or str(expected_bubble.get("translatedText", "")).strip()
+            ) and not translated.strip():
+                raise ValueError(
+                    f"HQ response bubble {bubble_id} returned an empty translation"
+                )
+            bubble_results[bubble_id] = translated
+        if set(bubble_results) != set(expected_by_page[page_id]):
+            raise ValueError(
+                f"HQ response page {page_id} bubble IDs do not match the request"
+            )
+        parsed[page_id] = bubble_results
+    if set(parsed) != set(expected_by_page):
+        raise ValueError("HQ response page IDs do not match the request")
+    return parsed
+
+
+def _batch_input_fingerprint(
+    *,
+    page_id: str,
+    document_revision: int,
+    bubbles: list[Mapping[str, Any]],
+    mode: str,
+    round_index: int | None,
+) -> str:
+    payload = json.dumps(
+        {
+            "pageId": page_id,
+            "documentRevision": document_revision,
+            "bubbles": bubbles,
+            "mode": mode,
+            "roundIndex": round_index,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class LegacyTranslationAlgorithms:
@@ -172,8 +314,133 @@ class LegacyTranslationAlgorithms:
             model_name=config.get("model_name"),
             prompt_content=config.get("prompt_content"),
             custom_base_url=config.get("custom_base_url"),
+            openai_options=_openai_options(config.get("openai_options")),
         )
         return {"translated": translated, "textbox": [], "mode": mode}
+
+    def translate_batch(
+        self,
+        pages: list[Mapping[str, Any]],
+        images: list[Image.Image],
+        config: Mapping[str, Any],
+        *,
+        mode: str,
+    ) -> Mapping[str, Any]:
+        from src.shared.ai_providers import HQ_TRANSLATION_CAPABILITY
+        from src.shared.ai_transport import UnifiedChatRequest
+        from src.shared.openai_execution import (
+            OpenAICompatibleBusinessRetryableError,
+            OpenAICompatibleSyncExecutor,
+            build_openai_compatible_runtime_options,
+            parse_json_block_from_text,
+        )
+
+        if len(pages) != len(images) or not pages:
+            raise ValueError("HQ batch pages and images must be non-empty and aligned")
+        request_pages = [
+            {
+                "pageId": str(page["pageId"]),
+                "bubbles": [
+                    {
+                        "bubbleId": str(bubble["bubbleId"]),
+                        "originalText": str(bubble.get("originalText", "")),
+                        "translatedText": str(bubble.get("translatedText", "")),
+                        "textDirection": str(
+                            bubble.get("textDirection", "vertical")
+                        ),
+                    }
+                    for bubble in page.get("bubbles", [])
+                ],
+            }
+            for page in pages
+        ]
+        content: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    "请严格按稳定 ID 返回 JSON。输出格式只能是 "
+                    '{"pages":[{"pageId":"...","bubbles":'
+                    '[{"bubbleId":"...","translatedText":"..."}]}]}。'
+                    "不得遗漏、增加或重复 pageId/bubbleId。\n\n"
+                    + json.dumps(
+                        {
+                            "schemaVersion": 1,
+                            "mode": mode,
+                            "targetLanguage": str(
+                                config.get("target_language", "zh")
+                            ),
+                            "pages": request_pages,
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                ),
+            }
+        ]
+        for page, image in zip(request_pages, images):
+            payload = BytesIO()
+            image.save(payload, format="PNG")
+            content.extend(
+                (
+                    {
+                        "type": "text",
+                        "text": f"pageId={page['pageId']}",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,"
+                            + base64.b64encode(payload.getvalue()).decode("ascii")
+                        },
+                    },
+                )
+            )
+        prompt = str(config.get("prompt_content", "")).strip()
+        messages: list[dict[str, Any]] = []
+        if prompt:
+            messages.append({"role": "system", "content": prompt})
+        messages.append({"role": "user", "content": content})
+        provider = str(
+            config.get("provider", config.get("model_provider", ""))
+        )
+        options = _openai_options(config.get("openai_options"))
+        executor = OpenAICompatibleSyncExecutor()
+
+        def parse(raw: str) -> dict[str, dict[str, str]]:
+            try:
+                payload = parse_json_block_from_text(raw)
+                return _validate_stable_batch_result(
+                    payload,
+                    expected_pages=request_pages,
+                )
+            except (TypeError, ValueError, KeyError) as exc:
+                raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
+
+        result = executor.execute(
+            UnifiedChatRequest(
+                provider=provider,
+                api_key=str(config.get("api_key", "")),
+                model=str(config.get("model_name", "")),
+                base_url=str(config.get("custom_base_url", "")) or None,
+                capability=HQ_TRANSLATION_CAPABILITY,
+                openai_options=options,
+                runtime_options=build_openai_compatible_runtime_options(
+                    timeout=300.0 if options.execution.use_stream else 120.0,
+                    print_stream_output=options.execution.use_stream,
+                    stream_output_label=(
+                        "AI校对" if mode == "proofread" else "高质量翻译"
+                    ),
+                ),
+                messages=messages,
+            ),
+            capability=HQ_TRANSLATION_CAPABILITY,
+            parser=parse,
+        )
+        return {
+            "rawContent": result.raw_content,
+            "pages": result.parsed,
+            "mode": mode,
+        }
 
     def repair(
         self,
@@ -246,8 +513,10 @@ class TranslationPipelineService:
             result = self._color(fence, step, page_id)
         elif kind == "auto_terms":
             result = self._checkpoint_only(fence, step, {"delta": []})
-        elif kind in {"translate", "hq_translate", "proofread"}:
+        elif kind == "translate":
             result = self._translate(fence, step, page_id, kind)
+        elif kind in {"hq_translate", "proofread"}:
+            raise JobConflict(f"{kind} must run through the durable batch executor")
         elif kind == "repair":
             result = self._repair(fence, step, page_id)
         elif kind == "render":
@@ -259,6 +528,207 @@ class TranslationPipelineService:
         else:
             raise ValueError(f"unsupported translation step: {kind}")
         return {**result, "__already_published__": True}
+
+    def batch_handler(
+        self,
+        fence: AttemptFence,
+        steps: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
+    ) -> Mapping[str, Any]:
+        """Execute one HQ/proofreading model batch using stable page/bubble IDs."""
+
+        if not steps:
+            raise ValueError("translation batch cannot be empty")
+        kind = str(steps[0]["stepKind"])
+        step_ordinal = int(steps[0]["stepOrdinal"])
+        if kind not in {"hq_translate", "proofread"}:
+            raise ValueError(f"unsupported translation batch step: {kind}")
+        if any(
+            str(step["stepKind"]) != kind
+            or int(step["stepOrdinal"]) != step_ordinal
+            for step in steps
+        ):
+            raise ValueError("translation batch mixed step kinds or rounds")
+
+        config = self._config(steps[0])
+        if kind == "proofread":
+            rounds = config.get("proofreadingRounds")
+            round_index = step_ordinal - 1
+            if (
+                not isinstance(rounds, list)
+                or round_index < 0
+                or round_index >= len(rounds)
+                or not isinstance(rounds[round_index], Mapping)
+            ):
+                raise JobConflict("frozen proofreading round is missing")
+            section = self._with_credential(rounds[round_index])
+            mode = "proofread"
+        else:
+            round_index = None
+            section = self._with_credential(config.get("translation", {}))
+            mode = "hq_translate"
+        section.setdefault(
+            "target_language",
+            config.get("targetLanguage", "zh"),
+        )
+
+        prepared: list[
+            tuple[Mapping[str, Any], PageSnapshot, list[dict[str, Any]]]
+        ] = []
+        for step in steps:
+            page_id = step.get("pageId")
+            if not isinstance(page_id, str):
+                raise ValueError("translation batch step has no page")
+            snapshot = self._snapshot(page_id)
+            bubble_payloads = []
+            for bubble_id, payload in zip(snapshot.bubble_ids, snapshot.bubbles):
+                translated_text = str(payload.get("translatedText", ""))
+                if kind == "proofread" and not translated_text.strip():
+                    continue
+                bubble_payloads.append(
+                    {
+                        "bubbleId": bubble_id,
+                        "originalText": str(payload.get("originalText", "")),
+                        "translatedText": translated_text,
+                        "textDirection": str(
+                            payload.get("textDirection", "vertical")
+                        ),
+                    }
+                )
+            if kind == "proofread" and not bubble_payloads:
+                self.jobs.skip_remaining_item(
+                    fence,
+                    step_id=str(step["stepId"]),
+                    reason="page_has_no_translated_bubbles",
+                )
+                continue
+            prepared.append((step, snapshot, bubble_payloads))
+
+        if not prepared:
+            return {"__already_published__": True, "skipped": len(steps)}
+
+        images: list[Image.Image] = []
+        request_pages: list[dict[str, Any]] = []
+        try:
+            for step, snapshot, bubble_payloads in prepared:
+                request_pages.append(
+                    {
+                        "pageId": snapshot.page_id,
+                        "bubbles": bubble_payloads,
+                    }
+                )
+                images.append(
+                    self._open_bound_image(
+                        fence,
+                        step,
+                        snapshot.page_id,
+                        "source",
+                    )
+                )
+            translator = getattr(self.algorithms, "translate_batch", None)
+            if not callable(translator):
+                raise JobConflict("translation algorithms do not support HQ batches")
+            result = translator(
+                request_pages,
+                images,
+                section,
+                mode=mode,
+            )
+        finally:
+            for image in images:
+                image.close()
+
+        parsed = result.get("pages")
+        if not isinstance(parsed, Mapping):
+            raise JobConflict("HQ batch returned no validated page mapping")
+        expected = _validate_stable_batch_result(
+            {
+                "pages": [
+                    {
+                        "pageId": page_id,
+                        "bubbles": [
+                            {
+                                "bubbleId": bubble_id,
+                                "translatedText": text,
+                            }
+                            for bubble_id, text in bubble_results.items()
+                        ],
+                    }
+                    for page_id, bubble_results in parsed.items()
+                    if isinstance(bubble_results, Mapping)
+                ]
+            },
+            expected_pages=request_pages,
+        )
+        raw_content = str(result.get("rawContent", ""))
+        batch_id = str(uuid.uuid4())
+        raw_payload = (
+            raw_content
+            if raw_content
+            else json.dumps(
+                {"pages": parsed},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        raw_asset = self.storage.publish_bytes(
+            raw_payload.encode("utf-8"),
+            extension="json",
+            mime_type="application/json",
+            bind=lambda connection, asset_id: connection.execute(
+                insert(job_step_asset_outputs)
+                .values(
+                    job_step_id=str(prepared[0][0]["stepId"]),
+                    role="model_raw",
+                    asset_id=asset_id,
+                )
+                .prefix_with("OR REPLACE")
+            ),
+        )
+
+        completed = 0
+        for step, snapshot, requested_bubbles in prepared:
+            translated_by_id = expected[snapshot.page_id]
+            updated = [dict(payload) for payload in snapshot.bubbles]
+            index_by_id = {
+                bubble_id: index
+                for index, bubble_id in enumerate(snapshot.bubble_ids)
+            }
+            for requested in requested_bubbles:
+                bubble_id = str(requested["bubbleId"])
+                updated[index_by_id[bubble_id]]["translatedText"] = str(
+                    translated_by_id[bubble_id]
+                )
+            fingerprint = _batch_input_fingerprint(
+                page_id=snapshot.page_id,
+                document_revision=snapshot.document_revision,
+                bubbles=requested_bubbles,
+                mode=mode,
+                round_index=round_index,
+            )
+            self._publish_bubble_update(
+                fence,
+                step,
+                snapshot,
+                updated,
+                {
+                    "batchId": batch_id,
+                    "batchSize": len(prepared),
+                    "mode": mode,
+                    "roundIndex": round_index,
+                    "rawAssetId": raw_asset.id,
+                    "parsedBubbleCount": len(translated_by_id),
+                    "inputFingerprint": fingerprint,
+                },
+                input_fingerprint=fingerprint,
+            )
+            completed += 1
+        return {
+            "__already_published__": True,
+            "batchId": batch_id,
+            "completed": completed,
+            "rawAssetId": raw_asset.id,
+        }
 
     def _detect(
         self,
@@ -619,6 +1089,8 @@ class TranslationPipelineService:
         snapshot: PageSnapshot,
         payloads: list[dict[str, Any]],
         checkpoint: dict[str, Any],
+        *,
+        input_fingerprint: str | None = None,
     ) -> Mapping[str, Any]:
         new_revision = snapshot.document_revision + 1
 
@@ -667,6 +1139,7 @@ class TranslationPipelineService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
+            input_fingerprint=input_fingerprint,
             publisher=publish,
         )
         return checkpoint
@@ -691,18 +1164,19 @@ class TranslationPipelineService:
             ).mappings().one_or_none()
             if page is None:
                 raise JobConflict("job target page no longer exists")
-            rows = connection.execute(
-                select(bubbles.c.payload_json)
+            rows = list(connection.execute(
+                select(bubbles.c.id, bubbles.c.payload_json)
                 .where(bubbles.c.page_id == page_id)
                 .order_by(bubbles.c.ordinal)
-            ).scalars()
+            ))
             return PageSnapshot(
                 page_id=page_id,
                 source_revision=int(page["source_revision"]),
                 document_revision=int(page["document_revision"]),
                 render_status=str(page["render_status"]),
                 style_defaults=json.loads(page["page_style_defaults_json"] or "{}"),
-                bubbles=tuple(json.loads(value) for value in rows),
+                bubble_ids=tuple(str(row.id) for row in rows),
+                bubbles=tuple(json.loads(row.payload_json) for row in rows),
             )
 
     def _open_bound_image(

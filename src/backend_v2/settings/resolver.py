@@ -191,32 +191,77 @@ class SettingsResolver:
         effective = _deep_merge(global_settings, chapter_memory)
         mode = str(command.get("mode", "standard"))
 
-        if mode == "hq":
-            selected_translation = _object(effective.get("hqTranslation"))
-            translation_domain = "hq"
-        elif mode == "proofread":
-            proofreading = _object(effective.get("proofreading"))
-            rounds = proofreading.get("rounds")
-            selected_translation = (
-                _object(rounds[0])
-                if isinstance(rounds, list) and rounds
-                else _object(effective.get("hqTranslation"))
-            )
-            translation_domain = "proofreading_0" if isinstance(rounds, list) and rounds else "hq"
+        proofreading = _object(effective.get("proofreading"))
+        raw_rounds = proofreading.get("rounds")
+        proofreading_rounds: list[dict[str, Any]] = []
+        provider_revision_keys: list[tuple[str, str]] = []
+        if mode == "proofread":
+            if not bool(proofreading.get("enabled", False)):
+                raise ValueError("AI 校对尚未启用，请先在设置中启用并保存")
+            if not isinstance(raw_rounds, list) or not raw_rounds:
+                raise ValueError("AI 校对至少需要一轮已保存的校对配置")
+            for index, raw_round in enumerate(raw_rounds):
+                selected_round = _object(raw_round)
+                domain = f"proofreading_{index}"
+                section = _provider_section(
+                    domain=domain,
+                    selected=selected_round,
+                    provider_rows=provider_rows,
+                )
+                section.update(
+                    {
+                        "roundIndex": index,
+                        "name": str(
+                            selected_round.get("name", f"第 {index + 1} 轮校对")
+                        ),
+                        "batchSize": _bounded_int(
+                            selected_round.get("batchSize"),
+                            default=3,
+                            minimum=1,
+                            maximum=10,
+                        ),
+                        "prompt_content": self._translation_prompt(
+                            effective,
+                            selected_round,
+                            mode=mode,
+                        ),
+                    }
+                )
+                proofreading_rounds.append(section)
+                provider_revision_keys.append(
+                    (domain, str(selected_round.get("provider", "")))
+                )
+            translation = proofreading_rounds[0]
         else:
-            selected_translation = _object(effective.get("translation"))
-            translation_domain = "translation"
-
-        translation = _provider_section(
-            domain=translation_domain,
-            selected=selected_translation,
-            provider_rows=provider_rows,
-        )
-        translation["prompt_content"] = self._translation_prompt(
-            effective,
-            selected_translation,
-            mode=mode,
-        )
+            selected_translation = _object(
+                effective.get("hqTranslation")
+                if mode == "hq"
+                else effective.get("translation")
+            )
+            translation_domain = "hq" if mode == "hq" else "translation"
+            translation = _provider_section(
+                domain=translation_domain,
+                selected=selected_translation,
+                provider_rows=provider_rows,
+            )
+            translation["prompt_content"] = self._translation_prompt(
+                effective,
+                selected_translation,
+                mode=mode,
+            )
+            if mode == "hq":
+                translation["batchSize"] = _bounded_int(
+                    selected_translation.get("batchSize"),
+                    default=3,
+                    minimum=1,
+                    maximum=10,
+                )
+            provider_revision_keys.append(
+                (
+                    translation_domain,
+                    str(selected_translation.get("provider", "")),
+                )
+            )
 
         text_style = _object(effective.get("textStyle"))
         box_expand = _object(effective.get("boxExpand"))
@@ -263,7 +308,10 @@ class SettingsResolver:
             "mask_box_expand_ratio": precise_mask.get("boxExpandRatio", 20),
         }
 
-        provider_revision_key = (translation_domain, str(selected_translation.get("provider", "")))
+        provider_revisions = {
+            domain: int(provider_rows.get((domain, provider), {}).get("revision", 0))
+            for domain, provider in provider_revision_keys
+        }
         return {
             "mode": mode,
             "executionMode": str(command.get("executionMode", "sequential")),
@@ -278,6 +326,13 @@ class SettingsResolver:
             "detector": detector,
             "ocr": ocr,
             "translation": translation,
+            "proofreadingRounds": proofreading_rounds,
+            "proofreadingMaxRetries": _bounded_int(
+                proofreading.get("maxRetries"),
+                default=2,
+                minimum=0,
+                maximum=10,
+            ),
             "inpainting": inpainting,
             "render": {},
             "skipCompleted": bool(command.get("skipCompleted", False)),
@@ -289,9 +344,8 @@ class SettingsResolver:
                 "chapterMemoryRevision": int(
                     chapter_row["settings_memory_revision"]
                 ),
-                "providerRevision": int(
-                    provider_rows.get(provider_revision_key, {}).get("revision", 0)
-                ),
+                "providerRevision": next(iter(provider_revisions.values()), 0),
+                "providerRevisions": provider_revisions,
             },
         }
 

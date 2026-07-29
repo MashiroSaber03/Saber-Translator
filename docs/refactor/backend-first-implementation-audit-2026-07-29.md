@@ -11,7 +11,7 @@
 结论：
 
 1. 后端中心化的基础架构已经建立，浏览器关闭后持久任务继续执行、SQLite 事实源、不可变资产、凭据版本、Worker 队列、operation fencing、缩略图和 v2-only 生产入口都不是空壳。
-2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。主要缺口集中在完整 API 契约、HQ/多轮校对真实流水线、任务重试/批次控制、任务中心、书架批量功能、快速工作区前端入口、并行 Pool 进度恢复、Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
+2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约与 HQ/多轮校对真实流水线已在审计后关闭；剩余主要缺口集中在任务重试/批次控制、任务中心、书架批量功能、快速工作区前端入口、并行 Pool 进度恢复、Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
 3. 本轮发现的 API Key 保存/使用故障不是后端没有保存，而是“后端凭据摘要”和“前端空白密钥输入框”之间的语义断裂。本轮已修复该故障及同类入口，并增加后端任务准入校验。
 4. 本轮还修复了翻译页“最后访问页只读不写”的数据闭环缺陷，并将导航更新改为与方案一致的独立 last-write-wins，不再因旧标签页 revision 产生普通切页冲突。
 5. 用户已确认的两项偏差不作为缺陷：
@@ -71,60 +71,36 @@
 | §5 存储架构 | 基本完成 | SQLite WAL、Alembic 0001–0009、不可变 assets、关系表、凭据/插件版本、任务/operation 快照均存在；完整查询计划、删除矩阵和故障注入验收不足。 |
 | §6 快速工作区 | 部分完成 | 后端播种、bootstrap、reset、promote、423 保护和约束处理存在；前端缺“新建快速翻译”和“保存到书架”顶栏入口，promote 无前端 API/弹窗；测试只覆盖部分 promote 语义。最后访问页本轮已补齐。 |
 | §7 统一任务系统 | 部分完成 | 持久队列、状态机、SSE、pause/resume/continue/cancel、reorder 后端存在；失败重试、批次控制、优先级和完整详情能力缺失。 |
-| §8 翻译任务后端化 | 部分完成 | 创建任务即冻结配置/资产/插件/凭据，Worker 流水线可脱离浏览器执行；但 HQ 没有真正的批处理协议，校对只使用第一轮，任务页内进度恢复和后端失败项重试也未完成。 |
+| §8 翻译任务后端化 | 基本完成 | 创建任务即冻结配置/资产/插件/凭据，Worker 流水线可脱离浏览器执行；HQ 稳定 ID 批处理与多轮校对已迁入持久 Worker，并具备批次失败隔离、暂停继续和逐轮检查点。任务页内 Pool 进度恢复和后端失败项重试仍未完成。 |
 | §9 Insight 任务统一 | 部分完成 | 全书/局部分析、派生物、向量、续写和导出均有持久任务；页面仍保留 3 秒轮询，未完全统一到全局 SSE/快照。 |
-| §10 插件 v3 | 基本完成 | 不可变版本、快照、能力/失败策略、Worker 执行、Agent handoff 和管理 API 已实现；OpenAPI 不完整仍影响其“单一正式契约”结论。 |
+| §10 插件 v3 | 基本完成 | 不可变版本、快照、能力/失败策略、Worker 执行、Agent handoff 和管理 API 已实现；运行时与 OpenAPI 已完成双向闭集。 |
 | §11 图片导入与缩略图 | 基本完成 | 普通图片逐页上传、容器后端任务、同步 source thumbnail、长条特判、无 Base64 响应已实现；完整导入失败矩阵和多场景大数据验收不足。 |
 | §12 媒体 API 与加载 | 部分完成 | asset URL/ETag/条件请求、翻译侧栏和编辑侧栏虚拟化、Reader 虚拟流存在；指定页码弹窗、Insight 大章节树和部分续写选择器仍一次创建大量缩略图节点。 |
 | §13 页面职责 | 基本完成 | 生产前端主要为投影和交互，业务长任务在后端；仍有前端轮询、内存失败页重试和未接线章节设置记忆。 |
-| §14 实施阶段 | 部分完成 | 阶段 1–6 的大量基础代码已经提交，但阶段退出门禁并未全部满足，尤其是契约、产品页和验收矩阵。 |
-| §15 全局验收 | 部分完成 | 后端 v2 有 100+ 测试，前端有大量单元/属性/视觉测试；缺完整 OpenAPI 覆盖、EXPLAIN QUERY PLAN、Insight/翻译 1000 页 DOM/内存、批量产品流和多项 crash-window 矩阵。 |
-| §16 翻译页 | 部分完成 | 后端任务、编辑 CAS、修复 operation、渲染、文本/导出等主体存在；HQ/校对仍复用普通逐页翻译适配器，校对仅冻结第一轮；并行模式仍只有单总进度条，刷新不恢复当前页 Pool 进度，失败重试依赖浏览器 `translationFailed`，章节 settings_memory 未接线，部分权威 API 与实现不一致。 |
+| §14 实施阶段 | 部分完成 | 阶段 1–6 的大量基础代码已经提交，阶段 0 契约门禁已关闭；产品页和验收矩阵仍未全部满足。 |
+| §15 全局验收 | 部分完成 | OpenAPI 已覆盖全部 180 个运行时操作，后端 v2 有 100+ 测试，前端有大量单元/属性/视觉测试；仍缺 EXPLAIN QUERY PLAN、Insight/翻译 1000 页 DOM/内存、批量产品流和多项 crash-window 矩阵。 |
+| §16 翻译页 | 部分完成 | 后端任务、编辑 CAS、修复 operation、渲染、文本/导出、HQ 稳定 ID batch 和多轮校对主体存在；并行模式仍只有单总进度条，刷新不恢复当前页 Pool 进度，失败重试依赖浏览器 `translationFailed`，章节 settings_memory 未接线。 |
 | §17 Insight | 部分完成 | 主要分析/概览/时间线/问答/笔记/续写/设置功能已切 v2；PagesTree 展开章节会创建整章节点，状态与向量重建仍轮询，专项 1000 页验收缺失。 |
 | §18 Character Studio | 基本完成 | 文档 CAS、保存型 generate/chat/summary operation、SSE chunk、会话数据、导入导出和诊断主体完整；前端没有调用 abort API，也没有归档会话永久删除入口。 |
 | §19 书架 | 部分完成 | 后端 CRUD、搜索/标签/排序、批量删除/标签和 jobStatusSummary 已实现；前端丢弃 jobStatusSummary，store 的 batchMode/selectedBookIds/expandBook 是未消费状态，章节多选翻译、书籍批量翻译/删除/标签和任务跳转未实现。 |
 | §20 任务中心 | 部分完成 | 全局抽屉、队列/历史、SSE、暂停/继续/取消、产物下载存在；重排 UI、筛选、详情事件分页、失败重试、批次取消/优先/继续、释放显存、新建批量分析和跨页定位缺失。 |
 | §21 阅读器 | 基本完成 | 后端页列表、translated→source 回退、VirtualPageStream 和懒加载存在；缺“未翻译”持久徽标和“已翻译 m/N”统计。 |
 | §22 设置/提示词/Provider | 部分完成 | SQLite 事实源、统一 transaction、不可变凭据、统一诊断、提示词和字体主体存在；本轮修复凭据 UI/校验；受限态只禁保存，未统一禁止所有任务/Provider 操作；文本默认值仍保留父子特殊握手；章节 settings_memory 未接线。 |
-| §23 插件管理 | 基本完成 | v3 manifest/version/snapshot/runtime/Agent/管理 UI 和测试主体存在；仍受 OpenAPI 不完整影响。 |
+| §23 插件管理 | 基本完成 | v3 manifest/version/snapshot/runtime/Agent/管理 UI、契约和测试主体存在。 |
 | §24 当前不做事项 | 完成/接受偏差 | 未引入账号、多租户、云对象存储、瓦片金字塔或单图像素预算；符合用户最终口径。 |
 
 ## 4. 阻断“方案完成”结论的问题
 
-### 4.1 P0：OpenAPI 不是完整唯一契约
+### 4.1 已关闭：OpenAPI 完整唯一契约
 
 运行时 Flask 路由与 `openapi/v2.yaml` 逐 method/path 标准化比对结果：
 
 - 运行时 v2 操作：180。
-- OpenAPI 已描述操作：96。
-- 运行时存在但 OpenAPI 缺失：84。
+- OpenAPI 已描述操作：180。
+- 运行时存在但 OpenAPI 缺失：0。
 - OpenAPI 描述但运行时不存在：0。
 
-84 个缺失操作按首段分组：
-
-- `insight`：47。
-- `chapters`：13。
-- `web-import`：8。
-- `books`：7。
-- `tags`：4。
-- `pages`：3。
-- `jobs`：1。
-- `job-batches`：1。
-
-当前 `test_openapi_contract.py` 只检查少量 required path、`$ref` 和 idempotency header，没有将 Flask `url_map` 与 OpenAPI 做闭合集合比较，因此测试全绿也无法发现 84 个未登记操作。
-
-此外：
-
-- 多个 v2 前端模块手写 DTO，而 ADR 0004 要求以生成类型为唯一来源。
-- 方案 §16/§19/§20 的部分权威路径与实际路径不同，例如方案的 `/translation-batches` 与实现的 `/job-batches/translation`。
-- 实现存在 `replace-source`、document batch 等等价或合并设计，但方案没有先更新，违反“先更新方案再改代码”的基线规则。
-
-关闭条件：
-
-1. OpenAPI 补齐全部运行时操作、错误响应、请求/响应 schema 和 operationId。
-2. 前端 v2 DTO 收敛到生成类型。
-3. 增加运行时路由 ↔ OpenAPI 双向闭集测试。
-4. 对有意采用的等价接口先更新方案/ADR。
+已补齐所有运行时操作、命名请求/响应 schema、operationId 和幂等头约束；移除 `GenericObject`/`GenericSuccess` 占位响应。`test_openapi_contract.py` 现在执行 Flask `url_map` ↔ OpenAPI 双向闭集、`$ref`、operationId、响应、幂等性和前端生成类型门禁。前端 v2 HTTP DTO 已全部改为从生成的 `components['schemas']` 派生。
 
 ### 4.2 P0：翻译并行进度与刷新恢复不符合方案
 
@@ -149,18 +125,18 @@
 
 这与 §7、§16、§20 的失败重试口径直接冲突。
 
-### 4.4 P0：HQ 和多轮校对没有按方案实现
+### 4.4 已关闭：HQ 和多轮校对真实后端流水线
 
 方案 §16.3.6–§16.3.7 要求 HQ 使用稳定 page/bubble ID 的批量协议，并要求校对的每一轮独立冻结 provider、model、URL、batch size、RPM、重试、JSON、流式、extra body 和 prompt。
 
-当前实现：
+已完成：
 
-- `SettingsResolver.resolve_translation()` 的 proofread 分支只选择 `rounds[0]`，其余轮次没有进入任务快照。
-- proofread 任务只有一个 `proofread` step，不存在逐轮 step/checkpoint、失败页面向后续轮次隔离或每轮输入/输出版本。
-- `LegacyTranslationAlgorithms.translate()` 不区分 `translate`、`hq_translate`、`proofread` 的执行协议，三者最终都调用普通 `translate_text_list()`。
-- HQ 和校对没有按各自 batch size 聚合页面/气泡，也没有保存模型原始输出、稳定 ID 解析结果和批次失败原因。
-
-因此当前状态只能证明“HQ/校对名义上的持久 job 可以在 Worker 中运行”，不能证明其业务语义与原功能或重构方案一致。关闭条件是为 HQ 与 proofread 建立真实的后端批次执行器、完整快照和逐轮检查点，并增加多轮/部分失败/中断恢复验收。
+- HQ 按冻结的 1–10 batch size 在 Worker 中聚合当前批次页面，模型协议使用稳定 `pageId/bubbleId`。
+- 缺页、未知/重复 ID、气泡集合不一致、非法 JSON 和非字符串/空译文均作为批次失败处理，不使用原始模型文本降级成成功结果。
+- 每批保存输入 fingerprint、解析结果、失败原因，并把模型原始输出保存为不可变 JSON asset；崩溃窗口重复执行可替换旧 step-output 绑定。
+- 校对任务冻结全部轮次的 provider、credential version、model、URL、batch size、OpenAI request/execution options、prompt 和 provider revision；每页生成逐轮独立步骤。
+- 每轮按自己的 batch size 执行；无可校对译文页整体 `skipped`，某批失败页不进入后续轮次，全部校对轮次完成后才开放 render。
+- 专项测试覆盖 3 页 HQ 的 2+1 分批、两轮不同模型/批大小、非法稳定 ID、无译文页、部分失败继续，以及暂停/继续不重复已完成 batch。
 
 ## 5. 主要产品缺口
 

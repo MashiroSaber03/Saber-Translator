@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
@@ -16,6 +16,10 @@ from src.backend_v2.jobs.repository import (
 
 
 StepHandler = Callable[[AttemptFence, Mapping[str, Any]], Mapping[str, Any]]
+BatchStepHandler = Callable[
+    [AttemptFence, Sequence[Mapping[str, Any]]],
+    Mapping[str, Any],
+]
 DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 
 
@@ -65,6 +69,7 @@ class JobWorkerLoop:
         *,
         worker_epoch_id: str,
         handlers: Mapping[str, StepHandler],
+        batch_handlers: Mapping[str, BatchStepHandler] | None = None,
         plugin_runtime: Any | None = None,
         safe_point: Callable[[], bool] | None = None,
         idle_poll_seconds: float = 0.25,
@@ -72,6 +77,9 @@ class JobWorkerLoop:
         self.repository = repository
         self.worker_epoch_id = worker_epoch_id
         self.handlers = dict(handlers)
+        self.batch_handlers = dict(batch_handlers or {})
+        if not set(self.batch_handlers).issubset(self.handlers):
+            raise ValueError("every batch handler requires a matching step handler")
         self.plugin_runtime = plugin_runtime
         self.safe_point = safe_point
         self.idle_poll_seconds = idle_poll_seconds
@@ -150,8 +158,50 @@ class JobWorkerLoop:
                     return
                 if self.safe_point is not None and self.safe_point():
                     continue
-                step = self.repository.next_step(fence)
+                handled_batch = False
+                config = self.repository.attempt_config(fence)
+                for batch_kind, batch_handler in self.batch_handlers.items():
+                    step_ordinal = self.repository.ready_step_ordinal(
+                        fence,
+                        step_kind=batch_kind,
+                    )
+                    if step_ordinal is None:
+                        continue
+                    batch = self.repository.next_step_batch(
+                        fence,
+                        step_kind=batch_kind,
+                        limit=self._batch_size(
+                            batch_kind,
+                            config,
+                            step_ordinal=step_ordinal,
+                        ),
+                    )
+                    if not batch:
+                        continue
+                    last_step_id = str(batch[-1]["stepId"])
+                    self._execute_batch(
+                        heartbeat,
+                        batch_handler,
+                        batch,
+                    )
+                    handled_batch = True
+                    break
+                if handled_batch:
+                    continue
+                ordinary_kinds = tuple(
+                    kind
+                    for kind in self.handlers
+                    if kind not in self.batch_handlers
+                )
+                step = self.repository.next_step(
+                    fence,
+                    allowed_kinds=ordinary_kinds,
+                )
                 if step is None:
+                    pending, running = self.repository.active_step_counts(fence)
+                    if pending or running:
+                        time.sleep(0.02)
+                        continue
                     if self.plugin_runtime is not None:
                         terminal = {"status": "completed"}
                         terminal = self.plugin_runtime.after_pipeline(
@@ -253,11 +303,36 @@ class JobWorkerLoop:
                     if status in {"pausing", "cancelling"}:
                         admission_closed.set()
                         return
-                    step = self.repository.next_step(
-                        heartbeat.fence,
-                        allowed_kinds=(pool_kind,),
+                    step_ordinal = (
+                        self.repository.ready_step_ordinal(
+                            heartbeat.fence,
+                            step_kind=pool_kind,
+                        )
+                        if pool_kind in self.batch_handlers
+                        else None
                     )
-                    if step is None:
+                    steps = (
+                        self.repository.next_step_batch(
+                            heartbeat.fence,
+                            step_kind=pool_kind,
+                            limit=self._batch_size(
+                                pool_kind,
+                                config,
+                                step_ordinal=step_ordinal,
+                            ),
+                        )
+                        if step_ordinal is not None
+                        else []
+                    )
+                    step = (
+                        None
+                        if pool_kind in self.batch_handlers
+                        else self.repository.next_step(
+                            heartbeat.fence,
+                            allowed_kinds=(pool_kind,),
+                        )
+                    )
+                    if not steps and step is None:
                         pending, running = self.repository.active_step_counts(
                             heartbeat.fence
                         )
@@ -266,6 +341,14 @@ class JobWorkerLoop:
                             return
                         time.sleep(0.02)
                         continue
+                    if steps:
+                        self._execute_batch(
+                            heartbeat,
+                            self.batch_handlers[pool_kind],
+                            steps,
+                        )
+                        continue
+                    assert step is not None
                     handler = self.handlers.get(str(step["stepKind"]))
                     if handler is None:
                         self.repository.fail_step(
@@ -387,6 +470,87 @@ class JobWorkerLoop:
                 terminal,
             )
         self.repository.finish_if_complete(heartbeat.fence)
+
+    def _execute_batch(
+        self,
+        heartbeat: AttemptHeartbeat,
+        handler: BatchStepHandler,
+        steps: Sequence[Mapping[str, Any]],
+    ) -> None:
+        effective_steps = [
+            (
+                self.plugin_runtime.before_step(heartbeat.fence, step)
+                if self.plugin_runtime is not None
+                else step
+            )
+            for step in steps
+        ]
+        try:
+            checkpoint = handler(heartbeat.fence, effective_steps)
+        except Exception as exc:
+            if heartbeat.fenced.is_set():
+                return
+            for step in steps:
+                try:
+                    self.repository.fail_step(
+                        heartbeat.fence,
+                        step_id=str(step["stepId"]),
+                        code="BATCH_STEP_FAILED",
+                        message=str(exc),
+                    )
+                except AttemptFenced:
+                    continue
+            return
+        if self.plugin_runtime is not None:
+            for step in effective_steps:
+                self.plugin_runtime.after_step(
+                    heartbeat.fence,
+                    step,
+                    checkpoint,
+                )
+        if checkpoint.get("__already_published__"):
+            return
+        per_step = checkpoint.get("steps")
+        for step in steps:
+            value = (
+                per_step.get(str(step["stepId"]), {})
+                if isinstance(per_step, Mapping)
+                else checkpoint
+            )
+            self.repository.complete_step(
+                heartbeat.fence,
+                step_id=str(step["stepId"]),
+                checkpoint=value if isinstance(value, Mapping) else {},
+            )
+
+    @staticmethod
+    def _batch_size(
+        step_kind: str,
+        config: Mapping[str, Any],
+        *,
+        step_ordinal: int | None,
+    ) -> int:
+        if step_kind == "hq_translate":
+            section = config.get("translation")
+            value = section.get("batchSize", 3) if isinstance(section, Mapping) else 3
+        elif step_kind == "proofread":
+            rounds = config.get("proofreadingRounds")
+            index = max(0, int(step_ordinal or 1) - 1)
+            section = (
+                rounds[index]
+                if isinstance(rounds, list)
+                and index < len(rounds)
+                and isinstance(rounds[index], Mapping)
+                else {}
+            )
+            value = section.get("batchSize", 3)
+        else:
+            value = 1
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = 3
+        return max(1, min(10, parsed))
 
 
 def wait_for_stop_step(

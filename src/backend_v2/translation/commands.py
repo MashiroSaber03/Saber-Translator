@@ -63,6 +63,7 @@ class TranslationJobCommandService:
         step_kinds = step_kinds_for_mode(
             mode,
             reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
+            proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
         )
         validate_translation_job_requirements(normalized, step_kinds)
         job_kind = "remove_text" if mode == "remove_text" else "translation"
@@ -125,6 +126,7 @@ class TranslationJobCommandService:
             step_kinds = step_kinds_for_mode(
                 mode,
                 reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
+                proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
             )
             validate_translation_job_requirements(normalized, step_kinds)
             specs.append(
@@ -232,6 +234,7 @@ def step_kinds_for_mode(
     mode: str,
     *,
     reuse_existing_bubbles: bool = False,
+    proofreading_rounds: int = 1,
 ) -> tuple[str, ...]:
     if mode == "standard":
         steps = (
@@ -245,7 +248,7 @@ def step_kinds_for_mode(
         )
         return steps[1:] if reuse_existing_bubbles else steps
     if mode == "hq":
-        return (
+        steps = (
             "detect",
             "ocr",
             "color",
@@ -254,8 +257,11 @@ def step_kinds_for_mode(
             "repair",
             "render",
         )
+        return steps[1:] if reuse_existing_bubbles else steps
     if mode == "proofread":
-        return ("proofread", "render")
+        if proofreading_rounds < 1:
+            raise ValueError("proofread mode requires at least one proofreading round")
+        return (*("proofread" for _ in range(proofreading_rounds)), "render")
     if mode == "remove_text":
         return ("detect", "ocr", "repair", "publish_clean")
     raise ValueError(f"unsupported translation mode: {mode}")
@@ -269,11 +275,7 @@ def validate_translation_job_requirements(
 
     steps = set(step_kinds)
     translation_step = next(
-        (
-            step
-            for step in ("translate", "hq_translate", "proofread")
-            if step in steps
-        ),
+        (step for step in ("translate", "hq_translate") if step in steps),
         None,
     )
     if translation_step is not None:
@@ -287,6 +289,18 @@ def validate_translation_job_requirements(
             capability=capability,
             label="翻译服务",
         )
+    if "proofread" in steps:
+        rounds = config.get("proofreadingRounds")
+        if not isinstance(rounds, Sequence) or isinstance(rounds, (str, bytes)):
+            raise ValueError("AI 校对任务缺少已冻结的轮次配置")
+        if len(rounds) != sum(1 for step in step_kinds if step == "proofread"):
+            raise ValueError("AI 校对步骤与冻结轮次数量不一致")
+        for index, round_config in enumerate(rounds):
+            _validate_ai_provider_section(
+                round_config,
+                capability=HQ_TRANSLATION_CAPABILITY,
+                label=f"第 {index + 1} 轮校对",
+            )
 
     if "ocr" in steps:
         _validate_ocr_section(config.get("ocr"))
