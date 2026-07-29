@@ -779,3 +779,85 @@ def test_quick_workspace_promote_moves_relations_without_moving_assets(
             "pageOrderRevision": 1,
         }
     ]
+
+
+def test_quick_workspace_promote_route_uses_explicit_mode_contract(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, importer, _book, _chapter = (
+        content_platform
+    )
+    quick_chapter_id = str(
+        repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)["chapters"][0][
+            "id"
+        ]
+    )
+    _import(
+        repository,
+        importer,
+        chapter_id=quick_chapter_id,
+        payload=_image_bytes((40, 60)),
+        logical_path="route-quick.png",
+        key="route-quick",
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="quick-promote-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    try:
+        response = app.test_client().post(
+            "/api/v2/quick-workspace/promote",
+            headers={"Idempotency-Key": "promote-route"},
+            json={
+                "mode": "new_book",
+                "title": "Route Book",
+                "chapterTitle": "Route Chapter",
+            },
+        )
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["chapterId"] == quick_chapter_id
+    assert repository.get_book(str(payload["bookId"]))["title"] == "Route Book"
+
+
+def test_quick_workspace_promote_rejects_duplicate_destinations(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, book, _chapter = (
+        content_platform
+    )
+    quick_chapter_id = str(
+        repository.list_chapters(QUICK_WORKSPACE_BOOK_ID)["chapters"][0][
+            "id"
+        ]
+    )
+    _import(
+        repository,
+        importer,
+        chapter_id=quick_chapter_id,
+        payload=_image_bytes((40, 60)),
+        logical_path="duplicate-quick.png",
+        key="duplicate-quick",
+    )
+
+    with pytest.raises(ValueError, match="new book title already exists"):
+        repository.promote_quick_workspace(
+            chapter_title="Saved Chapter",
+            new_book_title=str(book["title"]),
+        )
+
+    with pytest.raises(ValueError, match="chapter title already exists"):
+        repository.promote_quick_workspace(
+            chapter_title="Chapter",
+            target_book_id=str(book["id"]),
+        )

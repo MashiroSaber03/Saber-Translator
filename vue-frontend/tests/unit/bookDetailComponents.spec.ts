@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import BookDetailSummary from '@/components/bookshelf/book-detail/BookDetailSummary.vue'
@@ -36,6 +37,10 @@ const availableTags: TagData[] = [
 ]
 
 describe('bookshelf detail child components', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('uses the shared product chip list for removable detail tags and add-tag action', () => {
     const wrapper = mount(BookDetailSummary, {
       props: {

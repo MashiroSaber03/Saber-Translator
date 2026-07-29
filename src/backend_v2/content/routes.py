@@ -470,17 +470,20 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     def promote_quick_workspace() -> Response:
         _require_idempotency_key()
         body = _json_body()
+        mode = str(body.get("mode", ""))
+        if mode not in {"new_book", "existing_book"}:
+            raise ValueError("mode must be new_book or existing_book")
         return jsonify(
             repository.promote_quick_workspace(
                 chapter_title=str(body.get("chapterTitle", "")),
                 new_book_title=(
-                    str(body["newBookTitle"])
-                    if body.get("newBookTitle") is not None
+                    str(body["title"])
+                    if mode == "new_book" and body.get("title") is not None
                     else None
                 ),
                 target_book_id=(
-                    str(body["targetBookId"])
-                    if body.get("targetBookId") is not None
+                    str(body["bookId"])
+                    if mode == "existing_book" and body.get("bookId") is not None
                     else None
                 ),
             )

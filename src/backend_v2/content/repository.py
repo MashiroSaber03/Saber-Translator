@@ -418,6 +418,38 @@ class ContentRepository:
                     .order_by(tags.c.name)
                 ).mappings()
             )
+            chapter_job_rows = list(
+                connection.execute(
+                    select(
+                        jobs.c.chapter_id,
+                        jobs.c.status,
+                        func.count(jobs.c.id).label("job_count"),
+                    )
+                    .where(
+                        jobs.c.chapter_id.in_(
+                            [row["id"] for row in chapter_rows]
+                        ),
+                        jobs.c.kind == "translation",
+                        jobs.c.status.in_(
+                            (
+                                "queued",
+                                "running",
+                                "pausing",
+                                "paused",
+                                "cancelling",
+                                "interrupted",
+                                "failed",
+                            )
+                        ),
+                    )
+                    .group_by(jobs.c.chapter_id, jobs.c.status)
+                ).mappings()
+            ) if chapter_rows else []
+        chapter_jobs: dict[str, dict[str, int]] = {}
+        for row in chapter_job_rows:
+            chapter_jobs.setdefault(str(row["chapter_id"]), {})[
+                str(row["status"])
+            ] = int(row["job_count"])
         return {
             "id": book["id"],
             "title": book["title"],
@@ -435,6 +467,7 @@ class ContentRepository:
                     "title": row["title"],
                     "pageCount": row["page_count"],
                     "pageOrderRevision": row["page_order_revision"],
+                    "jobStatusSummary": chapter_jobs.get(str(row["id"]), {}),
                 }
                 for row in chapter_rows
             ],
@@ -2324,6 +2357,14 @@ class ContentRepository:
                 title = new_book_title.strip()
                 if not title:
                     raise ValueError("new book title is required")
+                duplicate_book = connection.execute(
+                    select(books.c.id).where(
+                        books.c.kind == "library",
+                        func.lower(books.c.title) == title.lower(),
+                    )
+                ).scalar_one_or_none()
+                if duplicate_book is not None:
+                    raise ValueError("new book title already exists")
                 destination_book_id = str(uuid.uuid4())
                 connection.execute(
                     insert(books).values(
@@ -2362,6 +2403,15 @@ class ContentRepository:
                 ).scalar_one_or_none()
                 if destination_kind != "library":
                     raise ContentNotFound("target library book not found")
+                duplicate_chapter = connection.execute(
+                    select(chapters.c.id).where(
+                        chapters.c.book_id == destination_book_id,
+                        func.lower(chapters.c.title)
+                        == normalized_chapter_title.lower(),
+                    )
+                ).scalar_one_or_none()
+                if duplicate_chapter is not None:
+                    raise ValueError("chapter title already exists in target book")
 
             destination_ordinal = (
                 connection.execute(

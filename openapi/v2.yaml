@@ -43,6 +43,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServerInfo"
+  /system/release-models:
+    post:
+      tags: [system]
+      operationId: releaseWorkerModelCache
+      x-command-mode: transient
+      responses:
+        "202":
+          description: Model release was accepted for the Worker safe point.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerCommandAccepted"
+        "409":
+          description: A local model inference is currently running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /settings:
     get:
       tags: [settings]
@@ -1693,7 +1711,7 @@ paths:
           description: Multi-chapter translation batch accepted.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+              schema: {$ref: "#/components/schemas/TranslationBatchAccepted"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /chapters/{chapter_id}/detect-jobs:
@@ -2065,14 +2083,21 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [chapterTitle]
+              required: [mode, chapterTitle]
               properties:
+                mode:
+                  type: string
+                  enum: [new_book, existing_book]
                 chapterTitle: {type: string, minLength: 1, maxLength: 500}
-                newBookTitle: {type: string, minLength: 1, maxLength: 500}
-                targetBookId: {$ref: "#/components/schemas/Uuid"}
+                title: {type: string, minLength: 1, maxLength: 500}
+                bookId: {$ref: "#/components/schemas/Uuid"}
               oneOf:
-                - required: [newBookTitle]
-                - required: [targetBookId]
+                - properties:
+                    mode: {const: new_book}
+                  required: [title]
+                - properties:
+                    mode: {const: existing_book}
+                  required: [bookId]
       responses:
         "200":
           description: Chapter relations moved and a new empty quick chapter created.
@@ -3689,6 +3714,18 @@ components:
         host: {type: string}
         port: {type: integer, minimum: 1, maximum: 65535}
         lanUrl: {type: string, format: uri}
+    WorkerCommandAccepted:
+      type: object
+      additionalProperties: false
+      required: [commandId, kind, status]
+      properties:
+        commandId: {$ref: "#/components/schemas/Uuid"}
+        kind:
+          type: string
+          const: release_models
+        status:
+          type: string
+          enum: [pending, running]
     SettingEntry:
       type: object
       additionalProperties: false
@@ -4328,6 +4365,32 @@ components:
         status:
           type: string
           const: queued
+    TranslationBatchSkip:
+      type: object
+      additionalProperties: false
+      required: [chapterId, reason, message]
+      properties:
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        reason:
+          type: string
+          enum: [not_found, empty_chapter, active_job, missing_credentials, invalid_configuration]
+        message: {type: string}
+    TranslationBatchAccepted:
+      type: object
+      additionalProperties: false
+      required: [batchId, jobIds, status, skipped]
+      properties:
+        batchId: {$ref: "#/components/schemas/Uuid"}
+        jobIds:
+          type: array
+          minItems: 1
+          items: {$ref: "#/components/schemas/Uuid"}
+        status:
+          type: string
+          const: queued
+        skipped:
+          type: array
+          items: {$ref: "#/components/schemas/TranslationBatchSkip"}
     JobRetryCommand:
       type: object
       additionalProperties: false
@@ -5429,6 +5492,7 @@ components:
               color: {type: string}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        jobStatusSummary: {$ref: "#/components/schemas/JobStatusSummary"}
     BookDetail:
       allOf:
         - $ref: "#/components/schemas/Book"
@@ -5528,6 +5592,18 @@ components:
         title: {type: string}
         pageCount: {type: integer, minimum: 0}
         pageOrderRevision: {type: integer, minimum: 1}
+        jobStatusSummary: {$ref: "#/components/schemas/JobStatusSummary"}
+    JobStatusSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        queued: {type: integer, minimum: 0}
+        running: {type: integer, minimum: 0}
+        pausing: {type: integer, minimum: 0}
+        paused: {type: integer, minimum: 0}
+        cancelling: {type: integer, minimum: 0}
+        interrupted: {type: integer, minimum: 0}
+        failed: {type: integer, minimum: 0}
     TitleUpdateCommand:
       type: object
       additionalProperties: false

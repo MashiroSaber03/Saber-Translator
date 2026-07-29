@@ -228,6 +228,10 @@ class _PluginLoader:
         )
         self._instances: dict[str, tuple[str, object]] = {}
 
+    def release_cached_instances(self) -> None:
+        """Drop Worker-owned plugin instances at a model-cache safe point."""
+        self._instances.clear()
+
     def load_job(self, job_id: str) -> list[_LoadedPlugin]:
         with self.engine.connect() as connection:
             rows = list(
@@ -418,6 +422,9 @@ class PluginJobRuntime:
             engine=engine,
         )
 
+    def release_cached_instances(self) -> None:
+        self.loader.release_cached_instances()
+
     def before_job(
         self,
         fence: AttemptFence,
@@ -586,6 +593,9 @@ class PluginOperationRuntime:
             data_root=data_root,
             engine=engine,
         )
+
+    def release_cached_instances(self) -> None:
+        self.loader.release_cached_instances()
 
     def before(
         self,

@@ -41,6 +41,28 @@ _manga_ocr_instance = None
 # 标记开始预加载过程
 _preloading_started = False
 
+
+def reset_manga_ocr_instance():
+    """卸载 MangaOCR 单例，使下一次识别按需重新加载。"""
+    global _manga_ocr_instance, _preloading_started
+    instance = _manga_ocr_instance
+    _manga_ocr_instance = None
+    _preloading_started = False
+    if instance is not None:
+        model = getattr(instance, "model", None)
+        if model is not None and hasattr(model, "to"):
+            try:
+                model.to("cpu")
+            except Exception:
+                logger.debug("MangaOCR 模型迁移到 CPU 失败", exc_info=True)
+    import gc
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    logger.info("MangaOCR 实例已重置")
+
+
 def get_manga_ocr_instance():
     """
     获取 MangaOCR 的单例实例。如果未初始化，则进行初始化。

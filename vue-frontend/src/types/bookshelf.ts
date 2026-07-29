@@ -1,5 +1,10 @@
 import type { BookTranslationConstraints } from './bookTranslationConstraints'
 
+export type JobStatusSummary = Partial<Record<
+  'queued' | 'running' | 'pausing' | 'paused' | 'cancelling' | 'interrupted' | 'failed',
+  number
+>>
+
 export interface BookData {
   id: string
   title: string
@@ -17,6 +22,7 @@ export interface BookData {
   created_at?: string
   updated_at?: string
   chapterOrderRevision?: number
+  jobStatusSummary?: JobStatusSummary
 }
 
 export interface ChapterData {
@@ -31,6 +37,7 @@ export interface ChapterData {
   session_path?: string
   ordinal?: number
   pageOrderRevision?: number
+  jobStatusSummary?: JobStatusSummary
 }
 
 export interface TagData {

@@ -207,12 +207,45 @@ class JobQueueRepository:
         self.engine = engine
         self.attempt_lease_seconds = attempt_lease_seconds
 
+    def idempotency_replay(
+        self,
+        *,
+        scope: str,
+        key: str,
+        payload: Mapping[str, Any],
+    ) -> dict[str, object] | None:
+        """Read a committed command response before resolving mutable targets."""
+        if not scope or not key:
+            raise ValueError("idempotency scope and key are required")
+        request_hash = hashlib.sha256(
+            _json(dict(payload)).encode("utf-8")
+        ).hexdigest()
+        with self.engine.connect() as connection:
+            replay = connection.execute(
+                select(
+                    idempotency_records.c.request_hash,
+                    idempotency_records.c.response_json,
+                ).where(
+                    idempotency_records.c.scope == scope,
+                    idempotency_records.c.key == key,
+                    idempotency_records.c.expires_at > utcnow(),
+                )
+            ).mappings().one_or_none()
+        if replay is None:
+            return None
+        if replay["request_hash"] != request_hash:
+            raise JobConflict(
+                "Idempotency-Key was reused for different job input"
+            )
+        return json.loads(str(replay["response_json"]))
+
     def create_batch(
         self,
         *,
         kind: str,
         display_name: str,
         specs: Sequence[JobSpec],
+        response_extra: Mapping[str, object] | None = None,
         idempotency_scope: str | None = None,
         idempotency_key: str | None = None,
         idempotency_payload: Mapping[str, Any] | None = None,
@@ -436,6 +469,13 @@ class JobQueueRepository:
                     "jobIds": created_ids,
                     "status": "queued",
                 }
+                if response_extra:
+                    reserved = {"batchId", "jobIds", "status"} & set(response_extra)
+                    if reserved:
+                        raise ValueError(
+                            "response_extra cannot replace batch response fields"
+                        )
+                    response.update(dict(response_extra))
                 if idempotency_scope and idempotency_key and request_hash:
                     connection.execute(
                         insert(idempotency_records).values(

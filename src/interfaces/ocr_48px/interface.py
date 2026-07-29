@@ -836,3 +836,25 @@ def get_48px_ocr_handler() -> Model48pxOCR:
     if _model_48px_instance is None:
         _model_48px_instance = Model48pxOCR()
     return _model_48px_instance
+
+
+def reset_48px_ocr_handler():
+    """卸载 48px OCR 单例，使下一次识别按需重新加载。"""
+    global _model_48px_instance
+    handler = _model_48px_instance
+    _model_48px_instance = None
+    if handler is not None:
+        model = getattr(handler, "model", None)
+        if model is not None and hasattr(model, "to"):
+            try:
+                model.to("cpu")
+            except Exception:
+                logger.debug("48px OCR 模型迁移到 CPU 失败", exc_info=True)
+        handler.model = None
+        handler.initialized = False
+    import gc
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    logger.info("48px OCR 实例已重置")

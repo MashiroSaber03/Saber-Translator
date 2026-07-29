@@ -11,7 +11,7 @@
 结论：
 
 1. 后端中心化的基础架构已经建立，浏览器关闭后持久任务继续执行、SQLite 事实源、不可变资产、凭据版本、Worker 队列、operation fencing、缩略图和 v2-only 生产入口都不是空壳。
-2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约、HQ/多轮校对、任务重试/批次控制、任务中心核心控制，以及翻译 Pool 进度/刷新恢复/章节设置记忆已在审计后关闭；剩余主要缺口集中在书架批量功能、快速工作区前端入口、Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
+2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约、HQ/多轮校对、任务重试/批次控制、翻译 Pool 进度/刷新恢复/章节设置记忆，以及快速工作区、书架批量产品流和任务中心系统控制已在审计后关闭；剩余主要缺口集中在 Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
 3. 本轮发现的 API Key 保存/使用故障不是后端没有保存，而是“后端凭据摘要”和“前端空白密钥输入框”之间的语义断裂。本轮已修复该故障及同类入口，并增加后端任务准入校验。
 4. 本轮还修复了翻译页“最后访问页只读不写”的数据闭环缺陷，并将导航更新改为与方案一致的独立 last-write-wins，不再因旧标签页 revision 产生普通切页冲突。
 5. 用户已确认的两项偏差不作为缺陷：
@@ -80,9 +80,9 @@
 | --- | --- | --- |
 | §1–§3 决策与边界 | 基本完成 | v2-only、后端事实源、浏览器交互/显示边界成立；部分前端仍用轮询或保留未接线工作态。 |
 | §4 运行架构 | 基本完成 | Launcher/API/Worker 分离、epoch/heartbeat/fencing、单实例和打包入口存在；CORS 与方案同源限制文字不一致，按用户意见记为接受偏差。 |
-| §5 存储架构 | 基本完成 | SQLite WAL、Alembic 0001–0010、不可变 assets、关系表、凭据/插件版本、任务/operation 快照和重试血缘均存在；完整查询计划、删除矩阵和故障注入验收不足。 |
-| §6 快速工作区 | 部分完成 | 后端播种、bootstrap、reset、promote、423 保护和约束处理存在；前端缺“新建快速翻译”和“保存到书架”顶栏入口，promote 无前端 API/弹窗；测试只覆盖部分 promote 语义。最后访问页本轮已补齐。 |
-| §7 统一任务系统 | 基本完成 | 持久队列、状态机、SSE、pause/resume/continue/cancel、reorder、关联 replacement retry、批次取消/优先/继续、脱敏详情和事件游标分页均已实现；系统模型释放和完整跨领域重试验收仍待补齐。 |
+| §5 存储架构 | 基本完成 | SQLite WAL、Alembic 0001–0011、不可变 assets、关系表、凭据/插件版本、任务/operation 快照、重试血缘和 Worker 控制命令均存在；完整查询计划、删除矩阵和故障注入验收不足。 |
+| §6 快速工作区 | 完成 | 后端播种、bootstrap、reset、promote、423 保护和约束处理完整；前端已有“新建快速翻译”“保存到书架”、new/existing book 弹窗和任务中心引导，promote 保持资产原位并拒绝重复目标。 |
+| §7 统一任务系统 | 基本完成 | 持久队列、状态机、SSE、pause/resume/continue/cancel、reorder、关联 replacement retry、批次取消/优先/继续、脱敏详情、事件游标分页和安全点模型释放均已实现；完整跨领域故障矩阵仍待补齐。 |
 | §8 翻译任务后端化 | 基本完成 | 创建任务即冻结配置/资产/插件/凭据，Worker 流水线可脱离浏览器执行；HQ 稳定 ID 批处理、多轮校对、真实 render/save 分界、后端 Pool 进度和基于后端失败事实的关联重试均已闭环。 |
 | §9 Insight 任务统一 | 部分完成 | 全书/局部分析、派生物、向量、续写和导出均有持久任务；页面仍保留 3 秒轮询，未完全统一到全局 SSE/快照。 |
 | §10 插件 v3 | 基本完成 | 不可变版本、快照、能力/失败策略、Worker 执行、Agent handoff 和管理 API 已实现；运行时与 OpenAPI 已完成双向闭集。 |
@@ -94,8 +94,8 @@
 | §16 翻译页 | 基本完成 | 后端任务、编辑 CAS、修复 operation、独立 render/save、文本/导出、HQ 稳定 ID batch、多轮校对、后端关联失败项重试、并行多行 Pool 进度和刷新恢复已闭环；剩余主要是指定页码大列表虚拟化和完整性能矩阵。 |
 | §17 Insight | 部分完成 | 主要分析/概览/时间线/问答/笔记/续写/设置功能已切 v2；PagesTree 展开章节会创建整章节点，状态与向量重建仍轮询，专项 1000 页验收缺失。 |
 | §18 Character Studio | 基本完成 | 文档 CAS、保存型 generate/chat/summary operation、SSE chunk、会话数据、导入导出和诊断主体完整；前端没有调用 abort API，也没有归档会话永久删除入口。 |
-| §19 书架 | 部分完成 | 后端 CRUD、搜索/标签/排序、批量删除/标签和 jobStatusSummary 已实现；前端丢弃 jobStatusSummary，store 的 batchMode/selectedBookIds/expandBook 是未消费状态，章节多选翻译、书籍批量翻译/删除/标签和任务跳转未实现。 |
-| §20 任务中心 | 基本完成 | 全局抽屉、队列/历史、SSE、暂停/继续/取消、产物下载、单任务排序、状态/类型/书籍筛选、脱敏详情、事件向前分页、整任务/失败项双策略重试和批次取消/优先/继续已实现；释放显存、新建批量分析和跨页定位仍缺。 |
+| §19 书架 | 基本完成 | 后端 CRUD、搜索/标签/排序、批量删除/标签和 jobStatusSummary 已实现；前端已接入排序、书籍批量翻译/删除/标签、章节多选翻译、任务徽章和任务中心定位。剩余为完整批量产品流与并发删除验收。 |
+| §20 任务中心 | 基本完成 | 全局抽屉、队列/历史、SSE、暂停/继续/取消、产物下载、单任务排序、状态/类型/书籍筛选、脱敏详情、事件向前分页、整任务/失败项双策略重试、批次取消/优先/继续、释放显存、新建批量分析和跨页定位均已实现；剩余为完整 crash-window/200 批清理验收。 |
 | §21 阅读器 | 基本完成 | 后端页列表、translated→source 回退、VirtualPageStream 和懒加载存在；缺“未翻译”持久徽标和“已翻译 m/N”统计。 |
 | §22 设置/提示词/Provider | 基本完成 | SQLite 事实源、统一 transaction、不可变凭据、统一诊断、提示词、字体和章节级非样式 settings_memory 已接线；本轮修复凭据 UI/校验；受限态仍未统一禁止所有任务/Provider 操作，文本默认值仍保留父子特殊握手。 |
 | §23 插件管理 | 基本完成 | v3 manifest/version/snapshot/runtime/Agent/管理 UI、契约和测试主体存在。 |
@@ -145,43 +145,38 @@
 
 ## 5. 主要产品缺口
 
-### 5.1 快速工作区
+### 5.1 已关闭：快速工作区
 
-后端已有：
+现已完成：
 
-- `GET /translation/bootstrap` 无参数工作区解析。
-- `POST /quick-workspace/reset`。
-- `POST /quick-workspace/promote`。
-- 非终态 job/operation/import lease 保护。
+- `GET /translation/bootstrap` 无参数解析固定快速工作区；新建快速翻译调用后端 reset。
+- 快速模式顶栏已有“新建快速翻译”和“保存到书架”两个正式动作。
+- promote 弹窗支持 new_book/existing_book，使用显式 mode 契约；资产关系原子转正而不移动对象文件。
+- 新书标题、目标书籍章节标题重复会拒绝；成功后新建空快速章节，快速约束清空，已有书籍约束保持。
+- reset/promote 遇到非终态 job、active operation 或导入租约时返回 423，前端打开并定位任务中心。
+- 后端路由、关系移动、重复目标和前端交互均有专项回归测试。
 
-前端缺失：
+### 5.2 已关闭主体：书架
 
-- 快速模式顶栏“新建快速翻译”按钮。
-- “保存到书架”按钮、new_book/existing_book 弹窗。
-- promote API wrapper。
-- 423 后打开/定位任务中心的引导。
+已接入：
 
-现有“清空全部”在快速模式调用 reset，不能替代方案定义的两个顶栏产品动作。
+- `jobStatusSummary` 从 OpenAPI DTO 经 bookshelf API 投影到书籍/章节，徽章优先消费全局任务 store 的实时状态并以数据库聚合兜底。
+- 首页批量管理模式支持多选书籍、批量翻译、批量删除和批量加/删标签；排序参数由后端执行。
+- 详情支持全选可翻译章节、逐章多选和“翻译选中章节”。
+- 后端批量翻译逐章准入：空章节、同类 active job、缺失凭据、非法设置或目标不存在按项跳过，并返回结构化原因；全不可用时返回 422。
+- 书籍/章节徽章和批量命令结果可打开任务中心并定位 job/batch/目标。
 
-### 5.2 书架
+仍需在最终验收矩阵中覆盖大批量、423 部分拒绝和并发删除产品流。
 
-后端 `list_books` 已查询 `jobStatusSummary`，但 `api/bookshelf.ts::toBook` 没有投影该字段，UI 因此无法显示任务徽标。
+### 5.3 已关闭主体：任务中心
 
-`bookshelfStore` 有 `batchMode`、`selectedBookIds`、batch tag helpers 和 `expandBook`，但书架视图/组件没有消费者。缺少：
+除既有的排序、筛选、详情、事件分页、重试和批次控制外，本轮新增：
 
-- 首页批量管理模式。
-- 批量翻译、删除、加/删标签。
-- 详情章节多选与“翻译选中章节”。
-- 书籍/章节任务状态徽标和任务中心跳转。
-- 后端 translation batch 的前端调用。
-
-### 5.3 任务中心
-
-本轮已完成 `jobs/reorder` 的 store/UI 接线、状态/类型/书籍筛选、任务详情和事件向前分页、单任务/失败项重试，以及批次取消/优先/继续。仍缺：
-
-- 释放本地模型/显存。
-- 新建批量分析入口。
-- 从书架/翻译/Insight 定位具体 job 或 batch。
+- “释放显存”通过 SQLite `worker_commands` 从 API 投递到隔离 Worker；Worker 只在原子步骤安全点领取，绑定 worker epoch，崩溃遗留 running 命令可恢复。
+- API 在本地模型 job step、Worker model operation 或 transient 模型请求运行时返回 409；空闲时卸载已加载的检测/OCR/Lama/Paddle 模型和插件运行时缓存。
+- 无 running/pausing/cancelling job、无 running Worker operation/transient request 持续 10 分钟后自动执行同一卸载逻辑。
+- 面板“新建批量分析”支持选择书籍、全书/增量/章节范围和章节多选，提交 Insight 后端任务。
+- 书架、翻译和其他入口通过 job/batch/book/chapter 目标打开抽屉、切换队列/历史、展开并滚动定位。
 
 ### 5.4 Insight
 
@@ -286,18 +281,17 @@
 本轮实际验证结果：
 
 - `npm run typecheck`、`npm run lint`、`npm run lint:css`、`npm run lint:ui` 全部通过。
-- 前端 Vitest：237 个测试文件、1710 项测试全部通过；typecheck、ESLint、Stylelint 和 UI architecture audit 同步通过。
-- 后端 v2 Pytest：130 项测试全部通过；2 条 warning 为 SQLAlchemy 对表达式索引反射的既有提示。
-- `npm run check:api` 与运行时 Flask 路由双向闭集测试通过；OpenAPI/运行时均为 185 个操作。
+- 前端 Vitest：238 个测试文件、1712 项测试全部通过；typecheck、ESLint、Stylelint 和 UI architecture audit 同步通过。
+- 后端 v2 Pytest：136 项测试全部通过；2 条 warning 为 SQLAlchemy 对表达式索引反射的既有提示。
+- 生成类型确定性检查与运行时 Flask 路由双向闭集测试通过；OpenAPI/运行时均为 186 个操作。
 - `npm run build:check` 通过，生产静态包已更新。
 
 ## 9. 建议的后续关闭顺序
 
 在再次宣布“重构完成”前，建议按以下门禁顺序处理：
 
-1. **产品页门禁**：快速工作区两个顶栏动作、书架批量/状态，以及任务中心系统模型释放/批量分析/跨页定位。
-2. **加载门禁**：Insight/指定页码/续写缩略图虚拟化，并补齐各场景 1000 页内存测试。
-3. **Studio/Reader/设置门禁**：Studio 服务端 abort 与归档删除接线、Reader 徽标/统计、全站 settings restricted mode。
-4. **最终验收门禁**：执行方案 §15 和各页面章节的剩余故障注入、并发、删除、GC、查询计划、断线恢复和打包验收。
+1. **加载门禁**：Insight/指定页码/续写缩略图虚拟化，并补齐各场景 1000 页内存测试。
+2. **Studio/Reader/设置门禁**：Studio 服务端 abort 与归档删除接线、Reader 徽标/统计、全站 settings restricted mode。
+3. **最终验收门禁**：执行方案 §15 和各页面章节的剩余故障注入、并发、删除、GC、查询计划、断线恢复和打包验收。
 
 当前可以继续在该分支重构，但不能以“只剩零碎优化”描述剩余工作；多个页面级功能和最终验收仍属于正式方案范围内的未完成项。

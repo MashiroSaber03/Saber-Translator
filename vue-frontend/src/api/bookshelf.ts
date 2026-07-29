@@ -58,6 +58,8 @@ export interface TagDetailResponse {
   error?: string
 }
 
+export type BookBatchDeleteResult = components['schemas']['BookBatchDeleteResult']
+
 function idempotencyConfig() {
   return {
     headers: {
@@ -93,6 +95,7 @@ function toChapter(chapter: V2Chapter): ChapterData {
     hasSession: true,
     ordinal: chapter.ordinal,
     pageOrderRevision: chapter.pageOrderRevision,
+    jobStatusSummary: chapter.jobStatusSummary,
   }
 }
 
@@ -117,6 +120,7 @@ function toBook(
     createdAt: book.createdAt,
     updatedAt: book.updatedAt,
     chapterOrderRevision: book.chapterOrderRevision,
+    jobStatusSummary: book.jobStatusSummary,
   }
 }
 
@@ -291,6 +295,27 @@ export async function deleteBook(bookId: string): Promise<ApiResponse> {
   chapterOrderRevisions.delete(bookId)
   constraintRevisions.delete(bookId)
   return { success: true }
+}
+
+export function batchDeleteBooks(bookIds: string[]): Promise<BookBatchDeleteResult> {
+  return apiClient.post<BookBatchDeleteResult>(
+    `${BOOKS_ENDPOINT}/batch-delete`,
+    { bookIds },
+    idempotencyConfig(),
+  )
+}
+
+export async function batchUpdateBookTags(
+  bookIds: string[],
+  tagNames: string[],
+  action: 'add' | 'remove',
+): Promise<{ updated: number }> {
+  const tagIds = await resolveTagIds(tagNames) || []
+  return apiClient.post(
+    `${BOOKS_ENDPOINT}/batch-tags`,
+    { bookIds, tagIds, action },
+    idempotencyConfig(),
+  )
 }
 
 export async function getChapters(bookId: string): Promise<ChapterListResponse> {

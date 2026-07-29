@@ -354,6 +354,90 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     }.issubset(roles)
 
 
+def test_multi_chapter_batch_creates_eligible_jobs_and_reports_skips(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    content = ContentRepository(platform["engine"])
+    eligible = content.create_chapter(
+        book_id=str(platform["book"]["id"]),
+        title="Eligible",
+    )
+    empty = content.create_chapter(
+        book_id=str(platform["book"]["id"]),
+        title="Empty",
+    )
+    importer = ImageImportService(
+        data_root=platform["data_root"],
+        repository=content,
+        storage=AssetStorageService(
+            platform["data_root"],
+            platform["engine"],
+        ),
+    )
+    payload = BytesIO()
+    with Image.new("RGB", (64, 64), (240, 240, 240)) as image:
+        image.save(payload, format="PNG")
+    lease = content.create_import_lease(str(eligible["id"]))
+    try:
+        importer.import_page(
+            chapter_id=str(eligible["id"]),
+            logical_path="eligible.png",
+            upload=BytesIO(payload.getvalue()),
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+            idempotency_key="eligible-page",
+        )
+    finally:
+        content.release_import_lease(
+            chapter_id=str(eligible["id"]),
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+        )
+
+    commands = TranslationJobCommandService(platform["engine"])
+    occupied = commands.create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard"},
+        page_ids=None,
+        idempotency_key="occupied",
+    )
+    accepted = commands.create_batch(
+        chapter_ids=[
+            str(platform["chapter"]["id"]),
+            str(eligible["id"]),
+            str(empty["id"]),
+        ],
+        config={"mode": "standard"},
+        idempotency_key="partial-batch",
+    )
+    replay = commands.create_batch(
+        chapter_ids=[
+            str(platform["chapter"]["id"]),
+            str(eligible["id"]),
+            str(empty["id"]),
+        ],
+        config={"mode": "standard"},
+        idempotency_key="partial-batch",
+    )
+
+    assert replay == accepted
+    assert len(accepted["jobIds"]) == 1
+    assert accepted["jobIds"][0] != occupied["jobIds"][0]
+    assert accepted["skipped"] == [
+        {
+            "chapterId": str(platform["chapter"]["id"]),
+            "reason": "active_job",
+            "message": "章节已有未结束的同类任务",
+        },
+        {
+            "chapterId": str(empty["id"]),
+            "reason": "empty_chapter",
+            "message": "translation task requires at least one page",
+        },
+    ]
+
+
 def test_translation_command_rejects_browser_supplied_provider_config() -> None:
     with pytest.raises(ValueError, match="unknown translation config fields"):
         normalize_translation_command(

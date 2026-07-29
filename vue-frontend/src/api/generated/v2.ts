@@ -36,6 +36,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/release-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["releaseWorkerModelCache"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings": {
         parameters: {
             query?: never;
@@ -2522,6 +2538,13 @@ export interface components {
             /** Format: uri */
             lanUrl: string;
         };
+        WorkerCommandAccepted: {
+            commandId: components["schemas"]["Uuid"];
+            /** @constant */
+            kind: "release_models";
+            /** @enum {string} */
+            status: "pending" | "running";
+        };
         SettingEntry: {
             domain: string;
             payload: {
@@ -2846,6 +2869,19 @@ export interface components {
             jobIds: components["schemas"]["Uuid"][];
             /** @constant */
             status: "queued";
+        };
+        TranslationBatchSkip: {
+            chapterId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            reason: "not_found" | "empty_chapter" | "active_job" | "missing_credentials" | "invalid_configuration";
+            message: string;
+        };
+        TranslationBatchAccepted: {
+            batchId: components["schemas"]["Uuid"];
+            jobIds: components["schemas"]["Uuid"][];
+            /** @constant */
+            status: "queued";
+            skipped: components["schemas"]["TranslationBatchSkip"][];
         };
         JobRetryCommand: {
             /**
@@ -3425,6 +3461,7 @@ export interface components {
             createdAt?: string;
             /** Format: date-time */
             updatedAt?: string;
+            jobStatusSummary?: components["schemas"]["JobStatusSummary"];
         };
         BookDetail: components["schemas"]["Book"] & {
             chapters: components["schemas"]["Chapter"][];
@@ -3472,6 +3509,16 @@ export interface components {
             title: string;
             pageCount?: number;
             pageOrderRevision: number;
+            jobStatusSummary?: components["schemas"]["JobStatusSummary"];
+        };
+        JobStatusSummary: {
+            queued?: number;
+            running?: number;
+            pausing?: number;
+            paused?: number;
+            cancelling?: number;
+            interrupted?: number;
+            failed?: number;
         };
         TitleUpdateCommand: {
             title: string;
@@ -4291,6 +4338,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServerInfo"];
+                };
+            };
+        };
+    };
+    releaseWorkerModelCache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model release was accepted for the Worker safe point. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerCommandAccepted"];
+                };
+            };
+            /** @description A local model inference is currently running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -6756,7 +6832,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobBatchAccepted"];
+                    "application/json": components["schemas"]["TranslationBatchAccepted"];
                 };
             };
             409: components["responses"]["Conflict"];
@@ -7317,10 +7393,18 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @enum {string} */
+                    mode: "new_book" | "existing_book";
                     chapterTitle: string;
-                    newBookTitle?: string;
-                    targetBookId?: components["schemas"]["Uuid"];
-                } & (unknown | unknown);
+                    title?: string;
+                    bookId?: components["schemas"]["Uuid"];
+                } & ({
+                    /** @constant */
+                    mode?: "new_book";
+                } | {
+                    /** @constant */
+                    mode?: "existing_book";
+                });
             };
         };
         responses: {

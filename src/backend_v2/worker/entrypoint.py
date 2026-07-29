@@ -130,6 +130,10 @@ def run_worker(args: object) -> int:
             from src.backend_v2.web_import.worker import (
                 WebImportWorkerService,
             )
+            from src.backend_v2.worker.model_lifecycle import (
+                WorkerModelControlRepository,
+                WorkerModelLifecycle,
+            )
 
             job_repository = JobQueueRepository(engine)
             translation = TranslationPipelineService(
@@ -269,6 +273,11 @@ def run_worker(args: object) -> int:
                 engine=engine,
                 repository=operation_repository,
             )
+            plugin_operation_runtime = PluginOperationRuntime(
+                data_root=data_root,
+                engine=engine,
+                repository=operation_repository,
+            )
             operation_runner = WorkerOperationRunner(
                 operation_repository,
                 worker_epoch_id=identity.epoch_id,
@@ -278,11 +287,7 @@ def run_worker(args: object) -> int:
                     "page_detect": interactive.handle,
                     "page_repair": repairs.handle,
                 },
-                plugin_runtime=PluginOperationRuntime(
-                    data_root=data_root,
-                    engine=engine,
-                    repository=operation_repository,
-                ),
+                plugin_runtime=plugin_operation_runtime,
             )
             qa_runner = InsightQAWorkerService(
                 data_root=data_root,
@@ -290,8 +295,27 @@ def run_worker(args: object) -> int:
                 worker_epoch_id=identity.epoch_id,
             )
 
+            plugin_job_runtime = PluginJobRuntime(
+                data_root=data_root,
+                engine=engine,
+                repository=job_repository,
+            )
+            model_lifecycle = WorkerModelLifecycle(
+                WorkerModelControlRepository(engine),
+                worker_epoch_id=identity.epoch_id,
+                release_callbacks=(
+                    plugin_job_runtime.release_cached_instances,
+                    plugin_operation_runtime.release_cached_instances,
+                ),
+            )
+
             def run_immediate_work() -> bool:
-                return operation_runner.run_one() or qa_runner.run_one()
+                if model_lifecycle.run_pending_release():
+                    return True
+                if operation_runner.run_one() or qa_runner.run_one():
+                    model_lifecycle.note_activity()
+                    return True
+                return model_lifecycle.release_if_idle()
 
             JobWorkerLoop(
                 job_repository,
@@ -302,11 +326,7 @@ def run_worker(args: object) -> int:
                     "proofread": translation.batch_handler,
                 },
                 safe_point=run_immediate_work,
-                plugin_runtime=PluginJobRuntime(
-                    data_root=data_root,
-                    engine=engine,
-                    repository=job_repository,
-                ),
+                plugin_runtime=plugin_job_runtime,
             ).run(stop_event)
     finally:
         if heartbeat is not None:

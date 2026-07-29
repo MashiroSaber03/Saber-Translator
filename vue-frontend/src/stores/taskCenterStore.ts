@@ -31,11 +31,19 @@ const EVENT_TYPES = [
   'drain_acknowledged',
 ]
 
+export interface TaskCenterFocus {
+  jobId?: string
+  batchId?: string
+  bookId?: string
+  chapterId?: string
+}
+
 export const useTaskCenterStore = defineStore('taskCenter', () => {
   const queue = ref<V2Job[]>([])
   const history = ref<V2Job[]>([])
   const queueRevision = ref(1)
   const drawerOpen = ref(false)
+  const focusTarget = ref<TaskCenterFocus | null>(null)
   const loading = ref(false)
   const connected = ref(false)
   const lastEventId = ref(0)
@@ -216,6 +224,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     history,
     queueRevision,
     drawerOpen,
+    focusTarget,
     loading,
     connected,
     latestEvent,
@@ -233,7 +242,10 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     initialize,
     disconnect,
     refresh,
-    open: () => { drawerOpen.value = true },
+    open: (target?: TaskCenterFocus) => {
+      focusTarget.value = target || null
+      drawerOpen.value = true
+    },
     close: () => { drawerOpen.value = false },
     pause: (jobId: string) => runCommand(() => jobsApi.pause(jobId)),
     resume: (jobId: string) => runCommand(() => jobsApi.resume(jobId)),

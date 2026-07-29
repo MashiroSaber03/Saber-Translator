@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import BookCard from '@/components/bookshelf/BookCard.vue'
@@ -22,6 +23,10 @@ function book(overrides: Partial<BookData> = {}): BookData {
 }
 
 describe('BookCard', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('uses a native button for opening the book card', async () => {
     const wrapper = mount(BookCard, {
       props: { book: book({ title: 'Saber' }) },

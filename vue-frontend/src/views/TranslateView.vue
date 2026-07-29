@@ -38,12 +38,17 @@ import {
 
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
+import QuickWorkspacePromoteModal from '@/components/translate/QuickWorkspacePromoteModal.vue'
+import { resetQuickWorkspace, type QuickWorkspacePromotion } from '@/api/v2/content'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const route = useRoute()
 
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
 const bubbleStore = useBubbleStore()
+const taskCenterStore = useTaskCenterStore()
 
 const {
   validateBeforeTranslation,
@@ -65,6 +70,7 @@ const translateInit = useTranslateInit()
 const showSettingsModal = ref(false)
 const showBookGlossaryModal = ref(false)
 const showBookNonTranslateModal = ref(false)
+const showQuickPromoteModal = ref(false)
 
 const showSponsorModal = ref(false)
 
@@ -82,7 +88,7 @@ const pageTitle = computed(() => {
   if (isBookshelfMode.value && currentChapterTitle.value && currentBookTitle.value) {
     return `${currentChapterTitle.value} - ${currentBookTitle.value}`
   }
-  return 'Saber-Translator'
+  return '快速翻译 - Saber-Translator'
 })
 
 onMounted(async () => {
@@ -217,6 +223,51 @@ function handleSettingsSave(payload?: { textDefaultsChanged?: boolean }) {
 function openSponsor() {
   showSponsorModal.value = true
 }
+
+function handleQuickWorkspaceLocked(error: unknown) {
+  showToast(
+    error instanceof Error
+      ? `${error.message}；请先在任务中心处理相关任务或等待导入结束`
+      : '快速工作区仍有活动任务或导入，请先在任务中心处理',
+    'warning',
+  )
+  taskCenterStore.open({ bookId: translateInit.currentBookId.value || undefined })
+}
+
+async function createNewQuickWorkspace() {
+  const confirmed = await confirmProductAction({
+    title: '新建快速翻译',
+    message: '这会永久清空当前快速工作区的页面、翻译结果和术语约束。确定继续吗？',
+    confirmText: '清空并新建',
+    tone: 'danger',
+  })
+  if (!confirmed || !(await guardDocumentFlush())) return
+  try {
+    await resetQuickWorkspace()
+    imageStore.clearImages()
+    bubbleStore.clearBubbles()
+    await loadChapterSession()
+    showToast('新的快速翻译工作区已创建', 'success')
+  } catch (error) {
+    if (
+      error
+      && typeof error === 'object'
+      && 'status' in error
+      && error.status === 423
+    ) {
+      handleQuickWorkspaceLocked(error)
+      return
+    }
+    showToast(error instanceof Error ? error.message : '新建快速翻译失败', 'error')
+  }
+}
+
+async function handleQuickWorkspacePromoted(_result: QuickWorkspacePromotion) {
+  imageStore.clearImages()
+  bubbleStore.clearBubbles()
+  await loadChapterSession()
+  showToast('快速翻译内容已保存到书架，当前工作区已切换为空白章节', 'success')
+}
 </script>
 
 <template>
@@ -258,6 +309,18 @@ function openSponsor() {
       </template>
 
       <template #actions>
+        <ProductHeaderAction
+          v-if="!isBookshelfMode"
+          label="新建快速翻译"
+          icon-name="plus"
+          @click="createNewQuickWorkspace"
+        />
+        <ProductHeaderAction
+          v-if="!isBookshelfMode"
+          label="保存到书架"
+          icon-name="book-open"
+          @click="showQuickPromoteModal = true"
+        />
         <ProductHeaderAction
           class="translate-header__settings-button"
           :class="{ 'translate-header__settings-button--highlighted': isSettingsButtonHighlighted }"
@@ -355,6 +418,11 @@ function openSponsor() {
 
     <BookGlossaryModal v-model="showBookGlossaryModal" />
     <BookNonTranslateModal v-model="showBookNonTranslateModal" />
+    <QuickWorkspacePromoteModal
+      v-model="showQuickPromoteModal"
+      @locked="handleQuickWorkspaceLocked"
+      @promoted="handleQuickWorkspacePromoted"
+    />
 
     <SponsorModal
       v-if="showSponsorModal"

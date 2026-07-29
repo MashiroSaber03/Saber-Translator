@@ -173,6 +173,7 @@ describe('BookshelfView', () => {
       'plus',
       'tags',
       'languages',
+      'check',
     ])
 
     const source = readFileSync(resolve(process.cwd(), 'src/views/BookshelfView.vue'), 'utf8')

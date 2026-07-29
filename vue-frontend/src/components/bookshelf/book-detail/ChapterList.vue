@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
@@ -6,14 +7,18 @@ import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import type { ChapterData } from '@/types/api'
 import ChapterRow from './ChapterRow.vue'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   chapters: ChapterData[]
   draggedChapterIndex: number | null
   dragOverChapterIndex: number | null
-}>()
+  selectedChapterIds?: Set<string>
+}>(), {
+  selectedChapterIds: () => new Set<string>(),
+})
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'create'): void
   (event: 'dragStart', dragEvent: DragEvent, index: number): void
   (event: 'dragOver', dragEvent: DragEvent, index: number): void
@@ -24,13 +29,57 @@ defineEmits<{
   (event: 'read', chapterId: string): void
   (event: 'edit', chapterId: string): void
   (event: 'delete', chapterId: string): void
+  (event: 'select', chapterId: string, selected: boolean): void
+  (event: 'selectAll', chapterIds: string[]): void
+  (event: 'translateSelected'): void
 }>()
+
+const taskCenterStore = useTaskCenterStore()
+const eligibleChapterIds = computed(() => props.chapters.filter(chapter => {
+  const pageCount = chapter.imageCount ?? 0
+  if (pageCount === 0) return false
+  const liveActive = taskCenterStore.queue.some(job => (
+    job.chapterId === chapter.id
+    && job.kind === 'translation'
+    && ['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)
+  ))
+  if (liveActive) return false
+  const summary = chapter.jobStatusSummary || {}
+  return !['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted']
+    .some(status => (summary[status as keyof typeof summary] || 0) > 0)
+}).map(chapter => chapter.id))
+const allSelected = computed(() => (
+  eligibleChapterIds.value.length > 0
+  && eligibleChapterIds.value.every(id => props.selectedChapterIds.has(id))
+))
+
+function toggleAll() {
+  emit('selectAll', allSelected.value ? [] : eligibleChapterIds.value)
+}
 </script>
 
 <template>
   <div class="chapter-list">
     <ProductSectionHeader title="章节列表" icon-name="book-open">
       <template #actions>
+        <UiButton
+          v-if="chapters.length"
+          size="sm"
+          variant="secondary"
+          :disabled="eligibleChapterIds.length === 0"
+          @click="toggleAll"
+        >
+          {{ allSelected ? '清空选择' : '全选可翻译章节' }}
+        </UiButton>
+        <UiButton
+          v-if="chapters.length"
+          size="sm"
+          variant="primary"
+          :disabled="selectedChapterIds.size === 0"
+          @click="$emit('translateSelected')"
+        >
+          翻译选中章节（{{ selectedChapterIds.size }}）
+        </UiButton>
         <UiButton size="sm" variant="primary" @click="$emit('create')">
           <UiIcon name="plus" size="14" />
           <span>新建章节</span>
@@ -52,6 +101,8 @@ defineEmits<{
         :index="index"
         :is-dragging="draggedChapterIndex === index"
         :is-drag-over="dragOverChapterIndex === index && draggedChapterIndex !== index"
+        :selectable="true"
+        :selected="selectedChapterIds.has(chapter.id)"
         @delete="$emit('delete', $event)"
         @drag-end="$emit('dragEnd')"
         @drag-leave="$emit('dragLeave')"
@@ -61,6 +112,7 @@ defineEmits<{
         @edit="$emit('edit', $event)"
         @read="$emit('read', $event)"
         @translate="$emit('translate', $event)"
+        @select="(chapterId, selected) => $emit('select', chapterId, selected)"
       />
     </ProductScrollStack>
     <ProductStatusBanner

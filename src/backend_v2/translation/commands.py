@@ -13,7 +13,8 @@ from src.backend_v2.jobs.repository import (
     JobSpec,
 )
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
-from src.backend_v2.storage.schema import books, chapters, pages
+from src.backend_v2.storage.schema import books, chapters, jobs, pages
+from src.backend_v2.storage.schema import NONTERMINAL_JOB_STATUSES
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.shared.ai_providers import (
     HQ_TRANSLATION_CAPABILITY,
@@ -121,23 +122,67 @@ class TranslationJobCommandService:
         command = normalize_translation_command(config)
         mode = str(command["mode"])
         job_kind = "remove_text" if mode == "remove_text" else "translation"
+        idempotency_payload = {
+            "chapterIds": list(chapter_ids),
+            "config": command,
+        }
+        replay = self.jobs.idempotency_replay(
+            scope="translation-batch",
+            key=idempotency_key,
+            payload=idempotency_payload,
+        )
+        if replay is not None:
+            return replay
         plugin_snapshots = self._plugin_snapshots()
         specs: list[JobSpec] = []
+        skipped: list[dict[str, str]] = []
+        with self.engine.connect() as connection:
+            occupied_chapter_ids = {
+                str(value)
+                for value in connection.execute(
+                    select(jobs.c.chapter_id).where(
+                        jobs.c.chapter_id.in_(chapter_ids),
+                        jobs.c.kind == job_kind,
+                        jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                    )
+                ).scalars()
+                if value is not None
+            }
         for chapter_id in chapter_ids:
-            chapter, ordered_pages = self._resolve_chapter_pages(
-                chapter_id=chapter_id,
-                requested_page_ids=None,
-            )
-            normalized = self.settings.resolve_translation(
-                chapter_id=chapter_id,
-                command=command,
-            )
-            step_kinds = step_kinds_for_mode(
-                mode,
-                reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
-                proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
-            )
-            validate_translation_job_requirements(normalized, step_kinds)
+            if chapter_id in occupied_chapter_ids:
+                skipped.append(
+                    {
+                        "chapterId": chapter_id,
+                        "reason": "active_job",
+                        "message": "章节已有未结束的同类任务",
+                    }
+                )
+                continue
+            try:
+                chapter, ordered_pages = self._resolve_chapter_pages(
+                    chapter_id=chapter_id,
+                    requested_page_ids=None,
+                )
+                normalized = self.settings.resolve_translation(
+                    chapter_id=chapter_id,
+                    command=command,
+                )
+                step_kinds = step_kinds_for_mode(
+                    mode,
+                    reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
+                    proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
+                )
+                validate_translation_job_requirements(normalized, step_kinds)
+            except ValueError as exc:
+                message = str(exc)
+                skipped.append(
+                    {
+                        "chapterId": chapter_id,
+                        "reason": _batch_skip_reason(message),
+                        "message": message,
+                    }
+                )
+                continue
             specs.append(
                 JobSpec(
                     kind=job_kind,
@@ -159,6 +204,11 @@ class TranslationJobCommandService:
                     plugin_snapshots=plugin_snapshots,
                 )
             )
+        if not specs:
+            summary = "；".join(
+                f"{item['chapterId']}: {item['message']}" for item in skipped
+            )
+            raise ValueError(f"没有可创建任务的章节：{summary}")
         return self.jobs.create_batch(
             kind=job_kind,
             display_name=(
@@ -167,12 +217,10 @@ class TranslationJobCommandService:
                 else str(specs[0].target_display["chapter"])
             ),
             specs=specs,
+            response_extra={"skipped": skipped},
             idempotency_scope="translation-batch",
             idempotency_key=idempotency_key,
-            idempotency_payload={
-                "chapterIds": list(chapter_ids),
-                "config": command,
-            },
+            idempotency_payload=idempotency_payload,
         )
 
     def _resolve_chapter_pages(
@@ -237,6 +285,17 @@ def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
         "skipCompleted": bool(config.get("skipCompleted", False)),
         "reuseExistingBubbles": bool(config.get("reuseExistingBubbles", False)),
     }
+
+
+def _batch_skip_reason(message: str) -> str:
+    lowered = message.lower()
+    if "chapter not found" in lowered:
+        return "not_found"
+    if "requires at least one page" in lowered:
+        return "empty_chapter"
+    if "api key" in lowered or "credential" in lowered:
+        return "missing_credentials"
+    return "invalid_configuration"
 
 
 def step_kinds_for_mode(

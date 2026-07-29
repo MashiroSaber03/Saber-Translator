@@ -780,6 +780,15 @@ def get_lama_mpe_inpainter() -> LamaMPEInpainter:
     return _inpainter
 
 
+def reset_lama_mpe_inpainter():
+    """卸载并丢弃全局 LAMA MPE 修复器。"""
+    global _inpainter
+    if _inpainter is not None:
+        _inpainter.unload()
+    _inpainter = None
+    LamaMPEInpainter._instance = None
+
+
 def is_lama_mpe_available() -> bool:
     """检查 LAMA MPE 是否可用"""
     model_path = resource_path("models/lama/inpainting_lama_mpe.ckpt")

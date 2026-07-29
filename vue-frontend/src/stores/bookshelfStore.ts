@@ -391,16 +391,32 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function deleteBookApi(bookId: string): Promise<boolean> {
-    try {
-      const response = await bookshelfApi.deleteBook(bookId)
-      if (response.success) {
-        deleteBook(bookId)
-        return true
-      }
-      return false
-    } catch {
-      return false
+    const response = await bookshelfApi.deleteBook(bookId)
+    if (response.success) {
+      deleteBook(bookId)
+      return true
     }
+    return false
+  }
+
+  async function batchDeleteBooksApi(
+    bookIds: string[],
+  ): Promise<bookshelfApi.BookBatchDeleteResult> {
+    const result = await bookshelfApi.batchDeleteBooks(bookIds)
+    deleteBooks(result.deleted)
+    return result
+  }
+
+  async function batchUpdateTagsApi(
+    bookIds: string[],
+    tagNames: string[],
+    action: 'add' | 'remove',
+  ): Promise<number> {
+    const result = await bookshelfApi.batchUpdateBookTags(bookIds, tagNames, action)
+    if (action === 'add') batchAddTags(bookIds, tagNames)
+    else batchRemoveTags(bookIds, tagNames)
+    await loadBooks()
+    return result.updated
   }
 
   async function createTag(name: string, color?: string): Promise<TagData | null> {
@@ -478,16 +494,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<boolean> {
-    try {
-      const response = await bookshelfApi.deleteChapter(bookId, chapterId)
-      if (response.success) {
-        deleteChapter(bookId, chapterId)
-        return true
-      }
-      return false
-    } catch {
-      return false
+    const response = await bookshelfApi.deleteChapter(bookId, chapterId)
+    if (response.success) {
+      deleteChapter(bookId, chapterId)
+      return true
     }
+    return false
   }
 
   async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<boolean> {
@@ -587,6 +599,8 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     createBook,
     updateBookApi,
     deleteBookApi,
+    batchDeleteBooksApi,
+    batchUpdateTagsApi,
     createTag,
     deleteTagApi,
     updateTagApi,

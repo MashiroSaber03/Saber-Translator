@@ -136,6 +136,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
         create_web_import_blueprint,
     )
     from src.backend_v2.api.web import create_web_blueprint
+    from src.backend_v2.api.system_routes import create_system_blueprint
     from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 
     engine = settings.engine or create_sqlite_engine(database_path_for(settings.data_root))
@@ -188,6 +189,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
     app.register_blueprint(
         create_content_blueprint(data_root=settings.data_root, engine=engine)
     )
+    app.register_blueprint(create_system_blueprint(engine=engine))
     app.register_blueprint(
         create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
     )

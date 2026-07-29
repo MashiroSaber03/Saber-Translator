@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
+import TaskBatchAnalysisModal from '@/components/task-center/TaskBatchAnalysisModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
@@ -10,11 +11,15 @@ import { describeJobTarget, progressPercent } from '@/stores/taskCenterProjectio
 import { jobsApi } from '@/api/v2/jobs'
 import { triggerUrlDownload } from '@/utils/browserDownload'
 import { showToast } from '@/utils/toast'
+import { releaseWorkerModelCache } from '@/api/v2/system'
+import type { V2AcceptedJob } from '@/api/v2/insight'
 
 const store = useTaskCenterStore()
 const tab = ref<'queue' | 'history'>('queue')
 const expanded = ref(new Set<string>())
 const downloading = ref(new Set<string>())
+const analysisModalOpen = ref(false)
+const releasingModels = ref(false)
 
 const groups = computed(() => tab.value === 'queue' ? store.queueBatches : store.historyBatches)
 const availableKinds = computed(() => (
@@ -43,6 +48,55 @@ const bookOptions = computed<UiSelectOption[]>(() => {
     ...[...labels].map(([value, label]) => ({ label, value })),
   ]
 })
+
+watch(
+  [
+    () => store.drawerOpen,
+    () => store.focusTarget,
+    () => store.queue.length,
+    () => store.history.length,
+  ],
+  async () => {
+    const target = store.focusTarget
+    if (!store.drawerOpen || !target) return
+    const allJobs = [...store.queue, ...store.history]
+    const focusedJob = target.jobId
+      ? allJobs.find(job => job.jobId === target.jobId)
+      : allJobs.find(job => (
+          (!target.batchId || job.batchId === target.batchId)
+          && (!target.chapterId || job.chapterId === target.chapterId)
+          && (!target.bookId || job.bookId === target.bookId)
+        ))
+    const batchId = target.batchId || focusedJob?.batchId || undefined
+    if (
+      focusedJob
+      && store.history.some(job => job.jobId === focusedJob.jobId)
+    ) {
+      tab.value = 'history'
+    } else {
+      tab.value = 'queue'
+    }
+    await nextTick()
+    const group = groups.value.find(item => (
+      (batchId && item.batchId === batchId)
+      || item.jobs.some(job => job.jobId === focusedJob?.jobId)
+    ))
+    if (group) {
+      expanded.value = new Set([...expanded.value, group.key])
+    }
+    await nextTick()
+    const selector = batchId
+      ? `[data-task-batch-id="${batchId}"]`
+      : focusedJob
+        ? `[data-task-job-id="${focusedJob.jobId}"]`
+        : ''
+    const element = selector
+      ? document.querySelector<HTMLElement>(selector)
+      : null
+    element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    if (element) store.focusTarget = null
+  },
+)
 
 const statusLabels: Record<string, string> = {
   queued: '排队中',
@@ -147,6 +201,40 @@ async function downloadArtifact(job: V2Job) {
     downloading.value = next
   }
 }
+
+async function releaseModels() {
+  if (releasingModels.value) return
+  releasingModels.value = true
+  try {
+    await releaseWorkerModelCache()
+    showToast('已提交显存释放命令，Worker 将在安全点立即执行', 'success')
+  } catch (error) {
+    const status = (
+      error
+      && typeof error === 'object'
+      && 'status' in error
+    ) ? Number(error.status) : 0
+    showToast(
+      status === 409
+        ? '本地模型正在推理，请等待当前模型步骤完成后再试'
+        : error instanceof Error
+          ? error.message
+          : '释放显存失败',
+      status === 409 ? 'warning' : 'error',
+    )
+  } finally {
+    releasingModels.value = false
+  }
+}
+
+async function analysisCreated(result: V2AcceptedJob) {
+  await store.refresh()
+  store.open({
+    batchId: result.batchId,
+    jobId: result.jobIds[0],
+  })
+  showToast('批量分析任务已加入后端队列', 'success')
+}
 </script>
 
 <template>
@@ -166,9 +254,26 @@ async function downloadArtifact(job: V2Job) {
             <h2>任务中心</h2>
             <p>后端持续执行 · 关闭页面不会停止任务</p>
           </div>
-          <UiButton size="sm" variant="ghost" class="task-center__close" @click="store.close">
-            关闭
-          </UiButton>
+          <div class="task-center__header-actions">
+            <UiButton
+              size="xs"
+              variant="secondary"
+              @click="analysisModalOpen = true"
+            >
+              新建批量分析
+            </UiButton>
+            <UiButton
+              size="xs"
+              variant="ghost"
+              :disabled="releasingModels"
+              @click="releaseModels"
+            >
+              {{ releasingModels ? '提交中…' : '释放显存' }}
+            </UiButton>
+            <UiButton size="sm" variant="ghost" class="task-center__close" @click="store.close">
+              关闭
+            </UiButton>
+          </div>
         </header>
 
         <div v-if="!store.connected" class="task-center__offline">
@@ -248,7 +353,12 @@ async function downloadArtifact(job: V2Job) {
           <p v-if="store.loading && !groups.length" class="task-center__empty">正在读取后端任务…</p>
           <p v-else-if="!groups.length" class="task-center__empty">这里还没有任务</p>
 
-          <section v-for="group in groups" :key="group.key" class="task-batch">
+          <section
+            v-for="group in groups"
+            :key="group.key"
+            class="task-batch"
+            :data-task-batch-id="group.batchId || undefined"
+          >
             <UiButton
               variant="card-action"
               block
@@ -288,7 +398,12 @@ async function downloadArtifact(job: V2Job) {
             </div>
 
             <div v-if="expanded.has(group.key) || group.jobs.length === 1" class="task-batch__jobs">
-              <article v-for="job in group.jobs" :key="job.jobId" class="task-job">
+              <article
+                v-for="job in group.jobs"
+                :key="job.jobId"
+                class="task-job"
+                :data-task-job-id="job.jobId"
+              >
                 <div class="task-job__top">
                   <div>
                     <strong>{{ describeJobTarget(job) }}</strong>
@@ -403,6 +518,10 @@ async function downloadArtifact(job: V2Job) {
         </main>
       </aside>
     </OverlayLayer>
+    <TaskBatchAnalysisModal
+      v-model="analysisModalOpen"
+      @created="analysisCreated"
+    />
   </Teleport>
 </template>
 
@@ -442,6 +561,13 @@ async function downloadArtifact(job: V2Job) {
   margin-top: 4px;
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+.task-center__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .task-center__close,

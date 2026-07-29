@@ -800,6 +800,40 @@ worker_leases = Table(
     Column("lease_expires_at", DateTime(timezone=True), nullable=False),
 )
 
+worker_commands = Table(
+    "worker_commands",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column("kind", String(64), nullable=False),
+    Column("status", String(16), nullable=False, server_default="pending"),
+    Column(
+        "worker_epoch_id",
+        String(UUID_LENGTH),
+        ForeignKey("process_epochs.id", ondelete="SET NULL"),
+    ),
+    Column("result_json", Text),
+    Column("error_json", Text),
+    Column("started_at", DateTime(timezone=True)),
+    Column("finished_at", DateTime(timezone=True)),
+    *_timestamps(),
+    CheckConstraint("kind IN ('release_models')", name="kind_values"),
+    CheckConstraint(
+        "status IN ('pending','running','completed','failed')",
+        name="status_values",
+    ),
+)
+Index(
+    "uq_worker_commands_one_active_kind",
+    worker_commands.c.kind,
+    unique=True,
+    sqlite_where=worker_commands.c.status.in_(("pending", "running")),
+)
+Index(
+    "ix_worker_commands_claim",
+    worker_commands.c.status,
+    worker_commands.c.created_at,
+)
+
 api_executor_leases = Table(
     "api_executor_leases",
     metadata,

@@ -4,18 +4,25 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import { computed, ref, watch } from 'vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import TaskStatusBadge from '@/components/task-center/TaskStatusBadge.vue'
 
 interface Props {
   book: BookData
   tags?: TagData[]
+  selectable?: boolean
+  selected?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   tags: () => [],
+  selectable: false,
+  selected: false,
 })
 
 const emit = defineEmits<{
   click: []
+  select: [selected: boolean]
 }>()
 
 const coverFailed = ref(false)
@@ -39,6 +46,7 @@ watch(() => props.book.cover, () => {
 })
 
 function handleClick() {
+  if (props.selectable) return
   emit('click')
 }
 
@@ -53,37 +61,58 @@ function handleImageError() {
 </script>
 
 <template>
-  <ProductRecordCard
-    as="button"
-    class="book-card"
-    :aria-label="`打开书籍：${book.title}`"
-    @click="handleClick"
-  >
-    <div class="book-card__cover">
-      <img
-        v-if="hasVisibleCover"
-        class="book-card__cover-image"
-        :src="book.cover"
-        :alt="book.title"
-        @error="handleImageError"
-      >
-      <div v-else class="book-card__cover-placeholder">无封面</div>
-    </div>
+  <div class="book-card-shell">
+    <ProductRecordCard
+      :as="selectable ? 'article' : 'button'"
+      class="book-card"
+      :accent="selected"
+      :aria-label="selectable ? `批量选择书籍：${book.title}` : `打开书籍：${book.title}`"
+      @click="handleClick"
+    >
+      <div class="book-card__cover">
+        <img
+          v-if="hasVisibleCover"
+          class="book-card__cover-image"
+          :src="book.cover"
+          :alt="book.title"
+          loading="lazy"
+          @error="handleImageError"
+        >
+        <div v-else class="book-card__cover-placeholder">无封面</div>
+      </div>
 
-    <div class="book-card__info">
-      <h3 class="book-card__title" :title="book.title">{{ book.title }}</h3>
-      <p class="book-card__chapter-count">{{ book.chapterCount ?? book.chapters?.length ?? 0 }} 章节</p>
-      <ProductChipList
-        v-if="tagItems.length > 0"
-        class="book-card__tags"
-        aria-label="书籍标签"
-        :items="tagItems"
-      />
-    </div>
-  </ProductRecordCard>
+      <div class="book-card__info">
+        <h3 class="book-card__title" :title="book.title">{{ book.title }}</h3>
+        <p class="book-card__chapter-count">{{ book.chapterCount ?? book.chapters?.length ?? 0 }} 章节</p>
+        <ProductChipList
+          v-if="tagItems.length > 0"
+          class="book-card__tags"
+          aria-label="书籍标签"
+          :items="tagItems"
+        />
+      </div>
+    </ProductRecordCard>
+    <UiCheckbox
+      v-if="selectable"
+      class="book-card-shell__selection"
+      :model-value="selected"
+      :aria-label="`选择书籍：${book.title}`"
+      @change="$emit('select', $event)"
+    />
+    <TaskStatusBadge
+      class="book-card-shell__task-status"
+      :book-id="book.id"
+      :summary="book.jobStatusSummary"
+    />
+  </div>
 </template>
 
 <style scoped>
+.book-card-shell {
+  position: relative;
+  min-width: 0;
+}
+
 .book-card {
   --product-record-card-background: var(--color-surface-card);
   --product-record-card-radius: var(--radius-lg);
@@ -102,6 +131,24 @@ function handleImageError() {
   overflow: hidden;
   position: relative;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.book-card-shell__selection,
+.book-card-shell__task-status {
+  position: absolute;
+  top: 10px;
+  z-index: var(--z-local);
+}
+
+.book-card-shell__selection {
+  left: 10px;
+  padding: 6px;
+  background: var(--color-surface-card);
+  border-radius: var(--radius-sm);
+}
+
+.book-card-shell__task-status {
+  right: 10px;
 }
 
 .book-card::after {

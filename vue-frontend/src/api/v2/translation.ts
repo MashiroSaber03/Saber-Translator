@@ -6,6 +6,8 @@ export type TranslationJobConfig = components['schemas']['TranslationJobConfig']
 export type V2TextImportPreview = components['schemas']['TextImportPreview']
 export type V2TextImportPreviewPage = components['schemas']['TextImportPreviewPage']
 export type V2TranslationBatchAccepted = components['schemas']['JobBatchAccepted']
+export type V2MultiChapterTranslationBatchAccepted =
+  components['schemas']['TranslationBatchAccepted']
 
 export async function createChapterTranslationJob(
   chapterId: string,
@@ -15,6 +17,17 @@ export async function createChapterTranslationJob(
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/translation-jobs`,
     { config, pageIds },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function createTranslationBatch(
+  chapterIds: string[],
+  config: TranslationJobConfig = { mode: 'standard' },
+): Promise<V2MultiChapterTranslationBatchAccepted> {
+  return apiClient.post<V2MultiChapterTranslationBatchAccepted>(
+    '/api/v2/job-batches/translation',
+    { chapterIds, config },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

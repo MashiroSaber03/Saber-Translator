@@ -205,6 +205,22 @@ export async function resetQuickWorkspace(): Promise<V2TranslationBootstrap> {
   return getTranslationBootstrap()
 }
 
+export type QuickWorkspacePromoteCommand =
+  | { mode: 'new_book'; title: string; chapterTitle: string }
+  | { mode: 'existing_book'; bookId: string; chapterTitle: string }
+
+export type QuickWorkspacePromotion = components['schemas']['QuickWorkspacePromotion']
+
+export function promoteQuickWorkspace(
+  command: QuickWorkspacePromoteCommand,
+): Promise<QuickWorkspacePromotion> {
+  return apiClient.post<QuickWorkspacePromotion>(
+    `${API_ROOT}/quick-workspace/promote`,
+    command,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
 export function updateLastVisitedPage(
   chapterId: string,
   pageId: string,

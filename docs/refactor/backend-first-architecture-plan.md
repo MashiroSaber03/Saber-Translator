@@ -237,6 +237,7 @@ API 与 Worker 的全部**业务数据协作**通道如下，均经 SQLite 与�
 | 导入租约 | `import_leases` | owner_token_hash、目标章节、最后活动时间和 60 秒到期时间；明文 token 只在签发响应返回一次，Worker 启动写任务前校验租约 |
 | Provider 限速 | `provider_rate_limits` | API 与 Worker 共用 SQLite 令牌/时间窗，合计遵守 RPM |
 | 进程 epoch | `process_epochs` + `worker_leases` + `api_executor_leases` | Launcher/API/Worker 启动身份、心跳和恢复完成标记；API 单独重启只创建新的 api epoch，不创建或失效 worker epoch |
+| Worker 控制命令 | `worker_commands` | API 提交释放模型等进程控制事实，Worker 只在原子步骤安全点领取；命令绑定 worker epoch，旧 epoch 的 running 命令由新 Worker 恢复为 pending |
 
 **operations 状态机**：
 
@@ -403,6 +404,7 @@ data-v2/
 - `job_asset_inputs`：任务运行期间对已绑定输入资产版本的明确 FK，并记录 `binding_phase=create|item_start|checkpoint`；至少供 export、Insight 和所有已经开始处理页面的写任务使用，禁止只把 asset_id 埋入配置 JSON。不同任务何时绑定输入由 §7.4.1 矩阵唯一决定，不得笼统地全部在任务创建时冻结。容器源文件和网页 draft 临时文件另由 job/draft 行及其任务作用域相对目录保护，不伪装成正式 asset。
 - `job_artifacts`：完成后可下载或按 TTL 查看之产物（job_id、kind、asset_id、expires_at）；ZIP/PDF/CBZ、Insight 导出和调试包均以真实 asset FK 管理，不把已完成文件继续留在 temp。
 - `process_epochs`、`worker_leases`、`api_executor_leases`：Launcher/API/Worker epoch、心跳、job/operation/render attempt、lease_token、恢复完成标记和到期时间；新 Worker/API executor 在对应旧 epoch 恢复事务完成前不得领取工作。API epoch 失效不改变健康 Worker job；任一续租 CAS 影响 0 行都必须触发 §4.4 的执行器自我隔离，不能只依赖发布时最终 fencing。
+- `worker_commands`：API 到 Worker 的持久控制命令；当前只允许 `release_models`，同类 active 命令唯一，Worker 在步骤安全点领取并绑定当前 worker epoch，崩溃遗留 running 命令由新 Worker 恢复后重试。
 - `chapter_write_intents`：章节写 job 在 queued 排空阶段的持久准入屏障；`chapter_id` 唯一，明确引用 job 与 owner `worker_epoch_id`，保存本次多章节共享的 `intent_set_id`、由 `chapters.write_intent_generation` 原子递增得到的每章节单调 generation、`lease_token/lease_expires_at/created_at`。同一 job 多章节意图必须在一个事务中全有或全无；它只封闭新写入，不等价于 running 锁，也不允许跨失效 Worker epoch 遗留。
 - `chapter_write_locks`：章节级持久写锁；`chapter_id` 唯一并明确引用持锁 job、单调 `lock_generation`、当前可空 owner attempt 和 lease_token。resume/continue 形成 queued 时锁仍归 job，下一次领取在同一事务提升 generation 并绑定新 attempt；旧 attempt 永远不能释放新 generation 的锁。
 - `operations`：保存型即时操作；记录 kind、由后端决定的 executor_role、明确目标 FK、base_revision、状态、结果、错误以及领取它的 executor_epoch_id/attempt_id/lease_token/lease_expires_at。每种 kind 的冻结请求保存在带 `request_schema_version` 的固定 schema `request_json`，不能接受任意扩展键或从 JSON 改写 executor/目标；`page_repair` 的 request 必须明确保存 method、fill_color（restore_source 为空）和 repair_revision，source/parent clean/mask 则通过 `operation_asset_inputs` 的真实 FK 绑定。

@@ -333,6 +333,15 @@ def get_litelama_inpainter() -> LiteLamaInpainter:
     return _litelama_inpainter
 
 
+def reset_litelama_inpainter():
+    """卸载并丢弃全局 LiteLama 修复器。"""
+    global _litelama_inpainter
+    if _litelama_inpainter is not None:
+        _litelama_inpainter.unload()
+    _litelama_inpainter = None
+    LiteLamaInpainter._instance = None
+
+
 def _clean_with_litelama(image, mask, disable_resize=False):
     """使用 litelama 进行修复"""
     if not LAMA_LITELAMA_AVAILABLE:

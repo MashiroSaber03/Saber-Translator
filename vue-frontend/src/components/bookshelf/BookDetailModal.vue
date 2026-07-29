@@ -12,6 +12,8 @@ import BookDetailSummary from './book-detail/BookDetailSummary.vue'
 import ChapterFormContent from './book-detail/ChapterFormContent.vue'
 import ChapterList from './book-detail/ChapterList.vue'
 import QuickTagPicker from './book-detail/QuickTagPicker.vue'
+import { createTranslationBatch } from '@/api/v2/translation'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const emit = defineEmits<{
   close: []
@@ -20,10 +22,12 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const bookshelfStore = useBookshelfStore()
+const taskCenterStore = useTaskCenterStore()
 
 const showChapterModal = ref(false)
 const editingChapterId = ref<string | null>(null)
 const chapterTitle = ref('')
+const selectedChapterIds = ref(new Set<string>())
 
 const showDeleteConfirm = ref(false)
 const deleteTarget = ref<'book' | 'chapter'>('book')
@@ -81,10 +85,55 @@ async function confirmDelete() {
       }
     }
   } catch (error) {
-    showToast('删除失败', 'error')
+    if (
+      error
+      && typeof error === 'object'
+      && 'status' in error
+      && error.status === 423
+    ) {
+      showToast('存在进行中的任务或导入，请先在任务中心处理', 'warning')
+      taskCenterStore.open({
+        bookId: currentBook.value?.id,
+        chapterId: deleteChapterId.value || undefined,
+      })
+    } else {
+      showToast(error instanceof Error ? error.message : '删除失败', 'error')
+    }
   }
   showDeleteConfirm.value = false
   deleteChapterId.value = null
+}
+
+function selectChapter(chapterId: string, selected: boolean) {
+  const next = new Set(selectedChapterIds.value)
+  if (selected) next.add(chapterId)
+  else next.delete(chapterId)
+  selectedChapterIds.value = next
+}
+
+function selectAllChapters(chapterIds: string[]) {
+  selectedChapterIds.value = new Set(chapterIds)
+}
+
+async function translateSelectedChapters() {
+  const chapterIds = [...selectedChapterIds.value]
+  if (!chapterIds.length) return
+  try {
+    const result = await createTranslationBatch(chapterIds, { mode: 'standard' })
+    selectedChapterIds.value = new Set()
+    await taskCenterStore.refresh()
+    await refreshBookDetail()
+    const skipped = result.skipped.length
+    showToast(
+      skipped
+        ? `已创建 ${result.jobIds.length} 个任务，跳过 ${skipped} 个章节`
+        : `已创建 ${result.jobIds.length} 个后端翻译任务`,
+      skipped ? 'warning' : 'success',
+    )
+    taskCenterStore.open({ batchId: result.batchId })
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '创建批量翻译任务失败', 'error')
+  }
 }
 
 function openCreateChapterModal() {
@@ -397,6 +446,7 @@ async function quickAddTagToBook(tagName: string) {
         :chapters="chapters"
         :drag-over-chapter-index="dragOverChapterIndex"
         :dragged-chapter-index="draggedChapterIndex"
+        :selected-chapter-ids="selectedChapterIds"
         @create="openCreateChapterModal"
         @delete="deleteChapter"
         @drag-end="handleChapterDragEnd"
@@ -407,6 +457,9 @@ async function quickAddTagToBook(tagName: string) {
         @edit="openEditChapterModal"
         @read="goToReader"
         @translate="goToTranslate"
+        @select="selectChapter"
+        @select-all="selectAllChapters"
+        @translate-selected="translateSelectedChapters"
       />
     </div>
   </BaseModal>
