@@ -46,6 +46,7 @@ from src.backend_v2.translation.commands import (
     normalize_translation_command,
 )
 from src.backend_v2.translation.pipeline import (
+    LegacyTranslationAlgorithms,
     TranslationPipelineService,
     _validate_stable_batch_result,
 )
@@ -58,6 +59,50 @@ from src.backend_v2.testing.fake_provider import (
 
 class FakeAlgorithms(DeterministicFakeProvider):
     """Compatibility alias for failure-injection tests in this module."""
+
+
+def test_legacy_color_adapter_accepts_serialized_dictionary_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import color_extractor
+
+    extracted = [
+        {
+            "fg_color": [1, 2, 3],
+            "bg_color": [250, 251, 252],
+            "confidence": 0.875,
+        }
+    ]
+    calls: list[tuple[list[list[int]], list[list[dict[str, Any]]]]] = []
+
+    def fake_extract(_image, coords, textlines):
+        calls.append((coords, textlines))
+        return extracted
+
+    monkeypatch.setattr(
+        color_extractor,
+        "extract_bubble_colors",
+        fake_extract,
+    )
+    payloads = [
+        {
+            "coords": [3, 4, 20, 30],
+            "textlines": [{"polygon": [[3, 4], [20, 4]], "direction": "h"}],
+        }
+    ]
+
+    with Image.new("RGB", (32, 32), "white") as image:
+        result = LegacyTranslationAlgorithms().colors(image, payloads)
+
+    assert result == extracted
+    assert result is not extracted
+    assert result[0] is not extracted[0]
+    assert calls == [
+        (
+            [[3, 4, 20, 30]],
+            [[{"polygon": [[3, 4], [20, 4]], "direction": "h"}]],
+        )
+    ]
 
 
 @pytest.fixture(autouse=True)

@@ -4,10 +4,12 @@ import logging
 from pathlib import Path
 import sys
 
+import colorama
 from flask import Flask
 
 from src.backend_v2.api.app import _install_request_logging
 from src.backend_v2.logging_config import (
+    ColoredSecretSafeFormatter,
     SecretSafeFormatter,
     configure_backend_logging,
 )
@@ -37,6 +39,40 @@ def test_secret_safe_formatter_redacts_messages_and_tracebacks() -> None:
     assert rendered.count("[REDACTED]") >= 3
 
 
+def test_colored_formatter_colors_complete_lines_by_severity() -> None:
+    formatter = ColoredSecretSafeFormatter("%(levelname)s %(message)s")
+
+    warning = formatter.format(
+        logging.LogRecord(
+            "test",
+            logging.WARNING,
+            __file__,
+            1,
+            "warning message",
+            (),
+            None,
+        )
+    )
+    error = formatter.format(
+        logging.LogRecord(
+            "test",
+            logging.ERROR,
+            __file__,
+            1,
+            "error message",
+            (),
+            None,
+        )
+    )
+
+    assert warning == (
+        f"{colorama.Fore.YELLOW}WARNING warning message{colorama.Style.RESET_ALL}"
+    )
+    assert error == (
+        f"{colorama.Fore.RED}ERROR error message{colorama.Style.RESET_ALL}"
+    )
+
+
 def test_backend_logging_writes_info_to_console_and_debug_to_rotating_file(
     tmp_path: Path,
     capsys,
@@ -60,11 +96,14 @@ def test_backend_logging_writes_info_to_console_and_debug_to_rotating_file(
         file_text = log_path.read_text(encoding="utf-8")
         assert "[WORKER:" in console
         assert "safe info" in console
+        assert colorama.Fore.GREEN in console
+        assert colorama.Style.RESET_ALL in console
         assert "sk-do-not-log" not in console
         assert "debug detail" not in console
         assert "debug detail" in file_text
         assert "safe info" in file_text
         assert "sk-do-not-log" not in file_text
+        assert "\x1b[" not in file_text
     finally:
         for handler in list(root.handlers):
             if handler not in original_handlers:

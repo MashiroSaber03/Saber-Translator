@@ -294,8 +294,12 @@ class LegacyTranslationAlgorithms:
 
         coords = [payload.get("coords", [0, 0, 0, 0]) for payload in bubble_payloads]
         textlines = [payload.get("textlines", []) for payload in bubble_payloads]
+        # ``extract_bubble_colors`` is the legacy boundary that already
+        # serializes ``ColorExtractionResult`` objects into dictionaries.
+        # Copy each mapping so the adapter result is detached from the legacy
+        # result without attempting a second ``to_dict`` conversion.
         return [
-            result.to_dict()
+            dict(result)
             for result in extract_bubble_colors(image, coords, textlines)
         ]
 

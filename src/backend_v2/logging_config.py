@@ -9,6 +9,8 @@ from pathlib import Path
 import sys
 from typing import Final
 
+import colorama
+
 from src.backend_v2.redaction import redact_sensitive_text
 
 
@@ -41,6 +43,25 @@ class SecretSafeFormatter(logging.Formatter):
             super().format(record),
             redact_paths=False,
         )
+
+
+class ColoredSecretSafeFormatter(SecretSafeFormatter):
+    """Apply the legacy level colors to the complete redacted console line."""
+
+    _COLORS: Final = {
+        logging.DEBUG: colorama.Fore.CYAN,
+        logging.INFO: colorama.Fore.GREEN,
+        logging.WARNING: colorama.Fore.YELLOW,
+        logging.ERROR: colorama.Fore.RED,
+        logging.CRITICAL: colorama.Fore.RED + colorama.Style.BRIGHT,
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        color = self._COLORS.get(record.levelno)
+        if color is None:
+            return rendered
+        return f"{color}{rendered}{colorama.Style.RESET_ALL}"
 
 
 def _console_level(explicit: str | None) -> int:
@@ -76,11 +97,16 @@ def configure_backend_logging(
     logs_root.mkdir(parents=True, exist_ok=True)
     log_path = logs_root / f"saber-{normalized_role}.log"
     role_label = normalized_role.upper()
-    formatter = SecretSafeFormatter(
-        (
-            "%(asctime)s [%(levelname)s] "
-            f"[{role_label}:%(process)d] %(name)s - %(message)s"
-        ),
+    format_template = (
+        "%(asctime)s [%(levelname)s] "
+        f"[{role_label}:%(process)d] %(name)s - %(message)s"
+    )
+    console_formatter = ColoredSecretSafeFormatter(
+        format_template,
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_formatter = SecretSafeFormatter(
+        format_template,
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
@@ -93,9 +119,12 @@ def configure_backend_logging(
     # INFO/DEBUG selection so normal terminal output remains readable.
     root.setLevel(logging.DEBUG)
 
+    # Enable ANSI colors on legacy Windows consoles while remaining idempotent
+    # on modern terminals and non-Windows platforms.
+    colorama.just_fix_windows_console()
     console = _mark(logging.StreamHandler(sys.stdout))
     console.setLevel(_console_level(console_level))
-    console.setFormatter(formatter)
+    console.setFormatter(console_formatter)
     root.addHandler(console)
 
     file_handler = _mark(
@@ -107,7 +136,7 @@ def configure_backend_logging(
         )
     )
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(file_formatter)
     root.addHandler(file_handler)
 
     for logger_name, level in _NOISY_LOGGERS.items():

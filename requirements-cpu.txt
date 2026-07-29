@@ -16,6 +16,7 @@ pyyaml
 pillow
 opencv-python
 requests
+colorama>=0.4.6,<1
 networkx
 shapely
 pyclipper
