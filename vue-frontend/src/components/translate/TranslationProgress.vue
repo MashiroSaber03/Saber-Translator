@@ -14,13 +14,56 @@
         </span>
       </span>
     </UiProgressBar>
+    <div
+      v-if="isParallelProgress && currentProgress.pools.length > 0"
+      class="translation-progress__pools"
+      aria-label="后端并行流水线进度"
+    >
+      <div
+        v-for="pool in currentProgress.pools"
+        :key="pool.kind"
+        class="translation-progress__pool"
+      >
+        <div class="translation-progress__pool-heading">
+          <strong>{{ poolLabel(pool.kind) }}</strong>
+          <span>
+            完成 {{ pool.completed }} / {{ pool.total }}
+            · 处理中 {{ pool.processing }}
+            · 等待 {{ pool.waiting }}
+          </span>
+          <span
+            v-if="pool.lockWaiting"
+            class="translation-progress__lock-waiting"
+          >
+            等待深度学习锁
+          </span>
+          <span v-else-if="pool.skipped > 0" class="translation-progress__skipped">
+            跳过 {{ pool.skipped }}
+          </span>
+          <span v-if="pool.failed > 0" class="translation-progress__failed-count">
+            失败 {{ pool.failed }}
+          </span>
+        </div>
+        <UiProgressBar
+          :value="poolPercent(pool)"
+          :label="`${poolLabel(pool.kind)} Pool`"
+          size="sm"
+          :striped="pool.processing > 0"
+          :animated="pool.processing > 0"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { useTranslation, type TranslationProgress } from '@/composables/useTranslationPipeline'
+import {
+  useTranslation,
+  type TranslationPoolProgress,
+  type TranslationProgress,
+} from '@/composables/useTranslationPipeline'
 import { useImageStore } from '@/stores/imageStore'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 
@@ -42,6 +85,9 @@ const showProgress = computed(() => (
   currentProgress.value.isInProgress || imageStore.isBatchTranslationInProgress
 ))
 const failedCount = computed(() => currentProgress.value.failed)
+const isParallelProgress = computed(
+  () => currentProgress.value.executionMode === 'parallel',
+)
 const progressPercent = computed(() => {
   if (currentProgress.value.percentage !== undefined) {
     return clampPercent(currentProgress.value.percentage)
@@ -51,10 +97,50 @@ const progressPercent = computed(() => {
     Math.round(currentProgress.value.current / currentProgress.value.total * 100),
   )
 })
-const progressLabel = computed(() => (
-  currentProgress.value.label
-  || `后端翻译任务：${currentProgress.value.current} / ${currentProgress.value.total}`
-))
+const progressLabel = computed(() => {
+  const value = currentProgress.value
+  const base = value.label
+    || `后端翻译任务：${value.current} / ${value.total}`
+  const details: string[] = value.total > 0
+    ? [`总进度 ${value.current} / ${value.total}`]
+    : []
+  if (value.status === 'queued' && value.queuePosition) {
+    details.push(`队列第 ${value.queuePosition} 位`)
+  }
+  if (value.executionMode === 'sequential' && value.currentStep) {
+    details.push(
+      `第 ${value.currentStep.itemOrdinal} 页 · ${poolLabel(value.currentStep.kind)}`,
+    )
+  }
+  return details.length > 0 ? `${base}（${details.join('，')}）` : base
+})
+
+const POOL_LABELS: Record<string, string> = {
+  detect: '检测',
+  ocr: 'OCR',
+  color: '颜色',
+  glossary: '术语',
+  auto_glossary: '术语',
+  auto_terms: '术语',
+  translate: '翻译',
+  hq_translate: 'HQ 翻译',
+  proofread: 'AI 校对',
+  repair: '修复',
+  render: '渲染',
+  save: '保存',
+  publish: '保存',
+}
+
+function poolLabel(kind: string): string {
+  return POOL_LABELS[kind] ?? kind
+}
+
+function poolPercent(pool: TranslationPoolProgress): number {
+  if (pool.total === 0) return 0
+  return clampPercent(
+    Math.round((pool.completed + pool.failed + pool.skipped) / pool.total * 100),
+  )
+}
 </script>
 
 <style scoped>
@@ -78,6 +164,40 @@ const progressLabel = computed(() => (
 .translation-progress__failed-count {
   color: var(--color-text-danger-strong);
   font-weight: 500;
+}
+
+.translation-progress__pools {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.translation-progress__pool {
+  display: grid;
+  gap: 5px;
+}
+
+.translation-progress__pool-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.translation-progress__pool-heading strong {
+  min-width: 4.5em;
+  color: var(--color-text-heading);
+}
+
+.translation-progress__lock-waiting {
+  color: var(--color-status-warning);
+  font-weight: 700;
+}
+
+.translation-progress__skipped {
+  color: var(--color-text-muted);
 }
 
 @container translation-progress (max-width: 520px) {

@@ -238,6 +238,51 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     assert replay == accepted
 
     repository = JobQueueRepository(platform["engine"])
+    bootstrap = ContentRepository(platform["engine"]).translation_bootstrap(
+        book_id=str(platform["book"]["id"]),
+        chapter_id=str(platform["chapter"]["id"]),
+    )
+    assert bootstrap["activeJobs"] == [
+        {
+            "id": accepted["jobIds"][0],
+            "kind": "translation",
+            "status": "queued",
+            "queueRank": 1,
+            "pageIds": [platform["page_id"]],
+            "progress": {
+                "executionMode": "parallel",
+                "jobStatus": "queued",
+                "totalItems": 1,
+                "completedItems": 0,
+                "failedItems": 0,
+                "skippedItems": 0,
+                "cancelledItems": 0,
+                "pools": [
+                    {
+                        "kind": kind,
+                        "total": 1,
+                        "completed": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "waiting": 1,
+                        "processing": 0,
+                        "lockWaiting": False,
+                        "current": [],
+                    }
+                    for kind in (
+                        "detect",
+                        "ocr",
+                        "color",
+                        "auto_terms",
+                        "translate",
+                        "repair",
+                        "render",
+                        "save",
+                    )
+                ],
+            },
+        }
+    ]
     service = TranslationPipelineService(
         data_root=platform["data_root"],
         engine=platform["engine"],
@@ -250,6 +295,30 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     while (step := repository.next_step(fence)) is not None:
         result = service.handler(fence, step)
         assert result["__already_published__"]
+        if step["stepKind"] == "render":
+            with platform["engine"].connect() as connection:
+                assert connection.execute(
+                    select(page_assets.c.asset_id).where(
+                        page_assets.c.page_id == platform["page_id"],
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none() is None
+                assert set(
+                    connection.execute(
+                        select(job_step_asset_outputs.c.role).where(
+                            job_step_asset_outputs.c.job_step_id
+                            == step["stepId"]
+                        )
+                    ).scalars()
+                ) == {"translated", "thumbnail_translated"}
+        if step["stepKind"] == "save":
+            with platform["engine"].connect() as connection:
+                assert connection.execute(
+                    select(page_assets.c.producer_job_step_id).where(
+                        page_assets.c.page_id == platform["page_id"],
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one() == step["stepId"]
     assert repository.finish_if_complete(fence) == "completed"
 
     with platform["engine"].connect() as connection:
@@ -648,6 +717,7 @@ def _run_translation_job(
             "proofread",
             "repair",
             "render",
+            "save",
             "publish_clean",
         )
     }
@@ -722,7 +792,7 @@ def test_hq_and_multiround_proofreading_use_durable_stable_id_batches(
     assert detail["status"] == "completed"
     assert all(
         [step["kind"] for step in item["steps"]]
-        == ["proofread", "proofread", "render"]
+        == ["proofread", "proofread", "render", "save"]
         for item in detail["items"]
     )
     assert all(

@@ -187,6 +187,62 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     assert all(item["isFactoryDefault"] for item in payload["prompts"])
 
 
+def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, _importer, book, chapter = (
+        content_platform
+    )
+    chapter_id = str(chapter["id"])
+    payload = {
+        "sourceLanguage": "english",
+        "targetLanguage": "zh",
+        "parallel": {"enabled": True, "deepLearningLockSize": 2},
+        "translation": {
+            "provider": "siliconflow",
+            "modelName": "chapter-model",
+        },
+    }
+    updated = repository.update_chapter_settings_memory(
+        chapter_id=chapter_id,
+        base_revision=1,
+        payload=payload,
+    )
+    assert updated == {
+        "chapterId": chapter_id,
+        "revision": 2,
+        "payload": payload,
+    }
+    bootstrap = repository.translation_bootstrap(
+        book_id=str(book["id"]),
+        chapter_id=chapter_id,
+    )
+    assert bootstrap["chapter"]["settingsMemory"] == payload
+    assert bootstrap["chapter"]["settingsMemoryRevision"] == 2
+
+    with pytest.raises(ContentConflict):
+        repository.update_chapter_settings_memory(
+            chapter_id=chapter_id,
+            base_revision=1,
+            payload={"sourceLanguage": "korean"},
+        )
+    with pytest.raises(ValueError, match="unsupported fields"):
+        repository.update_chapter_settings_memory(
+            chapter_id=chapter_id,
+            base_revision=2,
+            payload={"textStyle": {"fontSize": 42}},
+        )
+    with pytest.raises(ValueError, match="apiKey"):
+        repository.update_chapter_settings_memory(
+            chapter_id=chapter_id,
+            base_revision=2,
+            payload={
+                "translation": {
+                    "provider": "custom",
+                    "apiKey": "must-not-be-stored",
+                }
+            },
+        )
 def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
     content_platform,
 ) -> None:

@@ -271,7 +271,7 @@ class JobWorkerLoop:
     ) -> None:
         """Run one serial worker per step kind so different stages can overlap."""
 
-        pool_kinds = tuple(sorted(self.handlers))
+        pool_kinds = self.repository.step_kinds(heartbeat.fence)
         if not pool_kinds:
             self.repository.fail_job(
                 heartbeat.fence,
@@ -291,6 +291,21 @@ class JobWorkerLoop:
         deep_learning_admission = threading.Semaphore(
             max(1, min(4, deep_learning_concurrency))
         )
+        lock_waiting_states = {
+            kind: False
+            for kind in pool_kinds
+            if kind in DEEP_LEARNING_STEP_KINDS
+        }
+        lock_waiting_state_lock = threading.Lock()
+
+        def set_lock_waiting(pool_kind: str, waiting: bool) -> None:
+            with lock_waiting_state_lock:
+                lock_waiting_states[pool_kind] = waiting
+                snapshot = dict(lock_waiting_states)
+            self.repository.write_pipeline_progress(
+                heartbeat.fence,
+                lock_waiting=snapshot,
+            )
 
         def run_pool(pool_kind: str) -> None:
             while (
@@ -381,8 +396,16 @@ class JobWorkerLoop:
                             return checkpoint
 
                         if pool_kind in DEEP_LEARNING_STEP_KINDS:
-                            with deep_learning_admission:
+                            acquired = deep_learning_admission.acquire(blocking=False)
+                            if not acquired:
+                                set_lock_waiting(pool_kind, True)
+                                deep_learning_admission.acquire()
+                            try:
+                                if not acquired:
+                                    set_lock_waiting(pool_kind, False)
                                 checkpoint = execute_step()
+                            finally:
+                                deep_learning_admission.release()
                         else:
                             checkpoint = execute_step()
                     except Exception as exc:

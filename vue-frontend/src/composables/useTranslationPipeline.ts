@@ -1,7 +1,9 @@
 import { computed, ref, watch } from 'vue'
 
 import { createChapterTranslationJob } from '@/api/v2/translation'
-import { listChapterPages } from '@/api/v2/content'
+import { listChapterPages, type V2TranslationBootstrap } from '@/api/v2/content'
+import type { components } from '@/api/generated/v2'
+import type { V2JobStatus } from '@/api/v2/jobs'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -24,6 +26,25 @@ export interface TranslationProgress {
   isInProgress: boolean
   label?: string
   percentage?: number
+  executionMode: 'sequential' | 'parallel'
+  status?: V2JobStatus
+  queuePosition?: number | null
+  currentStep?: TranslationCurrentStep
+  pools: TranslationPoolProgress[]
+}
+
+export type TranslationCurrentStep = components['schemas']['JobProgressCurrentStep']
+
+export interface TranslationPoolProgress {
+  kind: string
+  total: number
+  completed: number
+  failed: number
+  skipped: number
+  waiting: number
+  processing: number
+  lockWaiting: boolean
+  current: components['schemas']['JobProgressPoolCurrent'][]
 }
 
 export interface TranslateResult {
@@ -41,6 +62,8 @@ const progress = ref<TranslationProgress>({
   isInProgress: false,
   label: '',
   percentage: 0,
+  executionMode: 'sequential',
+  pools: [],
 })
 const activeJobId = ref<string | null>(null)
 const activePageIds = ref<string[]>([])
@@ -55,20 +78,160 @@ function numberField(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function applyProgressSnapshot(snapshot: Record<string, unknown>, label: string): void {
+const ACTIVE_JOB_STATUSES = new Set<V2JobStatus>([
+  'queued',
+  'running',
+  'pausing',
+  'paused',
+  'cancelling',
+  'interrupted',
+])
+
+function jobStatusLabel(status: V2JobStatus | undefined): string {
+  switch (status) {
+    case 'queued': return '任务正在后端队列中等待'
+    case 'running': return '后端正在处理'
+    case 'pausing': return '正在等待当前步骤结束后暂停'
+    case 'paused': return '任务已暂停'
+    case 'cancelling': return '正在等待当前步骤结束后取消'
+    case 'interrupted': return 'Worker 中断，请在任务中心继续'
+    case 'completed_with_errors': return '任务完成，但有页面失败'
+    case 'completed': return '后端任务已完成'
+    case 'cancelled': return '后端任务已取消'
+    case 'failed': return '后端任务失败'
+    default: return '后端正在处理'
+  }
+}
+
+function normalizePools(value: unknown): TranslationPoolProgress[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return []
+    const pool = raw as Record<string, unknown>
+    const kind = typeof pool.kind === 'string' ? pool.kind : ''
+    if (!kind) return []
+    return [{
+      kind,
+      total: numberField(pool.total),
+      completed: numberField(pool.completed),
+      failed: numberField(pool.failed),
+      skipped: numberField(pool.skipped),
+      waiting: numberField(pool.waiting),
+      processing: numberField(pool.processing),
+      lockWaiting: Boolean(pool.lockWaiting),
+      current: Array.isArray(pool.current)
+        ? pool.current as components['schemas']['JobProgressPoolCurrent'][]
+        : [],
+    }]
+  })
+}
+
+function applyProgressSnapshot(
+  snapshot: Record<string, unknown>,
+  label?: string,
+  metadata: {
+    queuePosition?: number | null
+    status?: V2JobStatus
+  } = {},
+): void {
   const total = numberField(snapshot.totalItems)
   const completed = numberField(snapshot.completedItems)
   const failed = numberField(snapshot.failedItems)
-  const current = completed + failed
+  const skipped = numberField(snapshot.skippedItems)
+  const cancelled = numberField(snapshot.cancelledItems)
+  const current = completed + failed + skipped + cancelled
+  const snapshotStatus = typeof snapshot.jobStatus === 'string'
+    ? snapshot.jobStatus as V2JobStatus
+    : undefined
+  const status = metadata.status ?? snapshotStatus
+  const executionMode = snapshot.executionMode === 'parallel'
+    ? 'parallel'
+    : 'sequential'
+  const currentStep = (
+    snapshot.currentStep
+    && typeof snapshot.currentStep === 'object'
+  )
+    ? snapshot.currentStep as TranslationCurrentStep
+    : undefined
   progress.value = {
     current,
     total,
     completed,
     failed,
-    isInProgress: true,
-    label,
+    isInProgress: status ? ACTIVE_JOB_STATUSES.has(status) : true,
+    label: label ?? jobStatusLabel(status),
     percentage: total > 0 ? Math.round(current / total * 100) : 0,
+    executionMode,
+    status,
+    queuePosition: metadata.queuePosition,
+    currentStep,
+    pools: normalizePools(snapshot.pools),
   }
+}
+
+type TranslationBootstrapJob = V2TranslationBootstrap['activeJobs'][number]
+
+function activeTranslationJob(
+  jobs: TranslationBootstrapJob[],
+): TranslationBootstrapJob | undefined {
+  const priority: Record<V2JobStatus, number> = {
+    running: 0,
+    pausing: 1,
+    cancelling: 2,
+    paused: 3,
+    interrupted: 4,
+    queued: 5,
+    completed_with_errors: 6,
+    completed: 7,
+    failed: 8,
+    cancelled: 9,
+  }
+  return jobs
+    .filter(job => (
+      (job.kind === 'translation' || job.kind === 'remove_text')
+      && ACTIVE_JOB_STATUSES.has(job.status)
+    ))
+    .sort((left, right) => (
+      priority[left.status] - priority[right.status]
+      || (left.queueRank ?? Number.MAX_SAFE_INTEGER)
+        - (right.queueRank ?? Number.MAX_SAFE_INTEGER)
+    ))[0]
+}
+
+export function restoreTranslationFromBootstrap(
+  jobs: TranslationBootstrapJob[],
+  imageStore: ReturnType<typeof useImageStore>,
+): void {
+  const job = activeTranslationJob(jobs)
+  if (!job) {
+    activeJobId.value = null
+    activePageIds.value = []
+    imageStore.setBatchTranslationInProgress(false)
+    progress.value = {
+      current: 0,
+      total: 0,
+      completed: 0,
+      failed: 0,
+      isInProgress: false,
+      label: '',
+      percentage: 0,
+      executionMode: 'sequential',
+      pools: [],
+    }
+    return
+  }
+  activeJobId.value = job.id
+  activePageIds.value = [...job.pageIds]
+  applyProgressSnapshot(
+    job.progress,
+    jobStatusLabel(job.status),
+    { queuePosition: job.queueRank, status: job.status },
+  )
+  imageStore.setBatchTranslationInProgress(job.pageIds.length > 1)
+  const targetPages = new Set(job.pageIds)
+  imageStore.images.forEach((image, index) => {
+    if (targetPages.has(image.id)) imageStore.setTranslationStatus(index, 'processing')
+  })
 }
 
 async function refreshCurrentChapter(imageStore: ReturnType<typeof useImageStore>): Promise<void> {
@@ -150,6 +313,22 @@ export function useTranslation() {
     },
   )
 
+  watch(
+    () => taskCenterStore.queue,
+    queue => {
+      const jobId = activeJobId.value
+      if (!jobId) return
+      const job = queue.find(item => item.jobId === jobId)
+      if (!job) return
+      applyProgressSnapshot(
+        job.progress,
+        jobStatusLabel(job.status),
+        { queuePosition: job.queueRank, status: job.status },
+      )
+    },
+    { deep: true },
+  )
+
   async function translatePages(
     pageIndexes: number[],
     mode: TranslationMode,
@@ -201,6 +380,9 @@ export function useTranslation() {
         isInProgress: true,
         label: '任务已进入后端队列',
         percentage: 0,
+        executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
+        status: 'queued',
+        pools: [],
       }
       imageStore.setBatchTranslationInProgress(pageIds.length > 1)
       for (const pageId of pageIds) {
@@ -288,6 +470,9 @@ export function useTranslation() {
         isInProgress: true,
         label: '失败项重试已进入后端队列',
         percentage: 0,
+        executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
+        status: 'queued',
+        pools: [],
       }
       imageStore.setBatchTranslationInProgress(durableFailedPages.length > 1)
       toast.success('失败项已按当前设置加入后端任务中心')

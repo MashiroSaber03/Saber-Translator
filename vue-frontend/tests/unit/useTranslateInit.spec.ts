@@ -2,12 +2,15 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTranslateInit } from '@/composables/useTranslateInit'
+import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const mocks = vi.hoisted(() => ({
   getPageDocument: vi.fn(),
   getTranslationBootstrap: vi.fn(),
+  updateChapterSettingsMemory: vi.fn(),
   updateLastVisitedPage: vi.fn(),
 }))
 
@@ -22,11 +25,18 @@ vi.mock('vue-router', () => ({
 vi.mock('@/api/v2/content', () => ({
   getPageDocument: mocks.getPageDocument,
   getTranslationBootstrap: mocks.getTranslationBootstrap,
+  updateChapterSettingsMemory: mocks.updateChapterSettingsMemory,
   updateLastVisitedPage: mocks.updateLastVisitedPage,
 }))
 
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
+  useToast: () => ({
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+  }),
 }))
 
 function bootstrap(
@@ -129,6 +139,13 @@ describe('useTranslateInit', () => {
         revision: baseRevision + 1,
       }),
     )
+    mocks.updateChapterSettingsMemory.mockImplementation(
+      async (chapterId: string, payload: Record<string, unknown>, baseRevision: number) => ({
+        chapterId,
+        payload,
+        revision: baseRevision + 1,
+      }),
+    )
   })
 
   it('hydrates page metadata with backend URLs and loads only the current page document', async () => {
@@ -218,5 +235,71 @@ describe('useTranslateInit', () => {
     expect(state.currentBookId.value).toBe('quick')
     expect(state.currentChapterId.value).toBe('quick-chapter')
     expect(state.isBookshelfMode.value).toBe(false)
+  })
+
+  it('restores backend active job progress and page scope after refresh', async () => {
+    const payload = bootstrap('book-1', 'chapter-1')
+    payload.activeJobs = [{
+      id: 'job-1',
+      kind: 'translation',
+      status: 'running',
+      queueRank: 1,
+      pageIds: ['page-1'],
+      progress: {
+        executionMode: 'parallel',
+        jobStatus: 'running',
+        totalItems: 1,
+        completedItems: 0,
+        failedItems: 0,
+        skippedItems: 0,
+        cancelledItems: 0,
+        pools: [{
+          kind: 'ocr',
+          total: 1,
+          completed: 0,
+          failed: 0,
+          skipped: 0,
+          waiting: 0,
+          processing: 1,
+          lockWaiting: false,
+          current: [],
+        }],
+      },
+    }]
+    mocks.getTranslationBootstrap.mockResolvedValue(payload)
+
+    await useTranslateInit().initializeApp()
+    const translation = useTranslation()
+
+    expect(translation.progress.value.isInProgress).toBe(true)
+    expect(translation.progress.value.executionMode).toBe('parallel')
+    expect(translation.progress.value.pools[0]?.kind).toBe('ocr')
+  })
+
+  it('hydrates and CAS-persists chapter-scoped non-style work state', async () => {
+    const payload = bootstrap('book-1', 'chapter-1')
+    payload.chapter.settingsMemory = {
+      sourceLanguage: 'english',
+      targetLanguage: 'zh',
+    }
+    mocks.getTranslationBootstrap.mockResolvedValue(payload)
+
+    await useTranslateInit().initializeApp()
+    const settingsStore = useSettingsStore()
+    expect(settingsStore.settings.sourceLanguage).toBe('english')
+    expect(settingsStore.chapterWorkStatePayload()).not.toHaveProperty('textStyle')
+
+    settingsStore.settings.sourceLanguage = 'korean'
+    await vi.waitFor(() => {
+      expect(mocks.updateChapterSettingsMemory).toHaveBeenCalled()
+    })
+    expect(mocks.updateChapterSettingsMemory).toHaveBeenLastCalledWith(
+      'chapter-1',
+      expect.objectContaining({ sourceLanguage: 'korean' }),
+      1,
+    )
+    const savedPayload = mocks.updateChapterSettingsMemory.mock.calls.at(-1)?.[1]
+    expect(savedPayload).not.toHaveProperty('textStyle')
+    expect(JSON.stringify(savedPayload)).not.toContain('apiKey')
   })
 })

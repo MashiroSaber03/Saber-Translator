@@ -5,6 +5,7 @@ export type V2Book = components['schemas']['Book']
 export type V2BookDetail = components['schemas']['BookDetail']
 export type V2Chapter = components['schemas']['Chapter']
 export type V2ChapterNavigation = components['schemas']['ChapterNavigation']
+export type V2ChapterSettingsMemory = components['schemas']['ChapterSettingsMemory']
 export type V2ContainerImportAccepted = components['schemas']['JobBatchAccepted']
 export type V2ImportLease = components['schemas']['ImportLease']
 export type V2PageDocument = components['schemas']['PageDocument']
@@ -212,6 +213,18 @@ export function updateLastVisitedPage(
   return apiClient.patch<V2ChapterNavigation>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/last-visited-page`,
     { pageId, baseRevision },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function updateChapterSettingsMemory(
+  chapterId: string,
+  payload: Record<string, unknown>,
+  baseRevision: number,
+): Promise<V2ChapterSettingsMemory> {
+  return apiClient.patch<V2ChapterSettingsMemory>(
+    `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/settings-memory`,
+    { payload, baseRevision },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

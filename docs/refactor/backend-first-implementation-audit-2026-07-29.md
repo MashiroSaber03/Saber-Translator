@@ -11,7 +11,7 @@
 结论：
 
 1. 后端中心化的基础架构已经建立，浏览器关闭后持久任务继续执行、SQLite 事实源、不可变资产、凭据版本、Worker 队列、operation fencing、缩略图和 v2-only 生产入口都不是空壳。
-2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约、HQ/多轮校对真实流水线、任务重试/批次控制和任务中心核心控制已在审计后关闭；剩余主要缺口集中在书架批量功能、快速工作区前端入口、并行 Pool 进度恢复、Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
+2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约、HQ/多轮校对、任务重试/批次控制、任务中心核心控制，以及翻译 Pool 进度/刷新恢复/章节设置记忆已在审计后关闭；剩余主要缺口集中在书架批量功能、快速工作区前端入口、Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
 3. 本轮发现的 API Key 保存/使用故障不是后端没有保存，而是“后端凭据摘要”和“前端空白密钥输入框”之间的语义断裂。本轮已修复该故障及同类入口，并增加后端任务准入校验。
 4. 本轮还修复了翻译页“最后访问页只读不写”的数据闭环缺陷，并将导航更新改为与方案一致的独立 last-write-wins，不再因旧标签页 revision 产生普通切页冲突。
 5. 用户已确认的两项偏差不作为缺陷：
@@ -54,6 +54,18 @@
 - 后端导航 revision 仅用于观察写入，更新采用 last-write-wins；旧标签页不会得到 409。
 - 增加连续切页 revision 串行测试和后端 stale revision 覆盖测试。
 
+### 2.3 翻译 Pool 进度、刷新恢复与章节工作态
+
+已完成：
+
+- `jobs.latest_progress` 现在由数据库中的 item/step 图重建，持久化总页数、终态计数、执行模式、顺序模式当前页/步骤，以及每个实际参与阶段的完成/失败/跳过/等待/处理中页和深度学习锁等待状态。
+- Worker 只为当前 job 实际存在的 step kind 启动 Pool；共享深度学习信号量的等待状态由 Worker 覆盖写入，计数与当前页始终来自 SQLite。
+- claim、阶段开始/完成、页面成败、暂停/取消 drain、失败和终态都会保持同一份合法进度结构；不再在 job 失败时用单独 error 对象破坏 progress schema。
+- standard/HQ/proofread 将原来揉在一起的 render 正式拆为 `render` 资产生成检查点和 `save` 原子发布步骤，因此并行界面中的保存 Pool 是真实执行阶段。
+- bootstrap 的活动任务新增冻结 `pageIds`，翻译页刷新后恢复 `activeJobId`、页范围、队列/过渡/暂停/中断状态、总进度和 Pool 进度；SSE 事件与任务中心 REST 刷新都会重新投影同一后端快照。
+- 并行模式恢复专属多行 Pool 进度条；顺序模式继续显示单总进度条、当前页和当前原子步骤。
+- 章节 `settings_memory` 已接入 bootstrap hydrate 和 400ms debounce CAS PATCH；只允许翻译相关非样式工作态，前后端同时排除 API key/secret、字体、字号、方向、颜色、描边、行距、对齐和修复方式。
+
 ## 3. 逐章节实现状态
 
 状态定义：
@@ -71,21 +83,21 @@
 | §5 存储架构 | 基本完成 | SQLite WAL、Alembic 0001–0010、不可变 assets、关系表、凭据/插件版本、任务/operation 快照和重试血缘均存在；完整查询计划、删除矩阵和故障注入验收不足。 |
 | §6 快速工作区 | 部分完成 | 后端播种、bootstrap、reset、promote、423 保护和约束处理存在；前端缺“新建快速翻译”和“保存到书架”顶栏入口，promote 无前端 API/弹窗；测试只覆盖部分 promote 语义。最后访问页本轮已补齐。 |
 | §7 统一任务系统 | 基本完成 | 持久队列、状态机、SSE、pause/resume/continue/cancel、reorder、关联 replacement retry、批次取消/优先/继续、脱敏详情和事件游标分页均已实现；系统模型释放和完整跨领域重试验收仍待补齐。 |
-| §8 翻译任务后端化 | 基本完成 | 创建任务即冻结配置/资产/插件/凭据，Worker 流水线可脱离浏览器执行；HQ 稳定 ID 批处理、多轮校对和基于后端失败事实的关联重试均已闭环。任务页内 Pool 进度恢复仍未完成。 |
+| §8 翻译任务后端化 | 基本完成 | 创建任务即冻结配置/资产/插件/凭据，Worker 流水线可脱离浏览器执行；HQ 稳定 ID 批处理、多轮校对、真实 render/save 分界、后端 Pool 进度和基于后端失败事实的关联重试均已闭环。 |
 | §9 Insight 任务统一 | 部分完成 | 全书/局部分析、派生物、向量、续写和导出均有持久任务；页面仍保留 3 秒轮询，未完全统一到全局 SSE/快照。 |
 | §10 插件 v3 | 基本完成 | 不可变版本、快照、能力/失败策略、Worker 执行、Agent handoff 和管理 API 已实现；运行时与 OpenAPI 已完成双向闭集。 |
 | §11 图片导入与缩略图 | 基本完成 | 普通图片逐页上传、容器后端任务、同步 source thumbnail、长条特判、无 Base64 响应已实现；完整导入失败矩阵和多场景大数据验收不足。 |
 | §12 媒体 API 与加载 | 部分完成 | asset URL/ETag/条件请求、翻译侧栏和编辑侧栏虚拟化、Reader 虚拟流存在；指定页码弹窗、Insight 大章节树和部分续写选择器仍一次创建大量缩略图节点。 |
-| §13 页面职责 | 基本完成 | 生产前端主要为投影和交互，业务长任务和失败项重试均由后端事实驱动；仍有前端轮询和未接线章节设置记忆。 |
+| §13 页面职责 | 基本完成 | 生产前端主要为投影和交互，业务长任务、Pool 进度恢复、章节工作态和失败项重试均由后端事实驱动；Insight 等处仍有前端轮询。 |
 | §14 实施阶段 | 部分完成 | 阶段 1–6 的大量基础代码已经提交，阶段 0 契约门禁已关闭；产品页和验收矩阵仍未全部满足。 |
 | §15 全局验收 | 部分完成 | OpenAPI 已覆盖全部 180 个运行时操作，后端 v2 有 100+ 测试，前端有大量单元/属性/视觉测试；仍缺 EXPLAIN QUERY PLAN、Insight/翻译 1000 页 DOM/内存、批量产品流和多项 crash-window 矩阵。 |
-| §16 翻译页 | 部分完成 | 后端任务、编辑 CAS、修复 operation、渲染、文本/导出、HQ 稳定 ID batch、多轮校对和后端关联失败项重试主体存在；并行模式仍只有单总进度条，刷新不恢复当前页 Pool 进度，章节 settings_memory 未接线。 |
+| §16 翻译页 | 基本完成 | 后端任务、编辑 CAS、修复 operation、独立 render/save、文本/导出、HQ 稳定 ID batch、多轮校对、后端关联失败项重试、并行多行 Pool 进度和刷新恢复已闭环；剩余主要是指定页码大列表虚拟化和完整性能矩阵。 |
 | §17 Insight | 部分完成 | 主要分析/概览/时间线/问答/笔记/续写/设置功能已切 v2；PagesTree 展开章节会创建整章节点，状态与向量重建仍轮询，专项 1000 页验收缺失。 |
 | §18 Character Studio | 基本完成 | 文档 CAS、保存型 generate/chat/summary operation、SSE chunk、会话数据、导入导出和诊断主体完整；前端没有调用 abort API，也没有归档会话永久删除入口。 |
 | §19 书架 | 部分完成 | 后端 CRUD、搜索/标签/排序、批量删除/标签和 jobStatusSummary 已实现；前端丢弃 jobStatusSummary，store 的 batchMode/selectedBookIds/expandBook 是未消费状态，章节多选翻译、书籍批量翻译/删除/标签和任务跳转未实现。 |
 | §20 任务中心 | 基本完成 | 全局抽屉、队列/历史、SSE、暂停/继续/取消、产物下载、单任务排序、状态/类型/书籍筛选、脱敏详情、事件向前分页、整任务/失败项双策略重试和批次取消/优先/继续已实现；释放显存、新建批量分析和跨页定位仍缺。 |
 | §21 阅读器 | 基本完成 | 后端页列表、translated→source 回退、VirtualPageStream 和懒加载存在；缺“未翻译”持久徽标和“已翻译 m/N”统计。 |
-| §22 设置/提示词/Provider | 部分完成 | SQLite 事实源、统一 transaction、不可变凭据、统一诊断、提示词和字体主体存在；本轮修复凭据 UI/校验；受限态只禁保存，未统一禁止所有任务/Provider 操作；文本默认值仍保留父子特殊握手；章节 settings_memory 未接线。 |
+| §22 设置/提示词/Provider | 基本完成 | SQLite 事实源、统一 transaction、不可变凭据、统一诊断、提示词、字体和章节级非样式 settings_memory 已接线；本轮修复凭据 UI/校验；受限态仍未统一禁止所有任务/Provider 操作，文本默认值仍保留父子特殊握手。 |
 | §23 插件管理 | 基本完成 | v3 manifest/version/snapshot/runtime/Agent/管理 UI、契约和测试主体存在。 |
 | §24 当前不做事项 | 完成/接受偏差 | 未引入账号、多租户、云对象存储、瓦片金字塔或单图像素预算；符合用户最终口径。 |
 
@@ -102,16 +114,9 @@
 
 已补齐所有运行时操作、命名请求/响应 schema、operationId 和幂等头约束；移除 `GenericObject`/`GenericSuccess` 占位响应。`test_openapi_contract.py` 现在执行 Flask `url_map` ↔ OpenAPI 双向闭集、`$ref`、operationId、响应、幂等性和前端生成类型门禁。前端 v2 HTTP DTO 已全部改为从生成的 `components['schemas']` 派生。
 
-### 4.2 P0：翻译并行进度与刷新恢复不符合方案
+### 4.2 已关闭：翻译并行进度与刷新恢复
 
-方案要求并行模式使用多行 Pool 进度，显示各 Pool 完成/处理中/等待/锁等待，并可从后端快照恢复。
-
-当前：
-
-- `TranslationProgress.vue` 只有单一总进度条。
-- `useTranslationPipeline.ts` 只跟踪本浏览器创建的 `activeJobId`。
-- bootstrap 的 `activeJobs` 没有被用于恢复翻译页当前任务/Pool 进度。
-- 刷新后任务会继续，任务中心可见，但翻译页面自身的专属进度状态不能完整恢复。
+后端现已持久化实际 Pool 图和锁等待状态；bootstrap 返回活动任务页范围，前端从 bootstrap、SSE event payload 和任务中心 REST 快照恢复同一投影。并行模式显示实际启用阶段的多行进度，顺序模式保持单总进度和当前页/步骤；未参与当前工作流的 Pool 不会被创建或伪装为已执行。
 
 ### 4.3 已关闭：失败项重试后端事实源
 
@@ -204,12 +209,11 @@
 - translated 模式回退到 source 时的“未翻译”持久徽标。
 - 顶栏“已翻译 m/N”。
 
-### 5.7 设置受限态与章节记忆
+### 5.7 设置受限态
 
 - `settingsStore.isBackendReady` 当前主要用于禁用“保存设置”。
 - 翻译、Insight、Studio、网页导入等任务/Provider 操作没有统一受限态门禁。
 - 后端设置加载失败时仍可能使用前端出厂默认参与 UI 校验或发起命令；后端会再次解析真实设置，但不符合方案“加载成功前禁止创建任务/调用 Provider”的明确口径。
-- 后端有 `/chapters/{id}/settings-memory`，前端没有写入调用；章节级非样式工作态记忆尚未闭环。
 - `TextStyleDefaultsSettings` 最终确实与其他设置进入同一个 backend transaction，但仍通过 `saveRequestId/save-complete` 特殊父子握手，未完成 §22.8 要求的结构清理。
 
 ## 6. 图片与浏览器内存审计
@@ -282,8 +286,8 @@
 本轮实际验证结果：
 
 - `npm run typecheck`、`npm run lint`、`npm run lint:css`、`npm run lint:ui` 全部通过。
-- 前端 Vitest：237 个测试文件、1707 项测试全部通过；typecheck、ESLint 和 UI architecture audit 同步通过。
-- 后端 v2 Pytest：128 项测试全部通过；2 条 warning 为 SQLAlchemy 对表达式索引反射的既有提示。
+- 前端 Vitest：237 个测试文件、1710 项测试全部通过；typecheck、ESLint、Stylelint 和 UI architecture audit 同步通过。
+- 后端 v2 Pytest：130 项测试全部通过；2 条 warning 为 SQLAlchemy 对表达式索引反射的既有提示。
 - `npm run check:api` 与运行时 Flask 路由双向闭集测试通过；OpenAPI/运行时均为 185 个操作。
 - `npm run build:check` 通过，生产静态包已更新。
 
@@ -291,10 +295,9 @@
 
 在再次宣布“重构完成”前，建议按以下门禁顺序处理：
 
-1. **翻译页门禁**：并行 Pool 进度、bootstrap 活动任务恢复和章节 settings_memory。
-2. **产品页门禁**：快速工作区两个顶栏动作、书架批量/状态，以及任务中心系统模型释放/批量分析/跨页定位。
-3. **加载门禁**：Insight/指定页码/续写缩略图虚拟化，并补齐各场景 1000 页内存测试。
-4. **Studio/Reader/设置门禁**：Studio 服务端 abort 与归档删除接线、Reader 徽标/统计、全站 settings restricted mode。
-5. **最终验收门禁**：执行方案 §15 和各页面章节的剩余故障注入、并发、删除、GC、查询计划、断线恢复和打包验收。
+1. **产品页门禁**：快速工作区两个顶栏动作、书架批量/状态，以及任务中心系统模型释放/批量分析/跨页定位。
+2. **加载门禁**：Insight/指定页码/续写缩略图虚拟化，并补齐各场景 1000 页内存测试。
+3. **Studio/Reader/设置门禁**：Studio 服务端 abort 与归档删除接线、Reader 徽标/统计、全站 settings restricted mode。
+4. **最终验收门禁**：执行方案 §15 和各页面章节的剩余故障注入、并发、删除、GC、查询计划、断线恢复和打包验收。
 
 当前可以继续在该分支重构，但不能以“只剩零碎优化”描述剩余工作；多个页面级功能和最终验收仍属于正式方案范围内的未完成项。

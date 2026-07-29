@@ -2657,6 +2657,44 @@ export interface components {
         JobStatus: "queued" | "running" | "pausing" | "paused" | "cancelling" | "cancelled" | "completed" | "completed_with_errors" | "failed" | "interrupted";
         /** @enum {string} */
         JobKind: "translation" | "remove_text" | "detect" | "style_apply" | "text_import" | "container_import" | "web_extract" | "web_import_commit" | "export" | "insight_analysis" | "insight_export" | "vector_rebuild" | "continuation" | "derived_rebuild" | "plugin_agent";
+        JobProgressCurrentStep: {
+            kind: string;
+            itemId: components["schemas"]["Uuid"];
+            pageId: components["schemas"]["Uuid"] | null;
+            itemOrdinal: number;
+            stepId: components["schemas"]["Uuid"];
+            stepOrdinal: number;
+        };
+        JobProgressPoolCurrent: {
+            itemId: components["schemas"]["Uuid"];
+            pageId: components["schemas"]["Uuid"] | null;
+            itemOrdinal: number;
+            stepId: components["schemas"]["Uuid"];
+            stepOrdinal: number;
+        };
+        JobProgressPool: {
+            kind: string;
+            total: number;
+            completed: number;
+            failed: number;
+            skipped: number;
+            waiting: number;
+            processing: number;
+            lockWaiting: boolean;
+            current: components["schemas"]["JobProgressPoolCurrent"][];
+        };
+        JobProgress: {
+            /** @enum {string} */
+            executionMode: "sequential" | "parallel";
+            jobStatus: components["schemas"]["JobStatus"];
+            totalItems: number;
+            completedItems: number;
+            failedItems: number;
+            skippedItems: number;
+            cancelledItems: number;
+            pools: components["schemas"]["JobProgressPool"][];
+            currentStep?: components["schemas"]["JobProgressCurrentStep"];
+        };
         Job: {
             jobId: components["schemas"]["Uuid"];
             batchId?: components["schemas"]["Uuid"] | null;
@@ -2673,9 +2711,7 @@ export interface components {
             /** @enum {string|null} */
             blockedReason?: null | "blocked_by_job" | "blocked_by_import_lease" | "draining_immediate_writes";
             blockedByJobId?: components["schemas"]["Uuid"] | null;
-            progress: {
-                [key: string]: unknown;
-            };
+            progress: components["schemas"]["JobProgress"];
             target: {
                 [key: string]: unknown;
             };
@@ -3508,12 +3544,11 @@ export interface components {
         TranslationBootstrap: {
             activeJobs: {
                 id: components["schemas"]["Uuid"];
-                kind: string;
-                status: string;
+                kind: components["schemas"]["JobKind"];
+                status: components["schemas"]["JobStatus"];
                 queueRank: number | null;
-                progress: {
-                    [key: string]: unknown;
-                };
+                progress: components["schemas"]["JobProgress"];
+                pageIds: components["schemas"]["Uuid"][];
             }[];
             activeWebImportDraft: {
                 id: components["schemas"]["Uuid"];

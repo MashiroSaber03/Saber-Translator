@@ -1,4 +1,4 @@
-import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
+import { getCurrentInstance, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -10,8 +10,10 @@ import type { V2Font } from '@/api/v2/settings'
 import {
   getPageDocument,
   getTranslationBootstrap,
+  updateChapterSettingsMemory,
   updateLastVisitedPage,
 } from '@/api/v2/content'
+import { restoreTranslationFromBootstrap } from '@/composables/useTranslationPipeline'
 import {
   pageSummaryToImage,
 } from '@/adapters/v2ContentAdapter'
@@ -64,6 +66,15 @@ export function useTranslateInit() {
   let pageDocumentAbortController: AbortController | null = null
   let navigationRevision = 0
   let navigationWriteChain = Promise.resolve()
+  let settingsMemoryChapterId: string | null = null
+  let settingsMemoryRevision = 0
+  let lastSettingsMemoryFingerprint = ''
+  let settingsMemoryWriteTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingSettingsMemoryWrite: {
+    chapterId: string
+    payload: Record<string, unknown>
+  } | null = null
+  let isWritingSettingsMemory = false
 
   function clearSwitchImageFlagTimer(): void {
     if (switchImageFlagTimer) {
@@ -78,17 +89,40 @@ export function useTranslateInit() {
   }
 
   function markOwnerUnmounted(): void {
+    if (settingsMemoryWriteTimer) {
+      clearTimeout(settingsMemoryWriteTimer)
+      settingsMemoryWriteTimer = null
+      void flushSettingsMemoryWrite()
+    }
     isOwnerAlive = false
     bookContextRequestId += 1
     pageDocumentRequestId += 1
     pageDocumentAbortController?.abort()
     pageDocumentAbortController = null
     resetSwitchImageFlag()
+    settingsStore.clearChapterWorkState(settingsMemoryChapterId ?? undefined)
   }
 
   if (getCurrentInstance()) {
     onUnmounted(markOwnerUnmounted)
   }
+
+  watch(
+    () => settingsStore.chapterWorkStatePayload(),
+    payload => {
+      const chapterId = settingsMemoryChapterId
+      if (!chapterId) return
+      const fingerprint = JSON.stringify(payload)
+      if (fingerprint === lastSettingsMemoryFingerprint) return
+      pendingSettingsMemoryWrite = { chapterId, payload }
+      if (settingsMemoryWriteTimer) clearTimeout(settingsMemoryWriteTimer)
+      settingsMemoryWriteTimer = setTimeout(() => {
+        settingsMemoryWriteTimer = null
+        void flushSettingsMemoryWrite()
+      }, 400)
+    },
+    { deep: true },
+  )
 
   async function initializeApp(force: boolean = false): Promise<void> {
     // SPA 场景下重新进入翻译页时，需要重新加载书籍/章节上下文。
@@ -127,6 +161,23 @@ export function useTranslateInit() {
       if (!settingsStore.hydrateFromBackendDocument(bootstrap.settings)) {
         throw new Error(settingsStore.backendError || '后端设置加载失败')
       }
+      settingsStore.clearChapterWorkState(settingsMemoryChapterId ?? undefined)
+      settingsMemoryChapterId = bootstrap.chapter.id
+      settingsMemoryRevision = bootstrap.chapter.settingsMemoryRevision
+      if (!settingsStore.hydrateChapterWorkState(
+        bootstrap.chapter.id,
+        bootstrap.chapter.settingsMemory,
+      )) {
+        throw new Error('后端章节工作态设置格式无效')
+      }
+      lastSettingsMemoryFingerprint = JSON.stringify(
+        settingsStore.chapterWorkStatePayload(),
+      )
+      pendingSettingsMemoryWrite = null
+      if (settingsMemoryWriteTimer) {
+        clearTimeout(settingsMemoryWriteTimer)
+        settingsMemoryWriteTimer = null
+      }
       settingsStore.hydrateResourceCatalogs(bootstrap.fonts, bootstrap.prompts)
       fontList.value = bootstrap.fonts
       const translationPrompts = bootstrap.prompts.filter(
@@ -156,6 +207,7 @@ export function useTranslateInit() {
         bootstrap.constraints.payload as Partial<BookTranslationConstraints>,
       )
       imageStore.setImages(bootstrap.pages.items.map(pageSummaryToImage))
+      restoreTranslationFromBootstrap(bootstrap.activeJobs, imageStore)
       navigationRevision = bootstrap.navigation.revision
 
       const lastVisitedIndex = bootstrap.navigation.lastVisitedPageId
@@ -175,6 +227,40 @@ export function useTranslateInit() {
       if (!isOwnerAlive || requestId !== bookContextRequestId) return
       bookTranslationConstraintsStore.resetBookConstraints()
       showToast('加载后端章节数据失败', 'error')
+    }
+  }
+
+  async function flushSettingsMemoryWrite(): Promise<void> {
+    if (isWritingSettingsMemory) return
+    isWritingSettingsMemory = true
+    try {
+      while (pendingSettingsMemoryWrite) {
+        const pending = pendingSettingsMemoryWrite
+        pendingSettingsMemoryWrite = null
+        if (pending.chapterId !== settingsMemoryChapterId) continue
+        try {
+          const updated = await updateChapterSettingsMemory(
+            pending.chapterId,
+            pending.payload,
+            settingsMemoryRevision,
+          )
+          settingsMemoryRevision = updated.revision
+          lastSettingsMemoryFingerprint = JSON.stringify(updated.payload)
+        } catch (error) {
+          showToast(
+            `章节工作态设置未保存：${error instanceof Error ? error.message : '未知错误'}`,
+            'warning',
+          )
+        }
+      }
+    } finally {
+      isWritingSettingsMemory = false
+      if (pendingSettingsMemoryWrite && !settingsMemoryWriteTimer) {
+        settingsMemoryWriteTimer = setTimeout(() => {
+          settingsMemoryWriteTimer = null
+          void flushSettingsMemoryWrite()
+        }, 0)
+      }
     }
   }
 

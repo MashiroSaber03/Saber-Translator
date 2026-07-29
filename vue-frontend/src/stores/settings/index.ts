@@ -46,6 +46,81 @@ const CACHE_BY_PROVIDER_DOMAIN = Object.fromEntries(
   Object.entries(PROVIDER_DOMAIN_BY_CACHE).map(([cache, domain]) => [domain, cache]),
 ) as Record<string, ProviderCacheDomain>
 
+const CHAPTER_WORK_STATE_KEYS = [
+  'ocrEngine',
+  'sourceLanguage',
+  'textDetector',
+  'minTextBlockAreaPercent',
+  'enableAuxYoloDetection',
+  'auxYoloConfThreshold',
+  'auxYoloOverlapThreshold',
+  'enableSaberYoloRefine',
+  'saberYoloRefineOverlapThreshold',
+  'baiduOcr',
+  'paddleOcrVl',
+  'aiVisionOcr',
+  'hybridOcr',
+  'translation',
+  'targetLanguage',
+  'translatePrompt',
+  'useTextboxPrompt',
+  'textboxPrompt',
+  'hqTranslation',
+  'proofreading',
+  'boxExpand',
+  'preciseMask',
+  'showDetectionDebug',
+  'parallel',
+  'removeTextWithOcr',
+  'lamaDisableResize',
+] as const satisfies readonly (keyof TranslationSettings)[]
+const CHAPTER_WORK_STATE_KEY_SET = new Set<string>(CHAPTER_WORK_STATE_KEYS)
+
+const CHAPTER_SECRET_KEYS = new Set([
+  'apikey',
+  'secretkey',
+  'secret',
+  'token',
+  'password',
+  'credentialversionid',
+])
+
+function scrubChapterWorkState(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(scrubChapterWorkState)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !CHAPTER_SECRET_KEYS.has(
+        key.toLowerCase().replaceAll(/[^a-z0-9]/g, ''),
+      ))
+      .map(([key, child]) => [key, scrubChapterWorkState(child)]),
+  )
+}
+
+function mergeObjects(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = deepClone(base)
+  for (const [key, value] of Object.entries(override)) {
+    const current = result[key]
+    result[key] = (
+      current
+      && value
+      && typeof current === 'object'
+      && typeof value === 'object'
+      && !Array.isArray(current)
+      && !Array.isArray(value)
+    )
+      ? mergeObjects(
+          current as Record<string, unknown>,
+          value as Record<string, unknown>,
+        )
+      : deepClone(value)
+  }
+  return result
+}
+
 function emptyProviderConfigs(): ProviderConfigsCache {
   return {
     translation: {},
@@ -99,6 +174,10 @@ export const useSettingsStore = defineStore('settings', () => {
   let workflowPreferencesRevision = 0
   let providerRevisions = new Map<string, number>()
   let loadPromise: Promise<boolean> | null = null
+  let activeChapterWorkState: {
+    chapterId: string
+    payload: Record<string, unknown>
+  } | null = null
 
   const ocrModule = useOcrSettings(
     settings,
@@ -196,6 +275,58 @@ export const useSettingsStore = defineStore('settings', () => {
     settings.value.proofreading.rounds.forEach((round) => {
       round.apiKey = ''
     })
+    if (activeChapterWorkState) {
+      applyChapterWorkState(activeChapterWorkState.payload)
+    }
+  }
+
+  function chapterWorkStatePayload(): Record<string, unknown> {
+    const source = settings.value as unknown as Record<string, unknown>
+    return Object.fromEntries(
+      CHAPTER_WORK_STATE_KEYS.map(key => [
+        key,
+        scrubChapterWorkState(source[key]),
+      ]),
+    )
+  }
+
+  function applyChapterWorkState(payload: Record<string, unknown>): boolean {
+    const unknown = Object.keys(payload).filter(
+      key => !CHAPTER_WORK_STATE_KEY_SET.has(key),
+    )
+    if (unknown.length > 0) return false
+    const current = settings.value as unknown as Record<string, unknown>
+    const candidate = mergeObjects(current, scrubChapterWorkState(payload) as Record<string, unknown>)
+    candidate.settingsSchemaVersion = 3
+    candidate.textStyle = deepClone(settings.value.textStyle)
+    candidate.pluginAgent = deepClone(settings.value.pluginAgent)
+    candidate.enableVerboseLogs = settings.value.enableVerboseLogs
+    const parsed = parseCurrentSettings(candidate)
+    if (!parsed) return false
+    settings.value = parsed
+    return true
+  }
+
+  function hydrateChapterWorkState(
+    chapterId: string,
+    payload: Record<string, unknown>,
+  ): boolean {
+    const cloned = deepClone(payload)
+    activeChapterWorkState = { chapterId, payload: cloned }
+    if (applyChapterWorkState(cloned)) return true
+    activeChapterWorkState = null
+    return false
+  }
+
+  function clearChapterWorkState(chapterId?: string): void {
+    if (
+      chapterId
+      && activeChapterWorkState
+      && activeChapterWorkState.chapterId !== chapterId
+    ) {
+      return
+    }
+    activeChapterWorkState = null
   }
 
   function hydrateFromBackendDocument(document: V2SettingsDocument): boolean {
@@ -568,6 +699,9 @@ export const useSettingsStore = defineStore('settings', () => {
     resetToDefaults,
     hydrateFromBackendDocument,
     hydrateResourceCatalogs,
+    hydrateChapterWorkState,
+    clearChapterWorkState,
+    chapterWorkStatePayload,
 
     loadFromBackend,
     saveToBackend,

@@ -16,6 +16,8 @@ vi.mock('@/composables/useTranslationPipeline', () => ({
         total: 0,
         completed: 0,
         failed: 0,
+        executionMode: 'sequential',
+        pools: [],
       },
     },
   }),
@@ -36,6 +38,8 @@ describe('TranslationProgress', () => {
           completed: 1,
           failed: 1,
           label: '后端正在处理',
+          executionMode: 'sequential',
+          pools: [],
         },
       },
     })
@@ -57,6 +61,8 @@ describe('TranslationProgress', () => {
           completed: 8,
           failed: 0,
           percentage: 140,
+          executionMode: 'sequential',
+          pools: [],
         },
       },
     })
@@ -64,7 +70,38 @@ describe('TranslationProgress', () => {
     expect(wrapper.getComponent(UiProgressBar).props('value')).toBe(100)
   })
 
-  it('does not import or render the removed browser pool pipeline', () => {
+  it('renders only backend-projected pool facts for parallel jobs', () => {
+    const wrapper = mount(TranslationProgress, {
+      props: {
+        progress: {
+          isInProgress: true,
+          current: 1,
+          total: 3,
+          completed: 1,
+          failed: 0,
+          executionMode: 'parallel',
+          pools: [{
+            kind: 'ocr',
+            total: 3,
+            completed: 1,
+            failed: 0,
+            skipped: 0,
+            waiting: 1,
+            processing: 1,
+            lockWaiting: true,
+            current: [],
+          }],
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('OCR')
+    expect(wrapper.text()).toContain('完成 1 / 3')
+    expect(wrapper.text()).toContain('处理中 1')
+    expect(wrapper.text()).toContain('等待深度学习锁')
+  })
+
+  it('does not import the removed browser-owned pool pipeline', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/TranslationProgress.vue'),
       'utf8',
@@ -72,7 +109,6 @@ describe('TranslationProgress', () => {
 
     expect(source).not.toContain('useParallelTranslation')
     expect(source).not.toContain('preSave')
-    expect(source).not.toContain('translation-progress__pool')
     expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
   })
 

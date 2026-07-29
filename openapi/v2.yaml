@@ -3947,6 +3947,77 @@ components:
         - continuation
         - derived_rebuild
         - plugin_agent
+    JobProgressCurrentStep:
+      type: object
+      additionalProperties: false
+      required: [kind, itemId, pageId, itemOrdinal, stepId, stepOrdinal]
+      properties:
+        kind: {type: string}
+        itemId: {$ref: "#/components/schemas/Uuid"}
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        itemOrdinal: {type: integer, minimum: 1}
+        stepId: {$ref: "#/components/schemas/Uuid"}
+        stepOrdinal: {type: integer, minimum: 1}
+    JobProgressPoolCurrent:
+      type: object
+      additionalProperties: false
+      required: [itemId, pageId, itemOrdinal, stepId, stepOrdinal]
+      properties:
+        itemId: {$ref: "#/components/schemas/Uuid"}
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        itemOrdinal: {type: integer, minimum: 1}
+        stepId: {$ref: "#/components/schemas/Uuid"}
+        stepOrdinal: {type: integer, minimum: 1}
+    JobProgressPool:
+      type: object
+      additionalProperties: false
+      required:
+        [kind, total, completed, failed, skipped, waiting, processing, lockWaiting, current]
+      properties:
+        kind: {type: string}
+        total: {type: integer, minimum: 0}
+        completed: {type: integer, minimum: 0}
+        failed: {type: integer, minimum: 0}
+        skipped: {type: integer, minimum: 0}
+        waiting: {type: integer, minimum: 0}
+        processing: {type: integer, minimum: 0}
+        lockWaiting: {type: boolean}
+        current:
+          type: array
+          items: {$ref: "#/components/schemas/JobProgressPoolCurrent"}
+    JobProgress:
+      type: object
+      additionalProperties: false
+      required:
+        - executionMode
+        - jobStatus
+        - totalItems
+        - completedItems
+        - failedItems
+        - skippedItems
+        - cancelledItems
+        - pools
+      properties:
+        executionMode:
+          type: string
+          enum: [sequential, parallel]
+        jobStatus: {$ref: "#/components/schemas/JobStatus"}
+        totalItems: {type: integer, minimum: 0}
+        completedItems: {type: integer, minimum: 0}
+        failedItems: {type: integer, minimum: 0}
+        skippedItems: {type: integer, minimum: 0}
+        cancelledItems: {type: integer, minimum: 0}
+        pools:
+          type: array
+          items: {$ref: "#/components/schemas/JobProgressPool"}
+        currentStep:
+          $ref: "#/components/schemas/JobProgressCurrentStep"
     Job:
       type: object
       additionalProperties: false
@@ -4003,8 +4074,7 @@ components:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
         progress:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/JobProgress"
         target:
           type: object
           additionalProperties: true
@@ -5593,13 +5663,16 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [id, kind, status, queueRank, progress]
+            required: [id, kind, status, queueRank, progress, pageIds]
             properties:
               id: {$ref: "#/components/schemas/Uuid"}
-              kind: {type: string}
-              status: {type: string}
+              kind: {$ref: "#/components/schemas/JobKind"}
+              status: {$ref: "#/components/schemas/JobStatus"}
               queueRank: {type: [integer, "null"], minimum: 1}
-              progress: {type: object, additionalProperties: true}
+              progress: {$ref: "#/components/schemas/JobProgress"}
+              pageIds:
+                type: array
+                items: {$ref: "#/components/schemas/Uuid"}
         activeWebImportDraft:
           oneOf:
             - type: object

@@ -601,3 +601,76 @@ def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     thread.join(timeout=2)
     assert repository.get_job(job_id)["status"] == "completed"
     assert maximum_active == 1
+
+
+def test_parallel_progress_is_backend_owned_and_recovers_pool_lock_waiting(
+    job_platform,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="durable pool progress",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=(
+                    JobItemSpec(page_id=None, step_kinds=("detect",)),
+                    JobItemSpec(page_id=None, step_kinds=("ocr",)),
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    release = threading.Event()
+
+    def handler(_fence, step):
+        assert release.wait(3)
+        return {"done": str(step["stepKind"])}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler, "ocr": handler, "render": handler},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    snapshot: dict[str, object] = {}
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        snapshot = repository.get_job(job_id)["progress"]
+        pools = snapshot.get("pools", [])
+        if (
+            len(pools) == 2
+            and sum(int(pool["processing"]) for pool in pools) == 2
+            and any(bool(pool["lockWaiting"]) for pool in pools)
+        ):
+            break
+        time.sleep(0.01)
+    else:
+        raise AssertionError(f"lock-waiting progress was not persisted: {snapshot}")
+
+    assert snapshot["executionMode"] == "parallel"
+    assert [pool["kind"] for pool in snapshot["pools"]] == ["detect", "ocr"]
+    assert all(int(pool["total"]) == 1 for pool in snapshot["pools"])
+    assert all(int(pool["waiting"]) == 0 for pool in snapshot["pools"])
+
+    release.set()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if repository.get_job(job_id)["status"] == "completed":
+            break
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+    final = repository.get_job(job_id)["progress"]
+    assert repository.get_job(job_id)["status"] == "completed"
+    assert final["jobStatus"] == "completed"
+    assert all(int(pool["completed"]) == 1 for pool in final["pools"])
+    assert all(not bool(pool["lockWaiting"]) for pool in final["pools"])

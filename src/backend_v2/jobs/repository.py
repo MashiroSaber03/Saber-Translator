@@ -407,11 +407,21 @@ class JobQueueRepository:
                                     for role, asset_id in item_spec.asset_inputs.items()
                                 ],
                             )
+                    initial_progress = self._progress_snapshot(connection, job_id)
+                    connection.execute(
+                        update(jobs)
+                        .where(jobs.c.id == job_id)
+                        .values(latest_progress_json=_json(initial_progress))
+                    )
                     self._append_event(
                         connection,
                         job_id=job_id,
                         event_type="job_created",
-                        payload={"batchId": batch_id, "queueRank": next_rank},
+                        payload={
+                            "batchId": batch_id,
+                            "queueRank": next_rank,
+                            "progress": initial_progress,
+                        },
                         now=now,
                     )
                 if transaction_hook is not None:
@@ -932,6 +942,9 @@ class JobQueueRepository:
                     "worker_epoch_id": None,
                     "updated_at": now,
                 }
+                progress = _load_json(row["latest_progress_json"], {})
+                progress["jobStatus"] = "queued"
+                values["latest_progress_json"] = _json(progress)
                 connection.execute(
                     update(jobs).where(jobs.c.id == row["id"]).values(**values)
                 )
@@ -939,7 +952,12 @@ class JobQueueRepository:
                     connection,
                     job_id=str(row["id"]),
                     event_type=f"job_{event.value}",
-                    payload={"from": row["status"], "to": "queued", "source": "batch"},
+                    payload={
+                        "from": row["status"],
+                        "to": "queued",
+                        "source": "batch",
+                        "progress": progress,
+                    },
                     now=now,
                 )
                 updated = dict(row)
@@ -1278,6 +1296,29 @@ class JobQueueRepository:
         counts = {str(status): int(count) for status, count in rows}
         return counts.get("pending", 0), counts.get("running", 0)
 
+    def step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
+        """Return only the durable pools that belong to this job graph."""
+
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            rows = connection.execute(
+                select(
+                    job_steps.c.kind,
+                    func.min(job_steps.c.ordinal).label("first_ordinal"),
+                )
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(job_items.c.job_id == fence.job_id)
+                .group_by(job_steps.c.kind)
+                .order_by("first_ordinal", job_steps.c.kind)
+            )
+            return tuple(str(kind) for kind, _ordinal in rows)
+
     def next_step(
         self,
         fence: AttemptFence,
@@ -1363,6 +1404,16 @@ class JobQueueRepository:
             )
             if claimed.rowcount != 1:
                 raise AttemptFenced("step was claimed by another attempt")
+            snapshot = self._progress_snapshot(connection, fence.job_id)
+            connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.lease_token == fence.lease_token,
+                )
+                .values(latest_progress_json=_json(snapshot), updated_at=now)
+            )
             self._append_event(
                 connection,
                 job_id=fence.job_id,
@@ -1372,6 +1423,7 @@ class JobQueueRepository:
                     "pageId": row["page_id"],
                     "stepId": row["step_id"],
                     "stepKind": row["step_kind"],
+                    "progress": snapshot,
                 },
                 now=now,
             )
@@ -1500,19 +1552,6 @@ class JobQueueRepository:
                 )
                 if claimed.rowcount != 1:
                     raise AttemptFenced("batch step was claimed by another attempt")
-                self._append_event(
-                    connection,
-                    job_id=fence.job_id,
-                    event_type="step_started",
-                    payload={
-                        "itemId": row["item_id"],
-                        "pageId": row["page_id"],
-                        "stepId": row["step_id"],
-                        "stepKind": row["step_kind"],
-                        "batchOrdinal": int(first_ordinal),
-                    },
-                    now=now,
-                )
                 claimed_steps.append(
                     {
                         "jobId": fence.job_id,
@@ -1525,6 +1564,31 @@ class JobQueueRepository:
                         "stepOrdinal": row["step_ordinal"],
                         "stepKind": row["step_kind"],
                     }
+                )
+            snapshot = self._progress_snapshot(connection, fence.job_id)
+            connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.lease_token == fence.lease_token,
+                )
+                .values(latest_progress_json=_json(snapshot), updated_at=now)
+            )
+            for row in rows:
+                self._append_event(
+                    connection,
+                    job_id=fence.job_id,
+                    event_type="step_started",
+                    payload={
+                        "itemId": row["item_id"],
+                        "pageId": row["page_id"],
+                        "stepId": row["step_id"],
+                        "stepKind": row["step_kind"],
+                        "batchOrdinal": int(first_ordinal),
+                        "progress": snapshot,
+                    },
+                    now=now,
                 )
             return claimed_steps
 
@@ -1707,6 +1771,11 @@ class JobQueueRepository:
                 ).scalar_one()
             )
             final = "completed_with_errors" if failed else "completed"
+            final_progress = self._progress_snapshot(
+                connection,
+                fence.job_id,
+                job_status=final,
+            )
             connection.execute(
                 update(jobs)
                 .where(
@@ -1722,9 +1791,7 @@ class JobQueueRepository:
                     lease_expires_at=None,
                     worker_epoch_id=None,
                     finished_at=now,
-                    latest_progress_json=_json(
-                        self._progress_snapshot(connection, fence.job_id)
-                    ),
+                    latest_progress_json=_json(final_progress),
                     updated_at=now,
                 )
             )
@@ -1739,7 +1806,11 @@ class JobQueueRepository:
                 connection,
                 job_id=fence.job_id,
                 event_type="job_finished",
-                payload={"status": final, "failedItems": failed},
+                payload={
+                    "status": final,
+                    "failedItems": failed,
+                    "progress": final_progress,
+                },
                 now=now,
             )
             self._bump_queue_revision(connection, now)
@@ -1767,6 +1838,49 @@ class JobQueueRepository:
             )
             if result.rowcount != 1:
                 raise AttemptFenced("job progress write was fenced")
+
+    def write_pipeline_progress(
+        self,
+        fence: AttemptFence,
+        *,
+        lock_waiting: Mapping[str, bool] | None = None,
+    ) -> dict[str, Any]:
+        """Overwrite the recoverable backend projection of pipeline state.
+
+        The database step graph remains authoritative.  The only in-process
+        signal accepted here is whether a claimed deep-learning step is waiting
+        for the shared admission semaphore; all counts and current pages are
+        reconstructed from durable rows.
+        """
+
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            snapshot = self._progress_snapshot(
+                connection,
+                fence.job_id,
+                lock_waiting=lock_waiting,
+            )
+            result = connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.lease_token == fence.lease_token,
+                    jobs.c.worker_epoch_id == fence.worker_epoch_id,
+                    jobs.c.lease_expires_at > now,
+                    jobs.c.status.in_(("running", "pausing", "cancelling")),
+                )
+                .values(latest_progress_json=_json(snapshot), updated_at=now)
+            )
+            if result.rowcount != 1:
+                raise AttemptFenced("job pipeline progress write was fenced")
+            return snapshot
 
     def acknowledge_drain(
         self,
@@ -1887,6 +2001,12 @@ class JobQueueRepository:
                     status="cancelled",
                     now=now,
                 )
+            final_progress = self._progress_snapshot(
+                connection,
+                fence.job_id,
+                job_status=final,
+            )
+            values["latest_progress_json"] = _json(final_progress)
             connection.execute(
                 update(jobs)
                 .where(
@@ -1900,7 +2020,10 @@ class JobQueueRepository:
                 connection,
                 job_id=fence.job_id,
                 event_type=f"job_{final}",
-                payload={"source": "worker_drain"},
+                payload={
+                    "source": "worker_drain",
+                    "progress": final_progress,
+                },
                 now=now,
             )
             self._bump_queue_revision(connection, now)
@@ -1922,6 +2045,11 @@ class JobQueueRepository:
                 now,
                 allowed_statuses=("running", "pausing"),
             )
+            failed_progress = self._progress_snapshot(
+                connection,
+                fence.job_id,
+                job_status="failed",
+            )
             connection.execute(
                 update(jobs)
                 .where(
@@ -1937,9 +2065,7 @@ class JobQueueRepository:
                     lease_expires_at=None,
                     worker_epoch_id=None,
                     finished_at=now,
-                    latest_progress_json=_json(
-                        {"error": {"code": code, "message": message}}
-                    ),
+                    latest_progress_json=_json(failed_progress),
                     updated_at=now,
                 )
             )
@@ -1954,7 +2080,11 @@ class JobQueueRepository:
                 connection,
                 job_id=fence.job_id,
                 event_type="job_failed",
-                payload={"code": code, "message": message},
+                payload={
+                    "code": code,
+                    "message": message,
+                    "progress": failed_progress,
+                },
                 now=now,
             )
             self._bump_queue_revision(connection, now)
@@ -2116,6 +2246,9 @@ class JobQueueRepository:
                     status="cancelled",
                     now=now,
                 )
+            progress = _load_json(row["latest_progress_json"], {})
+            progress["jobStatus"] = new_status.value
+            values["latest_progress_json"] = _json(progress)
             connection.execute(
                 update(jobs).where(jobs.c.id == job_id).values(**values)
             )
@@ -2123,7 +2256,11 @@ class JobQueueRepository:
                 connection,
                 job_id=job_id,
                 event_type=f"job_{event.value}",
-                payload={"from": current.value, "to": new_status.value},
+                payload={
+                    "from": current.value,
+                    "to": new_status.value,
+                    "progress": progress,
+                },
                 now=now,
             )
             self._bump_queue_revision(connection, now)
@@ -2382,6 +2519,8 @@ class JobQueueRepository:
         job_id = str(candidate["id"])
         attempt_id = candidate.get("attempt_id") or str(uuid.uuid4())
         lease_token = candidate.get("lease_token") or secrets.token_urlsafe(32)
+        progress = _load_json(candidate["latest_progress_json"], {})
+        progress["jobStatus"] = "running"
         result = connection.execute(
             update(jobs)
             .where(jobs.c.id == job_id, jobs.c.status == "queued")
@@ -2395,6 +2534,7 @@ class JobQueueRepository:
                 blocked_by_job_id=None,
                 blocked_by_import_lease_id=None,
                 started_at=func.coalesce(jobs.c.started_at, now),
+                latest_progress_json=_json(progress),
                 updated_at=now,
             )
         )
@@ -2409,7 +2549,7 @@ class JobQueueRepository:
             connection,
             job_id=job_id,
             event_type="job_started",
-            payload={"attemptId": attempt_id},
+            payload={"attemptId": attempt_id, "progress": progress},
             now=now,
         )
         self._bump_queue_revision(connection, now)
@@ -2572,7 +2712,11 @@ class JobQueueRepository:
             )
             .values(status="cancelled", updated_at=now)
         )
-        snapshot = self._progress_snapshot(connection, job_id)
+        snapshot = self._progress_snapshot(
+            connection,
+            job_id,
+            job_status="cancelled",
+        )
         result = connection.execute(
             update(jobs)
             .where(jobs.c.id == job_id, jobs.c.status == "queued")
@@ -2649,7 +2793,13 @@ class JobQueueRepository:
             )
 
     @staticmethod
-    def _progress_snapshot(connection: Any, job_id: str) -> dict[str, int]:
+    def _progress_snapshot(
+        connection: Any,
+        job_id: str,
+        *,
+        lock_waiting: Mapping[str, bool] | None = None,
+        job_status: str | None = None,
+    ) -> dict[str, Any]:
         rows = connection.execute(
             select(job_items.c.status, func.count().label("count"))
             .where(job_items.c.job_id == job_id)
@@ -2657,13 +2807,123 @@ class JobQueueRepository:
         )
         counts = {str(status): int(count) for status, count in rows}
         total = sum(counts.values())
-        return {
+        job_row = connection.execute(
+            select(
+                jobs.c.status,
+                jobs.c.config_json,
+                jobs.c.latest_progress_json,
+            ).where(jobs.c.id == job_id)
+        ).mappings().one()
+        config = _load_json(job_row["config_json"], {})
+        execution_mode = str(config.get("executionMode", "sequential"))
+        effective_lock_waiting = dict(lock_waiting or {})
+        if lock_waiting is None:
+            previous = _load_json(job_row["latest_progress_json"], {})
+            previous_pools = previous.get("pools")
+            if isinstance(previous_pools, list):
+                effective_lock_waiting = {
+                    str(pool.get("kind")): bool(pool.get("lockWaiting", False))
+                    for pool in previous_pools
+                    if isinstance(pool, Mapping) and pool.get("kind")
+                }
+
+        step_rows = connection.execute(
+            select(
+                job_steps.c.kind,
+                job_steps.c.status,
+                func.count().label("count"),
+                func.min(job_steps.c.ordinal).label("first_ordinal"),
+            )
+            .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+            .where(job_items.c.job_id == job_id)
+            .group_by(job_steps.c.kind, job_steps.c.status)
+        )
+        pool_counts: dict[str, dict[str, int]] = {}
+        pool_ordinals: dict[str, int] = {}
+        for kind, status, count, first_ordinal in step_rows:
+            name = str(kind)
+            pool_counts.setdefault(name, {})[str(status)] = int(count)
+            ordinal = int(first_ordinal)
+            pool_ordinals[name] = min(pool_ordinals.get(name, ordinal), ordinal)
+
+        running_rows = connection.execute(
+            select(
+                job_steps.c.kind,
+                job_steps.c.id.label("step_id"),
+                job_steps.c.ordinal.label("step_ordinal"),
+                job_items.c.id.label("item_id"),
+                job_items.c.page_id,
+                job_items.c.ordinal.label("item_ordinal"),
+            )
+            .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+            .where(
+                job_items.c.job_id == job_id,
+                job_steps.c.status == "running",
+            )
+            .order_by(job_items.c.ordinal, job_steps.c.ordinal)
+        ).mappings()
+        current_by_pool: dict[str, list[dict[str, Any]]] = {}
+        for row in running_rows:
+            current_by_pool.setdefault(str(row["kind"]), []).append(
+                {
+                    "itemId": str(row["item_id"]),
+                    "pageId": (
+                        str(row["page_id"]) if row["page_id"] is not None else None
+                    ),
+                    "itemOrdinal": int(row["item_ordinal"]),
+                    "stepId": str(row["step_id"]),
+                    "stepOrdinal": int(row["step_ordinal"]),
+                }
+            )
+
+        pools: list[dict[str, Any]] = []
+        for kind in sorted(
+            pool_counts,
+            key=lambda value: (pool_ordinals.get(value, 0), value),
+        ):
+            statuses = pool_counts[kind]
+            current = current_by_pool.get(kind, [])
+            pools.append(
+                {
+                    "kind": kind,
+                    "total": sum(statuses.values()),
+                    "completed": statuses.get("completed", 0),
+                    "failed": statuses.get("failed", 0),
+                    "skipped": statuses.get("skipped", 0),
+                    "waiting": statuses.get("pending", 0),
+                    "processing": statuses.get("running", 0),
+                    "lockWaiting": bool(effective_lock_waiting.get(kind, False)),
+                    "current": current,
+                }
+            )
+
+        current_steps = [
+            {
+                "kind": kind,
+                **current,
+            }
+            for kind, values in current_by_pool.items()
+            for current in values
+        ]
+        current_steps.sort(
+            key=lambda value: (
+                int(value["itemOrdinal"]),
+                int(value["stepOrdinal"]),
+            )
+        )
+        snapshot: dict[str, Any] = {
+            "executionMode": execution_mode,
+            "jobStatus": job_status or str(job_row["status"]),
             "totalItems": total,
             "completedItems": counts.get("completed", 0),
             "failedItems": counts.get("failed", 0),
             "skippedItems": counts.get("skipped", 0),
             "cancelledItems": counts.get("cancelled", 0),
+            "pools": pools,
         }
+        if current_steps:
+            snapshot["currentStep"] = current_steps[0]
+        return snapshot
 
     @staticmethod
     def _config_summary(value: object) -> dict[str, object]:

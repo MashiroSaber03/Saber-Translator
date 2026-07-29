@@ -254,6 +254,7 @@ def step_kinds_for_mode(
             "translate",
             "repair",
             "render",
+            "save",
         )
         return steps[1:] if reuse_existing_bubbles else steps
     if mode == "hq":
@@ -265,12 +266,17 @@ def step_kinds_for_mode(
             "hq_translate",
             "repair",
             "render",
+            "save",
         )
         return steps[1:] if reuse_existing_bubbles else steps
     if mode == "proofread":
         if proofreading_rounds < 1:
             raise ValueError("proofread mode requires at least one proofreading round")
-        return (*("proofread" for _ in range(proofreading_rounds)), "render")
+        return (
+            *("proofread" for _ in range(proofreading_rounds)),
+            "render",
+            "save",
+        )
     if mode == "remove_text":
         return ("detect", "ocr", "repair", "publish_clean")
     raise ValueError(f"unsupported translation mode: {mode}")

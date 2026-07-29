@@ -147,6 +147,7 @@ def run_worker(args: object) -> int:
                 "proofread",
                 "repair",
                 "render",
+                "save",
                 "publish_clean",
             }
             transfer = TransferWorkerService(

@@ -30,6 +30,7 @@ from src.backend_v2.storage.schema import (
     app_settings,
     fonts,
     import_leases,
+    job_items,
     jobs,
     operations,
     page_assets,
@@ -54,6 +55,60 @@ NONTERMINAL_JOB_STATUSES = (
 )
 ACTIVE_OPERATION_STATUSES = ("pending", "running")
 _MISSING = object()
+_CHAPTER_WORK_STATE_KEYS = frozenset(
+    {
+        "ocrEngine",
+        "sourceLanguage",
+        "textDetector",
+        "minTextBlockAreaPercent",
+        "enableAuxYoloDetection",
+        "auxYoloConfThreshold",
+        "auxYoloOverlapThreshold",
+        "enableSaberYoloRefine",
+        "saberYoloRefineOverlapThreshold",
+        "baiduOcr",
+        "paddleOcrVl",
+        "aiVisionOcr",
+        "hybridOcr",
+        "translation",
+        "targetLanguage",
+        "translatePrompt",
+        "useTextboxPrompt",
+        "textboxPrompt",
+        "hqTranslation",
+        "proofreading",
+        "boxExpand",
+        "preciseMask",
+        "showDetectionDebug",
+        "parallel",
+        "removeTextWithOcr",
+        "lamaDisableResize",
+    }
+)
+_CHAPTER_MEMORY_FORBIDDEN_KEYS = frozenset(
+    {
+        "apikey",
+        "secretkey",
+        "secret",
+        "token",
+        "password",
+        "credentialversionid",
+        "textstyle",
+        "fontsize",
+        "autofontsize",
+        "fontfamily",
+        "layoutdirection",
+        "textcolor",
+        "fillcolor",
+        "inpaintmethod",
+        "useautotextcolor",
+        "strokeenabled",
+        "strokecolor",
+        "strokewidth",
+        "linespacing",
+        "textalign",
+    }
+)
 
 
 class ContentNotFound(LookupError):
@@ -85,6 +140,33 @@ def _utcnow() -> datetime:
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
+    unknown = sorted(set(payload) - _CHAPTER_WORK_STATE_KEYS)
+    if unknown:
+        raise ValueError(
+            "chapter settings memory contains unsupported fields: "
+            + ", ".join(unknown)
+        )
+    encoded = _json(payload)
+    if len(encoded.encode("utf-8")) > 256 * 1024:
+        raise ValueError("chapter settings memory exceeds 256 KiB")
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                normalized = re.sub(r"[^a-z0-9]", "", str(key).casefold())
+                if normalized in _CHAPTER_MEMORY_FORBIDDEN_KEYS:
+                    raise ValueError(
+                        f"chapter settings memory must not contain {key}"
+                    )
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(payload)
 
 
 def normalize_logical_path(raw_path: str) -> str:
@@ -741,6 +823,20 @@ class ContentRepository:
                     .order_by(jobs.c.queue_rank, jobs.c.created_at)
                 ).mappings()
             )
+            active_job_ids = [str(job["id"]) for job in active_jobs]
+            active_job_pages: dict[str, list[str]] = {
+                job_id: [] for job_id in active_job_ids
+            }
+            if active_job_ids:
+                for job_id, page_id in connection.execute(
+                    select(job_items.c.job_id, job_items.c.page_id)
+                    .where(
+                        job_items.c.job_id.in_(active_job_ids),
+                        job_items.c.page_id.is_not(None),
+                    )
+                    .order_by(job_items.c.job_id, job_items.c.ordinal)
+                ):
+                    active_job_pages[str(job_id)].append(str(page_id))
             active_draft = connection.execute(
                 select(
                     web_import_drafts.c.id,
@@ -802,6 +898,7 @@ class ContentRepository:
                     "status": job["status"],
                     "queueRank": job["queue_rank"],
                     "progress": json.loads(job["latest_progress_json"]),
+                    "pageIds": active_job_pages.get(str(job["id"]), []),
                 }
                 for job in active_jobs
             ],
@@ -824,6 +921,7 @@ class ContentRepository:
         base_revision: int,
         payload: dict[str, object],
     ) -> dict[str, object]:
+        _validate_chapter_settings_memory(payload)
         with immediate_transaction(self.engine) as connection:
             changed = connection.execute(
                 update(chapters)

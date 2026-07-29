@@ -19,8 +19,11 @@ from sqlalchemy.engine import Connection
 from src.backend_v2.jobs.repository import AttemptFence, JobConflict, JobQueueRepository
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
+    assets,
     bubbles,
     credential_versions,
+    job_items,
+    job_steps,
     job_step_asset_outputs,
     page_assets,
     pages,
@@ -521,6 +524,8 @@ class TranslationPipelineService:
             result = self._repair(fence, step, page_id)
         elif kind == "render":
             result = self._render(fence, step, page_id)
+        elif kind == "save":
+            result = self._save(fence, step, page_id)
         elif kind == "publish_clean":
             result = self._checkpoint_only(
                 fence, step, {"published": "clean"}
@@ -996,10 +1001,6 @@ class TranslationPipelineService:
                 self.storage,
                 page_id,
             )
-        persisted_payloads = [
-            (bubble_id, payload)
-            for bubble_id, payload, _render_payload in projected
-        ]
         render_payloads = [
             render_payload
             for _bubble_id, _payload, render_payload in projected
@@ -1019,6 +1020,115 @@ class TranslationPipelineService:
         translated = self._publish_image(rendered)
         thumbnail = self._publish_thumbnail(rendered)
         rendered.close()
+
+        def publish(connection: Connection) -> None:
+            self._assert_revision(
+                connection, page_id, snapshot.document_revision
+            )
+            connection.execute(
+                insert(job_step_asset_outputs),
+                [
+                    {
+                        "job_step_id": str(step["stepId"]),
+                        "role": "translated",
+                        "asset_id": translated.id,
+                    },
+                    {
+                        "job_step_id": str(step["stepId"]),
+                        "role": "thumbnail_translated",
+                        "asset_id": thumbnail.id,
+                    },
+                ],
+            )
+
+        checkpoint = {
+            "translatedAssetId": translated.id,
+            "thumbnailAssetId": thumbnail.id,
+            "documentRevision": snapshot.document_revision,
+        }
+        self.jobs.complete_step(
+            fence,
+            step_id=str(step["stepId"]),
+            checkpoint=checkpoint,
+            publisher=publish,
+        )
+        return checkpoint
+
+    def _save(
+        self,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
+        page_id: str,
+    ) -> Mapping[str, Any]:
+        """Publish a prior render checkpoint as the current page projection."""
+
+        from src.backend_v2.rendering.fonts import (
+            materialize_render_payloads,
+        )
+
+        snapshot = self._snapshot(page_id)
+        with self.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    select(
+                        job_step_asset_outputs.c.role,
+                        assets.c.id,
+                        assets.c.relative_path,
+                        assets.c.mime_type,
+                        assets.c.checksum,
+                        assets.c.byte_size,
+                        assets.c.width,
+                        assets.c.height,
+                    )
+                    .join(
+                        job_steps,
+                        job_steps.c.id
+                        == job_step_asset_outputs.c.job_step_id,
+                    )
+                    .join(
+                        job_items,
+                        job_items.c.id == job_steps.c.job_item_id,
+                    )
+                    .join(
+                        assets,
+                        assets.c.id == job_step_asset_outputs.c.asset_id,
+                    )
+                    .where(
+                        job_items.c.id == str(step["itemId"]),
+                        job_items.c.job_id == fence.job_id,
+                        job_steps.c.kind == "render",
+                        job_steps.c.status == "completed",
+                        job_step_asset_outputs.c.role.in_(
+                            ("translated", "thumbnail_translated")
+                        ),
+                    )
+                ).mappings()
+            )
+            projected = materialize_render_payloads(
+                connection,
+                self.storage,
+                page_id,
+            )
+        records = {
+            str(row["role"]): AssetRecord(
+                id=str(row["id"]),
+                relative_path=str(row["relative_path"]),
+                mime_type=str(row["mime_type"]),
+                checksum=str(row["checksum"]),
+                byte_size=int(row["byte_size"]),
+                width=int(row["width"]) if row["width"] is not None else None,
+                height=int(row["height"]) if row["height"] is not None else None,
+            )
+            for row in rows
+        }
+        translated = records.get("translated")
+        thumbnail = records.get("thumbnail_translated")
+        if translated is None or thumbnail is None:
+            raise JobConflict("save step has no complete render asset checkpoint")
+        persisted_payloads = [
+            (bubble_id, payload)
+            for bubble_id, payload, _render_payload in projected
+        ]
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
