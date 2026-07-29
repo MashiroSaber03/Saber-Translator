@@ -642,7 +642,8 @@ describe('PluginManager', () => {
         message: '插件已存在',
         status: 409,
         details: {
-          plugin_id: 'plugin_one',
+          pluginId: 'plugin_one',
+          currentRevision: 1,
         },
       })
       .mockResolvedValueOnce({

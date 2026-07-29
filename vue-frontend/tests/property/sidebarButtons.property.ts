@@ -26,11 +26,10 @@ const {
   uploadFontMock: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  getFontList: getFontListMock,
-  getTranslateWorkflowPreferences: getPreferencesMock,
-  saveTranslateWorkflowPreferences: savePreferencesMock,
-  uploadFont: uploadFontMock,
+vi.mock('@/api/v2/settings', async importOriginal => ({
+  ...await importOriginal<typeof import('@/api/v2/settings')>(),
+  listV2Fonts: getFontListMock,
+  uploadV2Font: uploadFontMock,
 }))
 
 interface GeneratedImage {
@@ -59,8 +58,8 @@ const generatedImageArb = fc.record({ failed: fc.boolean() })
 
 function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
   setActivePinia(createPinia())
-  getFontListMock.mockResolvedValue({ fonts: [] })
-  uploadFontMock.mockResolvedValue({ success: true, fontPath: 'fonts/UploadedFont.ttf' })
+  getFontListMock.mockResolvedValue([])
+  uploadFontMock.mockResolvedValue({ id: 'font-uploaded', assetUrl: '/api/v2/assets/font' })
   getPreferencesMock.mockResolvedValue({
     success: true,
     preferences: {

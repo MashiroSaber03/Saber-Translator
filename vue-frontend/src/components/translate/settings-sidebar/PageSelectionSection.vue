@@ -35,7 +35,7 @@ const isPageSelectionExpanded = ref(false)
           <span>启用</span>
           <UiSwitch
             :model-value="enabled"
-            aria-label="启用指定翻译页码"
+            ariaLabel="启用指定翻译页码"
             size="sm"
             :disabled="totalImages === 0 || !supportsPageSelection"
             @change="$emit('update:enabled', $event)"

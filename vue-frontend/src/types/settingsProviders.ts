@@ -31,5 +31,3 @@ export type HqTranslationProvider =
   | 'custom'
 
 export type PluginAgentProvider = HqTranslationProvider
-
-export type PdfProcessingMethod = 'frontend' | 'backend'

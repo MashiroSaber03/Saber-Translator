@@ -4,12 +4,10 @@ import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationCons
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  getFontList,
-  type TranslateWorkflowPreferences,
-  getTranslateWorkflowPreferences,
-  saveTranslateWorkflowPreferences,
-  uploadFont,
-} from '@/api/config'
+  listV2Fonts,
+  uploadV2Font,
+  type V2WorkflowPreferences,
+} from '@/api/v2/settings'
 import { showToast } from '@/utils/toast'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
@@ -33,7 +31,7 @@ import {
 } from '@/types/workflow'
 import { clampPageSelection, createPageSelectionSummary } from '@/utils/pageSelection'
 
-const FONT_FILE_EXTENSIONS = ['.ttf', '.ttc', '.otf'] as const
+const FONT_FILE_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2'] as const
 
 export interface ApplySettingsOptions {
   fontSize: boolean
@@ -94,7 +92,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const hasUserChangedRememberWorkflowMode = ref(false)
 
-  let pendingWorkflowPreferences: TranslateWorkflowPreferences | null = null
+  let pendingWorkflowPreferences: V2WorkflowPreferences | null = null
 
   let isPersistingWorkflowPreferences = false
 
@@ -234,7 +232,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const fontSelectOptions = computed(() => {
     const options = fontList.value.map(font => ({
-      label: getFontDisplayName(font),
+      label: settingsStore.fontCatalog.find(item => item.id === font)?.displayName
+        ?? getFontDisplayName(font),
       value: font,
     }))
     options.push({ label: '自定义字体...', value: 'custom-font' })
@@ -244,9 +243,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   onMounted(async () => {
     window.addEventListener('click', handleClickOutside)
 
-    void loadWorkflowPreferences()
-
-    await loadFontList()
+    applyWorkflowPreferences(settingsStore.workflowPreferences)
+    applyFontCatalog()
     ensureFontInList(textStyle.value.fontFamily)
   })
 
@@ -264,45 +262,48 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     selectedPages.value = clampPageSelection(selectedPages.value, count)
   })
 
+  watch(
+    () => settingsStore.workflowPreferences,
+    applyWorkflowPreferences,
+    { deep: true },
+  )
+
+  watch(
+    () => settingsStore.fontCatalog,
+    () => {
+      applyFontCatalog()
+      ensureFontInList(textStyle.value.fontFamily)
+    },
+    { deep: true },
+  )
+
   function ensureFontInList(font: string): void {
     if (font && !fontList.value.includes(font)) {
       fontList.value = [font, ...fontList.value]
     }
   }
 
-  async function loadFontList() {
-    try {
-      const response = await getFontList()
-      if (response.fonts && Array.isArray(response.fonts) && response.fonts.length > 0) {
-        fontList.value = response.fonts.map(font => font.path)
-      } else {
-        fontList.value = [...BUILTIN_FONTS]
-      }
-    } catch {
+  function applyFontCatalog(): void {
+    const fonts = settingsStore.fontCatalog
+    if (fonts.length > 0) {
+      fontList.value = fonts.map(font => font.id)
+    } else {
       fontList.value = [...BUILTIN_FONTS]
     }
   }
 
-  async function loadWorkflowPreferences() {
-    try {
-      const response = await getTranslateWorkflowPreferences()
-      const preferences = response.preferences
-      if (!response.success || !preferences) return
+  function applyWorkflowPreferences(preferences: V2WorkflowPreferences): void {
+    if (!hasUserChangedRememberWorkflowMode.value) {
+      rememberWorkflowModeEnabled.value = preferences.rememberWorkflowModeEnabled
+    }
 
-      if (!hasUserChangedRememberWorkflowMode.value) {
-        rememberWorkflowModeEnabled.value = preferences.rememberWorkflowModeEnabled
-      }
-
-      if (
-        preferences.rememberWorkflowModeEnabled &&
-        isWorkflowMode(preferences.lastWorkflowMode) &&
-        !hasUserChangedWorkflowMode.value &&
-        !hasUserChangedRememberWorkflowMode.value
-      ) {
-        selectedWorkflowMode.value = preferences.lastWorkflowMode
-      }
-    } catch {
-      // Workflow preferences are optional; defaults remain valid when loading fails.
+    if (
+      preferences.rememberWorkflowModeEnabled
+      && isWorkflowMode(preferences.lastWorkflowMode)
+      && !hasUserChangedWorkflowMode.value
+      && !hasUserChangedRememberWorkflowMode.value
+    ) {
+      selectedWorkflowMode.value = preferences.lastWorkflowMode
     }
   }
 
@@ -323,7 +324,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       pendingWorkflowPreferences = null
 
       try {
-        await saveTranslateWorkflowPreferences(nextPreferences)
+        await settingsStore.saveWorkflowPreferences(nextPreferences)
       } catch {
         // Preference persistence is best-effort and must not interrupt translation.
       }
@@ -351,20 +352,17 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     const isValidType = FONT_FILE_EXTENSIONS.some(ext => fileName.endsWith(ext))
 
     if (!isValidType) {
-      showToast('请选择 .ttf、.ttc 或 .otf 格式的字体文件', 'error')
+      showToast('请选择 .ttf、.otf、.woff 或 .woff2 格式的字体文件', 'error')
       fontUploadInput.value?.clear()
       return
     }
 
     try {
-      const response = await uploadFont(file)
-      if (response.success && response.fontPath) {
-        await loadFontList()
-        settingsStore.updateTextStyle({ fontFamily: response.fontPath })
-        showToast('字体上传成功', 'success')
-      } else {
-        showToast(response.error || '字体上传失败', 'error')
-      }
+      const response = await uploadV2Font(file)
+      const fonts = await listV2Fonts()
+      settingsStore.hydrateResourceCatalogs(fonts, settingsStore.promptCatalog)
+      settingsStore.updateTextStyle({ fontFamily: response.id })
+      showToast('字体上传成功', 'success')
     } catch {
       showToast('字体上传失败', 'error')
     } finally {

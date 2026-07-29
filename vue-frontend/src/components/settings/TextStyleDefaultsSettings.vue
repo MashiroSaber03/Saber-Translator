@@ -60,7 +60,7 @@
         />
         <UiFileInput
           ref="fontUploadInput"
-          accept=".ttf,.ttc,.otf"
+          accept=".ttf,.otf,.woff,.woff2"
           hidden
           @files-change="handleFontUpload"
         />

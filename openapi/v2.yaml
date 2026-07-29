@@ -1450,6 +1450,25 @@ paths:
             image/webp: {schema: {type: string, format: binary}}
         "404":
           $ref: "#/components/responses/NotFound"
+  /translation/bootstrap:
+    get:
+      tags: [content]
+      operationId: getTranslationBootstrap
+      parameters:
+        - name: bookId
+          in: query
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: chapterId
+          in: query
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: One-request translation workspace, settings, fonts, and prompt bootstrap.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TranslationBootstrap"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /quick-workspace/reset:
     post:
       tags: [content]
@@ -3266,6 +3285,95 @@ components:
           items: {$ref: "#/components/schemas/PageSummary"}
         nextCursor: {type: [integer, "null"], minimum: 1}
         pageOrderRevision: {type: integer, minimum: 1}
+    TranslationBootstrap:
+      type: object
+      additionalProperties: false
+      required:
+        - activeJobs
+        - activeWebImportDraft
+        - book
+        - chapter
+        - constraints
+        - navigation
+        - pages
+        - settings
+        - fonts
+        - prompts
+      properties:
+        activeJobs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, kind, status, queueRank, progress]
+            properties:
+              id: {$ref: "#/components/schemas/Uuid"}
+              kind: {type: string}
+              status: {type: string}
+              queueRank: {type: [integer, "null"], minimum: 1}
+              progress: {type: object, additionalProperties: true}
+        activeWebImportDraft:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [id, status, revision, expiresAt]
+              properties:
+                id: {$ref: "#/components/schemas/Uuid"}
+                status: {type: string}
+                revision: {type: integer, minimum: 1}
+                expiresAt: {type: string, format: date-time}
+            - type: "null"
+        book:
+          type: object
+          additionalProperties: false
+          required: [id, title, kind]
+          properties:
+            id: {$ref: "#/components/schemas/Uuid"}
+            title: {type: string}
+            kind: {type: string, enum: [library, quick_workspace]}
+        chapter:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - title
+            - pageOrderRevision
+            - settingsMemory
+            - settingsMemorySchemaVersion
+            - settingsMemoryRevision
+          properties:
+            id: {$ref: "#/components/schemas/Uuid"}
+            title: {type: string}
+            pageOrderRevision: {type: integer, minimum: 1}
+            settingsMemory: {type: object, additionalProperties: true}
+            settingsMemorySchemaVersion: {type: integer, minimum: 1}
+            settingsMemoryRevision: {type: integer, minimum: 1}
+        constraints:
+          type: object
+          additionalProperties: false
+          required: [payload, schemaVersion, revision]
+          properties:
+            payload: {type: object, additionalProperties: true}
+            schemaVersion: {type: integer, minimum: 1}
+            revision: {type: integer, minimum: 0}
+        navigation:
+          type: object
+          additionalProperties: false
+          required: [lastVisitedPageId, revision]
+          properties:
+            lastVisitedPageId:
+              oneOf:
+                - $ref: "#/components/schemas/Uuid"
+                - type: "null"
+            revision: {type: integer, minimum: 0}
+        pages: {$ref: "#/components/schemas/PageList"}
+        settings: {$ref: "#/components/schemas/SettingsDocument"}
+        fonts:
+          type: array
+          items: {$ref: "#/components/schemas/FontResource"}
+        prompts:
+          type: array
+          items: {$ref: "#/components/schemas/PromptResource"}
     PageImportResult:
       type: object
       additionalProperties: false
@@ -3305,6 +3413,9 @@ components:
           type: object
           additionalProperties:
             type: string
+        details:
+          type: object
+          additionalProperties: true
     ErrorEnvelope:
       type: object
       additionalProperties: false

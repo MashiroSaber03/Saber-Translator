@@ -6,7 +6,7 @@ import {
   FONT_SIZE_STEP
 } from '@/constants'
 import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
-import { getFontList } from '@/api/config'
+import { listV2Fonts } from '@/api/v2/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
@@ -400,29 +400,27 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
 
   async function loadFontList(): Promise<void> {
     try {
-      const response = await getFontList()
+      const fonts = await listV2Fonts()
       if (!isOwnerMounted) return
-      if (response.fonts) {
-        const system: { name: string; path: string }[] = []
-        const custom: { name: string; path: string }[] = []
+      const system: { name: string; path: string }[] = []
+      const custom: { name: string; path: string }[] = []
 
-        for (const font of response.fonts) {
-          const fontItem = {
-            name: font.display_name || font.file_name || '',
-            path: font.path,
-          }
-          if (fontItem.path.startsWith('fonts/')) {
-            system.push(fontItem)
-          } else {
-            custom.push(fontItem)
-          }
+      for (const font of fonts) {
+        const fontItem = {
+          name: font.displayName,
+          path: font.id,
         }
-
-        if (system.length > 0) {
-          systemFonts.value = system
+        if (font.kind === 'builtin') {
+          system.push(fontItem)
+        } else {
+          custom.push(fontItem)
         }
-        customFonts.value = custom
       }
+
+      if (system.length > 0) {
+        systemFonts.value = system
+      }
+      customFonts.value = custom
     } catch {
       if (isOwnerMounted) {
         customFonts.value = []

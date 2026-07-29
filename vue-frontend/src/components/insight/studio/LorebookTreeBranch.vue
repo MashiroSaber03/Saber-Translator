@@ -71,11 +71,12 @@
           <UiField variant="settings" label="概率" :control-id="entryControlId('probability')">
             <UiNumberField
               :input-id="entryControlId('probability')"
-              v-model="localEntry.probability"
+              :model-value="localEntry.probability ?? null"
               aria-label="世界书条目概率"
               :min="0"
               :max="100"
               variant="studio"
+              @update:model-value="value => { if (value !== null) localEntry.probability = value }"
             />
           </UiField>
         </UiFormGrid>

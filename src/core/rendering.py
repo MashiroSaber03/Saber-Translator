@@ -38,7 +38,7 @@ _freetype_font_cache = {}  # FreeType 字体缓存
 _font_file_handles = {}  # 保存文件句柄，防止被垃圾回收
 
 # --- 字体路径 ---
-FONTS_DIR = os.path.join('src', 'app', 'static', 'fonts')
+FONTS_DIR = os.path.join('src', 'backend_v2', 'resources', 'fonts')
 DEFAULT_FONT_PATH = constants.DEFAULT_FONT_RELATIVE_PATH
 
 # --- 回退字体列表 ---

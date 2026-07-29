@@ -8,7 +8,6 @@ import type {
   WebImportSettings,
   WebImportState,
 } from '@/types/webImport'
-import { STORAGE_KEY_WEB_IMPORT_SETTINGS } from '@/constants'
 import {
   getV2Settings,
   saveV2SettingsTransaction,
@@ -114,19 +113,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     providerConfigs.value = parsed.providerConfigs
     syncDraftFromCommitted()
     return true
-  }
-
-  function saveToStorage(): void {
-    try {
-      localStorage.removeItem(STORAGE_KEY_WEB_IMPORT_SETTINGS)
-    } catch {
-      return
-    }
-  }
-
-  function loadFromStorage(): void {
-    saveToStorage()
-    syncDraftFromCommitted()
   }
 
   function hasCredential(domain: string, provider: string): boolean {
@@ -279,7 +265,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     initPromise = (async () => {
       isInitializingSettings.value = true
       try {
-        loadFromStorage()
         await loadFromBackend()
       } finally {
         isInitializingSettings.value = false
@@ -479,7 +464,6 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   const settingsMethods = useWebImportSettings(draftSettings, draftProviderConfigs)
 
-  loadFromStorage()
   loadDisclaimerState()
   syncDraftFromCommitted()
 
@@ -508,8 +492,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     isSavingSettings,
     isInitializingSettings,
     hasCredential,
-    saveToStorage,
-    loadFromStorage,
     loadFromBackend,
     saveToBackend,
     initSettings,

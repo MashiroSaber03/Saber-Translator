@@ -146,7 +146,7 @@ export const useImageStore = defineStore('image', () => {
         img.fileName,
         img.originalDataURL,
         {
-          ...pickDefinedValues(img as Record<string, unknown>),
+          ...pickDefinedValues(img as unknown as Record<string, unknown>),
           ...normalizedTextStyle,
           width: img.width || 0,
           height: img.height || 0,

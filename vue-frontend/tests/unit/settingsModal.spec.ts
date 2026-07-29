@@ -6,15 +6,18 @@ import { defineComponent, h, watch } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
-const { saveToStorageMock, saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
-  saveToStorageMock: vi.fn(),
+const { saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
   saveToBackendMock: vi.fn(),
   saveDefaultsMock: vi.fn(),
 }))
 
 vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
-    saveToStorage: saveToStorageMock,
+    backendError: null,
+    isBackendReady: true,
+    settings: {},
+    providerConfigs: {},
+    loadFromBackend: vi.fn().mockResolvedValue(true),
     saveToBackend: saveToBackendMock,
   }),
 }))
@@ -88,7 +91,6 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 
 describe('SettingsModal', () => {
   beforeEach(() => {
-    saveToStorageMock.mockReset()
     saveToBackendMock.mockReset()
     saveDefaultsMock.mockReset()
 
@@ -116,7 +118,6 @@ describe('SettingsModal', () => {
     }
 
     expect(saveDefaultsMock).toHaveBeenCalledTimes(1)
-    expect(saveToStorageMock).toHaveBeenCalledTimes(1)
     expect(saveToBackendMock).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual({ textDefaultsChanged: true })
   })

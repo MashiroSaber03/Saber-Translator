@@ -6,19 +6,17 @@ import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  getWebImportSettingsMock,
-  saveWebImportSettingsMock,
+  getV2SettingsMock,
+  saveV2SettingsTransactionMock,
 } = vi.hoisted(() => ({
-  getWebImportSettingsMock: vi.fn(),
-  saveWebImportSettingsMock: vi.fn(),
+  getV2SettingsMock: vi.fn(),
+  saveV2SettingsTransactionMock: vi.fn(),
 }))
 
-vi.mock('@/api/webImport', async () => {
-  const actual = await vi.importActual<typeof import('@/api/webImport')>('@/api/webImport')
+vi.mock('@/api/v2/settings', () => {
   return {
-    ...actual,
-    getWebImportSettings: getWebImportSettingsMock,
-    saveWebImportSettings: saveWebImportSettingsMock,
+    getV2Settings: getV2SettingsMock,
+    saveV2SettingsTransaction: saveV2SettingsTransactionMock,
   }
 })
 
@@ -51,9 +49,14 @@ describe('WebImportDisclaimer', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
-    getWebImportSettingsMock.mockReset()
-    saveWebImportSettingsMock.mockReset()
-    getWebImportSettingsMock.mockResolvedValue({ success: true, hasStoredSettings: false })
+    getV2SettingsMock.mockReset()
+    saveV2SettingsTransactionMock.mockReset()
+    getV2SettingsMock.mockResolvedValue({
+      settings: [],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
   })
 
   it('uses product form and action primitives while preserving typed confirmation', async () => {

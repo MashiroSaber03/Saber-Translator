@@ -13,8 +13,9 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiColorInput from '@/components/ui/UiColorInput.vue'
 import type { BubbleState } from '@/types/bubble'
 
-vi.mock('@/api/config', () => ({
-  getFontList: vi.fn().mockResolvedValue({ fonts: [] }),
+vi.mock('@/api/v2/settings', async importOriginal => ({
+  ...await importOriginal<typeof import('@/api/v2/settings')>(),
+  listV2Fonts: vi.fn().mockResolvedValue([]),
 }))
 
 function makeBubble(): BubbleState {

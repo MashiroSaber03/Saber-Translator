@@ -181,8 +181,8 @@ onBeforeUnmount(() => {
   inset-inline-start: 8px;
   padding: 4px 8px;
   border-radius: 4px;
-  color: white;
-  background: rgb(0 0 0 / 60%);
+  color: var(--color-text-inverse);
+  background: var(--color-overlay-scrim);
   font-size: 12px;
   opacity: 0;
   transition: opacity 0.2s;

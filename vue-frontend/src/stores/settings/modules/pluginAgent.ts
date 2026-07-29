@@ -4,6 +4,7 @@ import { createDefaultSettings } from '../defaults'
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
+  normalizeOpenAiOptions,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
 import type {
@@ -23,8 +24,6 @@ import {
 export function usePluginAgentSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
-  saveToStorage: () => void,
-  saveProviderConfigsToStorage: () => void,
 ) {
   type PluginAgentUiUpdates = Partial<PluginAgentSettings> & OpenAiOptionsPatch
 
@@ -44,7 +43,6 @@ export function usePluginAgentSettings(
     savePluginAgentProviderConfig(previousProvider)
     settings.value.pluginAgent.provider = provider
     restorePluginAgentProviderConfig(provider)
-    saveToStorage()
   }
 
   function updatePluginAgent(updates: PluginAgentUiUpdates): void {
@@ -56,7 +54,6 @@ export function usePluginAgentSettings(
       settings.value.pluginAgent.openaiOptions = cloneOpenAiOptions(updates.openaiOptions)
     }
     applyOpenAiOptionsPatch(settings.value.pluginAgent.openaiOptions, updates)
-    saveToStorage()
   }
 
   function savePluginAgentProviderConfig(provider: string): void {
@@ -67,7 +64,6 @@ export function usePluginAgentSettings(
         ...snapshotProviderCredentials(settings.value.pluginAgent),
         openaiOptions: cloneOpenAiOptions(settings.value.pluginAgent.openaiOptions),
       }),
-      persist: saveProviderConfigsToStorage,
     })
   }
 
@@ -78,7 +74,7 @@ export function usePluginAgentSettings(
       applyCached: (cached) => {
         applyProviderCredentials(settings.value.pluginAgent, cached)
         settings.value.pluginAgent.openaiOptions = cached.openaiOptions !== undefined
-          ? cloneOpenAiOptions(cached.openaiOptions)
+          ? normalizeOpenAiOptions(cached.openaiOptions, settings.value.pluginAgent.openaiOptions)
           : getDefaultOpenAiOptions()
       },
       applyMissing: () => {

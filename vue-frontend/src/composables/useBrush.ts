@@ -206,8 +206,9 @@ export function useBrush(callbacks?: BrushCallbacks) {
     await waitForOperation(accepted.operationId, {
       signal: abortController.signal,
     })
+    if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
     const document = await getPageDocument(pageId, abortController.signal)
-    if (imageStore.currentImage?.id !== pageId) return
+    if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
     const bubbles = registerPageDocument(document)
     imageStore.updateCurrentImage({
       bubbleStates: bubbles,

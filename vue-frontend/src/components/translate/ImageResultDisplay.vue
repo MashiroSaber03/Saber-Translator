@@ -63,7 +63,7 @@ const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
 const failedImageCount = computed(() => imageStore.failedImageCount)
 
 const displayImageAlt = computed(() => {
-  const fileName = currentImage.value?.fileName || currentImage.value?.name || '当前图片'
+  const fileName = currentImage.value?.fileName || '当前图片'
   return showOriginal.value || !currentImage.value?.translatedDataURL
     ? `原图：${fileName}`
     : `翻译图：${fileName}`

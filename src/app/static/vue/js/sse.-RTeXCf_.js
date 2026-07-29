@@ -1,3 +1,0 @@
-async function p(l,a){const s=l.body?.getReader();if(!s)throw new Error(a.missingBodyMessage||"无法读取响应流");const c=new TextDecoder;let n="",t="",r=[];try{for(;;){const{done:d,value:f}=await s.read();if(d)break;n+=c.decode(f,{stream:!0});const o=n.split(`
-`);n=o.pop()||"";for(const h of o){const e=h.trimEnd();if(e.startsWith("event:"))t=e.slice(6).trim();else if(e.startsWith("data:"))r.push(e.slice(5).replace(/^ /,""));else if(e===""&&t&&r.length>0){const w=t,y=r.join(`
-`);let i;try{i=JSON.parse(y)}catch{throw new Error(a.parseErrorMessage||"解析事件流失败")}finally{t="",r=[]}a.onMessage({event:w,data:i})}}}}finally{s.releaseLock()}}export{p as r};

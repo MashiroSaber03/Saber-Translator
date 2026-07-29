@@ -31,21 +31,14 @@ const {
   confirmProductActionMock: vi.fn(),
 }))
 
-vi.mock('@/api/webImport', async () => {
-  const actual = await vi.importActual<typeof import('@/api/webImport')>('@/api/webImport')
-  return {
-    ...actual,
-    testFirecrawlConnection: testFirecrawlConnectionMock,
-    testAgentConnection: testAgentConnectionMock,
-  }
-})
-
 vi.mock('@/api/v2/webImport', () => ({
   checkWebImportSupport: checkWebImportSupportMock,
   commitWebImportDraft: commitWebImportDraftMock,
   createWebImportDraft: createWebImportDraftMock,
   getWebImportDraft: getWebImportDraftMock,
   listAllWebImportDraftPages: listAllWebImportDraftPagesMock,
+  testFirecrawlConnection: testFirecrawlConnectionMock,
+  testAgentConnection: testAgentConnectionMock,
   updateWebImportSelection: updateWebImportSelectionMock,
 }))
 
@@ -57,14 +50,9 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
 }))
 
-vi.mock('@/api/config', async () => {
-  const actual = await vi.importActual<typeof import('@/api/config')>('@/api/config')
+vi.mock('@/api/v2/diagnostics', () => {
   return {
-    ...actual,
-    configApi: {
-      ...actual.configApi,
-      fetchModels: fetchModelsMock,
-    },
+    fetchModels: fetchModelsMock,
   }
 })
 

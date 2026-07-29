@@ -1,7 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""
-Saber-Translator PyInstaller Spec 文件
-打包命令: .\venv\Scripts\Activate; pyinstaller app.spec --noconfirm
+"""Backend-first production PyInstaller specification.
+
+Build with ``pyinstaller app.spec --noconfirm`` after the Vue production build.
+The resulting executable defaults to the Launcher role and dispatches isolated
+API and Worker child processes from the same bundle.
 """
 
 import os
@@ -24,13 +26,17 @@ module_collection_mode = {
 }
 
 # ===================== 项目资源文件 =====================
-# 1. 静态资源 (Vue SPA 构建产物、字体、图标)
-datas.append((os.path.join(PROJECT_ROOT, 'src', 'app', 'static'), os.path.join('src', 'app', 'static')))
+# 1. v2 静态资源、内置字体、契约和迁移
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static'), os.path.join('src', 'backend_v2', 'static')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'resources'), os.path.join('src', 'backend_v2', 'resources')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'core', 'plugin_agent', 'plugin_builder_skill.md'), os.path.join('src', 'core', 'plugin_agent')))
-datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
-datas.append((os.path.join(PROJECT_ROOT, 'src', 'core', 'plugin_agent', 'plugin_builder_skill.md'), os.path.join('src', 'core', 'plugin_agent')))
+datas.append((os.path.join(PROJECT_ROOT, 'openapi', 'v2.yaml'), 'openapi'))
+datas.append((
+    os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'storage', 'migrations'),
+    os.path.join('src', 'backend_v2', 'storage', 'migrations'),
+))
 
 # 2. 配置文件 - 不打包用户运行时配置
 # user_settings.json, prompts.json, model_history.json 等会在运行时自动生成
@@ -95,35 +101,20 @@ for pkg in ['transformers', 'tokenizers', 'huggingface_hub', 'safetensors', 'man
 
 # ===================== 隐藏导入 =====================
 hiddenimports += [
+    # Backend-first role dispatcher and persistence
+    'src.backend_v2', 'src.backend_v2.dispatch', 'src.backend_v2.paths',
+    'src.backend_v2.runtime_identity', 'src.backend_v2.import_guard',
+    'src.backend_v2.api', 'src.backend_v2.api.app', 'src.backend_v2.api.entrypoint',
+    'src.backend_v2.worker', 'src.backend_v2.worker.entrypoint',
+    'src.backend_v2.launcher', 'src.backend_v2.launcher.entrypoint',
+    'src.backend_v2.launcher.windows_job',
+    'sqlalchemy', 'alembic', 'waitress',
+
     # Flask 相关
     'flask', 'flask_cors', 'werkzeug', 'werkzeug.serving', 'jinja2', 'itsdangerous', 'click',
     
-    # ========== 项目内部模块 (完整版) ==========
-    # app 基础
-    'src', 'src.app', 'src.app.routes',
-    
-    # app.api
-    'src.app.api', 'src.app.api.config_api', 'src.app.api.session_api', 
-    'src.app.api.bookshelf_api', 'src.app.api.api_docs',
-    
-    # app.api.system (完整)
-    'src.app.api.system', 'src.app.api.system.tests',
-    'src.app.api.system.downloads', 'src.app.api.system.files', 
-    'src.app.api.system.fonts', 'src.app.api.system.plugins',
-    'src.app.api.system.mobi_handler', 'src.app.api.system.pdf_handler',
-    
-    # app.api.translation (完整)
-    'src.app.api.translation', 'src.app.api.translation.routes',
-    'src.app.api.translation.parallel_routes',  # 并行翻译 API
-    
-    # app.api.manga_insight (漫画分析 API)
-    'src.app.api.manga_insight', 'src.app.api.manga_insight.analysis_routes',
-    'src.app.api.manga_insight.chat_routes', 'src.app.api.manga_insight.config_routes',
-    'src.app.api.manga_insight.data_routes', 'src.app.api.manga_insight.reanalyze_routes',
-    
-    'src.app.error_handlers', 'src.app.route_redirects',
-    
-    # core (完整)
+    # Worker 算法实现（仍由 v2 services 在 Worker 内按需导入）
+    'src',
     'src.core', 'src.core.detection', 'src.core.ocr', 'src.core.translation', 'src.core.inpainting',
     'src.core.rendering', 'src.core.session_manager', 'src.core.bookshelf_manager',
     'src.core.config_models', 'src.core.types_enhanced', 'src.core.quadrilateral',
@@ -231,7 +222,7 @@ hiddenimports += [
 
 # Collect submodules
 print("[SPEC] Collecting submodules...")
-for mod in ['flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime', 'safetensors', 'ultralytics', 'networkx', 'kornia', 'litelama']:
+for mod in ['src.backend_v2', 'flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime', 'safetensors', 'ultralytics', 'networkx', 'kornia', 'litelama']:
     try:
         hiddenimports += collect_submodules(mod)
     except:
@@ -250,7 +241,7 @@ excludes = [
 # ===================== Analysis =====================
 print("[SPEC] Starting analysis...")
 a = Analysis(
-    ['app.py'],
+    ['saber_v2.py'],
     pathex=[PROJECT_ROOT],
     binaries=binaries,
     datas=datas,
@@ -285,7 +276,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(PROJECT_ROOT, 'src', 'app', 'static', 'favicon.ico') if os.path.exists(os.path.join(PROJECT_ROOT, 'src', 'app', 'static', 'favicon.ico')) else None,
+    icon=os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static', 'favicon.ico') if os.path.exists(os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static', 'favicon.ico')) else None,
 )
 
 coll = COLLECT(

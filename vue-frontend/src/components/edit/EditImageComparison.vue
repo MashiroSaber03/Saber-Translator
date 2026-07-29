@@ -252,7 +252,7 @@ defineExpose({
         ⋮⋮⋮
       </div>
       <BubbleEditor
-        :bubble="selectedBubble"
+        :bubble="selectedBubble ?? null"
         :bubble-index="selectedBubbleIndex"
         :is-ocr-loading="isOcrLoading"
         :is-translate-loading="isTranslateLoading"

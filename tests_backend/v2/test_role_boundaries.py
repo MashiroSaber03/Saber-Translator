@@ -86,7 +86,20 @@ def test_api_probe_loads_only_v2_routes_and_no_worker_modules(tmp_path: Path) ->
     assert "/api/v2/health" in routes
     assert "/api/v2/system/server-info" in routes
     assert "/api/v2/openapi.json" in routes
-    assert all(route.startswith("/api/v2/") for route in routes)
+    assert "/" in routes
+    assert "/<path:path>" in routes
+    assert "/js/<path:filename>" in routes
+    assert "/assets/<path:filename>" in routes
+    assert all(
+        route.startswith("/api/v2/")
+        or route in {
+            "/",
+            "/<path:path>",
+            "/js/<path:filename>",
+            "/assets/<path:filename>",
+        }
+        for route in routes
+    )
 
 
 def test_worker_and_launcher_resolve_the_same_explicit_data_root(tmp_path: Path) -> None:

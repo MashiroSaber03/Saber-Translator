@@ -5,9 +5,11 @@ export type V2Book = components['schemas']['Book']
 export type V2Chapter = components['schemas']['Chapter']
 export type V2ImportLease = components['schemas']['ImportLease']
 export type V2PageDocument = components['schemas']['PageDocument']
+export type V2PageDocumentBatchMutation = components['schemas']['PageDocumentBatchMutation']
 export type V2PageImportResult = components['schemas']['PageImportResult']
 export type V2PageList = components['schemas']['PageList']
 export type V2PageSummary = components['schemas']['PageSummary']
+export type V2TranslationBootstrap = components['schemas']['TranslationBootstrap']
 
 const API_ROOT = '/api/v2'
 const naturalPathCollator = new Intl.Collator(undefined, {
@@ -25,49 +27,6 @@ export interface SequentialImportProgress {
   currentPath: string
   result: V2PageImportResult
   total: number
-}
-
-export interface V2BootstrapBook {
-  id: string
-  kind: 'library' | 'quick_workspace'
-  title: string
-}
-
-export interface V2BootstrapChapter {
-  id: string
-  pageOrderRevision: number
-  settingsMemory: Record<string, unknown>
-  settingsMemoryRevision: number
-  settingsMemorySchemaVersion: number
-  title: string
-}
-
-export interface V2TranslationBootstrap {
-  activeJobs: Array<{
-    id: string
-    kind: string
-    progress: Record<string, unknown>
-    queueRank: number | null
-    status: string
-  }>
-  activeWebImportDraft: {
-    expiresAt: string
-    id: string
-    revision: number
-    status: string
-  } | null
-  book: V2BootstrapBook
-  chapter: V2BootstrapChapter
-  constraints: {
-    payload: Record<string, unknown>
-    revision: number
-    schemaVersion: number
-  }
-  navigation: {
-    lastVisitedPageId: string | null
-    revision: number
-  }
-  pages: V2PageList
 }
 
 export interface V2BookDetail extends V2Book {
@@ -265,7 +224,7 @@ export async function getPageDocument(
 
 export async function mutatePageDocument(
   pageId: string,
-  command: components['schemas']['PageDocumentBatchMutation'],
+  command: V2PageDocumentBatchMutation,
 ): Promise<V2PageDocument> {
   return apiClient.patch<V2PageDocument>(
     `${API_ROOT}/pages/${encodeURIComponent(pageId)}/document`,

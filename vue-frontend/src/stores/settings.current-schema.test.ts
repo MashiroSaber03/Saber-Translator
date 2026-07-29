@@ -44,9 +44,6 @@ describe('useSettingsStore backend-first loading', () => {
       modelName: 'translation-model',
       customBaseUrl: 'https://translation.example.com/v1',
     }
-    localStorage.setItem('translationSettings', JSON.stringify({ apiKey: 'retired-key' }))
-    localStorage.setItem('providerConfigs', JSON.stringify({ apiKey: 'retired-key' }))
-
     settingsApiMocks.getV2Settings.mockResolvedValue({
       settings: [{
         domain: 'translation',
@@ -86,7 +83,5 @@ describe('useSettingsStore backend-first loading', () => {
     expect(store.settings.translation.apiKey).toBe('')
     expect(store.providerConfigs.translation.custom?.modelName).toBe('cached-model')
     expect(store.credentialSummaries[0]?.hasKey).toBe(true)
-    expect(localStorage.getItem('translationSettings')).toBeNull()
-    expect(localStorage.getItem('providerConfigs')).toBeNull()
   })
 })

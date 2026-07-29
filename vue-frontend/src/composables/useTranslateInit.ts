@@ -6,8 +6,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useEditMode } from '@/composables/useEditMode'
 import { showToast } from '@/utils/toast'
-import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
-import { reloadTextStyleDefaultsFromBackend } from '@/defaults/textStyleDefaults'
+import type { V2Font } from '@/api/v2/settings'
 import {
   getPageDocument,
   getTranslationBootstrap,
@@ -16,15 +15,18 @@ import {
   pageSummaryToImage,
 } from '@/adapters/v2ContentAdapter'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
-import { registerPageDocument } from '@/services/pageDocumentPersistence'
-
-import type { FontInfo } from '@/types/api'
+import {
+  flushPageDocument,
+  isPageDocumentRegistered,
+  queuePageDocumentSave,
+  registerPageDocument,
+} from '@/services/pageDocumentPersistence'
 
 export interface InitState {
   isInitializing: boolean
   isInitialized: boolean
   initError: string | null
-  fontList: FontInfo[]
+  fontList: V2Font[]
   promptNames: string[]
   textboxPromptNames: string[]
   currentBookId: string | null
@@ -45,7 +47,7 @@ export function useTranslateInit() {
   const isInitializing = ref(false)
   const isInitialized = ref(false)
   const initError = ref<string | null>(null)
-  const fontList = ref<FontInfo[]>([])
+  const fontList = ref<V2Font[]>([])
   const promptNames = ref<string[]>([])
   const textboxPromptNames = ref<string[]>([])
   const currentBookId = ref<string | null>(null)
@@ -96,10 +98,7 @@ export function useTranslateInit() {
     initError.value = null
 
     try {
-      await initializeSettings()
-      await initializeFontList()
-      await initializePromptSettings()
-      await initializeTextboxPromptSettings()
+      settingsStore.initSettings()
       await initializeBookChapterContext()
 
       isInitialized.value = true
@@ -107,64 +106,6 @@ export function useTranslateInit() {
       initError.value = error instanceof Error ? error.message : '初始化失败'
     } finally {
       isInitializing.value = false
-    }
-  }
-
-  async function initializeSettings(): Promise<void> {
-    await reloadTextStyleDefaultsFromBackend()
-    settingsStore.initSettings()
-
-    try {
-      await settingsStore.loadFromBackend()
-    } catch {
-      // Backend settings are optional; the current browser settings remain active.
-    }
-  }
-
-  async function initializeFontList(): Promise<void> {
-    try {
-      const response = await getFontList()
-      if (response.fonts && response.fonts.length > 0) {
-        fontList.value = response.fonts
-      } else if (response.error) {
-        showToast(response.error, 'warning')
-      }
-    } catch {
-      // Font discovery is optional during startup; users can still work with saved font settings.
-    }
-  }
-
-  async function initializePromptSettings(): Promise<void> {
-    try {
-      const response = await getPrompts()
-      if (response.prompt_names !== undefined) {
-        promptNames.value = response.prompt_names || []
-
-        if (!settingsStore.settings.translatePrompt && response.default_prompt_content) {
-          settingsStore.setTranslatePrompt(response.default_prompt_content)
-        }
-      } else if (response.error) {
-        showToast(response.error, 'warning')
-      }
-    } catch {
-      // Prompt discovery is optional during startup; existing prompt settings remain active.
-    }
-  }
-
-  async function initializeTextboxPromptSettings(): Promise<void> {
-    try {
-      const response = await getTextboxPrompts()
-      if (response.prompt_names !== undefined) {
-        textboxPromptNames.value = response.prompt_names || []
-
-        if (!settingsStore.settings.textboxPrompt && response.default_prompt_content) {
-          settingsStore.setTextboxPrompt(response.default_prompt_content)
-        }
-      } else if (response.error) {
-        showToast(response.error, 'warning')
-      }
-    } catch {
-      // Textbox prompt discovery is optional during startup; existing prompt settings remain active.
     }
   }
 
@@ -179,6 +120,28 @@ export function useTranslateInit() {
         chapterId: bookId && chapterId ? chapterId : undefined,
       })
       if (!isOwnerAlive || requestId !== bookContextRequestId) return
+
+      if (!settingsStore.hydrateFromBackendDocument(bootstrap.settings)) {
+        throw new Error(settingsStore.backendError || '后端设置加载失败')
+      }
+      settingsStore.hydrateResourceCatalogs(bootstrap.fonts, bootstrap.prompts)
+      fontList.value = bootstrap.fonts
+      const translationPrompts = bootstrap.prompts.filter(
+        prompt => prompt.type === 'translate',
+      )
+      const textboxPrompts = bootstrap.prompts.filter(
+        prompt => prompt.type === 'textbox',
+      )
+      promptNames.value = translationPrompts.map(prompt => prompt.name)
+      textboxPromptNames.value = textboxPrompts.map(prompt => prompt.name)
+      const translateFactory = translationPrompts.find(prompt => prompt.isFactoryDefault)
+      if (!settingsStore.settings.translatePrompt && translateFactory) {
+        settingsStore.setTranslatePrompt(translateFactory.content)
+      }
+      const textboxFactory = textboxPrompts.find(prompt => prompt.isFactoryDefault)
+      if (!settingsStore.settings.textboxPrompt && textboxFactory) {
+        settingsStore.setTextboxPrompt(textboxFactory.content)
+      }
 
       currentBookId.value = bootstrap.book.id
       currentChapterId.value = bootstrap.chapter.id
@@ -196,7 +159,7 @@ export function useTranslateInit() {
         : -1
       const initialIndex = lastVisitedIndex >= 0 ? lastVisitedIndex : 0
       if (imageStore.imageCount > 0) {
-        switchImage(initialIndex)
+        await switchImage(initialIndex)
       } else {
         bubbleStore.clearBubblesLocal()
       }
@@ -211,7 +174,7 @@ export function useTranslateInit() {
     }
   }
 
-  function switchImage(index: number): void {
+  async function switchImage(index: number): Promise<void> {
     if (index < 0 || index >= imageStore.imageCount) {
       return
     }
@@ -224,8 +187,28 @@ export function useTranslateInit() {
     }
 
     const currentImage = imageStore.currentImage
-    if (currentImage && bubbleStore.bubbles.length > 0) {
+    if (
+      currentImage
+      && index !== imageStore.currentImageIndex
+      && currentImage.documentRevision !== undefined
+      && isPageDocumentRegistered(currentImage.id)
+    ) {
       imageStore.updateCurrentImageProperty('bubbleStates', bubbleStore.bubbles)
+      queuePageDocumentSave(
+        currentImage.id,
+        currentImage.documentRevision,
+        bubbleStore.bubbles,
+      )
+      try {
+        await flushPageDocument(currentImage.id)
+      } catch (error) {
+        resetSwitchImageFlag()
+        showToast(
+          `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
+          'error',
+        )
+        return
+      }
     }
 
     imageStore.setCurrentImageIndex(index)
@@ -271,15 +254,15 @@ export function useTranslateInit() {
       })
   }
 
-  function goToPrevious(): void {
+  async function goToPrevious(): Promise<void> {
     if (imageStore.canGoPrevious) {
-      switchImage(imageStore.currentImageIndex - 1)
+      await switchImage(imageStore.currentImageIndex - 1)
     }
   }
 
-  function goToNext(): void {
+  async function goToNext(): Promise<void> {
     if (imageStore.canGoNext) {
-      switchImage(imageStore.currentImageIndex + 1)
+      await switchImage(imageStore.currentImageIndex + 1)
     }
   }
 
@@ -304,10 +287,6 @@ export function useTranslateInit() {
     isSwitchingImage,
 
     initializeApp,
-    initializeSettings,
-    initializeFontList,
-    initializePromptSettings,
-    initializeTextboxPromptSettings,
     initializeBookChapterContext,
 
     switchImage,

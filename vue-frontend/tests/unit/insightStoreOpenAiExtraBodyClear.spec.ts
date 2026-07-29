@@ -2,10 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useInsightStore } from '@/stores/insightStore'
-import {
-  buildInsightConfigStoragePayload,
-  parseInsightConfigStorage,
-} from '@/stores/insight/insightConfigStorage'
 
 describe('insight store clears OpenAI extraBody', () => {
   beforeEach(() => {
@@ -24,8 +20,6 @@ describe('insight store clears OpenAI extraBody', () => {
       },
     }))
     const store = useInsightStore()
-
-    store.loadConfigFromStorage()
 
     expect(store.config.vlm).toMatchObject({
       provider: 'gemini',
@@ -48,8 +42,6 @@ describe('insight store clears OpenAI extraBody', () => {
       },
     }))
     const store = useInsightStore()
-
-    store.loadConfigFromStorage()
 
     expect(store.config.vlm).toMatchObject({
       provider: 'gemini',
@@ -113,7 +105,6 @@ describe('insight store clears OpenAI extraBody', () => {
 
     setActivePinia(createPinia())
     const reloadedStore = useInsightStore()
-    reloadedStore.loadConfigFromStorage()
 
     expect(reloadedStore.config.vlm.openaiOptions.request.extraBody).toBeUndefined()
     expect(reloadedStore.config.llm.openaiOptions.request.extraBody).toBeUndefined()
@@ -143,12 +134,4 @@ describe('insight store clears OpenAI extraBody', () => {
     expect(store.config.llm.openaiOptions.execution.useStream).toBe(true)
   })
 
-  it('parses only current insight config storage payloads through the storage helper', () => {
-    const store = useInsightStore()
-    const payload = buildInsightConfigStoragePayload(store.config)
-
-    expect(parseInsightConfigStorage({ config: store.config })).toBeNull()
-    expect(parseInsightConfigStorage({ insightConfigSchemaVersion: 1, config: { vlm: store.config.vlm } })).toBeNull()
-    expect(parseInsightConfigStorage(payload)).toEqual(store.config)
-  })
 })

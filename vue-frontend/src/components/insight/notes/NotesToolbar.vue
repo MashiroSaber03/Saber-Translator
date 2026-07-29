@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import type { NoteType } from '@/stores/insightStore'
 
 defineProps<{
-  filter: string
-  filterOptions: Array<{ label: string; value: string }>
+  filter: NoteType | 'all'
+  filterOptions: Array<{ label: string; value: NoteType | 'all' }>
 }>()
 
 defineEmits<{
-  (event: 'update:filter', value: string): void
+  (event: 'update:filter', value: NoteType | 'all'): void
 }>()
 </script>
 
@@ -19,7 +20,7 @@ defineEmits<{
         :model-value="filter"
         aria-label="筛选笔记类型"
         :options="filterOptions"
-        @change="$emit('update:filter', String($event))"
+        @change="$emit('update:filter', String($event) as NoteType | 'all')"
       />
     </template>
   </ProductSectionHeader>

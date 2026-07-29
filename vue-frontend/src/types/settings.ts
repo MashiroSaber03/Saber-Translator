@@ -2,7 +2,6 @@ export type {
   HqTranslationProvider,
   HybridOcrEngine,
   OcrEngine,
-  PdfProcessingMethod,
   PluginAgentProvider,
   TextDetector,
   TranslationProvider,

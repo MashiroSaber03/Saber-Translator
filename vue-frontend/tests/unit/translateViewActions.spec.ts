@@ -1,15 +1,25 @@
 import { computed, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { useTranslateViewActions } from '@/views/useTranslateViewActions'
 
+const mocks = vi.hoisted(() => ({
+  deletePage: vi.fn(),
+  resetQuickWorkspace: vi.fn(),
+}))
+
+vi.mock('@/api/v2/content', () => ({
+  deletePage: mocks.deletePage,
+  resetQuickWorkspace: mocks.resetQuickWorkspace,
+}))
+
 function createOptions() {
+  const image = { id: 'page-1', fileName: 'page.png' }
   return {
     imageStore: {
-      hasImages: true,
+      currentImage: image,
       currentImageIndex: 0,
-      sortImagesByFileName: vi.fn(),
-      deleteCurrentImage: vi.fn(),
-      clearImages: vi.fn(),
+      images: [image],
     },
     settingsStore: {
       settings: {
@@ -19,9 +29,6 @@ function createOptions() {
         },
       },
       updateTextStyle: vi.fn(),
-    },
-    sessionStore: {
-      saveChapterSession: vi.fn(),
     },
     translation: {
       translateCurrentImage: vi.fn(),
@@ -35,17 +42,16 @@ function createOptions() {
       retryFailedImages: vi.fn(),
     },
     translateInit: {
-      initializeBookChapterContext: vi.fn(),
+      initializeBookChapterContext: vi.fn().mockResolvedValue(undefined),
+      isBookshelfMode: ref(true),
       switchImage: vi.fn(),
       goToPrevious: vi.fn(),
       goToNext: vi.fn(),
     },
     validateBeforeTranslation: vi.fn(() => true),
-    currentImage: computed(() => ({ fileName: 'page.png' })),
+    currentImage: computed(() => image),
     hasImages: computed(() => true),
     hasFailedImages: computed(() => false),
-    currentBookId: computed(() => 'book-1'),
-    currentChapterId: computed(() => 'chapter-1'),
     isEditMode: ref(false),
     confirmAction: vi.fn().mockResolvedValue(true),
   }
@@ -53,26 +59,28 @@ function createOptions() {
 
 describe('useTranslateViewActions', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
+    vi.clearAllMocks()
   })
 
-  it('sorts uploaded images without routine console noise', () => {
+  it('refreshes authoritative chapter metadata after upload', async () => {
     const options = createOptions()
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
 
-    const actions = useTranslateViewActions(options as unknown as Parameters<typeof useTranslateViewActions>[0])
-    actions.handleUploadComplete(3)
+    await actions.handleUploadComplete(3)
 
-    expect(options.imageStore.sortImagesByFileName).toHaveBeenCalled()
-    expect(options.translateInit.switchImage).toHaveBeenCalledWith(0)
-    expect(logSpy).not.toHaveBeenCalled()
+    expect(options.translateInit.initializeBookChapterContext).toHaveBeenCalled()
+    expect(options.translateInit.switchImage).not.toHaveBeenCalled()
   })
 
-  it('uses product confirmation for destructive image actions', async () => {
+  it('uses backend deletion APIs after product confirmation', async () => {
     const options = createOptions()
-    const browserConfirmSpy = vi.spyOn(window, 'confirm')
+    const browserConfirm = vi.spyOn(window, 'confirm')
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
 
-    const actions = useTranslateViewActions(options as unknown as Parameters<typeof useTranslateViewActions>[0])
     await actions.deleteCurrentImage()
     await actions.clearAllImages()
 
@@ -84,12 +92,24 @@ describe('useTranslateViewActions', () => {
     })
     expect(options.confirmAction).toHaveBeenCalledWith({
       title: '清空图片',
-      message: '确定要清除所有图片吗？这将丢失所有未保存的进度。',
+      message: '确定要从后端章节中删除所有图片和翻译结果吗？',
       confirmText: '清空',
       tone: 'danger',
     })
-    expect(options.imageStore.deleteCurrentImage).toHaveBeenCalled()
-    expect(options.imageStore.clearImages).toHaveBeenCalled()
-    expect(browserConfirmSpy).not.toHaveBeenCalled()
+    expect(mocks.deletePage).toHaveBeenCalledWith('page-1')
+    expect(options.translateInit.initializeBookChapterContext).toHaveBeenCalledTimes(2)
+    expect(browserConfirm).not.toHaveBeenCalled()
+  })
+
+  it('resets the fixed backend quick workspace when clearing quick translation', async () => {
+    const options = createOptions()
+    options.translateInit.isBookshelfMode.value = false
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
+
+    await actions.clearAllImages()
+
+    expect(mocks.resetQuickWorkspace).toHaveBeenCalled()
   })
 })

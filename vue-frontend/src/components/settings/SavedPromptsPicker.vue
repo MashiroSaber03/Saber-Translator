@@ -12,8 +12,7 @@
 <script setup lang="ts">
 import ProductChipList, { type ProductChipItem } from '@/components/product/ProductChipList.vue'
 import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
-import { configApi, type PromptContentResponse } from '@/api/config'
-import type { PromptListResponse } from '@/types'
+import { listV2Prompts, type V2Prompt } from '@/api/v2/settings'
 
 const props = defineProps<{
   promptType: string
@@ -23,7 +22,7 @@ const emit = defineEmits<{
   (e: 'select', content: string, name: string): void
 }>()
 
-const promptList = ref<{ name: string }[]>([])
+const promptList = ref<V2Prompt[]>([])
 const isLoading = ref(false)
 const promptChipItems = computed<ProductChipItem[]>(() => {
   if (isLoading.value) {
@@ -47,7 +46,7 @@ const promptChipItems = computed<ProductChipItem[]>(() => {
   }
 
   return promptList.value.map(prompt => ({
-    id: prompt.name,
+    id: prompt.id,
     label: prompt.name,
     iconName: 'file-text',
     interactive: true,
@@ -63,14 +62,11 @@ async function loadPromptList() {
   const promptType = props.promptType
   isLoading.value = true
   try {
-    const result: PromptListResponse = promptType === 'textbox'
-      ? await configApi.getTextboxPrompts()
-      : await configApi.getPrompts(promptType)
+    const result = await listV2Prompts(promptType)
     if (!isMounted || requestId !== promptListRequestId || props.promptType !== promptType) {
       return
     }
-    const names = result.prompt_names || []
-    promptList.value = names.map(name => ({ name }))
+    promptList.value = result
   } catch {
     if (!isMounted || requestId !== promptListRequestId || props.promptType !== promptType) {
       return
@@ -83,18 +79,16 @@ async function loadPromptList() {
   }
 }
 
-async function handleSelect(name: string) {
+async function handleSelect(promptId: string) {
   const requestId = ++promptContentRequestId
   const promptType = props.promptType
   try {
-    const result: PromptContentResponse = promptType === 'textbox'
-      ? await configApi.getTextboxPromptContent(name)
-      : await configApi.getPromptContent(promptType, name)
+    const prompt = promptList.value.find(item => item.id === promptId)
     if (!isMounted || requestId !== promptContentRequestId || props.promptType !== promptType) {
       return
     }
-    if (result.prompt_content) {
-      emit('select', result.prompt_content, name)
+    if (prompt?.content) {
+      emit('select', prompt.content, prompt.name)
     }
   } catch {
     // Prompt selection is optional; the picker remains available for another choice.

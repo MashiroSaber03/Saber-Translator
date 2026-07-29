@@ -53,6 +53,7 @@ describe('PageDetail', () => {
         page_summary: '旧摘要',
         panels: [],
       },
+      source_url: '/page.png',
     })
 
     reanalyzePageMock.mockReset()
@@ -415,9 +416,9 @@ describe('PageDetail', () => {
 
     const banners = analyzedWrapper.findAllComponents(ProductStatusBanner)
     expect(banners.at(-1)?.props()).toMatchObject({
-      iconName: 'message',
+      iconName: 'sparkles',
       role: 'note',
-      title: '此页没有检测到对话内容',
+      title: '此页没有识别出关键事件',
       tone: 'neutral',
     })
   })

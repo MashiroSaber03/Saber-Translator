@@ -187,12 +187,12 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     showToast('所有图片已清除', 'success')
   }
 
-  function goToPrevious() {
-    translateInit.goToPrevious()
+  async function goToPrevious() {
+    await translateInit.goToPrevious()
   }
 
-  function goToNext() {
-    translateInit.goToNext()
+  async function goToNext() {
+    await translateInit.goToNext()
   }
 
   function toggleEditMode() {
@@ -247,8 +247,8 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     }
   }
 
-  function selectImage(index: number) {
-    translateInit.switchImage(index)
+  async function selectImage(index: number) {
+    await translateInit.switchImage(index)
   }
 
   return {

@@ -1,20 +1,21 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { TranslationSettings } from '@/types/settings'
-import {
-  STORAGE_KEY_PROVIDER_CONFIGS,
-  STORAGE_KEY_THEME,
-  STORAGE_KEY_TRANSLATION_SETTINGS,
-} from '@/constants'
+import { STORAGE_KEY_THEME } from '@/constants'
 import {
   getV2Settings,
   saveV2SettingsTransaction,
   type V2CredentialEdit,
   type V2CredentialSummary,
+  type V2Font,
+  type V2Prompt,
   type V2ProviderSettingMutation,
   type V2SettingsDocument,
+  type V2WorkflowPreferences,
+  updateV2WorkflowPreferences,
 } from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
+import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
@@ -84,69 +85,49 @@ export const useSettingsStore = defineStore('settings', () => {
   const { theme, effectiveTheme, setTheme, toggleTheme, loadThemeFromStorage } = themePreference
   const providerConfigs = ref<ProviderConfigsCache>(emptyProviderConfigs())
   const credentialSummaries = ref<V2CredentialSummary[]>([])
+  const fontCatalog = ref<V2Font[]>([])
+  const promptCatalog = ref<V2Prompt[]>([])
+  const workflowPreferences = ref<V2WorkflowPreferences>({
+    rememberWorkflowModeEnabled: false,
+    lastWorkflowMode: 'translate-current',
+  })
   const isBackendReady = ref(false)
   const backendError = ref<string | null>(null)
 
   let settingsRevision = 0
+  let textStyleDefaultsRevision = 0
+  let workflowPreferencesRevision = 0
   let providerRevisions = new Map<string, number>()
   let loadPromise: Promise<boolean> | null = null
-
-  // Business settings and credentials are backend facts. These compatibility
-  // functions intentionally do not persist browser copies.
-  function saveToStorage(): void {}
-  function saveProviderConfigsToStorage(): void {}
-
-  function clearRetiredBusinessStorage(): void {
-    try {
-      localStorage.removeItem(STORAGE_KEY_TRANSLATION_SETTINGS)
-      localStorage.removeItem(STORAGE_KEY_PROVIDER_CONFIGS)
-    } catch {
-      // Storage may be unavailable; backend loading remains authoritative.
-    }
-  }
-
-  function loadFromStorage(): void {
-    clearRetiredBusinessStorage()
-  }
 
   const ocrModule = useOcrSettings(
     settings,
     providerConfigs,
-    saveToStorage,
-    saveProviderConfigsToStorage,
   )
 
   const translationModule = useTranslationSettings(
     settings,
     providerConfigs,
-    saveToStorage,
-    saveProviderConfigsToStorage,
   )
 
-  const detectionModule = useDetectionSettings(settings, saveToStorage)
+  const detectionModule = useDetectionSettings(settings)
 
   const hqTranslationModule = useHqTranslationSettings(
     settings,
     providerConfigs,
-    saveToStorage,
-    saveProviderConfigsToStorage,
   )
 
   const pluginAgentModule = usePluginAgentSettings(
     settings,
     providerConfigs,
-    saveToStorage,
-    saveProviderConfigsToStorage,
   )
 
-  const proofreadingModule = useProofreadingSettings(settings, saveToStorage)
-  const promptsModule = usePromptsSettings(settings, saveToStorage)
-  const miscModule = useMiscSettings(settings, saveToStorage)
+  const proofreadingModule = useProofreadingSettings(settings)
+  const promptsModule = usePromptsSettings(settings)
+  const miscModule = useMiscSettings(settings)
 
   function initSettings(): void {
-    clearRetiredBusinessStorage()
     loadThemeFromStorage()
-    void loadFromBackend()
   }
 
   function resetToDefaults(): void {
@@ -155,11 +136,35 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function applyBackendDocument(document: V2SettingsDocument): void {
     const translationEntry = document.settings.find(row => row.domain === 'translation')
+    const textStyleDefaultsEntry = document.settings.find(
+      row => row.domain === 'text_style_defaults',
+    )
+    const workflowPreferencesEntry = document.settings.find(
+      row => row.domain === 'workflow_preferences',
+    )
     settingsRevision = translationEntry?.revision ?? 0
+    textStyleDefaultsRevision = textStyleDefaultsEntry?.revision ?? 0
+    workflowPreferencesRevision = workflowPreferencesEntry?.revision ?? 0
     const parsed = translationEntry
       ? parseCurrentSettings(translationEntry.payload)
       : null
+    if (translationEntry && !parsed) {
+      throw new Error('后端翻译设置格式无效')
+    }
     settings.value = parsed ?? createDefaultSettings()
+    if (textStyleDefaultsEntry) {
+      settings.value.textStyle = normalizeTextStyleSettings(
+        textStyleDefaultsEntry.payload,
+      )
+    }
+    workflowPreferences.value = {
+      rememberWorkflowModeEnabled: Boolean(
+        workflowPreferencesEntry?.payload.rememberWorkflowModeEnabled,
+      ),
+      lastWorkflowMode: String(
+        workflowPreferencesEntry?.payload.lastWorkflowMode ?? 'translate-current',
+      ),
+    }
     normalizeSettings(settings.value)
 
     providerConfigs.value = emptyProviderConfigs()
@@ -193,14 +198,29 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
+  function hydrateFromBackendDocument(document: V2SettingsDocument): boolean {
+    try {
+      applyBackendDocument(document)
+      backendError.value = null
+      isBackendReady.value = true
+      return true
+    } catch (error) {
+      isBackendReady.value = false
+      backendError.value = error instanceof Error ? error.message : '设置加载失败'
+      return false
+    }
+  }
+
+  function hydrateResourceCatalogs(fonts: V2Font[], prompts: V2Prompt[]): void {
+    fontCatalog.value = deepClone(fonts)
+    promptCatalog.value = deepClone(prompts)
+  }
+
   async function loadFromBackend(): Promise<boolean> {
     if (loadPromise) return loadPromise
     loadPromise = (async () => {
       try {
-        applyBackendDocument(await getV2Settings())
-        backendError.value = null
-        isBackendReady.value = true
-        return true
+        return hydrateFromBackendDocument(await getV2Settings())
       } catch (error) {
         isBackendReady.value = false
         backendError.value = error instanceof Error ? error.message : '设置加载失败'
@@ -211,6 +231,25 @@ export const useSettingsStore = defineStore('settings', () => {
       return await loadPromise
     } finally {
       loadPromise = null
+    }
+  }
+
+  async function saveWorkflowPreferences(
+    preferences: V2WorkflowPreferences,
+  ): Promise<boolean> {
+    try {
+      const updated = await updateV2WorkflowPreferences(
+        preferences,
+        workflowPreferencesRevision,
+      )
+      workflowPreferencesRevision = updated.revision
+      workflowPreferences.value = deepClone(preferences)
+      return true
+    } catch (error) {
+      backendError.value = error instanceof Error
+        ? error.message
+        : '工作流偏好保存失败'
+      return false
     }
   }
 
@@ -241,17 +280,25 @@ export const useSettingsStore = defineStore('settings', () => {
       rawPayload: Record<string, unknown>
       secret: Record<string, unknown>
     },
+    source: {
+      credentials?: V2CredentialSummary[]
+      revisions?: Map<string, number>
+    } = {},
   ): void {
     const nonEmptySecret = Object.fromEntries(
       Object.entries(secret).filter(([, value]) => value !== '' && value != null),
     )
-    const existingCredential = currentCredential(domain, provider)
+    const credentials = source.credentials ?? credentialSummaries.value
+    const revisions = source.revisions ?? providerRevisions
+    const existingCredential = credentials.find(
+      row => row.domain === domain && row.provider === provider,
+    )
     const clientRef = `credential:${domain}:${provider}`
     const mutation: V2ProviderSettingMutation = {
       domain,
       provider,
       payload: withoutApiKey(rawPayload),
-      baseRevision: providerRevisions.get(credentialIdentity(domain, provider)) ?? 0,
+      baseRevision: revisions.get(credentialIdentity(domain, provider)) ?? 0,
       schemaVersion: 1,
     }
     if (Object.keys(nonEmptySecret).length > 0) {
@@ -319,12 +366,20 @@ export const useSettingsStore = defineStore('settings', () => {
     })
 
     return {
-      settings: [{
-        domain: 'translation',
-        payload: sanitizedSettingsPayload(settings.value),
-        baseRevision: settingsRevision,
-        schemaVersion: 3,
-      }],
+      settings: [
+        {
+          domain: 'translation',
+          payload: sanitizedSettingsPayload(settings.value),
+          baseRevision: settingsRevision,
+          schemaVersion: 3,
+        },
+        {
+          domain: 'text_style_defaults',
+          payload: deepClone(settings.value.textStyle) as unknown as Record<string, unknown>,
+          baseRevision: textStyleDefaultsRevision,
+          schemaVersion: 1,
+        },
+      ],
       providerSettings,
       credentialEdits,
     }
@@ -345,13 +400,93 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function savePluginAgentSettings(): Promise<boolean> {
-    return saveToBackend()
+    const localDraft = deepClone(settings.value)
+    const localProviderDraft = deepClone(providerConfigs.value)
+    try {
+      const authoritative = await getV2Settings(['translation', 'plugin_agent'])
+      const translationEntry = authoritative.settings.find(
+        row => row.domain === 'translation',
+      )
+      const authoritativeSettings = translationEntry
+        ? parseCurrentSettings(translationEntry.payload)
+        : null
+      if (!translationEntry || !authoritativeSettings) {
+        throw new Error('后端翻译设置缺失或格式无效')
+      }
+
+      pluginAgentModule.savePluginAgentProviderConfig(
+        settings.value.pluginAgent.provider,
+      )
+      authoritativeSettings.pluginAgent = deepClone(settings.value.pluginAgent)
+      authoritativeSettings.pluginAgent.apiKey = ''
+
+      const freshRevisions = new Map(
+        authoritative.providerSettings.map(row => [
+          credentialIdentity(row.domain, row.provider),
+          row.revision,
+        ]),
+      )
+      const providerSettings: V2ProviderSettingMutation[] = []
+      const credentialEdits: V2CredentialEdit[] = []
+      for (const [provider, rawConfig] of Object.entries(
+        providerConfigs.value.pluginAgent,
+      )) {
+        const config = deepClone(rawConfig) as Record<string, unknown>
+        addProviderMutation(
+          providerSettings,
+          credentialEdits,
+          {
+            domain: 'plugin_agent',
+            provider,
+            rawPayload: config,
+            secret: { api_key: config.apiKey },
+          },
+          {
+            credentials: authoritative.credentials,
+            revisions: freshRevisions,
+          },
+        )
+      }
+
+      await saveV2SettingsTransaction({
+        settings: [{
+          domain: 'translation',
+          payload: sanitizedSettingsPayload(authoritativeSettings),
+          baseRevision: translationEntry.revision,
+          schemaVersion: 3,
+        }],
+        providerSettings,
+        credentialEdits,
+      })
+
+      const reloaded = await loadFromBackend()
+      if (!reloaded) return false
+
+      const persistedPluginAgent = deepClone(settings.value.pluginAgent)
+      const persistedPluginProviders = deepClone(
+        providerConfigs.value.pluginAgent,
+      )
+      settings.value = localDraft
+      settings.value.pluginAgent = persistedPluginAgent
+      providerConfigs.value = localProviderDraft
+      providerConfigs.value.pluginAgent = persistedPluginProviders
+      backendError.value = null
+      return true
+    } catch (error) {
+      backendError.value = error instanceof Error
+        ? error.message
+        : '插件 Agent 设置保存失败'
+      return false
+    }
   }
 
   return {
     settings,
     providerConfigs,
     credentialSummaries,
+    fontCatalog,
+    promptCatalog,
+    workflowPreferences,
     hasCredential,
     isBackendReady,
     backendError,
@@ -416,24 +551,23 @@ export const useSettingsStore = defineStore('settings', () => {
     textStyle: miscModule.textStyle,
     updateSettings: miscModule.updateSettings,
     updateTextStyle: miscModule.updateTextStyle,
-    setPdfProcessingMethod: miscModule.setPdfProcessingMethod,
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
-    setAutoSaveInBookshelfMode: miscModule.setAutoSaveInBookshelfMode,
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
     setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
     setLamaDisableResize: miscModule.setLamaDisableResize,
 
-    saveToStorage,
-    loadFromStorage,
     setTheme,
     toggleTheme,
     loadThemeFromStorage,
     initSettings,
     resetToDefaults,
+    hydrateFromBackendDocument,
+    hydrateResourceCatalogs,
 
     loadFromBackend,
     saveToBackend,
     savePluginAgentSettings,
+    saveWorkflowPreferences,
   }
 })
 

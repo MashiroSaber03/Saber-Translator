@@ -2,13 +2,11 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, nextTick } from 'vue'
+import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TranslateView from '@/views/TranslateView.vue'
 import { useSettingsStore } from '@/stores/settings'
-import { useSessionStore } from '@/stores/sessionStore'
 import UiIcon from '@/components/ui/UiIcon.vue'
-import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 
 const {
   routeState,
@@ -16,17 +14,17 @@ const {
   initializeBookChapterContextMock,
   initValidationMock,
   handleKeydownMock,
-  saveCurrentSessionMock,
 } = vi.hoisted(() => ({
   routeState: { query: {} as Record<string, string | undefined> },
   initializeAppMock: vi.fn(),
   initializeBookChapterContextMock: vi.fn(),
   initValidationMock: vi.fn(),
   handleKeydownMock: vi.fn(),
-  saveCurrentSessionMock: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
   useRoute: () => routeState,
 }))
 
@@ -56,6 +54,9 @@ vi.mock('@/composables/useTranslateInit', () => ({
   useTranslateInit: () => ({
     currentBookTitle: { value: 'Book' },
     currentChapterTitle: { value: 'Chapter' },
+    currentChapterId: { value: 'chapter-1' },
+    isBookshelfMode: { value: true },
+    isSwitchingImage: { value: false },
     initializeApp: initializeAppMock,
     initializeBookChapterContext: initializeBookChapterContextMock,
   }),
@@ -79,7 +80,6 @@ vi.mock('@/views/useTranslateViewActions', () => ({
     handleRunWorkflow: vi.fn(),
     handleUploadComplete: vi.fn(),
     loadChapterSession: vi.fn(),
-    saveCurrentSession: saveCurrentSessionMock,
     selectImage: vi.fn(),
     toggleEditMode: vi.fn(),
   }),
@@ -159,7 +159,6 @@ describe('TranslateView', () => {
     initializeBookChapterContextMock.mockReset()
     initValidationMock.mockReset()
     handleKeydownMock.mockReset()
-    saveCurrentSessionMock.mockReset()
     initializeAppMock.mockResolvedValue(undefined)
     initializeBookChapterContextMock.mockResolvedValue(undefined)
   })
@@ -194,8 +193,6 @@ describe('TranslateView', () => {
     expect(wrapper.get('nav[aria-label="翻译页面导航"]').exists()).toBe(true)
     const actionGroup = wrapper.get('[role="group"][aria-label="翻译页面操作"]')
     expect(wrapper.get('.translate-header__back-link').attributes('aria-label')).toBe('返回书架')
-    expect(wrapper.get('.translate-header__save-button').attributes('aria-label')).toBe('保存进度')
-    expect(actionGroup.find('.translate-header__save-button').exists()).toBe(true)
     expect(actionGroup.find('.translate-header__settings-button').exists()).toBe(true)
     expect(actionGroup.find('.translate-header__link--donate').exists()).toBe(true)
     const themeToggle = wrapper.get('.translate-header__theme-toggle')
@@ -214,8 +211,8 @@ describe('TranslateView', () => {
   it('keeps edit-mode shell visibility in template state instead of product header CSS reach-through', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/TranslateView.vue'), 'utf8')
 
-    expect(source).toContain('<ProductPageHeader\n      v-show="!isEditMode"')
-    expect(source).toContain('<SidebarLayout\n      v-show="!isEditMode"')
+    expect(source).toMatch(/<ProductPageHeader\s+v-show="!isEditMode"/)
+    expect(source).toMatch(/<SidebarLayout\s+v-show="!isEditMode"/)
     expect(source).not.toContain('.translate-page.edit-mode-active .product-page-header')
   })
 
@@ -225,20 +222,6 @@ describe('TranslateView', () => {
     expect(source).not.toContain('id="openSettingsBtn"')
     expect(source).not.toContain('github.jpg')
     expect(source).not.toContain('translate-header__github-icon')
-  })
-
-  it('renders chapter loading progress through the shared progress primitive', async () => {
-    const wrapper = mountTranslateView()
-    const sessionStore = useSessionStore()
-
-    sessionStore.loadingProgress.current = 2
-    sessionStore.loadingProgress.total = 5
-    sessionStore.loadingProgress.message = '正在加载章节'
-    await nextTick()
-
-    const progress = wrapper.getComponent(UiProgressBar)
-    expect(progress.props('value')).toBe(40)
-    expect(progress.props('label')).toBe('正在加载章节')
   })
 
   it('keeps page owner tokens on semantic colors', () => {
@@ -254,7 +237,6 @@ describe('TranslateView', () => {
 
     expect(source).toContain('translate-bookshelf-mode-hint__text')
     expect(source).toContain('translate-upload-card__actions')
-    expect(source).toContain('translate-upload-card__progress-label')
     expect(source).not.toContain('class="translate-upload-actions"')
     expect(source).not.toContain('.translate-upload-actions')
     expect(source).not.toContain('class="translate-loading-progress-label"')

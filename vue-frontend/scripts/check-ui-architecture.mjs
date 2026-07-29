@@ -186,7 +186,7 @@ const VAGUE_COMPONENT_TOKEN_RE = /^--(?:base-modal|ui-combobox|toast-notificatio
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE = /^--(?:color-gray-\d+|color-accent-purple(?:-hover)?|color-text-primary(?:-[a-z0-9-]+)?|color-surface-[a-z0-9-]+-gradient-(?:start|end)|color-surface-editor-[a-z0-9-]+|color-surface-overlay-(?:light|medium)(?:-[a-z0-9-]+)?|color-surface-(?:plain|slate-soft|warning-tint|warning-warm)|shadow-(?:brand|success)-soft)$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
-const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|providerSettings|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
+const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
 const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
 const OPTIONAL_CURRENT_SCHEMA_VERSION_RE = /\b(?:settingsSchemaVersion|webImportSettingsSchemaVersion)\s*\?:/g
 const WEB_IMPORT_PARTIAL_SCHEMA_RE = /\bPartial\s*<\s*WebImport(?:Settings|ProviderConfigs|SettingsPayload)\s*>/g

@@ -37,7 +37,7 @@ const tagChips = computed<ProductChipItem[]>(() => {
 
 const citationChips = computed<ProductChipItem[]>(() => {
   const citations = props.note.citations ?? []
-  const visibleCitations = citations.slice(0, 3).map(citation => ({
+  const visibleCitations: ProductChipItem[] = citations.slice(0, 3).map(citation => ({
     id: citation.page,
     label: `第${citation.page}页`,
     ariaLabel: `查看第 ${citation.page} 页`,
@@ -66,7 +66,8 @@ const pageChips = computed<ProductChipItem[]>(() => {
   }]
 })
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return ''
   const date = new Date(dateStr)
   return date.toLocaleDateString('zh-CN', {
     month: 'short',

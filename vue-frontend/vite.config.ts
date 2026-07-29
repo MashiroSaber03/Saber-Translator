@@ -16,7 +16,7 @@ export default defineConfig({
   },
 
   build: {
-    outDir: '../src/app/static/vue',
+    outDir: '../src/backend_v2/static/vue',
     emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {

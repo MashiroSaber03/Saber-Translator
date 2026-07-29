@@ -2,13 +2,12 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useInsightStore } from './insightStore'
-import { useInsightConfigManager, type ProviderConfigsCache } from './insight/useInsightConfigManager'
+import type { ProviderConfigsCache } from './insight/useInsightConfigManager'
 import {
   normalizeInsightImageGenConfig,
   normalizeInsightRerankerConfig,
 } from './insight/insightConfigDefaults'
 import { applyInsightProviderSettingsFromApi } from './insight/insightProviderSettingsHydration'
-import { ref } from 'vue'
 
 describe('useInsightStore imageGen config', () => {
   beforeEach(() => {
@@ -84,70 +83,6 @@ describe('useInsightStore imageGen config', () => {
     expect(store.config.imageGen.provider).toBe('newapi')
     expect(store.config.imageGen.model).toBe('')
     expect(store.config.imageGen.baseUrl).toBe('')
-  })
-
-  it('ignores unversioned provider cache from storage', () => {
-    const providerConfigs = ref<ProviderConfigsCache>({
-      vlm: {},
-      llm: {},
-      embedding: {},
-      reranker: {},
-      imageGen: {},
-    })
-    localStorage.setItem('insight_provider_configs', JSON.stringify({
-      reranker: {
-        jina: {
-          apiKey: 'cached-reranker-key',
-          model: 'cached-reranker-model',
-        },
-      },
-    }))
-
-    const manager = useInsightConfigManager(providerConfigs)
-    manager.loadFromStorage()
-
-    expect(providerConfigs.value.reranker).toEqual({})
-  })
-
-  it('loads current versioned reranker provider cache fields from storage', () => {
-    const providerConfigs = ref<ProviderConfigsCache>({
-      vlm: {},
-      llm: {},
-      embedding: {},
-      reranker: {},
-      imageGen: {},
-    })
-    localStorage.setItem('insight_provider_configs', JSON.stringify({
-      insightProviderConfigSchemaVersion: 1,
-      vlm: {},
-      llm: {},
-      embedding: {},
-      reranker: {
-        jina: {
-          apiKey: 'reranker-key',
-          model: 'jina-reranker-v2-base-multilingual',
-          baseUrl: 'https://rerank.example.com/v1',
-          topK: 5,
-          transportRetries: 7,
-          businessRetries: 8,
-          timeoutSeconds: 9,
-        },
-      },
-      imageGen: {},
-    }))
-
-    const manager = useInsightConfigManager(providerConfigs)
-    manager.loadFromStorage()
-
-    expect(providerConfigs.value.reranker.jina).toEqual({
-      apiKey: 'reranker-key',
-      model: 'jina-reranker-v2-base-multilingual',
-      baseUrl: 'https://rerank.example.com/v1',
-      topK: 5,
-      transportRetries: 7,
-      businessRetries: 8,
-      timeoutSeconds: 9,
-    })
   })
 
   it('preserves explicit zero business_retries when mapping imageGen API payloads', () => {

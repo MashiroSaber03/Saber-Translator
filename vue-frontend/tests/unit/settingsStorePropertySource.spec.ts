@@ -10,7 +10,7 @@ describe('settings store property source contract', () => {
   it('keeps settings properties on current explicit assertion style', () => {
     const content = source('tests/property/settingsStore.property.ts')
 
-    expect(content).toContain('function installLocalStorageMock()')
+    expect(content).toContain('function installStorageMock()')
     expect(content).toContain('function createSettingsStore()')
     expect(content).not.toContain('beforeEach')
     expect(content).not.toContain('/**')

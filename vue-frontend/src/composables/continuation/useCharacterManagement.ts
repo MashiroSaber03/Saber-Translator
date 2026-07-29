@@ -14,7 +14,11 @@ export interface CharacterManagementComposable {
     uploadFormImage: (charName: string, formId: string, file: File) => Promise<void>
     deleteFormImage: (charName: string, formId: string) => Promise<void>
     toggleFormEnabled: (charName: string, formId: string, enabled: boolean) => Promise<void>
-    generateOrtho: (charName: string, formId: string, sourceImages: File[]) => Promise<{ success: boolean; image_path?: string; error?: string }>
+    generateOrtho: (
+        charName: string,
+        formId: string,
+        sourceImages: File[],
+    ) => Promise<continuationApi.UploadImageResponse>
     setFormReference: (charName: string, formId: string, imagePath: string) => Promise<void>
 }
 

@@ -1085,6 +1085,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/translation/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getTranslationBootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/quick-workspace/reset": {
         parameters: {
             query?: never;
@@ -2037,6 +2053,55 @@ export interface components {
             nextCursor: number | null;
             pageOrderRevision: number;
         };
+        TranslationBootstrap: {
+            activeJobs: {
+                id: components["schemas"]["Uuid"];
+                kind: string;
+                status: string;
+                queueRank: number | null;
+                progress: {
+                    [key: string]: unknown;
+                };
+            }[];
+            activeWebImportDraft: {
+                id: components["schemas"]["Uuid"];
+                status: string;
+                revision: number;
+                /** Format: date-time */
+                expiresAt: string;
+            } | null;
+            book: {
+                id: components["schemas"]["Uuid"];
+                title: string;
+                /** @enum {string} */
+                kind: "library" | "quick_workspace";
+            };
+            chapter: {
+                id: components["schemas"]["Uuid"];
+                title: string;
+                pageOrderRevision: number;
+                settingsMemory: {
+                    [key: string]: unknown;
+                };
+                settingsMemorySchemaVersion: number;
+                settingsMemoryRevision: number;
+            };
+            constraints: {
+                payload: {
+                    [key: string]: unknown;
+                };
+                schemaVersion: number;
+                revision: number;
+            };
+            navigation: {
+                lastVisitedPageId: components["schemas"]["Uuid"] | null;
+                revision: number;
+            };
+            pages: components["schemas"]["PageList"];
+            settings: components["schemas"]["SettingsDocument"];
+            fonts: components["schemas"]["FontResource"][];
+            prompts: components["schemas"]["PromptResource"][];
+        };
         PageImportResult: {
             page: components["schemas"]["PageSummary"];
             pageOrderRevision: number;
@@ -2053,6 +2118,9 @@ export interface components {
             message: string;
             fieldErrors?: {
                 [key: string]: string;
+            };
+            details?: {
+                [key: string]: unknown;
             };
         };
         ErrorEnvelope: {
@@ -4232,6 +4300,31 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getTranslationBootstrap: {
+        parameters: {
+            query?: {
+                bookId?: components["schemas"]["Uuid"];
+                chapterId?: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One-request translation workspace, settings, fonts, and prompt bootstrap. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationBootstrap"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     resetQuickWorkspace: {

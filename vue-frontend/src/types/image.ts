@@ -107,15 +107,3 @@ export interface ImageUploadResult {
   images: ImageData[]
   errors?: string[]
 }
-
-export interface PdfParseSession {
-  sessionId: string
-  totalPages: number
-  currentPage: number
-}
-
-export interface MobiParseSession {
-  sessionId: string
-  totalPages: number
-  currentPage: number
-}

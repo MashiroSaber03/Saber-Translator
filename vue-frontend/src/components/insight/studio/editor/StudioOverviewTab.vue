@@ -24,7 +24,7 @@ defineProps<{
   document: CharacterStudioDocument
   flattenedLorebookCount: number
   formatOrigin: (origin: CharacterStudioDocument['origin']['type']) => string
-  freezeItems: FreezeItem[]
+  freezeItems: readonly FreezeItem[]
   isFrozen: (section: string) => boolean
   latestReview: ReviewSummary
   pendingState: CharacterStudioEditorPendingState

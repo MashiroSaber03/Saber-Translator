@@ -12,6 +12,7 @@ from src.backend_v2.storage.defaults import (
     DEFAULT_TEXT_STYLE,
     DEFAULT_WORKFLOW_PREFERENCES,
     FACTORY_PROMPTS,
+    default_translation_settings,
 )
 from src.backend_v2.storage.schema import (
     app_settings,
@@ -73,7 +74,7 @@ def seed_system_records(engine: Engine) -> None:
             )
 
         default_domains = {
-            "translation": {},
+            "translation": default_translation_settings(),
             "detection": {},
             "ocr": {},
             "inpainting": {},
@@ -83,6 +84,9 @@ def seed_system_records(engine: Engine) -> None:
             "insight": {},
             "web_import": {},
             "plugin_agent": {},
+        }
+        default_schema_versions = {
+            "translation": 3,
         }
         existing_domains = set(
             connection.execute(select(app_settings.c.domain)).scalars()
@@ -98,6 +102,7 @@ def seed_system_records(engine: Engine) -> None:
                             sort_keys=True,
                             separators=(",", ":"),
                         ),
+                        schema_version=default_schema_versions.get(domain, 1),
                     )
                 )
 

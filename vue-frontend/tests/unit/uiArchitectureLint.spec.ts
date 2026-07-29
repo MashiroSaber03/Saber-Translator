@@ -44,7 +44,6 @@ const legacyProviderCustomOpenAi = 'custom' + '_openai'
 const legacyProviderCustomOpenAiVision = 'custom' + '_openai_vision'
 const legacyIdsField = 'legacy' + 'Ids'
 const legacyStorageKey = 'LEGACY' + '_STORAGE_KEY'
-const oldProviderSettingsField = 'provider' + 'Settings'
 const oldStripMirrorHelper = 'strip' + 'LegacyOpenAiMirrorFields'
 const oldSyncMirrorHelper = 'sync' + 'LegacyOpenAiMirrorFields'
 const oldCoerceRetryHelper = 'coerce' + 'LegacyRetryValue'
@@ -1454,7 +1453,6 @@ describe('UI architecture frontend schema compatibility lint', () => {
   it('rejects old settings migration and mirror helpers in frontend source', () => {
     const result = runUiArchitectureSourceFixture('settings.ts', `
       const ${legacyStorageKey} = 'saber-translator-settings'
-      const payload = { ${oldProviderSettingsField}: {} }
       function ${oldSchemaMergeHelper}() {}
       function ${oldStripMirrorHelper}() {}
       function ${oldSyncMirrorHelper}() {}
@@ -1464,7 +1462,6 @@ describe('UI architecture frontend schema compatibility lint', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
     expect(result.stderr).toContain(legacyStorageKey)
-    expect(result.stderr).toContain(oldProviderSettingsField)
     expect(result.stderr).toContain(oldSchemaMergeHelper)
     expect(result.stderr).toContain(oldStripMirrorHelper)
     expect(result.stderr).toContain(oldSyncMirrorHelper)

@@ -34,20 +34,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     return requestId === notesLoadRequestId && currentBookId.value === requestedBookId
   }
 
-  function saveNotesToStorage(): void {
-    try {
-      if (currentBookId.value) {
-        localStorage.removeItem(`manga_notes_${currentBookId.value}`)
-      }
-    } catch {
-      return
-    }
-  }
-
-  function loadNotesFromStorage(): void {
-    saveNotesToStorage()
-  }
-
   async function loadNotes(): Promise<void> {
     const requestedBookId = currentBookId.value
     const requestId = ++notesLoadRequestId
@@ -56,7 +42,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       return
     }
 
-    saveNotesToStorage()
     isLoading.value = true
     error.value = null
 
@@ -198,8 +183,6 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     isLoading,
     error,
     loadNotes,
-    loadNotesFromStorage,
-    saveNotesToStorage,
     addNote,
     updateNote,
     deleteNote,

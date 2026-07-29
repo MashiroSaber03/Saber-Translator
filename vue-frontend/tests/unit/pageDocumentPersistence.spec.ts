@@ -18,6 +18,21 @@ describe('page document persistence coordinator', () => {
     vi.resetModules()
   })
 
+  function serverDocument(
+    bubbles: Array<Record<string, unknown>>,
+    documentRevision: number,
+  ) {
+    return {
+      bubbles,
+      chapterId: 'chapter-1',
+      defaultFontId: 'font-2',
+      documentRevision,
+      pageId: 'page-1',
+      pageStyleDefaults: {},
+      pageStyleSchemaVersion: 1,
+    }
+  }
+
   it('commits bubble and page style changes in one CAS without image payloads', async () => {
     mutateMock.mockResolvedValue({
       bubbles: [{
@@ -87,5 +102,107 @@ describe('page document persistence coordinator', () => {
     const request = mutateMock.mock.calls[0]?.[1]
     expect(JSON.stringify(request)).not.toContain('originalDataURL')
     expect(JSON.stringify(request)).not.toContain('base64')
+  })
+
+  it('coalesces rapid edits into one 150ms trailing CAS using the latest state', async () => {
+    vi.useFakeTimers()
+    try {
+      mutateMock.mockResolvedValue(serverDocument([{
+        bubbleId: 'bubble-1',
+        fontId: 'font-2',
+        ordinal: 1,
+        payload: {
+          coords: [0, 0, 100, 80],
+          translatedText: '第二次输入',
+        },
+        updatedRevision: 2,
+      }], 2))
+      const {
+        queuePageDocumentSave,
+        registerPageDocument,
+      } = await import('@/services/pageDocumentPersistence')
+      registerPageDocument(serverDocument([], 1))
+      const first = createBubbleState({
+        backendBubbleId: 'bubble-1',
+        coords: [0, 0, 100, 80],
+        polygon: [],
+        translatedText: '第一次输入',
+      })
+      const second = createBubbleState({
+        ...first,
+        translatedText: '第二次输入',
+      })
+
+      const pending = queuePageDocumentSave('page-1', 1, [first])
+      await vi.advanceTimersByTimeAsync(100)
+      void queuePageDocumentSave('page-1', 1, [second])
+      await vi.advanceTimersByTimeAsync(149)
+      expect(mutateMock).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      await pending
+
+      expect(mutateMock).toHaveBeenCalledTimes(1)
+      expect(mutateMock).toHaveBeenCalledWith(
+        'page-1',
+        expect.objectContaining({
+          baseRevision: 1,
+          mutations: [
+            expect.objectContaining({
+              fields: expect.objectContaining({
+                translatedText: '第二次输入',
+              }),
+            }),
+          ],
+        }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('flushes a pending trailing edit immediately', async () => {
+    vi.useFakeTimers()
+    try {
+      mutateMock.mockResolvedValue(serverDocument([], 2))
+      const {
+        flushPageDocument,
+        queuePageDocumentSave,
+        registerPageDocument,
+      } = await import('@/services/pageDocumentPersistence')
+      registerPageDocument(serverDocument([], 1))
+      const bubble = createBubbleState({
+        backendBubbleId: 'bubble-1',
+        coords: [0, 0, 100, 80],
+        polygon: [],
+        translatedText: '立即提交',
+      })
+
+      void queuePageDocumentSave('page-1', 1, [bubble])
+      await flushPageDocument('page-1')
+
+      expect(mutateMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps only the three most recently registered settled documents', async () => {
+    const {
+      isPageDocumentRegistered,
+      registerPageDocument,
+    } = await import('@/services/pageDocumentPersistence')
+
+    for (let index = 1; index <= 4; index += 1) {
+      registerPageDocument({
+        ...serverDocument([], 1),
+        pageId: `page-${index}`,
+      })
+    }
+
+    expect(isPageDocumentRegistered('page-1')).toBe(false)
+    expect(isPageDocumentRegistered('page-2')).toBe(true)
+    expect(isPageDocumentRegistered('page-3')).toBe(true)
+    expect(isPageDocumentRegistered('page-4')).toBe(true)
   })
 })

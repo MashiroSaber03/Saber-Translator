@@ -20,11 +20,19 @@ from src.backend_v2.content.repository import (
     IdempotencyConflict,
 )
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.platform_repositories import (
+    FontRepository,
+    PromptRepository,
+    SettingsRepository,
+)
 
 
 def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     blueprint = Blueprint("content_v2", __name__, url_prefix="/api/v2")
     repository = ContentRepository(engine)
+    settings_repository = SettingsRepository(engine)
+    prompt_repository = PromptRepository(engine)
+    font_repository = FontRepository(engine)
     storage = AssetStorageService(data_root, engine)
     importer = ImageImportService(
         data_root=data_root,
@@ -445,12 +453,18 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.get("/translation/bootstrap")
     def translation_bootstrap() -> Response:
-        return jsonify(
-            repository.translation_bootstrap(
-                book_id=request.args.get("bookId"),
-                chapter_id=request.args.get("chapterId"),
-            )
+        result = repository.translation_bootstrap(
+            book_id=request.args.get("bookId"),
+            chapter_id=request.args.get("chapterId"),
         )
+        result["settings"] = settings_repository.load()
+        result["fonts"] = font_repository.list()
+        result["prompts"] = [
+            prompt
+            for prompt in prompt_repository.list()
+            if prompt["type"] in {"translate", "textbox"}
+        ]
+        return jsonify(result)
 
     @blueprint.post("/quick-workspace/promote")
     def promote_quick_workspace() -> Response:

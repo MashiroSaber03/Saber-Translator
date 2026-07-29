@@ -1,5 +1,2 @@
-export const STORAGE_KEY_TRANSLATION_SETTINGS = 'translationSettings'
 export const STORAGE_KEY_THEME = 'theme'
 export const STORAGE_KEY_READER_SETTINGS = 'readerSettings'
-export const STORAGE_KEY_MANGA_NOTES_PREFIX = 'manga_notes_'
-export const STORAGE_KEY_PROVIDER_CONFIGS = 'providerConfigs'

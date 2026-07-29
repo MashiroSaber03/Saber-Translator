@@ -34,12 +34,13 @@ describe('frontend state owner architecture', () => {
     expect(characterStudio).not.toContain('async function regenerateChatMessage')
   })
 
-  it('keeps pipeline runtime free of a session-store cycle', () => {
-    const sessionStore = source('src/stores/sessionStore.ts')
-    const runtime = source('src/composables/translation/core/runtime.ts')
+  it('keeps the translation facade on backend jobs without a browser pipeline', () => {
+    const translation = source('src/composables/useTranslationPipeline.ts')
 
-    expect(sessionStore).toContain("from '@/composables/translation/core/runtime'")
-    expect(sessionStore).not.toContain("await import('@/composables/translation/core/runtime')")
-    expect(runtime).not.toContain("from '@/stores/sessionStore'")
+    expect(translation).toContain("from '@/api/v2/translation'")
+    expect(translation).toContain('createChapterTranslationJob')
+    expect(translation).not.toContain('usePipeline')
+    expect(translation).not.toContain('sessionStore')
+    expect(translation).not.toContain('base64')
   })
 })

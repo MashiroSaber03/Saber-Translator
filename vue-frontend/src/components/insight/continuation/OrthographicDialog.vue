@@ -205,8 +205,7 @@ function useResult() {
 }
 
 function getResultUrl(): string {
-  if (!props.bookId || !props.resultImagePath) return ''
-  return `/api/manga-insight/${props.bookId}/continuation/generated-image?path=${encodeURIComponent(props.resultImagePath)}`
+  return props.resultImagePath ?? ''
 }
 
 watch(() => props.isGenerating, (generating) => {

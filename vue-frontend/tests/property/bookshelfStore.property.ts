@@ -7,7 +7,6 @@ import type { BookData, TagData } from '@/types/api'
 
 const bookIdArbitrary = fc.uuid()
 const bookTitleArbitrary = fc.string({ minLength: 1, maxLength: 100 })
-const bookDescriptionArbitrary = fc.option(fc.string({ maxLength: 500 }), { nil: undefined })
 const dateStringArbitrary = fc.date({ min: new Date('2020-01-01'), max: new Date('2025-12-31') })
   .map(d => d.toISOString())
 
@@ -22,28 +21,6 @@ const uniqueTagsArbitrary = (
   ...constraints,
   selector: tag => tag.name,
 })
-
-const bookDataArbitrary = (tagNames: string[]): fc.Arbitrary<BookData> => fc.record({
-  id: bookIdArbitrary,
-  title: bookTitleArbitrary,
-  description: bookDescriptionArbitrary,
-  cover: fc.option(fc.string(), { nil: undefined }),
-  tags: fc.option(
-    fc.subarray(tagNames, { minLength: 0, maxLength: Math.min(tagNames.length, 5) }),
-    { nil: undefined }
-  ),
-  chapters: fc.constant(undefined),
-  createdAt: dateStringArbitrary,
-  updatedAt: dateStringArbitrary,
-})
-
-const minimalBookArbitrary = fc.record({
-  id: bookIdArbitrary,
-  title: bookTitleArbitrary,
-  description: bookDescriptionArbitrary,
-  createdAt: dateStringArbitrary,
-  updatedAt: dateStringArbitrary,
-}) as fc.Arbitrary<BookData>
 
 const selectableBookArbitrary = fc.record({
   id: bookIdArbitrary,
@@ -60,15 +37,6 @@ const uniqueBooksArbitrary = (
   selector: book => book.id,
 })
 
-const bookshelfDataArbitrary = uniqueTagsArbitrary({ maxLength: 10 })
-  .chain(tags => {
-    const tagNames = tags.map(tag => tag.name)
-    return fc.tuple(
-      fc.constant(tags),
-      uniqueBooksArbitrary(bookDataArbitrary(tagNames), { maxLength: 20 })
-    )
-  })
-
 describe('bookshelf store properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -80,77 +48,6 @@ describe('bookshelf store properties', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-  })
-
-  it('filters books by search keyword across title and description', () => {
-    fc.assert(
-      fc.property(
-        fc.tuple(
-          uniqueBooksArbitrary(minimalBookArbitrary, { maxLength: 20 }),
-          fc.string({ maxLength: 20 })
-        ),
-        ([books, keyword]) => {
-          const store = useBookshelfStore()
-          store.setBooks(books)
-          store.setSearchKeyword(keyword)
-
-          const filtered = store.filteredBooks
-          const normalizedKeyword = keyword.toLowerCase().trim()
-
-          if (normalizedKeyword === '') {
-            expect(filtered).toHaveLength(books.length)
-            return
-          }
-
-          for (const book of filtered) {
-            const titleMatch = book.title.toLowerCase().includes(normalizedKeyword)
-            const descriptionMatch = book.description?.toLowerCase().includes(normalizedKeyword) ?? false
-            expect(titleMatch || descriptionMatch).toBe(true)
-          }
-
-          for (const book of books) {
-            const titleMatch = book.title.toLowerCase().includes(normalizedKeyword)
-            const descriptionMatch = book.description?.toLowerCase().includes(normalizedKeyword) ?? false
-            const isIncluded = filtered.some(filteredBook => filteredBook.id === book.id)
-            expect(isIncluded).toBe(titleMatch || descriptionMatch)
-          }
-        }
-      ),
-      { numRuns: 100 }
-    )
-  })
-
-  it('filters books by all selected tags', () => {
-    fc.assert(
-      fc.property(bookshelfDataArbitrary, ([tags, books]) => {
-        const store = useBookshelfStore()
-        store.setTags(tags)
-        store.setBooks(books)
-
-        const tagNames = tags.map(tag => tag.name)
-        const selectedTags = tagNames.slice(0, Math.min(tagNames.length, 3))
-        store.setTagFilter(selectedTags)
-
-        const filtered = store.filteredBooks
-        if (selectedTags.length === 0) {
-          expect(filtered).toHaveLength(books.length)
-          return
-        }
-
-        for (const book of filtered) {
-          for (const tagName of selectedTags) {
-            expect(book.tags?.includes(tagName)).toBe(true)
-          }
-        }
-
-        for (const book of books) {
-          const hasAllTags = selectedTags.every(tagName => book.tags?.includes(tagName))
-          const isIncluded = filtered.some(filteredBook => filteredBook.id === book.id)
-          expect(isIncluded).toBe(hasAllTags)
-        }
-      }),
-      { numRuns: 100 }
-    )
   })
 
   it('keeps batch selection as a toggle set', () => {

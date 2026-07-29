@@ -21,6 +21,7 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
     width: 100,
     height: 100,
     originalDataURL: `data:image/png;base64,${id}`,
+    thumbnailSourceUrl: `/api/v2/assets/${id}-thumbnail`,
     translatedDataURL: null,
     cleanImageData: null,
     bubbleStates: null,
@@ -75,7 +76,7 @@ describe('ThumbnailSidebar', () => {
     expect(thumbnailGrid.props('items')).toMatchObject([
       {
         id: 0,
-        src: 'data:image/png;base64,page-1',
+        src: '/api/v2/assets/page-1-thumbnail',
         alt: '001.png',
         label: '1',
         selected: true,
@@ -83,7 +84,7 @@ describe('ThumbnailSidebar', () => {
       },
       {
         id: 1,
-        src: 'data:image/png;base64,page-2',
+        src: '/api/v2/assets/page-2-thumbnail',
         alt: '002.png',
         label: '2',
         selected: false,

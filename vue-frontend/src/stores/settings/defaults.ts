@@ -189,10 +189,8 @@ export function createDefaultSettings(): TranslationSettings {
     proofreading: deepClone(DEFAULT_PROOFREADING),
     boxExpand: deepClone(DEFAULT_BOX_EXPAND),
     preciseMask: deepClone(DEFAULT_PRECISE_MASK),
-    pdfProcessingMethod: 'backend',
     showDetectionDebug: false,
     parallel: deepClone(DEFAULT_PARALLEL),
-    autoSaveInBookshelfMode: true,
     removeTextWithOcr: false,
     enableVerboseLogs: false,
     lamaDisableResize: false

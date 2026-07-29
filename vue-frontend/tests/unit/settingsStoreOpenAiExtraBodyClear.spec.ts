@@ -28,7 +28,6 @@ describe('settings store clears OpenAI extraBody', () => {
 
     setActivePinia(createPinia())
     const reloadedStore = useSettingsStore()
-    reloadedStore.loadFromStorage()
 
     expect(reloadedStore.settings.translation.openaiOptions.request.extraBody).toBeUndefined()
   })

@@ -163,7 +163,7 @@ function getStatusText(status: string): string {
 function getStatusTone(status: string): ProductChipItem['tone'] {
   const map: Record<string, ProductChipItem['tone']> = {
     pending: 'warning',
-    generating: 'info',
+    generating: 'primary',
     generated: 'success',
     failed: 'danger',
   }

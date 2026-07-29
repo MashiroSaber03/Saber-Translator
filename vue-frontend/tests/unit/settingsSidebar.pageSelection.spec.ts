@@ -5,17 +5,10 @@ import { defineComponent, h, type PropType } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-vi.mock('@/api/config', () => ({
-  getFontList: async () => ({ fonts: [] }),
-  uploadFont: async () => ({ success: true }),
-  getTranslateWorkflowPreferences: async () => ({
-    success: true,
-    preferences: {
-      rememberWorkflowModeEnabled: false,
-      lastWorkflowMode: 'translate-current',
-    },
-  }),
-  saveTranslateWorkflowPreferences: async () => ({ success: true }),
+vi.mock('@/api/v2/settings', async importOriginal => ({
+  ...await importOriginal<typeof import('@/api/v2/settings')>(),
+  listV2Fonts: async () => [],
+  uploadV2Font: async () => ({ id: 'font-uploaded', assetUrl: '/api/v2/assets/font' }),
 }))
 
 vi.mock('@/components/ui/UiCombobox.vue', () => ({

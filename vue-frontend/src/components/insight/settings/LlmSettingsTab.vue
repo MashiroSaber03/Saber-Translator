@@ -79,6 +79,7 @@ async function testConnection(): Promise<void> {
 
   try {
     const response = await insightApi.testLlmConnection({
+      use_same_as_vlm: false,
       provider: provider.value,
       api_key: apiKey.value,
       model: model.value,

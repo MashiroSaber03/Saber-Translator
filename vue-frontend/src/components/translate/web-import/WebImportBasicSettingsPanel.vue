@@ -37,6 +37,10 @@ defineEmits<{
   (event: 'test-agent'): void
   (event: 'test-firecrawl'): void
 }>()
+
+function applyNumber(action: (value: number) => void, value: number | null): void {
+  if (value !== null) action(value)
+}
 </script>
 
 <template>
@@ -157,7 +161,7 @@ defineEmits<{
         :model-value="draftSettings.extraction.maxIterations"
         :min="1"
         :max="20"
-        @update:model-value="settingsActions.setExtractionMaxIterations"
+        @update:model-value="value => applyNumber(settingsActions.setExtractionMaxIterations, value)"
       />
     </UiField>
   </ProductFormSection>
@@ -172,7 +176,7 @@ defineEmits<{
           :model-value="draftSettings.download.concurrency"
           :min="1"
           :max="10"
-          @update:model-value="settingsActions.setDownloadConcurrency"
+          @update:model-value="value => applyNumber(settingsActions.setDownloadConcurrency, value)"
         />
       </UiField>
 
@@ -182,7 +186,7 @@ defineEmits<{
           :model-value="draftSettings.download.timeout"
           :min="5"
           :max="120"
-          @update:model-value="settingsActions.setDownloadTimeout"
+          @update:model-value="value => applyNumber(settingsActions.setDownloadTimeout, value)"
         />
       </UiField>
 
@@ -192,7 +196,7 @@ defineEmits<{
           :model-value="draftSettings.download.retries"
           :min="0"
           :max="5"
-          @update:model-value="settingsActions.setDownloadRetries"
+          @update:model-value="value => applyNumber(settingsActions.setDownloadRetries, value)"
         />
       </UiField>
 
@@ -203,7 +207,7 @@ defineEmits<{
           :min="0"
           :max="2000"
           :step="100"
-          @update:model-value="settingsActions.setDownloadDelay"
+          @update:model-value="value => applyNumber(settingsActions.setDownloadDelay, value)"
         />
       </UiField>
     </UiFormGrid>

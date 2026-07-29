@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
-import { getServerInfo } from '@/api'
+import { getV2ServerInfo } from '@/api/v2/system'
 import { getBookDetail } from '@/api/bookshelf'
 import BookCard from '@/components/bookshelf/BookCard.vue'
 import BookSearch from '@/components/bookshelf/BookSearch.vue'
@@ -55,9 +55,9 @@ onMounted(async () => {
   ])
 
   try {
-    const response = await getServerInfo()
-    if (response.success && response.lan_url) {
-      lanUrl.value = response.lan_url
+    const response = await getV2ServerInfo()
+    if (response.lanUrl) {
+      lanUrl.value = response.lanUrl
     }
   } catch {
     lanUrl.value = '获取失败'

@@ -201,7 +201,7 @@ describe('UI primitives architecture contracts', () => {
     expect(source).toContain('active?: boolean')
     expect(source).toContain('pressed?: boolean')
     expect(source).toContain("'ui-icon-button--active': active")
-    expect(source).toContain(':aria-pressed="pressed === undefined ? undefined : String(pressed)"')
+    expect(source).toContain(':aria-pressed="pressed"')
   })
 
   it('allows icon buttons to keep concise labels and richer tooltips', () => {

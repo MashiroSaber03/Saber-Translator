@@ -247,14 +247,17 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import {
   getProviderOptionsForCapability,
   providerRequiresApiKey,
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
-import { configApi } from '@/api/config'
+import {
+  fetchModels as fetchV2Models,
+  testAiTranslateConnection,
+} from '@/api/v2/diagnostics'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
@@ -284,14 +287,6 @@ function roundFieldId(index: number, field: string) {
   return `proofreadingRound${index}${field}`
 }
 
-watch(
-  () => settingsStore.settings.proofreading.rounds,
-  () => {
-    settingsStore.saveToStorage()
-  },
-  { deep: true }
-)
-
 function getRoundModelOptions(index: number) {
   const options = [{ label: '-- 选择模型 --', value: '' }]
   getRoundModelDiscovery(index).models.value.forEach(model => {
@@ -320,7 +315,7 @@ function getRoundModelDiscovery(index: number): ReturnType<typeof useAiModelDisc
           : false,
       }
     },
-    fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+    fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
       provider,
       apiKey,
       baseUrl,
@@ -389,7 +384,7 @@ async function testRoundConnection(index: number) {
   toast.info(`正在测试轮次 ${index + 1} 的连接...`)
 
   try {
-    const result = await configApi.testAiTranslateConnection({
+    const result = await testAiTranslateConnection({
       provider,
       apiKey,
       modelName,

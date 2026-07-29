@@ -48,8 +48,7 @@ describe('type source contracts', () => {
       'SessionData',
       'BookData',
       'PluginData',
-      'FontInfo',
-      'ServerInfoResponse',
+      'FetchModelsResponse',
     ]) {
       expect(apiTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export interface ${typeName}`)
     }
@@ -60,8 +59,7 @@ describe('type source contracts', () => {
       './session',
       './bookshelf',
       './plugin',
-      './configApi',
-      './systemApi',
+      './diagnostics',
     ]) {
       expect(apiTypes).toContain(`from '${exportPath}'`)
     }
@@ -71,8 +69,7 @@ describe('type source contracts', () => {
     expect(source('src/types/session.ts')).toContain('export interface SessionData')
     expect(source('src/types/bookshelf.ts')).toContain('export interface BookData')
     expect(source('src/types/plugin.ts')).toContain('export interface PluginData')
-    expect(source('src/types/configApi.ts')).toContain('export interface FontInfo')
-    expect(source('src/types/systemApi.ts')).toContain('export interface ServerInfoResponse')
+    expect(source('src/types/diagnostics.ts')).toContain('export interface FetchModelsResponse')
   })
 
   it('keeps settings schema types split by owner behind the public settings barrel', () => {
@@ -327,7 +324,7 @@ describe('type source contracts', () => {
   it('keeps bubble type helper comments focused on render-direction behavior', () => {
     const bubbleTypes = source('src/types/bubble.ts')
 
-    expect(bubbleTypes).not.toContain('/**')
+    expect(bubbleTypes).toContain('Stable backend identity')
     expect(bubbleTypes).not.toContain('// ============================================================')
     expect(bubbleTypes).not.toContain('气泡状态类型定义')
     expect(bubbleTypes).not.toContain('与后端 BubbleState 数据类对应')
@@ -378,7 +375,6 @@ describe('type source contracts', () => {
 
   it('keeps cross-cutting barrel files free of mechanical narration', () => {
     const files = [
-      'src/composables/translation/core/steps/index.ts',
       'src/utils/index.ts',
     ]
 

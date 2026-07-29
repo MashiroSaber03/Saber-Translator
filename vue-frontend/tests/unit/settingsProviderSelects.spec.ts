@@ -18,13 +18,11 @@ const { fetchModelsMock } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  configApi: {
-    fetchModels: fetchModelsMock,
-    testAiTranslateConnection: vi.fn(),
-    testAiVisionOcrConnection: vi.fn(),
-    testBaiduOcrConnection: vi.fn(),
-  },
+vi.mock('@/api/v2/diagnostics', () => ({
+  fetchModels: fetchModelsMock,
+  testAiTranslateConnection: vi.fn(),
+  testAiVisionOcrConnection: vi.fn(),
+  testBaiduOcrConnection: vi.fn(),
 }))
 
 vi.mock('@/utils/toast', () => ({

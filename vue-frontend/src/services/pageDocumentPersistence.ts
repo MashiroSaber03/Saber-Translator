@@ -1,10 +1,16 @@
-import { mutatePageDocument, type V2PageDocument } from '@/api/v2/content'
+import {
+  mutatePageDocument,
+  type V2PageDocument,
+  type V2PageDocumentBatchMutation,
+} from '@/api/v2/content'
 import { pageDocumentToBubbles } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import type { BubbleState } from '@/types/bubble'
 
 interface PersistedPageState {
+  debounceResolve: (() => void) | null
+  debounceTimer: ReturnType<typeof setTimeout> | null
   defaultFontChanged: boolean
   desiredDefaultFontId: string | null
   desiredPropagateStyleFields: Set<string>
@@ -13,11 +19,15 @@ interface PersistedPageState {
   desiredVersion: number
   documentRevision: number
   lastError: Error | null
+  lastQueuedAt: number
   persisted: BubbleState[]
   promise: Promise<void> | null
   saving: boolean
+  flushRequested: boolean
 }
 
+const PAGE_DOCUMENT_TRAILING_MS = 150
+const PAGE_DOCUMENT_CACHE_SIZE = 3
 const states = new Map<string, PersistedPageState>()
 
 function cloneBubbles(bubbles: BubbleState[]): BubbleState[] {
@@ -40,6 +50,24 @@ function bubbleFields(bubble: BubbleState): Record<string, unknown> {
 function ensureBubbleIds(bubbles: BubbleState[]): void {
   for (const bubble of bubbles) {
     if (!bubble.backendBubbleId) bubble.backendBubbleId = crypto.randomUUID()
+  }
+}
+
+function touchState(pageId: string, state: PersistedPageState): void {
+  states.delete(pageId)
+  states.set(pageId, state)
+}
+
+function evictSettledStates(protectedPageId: string): void {
+  if (states.size <= PAGE_DOCUMENT_CACHE_SIZE) return
+  for (const [pageId, state] of states) {
+    if (states.size <= PAGE_DOCUMENT_CACHE_SIZE) return
+    if (
+      pageId === protectedPageId
+      || state.promise
+      || state.lastError
+    ) continue
+    states.delete(pageId)
   }
 }
 
@@ -90,7 +118,9 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
       && canonical(existing.desired) === canonical(existing.persisted)
     )
   ) {
-    states.set(document.pageId, {
+    const state: PersistedPageState = {
+      debounceResolve: null,
+      debounceTimer: null,
       defaultFontChanged: false,
       desiredDefaultFontId: document.defaultFontId ?? null,
       desiredPropagateStyleFields: new Set(),
@@ -99,12 +129,18 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
       desiredVersion: 0,
       documentRevision: document.documentRevision,
       lastError: null,
+      lastQueuedAt: 0,
       persisted: cloneBubbles(bubbles),
       promise: null,
       saving: false,
-    })
+      flushRequested: false,
+    }
+    touchState(document.pageId, state)
+    evictSettledStates(document.pageId)
     return bubbles
   }
+  touchState(document.pageId, existing)
+  evictSettledStates(document.pageId)
   return cloneBubbles(existing.desired)
 }
 
@@ -132,6 +168,8 @@ export function queuePageDocumentMutation(
   let state = states.get(pageId)
   if (!state) {
     state = {
+      debounceResolve: null,
+      debounceTimer: null,
       defaultFontChanged: false,
       desiredDefaultFontId: null,
       desiredPropagateStyleFields: new Set(),
@@ -140,12 +178,15 @@ export function queuePageDocumentMutation(
       desiredVersion: 0,
       documentRevision,
       lastError: null,
+      lastQueuedAt: 0,
       persisted: [],
       promise: null,
       saving: false,
+      flushRequested: false,
     }
     states.set(pageId, state)
   }
+  touchState(pageId, state)
   state.desired = cloneBubbles(bubbles)
   if (Object.hasOwn(style, 'defaultFontId')) {
     state.defaultFontChanged = true
@@ -156,10 +197,12 @@ export function queuePageDocumentMutation(
     state.desiredPropagateStyleFields.add(field)
   }
   state.desiredVersion += 1
+  state.lastQueuedAt = Date.now()
   state.lastError = null
   if (!state.promise) {
     state.promise = persistLoop(pageId, state).finally(() => {
       state!.promise = null
+      evictSettledStates(pageId)
     })
   }
   return state.promise
@@ -172,6 +215,7 @@ async function persistLoop(
   state.saving = true
   try {
     while (true) {
+      await waitForTrailingWindow(state)
       const sentVersion = state.desiredVersion
       const sent = cloneBubbles(state.desired)
       const mutations = mutationsFor(state.persisted, sent)
@@ -191,7 +235,7 @@ async function persistLoop(
         ...(Object.keys(sentStylePatch).length > 0
           ? {
               pageStyleDefaultsPatch: sentStylePatch,
-              propagateStyleFields: sentPropagation,
+              propagateStyleFields: sentPropagation as V2PageDocumentBatchMutation['propagateStyleFields'],
             }
           : {}),
       })
@@ -243,14 +287,43 @@ async function persistLoop(
   }
 }
 
+async function waitForTrailingWindow(state: PersistedPageState): Promise<void> {
+  while (!state.flushRequested) {
+    const remaining = PAGE_DOCUMENT_TRAILING_MS - (Date.now() - state.lastQueuedAt)
+    if (remaining <= 0) return
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        state.debounceTimer = null
+        state.debounceResolve = null
+        resolve()
+      }
+      state.debounceResolve = finish
+      state.debounceTimer = setTimeout(finish, remaining)
+    })
+  }
+  state.flushRequested = false
+}
+
 export function hasPendingPageDocument(pageId: string): boolean {
   const state = states.get(pageId)
-  return Boolean(state?.saving || state?.lastError)
+  return Boolean(state?.promise || state?.lastError)
+}
+
+export function isPageDocumentRegistered(pageId: string): boolean {
+  return states.has(pageId)
 }
 
 export async function flushPageDocument(pageId: string): Promise<void> {
   const state = states.get(pageId)
   if (!state) return
+  if (state.promise) {
+    state.flushRequested = true
+    if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    state.debounceResolve?.()
+  }
   if (state.promise) await state.promise
   if (state.lastError) throw state.lastError
 }

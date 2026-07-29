@@ -10,14 +10,21 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { hasPendingPageDocument } from '@/services/pageDocumentPersistence'
 import { useToast } from '@/utils/toast'
 import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
-import type {
-  PageSelection,
-  TranslationProgress,
-} from './translation/core/types'
-
-export type { PageSelection, TranslationProgress } from './translation/core/types'
-
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
+
+export interface PageSelection {
+  pages: number[]
+}
+
+export interface TranslationProgress {
+  current: number
+  total: number
+  completed: number
+  failed: number
+  isInProgress: boolean
+  label?: string
+  percentage?: number
+}
 
 export interface TranslateResult {
   success: boolean

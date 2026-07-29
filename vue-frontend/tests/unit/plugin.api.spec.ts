@@ -1,4 +1,3 @@
-import JSZip from 'jszip'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -90,18 +89,16 @@ describe('plugin v3 api', () => {
     expect(result.blob).toBe(blob)
   })
 
-  it('reads plugin.json and imports a v3 package with CAS and idempotency', async () => {
-    const archive = new JSZip()
-    archive.file('plugin.json', JSON.stringify({
-      schema_version: 3,
-      plugin_id: 'sample_plugin',
-    }))
-    archive.file('plugin.py', 'class Plugin:\n    pass\n')
-    const bytes = await archive.generateAsync({ type: 'uint8array' })
-    const file = new File([bytes], 'sample_plugin.zip', {
+  it('lets the backend identify and import a v3 package', async () => {
+    const file = new File(['backend-owned-zip'], 'sample_plugin.zip', {
       type: 'application/zip',
     })
-    uploadMock.mockResolvedValue(pluginV2)
+    uploadMock.mockResolvedValue({
+      pluginId: 'sample_plugin',
+      pluginVersionId: 'version-1',
+      packageVersion: '1.0.0',
+      currentRevision: 7,
+    })
     getMock.mockResolvedValue({ items: [pluginV2] })
 
     const { importPlugin } = await import('@/api/plugin')
@@ -117,6 +114,46 @@ describe('plugin v3 api', () => {
       headers: { 'Idempotency-Key': 'test-idempotency-key' },
     })
     expect(result.plugin?.id).toBe('sample_plugin')
+  })
+
+  it('retries an existing package with backend-provided CAS metadata', async () => {
+    const file = new File(['backend-owned-zip'], 'renamed-package.zip', {
+      type: 'application/zip',
+    })
+    uploadMock
+      .mockRejectedValueOnce({
+        status: 409,
+        details: {
+          pluginId: 'sample_plugin',
+          currentRevision: 7,
+        },
+      })
+      .mockResolvedValueOnce({
+        pluginId: 'sample_plugin',
+        pluginVersionId: 'version-2',
+        packageVersion: '2.0.0',
+        currentRevision: 8,
+      })
+    getMock.mockResolvedValue({
+      items: [{
+        ...pluginV2,
+        pluginVersionId: 'version-2',
+        packageVersion: '2.0.0',
+        currentRevision: 8,
+      }],
+    })
+
+    const { importPlugin } = await import('@/api/plugin')
+    await expect(importPlugin(file)).rejects.toMatchObject({ status: 409 })
+    const result = await importPlugin(file, true)
+
+    const replacementForm = uploadMock.mock.calls[1]?.[1] as FormData
+    expect(replacementForm.get('baseRevision')).toBe('7')
+    expect(result.plugin).toMatchObject({
+      id: 'sample_plugin',
+      version: '2.0.0',
+      current_revision: 8,
+    })
   })
 
   it('uses v2 management routes and cached CAS revisions', async () => {

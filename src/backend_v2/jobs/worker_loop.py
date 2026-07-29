@@ -16,6 +16,7 @@ from src.backend_v2.jobs.repository import (
 
 
 StepHandler = Callable[[AttemptFence, Mapping[str, Any]], Mapping[str, Any]]
+DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 
 
 class AttemptHeartbeat:
@@ -107,7 +108,7 @@ class JobWorkerLoop:
                     config,
                 )
             if config.get("executionMode") == "parallel":
-                self._run_parallel_attempt(heartbeat, stop_event)
+                self._run_parallel_attempt(heartbeat, stop_event, config)
             else:
                 self._run_sequential_attempt(heartbeat, stop_event)
         except AttemptFenced:
@@ -216,6 +217,7 @@ class JobWorkerLoop:
         self,
         heartbeat: AttemptHeartbeat,
         stop_event: threading.Event,
+        config: Mapping[str, Any],
     ) -> None:
         """Run one serial worker per step kind so different stages can overlap."""
 
@@ -230,6 +232,15 @@ class JobWorkerLoop:
         admission_closed = threading.Event()
         worker_errors: list[BaseException] = []
         error_lock = threading.Lock()
+        try:
+            deep_learning_concurrency = int(
+                config.get("deepLearningConcurrency", 1)
+            )
+        except (TypeError, ValueError):
+            deep_learning_concurrency = 1
+        deep_learning_admission = threading.Semaphore(
+            max(1, min(4, deep_learning_concurrency))
+        )
 
         def run_pool(pool_kind: str) -> None:
             while (
@@ -265,26 +276,32 @@ class JobWorkerLoop:
                         )
                         continue
                     try:
-                        effective_step = (
-                            self.plugin_runtime.before_step(
-                                heartbeat.fence,
-                                step,
+                        def execute_step() -> Mapping[str, Any]:
+                            effective_step = (
+                                self.plugin_runtime.before_step(
+                                    heartbeat.fence,
+                                    step,
+                                )
+                                if self.plugin_runtime is not None
+                                else step
                             )
-                            if self.plugin_runtime is not None
-                            else step
-                        )
-                        checkpoint = handler(
-                            heartbeat.fence,
-                            effective_step,
-                        )
-                        if self.plugin_runtime is not None:
-                            checkpoint = (
-                                self.plugin_runtime.after_step(
+                            checkpoint = handler(
+                                heartbeat.fence,
+                                effective_step,
+                            )
+                            if self.plugin_runtime is not None:
+                                checkpoint = self.plugin_runtime.after_step(
                                     heartbeat.fence,
                                     effective_step,
                                     checkpoint,
                                 )
-                            )
+                            return checkpoint
+
+                        if pool_kind in DEEP_LEARNING_STEP_KINDS:
+                            with deep_learning_admission:
+                                checkpoint = execute_step()
+                        else:
+                            checkpoint = execute_step()
                     except Exception as exc:
                         if heartbeat.fenced.is_set():
                             return

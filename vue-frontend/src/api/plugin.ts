@@ -1,9 +1,8 @@
-import JSZip from 'jszip'
-
 import { apiClient } from './client'
 import { downloadBlob } from './download'
 import { newIdempotencyKey } from './v2/content'
 import type { ApiResponse, PluginData } from '@/types'
+import type { components } from './generated/v2'
 
 interface PluginV2 {
   pluginId: string
@@ -37,6 +36,13 @@ interface PluginConfigV2 {
   schema: Record<string, unknown>
   value: Record<string, unknown>
   configRevision: number
+}
+
+type PluginImportResultV2 = components['schemas']['PluginImportResult']
+
+interface PluginImportConflict {
+  currentRevision: number
+  pluginId: string
 }
 
 export interface PluginListResponse {
@@ -78,6 +84,7 @@ export interface PluginImportResponse {
 const pluginRevisions = new Map<string, number>()
 const configRevisions = new Map<string, number>()
 const defaultStates = new Map<string, boolean>()
+const importConflicts = new WeakMap<File, PluginImportConflict>()
 
 function pluginEndpoint(pluginId: string, suffix = ''): string {
   return `/api/v2/plugins/${encodeURIComponent(pluginId)}${suffix}`
@@ -202,31 +209,47 @@ export async function exportPlugin(pluginId: string): Promise<{ blob: Blob; file
   })
 }
 
-async function readPluginId(file: File): Promise<string> {
-  const archive = await JSZip.loadAsync(file)
-  const manifestEntry = archive.file('plugin.json')
-  if (!manifestEntry) throw new Error('插件包缺少 plugin.json')
-  const manifest = JSON.parse(await manifestEntry.async('text')) as {
-    plugin_id?: unknown
+function pluginImportConflict(error: unknown): PluginImportConflict | null {
+  if (!error || typeof error !== 'object') return null
+  const apiError = error as {
+    details?: Record<string, unknown>
+    status?: number
   }
-  const pluginId = String(manifest.plugin_id || '').trim()
-  if (!pluginId) throw new Error('plugin.json 缺少 plugin_id')
-  return pluginId
+  if (apiError.status !== 409) return null
+  const pluginId = String(apiError.details?.pluginId || '').trim()
+  const currentRevision = Number(apiError.details?.currentRevision)
+  if (!pluginId || !Number.isInteger(currentRevision) || currentRevision < 1) {
+    return null
+  }
+  return { pluginId, currentRevision }
 }
 
 export async function importPlugin(file: File, replace = false): Promise<PluginImportResponse> {
-  const pluginId = await readPluginId(file)
-  const baseRevision = replace ? (pluginRevisions.get(pluginId) || 0) : 0
+  const conflict = importConflicts.get(file)
+  if (replace && !conflict) {
+    throw new Error('插件替换上下文已失效，请重新选择插件包')
+  }
   const formData = new FormData()
   formData.append('file', file)
-  formData.append('baseRevision', String(baseRevision))
-  await apiClient.upload('/api/v2/plugins/import', formData, {
-    headers: { 'Idempotency-Key': newIdempotencyKey() },
-  })
+  formData.append('baseRevision', String(replace ? conflict!.currentRevision : 0))
+  let imported: PluginImportResultV2
+  try {
+    imported = await apiClient.upload<PluginImportResultV2>(
+      '/api/v2/plugins/import',
+      formData,
+      { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+    )
+  } catch (error) {
+    const nextConflict = pluginImportConflict(error)
+    if (nextConflict) importConflicts.set(file, nextConflict)
+    throw error
+  }
+  importConflicts.delete(file)
+  pluginRevisions.set(imported.pluginId, imported.currentRevision)
   const current = await getPlugins()
   return {
     success: true,
-    plugin: current.plugins.find(plugin => plugin.id === pluginId),
+    plugin: current.plugins.find(plugin => plugin.id === imported.pluginId),
   }
 }
 

@@ -229,16 +229,17 @@ function normalizeWorldbookAddPayload(value: unknown): CharacterStudioWorldbookA
 function normalizeWorldbookChanges(value: unknown): CharacterStudioWorldbookChanges {
   const changes = ensureRecord(value, 'worldbook_update.changes')
   const normalized: CharacterStudioWorldbookChanges = {}
+  const target = normalized as unknown as Record<string, unknown>
   for (const [key, raw] of Object.entries(changes)) {
     if (!WORLD_BOOK_CHANGE_KEYS.has(key as keyof CharacterStudioWorldbookChanges)) {
       throw new Error(`worldbook_update 不支持字段: ${key}`)
     }
     if (key === 'comment' || key === 'content') {
-      normalized[key] = String(raw)
+      target[key] = String(raw)
     } else if (key === 'position') {
       normalized.position = normalizeLorebookPosition(raw, 'worldbook_update.position')
     } else if (key === 'keys' || key === 'secondary_keys') {
-      normalized[key] = normalizeStringList(raw, `worldbook_update.${key}`)
+      target[key] = normalizeStringList(raw, `worldbook_update.${key}`)
     } else if (
       key === 'enabled' ||
       key === 'constant' ||
@@ -251,9 +252,9 @@ function normalizeWorldbookChanges(value: unknown): CharacterStudioWorldbookChan
       key === 'match_character_depth_prompt' ||
       key === 'match_scenario'
     ) {
-      normalized[key] = normalizeBoolean(raw, `worldbook_update.${key}`)
+      target[key] = normalizeBoolean(raw, `worldbook_update.${key}`)
     } else {
-      normalized[key] = normalizeNumber(raw, `worldbook_update.${key}`)
+      target[key] = normalizeNumber(raw, `worldbook_update.${key}`)
     }
   }
   return normalized
@@ -276,16 +277,17 @@ function normalizeRegexAddPayload(value: unknown): CharacterStudioRegexAddPayloa
 function normalizeRegexChanges(value: unknown): CharacterStudioRegexChanges {
   const changes = ensureRecord(value, 'regex_update.changes')
   const normalized: CharacterStudioRegexChanges = {}
+  const target = normalized as unknown as Record<string, unknown>
   for (const [key, raw] of Object.entries(changes)) {
     if (!REGEX_CHANGE_KEYS.has(key as keyof CharacterStudioRegexChanges)) {
       throw new Error(`regex_update 不支持字段: ${key}`)
     }
     if (key === 'scriptName' || key === 'findRegex' || key === 'replaceString') {
-      normalized[key] = String(raw)
+      target[key] = String(raw)
     } else if (key === 'placement') {
       normalized.placement = normalizePlacement(raw, 'regex_update.placement')
     } else {
-      normalized[key] = normalizeBoolean(raw, `regex_update.${key}`)
+      target[key] = normalizeBoolean(raw, `regex_update.${key}`)
     }
   }
   return normalized
@@ -311,12 +313,13 @@ function normalizeTaskAddPayload(value: unknown): CharacterStudioTaskAddPayload 
 function normalizeTaskChanges(value: unknown): CharacterStudioTaskChanges {
   const changes = ensureRecord(value, 'task_update.changes')
   const normalized: CharacterStudioTaskChanges = {}
+  const target = normalized as unknown as Record<string, unknown>
   for (const [key, raw] of Object.entries(changes)) {
     if (!TASK_CHANGE_KEYS.has(key as keyof CharacterStudioTaskChanges)) {
       throw new Error(`task_update 不支持字段: ${key}`)
     }
     if (key === 'name' || key === 'commands') {
-      normalized[key] = String(raw)
+      target[key] = String(raw)
     } else if (key === 'triggerTiming') {
       const triggerTiming = String(raw)
       if (!VALID_TRIGGER_TIMINGS.has(triggerTiming)) {
@@ -326,7 +329,7 @@ function normalizeTaskChanges(value: unknown): CharacterStudioTaskChanges {
     } else if (key === 'interval') {
       normalized.interval = normalizeNumber(raw, 'task_update.interval')
     } else {
-      normalized[key] = normalizeBoolean(raw, `task_update.${key}`)
+      target[key] = normalizeBoolean(raw, `task_update.${key}`)
     }
   }
   return normalized

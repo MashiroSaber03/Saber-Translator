@@ -3,70 +3,84 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 
-const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
-  getUserSettingsMock: vi.fn(),
-  saveUserSettingsMock: vi.fn(),
-}))
-
-vi.mock('@/api/config', () => ({
-  getUserSettings: getUserSettingsMock,
-  saveUserSettings: saveUserSettingsMock,
-}))
-
+import type { V2SettingsDocument, V2SettingsTransaction } from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
-type SavedPluginAgentPayload = {
-  settingsSchemaVersion: unknown
-  translation?: {
-    modelName?: unknown
-  }
-  pluginAgent?: Record<string, unknown> & {
-    modelName?: unknown
-    rpmLimit?: unknown
-    useStream?: unknown
-  }
-  providerConfigs?: {
-    pluginAgent?: Record<string, {
-      apiKey?: unknown
-      modelName?: unknown
-      customBaseUrl?: unknown
-    }>
+const settingsApiMocks = vi.hoisted(() => ({
+  getV2Settings: vi.fn(),
+  saveV2SettingsTransaction: vi.fn(),
+}))
+
+vi.mock('@/api/v2/settings', () => ({
+  getV2Settings: settingsApiMocks.getV2Settings,
+  saveV2SettingsTransaction: settingsApiMocks.saveV2SettingsTransaction,
+}))
+
+function backendDocument(
+  agentModel = 'backend-agent-model',
+  revision = 5,
+  providerRevision = 3,
+): V2SettingsDocument {
+  const settings = createDefaultSettings()
+  settings.translation.modelName = 'backend-translation-model'
+  settings.pluginAgent.provider = 'siliconflow'
+  settings.pluginAgent.modelName = agentModel
+  return {
+    settings: [{
+      domain: 'translation',
+      payload: settings as unknown as Record<string, unknown>,
+      revision,
+      schemaVersion: 3,
+    }],
+    bookSettings: [],
+    providerSettings: [{
+      domain: 'plugin_agent',
+      provider: 'siliconflow',
+      payload: {
+        modelName: agentModel,
+        customBaseUrl: '',
+        openaiOptions: settings.pluginAgent.openaiOptions,
+      },
+      revision: providerRevision,
+      schemaVersion: 1,
+      credentialVersionId: 'credential-version-1',
+    }],
+    credentials: [{
+      credentialId: 'credential-1',
+      credentialVersionId: 'credential-version-1',
+      currentVersion: 1,
+      domain: 'plugin_agent',
+      hasKey: true,
+      provider: 'siliconflow',
+      revision: 2,
+    }],
   }
 }
 
 describe('settings store plugin agent configuration', () => {
   beforeEach(() => {
-    localStorage.clear()
     setActivePinia(createPinia())
-    getUserSettingsMock.mockReset()
-    saveUserSettingsMock.mockReset()
-    getUserSettingsMock.mockResolvedValue({
-      success: true,
-      settings: {
-        settingsSchemaVersion: 3,
-        translation: {
-          modelName: 'backend-translation-model',
-        },
-        pluginAgent: {
-          provider: 'siliconflow',
-          modelName: 'backend-agent-model',
-        },
-        providerConfigs: {
-          pluginAgent: {
-            siliconflow: {
-              modelName: 'backend-agent-model',
-            },
-          },
-        },
-      },
-    })
-    saveUserSettingsMock.mockResolvedValue({
-      success: true,
+    settingsApiMocks.getV2Settings.mockReset()
+    settingsApiMocks.saveV2SettingsTransaction.mockReset()
+    settingsApiMocks.getV2Settings.mockResolvedValue(backendDocument())
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [{ domain: 'translation', revision: 6 }],
+      bookSettings: [],
+      providerSettings: [{
+        domain: 'plugin_agent',
+        provider: 'siliconflow',
+        revision: 4,
+      }],
+      credentials: [],
     })
   })
 
   it('keeps plugin agent store tests on current payload contracts without broad any', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/settingsStorePluginAgent.spec.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/settingsStorePluginAgent.spec.ts'),
+      'utf8',
+    )
     const broadRecord = 'Record<string, ' + 'any>'
 
     expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
@@ -84,7 +98,6 @@ describe('settings store plugin agent configuration', () => {
       modelName: 'sf-model',
       customBaseUrl: 'https://sf.example/v1',
     })
-
     store.setPluginAgentProvider('deepseek')
 
     expect(store.providerConfigs.pluginAgent.siliconflow).toEqual(
@@ -111,21 +124,29 @@ describe('settings store plugin agent configuration', () => {
       extraBody: { reasoning_effort: 'low' },
     })
 
-    expect(store.settings.pluginAgent.openaiOptions.execution.rpmLimit).toBe(11)
-    expect(store.settings.pluginAgent.openaiOptions.execution.transportRetries).toBe(2)
-    expect(store.settings.pluginAgent.openaiOptions.execution.businessRetries).toBe(4)
-    expect(store.settings.pluginAgent.openaiOptions.request.forceJsonOutput).toBe(true)
-    expect(store.settings.pluginAgent.openaiOptions.execution.useStream).toBe(false)
-    expect(store.settings.pluginAgent.openaiOptions.request.extraBody).toEqual({
-      reasoning_effort: 'low',
+    expect(store.settings.pluginAgent.openaiOptions.execution).toMatchObject({
+      rpmLimit: 11,
+      transportRetries: 2,
+      businessRetries: 4,
+      useStream: false,
+    })
+    expect(store.settings.pluginAgent.openaiOptions.request).toMatchObject({
+      forceJsonOutput: true,
+      extraBody: { reasoning_effort: 'low' },
     })
     expect((store.settings.pluginAgent as Record<string, unknown>).rpmLimit).toBeUndefined()
     expect((store.settings.pluginAgent as Record<string, unknown>).useStream).toBeUndefined()
   })
 
-  it('saves only plugin agent settings to backend payload', async () => {
-    const store = useSettingsStore()
+  it('saves only plugin agent settings against a fresh backend revision', async () => {
+    const reloaded = backendDocument('agent-model', 6, 4)
+    settingsApiMocks.getV2Settings
+      .mockResolvedValueOnce(backendDocument())
+      .mockResolvedValueOnce(backendDocument())
+      .mockResolvedValueOnce(reloaded)
 
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
     store.settings.translation.modelName = 'unsaved-local-translation-change'
     store.updatePluginAgent({
       apiKey: 'agent-key',
@@ -133,30 +154,55 @@ describe('settings store plugin agent configuration', () => {
       customBaseUrl: 'https://agent.example/v1',
     })
 
-    const success = await store.savePluginAgentSettings()
+    expect(await store.savePluginAgentSettings()).toBe(true)
 
-    expect(success).toBe(true)
-    expect(getUserSettingsMock).toHaveBeenCalledTimes(1)
-    expect(saveUserSettingsMock).toHaveBeenCalledTimes(1)
-
-    const payload = saveUserSettingsMock.mock.calls[0]?.[0] as SavedPluginAgentPayload
-    expect(payload.translation?.modelName).toBe('backend-translation-model')
-    expect(payload.pluginAgent?.modelName).toBe('agent-model')
-    expect(payload.providerConfigs?.pluginAgent?.siliconflow).toEqual(
-      expect.objectContaining({
-        apiKey: 'agent-key',
+    expect(settingsApiMocks.getV2Settings).toHaveBeenNthCalledWith(
+      2,
+      ['translation', 'plugin_agent'],
+    )
+    const transaction = (
+      settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
+    ) as V2SettingsTransaction
+    expect(transaction.settings).toHaveLength(1)
+    expect(transaction.settings?.[0]).toMatchObject({
+      domain: 'translation',
+      baseRevision: 5,
+      schemaVersion: 3,
+    })
+    expect(transaction.settings?.[0]?.payload).toMatchObject({
+      translation: { modelName: 'backend-translation-model' },
+      pluginAgent: {
         modelName: 'agent-model',
         customBaseUrl: 'https://agent.example/v1',
+        apiKey: '',
+      },
+    })
+    expect(transaction.providerSettings).toEqual([
+      expect.objectContaining({
+        domain: 'plugin_agent',
+        provider: 'siliconflow',
+        baseRevision: 3,
+        credentialEditRef: 'credential:plugin_agent:siliconflow',
+        payload: expect.objectContaining({
+          modelName: 'agent-model',
+          customBaseUrl: 'https://agent.example/v1',
+        }),
       }),
-    )
-    expect(payload.pluginAgent?.rpmLimit).toBeUndefined()
-    expect(payload.pluginAgent?.useStream).toBeUndefined()
-    expect(payload.settingsSchemaVersion).toBe(3)
+    ])
+    expect(transaction.credentialEdits).toEqual([{
+      domain: 'plugin_agent',
+      provider: 'siliconflow',
+      secret: { api_key: 'agent-key' },
+      baseRevision: 2,
+      credentialId: 'credential-1',
+      clientRef: 'credential:plugin_agent:siliconflow',
+    }])
+    expect(store.settings.translation.modelName).toBe('unsaved-local-translation-change')
+    expect(store.settings.pluginAgent.modelName).toBe('agent-model')
   })
 
-  it('resets plugin agent openai options to defaults when switching to uncached provider', () => {
+  it('resets plugin agent openai options to defaults for an uncached provider', () => {
     const store = useSettingsStore()
-
     store.updatePluginAgent({
       rpmLimit: 23,
       businessRetries: 5,

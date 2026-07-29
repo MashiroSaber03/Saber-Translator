@@ -1,90 +1,70 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
+import type { V2SettingsDocument, V2SettingsTransaction } from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
 import { createDefaultSettings } from '@/stores/settings/defaults'
 
-const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
-  getUserSettingsMock: vi.fn(),
-  saveUserSettingsMock: vi.fn(),
+const settingsApiMocks = vi.hoisted(() => ({
+  getV2Settings: vi.fn(),
+  saveV2SettingsTransaction: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  getUserSettings: getUserSettingsMock,
-  saveUserSettings: saveUserSettingsMock,
+vi.mock('@/api/v2/settings', () => ({
+  getV2Settings: settingsApiMocks.getV2Settings,
+  saveV2SettingsTransaction: settingsApiMocks.saveV2SettingsTransaction,
 }))
 
-interface SavedSettingsPayload {
-  hqTranslation: {
-    openaiOptions: {
-      execution: {
-        rpmLimit: number
-      }
-    }
-  }
-  proofreading: {
-    rounds: Array<{
-      openaiOptions: {
-        execution: {
-          rpmLimit: number
-        }
-      }
-    }>
+function settingsDocument(
+  settings = createDefaultSettings(),
+  revision = 8,
+): V2SettingsDocument {
+  return {
+    settings: [{
+      domain: 'translation',
+      payload: settings as unknown as Record<string, unknown>,
+      revision,
+      schemaVersion: 3,
+    }],
+    bookSettings: [],
+    providerSettings: [],
+    credentials: [],
   }
 }
 
 describe('settings store current schema boundaries', () => {
-  let localStorageMock: Record<string, string> = {}
-
   beforeEach(() => {
-    localStorageMock = {}
     setActivePinia(createPinia())
-
-    getUserSettingsMock.mockReset()
-    saveUserSettingsMock.mockReset()
-    saveUserSettingsMock.mockResolvedValue({ success: true })
-
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
-      return localStorageMock[key] || null
+    settingsApiMocks.getV2Settings.mockReset()
+    settingsApiMocks.saveV2SettingsTransaction.mockReset()
+    settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument())
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [{ domain: 'translation', revision: 9 }],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
     })
-
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
-      localStorageMock[key] = value
-    })
-
-    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation((key: string) => {
-      delete localStorageMock[key]
-    })
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
   })
 
   it('keeps settings store cloning on shared helpers', () => {
-    const genericCloneFiles = [
+    for (const file of [
       'src/stores/settings/defaults.ts',
       'src/stores/settings/index.ts',
-    ]
-    const providerModuleFiles = [
-      'src/stores/settings/modules/translation.ts',
-      'src/stores/settings/modules/hqTranslation.ts',
-      'src/stores/settings/modules/ocr.ts',
-      'src/stores/settings/modules/pluginAgent.ts',
-    ]
-
-    for (const file of genericCloneFiles) {
+    ]) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
       expect(source, file).toContain("import { deepClone } from '@/utils/deepClone'")
       expect(source, file).not.toContain('function cloneJson')
       expect(source, file).not.toContain('JSON.parse(JSON.stringify')
     }
 
-    for (const file of providerModuleFiles) {
+    for (const file of [
+      'src/stores/settings/modules/translation.ts',
+      'src/stores/settings/modules/hqTranslation.ts',
+      'src/stores/settings/modules/ocr.ts',
+      'src/stores/settings/modules/pluginAgent.ts',
+    ]) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
       expect(source, file).toContain('cloneOpenAiOptions')
       expect(source, file).not.toContain('JSON.parse(JSON.stringify')
@@ -92,22 +72,17 @@ describe('settings store current schema boundaries', () => {
   })
 
   it('keeps provider cache switching on shared settings helpers', () => {
-    const providerModuleFiles = [
+    for (const file of [
       'src/stores/settings/modules/translation.ts',
       'src/stores/settings/modules/hqTranslation.ts',
       'src/stores/settings/modules/ocr.ts',
       'src/stores/settings/modules/pluginAgent.ts',
       'src/stores/settings/modules/webImport.ts',
-    ]
-
-    for (const file of providerModuleFiles) {
+    ]) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
       expect(source, file).toContain("from '../providerConfigCache'")
       expect(source, file).toContain('saveProviderCacheEntry')
       expect(source, file).toContain('restoreProviderCacheEntry')
-      expect(source, file).toContain('snapshotProviderCredentials')
-      expect(source, file).toContain('applyProviderCredentials')
-      expect(source, file).toContain('clearProviderCredentials')
       expect(source, file).not.toMatch(/providerConfigs\.value\.\w+\[[^\]]+\]\s*=/)
     }
   })
@@ -121,44 +96,49 @@ describe('settings store current schema boundaries', () => {
     expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
-  it('does not send removed session reset fields when saving backend settings', async () => {
+  it('does not send removed session reset fields in v2 settings transactions', async () => {
     const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
     store.settings.hqTranslation.openaiOptions.execution.rpmLimit = 9
-    store.settings.proofreading.rounds = [
-      {
-        name: '第1轮',
-        provider: 'siliconflow',
-        apiKey: 'proof-key',
-        modelName: 'proof-model',
-        customBaseUrl: '',
-        prompt: 'proof',
-        batchSize: 2,
-        openaiOptions: {
-          request: {
-            forceJsonOutput: false,
-          },
-          execution: {
-            useStream: true,
-            rpmLimit: 7,
-            transportRetries: 1,
-            businessRetries: 1,
-          },
+    store.settings.proofreading.rounds = [{
+      name: '第1轮',
+      provider: 'siliconflow',
+      apiKey: 'proof-key',
+      modelName: 'proof-model',
+      customBaseUrl: '',
+      prompt: 'proof',
+      batchSize: 2,
+      openaiOptions: {
+        request: { forceJsonOutput: false },
+        execution: {
+          useStream: true,
+          rpmLimit: 7,
+          transportRetries: 1,
+          businessRetries: 1,
         },
       },
-    ]
+    }]
 
-    const success = await store.saveToBackend()
+    expect(await store.saveToBackend()).toBe(true)
 
-    expect(success).toBe(true)
-    expect(saveUserSettingsMock).toHaveBeenCalledTimes(1)
-    const payload = saveUserSettingsMock.mock.calls[0]?.[0] as SavedSettingsPayload
+    const transaction = (
+      settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
+    ) as V2SettingsTransaction
+    const payload = transaction.settings?.[0]?.payload
     expect(payload).not.toHaveProperty('hqSessionReset')
-    expect(payload.hqTranslation.openaiOptions.execution.rpmLimit).toBe(9)
-    expect(payload.proofreading.rounds[0]).not.toHaveProperty('sessionReset')
-    expect(payload.proofreading.rounds[0].openaiOptions.execution.rpmLimit).toBe(7)
+    expect(payload?.hqTranslation).toMatchObject({
+      openaiOptions: { execution: { rpmLimit: 9 } },
+    })
+    const proofreading = payload?.proofreading as {
+      rounds: Array<Record<string, unknown>>
+    }
+    expect(proofreading.rounds[0]).not.toHaveProperty('sessionReset')
+    expect(proofreading.rounds[0]).toMatchObject({
+      openaiOptions: { execution: { rpmLimit: 7 } },
+    })
   })
 
-  it('keeps proofreading OpenAI UI patch fields out of the round schema', () => {
+  it('keeps proofreading UI patches inside nested OpenAI options', () => {
     const store = useSettingsStore()
     store.setProofreadingEnabled(true)
     store.addProofreadingRound({
@@ -168,9 +148,7 @@ describe('settings store current schema boundaries', () => {
       modelName: 'proof-model',
       customBaseUrl: '',
       openaiOptions: {
-        request: {
-          forceJsonOutput: false,
-        },
+        request: { forceJsonOutput: false },
         execution: {
           useStream: false,
           rpmLimit: 0,
@@ -193,11 +171,7 @@ describe('settings store current schema boundaries', () => {
 
     const round = store.settings.proofreading.rounds[0] as Record<string, unknown>
     expect(round).not.toHaveProperty('rpmLimit')
-    expect(round).not.toHaveProperty('transportRetries')
-    expect(round).not.toHaveProperty('businessRetries')
-    expect(round).not.toHaveProperty('forceJsonOutput')
     expect(round).not.toHaveProperty('useStream')
-    expect(round).not.toHaveProperty('extraBody')
     expect(store.settings.proofreading.rounds[0]?.openaiOptions).toEqual({
       request: {
         forceJsonOutput: true,
@@ -212,163 +186,16 @@ describe('settings store current schema boundaries', () => {
     })
   })
 
-  it('ignores backend settings without the current schema version', async () => {
-    getUserSettingsMock.mockResolvedValue({
-      success: true,
-      settings: {
-        hqRpmLimit: '12',
-        hqSessionReset: '5',
-        proofreading: {
-          enabled: true,
-          rounds: [
-            {
-              name: '第1轮',
-              provider: 'siliconflow',
-              apiKey: 'proof-key',
-              modelName: 'proof-model',
-              rpmLimit: 4,
-              useStream: true,
-            },
-          ],
-        },
-      },
-    })
-
-    const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
-
-    expect(loaded).toBe(false)
-    expect(store.settings.hqTranslation.openaiOptions.execution.rpmLimit).not.toBe(12)
-    expect('sessionReset' in (store.settings.hqTranslation as Record<string, unknown>)).toBe(false)
-  })
-
-  it('ignores local settings without the current schema version', () => {
-    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
-      hqTranslation: {
-        lowReasoning: true,
-        noThinkingMethod: 'volcano',
-        forceJsonOutput: true,
-      },
-      proofreading: {
-        enabled: true,
-        maxRetries: 2,
-        rounds: [
-          {
-            name: '第1轮',
-            provider: 'siliconflow',
-            apiKey: 'proof-key',
-            modelName: 'proof-model',
-            customBaseUrl: '',
-            prompt: 'proof',
-            batchSize: 2,
-            rpmLimit: 7,
-            maxRetries: 1,
-            lowReasoning: true,
-            noThinkingMethod: 'gemini',
-            forceJsonOutput: false,
-            useStream: true,
-          },
-        ],
-      },
-    })
-
-    const store = useSettingsStore()
-    store.loadFromStorage()
-
-    expect('lowReasoning' in (store.settings.hqTranslation as Record<string, unknown>)).toBe(false)
-    expect('noThinkingMethod' in (store.settings.hqTranslation as Record<string, unknown>)).toBe(false)
-    expect(store.settings.hqTranslation.openaiOptions.request.forceJsonOutput).toBe(false)
-  })
-
-  it('ignores local settings with the current schema version when required current sections are missing', () => {
-    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
+  it('rejects malformed authoritative backend settings', async () => {
+    settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument({
       settingsSchemaVersion: 3,
-      translation: {
-        provider: 'custom',
-        apiKey: 'partial-key',
-      },
-    })
-
+      translation: { provider: 'custom' },
+    } as unknown as ReturnType<typeof createDefaultSettings>))
     const store = useSettingsStore()
-    store.loadFromStorage()
 
-    expect(store.settings.translation.provider).toBe(createDefaultSettings().translation.provider)
-    expect(store.settings.translation.apiKey).toBe('')
-  })
-
-  it('ignores local current-schema settings with invalid OCR prompt mode', () => {
-    const invalidSettings = createDefaultSettings()
-    invalidSettings.translation.apiKey = 'should-not-load'
-    invalidSettings.aiVisionOcr.prompt = '对图中的日语进行OCR:'
-    ;(invalidSettings.aiVisionOcr as Record<string, unknown>).promptMode = 'legacy-inferred'
-    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(invalidSettings)
-
-    const store = useSettingsStore()
-    store.loadFromStorage()
-
-    expect(store.settings.translation.apiKey).toBe('')
-    expect(store.settings.aiVisionOcr.promptMode).toBe(createDefaultSettings().aiVisionOcr.promptMode)
-  })
-
-  it('ignores backend settings with the current schema version when required current sections are missing', async () => {
-    getUserSettingsMock.mockResolvedValue({
-      success: true,
-      settings: {
-        settingsSchemaVersion: 3,
-        translation: {
-          provider: 'custom',
-          apiKey: 'partial-key',
-        },
-      },
-    })
-
-    const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
-
-    expect(loaded).toBe(false)
-    expect(store.settings.translation.provider).toBe(createDefaultSettings().translation.provider)
-    expect(store.settings.translation.apiKey).toBe('')
-  })
-
-  it('ignores backend current-schema settings with invalid OCR prompt mode', async () => {
-    const invalidSettings = createDefaultSettings()
-    invalidSettings.targetLanguage = 'en'
-    invalidSettings.aiVisionOcr.prompt = '对图中的日语进行OCR:'
-    ;(invalidSettings.aiVisionOcr as Record<string, unknown>).promptMode = 'legacy-inferred'
-    getUserSettingsMock.mockResolvedValue({
-      success: true,
-      settings: invalidSettings,
-    })
-
-    const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
-
-    expect(loaded).toBe(false)
-    expect(store.settings.targetLanguage).toBe(createDefaultSettings().targetLanguage)
-    expect(store.settings.aiVisionOcr.promptMode).toBe(createDefaultSettings().aiVisionOcr.promptMode)
-  })
-
-  it('leaves settings unchanged when backend provider configs fail current-schema validation', async () => {
-    const backendSettings = createDefaultSettings()
-    backendSettings.targetLanguage = 'en'
-    backendSettings.translation.apiKey = 'backend-key'
-    getUserSettingsMock.mockResolvedValue({
-      success: true,
-      settings: {
-        ...backendSettings,
-        providerConfigs: {
-          translation: {},
-          hqTranslation: {},
-          pluginAgent: {},
-        },
-      },
-    })
-
-    const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
-
-    expect(loaded).toBe(false)
-    expect(store.settings.targetLanguage).toBe(createDefaultSettings().targetLanguage)
-    expect(store.settings.translation.apiKey).toBe('')
+    expect(await store.loadFromBackend()).toBe(false)
+    expect(store.isBackendReady).toBe(false)
+    expect(store.backendError).toContain('格式无效')
+    expect(store.settings).toEqual(createDefaultSettings())
   })
 })

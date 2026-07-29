@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import OverlayLayer from '@/components/ui/OverlayLayer.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { V2Job } from '@/api/v2/jobs'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { describeJobTarget, progressPercent } from '@/stores/taskCenterProjection'
@@ -71,15 +73,24 @@ async function downloadArtifact(job: V2Job) {
 
 <template>
   <Teleport to="body">
-    <div v-if="store.drawerOpen" class="task-center" role="dialog" aria-modal="true" aria-label="任务中心">
-      <button class="task-center__backdrop" type="button" aria-label="关闭任务中心" @click="store.close" />
+    <OverlayLayer
+      v-if="store.drawerOpen"
+      class="task-center"
+      level="overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="任务中心"
+      @backdrop="store.close"
+    >
       <aside class="task-center__panel">
         <header class="task-center__header">
           <div>
             <h2>任务中心</h2>
             <p>后端持续执行 · 关闭页面不会停止任务</p>
           </div>
-          <button type="button" class="task-center__close" @click="store.close">关闭</button>
+          <UiButton size="sm" variant="ghost" class="task-center__close" @click="store.close">
+            关闭
+          </UiButton>
         </header>
 
         <div v-if="!store.connected" class="task-center__offline">
@@ -87,19 +98,42 @@ async function downloadArtifact(job: V2Job) {
         </div>
 
         <nav class="task-center__tabs" aria-label="任务分区">
-          <button type="button" :class="{ active: tab === 'queue' }" @click="tab = 'queue'">
+          <UiButton
+            size="sm"
+            variant="tab"
+            class="task-center__tab"
+            :class="{ 'task-center__tab--active': tab === 'queue' }"
+            @click="tab = 'queue'"
+          >
             队列 {{ store.queue.length }}
-          </button>
-          <button type="button" :class="{ active: tab === 'history' }" @click="tab = 'history'">
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="tab"
+            class="task-center__tab"
+            :class="{ 'task-center__tab--active': tab === 'history' }"
+            @click="tab = 'history'"
+          >
             历史 {{ store.history.length }}
-          </button>
+          </UiButton>
           <span class="task-center__spacer" />
-          <button v-if="tab === 'queue' && store.queuedCount" type="button" @click="store.cancelQueued">
+          <UiButton
+            v-if="tab === 'queue' && store.queuedCount"
+            size="xs"
+            variant="ghost"
+            tone="danger"
+            @click="store.cancelQueued"
+          >
             取消全部排队
-          </button>
-          <button v-if="tab === 'history' && store.history.length" type="button" @click="store.clearHistory">
+          </UiButton>
+          <UiButton
+            v-if="tab === 'history' && store.history.length"
+            size="xs"
+            variant="ghost"
+            @click="store.clearHistory"
+          >
             清空历史
-          </button>
+          </UiButton>
         </nav>
 
         <main class="task-center__content">
@@ -107,13 +141,18 @@ async function downloadArtifact(job: V2Job) {
           <p v-else-if="!groups.length" class="task-center__empty">这里还没有任务</p>
 
           <section v-for="group in groups" :key="group.key" class="task-batch">
-            <button type="button" class="task-batch__header" @click="toggle(group.key)">
+            <UiButton
+              variant="card-action"
+              block
+              class="task-batch__header"
+              @click="toggle(group.key)"
+            >
               <span>
                 <strong>{{ group.displayName }}</strong>
                 <small>{{ group.jobs.length }} 个任务</small>
               </span>
               <span>{{ expanded.has(group.key) || group.jobs.length === 1 ? '收起' : '展开' }}</span>
-            </button>
+            </UiButton>
 
             <div v-if="expanded.has(group.key) || group.jobs.length === 1" class="task-batch__jobs">
               <article v-for="job in group.jobs" :key="job.jobId" class="task-job">
@@ -133,41 +172,33 @@ async function downloadArtifact(job: V2Job) {
                   {{ job.blockedReason === 'draining_immediate_writes' ? '正在排空即时写入，新编辑已暂停' : `等待：${job.blockedReason}` }}
                 </p>
                 <div class="task-job__actions">
-                  <button
+                  <UiButton
                     v-if="job.status === 'completed'"
-                    type="button"
+                    size="xs"
+                    variant="secondary"
+                    class="task-job__action"
                     :disabled="downloading.has(job.jobId)"
                     @click="downloadArtifact(job)"
                   >
                     {{ downloading.has(job.jobId) ? '读取中…' : '下载产物' }}
-                  </button>
-                  <button v-if="job.status === 'running'" type="button" @click="store.pause(job.jobId)">暂停</button>
-                  <button v-if="job.status === 'paused'" type="button" @click="store.resume(job.jobId)">继续</button>
-                  <button v-if="job.status === 'interrupted'" type="button" @click="store.continueJob(job.jobId)">从检查点继续</button>
-                  <button v-if="canCancel(job)" type="button" @click="store.cancel(job.jobId)">取消</button>
+                  </UiButton>
+                  <UiButton v-if="job.status === 'running'" size="xs" variant="secondary" @click="store.pause(job.jobId)">暂停</UiButton>
+                  <UiButton v-if="job.status === 'paused'" size="xs" variant="secondary" @click="store.resume(job.jobId)">继续</UiButton>
+                  <UiButton v-if="job.status === 'interrupted'" size="xs" variant="secondary" @click="store.continueJob(job.jobId)">从检查点继续</UiButton>
+                  <UiButton v-if="canCancel(job)" size="xs" variant="ghost" tone="danger" @click="store.cancel(job.jobId)">取消</UiButton>
                 </div>
               </article>
             </div>
           </section>
         </main>
       </aside>
-    </div>
+    </OverlayLayer>
   </Teleport>
 </template>
 
 <style scoped>
 .task-center {
-  position: fixed;
-  z-index: var(--z-modal, 1000);
-  inset: 0;
-}
-
-.task-center__backdrop {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  background: rgb(15 23 42 / 42%);
-  border: 0;
+  background: var(--color-overlay-scrim-subtle);
 }
 
 .task-center__panel {
@@ -178,10 +209,10 @@ async function downloadArtifact(job: V2Job) {
   flex-direction: column;
   width: min(520px, 100vw);
   height: 100%;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
-  box-shadow: var(--shadow-xl);
+  color: var(--color-text-default);
+  background: var(--color-surface-base);
+  border-left: 1px solid var(--color-border-default);
+  box-shadow: 0 8px 16px var(--shadow-medium);
 }
 
 .task-center__header {
@@ -189,7 +220,7 @@ async function downloadArtifact(job: V2Job) {
   align-items: flex-start;
   justify-content: space-between;
   padding: 22px 24px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .task-center__header h2,
@@ -204,23 +235,23 @@ async function downloadArtifact(job: V2Job) {
 }
 
 .task-center__close,
-.task-center__tabs button,
-.task-job__actions button {
+.task-center__tab,
+.task-job__action {
   padding: 7px 10px;
-  color: var(--color-text);
+  color: var(--color-text-default);
   font: inherit;
   font-size: 12px;
   background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .task-center__offline {
   padding: 9px 24px;
-  color: var(--color-warning-text, #92400e);
+  color: var(--color-status-warning);
   font-size: 12px;
-  background: var(--color-warning-subtle, #fef3c7);
+  background: var(--color-status-warning-surface);
 }
 
 .task-center__tabs {
@@ -228,12 +259,12 @@ async function downloadArtifact(job: V2Job) {
   gap: 8px;
   align-items: center;
   padding: 12px 24px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
-.task-center__tabs button.active {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
+.task-center__tab--active {
+  color: var(--color-action-primary);
+  border-color: var(--color-action-primary);
 }
 
 .task-center__spacer {
@@ -255,7 +286,7 @@ async function downloadArtifact(job: V2Job) {
 .task-batch {
   margin-bottom: 12px;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
 }
 
@@ -265,7 +296,7 @@ async function downloadArtifact(job: V2Job) {
   justify-content: space-between;
   width: 100%;
   padding: 12px 14px;
-  color: var(--color-text);
+  color: var(--color-text-default);
   text-align: left;
   background: var(--color-surface-muted);
   border: 0;
@@ -287,7 +318,7 @@ async function downloadArtifact(job: V2Job) {
 
 .task-job {
   padding: 14px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border-default);
 }
 
 .task-job__top,
@@ -311,12 +342,12 @@ async function downloadArtifact(job: V2Job) {
 
 .task-job__status[data-status='running'],
 .task-job__status[data-status='completed'] {
-  color: var(--color-success, #15803d);
+  color: var(--color-status-success);
 }
 
 .task-job__status[data-status='failed'],
 .task-job__status[data-status='interrupted'] {
-  color: var(--color-danger, #dc2626);
+  color: var(--color-status-error);
 }
 
 .task-job__progress {
@@ -330,7 +361,7 @@ async function downloadArtifact(job: V2Job) {
 .task-job__progress span {
   display: block;
   height: 100%;
-  background: var(--color-primary);
+  background: var(--color-action-primary);
 }
 
 .task-job__hint {

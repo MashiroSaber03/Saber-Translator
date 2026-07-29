@@ -1,167 +1,148 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, ref } from 'vue'
-import { mount } from '@vue/test-utils'
-import { storeToRefs } from 'pinia'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, setActivePinia, storeToRefs } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
+
 import { useEditWorkspaceProcessingActions } from '@/composables/edit/useEditWorkspaceProcessingActions'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
-const {
-  translateSingleTextMock,
-  executeDetectionMock,
-  saveDetectionResultToImageMock,
-  translateWithCurrentBubblesMock,
-  confirmProductActionMock,
-  showToastMock,
-} = vi.hoisted(() => ({
-  translateSingleTextMock: vi.fn(),
-  executeDetectionMock: vi.fn(),
-  saveDetectionResultToImageMock: vi.fn(),
-  translateWithCurrentBubblesMock: vi.fn(),
-  confirmProductActionMock: vi.fn(),
-  showToastMock: vi.fn(),
+const mocks = vi.hoisted(() => ({
+  confirm: vi.fn(),
+  createChapterDetectJob: vi.fn(),
+  getPageDocument: vi.fn(),
+  queuePageDocumentSave: vi.fn(),
+  registerPageDocument: vi.fn(),
+  runPageOperation: vi.fn(),
+  toast: vi.fn(),
+  translateWithCurrentBubbles: vi.fn(),
 }))
 
-vi.mock('@/api/translate', () => ({
-  translateSingleText: translateSingleTextMock,
+vi.mock('@/api/v2/content', () => ({
+  getPageDocument: mocks.getPageDocument,
 }))
 
-vi.mock('@/composables/translation/core/steps', () => ({
-  executeDetection: executeDetectionMock,
+vi.mock('@/api/v2/operations', () => ({
+  runPageOperation: mocks.runPageOperation,
 }))
 
-vi.mock('@/composables/translation/core/detectionResultWriter', () => ({
-  saveDetectionResultToImage: saveDetectionResultToImageMock,
+vi.mock('@/api/v2/translation', () => ({
+  createChapterDetectJob: mocks.createChapterDetectJob,
+}))
+
+vi.mock('@/services/pageDocumentPersistence', () => ({
+  queuePageDocumentSave: mocks.queuePageDocumentSave,
+  registerPageDocument: mocks.registerPageDocument,
 }))
 
 vi.mock('@/composables/useTranslationPipeline', () => ({
   useTranslation: () => ({
-    translateWithCurrentBubbles: translateWithCurrentBubblesMock,
+    translateWithCurrentBubbles: mocks.translateWithCurrentBubbles,
   }),
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
-  confirmProductAction: confirmProductActionMock,
+  confirmProductAction: mocks.confirm,
 }))
 
 vi.mock('@/utils/toast', () => ({
-  showToast: showToastMock,
+  showToast: mocks.toast,
 }))
 
-describe('useEditWorkspaceProcessingActions', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-    translateSingleTextMock.mockResolvedValue({
-      success: true,
-      data: {
-        translated_text: 'translated bubble',
-        warnings: [],
-      },
+function createActions(pageCount = 1) {
+  const imageStore = useImageStore()
+  const bubbleStore = useBubbleStore()
+  for (let index = 0; index < pageCount; index += 1) {
+    imageStore.addImage(`${index + 1}.png`, `/api/v2/assets/source-${index + 1}`, {
+      chapterId: 'chapter-1',
+      documentRevision: 3,
+      id: `page-${index + 1}`,
     })
-    confirmProductActionMock.mockReset()
-    confirmProductActionMock.mockResolvedValue(true)
+  }
+  const bubble = createBubbleState({
+    backendBubbleId: 'bubble-1',
+    coords: [0, 0, 120, 80],
+    originalText: '原文',
+    polygon: [],
   })
-
-  afterEach(() => {
-    vi.useRealTimers()
-    vi.restoreAllMocks()
-  })
-
-  it('retranslates the selected bubble without routine console logs', async () => {
-    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
-    const imageStore = useImageStore()
-    const bubbleStore = useBubbleStore()
-    const settingsStore = useSettingsStore()
-    const reRenderFullImage = vi.fn(async () => true)
-
-    settingsStore.settings.translation.provider = 'custom'
-    settingsStore.settings.translation.apiKey = 'key'
-    settingsStore.settings.translation.modelName = 'model'
-    settingsStore.settings.translation.openaiOptions.request.forceJsonOutput = false
-
-    imageStore.addImage('page.png', 'data:image/png;base64,page')
-    bubbleStore.setBubbles([
-      createBubbleState({
-        coords: [0, 0, 120, 80],
-        polygon: [],
-        originalText: '原文',
-      }),
-    ])
-
-    const { bubbles } = storeToRefs(bubbleStore)
-    const actions = useEditWorkspaceProcessingActions({
+  bubbleStore.setBubbles([bubble])
+  const { bubbles } = storeToRefs(bubbleStore)
+  return {
+    actions: useEditWorkspaceProcessingActions({
       images: ref(imageStore.images),
       currentImage: ref(imageStore.currentImage),
       currentImageIndex: ref(imageStore.currentImageIndex),
       bubbles,
-      reRenderFullImage,
-      loadBubbleStatesFromImage: vi.fn(),
       selectFirstBubbleIfExists: vi.fn(),
+    }),
+    bubble,
+  }
+}
+
+describe('useEditWorkspaceProcessingActions', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mocks.confirm.mockResolvedValue(true)
+    mocks.queuePageDocumentSave.mockResolvedValue(undefined)
+    mocks.runPageOperation.mockResolvedValue({
+      id: 'operation-1',
+      result: {},
+      status: 'completed',
     })
+    mocks.getPageDocument.mockResolvedValue({
+      bubbles: [],
+      chapterId: 'chapter-1',
+      defaultFontId: null,
+      documentRevision: 4,
+      pageId: 'page-1',
+      pageStyleDefaults: {},
+      pageStyleSchemaVersion: 1,
+      renderedRevision: null,
+      sourceRevision: 1,
+    })
+    mocks.registerPageDocument.mockReturnValue([])
+    mocks.createChapterDetectJob.mockResolvedValue({
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+      status: 'queued',
+    })
+  })
+
+  it('persists the page document and runs bubble translation on the backend', async () => {
+    const { actions, bubble } = createActions()
 
     await actions.handleReTranslateBubble(0)
 
-    expect(translateSingleTextMock).toHaveBeenCalledWith(expect.objectContaining({
-      original_text: '原文',
-      model_provider: 'custom',
-    }))
-    expect(bubbleStore.bubbles[0]?.translatedText).toBe('translated bubble')
-    expect(reRenderFullImage).toHaveBeenCalled()
-    expect(consoleLog).not.toHaveBeenCalled()
+    expect(mocks.queuePageDocumentSave).toHaveBeenCalledWith(
+      'page-1',
+      3,
+      [bubble],
+    )
+    expect(mocks.runPageOperation).toHaveBeenCalledWith(
+      'page-1',
+      {
+        baseRevision: 3,
+        bubbleId: 'bubble-1',
+        kind: 'bubble_translate',
+      },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(mocks.toast).toHaveBeenCalledWith('重新翻译完成', 'success')
   })
 
-  it('clears the batch detection completion timer when the owner unmounts', async () => {
-    vi.useFakeTimers()
-    const windowConfirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    executeDetectionMock.mockResolvedValue({
-      bubbleCoords: [],
-      bubbleStates: [],
-    })
-
-    const imageStore = useImageStore()
-    const bubbleStore = useBubbleStore()
-    imageStore.addImage('page-1.png', 'data:image/png;base64,page1')
-    imageStore.addImage('page-2.png', 'data:image/png;base64,page2')
-
-    const { bubbles } = storeToRefs(bubbleStore)
-    let actions!: ReturnType<typeof useEditWorkspaceProcessingActions>
-
-    const Harness = defineComponent({
-      setup() {
-        actions = useEditWorkspaceProcessingActions({
-          images: ref(imageStore.images),
-          currentImage: ref(imageStore.currentImage),
-          currentImageIndex: ref(imageStore.currentImageIndex),
-          bubbles,
-          reRenderFullImage: vi.fn(async () => true),
-          loadBubbleStatesFromImage: vi.fn(),
-          selectFirstBubbleIfExists: vi.fn(),
-        })
-        return () => null
-      },
-    })
-
-    const wrapper = mount(Harness)
+  it('submits batch detection as a durable chapter job', async () => {
+    const { actions } = createActions(2)
 
     await actions.detectAllImages()
 
-    expect(confirmProductActionMock).toHaveBeenCalledWith({
-      title: '批量检测文本框',
-      message: '此操作将对所有图片进行文本框检测，可能会覆盖已有的检测结果。确定继续吗？',
-      confirmText: '开始检测',
-      cancelText: '取消',
-      tone: 'danger',
-    })
-    expect(windowConfirm).not.toHaveBeenCalled()
-    expect(actions.isProcessing.value).toBe(true)
-
-    wrapper.unmount()
-    expect(actions.isProcessing.value).toBe(false)
-
-    await vi.advanceTimersByTimeAsync(2000)
-    expect(actions.isProcessing.value).toBe(false)
+    expect(mocks.createChapterDetectJob).toHaveBeenCalledWith(
+      'chapter-1',
+      ['page-1', 'page-2'],
+    )
+    expect(mocks.toast).toHaveBeenCalledWith(
+      '批量检测已加入任务中心；关闭浏览器也会继续执行',
+      'success',
+    )
   })
 })

@@ -50,7 +50,10 @@ export function useQANoteModal(insightStore: ReturnType<typeof useInsightStore>)
       content: pendingQAData.value.answer,
       question: pendingQAData.value.question,
       answer: pendingQAData.value.answer,
-      citations: pendingQAData.value.citations,
+      citations: pendingQAData.value.citations.map(citation => ({
+        ...citation,
+        content: '',
+      })),
       comment: noteComment.value || undefined,
       createdAt: now,
       updatedAt: now,

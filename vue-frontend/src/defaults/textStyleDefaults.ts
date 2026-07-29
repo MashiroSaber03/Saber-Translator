@@ -2,7 +2,6 @@ import textStyleDefaultsJson from '../../../src/shared/text_style_defaults_facto
 import type { BubbleGlobalDefaults, TextDirection } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import type { TextStyleSettings } from '@/types/settings'
-import { getTextStyleDefaults as fetchTextStyleDefaults } from '@/api/config'
 
 export type TextStyleDefaults = TextStyleSettings
 
@@ -132,35 +131,9 @@ function parseTextStyleDefaults(source: Record<string, unknown> | TextStyleSetti
   return buildTextStyleFields(source)
 }
 
-function applyTextStyleDefaults(nextDefaults: TextStyleDefaults): void {
-  Object.assign(TEXT_STYLE_DEFAULTS, nextDefaults)
-}
-
 const BUNDLED_TEXT_STYLE_DEFAULTS = Object.freeze(parseTextStyleDefaults(rawDefaults))
 
-export const TEXT_STYLE_DEFAULTS: TextStyleDefaults = {
-  ...BUNDLED_TEXT_STYLE_DEFAULTS
-}
-
-export function resetTextStyleDefaultsToBundled(): void {
-  applyTextStyleDefaults({ ...BUNDLED_TEXT_STYLE_DEFAULTS })
-}
-
-export async function reloadTextStyleDefaultsFromBackend(): Promise<boolean> {
-  try {
-    const response = await fetchTextStyleDefaults()
-    if (!response.success || !response.defaults) {
-      return false
-    }
-
-    applyTextStyleDefaults(parseTextStyleDefaults(response.defaults))
-    return true
-  } catch {
-    return false
-  }
-}
-
-applyTextStyleDefaults(parseTextStyleDefaults(rawDefaults))
+export const TEXT_STYLE_DEFAULTS: Readonly<TextStyleDefaults> = BUNDLED_TEXT_STYLE_DEFAULTS
 
 export function getTextStyleDefaults(): TextStyleDefaults {
   return { ...TEXT_STYLE_DEFAULTS }

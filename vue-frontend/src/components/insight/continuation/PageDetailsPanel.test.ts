@@ -207,7 +207,7 @@ describe('PageDetailsPanel', () => {
     expect(source).not.toMatch(/--page-details-panel-status-[^:]+:\s*#[0-9a-fA-F]{3,8}/)
     expect(source).toContain('ProductChipItem')
     expect(source).toContain("pending: 'warning'")
-    expect(source).toContain("generating: 'info'")
+    expect(source).toContain("generating: 'primary'")
     expect(source).toContain("generated: 'success'")
     expect(source).toContain("failed: 'danger'")
   })

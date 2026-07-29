@@ -369,6 +369,16 @@ onUnmounted(() => {
             <div class="page-detail-panel__dialogue-text">{{ event.summary }}</div>
           </div>
         </div>
+        <ProductStatusBanner
+          v-else-if="isPageAnalyzed"
+          class="page-detail-panel__dialogue-feedback"
+          icon-name="sparkles"
+          role="note"
+          title="此页没有识别出关键事件"
+          tone="neutral"
+        >
+          当前页面分析结果中没有关键事件。
+        </ProductStatusBanner>
 
         <ProductStatusBanner
           v-if="pageAnalysis?.continuity_notes"

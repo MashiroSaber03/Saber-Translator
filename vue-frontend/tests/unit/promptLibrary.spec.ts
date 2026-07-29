@@ -8,16 +8,14 @@ const {
   updateTranslationServiceMock,
   updateAiVisionOcrMock,
   toastInfoMock,
-  getPromptsMock,
-  getPromptContentMock,
+  listV2PromptsMock,
   deletePromptMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   updateTranslationServiceMock: vi.fn(),
   updateAiVisionOcrMock: vi.fn(),
   toastInfoMock: vi.fn(),
-  getPromptsMock: vi.fn(),
-  getPromptContentMock: vi.fn(),
+  listV2PromptsMock: vi.fn(),
   deletePromptMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
@@ -57,17 +55,11 @@ vi.mock('@/utils/toast', () => ({
   }),
 }))
 
-vi.mock('@/api/config', () => ({
-  configApi: {
-    getPrompts: getPromptsMock,
-    getPromptContent: getPromptContentMock,
-    savePrompt: vi.fn(),
-    deletePrompt: deletePromptMock,
-    getTextboxPrompts: vi.fn(),
-    getTextboxPromptContent: vi.fn(),
-    saveTextboxPrompt: vi.fn(),
-    deleteTextboxPrompt: vi.fn(),
-  },
+vi.mock('@/api/v2/settings', () => ({
+  listV2Prompts: listV2PromptsMock,
+  createV2Prompt: vi.fn(),
+  updateV2Prompt: vi.fn(),
+  deleteV2Prompt: deletePromptMock,
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
@@ -80,6 +72,22 @@ import UiField from '@/components/ui/UiField.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+
+function prompt(
+  id: string,
+  name: string,
+  content = '提示词内容',
+  isFactoryDefault = false,
+) {
+  return {
+    id,
+    name,
+    content,
+    type: 'translate',
+    revision: 1,
+    isFactoryDefault,
+  }
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -96,12 +104,10 @@ describe('PromptLibrary', () => {
     updateTranslationServiceMock.mockReset()
     updateAiVisionOcrMock.mockReset()
     toastInfoMock.mockReset()
-    getPromptsMock.mockReset()
-    getPromptContentMock.mockReset()
+    listV2PromptsMock.mockReset()
     deletePromptMock.mockReset()
     confirmProductActionMock.mockReset()
-    getPromptsMock.mockResolvedValue({ prompt_names: [] })
-    getPromptContentMock.mockResolvedValue({ prompt_content: '提示词内容' })
+    listV2PromptsMock.mockResolvedValue([])
     deletePromptMock.mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValue(true)
 
@@ -165,7 +171,10 @@ describe('PromptLibrary', () => {
   })
 
   it('uses separate controls for selecting, loading, and deleting prompt rows', async () => {
-    getPromptsMock.mockResolvedValue({ prompt_names: ['default', 'custom'] })
+    listV2PromptsMock.mockResolvedValue([
+      prompt('prompt-default', 'default', '提示词内容', true),
+      prompt('prompt-custom', 'custom'),
+    ])
     const wrapper = mount(PromptLibrary)
     await flushPromises()
 
@@ -180,7 +189,7 @@ describe('PromptLibrary', () => {
     await selectButton.trigger('click')
     await flushPromises()
 
-    expect(getPromptContentMock).toHaveBeenCalledWith('translate', 'default')
+    expect(wrapper.getComponent(UiTextarea).props('modelValue')).toBe('提示词内容')
     expect(wrapper.find('.prompt-library__select-action').attributes('aria-pressed')).toBe('true')
 
     const loadButton = wrapper.find('.prompt-library__load-action')
@@ -239,8 +248,8 @@ describe('PromptLibrary', () => {
     expect(source).not.toContain('empty-hint')
     expect(source).toContain('ProductStatusBanner')
 
-    const pendingPrompts = deferred<{ prompt_names: string[] }>()
-    getPromptsMock.mockReturnValueOnce(pendingPrompts.promise)
+    const pendingPrompts = deferred<ReturnType<typeof prompt>[]>()
+    listV2PromptsMock.mockReturnValueOnce(pendingPrompts.promise)
 
     const wrapper = mount(PromptLibrary)
     await nextTick()
@@ -255,7 +264,7 @@ describe('PromptLibrary', () => {
     })
     expect(wrapper.find('.loading-hint').exists()).toBe(false)
 
-    pendingPrompts.resolve({ prompt_names: [] })
+    pendingPrompts.resolve([])
     await flushPromises()
 
     const emptyBanner = wrapper.findComponent(ProductStatusBanner)
@@ -291,9 +300,9 @@ describe('PromptLibrary', () => {
   })
 
   it('ignores stale prompt list responses after the prompt type changes', async () => {
-    const translatePrompts = deferred<{ prompt_names: string[] }>()
-    const visionPrompts = deferred<{ prompt_names: string[] }>()
-    getPromptsMock.mockImplementation((type?: string) =>
+    const translatePrompts = deferred<ReturnType<typeof prompt>[]>()
+    const visionPrompts = deferred<ReturnType<typeof prompt>[]>()
+    listV2PromptsMock.mockImplementation((type?: string) =>
       type === 'ai_vision_ocr' ? visionPrompts.promise : translatePrompts.promise
     )
 
@@ -302,18 +311,20 @@ describe('PromptLibrary', () => {
     const typeSelect = wrapper.findAllComponents(UiSelect)[0]!
     typeSelect.vm.$emit('change', 'ai_vision_ocr')
 
-    visionPrompts.resolve({ prompt_names: ['vision-current'] })
+    visionPrompts.resolve([prompt('vision-current', 'vision-current')])
     await flushPromises()
     expect(wrapper.text()).toContain('vision-current')
 
-    translatePrompts.resolve({ prompt_names: ['translate-stale'] })
+    translatePrompts.resolve([prompt('translate-stale', 'translate-stale')])
     await flushPromises()
     expect(wrapper.text()).toContain('vision-current')
     expect(wrapper.text()).not.toContain('translate-stale')
   })
 
   it('confirms before deleting custom prompts', async () => {
-    getPromptsMock.mockResolvedValue({ prompt_names: ['custom'] })
+    listV2PromptsMock.mockResolvedValue([
+      prompt('prompt-custom', 'custom'),
+    ])
     confirmProductActionMock.mockResolvedValueOnce(false)
 
     const wrapper = mount(PromptLibrary)
@@ -336,6 +347,6 @@ describe('PromptLibrary', () => {
     await deleteButton.trigger('click')
     await flushPromises()
 
-    expect(deletePromptMock).toHaveBeenCalledWith('translate', 'custom')
+    expect(deletePromptMock).toHaveBeenCalledWith('prompt-custom')
   })
 })

@@ -321,7 +321,10 @@ def test_parallel_worker_uses_serial_stage_pools_with_cross_stage_overlap(
             JobSpec(
                 kind="translation",
                 chapter_id=str(chapter["id"]),
-                config={"executionMode": "parallel"},
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 2,
+                },
                 items=tuple(
                     JobItemSpec(page_id=None, step_kinds=("detect", "ocr"))
                     for _index in range(3)
@@ -366,3 +369,60 @@ def test_parallel_worker_uses_serial_stage_pools_with_cross_stage_overlap(
     assert repository.get_job(job_id)["status"] == "completed"
     assert max_active == {"detect": 1, "ocr": 1}
     assert cross_stage_overlap.is_set()
+
+
+def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
+    job_platform,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="bounded deep learning pipeline",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=tuple(
+                    JobItemSpec(page_id=None, step_kinds=("detect", "ocr"))
+                    for _index in range(3)
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    state_lock = threading.Lock()
+    active_count = 0
+    maximum_active = 0
+
+    def handler(_fence, step):
+        nonlocal active_count, maximum_active
+        with state_lock:
+            active_count += 1
+            maximum_active = max(maximum_active, active_count)
+        time.sleep(0.04)
+        with state_lock:
+            active_count -= 1
+        return {"done": str(step["stepKind"])}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler, "ocr": handler},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if repository.get_job(job_id)["status"] == "completed":
+            break
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+    assert repository.get_job(job_id)["status"] == "completed"
+    assert maximum_active == 1

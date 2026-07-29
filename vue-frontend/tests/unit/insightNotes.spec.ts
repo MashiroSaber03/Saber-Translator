@@ -18,7 +18,6 @@ vi.mock('@/api/insight', () => ({
 
 describe('useInsightNotes', () => {
   beforeEach(() => {
-    localStorage.clear()
     createNoteMock.mockReset()
     getNotesMock.mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -42,33 +41,6 @@ describe('useInsightNotes', () => {
     expect(result).toBeNull()
     expect(notesState.notes.value).toEqual([])
     expect(notesState.error.value).toBe('create failed')
-    expect(localStorage.getItem('manga_notes_book-1')).toBeNull()
-  })
-
-  it('removes obsolete local note caches without hydrating them', async () => {
-    localStorage.setItem('manga_notes_book-1', JSON.stringify([
-      {
-        id: 'note-1',
-        type: 'text',
-        content: 'valid note',
-        pageNum: 3,
-        createdAt: '2026-06-23T00:00:00.000Z',
-        updatedAt: '2026-06-23T00:00:00.000Z',
-      },
-      {
-        id: 42,
-        type: 'unknown',
-        content: null,
-      },
-    ]))
-
-    const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
-    const notesState = useInsightNotes({ currentBookId: ref('book-1') })
-
-    notesState.loadNotesFromStorage()
-
-    expect(notesState.notes.value).toEqual([])
-    expect(localStorage.getItem('manga_notes_book-1')).toBeNull()
   })
 
   it('ignores stale note loads after the selected book changes', async () => {
@@ -97,19 +69,9 @@ describe('useInsightNotes', () => {
     await pendingLoad
 
     expect(notesState.notes.value).toEqual([])
-    expect(localStorage.getItem('manga_notes_book-2')).toBeNull()
   })
 
-  it('does not resurrect local notes when the backend returns an error response', async () => {
-    localStorage.setItem('manga_notes_book-1', JSON.stringify([
-      {
-        id: 'cached-note',
-        type: 'text',
-        content: 'cached note',
-        createdAt: '2026-06-25T00:00:00.000Z',
-        updatedAt: '2026-06-25T00:00:00.000Z',
-      },
-    ]))
+  it('keeps notes empty when the backend returns an error response', async () => {
     getNotesMock.mockResolvedValueOnce({
       success: false,
       error: 'notes service unavailable',
@@ -122,7 +84,6 @@ describe('useInsightNotes', () => {
 
     expect(notesState.error.value).toBe('notes service unavailable')
     expect(notesState.notes.value).toEqual([])
-    expect(localStorage.getItem('manga_notes_book-1')).toBeNull()
   })
 
   it('maps API note payloads through a typed current-schema mapper', async () => {
@@ -226,25 +187,14 @@ describe('useInsightNotes', () => {
     })).toThrow('笔记响应格式无效')
   })
 
-  it('keeps notes property tests focused on async behavior contracts', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/property/insightNotes.property.ts'), 'utf8')
+  it('keeps note persistence backend-owned', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/stores/insight/useInsightNotes.ts'),
+      'utf8',
+    )
 
-    for (const staleNarration of [
-      '漫画分析笔记属性测试',
-      '测试数据生成器',
-      '属性测试',
-      '生成有效',
-      '// ============================================================',
-      '/' + '**',
-      '验证',
-      'return true',
-      '每次测试创建新的 Pinia 实例',
-      '创建新的 store 实例模拟重新加载',
-    ]) {
-      expect(source).not.toContain(staleNarration)
-    }
-
-    expect(source).toContain('fc.asyncProperty')
-    expect(source).toContain('await store.addNote')
+    expect(source).toContain('getNotes(')
+    expect(source).toContain('createNote(')
+    expect(source).not.toContain('localStorage')
   })
 })

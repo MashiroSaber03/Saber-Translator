@@ -194,10 +194,10 @@ export async function listAllInsightNotes(
   const items: V2InsightNote[] = []
   let cursor: string | null = null
   do {
-    const response = await apiClient.get<{
+    const response: {
       items: V2InsightNote[]
       nextCursor: string | null
-    }>(`${ROOT}/notes`, {
+    } = await apiClient.get(`${ROOT}/notes`, {
       params: {
         bookId,
         limit: 200,

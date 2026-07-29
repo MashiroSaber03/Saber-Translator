@@ -14,24 +14,23 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import { useSettingsStore } from '@/stores/settings'
 
 const {
   getFontListMock,
-  getPreferencesMock,
   savePreferencesMock,
   uploadFontMock,
 } = vi.hoisted(() => ({
   getFontListMock: vi.fn(),
-  getPreferencesMock: vi.fn(),
   savePreferencesMock: vi.fn(),
   uploadFontMock: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  getFontList: getFontListMock,
-  uploadFont: uploadFontMock,
-  getTranslateWorkflowPreferences: getPreferencesMock,
-  saveTranslateWorkflowPreferences: savePreferencesMock,
+vi.mock('@/api/v2/settings', async importOriginal => ({
+  ...await importOriginal<typeof import('@/api/v2/settings')>(),
+  listV2Fonts: getFontListMock,
+  uploadV2Font: uploadFontMock,
+  updateV2WorkflowPreferences: savePreferencesMock,
 }))
 
 vi.mock('@/components/ui/UiCombobox.vue', () => ({
@@ -113,19 +112,16 @@ describe('SettingsSidebar workflow preferences', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     getFontListMock.mockReset()
-    getPreferencesMock.mockReset()
     savePreferencesMock.mockReset()
     uploadFontMock.mockReset()
-    getFontListMock.mockResolvedValue({ fonts: [] })
-    uploadFontMock.mockResolvedValue({ success: true, fontPath: 'fonts/UploadedFont.ttf' })
-    getPreferencesMock.mockResolvedValue({
-      success: true,
-      preferences: {
-        rememberWorkflowModeEnabled: false,
-        lastWorkflowMode: 'translate-current',
-      },
+    getFontListMock.mockResolvedValue([])
+    uploadFontMock.mockResolvedValue({ id: 'font-uploaded', assetUrl: '/api/v2/assets/font' })
+    savePreferencesMock.mockResolvedValue({
+      domain: 'workflow_preferences',
+      payload: {},
+      revision: 1,
+      schemaVersion: 1,
     })
-    savePreferencesMock.mockResolvedValue({ success: true })
   })
 
   afterEach(() => {
@@ -142,13 +138,11 @@ describe('SettingsSidebar workflow preferences', () => {
   })
 
   it('restores a remembered dangerous workflow mode', async () => {
-    getPreferencesMock.mockResolvedValue({
-      success: true,
-      preferences: {
-        rememberWorkflowModeEnabled: true,
-        lastWorkflowMode: 'clear-all',
-      },
-    })
+    const settingsStore = useSettingsStore()
+    settingsStore.workflowPreferences = {
+      rememberWorkflowModeEnabled: true,
+      lastWorkflowMode: 'clear-all',
+    }
 
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
@@ -163,10 +157,13 @@ describe('SettingsSidebar workflow preferences', () => {
 
     selectWorkflowMode(wrapper, 'hq-batch')
 
-    expect(savePreferencesMock).toHaveBeenCalledWith({
-      rememberWorkflowModeEnabled: false,
-      lastWorkflowMode: 'hq-batch',
-    })
+    expect(savePreferencesMock).toHaveBeenCalledWith(
+      {
+        rememberWorkflowModeEnabled: false,
+        lastWorkflowMode: 'hq-batch',
+      },
+      0,
+    )
   })
 
   it('saves the remember switch immediately with the current workflow mode', async () => {
@@ -176,10 +173,13 @@ describe('SettingsSidebar workflow preferences', () => {
     getRememberWorkflowToggle(wrapper).vm.$emit('change', true)
     await flushPromises()
 
-    expect(savePreferencesMock).toHaveBeenCalledWith({
-      rememberWorkflowModeEnabled: true,
-      lastWorkflowMode: 'translate-current',
-    })
+    expect(savePreferencesMock).toHaveBeenCalledWith(
+      {
+        rememberWorkflowModeEnabled: true,
+        lastWorkflowMode: 'translate-current',
+      },
+      0,
+    )
   })
 
   it('keeps the selected workflow mode in the UI even when saving fails', async () => {
@@ -202,9 +202,19 @@ describe('SettingsSidebar workflow preferences', () => {
     let resolveFirstSave!: () => void
     savePreferencesMock
       .mockImplementationOnce(() => new Promise(resolve => {
-        resolveFirstSave = () => resolve({ success: true })
+        resolveFirstSave = () => resolve({
+          domain: 'workflow_preferences',
+          payload: {},
+          revision: 1,
+          schemaVersion: 1,
+        })
       }))
-      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({
+        domain: 'workflow_preferences',
+        payload: {},
+        revision: 2,
+        schemaVersion: 1,
+      })
 
     const wrapper = mount(SettingsSidebar)
     await flushPromises()
@@ -213,58 +223,50 @@ describe('SettingsSidebar workflow preferences', () => {
     selectWorkflowMode(wrapper, 'clear-all')
 
     expect(savePreferencesMock).toHaveBeenCalledTimes(1)
-    expect(savePreferencesMock).toHaveBeenNthCalledWith(1, {
-      rememberWorkflowModeEnabled: false,
-      lastWorkflowMode: 'hq-batch',
-    })
+    expect(savePreferencesMock).toHaveBeenNthCalledWith(
+      1,
+      {
+        rememberWorkflowModeEnabled: false,
+        lastWorkflowMode: 'hq-batch',
+      },
+      0,
+    )
 
     resolveFirstSave()
     await flushPromises()
 
     expect(savePreferencesMock).toHaveBeenCalledTimes(2)
-    expect(savePreferencesMock).toHaveBeenNthCalledWith(2, {
-      rememberWorkflowModeEnabled: false,
-      lastWorkflowMode: 'clear-all',
-    })
+    expect(savePreferencesMock).toHaveBeenNthCalledWith(
+      2,
+      {
+        rememberWorkflowModeEnabled: false,
+        lastWorkflowMode: 'clear-all',
+      },
+      1,
+    )
   })
 
-  it('does not let late preference loading overwrite a manual mode change', async () => {
-    let resolvePreferences!: (value: unknown) => void
-    getPreferencesMock.mockReturnValue(new Promise(resolve => {
-      resolvePreferences = resolve
-    }))
-
+  it('does not let late bootstrap hydration overwrite a manual mode change', async () => {
     const wrapper = mount(SettingsSidebar)
 
     selectWorkflowMode(wrapper, 'proofread-batch')
-    resolvePreferences({
-      success: true,
-      preferences: {
-        rememberWorkflowModeEnabled: true,
-        lastWorkflowMode: 'clear-all',
-      },
-    })
+    useSettingsStore().workflowPreferences = {
+      rememberWorkflowModeEnabled: true,
+      lastWorkflowMode: 'clear-all',
+    }
     await flushPromises()
 
     expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('proofread-batch')
   })
 
-  it('does not let late preference loading overwrite after the remember switch changes', async () => {
-    let resolvePreferences!: (value: unknown) => void
-    getPreferencesMock.mockReturnValue(new Promise(resolve => {
-      resolvePreferences = resolve
-    }))
-
+  it('does not let late bootstrap hydration overwrite after the remember switch changes', async () => {
     const wrapper = mount(SettingsSidebar)
 
     getRememberWorkflowToggle(wrapper).vm.$emit('change', true)
-    resolvePreferences({
-      success: true,
-      preferences: {
-        rememberWorkflowModeEnabled: true,
-        lastWorkflowMode: 'clear-all',
-      },
-    })
+    useSettingsStore().workflowPreferences = {
+      rememberWorkflowModeEnabled: true,
+      lastWorkflowMode: 'clear-all',
+    }
     await flushPromises()
 
     expect(getWorkflowModeSelect(wrapper).props('modelValue')).toBe('translate-current')

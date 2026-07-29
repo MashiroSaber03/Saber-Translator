@@ -111,11 +111,9 @@ vi.mock('@/utils/toast', () => ({
   }),
 }))
 
-vi.mock('@/api/config', () => ({
-  configApi: {
-    fetchModels: fetchModelsMock,
-    testAiTranslateConnection: testAiTranslateConnectionMock,
-  },
+vi.mock('@/api/v2/diagnostics', () => ({
+  fetchModels: fetchModelsMock,
+  testAiTranslateConnection: testAiTranslateConnectionMock,
 }))
 
 import PluginAgentModal from '@/components/settings/PluginAgentModal.vue'

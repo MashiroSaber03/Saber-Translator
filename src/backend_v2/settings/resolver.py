@@ -22,6 +22,20 @@ def _object(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _bounded_int(
+    value: object,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
 def _deep_merge(
     base: Mapping[str, Any],
     override: Mapping[str, Any],
@@ -239,6 +253,7 @@ class SettingsResolver:
 
         ocr = self._ocr_section(effective, provider_rows)
         precise_mask = _object(effective.get("preciseMask"))
+        parallel = _object(effective.get("parallel"))
         method = str(text_style.get("inpaintMethod", "solid"))
         inpainting = {
             "method": "solid" if method == "solid" else "lama",
@@ -252,6 +267,12 @@ class SettingsResolver:
         return {
             "mode": mode,
             "executionMode": str(command.get("executionMode", "sequential")),
+            "deepLearningConcurrency": _bounded_int(
+                parallel.get("deepLearningLockSize"),
+                default=1,
+                minimum=1,
+                maximum=4,
+            ),
             "sourceLanguage": str(effective.get("sourceLanguage", "japanese")),
             "targetLanguage": str(effective.get("targetLanguage", "zh")),
             "detector": detector,

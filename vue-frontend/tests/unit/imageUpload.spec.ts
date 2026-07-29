@@ -1,189 +1,114 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { nextTick } from 'vue'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import ImageUpload from '@/components/translate/ImageUpload.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import UiIconButton from '@/components/ui/UiIconButton.vue'
-import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import { useWebImportStore } from '@/stores/webImportStore'
 
-vi.mock('@/api/system', () => ({
-  parsePdfStart: vi.fn(),
-  parsePdfBatch: vi.fn(),
-  parsePdfCleanup: vi.fn(),
-  parseMobiStart: vi.fn(),
-  parseMobiBatch: vi.fn(),
-  parseMobiCleanup: vi.fn(),
+const mocks = vi.hoisted(() => ({
+  createContainerImportJob: vi.fn(),
+  importImagesSequentially: vi.fn(),
+  toast: vi.fn(),
+}))
+
+vi.mock('@/api/v2/content', () => ({
+  createContainerImportJob: mocks.createContainerImportJob,
+  importImagesSequentially: mocks.importImagesSequentially,
+}))
+
+vi.mock('@/utils/toast', () => ({
+  showToast: mocks.toast,
 }))
 
 describe('ImageUpload', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
+    mocks.importImagesSequentially.mockResolvedValue([{ pageId: 'page-1' }])
+    mocks.createContainerImportJob.mockResolvedValue({
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+      status: 'queued',
+    })
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('uses product upload primitives for the entry shell and secondary actions', async () => {
+  it('uses product upload primitives for files, folders, and web import', async () => {
     const webImportStore = useWebImportStore()
-    const openModalSpy = vi.spyOn(webImportStore, 'openModal')
-    const wrapper = mount(ImageUpload)
+    const openModal = vi.spyOn(webImportStore, 'openModal')
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
 
-    const dropzone = wrapper.getComponent(ProductFileDropzone)
-    expect(dropzone.props()).toMatchObject({
+    expect(wrapper.getComponent(ProductFileDropzone).props()).toMatchObject({
       inputId: 'imageUpload',
-      accept: 'image/*,application/pdf,.mobi,.azw,.azw3',
+      accept: 'image/*,application/pdf,.zip,.cbz,.mobi,.azw,.azw3',
       multiple: true,
       label: '上传翻译源文件',
     })
-    expect(wrapper.getComponent(ProductActionRow).props()).toMatchObject({
-      ariaLabel: '其他导入方式',
-      justify: 'center',
-    })
-    expect(wrapper.find('.drop-area').exists()).toBe(false)
-    expect(wrapper.find('.select-link').exists()).toBe(false)
+    expect(wrapper.getComponent(ProductActionRow).props('ariaLabel')).toBe('其他导入方式')
 
     await wrapper.get('button[aria-label="从网页导入漫画图片"]').trigger('click')
-
-    expect(openModalSpy).toHaveBeenCalled()
+    expect(openModal).toHaveBeenCalled()
   })
 
-  it('uses the typed file-input contract for folder selection', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
+  it('uploads ordinary images directly into the backend chapter', async () => {
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const file = new File(['image'], '001.png', { type: 'image/png' })
 
-    expect(source).toContain('@files-change="handleFolderSelect"')
-    expect(source).toContain('folderInputRef.value?.clear()')
-    expect(source).not.toContain('event.target as HTMLInputElement')
-    expect(source).not.toContain('@change="handleFolderSelect"')
-    expect(source).not.toContain('input.value =')
-  })
-
-  it('renders upload errors through the product status banner', async () => {
-    class FailingFileReader {
-      onerror: (() => void) | null = null
-      onload: (() => void) | null = null
-      readAsDataURL(): void {
-        this.onerror?.()
-      }
-    }
-
-    vi.stubGlobal('FileReader', FailingFileReader)
-
-    const wrapper = mount(ImageUpload)
-
-    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [new File(['broken'], 'broken.png', { type: 'image/png' })])
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
     await flushPromises()
 
-    const banner = wrapper.getComponent(ProductStatusBanner)
-    expect(banner.props('tone')).toBe('danger')
-    expect(banner.props('ariaLive')).toBe('assertive')
-    expect(wrapper.find('.error-message').exists()).toBe(false)
-    const dismissAction = wrapper.getComponent(UiIconButton)
-    expect(dismissAction.props('label')).toBe('关闭上传错误提示')
-
-    await wrapper.get('button[aria-label="关闭上传错误提示"]').trigger('click')
-
-    expect(wrapper.findComponent(ProductStatusBanner).exists()).toBe(false)
+    expect(mocks.importImagesSequentially).toHaveBeenCalledWith(
+      'chapter-1',
+      [file],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    )
+    expect(wrapper.emitted('uploadComplete')).toEqual([[1]])
+    expect(mocks.toast).toHaveBeenCalledWith('已写入后端 1 张图片', 'success')
   })
 
-  it('keeps upload error text on owner-prefixed hooks', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
+  it('submits PDF and comic archives as durable backend jobs', async () => {
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const file = new File(['pdf'], 'chapter.pdf', { type: 'application/pdf' })
 
-    expect(source).toContain('class="image-upload__error-text"')
-    expect(source).not.toContain('class="error-text"')
-    expect(source).not.toMatch(/\.error-text\s*{/)
-  })
-
-  it('renders upload progress through the shared progress primitive', async () => {
-    let finishRead: (() => void) | null = null
-
-    class PendingFileReader {
-      onerror: (() => void) | null = null
-      onload: ((event: { target: { result: string } }) => void) | null = null
-
-      readAsDataURL(): void {
-        finishRead = () => {
-          this.onload?.({ target: { result: 'data:image/png;base64,aW1hZ2U=' } })
-        }
-      }
-    }
-
-    vi.stubGlobal('FileReader', PendingFileReader)
-
-    const wrapper = mount(ImageUpload)
-
-    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [new File(['image'], 'page.png', { type: 'image/png' })])
-    await nextTick()
-
-    const progress = wrapper.getComponent(UiProgressBar)
-    expect(progress.props('value')).toBe(0)
-    expect(progress.text()).toContain('page.png')
-    expect(wrapper.find('.progress').exists()).toBe(false)
-
-    finishRead?.()
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
     await flushPromises()
+
+    expect(mocks.createContainerImportJob).toHaveBeenCalledWith('chapter-1', file)
+    expect(mocks.toast).toHaveBeenCalledWith(
+      '已创建 1 个后端解析任务，可安全关闭页面',
+      'success',
+    )
   })
 
-  it('maps dropzone owner colors through product and semantic tokens', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
-    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
+  it('renders backend upload errors through the product status banner', async () => {
+    mocks.importImagesSequentially.mockRejectedValueOnce(new Error('backend rejected'))
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
 
-    expect(styleBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
-    expect(styleBlock).toContain('--product-file-dropzone-background')
-    expect(styleBlock).toContain('--product-file-dropzone-border')
-    expect(styleBlock).toContain('--color-border-muted')
-    expect(styleBlock).toContain('--color-surface-interactive-hover')
+    wrapper.getComponent(ProductFileDropzone).vm.$emit(
+      'select',
+      [new File(['image'], 'broken.png', { type: 'image/png' })],
+    )
+    await flushPromises()
+
+    expect(wrapper.getComponent(ProductStatusBanner).props('tone')).toBe('danger')
+    expect(wrapper.text()).toContain('backend rejected')
   })
 
-  it('does not keep the unreachable local loading spinner overlay', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
+  it('contains no FileReader, PDF.js, or browser Base64 import pipeline', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'),
+      'utf8',
+    )
 
-    expect(source).not.toContain('isLoading && !showProgress')
-    expect(source).not.toContain('class="loading-overlay"')
-    expect(source).not.toContain('class="spinner"')
-    expect(source).not.toMatch(/\.spinner\s*{[\s\S]*animation:\s*spin/)
-  })
-
-  it('guards frontend PDF canvas contexts without double type escapes', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
-
-    expect(source).not.toContain('as unknown as CanvasRenderingContext2D')
-    expect(source).not.toContain("getContext('2d')!")
-    expect(source).toContain("throw new Error('无法创建 PDF 渲染上下文')")
-  })
-
-  it('bundles the PDF worker locally instead of depending on a CDN', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
-
-    expect(source).toContain("pdfjs-dist/build/pdf.worker.min.js?url")
-    expect(source).toContain('GlobalWorkerOptions.workerSrc = pdfWorkerUrl')
-    expect(source).not.toContain('cdnjs.cloudflare.com')
-  })
-
-  it('uses shared document parse helpers for backend document imports', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
-
-    expect(source).toContain('buildDocumentParseBatches')
-    expect(source).toContain('calculateDocumentParseProgress')
-    expect(source).toContain('createDocumentPageFileName')
-    expect(source).not.toContain('for (let startIndex = 0; startIndex < totalPages; startIndex += BATCH_SIZE)')
-    expect(source).not.toContain('Math.round((startIndex / totalPages) * 100)')
-    expect(source).not.toContain('String(imgData.page_index + 1).padStart(4')
-    expect(source).not.toContain("file.name.replace(/\\.(mobi|azw|azw3)$/i, '')")
-  })
-
-  it('keeps upload workflow private and driven by product input events', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'), 'utf8')
-
-    expect(source).not.toContain('defineExpose')
-    expect(source).toContain('@select="handleFileSelect"')
-    expect(source).toContain('@click="triggerFolderSelect"')
-    expect(source).toContain('@click="clearError"')
+    expect(source).toContain('importImagesSequentially')
+    expect(source).toContain('createContainerImportJob')
+    expect(source).not.toContain('FileReader')
+    expect(source).not.toContain('pdfjs-dist')
+    expect(source).not.toContain('readAsDataURL')
+    expect(source).not.toContain('base64')
   })
 })

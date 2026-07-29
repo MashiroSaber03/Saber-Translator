@@ -8,6 +8,7 @@ import type {
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
+  normalizeOpenAiOptions,
   omitOpenAiOptionsPatchFields,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
@@ -23,8 +24,6 @@ import {
 export function useHqTranslationSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
-  saveToStorage: () => void,
-  saveProviderConfigsToStorage: () => void
 ) {
   type HqTranslationUiUpdates = Partial<HqTranslationSettings> & OpenAiOptionsPatch
   const hqProvider = computed(() => settings.value.hqTranslation.provider)
@@ -40,23 +39,19 @@ export function useHqTranslationSettings(
 
     restoreHqProviderConfig(provider)
 
-    saveToStorage()
   }
 
   function updateHqTranslation(updates: HqTranslationUiUpdates): void {
     Object.assign(settings.value.hqTranslation, omitOpenAiOptionsPatchFields(updates))
     applyOpenAiOptionsPatch(settings.value.hqTranslation.openaiOptions, updates)
-    saveToStorage()
   }
 
   function setHqUseStream(useStream: boolean): void {
     settings.value.hqTranslation.openaiOptions.execution.useStream = useStream
-    saveToStorage()
   }
 
   function setHqForceJsonOutput(forceJsonOutput: boolean): void {
     settings.value.hqTranslation.openaiOptions.request.forceJsonOutput = forceJsonOutput
-    saveToStorage()
   }
 
   function saveHqProviderConfig(provider: string): void {
@@ -69,7 +64,6 @@ export function useHqTranslationSettings(
         openaiOptions: cloneOpenAiOptions(settings.value.hqTranslation.openaiOptions),
         prompt: settings.value.hqTranslation.prompt
       }),
-      persist: saveProviderConfigsToStorage,
     })
   }
 
@@ -80,7 +74,12 @@ export function useHqTranslationSettings(
       applyCached: (cached) => {
         applyProviderCredentials(settings.value.hqTranslation, cached)
         if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
-        if (cached.openaiOptions !== undefined) settings.value.hqTranslation.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
+        if (cached.openaiOptions !== undefined) {
+          settings.value.hqTranslation.openaiOptions = normalizeOpenAiOptions(
+            cached.openaiOptions,
+            settings.value.hqTranslation.openaiOptions,
+          )
+        }
         if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
       },
       applyMissing: () => {

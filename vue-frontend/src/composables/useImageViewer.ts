@@ -21,7 +21,7 @@ const DEFAULT_OPTIONS: Required<Omit<ImageViewerOptions, 'onScaleChange' | 'onTr
 }
 
 function normalizePositiveOption(value: number | undefined, fallback: number): number {
-  return Number.isFinite(value) && value > 0 ? value : fallback
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 function createViewerConfig(options: ImageViewerOptions) {

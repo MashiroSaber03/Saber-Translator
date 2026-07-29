@@ -1,5 +1,6 @@
 import { apiClient } from '@/api/client'
 import { newIdempotencyKey } from './content'
+import { runV2ConnectionTest } from './settings'
 
 const ROOT = '/api/v2/web-import'
 
@@ -105,4 +106,31 @@ export function commitWebImportDraft(
     { baseRevision },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
+}
+
+export function testFirecrawlConnection(
+  apiKey: string,
+): Promise<{ success: boolean; message?: string }> {
+  return runV2ConnectionTest(
+    'firecrawl',
+    apiKey
+      ? { secret: { apiKey } }
+      : { domain: 'web_import_firecrawl' },
+  )
+}
+
+export function testAgentConnection(
+  provider: string,
+  apiKey: string,
+  customBaseUrl: string,
+  modelName: string,
+): Promise<{ success: boolean; message?: string }> {
+  return runV2ConnectionTest('web_import_agent', {
+    provider,
+    baseUrl: customBaseUrl || undefined,
+    model: modelName,
+    ...(apiKey
+      ? { secret: { apiKey } }
+      : { domain: 'web_import_agent' }),
+  })
 }

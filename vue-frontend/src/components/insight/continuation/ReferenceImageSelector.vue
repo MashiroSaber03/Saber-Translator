@@ -275,8 +275,7 @@ function getOriginalThumbnailUrl(pageNum: number): string {
 }
 
 function getImageUrl(path: string): string {
-  if (!path) return ''
-  return `/api/manga-insight/file?path=${encodeURIComponent(path)}`
+  return path
 }
 
 function handleConfirm(): void {

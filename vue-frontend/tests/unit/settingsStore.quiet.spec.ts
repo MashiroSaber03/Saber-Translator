@@ -30,8 +30,6 @@ describe('settingsStore routine logging', () => {
     store.setTranslatePromptMode(false)
     store.saveTranslationProviderConfig('custom')
     store.restoreTranslationProviderConfig('custom')
-    store.setPdfProcessingMethod('frontend')
-    store.setAutoSaveInBookshelfMode(true)
     store.setRemoveTextWithOcr(true)
     store.setEnableVerboseLogs(true)
     store.setLamaDisableResize(true)

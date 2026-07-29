@@ -1,6 +1,5 @@
 import { getProviderOptionsForCapability } from '@/config/aiProviders'
 
-export const STORAGE_KEY_WEB_IMPORT_SETTINGS = 'webImportSettings'
 
 export const DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT = `你是一个专业的漫画数据提取助手。请针对当前网页执行以下提取任务:
 

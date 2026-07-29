@@ -28,17 +28,14 @@ const {
   updateWebImportSelectionMock: vi.fn(),
 }))
 
-vi.mock('@/api/webImport', () => ({
-  testAgentConnection: vi.fn(),
-  testFirecrawlConnection: vi.fn(),
-}))
-
 vi.mock('@/api/v2/webImport', () => ({
   checkWebImportSupport: checkWebImportSupportMock,
   commitWebImportDraft: commitWebImportDraftMock,
   createWebImportDraft: createWebImportDraftMock,
   getWebImportDraft: getWebImportDraftMock,
   listAllWebImportDraftPages: listAllWebImportDraftPagesMock,
+  testAgentConnection: vi.fn(),
+  testFirecrawlConnection: vi.fn(),
   updateWebImportSelection: updateWebImportSelectionMock,
 }))
 
@@ -50,10 +47,8 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
 }))
 
-vi.mock('@/api/config', () => ({
-  configApi: {
-    fetchModels: fetchModelsMock,
-  },
+vi.mock('@/api/v2/diagnostics', () => ({
+  fetchModels: fetchModelsMock,
 }))
 
 vi.mock('@/utils/toast', () => ({

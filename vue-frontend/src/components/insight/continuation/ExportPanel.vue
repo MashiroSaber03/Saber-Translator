@@ -9,7 +9,7 @@
 
       <ProductChoiceCardGrid
         class="continuation-export-panel__format-grid"
-        aria-label="导出格式"
+        ariaLabel="导出格式"
         :model-value="selectedFormat"
         :items="exportFormatItems"
         @select="handleFormatSelect"

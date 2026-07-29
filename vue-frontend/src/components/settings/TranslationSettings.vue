@@ -246,11 +246,18 @@ import {
   getProviderOptionsForCapability,
   isLocalProviderId,
   normalizeProviderId,
+  providerRequiresApiKey,
   providerRequiresBaseUrl,
   providerSupportsCapability,
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
-import { configApi } from '@/api/config'
+import {
+  fetchModels as fetchV2Models,
+  testAiTranslateConnection,
+  testBaiduTranslateConnection,
+  testSakuraConnection,
+  testYoudaoTranslateConnection,
+} from '@/api/v2/diagnostics'
 import { useToast } from '@/utils/toast'
 import {
   DEFAULT_TRANSLATE_PROMPT,
@@ -326,7 +333,7 @@ const remoteModelDiscovery = useAiModelDiscovery({
       localSettings.value.modelProvider,
     ),
   }),
-  fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
     provider,
     apiKey,
     baseUrl,
@@ -585,7 +592,7 @@ async function fetchLocalModels() {
   isFetchingLocalModels.value = true
   try {
     if (provider === 'sakura') {
-      const result = await configApi.testSakuraConnection()
+      const result = await testSakuraConnection()
       if (!localModelFetchGuard.isCurrent(requestId)) return
       if (result.success && result.models) {
         localModelList.value = result.models
@@ -597,7 +604,7 @@ async function fetchLocalModels() {
     }
 
     if (provider === 'ollama') {
-      const result = await configApi.fetchModels(provider, '', '')
+      const result = await fetchV2Models(provider, '', '')
       if (!localModelFetchGuard.isCurrent(requestId)) return
       if (result.success && result.models) {
         localModelList.value = result.models.map(model => model.id)
@@ -629,9 +636,9 @@ async function testLocalConnection() {
   try {
     let result
     if (provider === 'sakura') {
-      result = await configApi.testSakuraConnection()
+      result = await testSakuraConnection()
     } else if (provider === 'ollama') {
-      result = await configApi.testAiTranslateConnection({
+      result = await testAiTranslateConnection({
         provider,
         apiKey: '',
         modelName,
@@ -680,13 +687,13 @@ async function testCloudConnection() {
     let result
     switch (provider) {
       case 'baidu_translate':
-        result = await configApi.testBaiduTranslateConnection(apiKey, modelName)
+        result = await testBaiduTranslateConnection(apiKey, modelName)
         break
       case 'youdao_translate':
-        result = await configApi.testYoudaoTranslateConnection(apiKey, modelName)
+        result = await testYoudaoTranslateConnection(apiKey, modelName)
         break
       default:
-        result = await configApi.testAiTranslateConnection({
+        result = await testAiTranslateConnection({
           provider,
           apiKey,
           modelName,

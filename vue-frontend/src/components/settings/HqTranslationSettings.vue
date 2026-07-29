@@ -153,7 +153,10 @@ import {
   providerRequiresApiKey,
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
-import { configApi } from '@/api/config'
+import {
+  fetchModels as fetchV2Models,
+  testAiTranslateConnection,
+} from '@/api/v2/diagnostics'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
@@ -228,7 +231,7 @@ const modelDiscovery = useAiModelDiscovery({
     baseUrl: localHqSettings.value.customBaseUrl,
     hasStoredCredential: settingsStore.hasCredential('hq', hqSettings.value.provider),
   }),
-  fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
     provider,
     apiKey,
     baseUrl,
@@ -300,7 +303,7 @@ async function testConnection() {
   toast.info('正在测试连接...')
 
   try {
-    const result = await configApi.testAiTranslateConnection({
+    const result = await testAiTranslateConnection({
       provider,
       apiKey,
       modelName,

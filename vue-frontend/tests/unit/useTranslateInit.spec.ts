@@ -1,17 +1,14 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { useTranslateInit } from '@/composables/useTranslateInit'
 import { useImageStore } from '@/stores/imageStore'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useSettingsStore } from '@/stores/settings'
-import { getFontList, getPrompts, getTextboxPrompts } from '@/api/config'
-import { cleanupGpu } from '@/api/system'
-import { reloadTextStyleDefaultsFromBackend } from '@/defaults/textStyleDefaults'
-import { getBookDetail } from '@/api/bookshelf'
+import { createDefaultSettings } from '@/stores/settings/defaults'
+
+const mocks = vi.hoisted(() => ({
+  getPageDocument: vi.fn(),
+  getTranslationBootstrap: vi.fn(),
+}))
 
 const routeState = vi.hoisted(() => ({
   query: {} as Record<string, string | undefined>,
@@ -21,181 +18,161 @@ vi.mock('vue-router', () => ({
   useRoute: () => routeState,
 }))
 
-vi.mock('@/api/config', () => ({
-  getFontList: vi.fn(),
-  getPrompts: vi.fn(),
-  getTextboxPrompts: vi.fn(),
+vi.mock('@/api/v2/content', () => ({
+  getPageDocument: mocks.getPageDocument,
+  getTranslationBootstrap: mocks.getTranslationBootstrap,
 }))
-
-vi.mock('@/api/system', () => ({
-  cleanupGpu: vi.fn(),
-}))
-
-vi.mock('@/api/bookshelf', () => ({
-  getBookDetail: vi.fn(),
-}))
-
-vi.mock('@/defaults/textStyleDefaults', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/defaults/textStyleDefaults')>()
-  return {
-    ...actual,
-    reloadTextStyleDefaultsFromBackend: vi.fn(),
-  }
-})
 
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
 }))
 
+function bootstrap(
+  bookId: string,
+  chapterId: string,
+  kind: 'library' | 'quick_workspace' = 'library',
+) {
+  return {
+    activeJobs: [],
+    activeWebImportDraft: null,
+    book: { id: bookId, kind, title: `Book ${bookId}` },
+    chapter: {
+      id: chapterId,
+      pageOrderRevision: 1,
+      settingsMemory: {},
+      settingsMemoryRevision: 1,
+      settingsMemorySchemaVersion: 1,
+      title: `Chapter ${chapterId}`,
+    },
+    constraints: { payload: {}, revision: 1, schemaVersion: 1 },
+    navigation: { lastVisitedPageId: null, revision: 1 },
+    settings: {
+      settings: [
+        {
+          domain: 'translation',
+          payload: createDefaultSettings() as unknown as Record<string, unknown>,
+          revision: 1,
+          schemaVersion: 3,
+        },
+        {
+          domain: 'text_style_defaults',
+          payload: createDefaultSettings().textStyle as unknown as Record<string, unknown>,
+          revision: 1,
+          schemaVersion: 1,
+        },
+        {
+          domain: 'workflow_preferences',
+          payload: {
+            rememberWorkflowModeEnabled: false,
+            lastWorkflowMode: 'translate-current',
+          },
+          revision: 1,
+          schemaVersion: 1,
+        },
+      ],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    },
+    fonts: [],
+    prompts: [],
+    pages: {
+      items: [{
+        chapterId,
+        cleanUrl: null,
+        detectionState: 'not_started',
+        documentRevision: 1,
+        height: 1600,
+        id: 'page-1',
+        logicalSourcePath: '001.png',
+        ordinal: 0,
+        renderStatus: 'idle',
+        renderedRevision: null,
+        sourceRevision: 1,
+        sourceUrl: '/api/v2/assets/source-1',
+        thumbnailSourceUrl: '/api/v2/assets/thumb-1',
+        thumbnailTranslatedUrl: null,
+        translatedUrl: null,
+        width: 1200,
+      }],
+      nextCursor: null,
+      total: 1,
+    },
+  }
+}
+
 describe('useTranslateInit', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.useFakeTimers()
+    vi.clearAllMocks()
     routeState.query = {}
-
-    vi.mocked(reloadTextStyleDefaultsFromBackend).mockResolvedValue(undefined)
-    vi.mocked(getFontList).mockResolvedValue({
-      fonts: [
-        {
-          file_name: 'default.ttf',
-          display_name: 'Default',
-          path: '/fonts/default.ttf',
-          is_default: true,
-        },
-      ],
-    })
-    vi.mocked(getPrompts).mockResolvedValue({
-      prompt_names: ['Default'],
-      default_prompt_content: '',
-    })
-    vi.mocked(getTextboxPrompts).mockResolvedValue({
-      prompt_names: ['Default textbox'],
-      default_prompt_content: '',
-    })
-    vi.mocked(cleanupGpu).mockResolvedValue({
-      success: true,
-      unloaded_models: ['ocr'],
-      memory_allocated_mb: 0,
-      memory_reserved_mb: 0,
-    })
-    vi.mocked(getBookDetail).mockResolvedValue({
-      success: false,
-      error: 'not configured',
+    mocks.getTranslationBootstrap.mockResolvedValue(
+      bootstrap('quick', 'quick-chapter', 'quick_workspace'),
+    )
+    mocks.getPageDocument.mockResolvedValue({
+      bubbles: [],
+      chapterId: 'quick-chapter',
+      defaultFontId: null,
+      documentRevision: 1,
+      pageId: 'page-1',
+      pageStyleDefaults: {},
+      pageStyleSchemaVersion: 1,
+      renderedRevision: null,
+      sourceRevision: 1,
     })
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
-    vi.restoreAllMocks()
-  })
-
-  it('does not write routine console logs during successful initialization and image switching', async () => {
-    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
-    const translateInit = useTranslateInit()
-    const settingsStore = useSettingsStore()
-    const sessionStore = useSessionStore()
+  it('hydrates page metadata with backend URLs and loads only the current page document', async () => {
+    await useTranslateInit().initializeApp()
     const imageStore = useImageStore()
 
-    vi.spyOn(settingsStore, 'initSettings').mockImplementation(() => {})
-    vi.spyOn(settingsStore, 'loadFromBackend').mockResolvedValue(true)
-    vi.spyOn(sessionStore, 'clearContext').mockImplementation(() => {})
-
-    await translateInit.initializeApp()
-    imageStore.addImage('first.png', 'data:image/png;base64,first')
-    imageStore.addImage('second.png', 'data:image/png;base64,second')
-    translateInit.switchImage(1)
-    await vi.advanceTimersByTimeAsync(100)
-
-    expect(translateInit.isSwitchingImage.value).toBe(false)
-    expect(consoleLog).not.toHaveBeenCalled()
-  })
-
-  it('clears the image-switching flag when the owner unmounts', () => {
-    const imageStore = useImageStore()
-    imageStore.addImage('first.png', 'data:image/png;base64,first')
-    imageStore.addImage('second.png', 'data:image/png;base64,second')
-
-    let translateInit!: ReturnType<typeof useTranslateInit>
-    const Harness = defineComponent({
-      setup() {
-        translateInit = useTranslateInit()
-        return () => null
-      },
+    expect(mocks.getTranslationBootstrap).toHaveBeenCalledWith({
+      bookId: undefined,
+      chapterId: undefined,
     })
-
-    const wrapper = mount(Harness)
-    translateInit.switchImage(1)
-
-    expect(translateInit.isSwitchingImage.value).toBe(true)
-
-    wrapper.unmount()
-    expect(translateInit.isSwitchingImage.value).toBe(false)
+    expect(imageStore.images).toHaveLength(1)
+    expect(imageStore.images[0]?.originalDataURL).toBe('/api/v2/assets/source-1')
+    expect(imageStore.images[0]?.thumbnailSourceUrl).toBe('/api/v2/assets/thumb-1')
+    expect(mocks.getPageDocument).toHaveBeenCalledTimes(1)
+    expect(mocks.getPageDocument).toHaveBeenCalledWith('page-1', expect.any(AbortSignal))
   })
 
-  it('ignores stale bookshelf context responses after the route leaves bookshelf mode', async () => {
-    let resolveBookDetail!: (value: Awaited<ReturnType<typeof getBookDetail>>) => void
-    vi.mocked(getBookDetail).mockImplementationOnce(() => new Promise((resolve) => {
-      resolveBookDetail = resolve
-    }))
-
+  it('requests the selected library chapter through the v2 bootstrap', async () => {
     routeState.query = { book: 'book-1', chapter: 'chapter-1' }
-    const translateInit = useTranslateInit()
-    const sessionStore = useSessionStore()
-    const setContext = vi.spyOn(sessionStore, 'setBookChapterContext')
+    mocks.getTranslationBootstrap.mockResolvedValue(
+      bootstrap('book-1', 'chapter-1'),
+    )
 
-    const pendingContext = translateInit.initializeBookChapterContext()
-    routeState.query = {}
-    await translateInit.initializeBookChapterContext()
+    const state = useTranslateInit()
+    await state.initializeBookChapterContext()
 
-    resolveBookDetail({
-      success: true,
-      book: {
-        id: 'book-1',
-        title: 'Stale Book',
-        chapters: [{
-          id: 'chapter-1',
-          title: 'Stale Chapter',
-          order: 1,
-          imageCount: 0,
-          hasSession: false,
-        }],
-        createdAt: '2026-06-25T00:00:00.000Z',
-        updatedAt: '2026-06-25T00:00:00.000Z',
-      },
+    expect(mocks.getTranslationBootstrap).toHaveBeenCalledWith({
+      bookId: 'book-1',
+      chapterId: 'chapter-1',
     })
-    await pendingContext
-
-    expect(translateInit.isBookshelfMode.value).toBe(false)
-    expect(translateInit.currentBookId.value).toBeNull()
-    expect(translateInit.currentChapterId.value).toBeNull()
-    expect(translateInit.currentBookTitle.value).toBeNull()
-    expect(translateInit.currentChapterTitle.value).toBeNull()
-    expect(setContext).not.toHaveBeenCalled()
+    expect(state.isBookshelfMode.value).toBe(true)
+    expect(state.currentBookId.value).toBe('book-1')
+    expect(state.currentChapterId.value).toBe('chapter-1')
   })
 
-  it('keeps initialization source comments focused on current behavior contracts', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/composables/useTranslateInit.ts'), 'utf8')
+  it('ignores a stale bootstrap response after navigation changes', async () => {
+    let resolveFirst!: (value: ReturnType<typeof bootstrap>) => void
+    mocks.getTranslationBootstrap
+      .mockImplementationOnce(() => new Promise(resolve => {
+        resolveFirst = resolve
+      }))
+      .mockResolvedValueOnce(bootstrap('quick', 'quick-chapter', 'quick_workspace'))
 
-    for (const staleNarration of [
-      '翻译页面初始化组合式函数',
-      '// ============================================================',
-      '类型定义',
-      '状态定义',
-      '初始化方法',
-      '图片切换逻辑',
-      '生命周期',
-      '返回',
-      '@param',
-      '1. 初始化设置',
-      '2. 初始化字体列表',
-      '3. 初始化提示词设置',
-      '4. 清理 GPU 资源',
-      '5. 处理书籍/章节 URL 参数',
-    ]) {
-      expect(source).not.toContain(staleNarration)
-    }
+    routeState.query = { book: 'old-book', chapter: 'old-chapter' }
+    const state = useTranslateInit()
+    const stale = state.initializeBookChapterContext()
+    routeState.query = {}
+    await state.initializeBookChapterContext()
+    resolveFirst(bootstrap('old-book', 'old-chapter'))
+    await stale
 
-    expect(source).toContain('null 和 [] 的语义区分')
-    expect(source).toContain('Backend settings are optional')
+    expect(state.currentBookId.value).toBe('quick')
+    expect(state.currentChapterId.value).toBe('quick-chapter')
+    expect(state.isBookshelfMode.value).toBe(false)
   })
 })

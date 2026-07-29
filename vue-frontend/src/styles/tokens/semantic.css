@@ -12,7 +12,6 @@
   --color-action-success-bright-active: #00cc6a;
 
   --color-status-success: #5cb85c;
-  --color-status-success-hover: #4cae4c;
   --color-status-error: #d9534f;
   --color-status-error-hover: #d43f3a;
   --color-status-error-active: #c9302c;
@@ -55,7 +54,6 @@
   --color-overlay-inverse-soft: rgba(255, 255, 255, .15);
   --color-overlay-inverse-raised: rgba(255, 255, 255, .18);
   --color-overlay-inverse-muted: rgba(255, 255, 255, .2);
-  --color-overlay-inverse-strong: rgba(255, 255, 255, .2);
   --color-overlay-inverse-emphasis: rgba(255, 255, 255, .25);
   --color-overlay-inverse-prominent: rgba(255, 255, 255, 0.4);
   --color-overlay-backdrop-solid: #1a202c;
@@ -109,7 +107,6 @@
   --color-action-success-strong: #10b981;
 
   --color-status-success: #34d399;
-  --color-status-success-hover: #10b981;
   --color-status-error: #f87171;
   --color-status-error-hover: #ef4444;
   --color-status-error-active: #dc2626;

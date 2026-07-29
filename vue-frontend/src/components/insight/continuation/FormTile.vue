@@ -48,7 +48,7 @@
           size="sm"
           :model-value="form.enabled !== false"
           :title="form.enabled !== false ? '点击禁用' : '点击启用'"
-          :aria-label="`启用 ${characterName} ${form.form_name}`"
+          :ariaLabel="`启用 ${characterName} ${form.form_name}`"
           @change="$emit('toggle-enabled', $event)"
         />
         <UiIconButton variant="primary" :label="`生成 ${characterName} ${form.form_name} 三视图`" @click="$emit('generate-orthographic')">

@@ -1,7 +1,6 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebImportStore } from '@/stores/webImportStore'
-import { testFirecrawlConnection, testAgentConnection } from '@/api/webImport'
 import type { WebImportEngine } from '@/types/webImport'
 import {
   checkWebImportSupport,
@@ -9,6 +8,8 @@ import {
   createWebImportDraft,
   getWebImportDraft,
   listAllWebImportDraftPages,
+  testAgentConnection,
+  testFirecrawlConnection,
   updateWebImportSelection,
 } from '@/api/v2/webImport'
 import { getTranslationBootstrap } from '@/api/v2/content'
@@ -18,7 +19,7 @@ import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
 import { useAiModelDiscovery } from '@/composables/useAiModelDiscovery'
-import { configApi } from '@/api/config'
+import { fetchModels as fetchV2Models } from '@/api/v2/diagnostics'
 import type { WebImportSettingsActions } from './web-import/webImportSettingsActions'
 
 export function useWebImportModal() {
@@ -96,7 +97,7 @@ export function useWebImportModal() {
       baseUrl: draftSettings.value.agent.customBaseUrl,
       hasStoredCredential: hasAgentCredential.value,
     }),
-    fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+    fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
       provider,
       apiKey,
       baseUrl,
@@ -435,7 +436,7 @@ export function useWebImportModal() {
       if (result.success) {
         showToast('Firecrawl 连接成功', 'success')
       } else {
-        showToast(`连接失败: ${result.message || result.error || '未知错误'}`, 'error')
+        showToast(`连接失败: ${result.message || '未知错误'}`, 'error')
       }
     } catch (e) {
       showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
@@ -465,7 +466,7 @@ export function useWebImportModal() {
       if (result.success) {
         showToast('AI Agent 连接成功', 'success')
       } else {
-        showToast(`连接失败: ${result.message || result.error || '未知错误'}`, 'error')
+        showToast(`连接失败: ${result.message || '未知错误'}`, 'error')
       }
     } catch (e) {
       showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')

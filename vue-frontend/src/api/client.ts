@@ -34,7 +34,9 @@ function createApiError(error: AxiosError): ApiError {
     code: (structuredError?.code as string) || (data?.code as string) || (data?.error_code as string) || error.code || 'UNKNOWN_ERROR',
     message: (structuredError?.message as string) || (data?.error as string) || (data?.message as string) || error.message,
     status: response?.status || 500,
-    details: data?.details as Record<string, unknown> | undefined,
+    details: (
+      structuredError?.details ?? data?.details
+    ) as Record<string, unknown> | undefined,
   })
 }
 

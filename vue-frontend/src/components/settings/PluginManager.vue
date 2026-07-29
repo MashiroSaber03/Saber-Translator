@@ -54,7 +54,7 @@
             <div class="plugin-manager__plugin-controls">
               <UiSwitch
                 :model-value="plugin.enabled"
-                :aria-label="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
+                :ariaLabel="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
                 @change="setPluginEnabled(plugin, $event)"
               />
               <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
@@ -95,7 +95,7 @@
         <span class="plugin-manager__plugin-name">{{ plugin.display_name }}</span>
         <UiSwitch
           :model-value="Boolean(defaultStates[plugin.id])"
-          :aria-label="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
+          :ariaLabel="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
           @change="updateDefaultState(plugin.id, $event)"
         />
       </div>
@@ -141,7 +141,7 @@
                 <UiSwitch
                   :id="'config-' + key"
                   :model-value="Boolean(configValues[key])"
-                  :aria-label="`${field.label || key}：${configValues[key] ? '禁用' : '启用'}`"
+                  :ariaLabel="`${field.label || key}：${configValues[key] ? '禁用' : '启用'}`"
                   @change="(value) => { configValues[key] = value }"
                 />
                 <span class="plugin-manager__config-switch-text">{{ configValues[key] ? '启用' : '禁用' }}</span>
@@ -169,8 +169,9 @@
               <UiInput
                 type="text"
                 :id="'config-' + key"
-                v-model="configValues[key]"
+                :model-value="String(configValues[key] ?? '')"
                 :placeholder="field.placeholder"
+                @update:model-value="value => setConfigValue(key, value)"
               />
             </template>
           </UiField>
@@ -424,7 +425,7 @@ async function handleImportFiles(files: File[]) {
   } catch (error: unknown) {
     const conflictError = error as { status?: number; details?: Record<string, unknown>; message?: string }
     if (conflictError?.status === 409) {
-      const pluginId = String(conflictError.details?.plugin_id || '')
+      const pluginId = String(conflictError.details?.pluginId || '')
       const confirmed = await confirmProductAction({
         title: '替换插件',
         message: `插件 "${pluginId || file.name}" 已存在，是否替换？`,

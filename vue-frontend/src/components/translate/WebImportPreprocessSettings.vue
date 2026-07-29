@@ -35,6 +35,10 @@ function updateTargetFormat(value: string | number): void {
   if (!isTargetFormat(value)) return
   props.settingsActions.setImageTargetFormat(value)
 }
+
+function applyNumber(action: (value: number) => void, value: number | null): void {
+  if (value !== null) action(value)
+}
 </script>
 
 <template>
@@ -80,7 +84,7 @@ function updateTargetFormat(value: string | number): void {
               :model-value="draftSettings.imagePreprocess.compression.quality"
               :min="1"
               :max="100"
-              @update:model-value="settingsActions.setImageCompressionQuality"
+              @update:model-value="value => applyNumber(settingsActions.setImageCompressionQuality, value)"
             />
           </UiField>
           <UiField variant="settings" label="最大宽度 (0=不限)" control-id="webImportImageMaxWidth">
@@ -88,7 +92,7 @@ function updateTargetFormat(value: string | number): void {
               input-id="webImportImageMaxWidth"
               :model-value="draftSettings.imagePreprocess.compression.maxWidth"
               :min="0"
-              @update:model-value="settingsActions.setImageMaxWidth"
+              @update:model-value="value => applyNumber(settingsActions.setImageMaxWidth, value)"
             />
           </UiField>
           <UiField variant="settings" label="最大高度 (0=不限)" control-id="webImportImageMaxHeight">
@@ -96,7 +100,7 @@ function updateTargetFormat(value: string | number): void {
               input-id="webImportImageMaxHeight"
               :model-value="draftSettings.imagePreprocess.compression.maxHeight"
               :min="0"
-              @update:model-value="settingsActions.setImageMaxHeight"
+              @update:model-value="value => applyNumber(settingsActions.setImageMaxHeight, value)"
             />
           </UiField>
         </UiFormGrid>

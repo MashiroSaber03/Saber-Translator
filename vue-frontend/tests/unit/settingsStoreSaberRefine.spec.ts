@@ -1,55 +1,54 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { STORAGE_KEY_TRANSLATION_SETTINGS } from '@/constants'
+import type { V2SettingsDocument, V2SettingsTransaction } from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
 import { createDefaultSettings } from '@/stores/settings/defaults'
 
-const { getUserSettingsMock, saveUserSettingsMock } = vi.hoisted(() => ({
-  getUserSettingsMock: vi.fn(),
-  saveUserSettingsMock: vi.fn()
+const settingsApiMocks = vi.hoisted(() => ({
+  getV2Settings: vi.fn(),
+  saveV2SettingsTransaction: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  getUserSettings: getUserSettingsMock,
-  saveUserSettings: saveUserSettingsMock
+vi.mock('@/api/v2/settings', () => ({
+  getV2Settings: settingsApiMocks.getV2Settings,
+  saveV2SettingsTransaction: settingsApiMocks.saveV2SettingsTransaction,
 }))
+
+function settingsDocument(
+  settings = createDefaultSettings(),
+  revision = 6,
+): V2SettingsDocument {
+  return {
+    settings: [{
+      domain: 'translation',
+      payload: settings as unknown as Record<string, unknown>,
+      revision,
+      schemaVersion: 3,
+    }],
+    bookSettings: [],
+    providerSettings: [],
+    credentials: [],
+  }
+}
 
 describe('settings store saber yolo refine', () => {
-  let localStorageMock: Record<string, string> = {}
-
   beforeEach(() => {
-    localStorageMock = {}
     setActivePinia(createPinia())
-
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
-      return localStorageMock[key] || null
+    settingsApiMocks.getV2Settings.mockReset()
+    settingsApiMocks.saveV2SettingsTransaction.mockReset()
+    settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument())
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [{ domain: 'translation', revision: 7 }],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
     })
-
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
-      localStorageMock[key] = value
-    })
-
-    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation((key: string) => {
-      delete localStorageMock[key]
-    })
-
-    getUserSettingsMock.mockReset()
-    saveUserSettingsMock.mockReset()
-    saveUserSettingsMock.mockResolvedValue({ success: true })
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('defaults enableSaberYoloRefine to true', () => {
+  it('uses the current detection defaults', () => {
     const store = useSettingsStore()
 
-    expect(typeof store.setEnableAuxYoloDetection).toBe('function')
-    expect(typeof store.setAuxYoloConfThreshold).toBe('function')
-    expect(typeof store.setAuxYoloOverlapThreshold).toBe('function')
     expect(store.settings.enableSaberYoloRefine).toBe(true)
     expect(store.settings.saberYoloRefineOverlapThreshold).toBe(50)
     expect(store.settings.enableAuxYoloDetection).toBe(false)
@@ -57,87 +56,48 @@ describe('settings store saber yolo refine', () => {
     expect(store.settings.auxYoloOverlapThreshold).toBe(0.1)
   })
 
-  it('loads enableSaberYoloRefine from localStorage', () => {
+  it('loads saber refine and auxiliary detector settings from backend', async () => {
     const settings = createDefaultSettings()
     settings.enableSaberYoloRefine = false
     settings.saberYoloRefineOverlapThreshold = 35
     settings.enableAuxYoloDetection = true
     settings.auxYoloConfThreshold = 0.55
     settings.auxYoloOverlapThreshold = 0.2
-    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify(settings)
+    settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument(settings))
 
     const store = useSettingsStore()
-    store.loadFromStorage()
 
-    expect(store.settings.enableSaberYoloRefine).toBe(false)
-    expect(store.settings.saberYoloRefineOverlapThreshold).toBe(35)
-    expect(store.settings.enableAuxYoloDetection).toBe(true)
-    expect(store.settings.auxYoloConfThreshold).toBe(0.55)
-    expect(store.settings.auxYoloOverlapThreshold).toBe(0.2)
-  })
-
-  it('ignores partial localStorage settings even when saber refine fields are present', () => {
-    localStorageMock[STORAGE_KEY_TRANSLATION_SETTINGS] = JSON.stringify({
-      settingsSchemaVersion: 3,
-      enableSaberYoloRefine: false,
-      saberYoloRefineOverlapThreshold: 35,
-      enableAuxYoloDetection: true,
-      auxYoloConfThreshold: 0.55,
-      auxYoloOverlapThreshold: 0.2
-    })
-
-    const store = useSettingsStore()
-    store.loadFromStorage()
-
-    expect(store.settings.enableSaberYoloRefine).toBe(createDefaultSettings().enableSaberYoloRefine)
-    expect(store.settings.saberYoloRefineOverlapThreshold).toBe(createDefaultSettings().saberYoloRefineOverlapThreshold)
-    expect(store.settings.enableAuxYoloDetection).toBe(createDefaultSettings().enableAuxYoloDetection)
-    expect(store.settings.auxYoloConfThreshold).toBe(createDefaultSettings().auxYoloConfThreshold)
-    expect(store.settings.auxYoloOverlapThreshold).toBe(createDefaultSettings().auxYoloOverlapThreshold)
-  })
-
-  it('loads enableSaberYoloRefine from backend settings', async () => {
-    const settings = createDefaultSettings()
-    settings.enableSaberYoloRefine = false
-    settings.saberYoloRefineOverlapThreshold = 35
-    settings.enableAuxYoloDetection = true
-    settings.auxYoloConfThreshold = 0.55
-    settings.auxYoloOverlapThreshold = 0.2
-
-    getUserSettingsMock.mockResolvedValue({
-      success: true,
-      settings
-    })
-
-    const store = useSettingsStore()
-    const loaded = await store.loadFromBackend()
-
-    expect(loaded).toBe(true)
-    expect(store.settings.enableSaberYoloRefine).toBe(false)
-    expect(store.settings.saberYoloRefineOverlapThreshold).toBe(35)
-    expect(store.settings.enableAuxYoloDetection).toBe(true)
-    expect(store.settings.auxYoloConfThreshold).toBe(0.55)
-    expect(store.settings.auxYoloOverlapThreshold).toBe(0.2)
-  })
-
-  it('saves enableSaberYoloRefine to backend settings', async () => {
-    const store = useSettingsStore()
-    store.settings.enableSaberYoloRefine = false
-    store.settings.saberYoloRefineOverlapThreshold = 35
-    store.settings.enableAuxYoloDetection = true
-    store.settings.auxYoloConfThreshold = 0.55
-    store.settings.auxYoloOverlapThreshold = 0.2
-
-    const saved = await store.saveToBackend()
-
-    expect(saved).toBe(true)
-    expect(saveUserSettingsMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.settings).toMatchObject({
       enableSaberYoloRefine: false,
       saberYoloRefineOverlapThreshold: 35,
       enableAuxYoloDetection: true,
       auxYoloConfThreshold: 0.55,
       auxYoloOverlapThreshold: 0.2,
-      settingsSchemaVersion: 3
-    }))
+    })
+  })
+
+  it('saves detector settings through the v2 transaction', async () => {
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    store.setEnableSaberYoloRefine(false)
+    store.setSaberYoloRefineOverlapThreshold(35)
+    store.setEnableAuxYoloDetection(true)
+    store.setAuxYoloConfThreshold(0.55)
+    store.setAuxYoloOverlapThreshold(0.2)
+
+    expect(await store.saveToBackend()).toBe(true)
+
+    const transaction = (
+      settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
+    ) as V2SettingsTransaction
+    expect(transaction.settings?.[0]?.payload).toMatchObject({
+      enableSaberYoloRefine: false,
+      saberYoloRefineOverlapThreshold: 35,
+      enableAuxYoloDetection: true,
+      auxYoloConfThreshold: 0.55,
+      auxYoloOverlapThreshold: 0.2,
+      settingsSchemaVersion: 3,
+    })
   })
 })

@@ -92,6 +92,11 @@ export interface V2Prompt {
   type: string
 }
 
+export interface V2WorkflowPreferences {
+  lastWorkflowMode: string
+  rememberWorkflowModeEnabled: boolean
+}
+
 export interface V2DiagnosticRequest {
   baseUrl?: string
   credentialId?: string
@@ -221,7 +226,7 @@ export function runV2ConnectionTest(
 }
 
 export function updateV2WorkflowPreferences(
-  payload: Record<string, unknown>,
+  payload: V2WorkflowPreferences,
   baseRevision: number,
 ): Promise<V2SettingEntry> {
   return apiClient.patch<V2SettingEntry>(

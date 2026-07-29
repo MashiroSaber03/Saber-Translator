@@ -34,15 +34,15 @@ const isTesting = ref(false)
 const provider = ref(insightStore.config.vlm.provider)
 const apiKey = ref(insightStore.config.vlm.apiKey)
 const model = ref(insightStore.config.vlm.model)
-const baseUrl = ref(insightStore.config.vlm.baseUrl)
-const rpmLimit = ref(insightStore.config.vlm.openaiOptions.execution.rpmLimit)
+const baseUrl = ref(insightStore.config.vlm.baseUrl ?? '')
+const rpmLimit = ref(insightStore.config.vlm.openaiOptions.execution.rpmLimit ?? 0)
 const transportRetries = ref(insightStore.config.vlm.openaiOptions.execution.transportRetries)
 const businessRetries = ref(insightStore.config.vlm.openaiOptions.execution.businessRetries)
-const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperature)
+const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperature ?? 0.3)
 const forceJsonOutput = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
 const extraBody = ref(insightStore.config.vlm.openaiOptions.request.extraBody)
 const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
-const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize)
+const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize ?? 1280)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 const {
@@ -128,15 +128,15 @@ function applyDraftConfig(config: StoreVlmConfig): void {
   provider.value = config.provider
   apiKey.value = config.apiKey
   model.value = config.model
-  baseUrl.value = config.baseUrl
-  rpmLimit.value = config.openaiOptions.execution.rpmLimit
+  baseUrl.value = config.baseUrl ?? ''
+  rpmLimit.value = config.openaiOptions.execution.rpmLimit ?? 0
   transportRetries.value = config.openaiOptions.execution.transportRetries
   businessRetries.value = config.openaiOptions.execution.businessRetries
-  temperature.value = config.openaiOptions.request.temperature
+  temperature.value = config.openaiOptions.request.temperature ?? 0.3
   forceJsonOutput.value = config.openaiOptions.request.forceJsonOutput
   extraBody.value = config.openaiOptions.request.extraBody
   useStream.value = config.openaiOptions.execution.useStream
-  imageMaxSize.value = config.imageMaxSize
+  imageMaxSize.value = config.imageMaxSize ?? 1280
 }
 
 useInsightSettingsDraft<StoreVlmConfig>({

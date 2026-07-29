@@ -716,7 +716,7 @@ export async function getRebuildEmbeddingsStatus(
   return {
     success: true,
     task: {
-      task_id: job.id,
+      task_id: job.jobId,
       task_type: job.kind,
       status: mapJobStatus(job.status),
       progress: {
@@ -725,7 +725,10 @@ export async function getRebuildEmbeddingsStatus(
         total_pages: Number(progress.total ?? 0),
         percentage: Number(progress.percent ?? 0),
       },
-      error_message: job.error?.message,
+      error_message: String(
+        ((job.progress as Record<string, unknown>).error as Record<string, unknown> | undefined)
+          ?.message ?? '',
+      ) || undefined,
     },
   }
 }
@@ -900,7 +903,10 @@ export async function getGlobalConfig(): Promise<GlobalConfigResponse> {
   credentialSummaries = document.credentials
   promptCache = prompts
   const app = document.settings.find(row => row.domain === 'insight')?.payload ?? {}
-  const section = (key: keyof typeof SECTION_DOMAINS, appKey = key): Record<string, unknown> => {
+  const section = (
+    key: keyof typeof SECTION_DOMAINS,
+    appKey: string = key,
+  ): Record<string, unknown> => {
     const selected = (app[appKey] as Record<string, unknown> | undefined) ?? {}
     const provider = String(selected.provider ?? '')
     const row = document.providerSettings.find(

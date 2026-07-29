@@ -44,7 +44,14 @@ class PluginNotFound(LookupError):
 
 
 class PluginConflict(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.details = details or {}
 
 
 class PluginLocked(PluginConflict):
@@ -214,7 +221,11 @@ class PluginRegistry:
                 )
                 if current_revision != base_revision:
                     raise PluginConflict(
-                        "plugin current version revision changed"
+                        "plugin current version revision changed",
+                        details={
+                            "pluginId": plugin_id,
+                            "currentRevision": current_revision,
+                        },
                     )
                 if plugin is None and base_revision != 0:
                     raise PluginConflict(

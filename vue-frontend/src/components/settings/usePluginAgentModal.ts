@@ -1,6 +1,9 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { marked } from 'marked'
-import { configApi } from '@/api/config'
+import {
+  fetchModels as fetchV2Models,
+  testAiTranslateConnection,
+} from '@/api/v2/diagnostics'
 import {
   cancelPluginAgentExecution,
   createPluginAgentSession,
@@ -113,7 +116,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
         localAgentSettings.value.provider,
       ),
     }),
-    fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+    fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
       provider,
       apiKey,
       baseUrl,
@@ -695,7 +698,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   async function testConnection(): Promise<void> {
     isTestingConnection.value = true
     try {
-      const result = await configApi.testAiTranslateConnection({
+      const result = await testAiTranslateConnection({
         provider: localAgentSettings.value.provider,
         apiKey: localAgentSettings.value.apiKey,
         modelName: localAgentSettings.value.modelName,

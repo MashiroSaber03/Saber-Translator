@@ -98,7 +98,7 @@ interface CharactersResponse {
   error?: string
 }
 
-interface UploadImageResponse {
+export interface UploadImageResponse {
   success: boolean
   image_path?: string
   task_id?: string
@@ -253,6 +253,7 @@ async function ensureProject(bookId: string): Promise<V2ContinuationProject> {
     state = { ...state, project }
     stateCache.set(bookId, state)
   }
+  if (!state.project) throw new Error('续写项目同步失败')
   return state.project
 }
 
@@ -822,7 +823,9 @@ export async function waitForContinuationJob(
     onProgress?.(job.progress as Record<string, unknown>)
     if (job.status === 'completed' || job.status === 'completed_with_errors') return job
     if (['failed', 'cancelled', 'interrupted'].includes(job.status)) {
-      throw new Error(job.error?.message ?? '续写任务失败')
+      const progress = job.progress as Record<string, unknown>
+      const error = progress.error as Record<string, unknown> | undefined
+      throw new Error(String(error?.message ?? '续写任务失败'))
     }
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
   }

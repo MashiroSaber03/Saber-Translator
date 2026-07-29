@@ -8,6 +8,7 @@ import type {
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
+  normalizeOpenAiOptions,
   omitOpenAiOptionsPatchFields,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
@@ -23,8 +24,6 @@ import {
 export function useTranslationSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
-  saveToStorage: () => void,
-  saveProviderConfigsToStorage: () => void
 ) {
   type TranslationServiceUiUpdates = Partial<TranslationServiceSettings> & OpenAiOptionsPatch
   const translationProvider = computed(() => settings.value.translation.provider)
@@ -40,13 +39,11 @@ export function useTranslationSettings(
 
     restoreTranslationProviderConfig(provider)
 
-    saveToStorage()
   }
 
   function updateTranslationService(updates: TranslationServiceUiUpdates): void {
     Object.assign(settings.value.translation, omitOpenAiOptionsPatchFields(updates))
     applyOpenAiOptionsPatch(settings.value.translation.openaiOptions, updates)
-    saveToStorage()
   }
 
   function setTranslatePrompt(prompt: string): void {
@@ -64,7 +61,6 @@ export function useTranslationSettings(
       translation.batchNormalPrompt = prompt
     }
     settings.value.translatePrompt = prompt
-    saveToStorage()
   }
 
   function setTranslatePromptMode(forceJsonOutput: boolean): void {
@@ -84,7 +80,6 @@ export function useTranslationSettings(
     }
     settings.value.translatePrompt = prompt
 
-    saveToStorage()
   }
 
   function saveTranslationProviderConfig(provider: string): void {
@@ -96,7 +91,6 @@ export function useTranslationSettings(
         openaiOptions: cloneOpenAiOptions(settings.value.translation.openaiOptions),
         translationMode: settings.value.translation.translationMode
       }),
-      persist: saveProviderConfigsToStorage,
     })
   }
 
@@ -106,7 +100,12 @@ export function useTranslationSettings(
       cache: providerConfigs.value.translation,
       applyCached: (cached) => {
         applyProviderCredentials(settings.value.translation, cached)
-        if (cached.openaiOptions !== undefined) settings.value.translation.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
+        if (cached.openaiOptions !== undefined) {
+          settings.value.translation.openaiOptions = normalizeOpenAiOptions(
+            cached.openaiOptions,
+            settings.value.translation.openaiOptions,
+          )
+        }
         if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
       },
       applyMissing: () => {

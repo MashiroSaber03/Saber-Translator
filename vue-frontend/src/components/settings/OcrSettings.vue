@@ -283,7 +283,11 @@ import {
   providerRequiresBaseUrl
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
-import { configApi } from '@/api/config'
+import {
+  fetchModels as fetchV2Models,
+  testAiVisionOcrConnection,
+  testBaiduOcrConnection,
+} from '@/api/v2/diagnostics'
 import { useToast } from '@/utils/toast'
 import {
   DEFAULT_AI_VISION_OCR_PROMPT,
@@ -389,7 +393,7 @@ const aiVisionModelDiscovery = useAiModelDiscovery({
       settingsStore.settings.aiVisionOcr.provider,
     ),
   }),
-  fetcher: (provider, apiKey, baseUrl) => configApi.fetchModels(
+  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
     provider,
     apiKey,
     baseUrl,
@@ -452,7 +456,8 @@ function handleHybridSecondaryEngineChange(value: UiSelectValue) {
     : RECOMMENDED_HYBRID_SECONDARY_ENGINE
   settingsStore.updateHybridOcr({ secondaryEngine: fallback })
 }
-function handleHybridThresholdChange(value: number) {
+function handleHybridThresholdChange(value: number | null) {
+  if (value === null) return
   const normalized = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
   settingsStore.updateHybridOcr({ confidenceThreshold: normalized })
 }
@@ -559,7 +564,7 @@ async function testBaiduOcr() {
   isTesting.value = true
   toast.info('正在测试百度OCR连接...')
   try {
-    const result = await configApi.testBaiduOcrConnection(apiKey, secretKey)
+    const result = await testBaiduOcrConnection(apiKey, secretKey)
     if (result.success) {
       toast.success(result.message || '百度OCR连接成功!')
     } else {
@@ -575,7 +580,7 @@ async function testBaiduOcr() {
 async function testAiVisionOcr() {
   isTesting.value = true
   try {
-    const result = await configApi.testAiVisionOcrConnection({
+    const result = await testAiVisionOcrConnection({
       provider: settingsStore.settings.aiVisionOcr.provider,
       apiKey: localAiVisionOcr.value.apiKey,
       modelName: localAiVisionOcr.value.modelName,

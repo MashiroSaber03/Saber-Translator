@@ -6,27 +6,27 @@ import { nextTick } from 'vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
 
 const {
-  getPromptsMock,
-  getPromptContentMock,
-  getTextboxPromptsMock,
-  getTextboxPromptContentMock,
+  listV2PromptsMock,
 } = vi.hoisted(() => ({
-  getPromptsMock: vi.fn(),
-  getPromptContentMock: vi.fn(),
-  getTextboxPromptsMock: vi.fn(),
-  getTextboxPromptContentMock: vi.fn(),
+  listV2PromptsMock: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  configApi: {
-    getPrompts: getPromptsMock,
-    getPromptContent: getPromptContentMock,
-    getTextboxPrompts: getTextboxPromptsMock,
-    getTextboxPromptContent: getTextboxPromptContentMock,
-  },
+vi.mock('@/api/v2/settings', () => ({
+  listV2Prompts: listV2PromptsMock,
 }))
 
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
+
+function prompt(id: string, name: string, content: string) {
+  return {
+    id,
+    name,
+    content,
+    type: 'translate',
+    revision: 1,
+    isFactoryDefault: false,
+  }
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -40,41 +40,42 @@ function deferred<T>() {
 
 describe('SavedPromptsPicker', () => {
   beforeEach(() => {
-    getPromptsMock.mockReset()
-    getPromptContentMock.mockReset()
-    getTextboxPromptsMock.mockReset()
-    getTextboxPromptContentMock.mockReset()
-    getPromptsMock.mockResolvedValue({ prompt_names: [] })
-    getPromptContentMock.mockResolvedValue({ prompt_content: 'prompt content' })
-    getTextboxPromptsMock.mockResolvedValue({ prompt_names: [] })
-    getTextboxPromptContentMock.mockResolvedValue({ prompt_content: 'textbox content' })
+    listV2PromptsMock.mockReset()
+    listV2PromptsMock.mockResolvedValue([])
   })
 
   it('ignores stale prompt list responses after prompt type changes', async () => {
-    const translatePrompts = deferred<{ prompt_names: string[] }>()
-    const textboxPrompts = deferred<{ prompt_names: string[] }>()
-    getPromptsMock.mockReturnValue(translatePrompts.promise)
-    getTextboxPromptsMock.mockReturnValue(textboxPrompts.promise)
+    const translatePrompts = deferred<ReturnType<typeof prompt>[]>()
+    const textboxPrompts = deferred<ReturnType<typeof prompt>[]>()
+    listV2PromptsMock.mockImplementation((type: string) =>
+      type === 'textbox' ? textboxPrompts.promise : translatePrompts.promise
+    )
 
     const wrapper = mount(SavedPromptsPicker, {
       props: { promptType: 'translate' },
     })
 
     await wrapper.setProps({ promptType: 'textbox' })
-    textboxPrompts.resolve({ prompt_names: ['textbox-current'] })
+    textboxPrompts.resolve([
+      prompt('textbox-current-id', 'textbox-current', 'textbox content'),
+    ])
     await flushPromises()
     expect(wrapper.text()).toContain('textbox-current')
 
-    translatePrompts.resolve({ prompt_names: ['translate-stale'] })
+    translatePrompts.resolve([
+      prompt('translate-stale-id', 'translate-stale', 'stale content'),
+    ])
     await flushPromises()
     expect(wrapper.text()).toContain('textbox-current')
     expect(wrapper.text()).not.toContain('translate-stale')
   })
 
-  it('does not emit stale prompt content after prompt type changes', async () => {
-    getPromptsMock.mockResolvedValue({ prompt_names: ['translate-prompt'] })
-    const translateContent = deferred<{ prompt_content: string }>()
-    getPromptContentMock.mockReturnValue(translateContent.promise)
+  it('does not emit a prompt that no longer belongs to the active type', async () => {
+    listV2PromptsMock.mockImplementation((type: string) => Promise.resolve(
+      type === 'translate'
+        ? [prompt('translate-prompt-id', 'translate-prompt', 'prompt content')]
+        : [],
+    ))
 
     const wrapper = mount(SavedPromptsPicker, {
       props: { promptType: 'translate' },
@@ -85,15 +86,15 @@ describe('SavedPromptsPicker', () => {
     expect(chips.props('label')).toBe('快速选择')
     expect(chips.props('items')).toEqual([
       expect.objectContaining({
-        id: 'translate-prompt',
+        id: 'translate-prompt-id',
         interactive: true,
         label: 'translate-prompt',
       }),
     ])
 
-    chips.vm.$emit('select', 'translate-prompt')
     await wrapper.setProps({ promptType: 'textbox' })
-    translateContent.resolve({ prompt_content: 'stale translate content' })
+    await flushPromises()
+    chips.vm.$emit('select', 'translate-prompt-id')
     await flushPromises()
 
     expect(wrapper.emitted('select')).toBeUndefined()
@@ -106,8 +107,8 @@ describe('SavedPromptsPicker', () => {
     )
     expect(source).not.toContain('empty-hint')
 
-    const pendingPrompts = deferred<{ prompt_names: string[] }>()
-    getPromptsMock.mockReturnValueOnce(pendingPrompts.promise)
+    const pendingPrompts = deferred<ReturnType<typeof prompt>[]>()
+    listV2PromptsMock.mockReturnValueOnce(pendingPrompts.promise)
 
     const wrapper = mount(SavedPromptsPicker, {
       props: { promptType: 'translate' },
@@ -126,7 +127,7 @@ describe('SavedPromptsPicker', () => {
     ])
     expect(wrapper.find('.empty-hint').exists()).toBe(false)
 
-    pendingPrompts.resolve({ prompt_names: [] })
+    pendingPrompts.resolve([])
     await flushPromises()
 
     chipList = wrapper.getComponent(ProductChipList)

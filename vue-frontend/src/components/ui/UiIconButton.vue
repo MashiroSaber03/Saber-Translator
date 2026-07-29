@@ -37,7 +37,7 @@ withDefaults(defineProps<{
     :type="type"
     :disabled="disabled"
     :aria-label="label"
-    :aria-pressed="pressed === undefined ? undefined : String(pressed)"
+    :aria-pressed="pressed"
     :title="title || label"
   >
     <slot />

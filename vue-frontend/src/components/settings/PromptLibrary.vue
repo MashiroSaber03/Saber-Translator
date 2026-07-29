@@ -49,17 +49,17 @@
       <div v-else class="prompt-library__list">
         <div
           v-for="prompt in promptList"
-          :key="prompt.name"
+          :key="prompt.id"
           class="prompt-library__item"
-          :class="{ 'prompt-library__item--active': selectedPrompt === prompt.name }"
+          :class="{ 'prompt-library__item--active': selectedPromptId === prompt.id }"
         >
           <UiButton
             variant="toolbar"
             type="button"
             class="prompt-library__select-action"
             :aria-label="`选择提示词：${prompt.name}`"
-            :aria-pressed="String(selectedPrompt === prompt.name)"
-            @click="selectPrompt(prompt.name)"
+            :aria-pressed="String(selectedPromptId === prompt.id)"
+            @click="selectPrompt(prompt)"
           >
             <span class="prompt-library__name">{{ prompt.name }}</span>
           </UiButton>
@@ -69,7 +69,7 @@
               :label="`加载提示词：${prompt.name}`"
               variant="soft"
               size="sm"
-              @click="loadPrompt(prompt.name)"
+              @click="loadPrompt(prompt)"
             >
               <UiIcon name="download" />
             </UiIconButton>
@@ -78,8 +78,8 @@
               class="prompt-library__delete-action"
               :label="`删除提示词：${prompt.name}`"
               size="sm"
-              @click="deletePrompt(prompt.name)"
-              :disabled="prompt.name === 'default'"
+              @click="deletePrompt(prompt)"
+              :disabled="prompt.isFactoryDefault"
             >
               <UiIcon name="trash" />
             </UiIconButton>
@@ -122,8 +122,13 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
-import { configApi, type PromptContentResponse } from '@/api/config'
-import type { PromptListResponse } from '@/types'
+import {
+  createV2Prompt,
+  deleteV2Prompt,
+  listV2Prompts,
+  updateV2Prompt,
+  type V2Prompt,
+} from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import UiSelect from '@/components/ui/UiSelect.vue'
@@ -152,8 +157,8 @@ const toast = useToast()
 const settingsStore = useSettingsStore()
 
 const selectedType = ref('translate')
-const promptList = ref<{ name: string }[]>([])
-const selectedPrompt = ref('')
+const promptList = ref<V2Prompt[]>([])
+const selectedPromptId = ref('')
 const editingName = ref('')
 const editingContent = ref('')
 const isLoading = ref(false)
@@ -194,15 +199,11 @@ async function loadPromptList() {
   const promptType = selectedType.value
   isLoading.value = true
   try {
-    const result: PromptListResponse =
-      promptType === 'textbox'
-        ? await configApi.getTextboxPrompts()
-        : await configApi.getPrompts(promptType)
+    const result = await listV2Prompts(promptType)
     if (!isMounted || requestId !== promptListRequestId || selectedType.value !== promptType) {
       return
     }
-    const names = result.prompt_names || []
-    promptList.value = names.map(name => ({ name }))
+    promptList.value = result
   } catch (error: unknown) {
     if (!isMounted || requestId !== promptListRequestId || selectedType.value !== promptType) {
       return
@@ -216,26 +217,22 @@ async function loadPromptList() {
   }
 }
 
-async function selectPrompt(name: string) {
-  selectedPrompt.value = name
-  editingName.value = name
-  await loadPrompt(name)
+async function selectPrompt(prompt: V2Prompt) {
+  selectedPromptId.value = prompt.id
+  editingName.value = prompt.name
+  await loadPrompt(prompt)
 }
 
-async function loadPrompt(name: string) {
+async function loadPrompt(prompt: V2Prompt) {
   const requestId = ++promptContentRequestId
   const promptType = selectedType.value
   try {
-    const result: PromptContentResponse =
-      promptType === 'textbox'
-        ? await configApi.getTextboxPromptContent(name)
-        : await configApi.getPromptContent(promptType, name)
     if (!isMounted || requestId !== promptContentRequestId || selectedType.value !== promptType) {
       return
     }
-    editingName.value = name
-    editingContent.value = result.prompt_content || ''
-    selectedPrompt.value = name
+    editingName.value = prompt.name
+    editingContent.value = prompt.content
+    selectedPromptId.value = prompt.id
     toast.success('已加载提示词')
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '加载提示词内容失败'
@@ -249,12 +246,22 @@ async function savePrompt() {
     return
   }
   try {
-    if (selectedType.value === 'textbox') {
-      await configApi.saveTextboxPrompt(editingName.value, editingContent.value)
+    const selected = promptList.value.find(prompt => prompt.id === selectedPromptId.value)
+    if (selected) {
+      await updateV2Prompt({
+        ...selected,
+        name: editingName.value,
+        content: editingContent.value,
+      })
     } else {
-      await configApi.savePrompt(selectedType.value, editingName.value, editingContent.value)
+      await createV2Prompt(
+        selectedType.value,
+        editingName.value,
+        editingContent.value,
+      )
     }
     toast.success('提示词保存成功')
+    selectedPromptId.value = ''
     editingName.value = ''
     editingContent.value = ''
     await loadPromptList()
@@ -264,15 +271,15 @@ async function savePrompt() {
   }
 }
 
-async function deletePrompt(name: string) {
-  if (name === 'default') {
+async function deletePrompt(prompt: V2Prompt) {
+  if (prompt.isFactoryDefault) {
     toast.warning('默认提示词不能删除')
     return
   }
 
   const confirmed = await confirmProductAction({
     title: '删除提示词',
-    message: `确定要删除提示词“${name}”吗？此操作无法撤销。`,
+    message: `确定要删除提示词“${prompt.name}”吗？此操作无法撤销。`,
     confirmText: '删除',
     cancelText: '取消',
     tone: 'danger',
@@ -282,14 +289,10 @@ async function deletePrompt(name: string) {
   }
 
   try {
-    if (selectedType.value === 'textbox') {
-      await configApi.deleteTextboxPrompt(name)
-    } else {
-      await configApi.deletePrompt(selectedType.value, name)
-    }
+    await deleteV2Prompt(prompt.id)
     toast.success('提示词删除成功')
-    if (selectedPrompt.value === name) {
-      selectedPrompt.value = ''
+    if (selectedPromptId.value === prompt.id) {
+      selectedPromptId.value = ''
       editingName.value = ''
       editingContent.value = ''
     }
@@ -301,7 +304,7 @@ async function deletePrompt(name: string) {
 }
 
 function handleTypeChange() {
-  selectedPrompt.value = ''
+  selectedPromptId.value = ''
   editingName.value = ''
   editingContent.value = ''
   if (selectedType.value === 'translate') {

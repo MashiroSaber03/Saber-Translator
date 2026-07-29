@@ -8,7 +8,7 @@ import NoteEditorModal from './notes/NoteEditorModal.vue'
 import NotesList from './notes/NotesList.vue'
 import NotesToolbar from './notes/NotesToolbar.vue'
 
-const noteFilterOptions = [
+const noteFilterOptions: Array<{ label: string; value: NoteType | 'all' }> = [
   { label: '全部', value: 'all' },
   { label: '文本笔记', value: 'text' },
   { label: '问答笔记', value: 'qa' },

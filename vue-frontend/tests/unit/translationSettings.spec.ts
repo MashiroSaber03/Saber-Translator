@@ -20,19 +20,14 @@ const {
   testSakuraConnectionMock: vi.fn(),
 }))
 
-vi.mock('@/api/config', async () => {
-  const actual = await vi.importActual<typeof import('@/api/config')>('@/api/config')
-  return {
-    ...actual,
-    configApi: {
-      ...actual.configApi,
-      fetchModels: fetchModelsMock,
-      testAiTranslateConnection: testAiTranslateConnectionMock,
-      testOllamaConnection: testOllamaConnectionMock,
-      testSakuraConnection: testSakuraConnectionMock,
-    },
-  }
-})
+vi.mock('@/api/v2/diagnostics', () => ({
+  fetchModels: fetchModelsMock,
+  testAiTranslateConnection: testAiTranslateConnectionMock,
+  testOllamaConnection: testOllamaConnectionMock,
+  testSakuraConnection: testSakuraConnectionMock,
+  testBaiduTranslateConnection: vi.fn(),
+  testYoudaoTranslateConnection: vi.fn(),
+}))
 
 vi.mock('@/utils/toast', () => ({
   useToast: () => ({

@@ -1,7 +1,6 @@
 import type {
   HqTranslationProvider,
   OcrEngine,
-  PdfProcessingMethod,
   PluginAgentProvider,
   TextDetector,
   TranslationProvider,
@@ -109,10 +108,8 @@ export interface TranslationSettings {
   proofreading: ProofreadingSettings
   boxExpand: BoxExpandSettings
   preciseMask: PreciseMaskSettings
-  pdfProcessingMethod: PdfProcessingMethod
   showDetectionDebug: boolean
   parallel: ParallelSettings
-  autoSaveInBookshelfMode: boolean
   removeTextWithOcr: boolean
   enableVerboseLogs: boolean
   lamaDisableResize: boolean

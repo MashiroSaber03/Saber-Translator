@@ -240,18 +240,13 @@ describe('store source contracts', () => {
     expect(defaultsSource).toContain('export function normalizeInsightImageGenConfig')
   })
 
-  it('keeps insight local storage schema parsing outside the central store', () => {
+  it('keeps Insight business configuration out of browser storage', () => {
     const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/insightStore.ts'), 'utf8')
-    const storageSource = readFileSync(resolve(process.cwd(), 'src/stores/insight/insightConfigStorage.ts'), 'utf8')
 
-    expect(storeSource).toContain("from './insight/insightConfigStorage'")
-    expect(storeSource).toContain('buildInsightConfigStoragePayload')
-    expect(storeSource).toContain('parseInsightConfigStorage')
-    expect(storeSource).not.toContain('function isStoreVlmConfig')
-    expect(storeSource).not.toContain('function isOpenAiOptions')
-    expect(storeSource).not.toContain('function parseInsightConfigStorage')
-    expect(storageSource).toContain('export function buildInsightConfigStoragePayload')
-    expect(storageSource).toContain('export function parseInsightConfigStorage')
+    expect(storeSource).not.toContain('insightConfigStorage')
+    expect(storeSource).not.toContain('localStorage')
+    expect(storeSource).not.toContain('buildInsightConfigStoragePayload')
+    expect(storeSource).not.toContain('parseInsightConfigStorage')
   })
 
   it('keeps insight provider settings hydration outside the central store', () => {
@@ -390,9 +385,4 @@ describe('store source contracts', () => {
     }
   })
 
-  it('restores session image text-style fields without unknown ImageData casts', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/stores/sessionStore.ts'), 'utf8')
-
-    expect(source).not.toContain('normalizeImageTextStyleFields(img as unknown as Partial<ImageData>)')
-  })
 })

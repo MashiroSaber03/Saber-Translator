@@ -220,6 +220,10 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                     "settingsSchemaVersion": 3,
                     "sourceLanguage": "japanese",
                     "targetLanguage": "zh",
+                    "parallel": {
+                        "enabled": True,
+                        "deepLearningLockSize": 3,
+                    },
                     "translation": {
                         "provider": "custom",
                         "translationMode": "batch",
@@ -295,6 +299,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
         )
     assert frozen["translation"]["model_name"] == "backend-model"
     assert frozen["translation"]["prompt_content"] == "backend prompt"
+    assert frozen["deepLearningConcurrency"] == 3
     assert "backend-only-secret" not in json.dumps(frozen)
     assert steps[0] == "ocr"
     assert "detect" not in steps

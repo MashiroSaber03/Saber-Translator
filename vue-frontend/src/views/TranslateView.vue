@@ -2,7 +2,11 @@
 import AppShell from '@/components/ui/AppShell.vue'
 import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+} from 'vue-router'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { showToast } from '@/utils/toast'
@@ -26,7 +30,11 @@ import ProductPageHeader from '@/components/product/ProductPageHeader.vue'
 import ProductThemeToggle from '@/components/product/ProductThemeToggle.vue'
 import { useTextStyleSync } from '@/composables/useTextStyleSync'
 import { useTranslateViewActions } from './useTranslateViewActions'
-import { queuePageDocumentSave } from '@/services/pageDocumentPersistence'
+import {
+  flushPageDocument,
+  isPageDocumentRegistered,
+  queuePageDocumentSave,
+} from '@/services/pageDocumentPersistence'
 
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
@@ -90,7 +98,41 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  void flushCurrentPageDocument().catch(() => {
+    // Controlled route transitions report failures through their navigation guard.
+  })
 })
+
+async function flushCurrentPageDocument(): Promise<void> {
+  const image = imageStore.currentImage
+  if (
+    !image
+    || image.documentRevision === undefined
+    || !isPageDocumentRegistered(image.id)
+  ) return
+  queuePageDocumentSave(
+    image.id,
+    image.documentRevision,
+    bubbleStore.bubbles,
+  )
+  await flushPageDocument(image.id)
+}
+
+async function guardDocumentFlush(): Promise<boolean> {
+  try {
+    await flushCurrentPageDocument()
+    return true
+  } catch (error) {
+    showToast(
+      `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
+      'error',
+    )
+    return false
+  }
+}
+
+onBeforeRouteUpdate(guardDocumentFlush)
+onBeforeRouteLeave(guardDocumentFlush)
 
 watch(
   () => [route.query.book, route.query.chapter],
@@ -116,7 +158,12 @@ watch(
   () => bubbleStore.bubbles,
   bubbles => {
     const image = imageStore.currentImage
-    if (!image || image.documentRevision === undefined) {
+    if (
+      !image
+      || image.documentRevision === undefined
+      || translateInit.isSwitchingImage.value
+      || !isPageDocumentRegistered(image.id)
+    ) {
       return
     }
     void queuePageDocumentSave(

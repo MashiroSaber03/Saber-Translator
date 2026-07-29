@@ -119,6 +119,74 @@ def test_server_info_uses_the_configured_v2_api_port(content_platform) -> None:
     assert payload["lanUrl"].endswith(":5123")
 
 
+def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
+    content_platform,
+) -> None:
+    data_root, engine, _repository, _storage, _importer, book, chapter = (
+        content_platform
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-bootstrap-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+
+    response = app.test_client().get(
+        "/api/v2/translation/bootstrap",
+        query_string={
+            "bookId": str(book["id"]),
+            "chapterId": str(chapter["id"]),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["book"]["id"] == str(book["id"])
+    assert payload["chapter"]["id"] == str(chapter["id"])
+
+    settings_by_domain = {
+        item["domain"]: item for item in payload["settings"]["settings"]
+    }
+    assert {
+        "translation",
+        "text_style_defaults",
+        "workflow_preferences",
+    } <= settings_by_domain.keys()
+    translation = settings_by_domain["translation"]
+    assert translation["schemaVersion"] == 3
+    assert translation["revision"] == 1
+    assert translation["payload"]["settingsSchemaVersion"] == 3
+    assert translation["payload"]["translation"]["provider"]
+    assert translation["payload"]["textStyle"]["fontFamily"]
+    assert translation["payload"]["pluginAgent"]["provider"]
+
+    workflow = settings_by_domain["workflow_preferences"]["payload"]
+    assert workflow == {
+        "rememberWorkflowModeEnabled": False,
+        "lastWorkflowMode": "translate-current",
+    }
+    assert payload["fonts"] == [
+        {
+            "assetUrl": None,
+            "builtinKey": "default",
+            "displayName": "默认字体",
+            "id": "00000000-0000-0000-0000-000000000010",
+            "kind": "builtin",
+        }
+    ]
+    assert {item["type"] for item in payload["prompts"]} == {
+        "translate",
+        "textbox",
+    }
+    assert all(item["isFactoryDefault"] for item in payload["prompts"])
+
+
 def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
     content_platform,
 ) -> None:

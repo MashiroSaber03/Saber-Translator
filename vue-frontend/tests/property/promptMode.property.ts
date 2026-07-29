@@ -7,7 +7,6 @@ import {
   DEFAULT_AI_VISION_OCR_PROMPT,
   DEFAULT_TRANSLATE_JSON_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
-  STORAGE_KEY_TRANSLATION_SETTINGS,
 } from '@/constants'
 import type { TranslationMode } from '@/types/settings'
 
@@ -133,40 +132,7 @@ describe('prompt mode properties', () => {
     )
   })
 
-  it('persists prompt modes through the current settings schema', () => {
-    fc.assert(
-      fc.property(
-        fc.constantFrom<TranslationMode>('batch', 'single'),
-        fc.boolean(),
-        fc.boolean(),
-        (translationMode, translateJsonMode, aiVisionJsonMode) => {
-          const storageState = installMemoryStorage()
-          const store = createStore()
-
-          store.updateTranslationService({ translationMode })
-          store.setTranslatePromptMode(translateJsonMode)
-          store.setAiVisionOcrPromptMode(aiVisionJsonMode)
-
-          expect(storageState[STORAGE_KEY_TRANSLATION_SETTINGS]).toEqual(expect.any(String))
-
-          const newStore = createStore()
-          newStore.loadFromStorage()
-
-          expect(newStore.settings.translation.translationMode).toBe(translationMode)
-          expect(newStore.settings.translation.openaiOptions.request.forceJsonOutput).toBe(translateJsonMode)
-          expect(newStore.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput).toBe(aiVisionJsonMode)
-          expect(newStore.settings.translatePrompt).toBe(
-            expectedTranslatePrompt(newStore, translationMode, translateJsonMode),
-          )
-          expect(newStore.settings.aiVisionOcr.prompt).toBe(
-            aiVisionJsonMode ? DEFAULT_AI_VISION_OCR_JSON_PROMPT : DEFAULT_AI_VISION_OCR_PROMPT,
-          )
-        },
-      ),
-    )
-  })
-
-  it('persists custom prompt text without changing the selected prompt modes', () => {
+  it('keeps custom prompt text in the active draft without changing prompt modes', () => {
     fc.assert(
       fc.property(
         fc.constantFrom<TranslationMode>('batch', 'single'),
@@ -182,13 +148,10 @@ describe('prompt mode properties', () => {
           store.setTranslatePrompt(translatePrompt)
           store.updateAiVisionOcr({ prompt: aiVisionPrompt })
 
-          const newStore = createStore()
-          newStore.loadFromStorage()
-
-          expect(newStore.settings.translation.translationMode).toBe(translationMode)
-          expect(newStore.settings.translation.openaiOptions.request.forceJsonOutput).toBe(forceJsonOutput)
-          expect(newStore.settings.translatePrompt).toBe(translatePrompt)
-          expect(newStore.settings.aiVisionOcr.prompt).toBe(aiVisionPrompt)
+          expect(store.settings.translation.translationMode).toBe(translationMode)
+          expect(store.settings.translation.openaiOptions.request.forceJsonOutput).toBe(forceJsonOutput)
+          expect(store.settings.translatePrompt).toBe(translatePrompt)
+          expect(store.settings.aiVisionOcr.prompt).toBe(aiVisionPrompt)
         },
       ),
     )

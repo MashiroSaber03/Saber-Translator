@@ -135,6 +135,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
     from src.backend_v2.web_import.routes import (
         create_web_import_blueprint,
     )
+    from src.backend_v2.api.web import create_web_blueprint
     from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 
     engine = settings.engine or create_sqlite_engine(database_path_for(settings.data_root))
@@ -230,6 +231,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
             engine=engine,
         )
     )
+    app.register_blueprint(create_web_blueprint())
 
     assert_api_import_boundary()
     return app

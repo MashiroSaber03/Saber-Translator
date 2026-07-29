@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, unref } from 'vue'
+import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'inverse' | 'link' | 'toolbar' | 'card-action' | 'tab' | 'plain-danger'
   tone?: 'neutral' | 'primary' | 'danger' | 'success' | 'warning'
   size?: 'lg' | 'md' | 'sm' | 'xs'
   type?: 'button' | 'submit' | 'reset'
-  disabled?: unknown
+  disabled?: boolean
   loading?: boolean
   block?: boolean
   icon?: boolean
@@ -21,7 +21,7 @@ const props = withDefaults(defineProps<{
   icon: false,
 })
 
-const isDisabled = computed(() => Boolean(unref(props.disabled)) || props.loading)
+const isDisabled = computed(() => props.disabled || props.loading)
 const isBareStyledVariant = computed(() => ['link', 'toolbar', 'card-action', 'tab', 'plain-danger'].includes(props.variant))
 const buttonClasses = computed(() => {
   return [

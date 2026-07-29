@@ -11,13 +11,13 @@
         class="edit-thumbnails-panel__track"
         :style="{ width: `${images.length * ITEM_WIDTH}px` }"
       >
-        <button
+        <UiButton
           v-for="item in visibleItems"
           :key="item.image.id"
           class="edit-thumbnails-panel__item"
           :class="{ 'edit-thumbnails-panel__item--selected': item.index === currentImageIndex }"
           :style="{ transform: `translateX(${item.index * ITEM_WIDTH}px)` }"
-          type="button"
+          variant="card-action"
           role="listitem"
           :aria-label="`切换到图片 ${item.index + 1}`"
           :aria-current="item.index === currentImageIndex ? 'page' : undefined"
@@ -35,7 +35,7 @@
             {{ item.index + 1 }}
           </span>
           <span class="edit-thumbnails-panel__label">{{ item.index + 1 }}</span>
-        </button>
+        </UiButton>
       </div>
     </div>
   </div>
@@ -43,6 +43,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { ImageData } from '@/types/image'
 
 const ITEM_WIDTH = 70

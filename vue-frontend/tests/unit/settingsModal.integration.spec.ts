@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-const { saveToStorageMock, saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
-  saveToStorageMock: vi.fn(),
+const { saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
   saveToBackendMock: vi.fn(),
   saveDefaultsMock: vi.fn(),
 }))
 
 vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
-    saveToStorage: saveToStorageMock,
+    backendError: null,
+    isBackendReady: true,
+    settings: {},
+    providerConfigs: {},
+    loadFromBackend: vi.fn().mockResolvedValue(true),
     saveToBackend: saveToBackendMock,
   }),
 }))

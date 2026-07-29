@@ -22,9 +22,8 @@ DEFAULT_TEXT_STYLE: dict[str, object] = {
 }
 
 DEFAULT_WORKFLOW_PREFERENCES: dict[str, object] = {
-    "rememberWorkflowMode": False,
-    "lastWorkflowMode": "translate-batch",
-    "executionMode": "sequential",
+    "rememberWorkflowModeEnabled": False,
+    "lastWorkflowMode": "translate-current",
 }
 
 FACTORY_PROMPTS: dict[str, str] = {
@@ -71,3 +70,129 @@ FACTORY_PROMPTS: dict[str, str] = {
         "你是漫画分析助手。所有结论必须来自当前分析资料，区分事实与推断。"
     ),
 }
+
+
+def default_translation_settings() -> dict[str, object]:
+    """Return the complete browser schema-v3 factory document.
+
+    The v2 database is the first source of truth, so a fresh database must
+    contain a document the strict frontend parser can hydrate without falling
+    back to a second browser-owned settings source.
+    """
+
+    def openai_options(
+        *,
+        use_stream: bool,
+        rpm_limit: int,
+        transport_retries: int,
+        business_retries: int,
+    ) -> dict[str, object]:
+        return {
+            "request": {"forceJsonOutput": False},
+            "execution": {
+                "useStream": use_stream,
+                "rpmLimit": rpm_limit,
+                "transportRetries": transport_retries,
+                "businessRetries": business_retries,
+            },
+        }
+
+    return {
+        "settingsSchemaVersion": 3,
+        "textStyle": dict(DEFAULT_TEXT_STYLE),
+        "ocrEngine": "manga_ocr",
+        "sourceLanguage": "japanese",
+        "textDetector": "default",
+        "minTextBlockAreaPercent": 0.05,
+        "enableAuxYoloDetection": False,
+        "auxYoloConfThreshold": 0.4,
+        "auxYoloOverlapThreshold": 0.1,
+        "enableSaberYoloRefine": True,
+        "saberYoloRefineOverlapThreshold": 50,
+        "baiduOcr": {
+            "apiKey": "",
+            "secretKey": "",
+            "version": "standard",
+            "sourceLanguage": "JAP",
+        },
+        "paddleOcrVl": {"sourceLanguage": "japanese"},
+        "aiVisionOcr": {
+            "provider": "gemini",
+            "apiKey": "",
+            "modelName": "",
+            "prompt": FACTORY_PROMPTS["ai_vision_ocr"],
+            "promptMode": "normal",
+            "customBaseUrl": "",
+            "openaiOptions": openai_options(
+                use_stream=False,
+                rpm_limit=0,
+                transport_retries=1,
+                business_retries=3,
+            ),
+            "minImageSize": 32,
+        },
+        "hybridOcr": {
+            "enabled": False,
+            "secondaryEngine": "48px_ocr",
+            "confidenceThreshold": 0.2,
+        },
+        "translation": {
+            "provider": "siliconflow",
+            "apiKey": "",
+            "modelName": "",
+            "customBaseUrl": "",
+            "openaiOptions": openai_options(
+                use_stream=True,
+                rpm_limit=0,
+                transport_retries=1,
+                business_retries=3,
+            ),
+            "translationMode": "batch",
+            "batchNormalPrompt": FACTORY_PROMPTS["translate"],
+            "batchJsonPrompt": FACTORY_PROMPTS["translate"],
+            "singleNormalPrompt": FACTORY_PROMPTS["translate"],
+            "singleJsonPrompt": FACTORY_PROMPTS["translate"],
+        },
+        "targetLanguage": "zh",
+        "translatePrompt": FACTORY_PROMPTS["translate"],
+        "useTextboxPrompt": False,
+        "textboxPrompt": "",
+        "hqTranslation": {
+            "provider": "siliconflow",
+            "apiKey": "",
+            "modelName": "",
+            "customBaseUrl": "",
+            "openaiOptions": openai_options(
+                use_stream=True,
+                rpm_limit=7,
+                transport_retries=3,
+                business_retries=3,
+            ),
+            "batchSize": 3,
+            "prompt": FACTORY_PROMPTS["hq_translate"],
+        },
+        "pluginAgent": {
+            "provider": "siliconflow",
+            "apiKey": "",
+            "modelName": "",
+            "customBaseUrl": "",
+            "openaiOptions": openai_options(
+                use_stream=True,
+                rpm_limit=0,
+                transport_retries=10,
+                business_retries=10,
+            ),
+        },
+        "proofreading": {
+            "enabled": False,
+            "rounds": [],
+            "maxRetries": 2,
+        },
+        "boxExpand": {"ratio": 0, "top": 0, "bottom": 0, "left": 0, "right": 0},
+        "preciseMask": {"dilateSize": 10, "boxExpandRatio": 20},
+        "showDetectionDebug": False,
+        "parallel": {"enabled": False, "deepLearningLockSize": 1},
+        "removeTextWithOcr": False,
+        "enableVerboseLogs": False,
+        "lamaDisableResize": False,
+    }

@@ -41,9 +41,9 @@ export function resolveDownloadFileName(
 }
 
 export function collectDownloadImageEntries(images: ImageData[]): DownloadImageEntry[] {
-  return images.flatMap((image, index) => {
-    if (image.translatedDataURL) return [{ index, type: 'translated' as const }]
-    if (image.originalDataURL) return [{ index, type: 'original' as const }]
+  return images.flatMap<DownloadImageEntry>((image, index) => {
+    if (image.translatedDataURL) return [{ index, type: 'translated' }]
+    if (image.originalDataURL) return [{ index, type: 'original' }]
     return []
   })
 }

@@ -17,14 +17,7 @@ export {
 
 export {
   useExportImport,
-  type ExportTextData,
   type DownloadFormat
 } from './useExportImport'
-
-export {
-  useImageConverter,
-  type ImageConvertResult,
-  type BatchConvertProgress
-} from './useImageConverter'
 
 export { useFolderTree } from './useFolderTree'

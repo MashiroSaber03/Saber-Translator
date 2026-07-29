@@ -14,21 +14,15 @@ describe('api source contracts', () => {
     expect(source).not.toContain('获取插件列表')
   })
 
-  it('keeps the web import API module free of scaffold-style narration', () => {
-    const source = readFileSync(resolve(frontendRoot, 'src/api/webImport.ts'), 'utf8')
+  it('keeps the web import API on backend-owned v2 drafts', () => {
+    const source = readFileSync(resolve(frontendRoot, 'src/api/v2/webImport.ts'), 'utf8')
 
-    expect(source).not.toContain('网页导入 API')
-    expect(source).not.toContain('获取代理图片 URL')
-    expect(source).not.toContain('提取漫画图片')
-    expect(source).not.toContain('测试 AI Agent 连接')
-  })
-
-  it('keeps WebImport raw fetch usage scoped to streaming extraction', () => {
-    const source = readFileSync(resolve(frontendRoot, 'src/api/webImport.ts'), 'utf8')
-
-    expect(source).toContain('function webImportEndpoint')
-    expect(source.match(/await fetch\(/g) ?? []).toHaveLength(1)
-    expect(source).not.toContain('response.json()')
+    expect(source).toContain('/api/v2/web-import')
+    expect(source).toContain('createWebImportDraft')
+    expect(source).toContain('commitWebImportDraft')
+    expect(source).not.toContain('/api/web-import')
+    expect(source).not.toContain('ReadableStream')
+    expect(source).not.toContain('dataUrl')
   })
 
   it('keeps the continuation API module free of scaffold-style narration', () => {
@@ -40,30 +34,21 @@ describe('api source contracts', () => {
     expect(source).not.toContain('获取可用于参考图选择')
   })
 
-  it('keeps the parallel translate API module free of scaffold-style narration', () => {
-    const source = readFileSync(resolve(frontendRoot, 'src/api/parallelTranslate.ts'), 'utf8')
+  it('keeps browser translation APIs on the v2 job contract', () => {
+    const source = readFileSync(resolve(frontendRoot, 'src/api/v2/translation.ts'), 'utf8')
 
-    expect(source).not.toContain('// ====================')
-    expect(source).not.toContain('并行翻译 API')
-    expect(source).not.toContain('为并行流水线提供')
+    expect(source).toContain('/api/v2/chapters/')
+    expect(source).toContain('/translation-jobs')
+    expect(source).not.toContain('/api/parallel/')
+    expect(source).not.toContain('base64')
   })
 
-  it('keeps the translate API module free of scaffold-style narration', () => {
-    const source = readFileSync(resolve(frontendRoot, 'src/api/translate.ts'), 'utf8')
+  it('keeps diagnostics on the v2 backend contract', () => {
+    const source = readFileSync(resolve(frontendRoot, 'src/api/v2/diagnostics.ts'), 'utf8')
 
-    expect(source).not.toContain('// ====================')
-    expect(source).not.toContain('包含图片翻译')
-    expect(source).not.toContain('@param')
-    expect(source).not.toContain('当前后端协议字段')
-  })
-
-  it('keeps the config API module free of scaffold-style narration', () => {
-    const source = readFileSync(resolve(frontendRoot, 'src/api/config.ts'), 'utf8')
-
-    expect(source).not.toContain('// ====================')
-    expect(source).not.toContain('配置 API')
-    expect(source).not.toContain('@param')
-    expect(source).not.toContain('当前后端协议字段')
+    expect(source).toContain('fetchV2ModelCatalog')
+    expect(source).toContain('runV2ConnectionTest')
+    expect(source).not.toContain('/api/config')
   })
 
   it('keeps plugin agent session paths behind a local endpoint helper', () => {
@@ -76,10 +61,9 @@ describe('api source contracts', () => {
   it('keeps character studio paths behind local endpoint helpers', () => {
     const source = readFileSync(resolve(frontendRoot, 'src/api/characterStudio.ts'), 'utf8')
 
-    expect(source).toContain('function characterStudioEndpoint')
-    expect(source).toContain('function characterStudioDocumentEndpoint')
-    expect(source).toContain('function characterStudioQuery')
-    expect(source.match(/encodeURIComponent\(/g) ?? []).toHaveLength(1)
+    expect(source).toContain("from '@/api/v2/studio'")
+    expect(source).not.toContain('/api/manga-insight/')
+    expect(source).not.toContain('/character-studio/')
   })
 
   it('keeps the insight API module compact and helper-driven', () => {
@@ -88,10 +72,8 @@ describe('api source contracts', () => {
     expect(source).not.toContain('// ====================')
     expect(source).not.toContain('漫画分析 API')
     expect(source).not.toContain('@param')
-    expect(source).toContain('function insightEndpoint')
-    expect(source).toContain('function insightBookEndpoint')
-    expect(source).toContain('function insightQuery')
-    expect(source.match(/encodeURIComponent\(/g) ?? []).toHaveLength(1)
+    expect(source).toContain("from '@/api/v2/insight'")
+    expect(source).not.toContain('/api/manga-insight/')
   })
 
   it('uses the shared OpenAI-compatible wire type in the insight API module', () => {

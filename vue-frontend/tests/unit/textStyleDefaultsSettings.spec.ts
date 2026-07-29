@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createPinia, setActivePinia } from 'pinia'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import { useSettingsStore } from '@/stores/settings'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const initialDefaults = {
   fontSize: 26,
@@ -29,27 +32,22 @@ const factoryDefaults = {
 }
 
 const {
-  getDefaultsMock,
-  saveDefaultsMock,
-  resetDefaultsMock,
-  getFontListMock,
-  uploadFontMock,
+  getV2SettingsMock,
+  listV2FontsMock,
+  saveV2SettingsTransactionMock,
+  uploadV2FontMock,
 } = vi.hoisted(() => ({
-  getDefaultsMock: vi.fn(),
-  saveDefaultsMock: vi.fn(),
-  resetDefaultsMock: vi.fn(),
-  getFontListMock: vi.fn(),
-  uploadFontMock: vi.fn(),
+  getV2SettingsMock: vi.fn(),
+  listV2FontsMock: vi.fn(),
+  saveV2SettingsTransactionMock: vi.fn(),
+  uploadV2FontMock: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  configApi: {
-    getTextStyleDefaults: getDefaultsMock,
-    saveTextStyleDefaults: saveDefaultsMock,
-    resetTextStyleDefaults: resetDefaultsMock,
-    getFontList: getFontListMock,
-    uploadFont: uploadFontMock,
-  },
+vi.mock('@/api/v2/settings', () => ({
+  getV2Settings: getV2SettingsMock,
+  listV2Fonts: listV2FontsMock,
+  saveV2SettingsTransaction: saveV2SettingsTransactionMock,
+  uploadV2Font: uploadV2FontMock,
 }))
 
 vi.mock('@/defaults/textStyleFactoryDefaults', () => ({
@@ -77,24 +75,36 @@ async function requestDefaultsSave(wrapper: ReturnType<typeof mount>, requestId 
 
 describe('TextStyleDefaultsSettings', () => {
   beforeEach(() => {
-    getDefaultsMock.mockReset()
-    saveDefaultsMock.mockReset()
-    resetDefaultsMock.mockReset()
-    getFontListMock.mockReset()
-    uploadFontMock.mockReset()
+    setActivePinia(createPinia())
+    getV2SettingsMock.mockReset()
+    listV2FontsMock.mockReset()
+    saveV2SettingsTransactionMock.mockReset()
+    uploadV2FontMock.mockReset()
 
-    getDefaultsMock.mockResolvedValue({ success: true, defaults: { ...initialDefaults } })
-    saveDefaultsMock.mockResolvedValue({ success: true, defaults: { ...factoryDefaults } })
-    resetDefaultsMock.mockResolvedValue({ success: true, defaults: { ...factoryDefaults } })
-    uploadFontMock.mockResolvedValue({ success: true, fontPath: 'fonts/UploadedFont.ttf' })
-    getFontListMock.mockResolvedValue({
-      fonts: [{
-        file_name: '思源黑体SourceHanSansK-Bold.TTF',
-        display_name: '思源黑体',
-        path: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
-        is_default: false,
+    const settings = createDefaultSettings()
+    settings.textStyle = { ...initialDefaults }
+    getV2SettingsMock.mockResolvedValue({
+      settings: [{
+        domain: 'translation',
+        payload: settings,
+        revision: 1,
+        schemaVersion: 3,
       }],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
     })
+    uploadV2FontMock.mockResolvedValue({
+      id: 'font-uploaded',
+      assetUrl: '/api/v2/assets/font-uploaded',
+    })
+    listV2FontsMock.mockResolvedValue([{
+      id: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
+      displayName: '思源黑体',
+      kind: 'builtin',
+      builtinKey: 'source-han-sans',
+      assetUrl: null,
+    }])
   })
 
   it('loads current defaults when the settings modal opens', async () => {
@@ -109,7 +119,7 @@ describe('TextStyleDefaultsSettings', () => {
 
     await flushPromises()
 
-    expect(getDefaultsMock).toHaveBeenCalledTimes(1)
+    expect(getV2SettingsMock).toHaveBeenCalledTimes(1)
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('26')
   })
 
@@ -126,7 +136,7 @@ describe('TextStyleDefaultsSettings', () => {
     await flushPromises()
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
 
-    expect(saveDefaultsMock).not.toHaveBeenCalled()
+    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('31')
   })
 
@@ -144,9 +154,9 @@ describe('TextStyleDefaultsSettings', () => {
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
 
     const result = await requestDefaultsSave(wrapper)
-    expect(resetDefaultsMock).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ success: true, changed: true })
-    expect(saveDefaultsMock).not.toHaveBeenCalled()
+    expect(useSettingsStore().settings.textStyle).toEqual(factoryDefaults)
+    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
   it('uses fixed select primitives for layout, alignment, and fill method fields', async () => {
@@ -228,7 +238,7 @@ describe('TextStyleDefaultsSettings', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
 
     expect(source).not.toContain('style="display: none"')
-    expect(source).toContain('accept=".ttf,.ttc,.otf"\n          hidden')
+    expect(source).toMatch(/accept="\.ttf,\.otf,\.woff,\.woff2"\s+hidden/)
   })
 
   it('receives custom fonts through the typed file-input boundary', async () => {
@@ -252,7 +262,13 @@ describe('TextStyleDefaultsSettings', () => {
     wrapper.getComponent(UiFileInput).vm.$emit('files-change', [file])
     await flushPromises()
 
-    expect(uploadFontMock).toHaveBeenCalledWith(file)
+    expect(uploadV2FontMock).toHaveBeenCalledWith(file)
+    expect(wrapper.get('.ui-combobox-stub').attributes('data-value')).toBe('font-uploaded')
+    expect(await requestDefaultsSave(wrapper)).toEqual({
+      success: true,
+      changed: true,
+    })
+    expect(useSettingsStore().settings.textStyle.fontFamily).toBe('font-uploaded')
   })
 
   it('uses normal save when the user edits fields after resetting to factory defaults', async () => {
@@ -270,15 +286,15 @@ describe('TextStyleDefaultsSettings', () => {
     await wrapper.get('#textDefaultsFontSize').setValue('35')
 
     expect(await requestDefaultsSave(wrapper)).toEqual({ success: true, changed: true })
-    expect(saveDefaultsMock).toHaveBeenCalledWith({
+    expect(useSettingsStore().settings.textStyle).toEqual({
       ...factoryDefaults,
       fontSize: 35,
     })
-    expect(resetDefaultsMock).not.toHaveBeenCalled()
+    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
   it('becomes a no-op when current defaults failed to load but the user did not touch text defaults', async () => {
-    getDefaultsMock.mockResolvedValue({ success: false, error: 'load failed' })
+    getV2SettingsMock.mockRejectedValue(new Error('load failed'))
 
     const wrapper = mount(TextStyleDefaultsSettings, {
       props: { isOpen: true },
@@ -295,12 +311,11 @@ describe('TextStyleDefaultsSettings', () => {
       success: true,
       changed: false,
     })
-    expect(saveDefaultsMock).not.toHaveBeenCalled()
-    expect(resetDefaultsMock).not.toHaveBeenCalled()
+    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
   it('still reports an error if the user edits text defaults after load failure', async () => {
-    getDefaultsMock.mockResolvedValue({ success: false, error: 'load failed' })
+    getV2SettingsMock.mockRejectedValue(new Error('load failed'))
 
     const wrapper = mount(TextStyleDefaultsSettings, {
       props: { isOpen: true },
@@ -319,7 +334,6 @@ describe('TextStyleDefaultsSettings', () => {
       changed: false,
       error: '请先成功加载当前默认值，或先点击“恢复出厂默认”再保存'
     })
-    expect(saveDefaultsMock).not.toHaveBeenCalled()
-    expect(resetDefaultsMock).not.toHaveBeenCalled()
+    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 })

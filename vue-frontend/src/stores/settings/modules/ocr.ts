@@ -17,6 +17,7 @@ import { normalizeHybridOcrConfig } from '@/utils/hybridOcr'
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
+  normalizeOpenAiOptions,
   omitOpenAiOptionsPatchFields,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
@@ -31,8 +32,6 @@ import {
 export function useOcrSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
-  saveToStorage: () => void,
-  saveProviderConfigsToStorage: () => void
 ) {
   type AiVisionOcrUiUpdates = Partial<AiVisionOcrSettings> & OpenAiOptionsPatch
   const ocrEngine = computed(() => settings.value.ocrEngine)
@@ -42,22 +41,18 @@ export function useOcrSettings(
     const normalized = normalizeHybridOcrConfig(engine, settings.value.hybridOcr)
     settings.value.ocrEngine = normalized.primaryEngine
     settings.value.hybridOcr = normalized.hybrid
-    saveToStorage()
   }
 
   function setSourceLanguage(language: string): void {
     settings.value.sourceLanguage = language
-    saveToStorage()
   }
 
   function updateBaiduOcr(updates: Partial<BaiduOcrSettings>): void {
     Object.assign(settings.value.baiduOcr, updates)
-    saveToStorage()
   }
 
   function updatePaddleOcrVl(updates: Partial<PaddleOcrVlSettings>): void {
     Object.assign(settings.value.paddleOcrVl, updates)
-    saveToStorage()
   }
 
   function updateAiVisionOcr(updates: AiVisionOcrUiUpdates): void {
@@ -66,7 +61,6 @@ export function useOcrSettings(
     if (updates.forceJsonOutput !== undefined) {
       settings.value.aiVisionOcr.promptMode = updates.forceJsonOutput ? 'json' : 'normal'
     }
-    saveToStorage()
   }
 
   function updateHybridOcr(updates: Partial<HybridOcrSettings>): void {
@@ -83,7 +77,6 @@ export function useOcrSettings(
     )
     settings.value.ocrEngine = normalized.primaryEngine
     settings.value.hybridOcr = normalized.hybrid
-    saveToStorage()
   }
 
   function setAiVisionOcrProvider(provider: string): void {
@@ -97,7 +90,6 @@ export function useOcrSettings(
 
     restoreAiVisionOcrProviderConfig(provider)
 
-    saveToStorage()
   }
 
   function setAiVisionOcrPromptMode(mode: boolean | 'normal' | 'json' | 'paddleocr_vl'): void {
@@ -112,7 +104,6 @@ export function useOcrSettings(
       settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_PROMPT
     }
 
-    saveToStorage()
   }
 
   function saveAiVisionOcrProviderConfig(provider: string): void {
@@ -126,7 +117,6 @@ export function useOcrSettings(
         openaiOptions: cloneOpenAiOptions(settings.value.aiVisionOcr.openaiOptions),
         minImageSize: settings.value.aiVisionOcr.minImageSize
       }),
-      persist: saveProviderConfigsToStorage,
     })
   }
 
@@ -138,7 +128,12 @@ export function useOcrSettings(
         applyProviderCredentials(settings.value.aiVisionOcr, cached)
         if (cached.prompt !== undefined) settings.value.aiVisionOcr.prompt = cached.prompt
         if (cached.promptMode !== undefined) settings.value.aiVisionOcr.promptMode = cached.promptMode
-        if (cached.openaiOptions !== undefined) settings.value.aiVisionOcr.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
+        if (cached.openaiOptions !== undefined) {
+          settings.value.aiVisionOcr.openaiOptions = normalizeOpenAiOptions(
+            cached.openaiOptions,
+            settings.value.aiVisionOcr.openaiOptions,
+          )
+        }
         if (cached.minImageSize !== undefined) settings.value.aiVisionOcr.minImageSize = cached.minImageSize
       },
       applyMissing: () => {

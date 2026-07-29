@@ -39,7 +39,12 @@ def create_plugins_blueprint(
 
     @blueprint.errorhandler(PluginConflict)
     def conflict(error: PluginConflict):
-        return _error("revision_conflict", str(error), 409)
+        return _error(
+            "revision_conflict",
+            str(error),
+            409,
+            details=error.details,
+        )
 
     @blueprint.errorhandler(ValueError)
     def validation(error: ValueError):
@@ -178,5 +183,14 @@ def _idempotency_key() -> str:
     return value
 
 
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status
+def _error(
+    code: str,
+    message: str,
+    status: int,
+    *,
+    details: dict[str, object] | None = None,
+):
+    error: dict[str, object] = {"code": code, "message": message}
+    if details:
+        error["details"] = details
+    return jsonify({"error": error}), status

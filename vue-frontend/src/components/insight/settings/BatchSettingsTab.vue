@@ -73,7 +73,8 @@ function removeCustomLayer(idx: number): void {
   if (idx > 0 && idx < customLayers.value.length - 1) customLayers.value.splice(idx, 1)
 }
 
-function updateCustomLayer(idx: number, field: keyof CustomLayer, value: string | number | boolean): void {
+function updateCustomLayer(idx: number, field: keyof CustomLayer, value: string | number | boolean | null): void {
+  if (value === null) return
   const layer = customLayers.value[idx]
   if (!layer) return
 

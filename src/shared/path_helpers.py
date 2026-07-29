@@ -161,19 +161,15 @@ def get_font_path(font_path):
         # 如果未提供字体，使用默认字体
         return resource_path(DEFAULT_FONT_RELATIVE_PATH)
     
-    # 处理不同格式的字体路径
+    builtin_fonts = os.path.join('src', 'backend_v2', 'resources', 'fonts')
+
+    # 兼容旧文档中的展示路径，实际统一解析到 v2 只读字体资源。
     if font_path.startswith('static/fonts/'):
-        # 从static/fonts/开头的路径
-        rel_path = os.path.join('src', 'app', font_path)
-        return resource_path(rel_path)
+        return resource_path(os.path.join(builtin_fonts, os.path.basename(font_path)))
     elif font_path.startswith('static/'):
-        # 从static/开头的路径
-        rel_path = os.path.join('src', 'app', font_path)
-        return resource_path(rel_path)
+        return resource_path(os.path.join(builtin_fonts, os.path.basename(font_path)))
     elif font_path.startswith('fonts/'):
-        # 从fonts/开头的路径
-        rel_path = os.path.join('src', 'app', 'static', font_path)
-        return resource_path(rel_path)
+        return resource_path(os.path.join(builtin_fonts, os.path.basename(font_path)))
     elif os.path.exists(font_path):
         # 如果路径存在，直接返回
         return font_path
@@ -184,14 +180,11 @@ def get_font_path(font_path):
             return app_dir_path
             
         # 尝试在fonts目录下查找
-        fonts_dir_path = resource_path(os.path.join('src', 'app', 'static', 'fonts', os.path.basename(font_path)))
+        fonts_dir_path = resource_path(
+            os.path.join(builtin_fonts, os.path.basename(font_path))
+        )
         if os.path.exists(fonts_dir_path):
             return fonts_dir_path
-            
-        # 尝试在static目录下查找
-        static_dir_path = resource_path(os.path.join('src', 'app', 'static', os.path.basename(font_path)))
-        if os.path.exists(static_dir_path):
-            return static_dir_path
     
     # 如果所有尝试都失败，返回默认字体
     logger.warning(f"未找到字体 {font_path}，使用默认字体")
@@ -208,5 +201,5 @@ if __name__ == '__main__':
     print("调试目录:", get_debug_dir())
     print("气泡调试目录:", get_debug_dir('bubbles'))
     print("默认字体路径:", get_font_path(None))
-    print("尝试获取 STXINGKA:", get_font_path('static/fonts/STXINGKA.TTF')) # 假设字体已移动
+    print("尝试获取 STXINGKA:", get_font_path('static/fonts/STXINGKA.TTF'))
     print("尝试获取不存在字体:", get_font_path('nonexistentfont.ttf'))

@@ -2,8 +2,6 @@ import type { OpenAICompatibleOptions } from '@/types/settings'
 import { cloneOpenAiOptions } from '@/utils/openaiOptions'
 import type { Ref } from 'vue'
 
-const STORAGE_KEY = 'insight_provider_configs'
-const INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION = 1
 const DEFAULT_VLM_OPENAI_OPTIONS = {
   request: { forceJsonOutput: false, temperature: 0.3 },
   execution: { useStream: true, rpmLimit: 0, transportRetries: 10, businessRetries: 10 },
@@ -57,16 +55,8 @@ export interface ProviderConfigsCache {
   imageGen: Record<string, Partial<ImageGenFields>>
 }
 
-type ProviderConfigsStoragePayload = ProviderConfigsCache & {
-  insightProviderConfigSchemaVersion: typeof INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasStringField(value: Record<string, unknown>, key: string): boolean {
-  return typeof value[key] === 'string'
 }
 
 function hasNumberField(value: Record<string, unknown>, key: string): boolean {
@@ -90,91 +80,13 @@ function isOpenAiOptions(value: unknown): value is OpenAICompatibleOptions {
   )
 }
 
-function isProviderGroup<T extends Record<string, unknown>>(
-  value: unknown,
-  isConfig: (config: Record<string, unknown>) => config is T,
-): value is Record<string, T> {
-  if (!isRecord(value)) return false
-  return Object.values(value).every(config => isRecord(config) && isConfig(config))
-}
-
-function hasBaseProviderFields(value: Record<string, unknown>): boolean {
-  return hasStringField(value, 'apiKey') && hasStringField(value, 'model') && hasStringField(value, 'baseUrl')
-}
-
-function isVlmConfig(value: Record<string, unknown>): value is VlmFields {
-  return hasBaseProviderFields(value) && isOpenAiOptions(value.openaiOptions) && hasNumberField(value, 'imageMaxSize')
-}
-
-function isLlmConfig(value: Record<string, unknown>): value is LlmFields {
-  return hasBaseProviderFields(value) && isOpenAiOptions(value.openaiOptions)
-}
-
 function cloneOpenAiOptionsOrDefault(value: unknown, fallback: OpenAICompatibleOptions): OpenAICompatibleOptions {
   return cloneOpenAiOptions(isOpenAiOptions(value) ? value : fallback)
-}
-
-function isEmbeddingConfig(value: Record<string, unknown>): value is EmbeddingFields {
-  return (
-    hasBaseProviderFields(value) &&
-    hasNumberField(value, 'rpmLimit') &&
-    hasNumberField(value, 'transportRetries') &&
-    hasNumberField(value, 'businessRetries') &&
-    hasNumberField(value, 'timeoutSeconds')
-  )
-}
-
-function isRerankerConfig(value: Record<string, unknown>): value is RerankerFields {
-  return (
-    hasBaseProviderFields(value) &&
-    hasNumberField(value, 'topK') &&
-    hasNumberField(value, 'transportRetries') &&
-    hasNumberField(value, 'businessRetries') &&
-    hasNumberField(value, 'timeoutSeconds')
-  )
-}
-
-function isImageGenConfig(value: Record<string, unknown>): value is ImageGenFields {
-  return (
-    hasBaseProviderFields(value) &&
-    hasNumberField(value, 'transportRetries') &&
-    hasNumberField(value, 'businessRetries') &&
-    hasNumberField(value, 'timeoutSeconds')
-  )
-}
-
-function parseProviderConfigsStorage(value: unknown): ProviderConfigsCache | null {
-  if (!isRecord(value)) return null
-  if (value.insightProviderConfigSchemaVersion !== INSIGHT_PROVIDER_CONFIG_SCHEMA_VERSION) return null
-  if (!isProviderGroup(value.vlm, isVlmConfig)) return null
-  if (!isProviderGroup(value.llm, isLlmConfig)) return null
-  if (!isProviderGroup(value.embedding, isEmbeddingConfig)) return null
-  if (!isProviderGroup(value.reranker, isRerankerConfig)) return null
-  if (!isProviderGroup(value.imageGen, isImageGenConfig)) return null
-  return {
-    vlm: value.vlm,
-    llm: value.llm,
-    embedding: value.embedding,
-    reranker: value.reranker,
-    imageGen: value.imageGen,
-  }
 }
 
 export function useInsightConfigManager(
   providerConfigs: Ref<ProviderConfigsCache>
 ) {
-  function saveToStorage(): void {
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-    } catch {
-      // Backend settings are authoritative; legacy cleanup is best-effort.
-    }
-  }
-
-  function loadFromStorage(): void {
-    saveToStorage()
-  }
-
   function createProviderManager<T extends ProviderFieldMap>(
     configType: 'vlm' | 'llm' | 'embedding' | 'reranker' | 'imageGen',
     fieldExtractor: (config: Record<string, unknown>) => Partial<T>,
@@ -186,7 +98,6 @@ export function useInsightConfigManager(
         if (!provider) return
         const cache = providerConfigs.value[configType] as Record<string, Partial<T>>
         cache[provider] = fieldExtractor(currentConfig)
-        saveToStorage()
       },
 
       restore(provider: string, currentConfig: Record<string, unknown>): void {
@@ -316,8 +227,6 @@ export function useInsightConfigManager(
   )
 
   return {
-    saveToStorage,
-    loadFromStorage,
     vlmManager,
     llmManager,
     embeddingManager,

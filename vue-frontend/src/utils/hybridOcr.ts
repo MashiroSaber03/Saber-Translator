@@ -72,10 +72,13 @@ export function normalizeHybridOcrConfig(
     normalizedPrimary = RECOMMENDED_HYBRID_PRIMARY_ENGINE
   }
 
-  let normalizedSecondary = hybrid.secondaryEngine
-  if (!isSupportedHybridOcrCombo(normalizedPrimary, normalizedSecondary)) {
-    normalizedSecondary = getHybridCounterpartEngine(normalizedPrimary)
-  }
+  const configuredSecondary = hybrid.secondaryEngine
+  const normalizedSecondary = (
+    isSupportedHybridOcrEngine(configuredSecondary)
+    && configuredSecondary !== normalizedPrimary
+  )
+    ? configuredSecondary
+    : getHybridCounterpartEngine(normalizedPrimary)
 
   return {
     primaryEngine: normalizedPrimary,

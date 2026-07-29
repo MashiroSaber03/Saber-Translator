@@ -153,7 +153,6 @@ export const useInsightStore = defineStore('insight', () => {
   async function deleteNote(noteId: string): Promise<void> { await notesComposable.deleteNote(noteId) }
   function setNoteTypeFilter(type: NoteType | 'all'): void { notesComposable.setNoteTypeFilter(type) }
   async function loadNotesFromAPI(): Promise<void> { await notesComposable.loadNotes() }
-  function loadNotesFromStorage(): void { notesComposable.loadNotesFromStorage() }
 
   function setLoading(loading: boolean): void { isLoading.value = loading }
   function setError(message: string | null): void { error.value = message }
@@ -168,7 +167,6 @@ export const useInsightStore = defineStore('insight', () => {
       imageMaxSize: c.imageMaxSize ?? config.value.vlm.imageMaxSize,
     }
     configManager.vlmManager.save(config.value.vlm.provider, config.value.vlm)
-    saveConfigToStorage()
   }
   function updateLlmConfig(c: Partial<LlmConfig>): void {
     config.value.llm = {
@@ -180,19 +178,18 @@ export const useInsightStore = defineStore('insight', () => {
       openaiOptions: c.openaiOptions ?? config.value.llm.openaiOptions,
     }
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
-    saveConfigToStorage()
   }
-  function updateEmbeddingConfig(c: Partial<EmbeddingConfig>): void { config.value.embedding = { ...config.value.embedding, ...c }; configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding); saveConfigToStorage() }
-  function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = normalizeInsightRerankerConfig(c, config.value.reranker); configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker); saveConfigToStorage() }
-  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeInsightImageGenConfig(c, config.value.imageGen); configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen); saveConfigToStorage() }
-  function updateBatchConfig(c: Partial<BatchConfig>): void { config.value.batch = { ...config.value.batch, ...c }; saveConfigToStorage() }
-  function updatePrompts(prompts: Record<string, string>): void { config.value.prompts = { ...config.value.prompts, ...prompts }; saveConfigToStorage() }
+  function updateEmbeddingConfig(c: Partial<EmbeddingConfig>): void { config.value.embedding = { ...config.value.embedding, ...c }; configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding) }
+  function updateRerankerConfig(c: Partial<RerankerConfig>): void { config.value.reranker = normalizeInsightRerankerConfig(c, config.value.reranker); configManager.rerankerManager.save(config.value.reranker.provider, config.value.reranker) }
+  function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeInsightImageGenConfig(c, config.value.imageGen); configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen) }
+  function updateBatchConfig(c: Partial<BatchConfig>): void { config.value.batch = { ...config.value.batch, ...c } }
+  function updatePrompts(prompts: Record<string, string>): void { config.value.prompts = { ...config.value.prompts, ...prompts } }
 
-  function setVlmProvider(p: string): void { if (config.value.vlm.provider === p) return; configManager.vlmManager.switch(config.value.vlm.provider, p, config.value.vlm); config.value.vlm.provider = p; saveConfigToStorage() }
-  function setLlmProvider(p: string): void { if (config.value.llm.provider === p) return; configManager.llmManager.switch(config.value.llm.provider, p, config.value.llm); config.value.llm.provider = p; saveConfigToStorage() }
-  function setEmbeddingProvider(p: string): void { if (config.value.embedding.provider === p) return; configManager.embeddingManager.switch(config.value.embedding.provider, p, config.value.embedding); config.value.embedding.provider = p; saveConfigToStorage() }
-  function setRerankerProvider(p: string): void { if (config.value.reranker.provider === p) return; configManager.rerankerManager.switch(config.value.reranker.provider, p, config.value.reranker); config.value.reranker.provider = p; saveConfigToStorage() }
-  function setImageGenProvider(p: string): void { if (config.value.imageGen.provider === p) return; configManager.imageGenManager.switch(config.value.imageGen.provider, p, config.value.imageGen); config.value.imageGen.provider = p; saveConfigToStorage() }
+  function setVlmProvider(p: string): void { if (config.value.vlm.provider === p) return; configManager.vlmManager.switch(config.value.vlm.provider, p, config.value.vlm); config.value.vlm.provider = p }
+  function setLlmProvider(p: string): void { if (config.value.llm.provider === p) return; configManager.llmManager.switch(config.value.llm.provider, p, config.value.llm); config.value.llm.provider = p }
+  function setEmbeddingProvider(p: string): void { if (config.value.embedding.provider === p) return; configManager.embeddingManager.switch(config.value.embedding.provider, p, config.value.embedding); config.value.embedding.provider = p }
+  function setRerankerProvider(p: string): void { if (config.value.reranker.provider === p) return; configManager.rerankerManager.switch(config.value.reranker.provider, p, config.value.reranker); config.value.reranker.provider = p }
+  function setImageGenProvider(p: string): void { if (config.value.imageGen.provider === p) return; configManager.imageGenManager.switch(config.value.imageGen.provider, p, config.value.imageGen); config.value.imageGen.provider = p }
 
   function switchVlmProviderDraft(draft: VlmConfig): VlmConfig {
     const previousProvider = config.value.vlm.provider
@@ -202,7 +199,6 @@ export const useInsightStore = defineStore('insight', () => {
     config.value.vlm = { ...draft, provider: previousProvider }
     configManager.vlmManager.switch(previousProvider, nextProvider, config.value.vlm)
     config.value.vlm.provider = nextProvider
-    saveConfigToStorage()
     return config.value.vlm
   }
 
@@ -214,7 +210,6 @@ export const useInsightStore = defineStore('insight', () => {
     config.value.llm = { ...draft, provider: previousProvider }
     configManager.llmManager.switch(previousProvider, nextProvider, config.value.llm)
     config.value.llm.provider = nextProvider
-    saveConfigToStorage()
     return config.value.llm
   }
 
@@ -226,7 +221,6 @@ export const useInsightStore = defineStore('insight', () => {
     config.value.embedding = { ...draft, provider: previousProvider }
     configManager.embeddingManager.switch(previousProvider, nextProvider, config.value.embedding)
     config.value.embedding.provider = nextProvider
-    saveConfigToStorage()
     return config.value.embedding
   }
 
@@ -238,7 +232,6 @@ export const useInsightStore = defineStore('insight', () => {
     config.value.reranker = normalizeInsightRerankerConfig({ ...draft, provider: previousProvider }, config.value.reranker)
     configManager.rerankerManager.switch(previousProvider, nextProvider, config.value.reranker)
     config.value.reranker.provider = nextProvider
-    saveConfigToStorage()
     return config.value.reranker
   }
 
@@ -250,7 +243,6 @@ export const useInsightStore = defineStore('insight', () => {
     config.value.imageGen = normalizeInsightImageGenConfig({ ...draft, provider: previousProvider }, config.value.imageGen)
     configManager.imageGenManager.switch(previousProvider, nextProvider, config.value.imageGen)
     config.value.imageGen.provider = nextProvider
-    saveConfigToStorage()
     return config.value.imageGen
   }
 
@@ -260,18 +252,6 @@ export const useInsightStore = defineStore('insight', () => {
       reranker: normalizeInsightRerankerConfig(newConfig.reranker, config.value.reranker),
       imageGen: normalizeInsightImageGenConfig(newConfig.imageGen, config.value.imageGen),
     }
-    saveConfigToStorage()
-  }
-  function saveConfigToStorage(): void {
-    try {
-      localStorage.removeItem('manga_insight_config')
-      localStorage.removeItem('mangaInsightProviderConfigs')
-    } catch {
-      return
-    }
-  }
-  function loadConfigFromStorage(): void {
-    saveConfigToStorage()
   }
 
   function getConfigForApi(): Record<string, unknown> {
@@ -282,7 +262,6 @@ export const useInsightStore = defineStore('insight', () => {
     applyActiveInsightConfigFromApi(config.value, apiConfig)
     applyInsightProviderSettingsFromApi(providerConfigs.value, apiConfig.provider_settings)
     if (apiConfig.prompts) config.value.prompts = apiConfig.prompts as Record<string, string>
-    saveConfigToStorage()
     configManager.vlmManager.save(config.value.vlm.provider, config.value.vlm)
     configManager.llmManager.save(config.value.llm.provider, config.value.llm)
     configManager.embeddingManager.save(config.value.embedding.provider, config.value.embedding)
@@ -297,8 +276,8 @@ export const useInsightStore = defineStore('insight', () => {
     currentBookId, currentTaskId, analysisStatus, progress, analysisMode, incrementalAnalysis, chapters, pages, overview, generatedTemplates, timeline, qaHistory: qaComposable.qaHistory, notes: notesComposable.notes, selectedPageNum, noteTypeFilter: notesComposable.noteTypeFilter, isLoading, isStreaming: qaComposable.isStreaming, error, config,
     progressPercent, isAnalyzing, isAnalysisCompleted, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes, selectedPage,
     setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setAnalysisMode, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, setPageData, setPages, selectPage, setOverview, setGeneratedTemplates, setTimeline, dataRefreshKey, triggerDataRefresh,
-    addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, loadNotesFromStorage, setLoading, setError,
-    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, saveConfigToStorage, loadConfigFromStorage, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
+    addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
+    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
     switchVlmProviderDraft, switchLlmProviderDraft, switchEmbeddingProviderDraft, switchRerankerProviderDraft, switchImageGenProviderDraft,
     resetAnalysis, reset
   }

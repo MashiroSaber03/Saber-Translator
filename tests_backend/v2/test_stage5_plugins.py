@@ -294,6 +294,23 @@ def test_plugin_management_http_api_is_metadata_only(
         headers={"Idempotency-Key": "http-plugin-import"},
     )
     assert installed.status_code == 201
+    conflict = client.post(
+        "/api/v2/plugins/import",
+        data={
+            "baseRevision": "0",
+            "file": (
+                BytesIO(_plugin_archive(plugin_id="http_v3")),
+                "http_v3.zip",
+            ),
+        },
+        content_type="multipart/form-data",
+        headers={"Idempotency-Key": "http-plugin-conflict"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.get_json()["error"]["details"] == {
+        "pluginId": "http_v3",
+        "currentRevision": 1,
+    }
     listing = client.get("/api/v2/plugins")
     assert listing.status_code == 200
     item = listing.get_json()["items"][0]

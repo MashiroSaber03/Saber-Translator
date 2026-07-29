@@ -18,6 +18,6 @@ describe('useSettingsStore factory defaults', () => {
     expect(store.settings.hqTranslation.openaiOptions.execution.transportRetries).toBe(3)
     expect(store.settings.hqTranslation.openaiOptions.execution.businessRetries).toBe(3)
     expect(store.settings.pluginAgent.openaiOptions.execution.rpmLimit).toBe(0)
-    expect(store.settings.autoSaveInBookshelfMode).toBe(true)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(1)
   })
 })

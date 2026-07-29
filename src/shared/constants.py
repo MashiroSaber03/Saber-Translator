@@ -30,8 +30,8 @@ def refresh_text_style_runtime_defaults() -> None:
 
     DEFAULT_FONT_RELATIVE_PATH = os.path.join(
         'src',
-        'app',
-        'static',
+        'backend_v2',
+        'resources',
         _TEXT_STYLE_DEFAULTS["fontFamily"].replace("/", os.sep)
     )
     DEFAULT_FONT_PATH = f"static/{os.path.basename(DEFAULT_FONT_RELATIVE_PATH)}"
@@ -185,12 +185,10 @@ BAIDU_TRANSLATE_ENGINE_ID = 'baidu_translate'
 YOUDAO_TRANSLATE_ENGINE_ID = 'youdao_translate'
 
 # --- 文件与目录 ---
-# 默认字体路径现在指向 src/app/static/fonts/
+# 默认字体路径指向 v2 只读资源目录。
 # 注意：
-# - 临时文件实际存储在 data/temp/ 目录
-# - PDF 上传直接处理为 base64，不保存到磁盘
-# - 字体上传保存到 src/app/static/fonts/ 目录
-# - 图片上传在前端转为 base64，不经过后端文件系统
+# - 内置字体随应用发布，位于 src/backend_v2/resources/fonts/
+# - 用户上传字体进入 v2 对象存储，不修改应用资源目录
 
 # --- 默认翻译与渲染参数 ---
 DEFAULT_TARGET_LANG = 'zh'

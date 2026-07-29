@@ -71,7 +71,7 @@ const isTextStyleExpanded = ref(true)
             :disabled="textStyle.autoFontSize"
             aria-label="字号"
             :title="textStyle.autoFontSize ? '已启用自动字号，首次翻译时将自动计算' : ''"
-            @update:model-value="$emit('updateFontSize', $event)"
+            @update:model-value="$event !== null && $emit('updateFontSize', $event)"
           />
           <UiCheckbox
             class="text-style-section__toggle text-style-section__toggle--auto-fontsize"
@@ -125,7 +125,7 @@ const isTextStyleExpanded = ref(true)
             :max="3"
             :step="0.1"
             aria-label="行间距"
-            @update:model-value="$emit('updateLineSpacing', $event)"
+            @update:model-value="$event !== null && $emit('updateLineSpacing', $event)"
           />
         </UiField>
 
@@ -249,7 +249,7 @@ const isTextStyleExpanded = ref(true)
                   :min="0"
                   :max="10"
                   aria-label="描边宽度"
-                  @update:model-value="$emit('updateStrokeWidth', $event)"
+                  @update:model-value="$event !== null && $emit('updateStrokeWidth', $event)"
                 />
               </UiField>
             </div>

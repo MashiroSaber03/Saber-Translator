@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-import { configApi } from '@/api/config'
+import { fetchModels as fetchV2Models } from '@/api/v2/diagnostics'
 import {
   getProviderDisplayName,
   providerRequiresApiKey,
@@ -62,7 +62,7 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
   const models = ref<ModelInfoItem[]>([])
   const isFetchingModels = ref(false)
   const requestGuard = useLatestRequestGuard()
-  const fetcher = options.fetcher ?? configApi.fetchModels
+  const fetcher = options.fetcher ?? fetchV2Models
   const supportsProvider = options.supportsProvider
     ?? ((provider: string) => providerSupportsCapability(provider, 'modelFetch'))
   const requiresApiKey = options.requiresApiKey ?? providerRequiresApiKey

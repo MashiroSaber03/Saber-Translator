@@ -14,21 +14,20 @@ const apiMocks = vi.hoisted(() => ({
   uploadFont: vi.fn(),
 }))
 
-vi.mock('@/api/config', () => ({
-  getFontList: apiMocks.getFontList,
-  getTranslateWorkflowPreferences: apiMocks.getTranslateWorkflowPreferences,
-  saveTranslateWorkflowPreferences: apiMocks.saveTranslateWorkflowPreferences,
-  uploadFont: apiMocks.uploadFont,
+vi.mock('@/api/v2/settings', async importOriginal => ({
+  ...await importOriginal<typeof import('@/api/v2/settings')>(),
+  listV2Fonts: apiMocks.getFontList,
+  uploadV2Font: apiMocks.uploadFont,
 }))
 
 describe('SettingsSidebar defaults', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    apiMocks.getFontList.mockResolvedValue({ fonts: [] })
+    apiMocks.getFontList.mockResolvedValue([])
     apiMocks.getTranslateWorkflowPreferences.mockRejectedValue(new Error('offline'))
     apiMocks.saveTranslateWorkflowPreferences.mockResolvedValue({ success: true })
-    apiMocks.uploadFont.mockResolvedValue({ success: true, fontPath: 'fonts/custom.ttf' })
+    apiMocks.uploadFont.mockResolvedValue({ id: 'font-custom', assetUrl: '/api/v2/assets/font' })
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
