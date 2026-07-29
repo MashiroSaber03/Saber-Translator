@@ -7,6 +7,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import type { V2Job } from '@/api/v2/jobs'
 import type { BookData } from '@/types'
 
 const {
@@ -92,9 +94,33 @@ function stubBookshelfLoadBooks() {
   vi.spyOn(bookshelfStore, 'loadBooks').mockResolvedValue(undefined)
 }
 
-describe('InsightView polling', () => {
+function insightJob(overrides: Partial<V2Job> = {}): V2Job {
+  return {
+    jobId: 'analysis-job-1',
+    kind: 'insight_analysis',
+    retryOfJobId: null,
+    retryMode: null,
+    status: 'running',
+    queueRank: 1,
+    bookId: 'book-1',
+    progress: {
+      executionMode: 'sequential',
+      jobStatus: 'running',
+      totalItems: 10,
+      completedItems: 4,
+      failedItems: 0,
+      skippedItems: 0,
+      cancelledItems: 0,
+      pools: [],
+    },
+    target: {},
+    createdAt: null,
+    ...overrides,
+  }
+}
+
+describe('InsightView task event projection', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -117,11 +143,10 @@ describe('InsightView polling', () => {
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
-  it('refreshes panels when polling transitions running -> idle', async () => {
+  it('projects active progress and refreshes backend facts on a terminal task event', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -155,20 +180,33 @@ describe('InsightView polling', () => {
       },
     })
 
+    await flushPromises()
+    const taskCenterStore = useTaskCenterStore()
     const refreshKeyBefore = insightStore.dataRefreshKey
-    insightStore.setAnalysisStatus('running')
+    taskCenterStore.queue = [insightJob()]
     await nextTick()
 
-    await vi.advanceTimersByTimeAsync(3000)
+    expect(insightStore.analysisStatus).toBe('running')
+    expect(insightStore.currentTaskId).toBe('analysis-job-1')
+    expect(insightStore.progress.current).toBe(4)
+
+    taskCenterStore.latestEvent = {
+      eventId: 101,
+      jobId: 'analysis-job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+    }
     await flushPromises()
 
-    expect(getAnalysisStatusMock).toHaveBeenCalledTimes(2)
+    expect(getAnalysisStatusMock).toHaveBeenCalledTimes(1)
     expect(getAnalysisStatusMock).toHaveBeenCalledWith('book-1')
-    expect(insightStore.analysisStatus).toBe('idle')
+    expect(insightStore.analysisStatus).toBe('completed')
+    expect(insightStore.currentTaskId).toBeNull()
     expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 
-  it('cancels the delayed completed refresh when unmounted', async () => {
+  it('does not process task events after the view is unmounted', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -178,13 +216,6 @@ describe('InsightView polling', () => {
     insightStore.dataRefreshKey = 0
 
     stubBookshelfLoadBooks()
-
-    getAnalysisStatusMock.mockResolvedValue({
-      success: true,
-      analyzed: true,
-      fully_analyzed: true,
-      analyzed_pages_count: 5,
-    })
 
     const wrapper = shallowMount(InsightView, {
       global: {
@@ -210,20 +241,24 @@ describe('InsightView polling', () => {
       },
     })
 
-    const refreshKeyBefore = insightStore.dataRefreshKey
-    insightStore.setAnalysisStatus('running')
-    await nextTick()
-
-    await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
-    expect(insightStore.analysisStatus).toBe('completed')
-    expect(getAnalysisStatusMock).toHaveBeenCalledTimes(1)
+    const taskCenterStore = useTaskCenterStore()
+    const refreshKeyBefore = insightStore.dataRefreshKey
+    taskCenterStore.queue = [insightJob()]
+    await nextTick()
+    expect(insightStore.currentTaskId).toBe('analysis-job-1')
 
     wrapper.unmount()
-    await vi.advanceTimersByTimeAsync(1000)
+    taskCenterStore.latestEvent = {
+      eventId: 102,
+      jobId: 'analysis-job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+    }
     await flushPromises()
 
-    expect(getAnalysisStatusMock).toHaveBeenCalledTimes(1)
+    expect(getAnalysisStatusMock).not.toHaveBeenCalled()
     expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore)
   })
 
@@ -278,10 +313,14 @@ describe('InsightView polling', () => {
     }
   })
 
-  it('keeps polling store action mocks typed to the current store contract', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/insight-view.polling.spec.ts'), 'utf8')
+  it('keeps task event projection typed and free of page-local polling', () => {
+    const source = readFileSync(resolve(process.cwd(), 'tests/unit/insight-view.task-events.spec.ts'), 'utf8')
+    const viewSource = readFileSync(resolve(process.cwd(), 'src/views/InsightView.vue'), 'utf8')
 
     expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+    expect(viewSource).not.toContain('setInterval(')
+    expect(viewSource).not.toContain('setTimeout(')
+    expect(viewSource).toContain('taskCenterStore.latestEvent')
   })
 
   it('keeps page header action appearance on the product header primitive', () => {

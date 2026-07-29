@@ -57,6 +57,9 @@ const pageTitle = computed(() => {
 })
 
 const showChapterNav = computed(() => !isLoading.value && imagesData.value.length > 0)
+const translatedPageCount = computed(() => (
+  imagesData.value.filter(page => Boolean(page.translatedUrl)).length
+))
 
 function clearFailureRedirectTimer() {
   if (failureRedirectTimer !== null) {
@@ -212,6 +215,12 @@ watch(
                 label="翻译"
                 @click="setViewMode('translated')"
               />
+              <span
+                class="reader-header__translated-count"
+                aria-label="已翻译页面数量"
+              >
+                已翻译 {{ translatedPageCount }}/{{ imagesData.length }}
+              </span>
             </div>
             <ProductHeaderAction
               class="reader-header__button"
@@ -319,6 +328,16 @@ watch(
   border-radius: 8px;
 }
 
+.reader-header__translated-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--color-text-inverse);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
 @media (--breakpoint-md-down) {
   .reader-header__book-title {
     max-width: 120px;
@@ -331,6 +350,10 @@ watch(
   .reader-header__mode-button {
     padding: 8px 12px;
     font-size: 12px;
+  }
+
+  .reader-header__translated-count {
+    display: none;
   }
 }
 

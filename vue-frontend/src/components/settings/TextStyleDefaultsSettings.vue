@@ -207,7 +207,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { computed, ref, watch, watchEffect } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { InpaintMethod, TextAlign, TextDirection } from '@/types/bubble'
 import type { TextStyleSettings } from '@/types/settings'
 import { getFactoryTextStyleDefaults } from '@/defaults/textStyleFactoryDefaults'
@@ -225,34 +225,17 @@ import {
   textAlignOptions,
 } from '@/utils/textStyleForm'
 
-interface TextDefaultsSaveResult {
-  success: boolean
-  changed: boolean
-  error?: string
-}
-
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   isOpen: boolean
-  saveRequestId?: number
-}>(), {
-  saveRequestId: 0,
-})
-
-const emit = defineEmits<{
-  (e: 'save-complete', result: TextDefaultsSaveResult): void
 }>()
 
 const toast = useToast()
 const settingsStore = useSettingsStore()
 const draftDefaults = ref<TextStyleSettings>(getFactoryTextStyleDefaults())
-const loadedDefaults = ref<TextStyleSettings | null>(null)
-const resetRequested = ref(false)
-const userTouched = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
 const fontList = ref<V2Font[]>([])
 const fontUploadInput = ref<InstanceType<typeof UiFileInput> | null>(null)
-const handledSaveRequestId = ref(0)
 
 const fontSelectOptions = computed(() => {
   const backendOptions = fontList.value.map(font => ({
@@ -266,12 +249,6 @@ const fontSelectOptions = computed(() => {
   const options = [...backendOptions, ...legacyOptions]
   options.push({ label: '自定义字体...', value: 'custom-font' })
   return options
-})
-
-const hasPendingChanges = computed(() => {
-  if (resetRequested.value) return true
-  if (!loadedDefaults.value) return false
-  return JSON.stringify(draftDefaults.value) !== JSON.stringify(loadedDefaults.value)
 })
 
 async function loadFontList(): Promise<void> {
@@ -295,11 +272,7 @@ async function loadDefaults(): Promise<void> {
     }
     const normalized = normalizeTextStyleSettings(settingsStore.settings.textStyle)
     draftDefaults.value = normalized
-    loadedDefaults.value = normalized
-    resetRequested.value = false
-    userTouched.value = false
   } catch (error) {
-    loadedDefaults.value = null
     errorMessage.value = error instanceof Error ? error.message : '获取文本默认值失败'
   } finally {
     isLoading.value = false
@@ -316,20 +289,13 @@ watch(
   { immediate: true }
 )
 
-watchEffect(async () => {
-  const requestId = props.saveRequestId
-  if (requestId === 0 || requestId === handledSaveRequestId.value) return
-  handledSaveRequestId.value = requestId
-  emit('save-complete', await saveDefaults())
-})
-
 function updateDraft(updates: Partial<TextStyleSettings>): void {
-  draftDefaults.value = {
+  const normalized = normalizeTextStyleSettings({
     ...draftDefaults.value,
     ...updates,
-  }
-  resetRequested.value = false
-  userTouched.value = true
+  })
+  draftDefaults.value = normalized
+  settingsStore.updateTextStyle(normalized)
 }
 
 function updateFontSize(value: number | null): void {
@@ -388,9 +354,9 @@ function updateStrokeWidth(value: number | null): void {
 }
 
 function resetDraftToFactory(): void {
-  draftDefaults.value = getFactoryTextStyleDefaults()
-  resetRequested.value = true
-  userTouched.value = true
+  const normalized = normalizeTextStyleSettings(getFactoryTextStyleDefaults())
+  draftDefaults.value = normalized
+  settingsStore.updateTextStyle(normalized)
   errorMessage.value = ''
 }
 
@@ -426,41 +392,6 @@ function handleFontSelectChange(value: string | number): void {
     return
   }
   updateDraft({ fontFamily: nextValue })
-}
-
-async function saveDefaults(): Promise<TextDefaultsSaveResult> {
-  if (resetRequested.value) {
-    const normalized = normalizeTextStyleSettings(getFactoryTextStyleDefaults())
-    settingsStore.updateTextStyle(normalized)
-    draftDefaults.value = normalized
-    loadedDefaults.value = normalized
-    resetRequested.value = false
-    userTouched.value = false
-    errorMessage.value = ''
-    return { success: true, changed: true }
-  }
-
-  if (!loadedDefaults.value) {
-    if (!userTouched.value) {
-      return { success: true, changed: false }
-    }
-    const error = '请先成功加载当前默认值，或先点击“恢复出厂默认”再保存'
-    errorMessage.value = error
-    return { success: false, changed: false, error }
-  }
-
-  if (!hasPendingChanges.value) {
-    return { success: true, changed: false }
-  }
-
-  const normalized = normalizeTextStyleSettings(draftDefaults.value)
-  settingsStore.updateTextStyle(normalized)
-  draftDefaults.value = normalized
-  loadedDefaults.value = normalized
-  resetRequested.value = false
-  userTouched.value = false
-  errorMessage.value = ''
-  return { success: true, changed: true }
 }
 
 </script>

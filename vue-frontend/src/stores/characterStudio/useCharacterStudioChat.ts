@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue'
 
 import {
+  abortCharacterStudioChatOperation,
   regenerateCharacterStudioChatMessage,
   streamCharacterStudioChatMessage,
 } from '@/api/characterStudio'
@@ -29,6 +30,7 @@ interface CharacterStudioChatOptions {
 
 export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
   const isChatStreaming = ref(false)
+  const activeChatOperationId = ref<string | null>(null)
   let abortController: AbortController | null = null
   let rollbackSession: CharacterStudioChatSession | null = null
   let streamRunId = 0
@@ -101,9 +103,36 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     revokeOptimisticSessionAssets(options.activeChatSession.value)
     abortController.abort()
     abortController = null
+    activeChatOperationId.value = null
     if (rollbackSession) {
       options.activeChatSession.value = rollbackSession
       rollbackSession = null
+    }
+  }
+
+  async function abortActiveChatOperation(): Promise<void> {
+    const operationId = activeChatOperationId.value
+    const sessionId = options.activeChatSession.value?.session_id
+    if (!operationId || !sessionId) return
+    clearErrorMessage()
+    try {
+      const session = await abortCharacterStudioChatOperation(
+        sessionId,
+        operationId,
+      )
+      const controller = abortController
+      streamRunId += 1
+      revokeOptimisticSessionAssets(options.activeChatSession.value)
+      rollbackSession = null
+      abortController = null
+      activeChatOperationId.value = null
+      controller?.abort()
+      isChatStreaming.value = false
+      options.applySession(session)
+    } catch (error) {
+      throw createActionError(error, '中止聊天生成失败')
+    } finally {
+      void options.flushPendingRehydrate()
     }
   }
 
@@ -138,6 +167,17 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
         content,
         attachments,
         signal: controller.signal,
+        onAccepted: operationId => {
+          if (isActiveStream(
+            runId,
+            controller,
+            requestedBookId,
+            requestedDocId,
+            requestedSessionId,
+          )) {
+            activeChatOperationId.value = operationId
+          }
+        },
         onEvent: event => {
           if (!isActiveStream(runId, controller, requestedBookId, requestedDocId, requestedSessionId)) return
           const session = options.activeChatSession.value
@@ -162,6 +202,7 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     } finally {
       if (abortController === controller) {
         abortController = null
+        activeChatOperationId.value = null
         rollbackSession = null
       }
       if (runId === streamRunId) isChatStreaming.value = false
@@ -215,6 +256,17 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
           }
         },
         controller.signal,
+        operationId => {
+          if (isActiveStream(
+            runId,
+            controller,
+            requestedBookId,
+            requestedDocId,
+            requestedSessionId,
+          )) {
+            activeChatOperationId.value = operationId
+          }
+        },
       )
     } catch (error) {
       if (controller.signal.aborted) return
@@ -224,6 +276,7 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     } finally {
       if (abortController === controller) {
         abortController = null
+        activeChatOperationId.value = null
         rollbackSession = null
       }
       if (runId === streamRunId) isChatStreaming.value = false
@@ -232,7 +285,9 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
   }
 
   return {
+    activeChatOperationId,
     isChatStreaming,
+    abortActiveChatOperation,
     abortActiveChatStream,
     sendChatMessage,
     regenerateChatMessage,

@@ -40,7 +40,7 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
+import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 
 function deferred<T>() {
@@ -180,7 +180,7 @@ describe('PagesTree', () => {
     expect(chapterToggle.element.tagName).toBe('BUTTON')
     expect(chapterToggle.attributes('aria-expanded')).toBe('true')
 
-    const thumbnailGrid = wrapper.getComponent(ProductThumbnailGrid)
+    const thumbnailGrid = wrapper.getComponent(VirtualThumbnailGrid)
     expect(thumbnailGrid.props('ariaLabel')).toBe('第1章页面导航')
     expect(thumbnailGrid.props('items')).toEqual([
       {
@@ -205,7 +205,7 @@ describe('PagesTree', () => {
     await nextTick()
 
     expect(store.selectedPageNum).toBe(1)
-    expect(wrapper.getComponent(ProductThumbnailGrid).props('items')[0]).toMatchObject({
+    expect(wrapper.getComponent(VirtualThumbnailGrid).props('items')[0]).toMatchObject({
       id: 1,
       selected: true,
     })
@@ -255,11 +255,7 @@ describe('PagesTree', () => {
     })
     await flushPromises()
 
-    expect(
-      emptyTreeWrapper
-        .findAllComponents(ProductActionRow)
-        .some(row => row.props('ariaLabel') === '页面导航加载操作')
-    ).toBe(true)
+    expect(emptyTreeWrapper.getComponent(VirtualThumbnailGrid).props('items')).toHaveLength(101)
     expect(emptyTreeWrapper.find('.btn-load-more').exists()).toBe(false)
   })
 
@@ -435,15 +431,35 @@ describe('PagesTree', () => {
     book2Markers.resolve({ success: true, pages: [2] })
     await flushPromises()
 
-    const pageItemsAfterBook2 = wrapper.getComponent(ProductThumbnailGrid).props('items')
+    const pageItemsAfterBook2 = wrapper.getComponent(VirtualThumbnailGrid).props('items')
     expect(pageItemsAfterBook2[0]).toMatchObject({ id: 1, marked: false })
     expect(pageItemsAfterBook2[1]).toMatchObject({ id: 2, marked: true })
 
     book1Markers.resolve({ success: true, pages: [1] })
     await flushPromises()
 
-    const pageItemsAfterStaleBook1 = wrapper.getComponent(ProductThumbnailGrid).props('items')
+    const pageItemsAfterStaleBook1 = wrapper.getComponent(VirtualThumbnailGrid).props('items')
     expect(pageItemsAfterStaleBook1[0]).toMatchObject({ id: 1, marked: false })
     expect(pageItemsAfterStaleBook1[1]).toMatchObject({ id: 2, marked: true })
+  })
+
+  it('keeps a 1000-page expanded chapter to a bounded thumbnail DOM window', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setBookTotalPages(1000)
+    store.setChapters([
+      { id: 'ch-large', title: '大章节', startPage: 1, endPage: 1000, analyzed: false },
+    ])
+
+    const wrapper = mount(PagesTree, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    const grid = wrapper.getComponent(VirtualThumbnailGrid)
+    expect(grid.props('items')).toHaveLength(1000)
+    expect(grid.findAll('[data-product-thumbnail-id]').length).toBeLessThanOrEqual(8)
   })
 })

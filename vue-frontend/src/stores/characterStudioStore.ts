@@ -4,6 +4,7 @@ import {
   createCharacterStudioChatSession,
   createCharacterStudioDocument,
   deleteCharacterStudioChatMessage,
+  deleteCharacterStudioChatSession,
   deleteCharacterStudioDocument,
   editCharacterStudioChatMessage,
   generateCharacterStudioSection,
@@ -101,7 +102,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     flushPendingRehydrate: flushPendingChatRehydrate,
   })
   const {
+    activeChatOperationId,
     isChatStreaming,
+    abortActiveChatOperation,
     abortActiveChatStream,
     sendChatMessage,
     regenerateChatMessage,
@@ -662,6 +665,32 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
+  async function deleteArchivedChatSession(
+    sessionId: string,
+    revision?: number,
+  ) {
+    if (!bookId.value || !currentDocument.value || !sessionId) return
+    isChatMutating.value = true
+    clearErrorMessage()
+    try {
+      const response = await deleteCharacterStudioChatSession(
+        bookId.value,
+        currentDocument.value.id,
+        sessionId,
+        revision,
+      )
+      if (!response.success) {
+        throw new Error(response.error || '删除归档会话失败')
+      }
+      applyChatStatePayload(response)
+    } catch (error) {
+      throw createActionError(error, '删除归档会话失败')
+    } finally {
+      isChatMutating.value = false
+      void flushPendingChatRehydrate()
+    }
+  }
+
   async function editChatMessage(messageId: string, content: string) {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
     isChatMutating.value = true
@@ -884,6 +913,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isSaving,
     isChatLoading,
     isChatStreaming,
+    activeChatOperationId,
     isChatMutating,
     isChatSummarizing,
     isChatImporting,
@@ -910,6 +940,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     loadChatState,
     createChatSession,
     switchChatSession,
+    deleteArchivedChatSession,
+    abortActiveChatOperation,
     sendChatMessage,
     editChatMessage,
     deleteChatMessage,

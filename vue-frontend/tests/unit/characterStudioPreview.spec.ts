@@ -234,6 +234,8 @@ function mountPreview(overrides: Record<string, unknown> = {}) {
           session_id: 'chat-archived',
           title: '归档会话',
           message_count: 5,
+          revision: 7,
+          generation: 1,
           updated_at: '2026-05-15T01:00:00',
           archived_at: '2026-05-15T01:00:00',
           last_message_excerpt: '上一次聊到这里',
@@ -792,16 +794,20 @@ describe('CharacterStudioPreview workspace', () => {
     })
   })
 
-  it('disables send button while a chat reply is still being generated', () => {
+  it('offers a backend abort action while a chat reply is still being generated', async () => {
     const wrapper = mountPreview({
       chatStreaming: true,
+      chatAbortable: true,
     })
 
-    const sendButton = wrapper.get('[data-testid="chat-send-trigger"]')
-    expect(sendButton.attributes('aria-label')).toBe('回复生成中...')
-    expect(sendButton.getComponent(UiIcon).props('name')).toBe('loading')
-    expect(sendButton.text()).not.toContain('…')
-    expect((sendButton.element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="chat-send-trigger"]').exists()).toBe(false)
+    const abortButton = wrapper.get('[data-testid="chat-abort-trigger"]')
+    expect(abortButton.attributes('aria-label')).toBe('中止本次生成')
+    expect(abortButton.getComponent(UiIcon).props('name')).toBe('square')
+    expect((abortButton.element as HTMLButtonElement).disabled).toBe(false)
+
+    await abortButton.trigger('click')
+    expect(wrapper.emitted('abort-chat')).toHaveLength(1)
   })
 
   it('opens session list panel from the current session button', async () => {
@@ -821,6 +827,19 @@ describe('CharacterStudioPreview workspace', () => {
 
     expect(wrapper.text()).toContain('归档会话')
     expect(wrapper.text()).toContain('上一次聊到这里')
+  })
+
+  it('exposes permanent deletion for archived sessions without activating them', async () => {
+    const wrapper = mountPreview()
+    await wrapper.get('[data-testid="session-list-trigger"]').trigger('click')
+
+    await wrapper.get('[aria-label="永久删除归档会话：归档会话"]').trigger('click')
+
+    expect(wrapper.emitted('delete-session')?.[0]?.[0]).toMatchObject({
+      session_id: 'chat-archived',
+      revision: 7,
+    })
+    expect(wrapper.emitted('switch-chat-session')).toBeUndefined()
   })
 
   it('renders the empty archived-session list through product status feedback', async () => {

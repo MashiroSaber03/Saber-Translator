@@ -301,4 +301,63 @@ describe('character studio v2 api facade', () => {
       vi.fn(),
     )).rejects.toThrow('stream failed')
   })
+
+  it('uses fenced v2 commands for server abort and archived-session deletion', async () => {
+    postMock.mockResolvedValue({
+      operationId: 'chat-op',
+      sessionGeneration: 2,
+      sessionRevision: 5,
+      status: 'cancelled',
+    })
+    deleteMock.mockResolvedValue({ deleted: true, sessionId: 'session/id one' })
+    getMock.mockImplementation((url: string) => {
+      if (url === '/api/v2/studio/chat/sessions/session%2Fid%20one') {
+        return Promise.resolve({ ...session, revision: 5, generation: 2 })
+      }
+      if (url === '/api/v2/studio/documents/doc%2Fid%20one/chat') {
+        return Promise.resolve({
+          ...chatState,
+          activeSession: null,
+          sessions: [],
+          indexRevision: 3,
+        })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const {
+      abortCharacterStudioChatOperation,
+      deleteCharacterStudioChatSession,
+    } = await import('@/api/characterStudio')
+
+    const aborted = await abortCharacterStudioChatOperation(
+      'session/id one',
+      'chat-op',
+    )
+    await deleteCharacterStudioChatSession(
+      'book/id one',
+      'doc/id one',
+      'session/id one',
+      5,
+    )
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/studio/chat/sessions/session%2Fid%20one/abort',
+      { operationId: 'chat-op' },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    )
+    expect(aborted).toMatchObject({
+      session_id: 'session/id one',
+      revision: 5,
+      generation: 2,
+    })
+    expect(deleteMock).toHaveBeenCalledWith(
+      '/api/v2/studio/chat/sessions/session%2Fid%20one',
+      {
+        headers: {
+          'Idempotency-Key': expect.any(String),
+          'If-Match': '5',
+        },
+      },
+    )
+  })
 })

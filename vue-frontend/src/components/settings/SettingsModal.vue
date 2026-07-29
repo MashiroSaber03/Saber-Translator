@@ -26,56 +26,67 @@
       </span>
     </template>
 
-    <ProductSegmentedTabs
-      :tabs="tabs"
-      :active-tab="activeTab"
-      aria-label="设置分类"
-      appearance="underline"
-      class="settings-modal__tabs"
-      @update:active-tab="setActiveTab"
-    />
+    <ProductStatusBanner
+      v-if="!settingsStore.isBackendReady"
+      class="settings-modal__restricted"
+      tone="danger"
+      role="alert"
+      title="设置受限模式"
+    >
+      {{ settingsStore.backendError || '正在读取后端设置。加载成功前只能查看出厂默认值，不能保存或调用 Provider。' }}
+    </ProductStatusBanner>
 
-    <div class="settings-modal__tab-content">
-      <div v-show="activeTab === 'ocr'" class="settings-modal__tab-pane">
-        <OcrSettings />
-      </div>
+    <fieldset
+      class="settings-modal__fieldset"
+      :disabled="!settingsStore.isBackendReady"
+    >
+      <ProductSegmentedTabs
+        :tabs="tabs"
+        :active-tab="activeTab"
+        aria-label="设置分类"
+        appearance="underline"
+        class="settings-modal__tabs"
+        @update:active-tab="setActiveTab"
+      />
 
-      <div v-show="activeTab === 'translate'" class="settings-modal__tab-pane">
-        <TranslationSettings />
-      </div>
+      <div class="settings-modal__tab-content">
+        <div v-show="activeTab === 'ocr'" class="settings-modal__tab-pane">
+          <OcrSettings />
+        </div>
 
-      <div v-show="activeTab === 'detection'" class="settings-modal__tab-pane">
-        <DetectionSettings />
-      </div>
+        <div v-show="activeTab === 'translate'" class="settings-modal__tab-pane">
+          <TranslationSettings />
+        </div>
 
-      <div v-show="activeTab === 'hq'" class="settings-modal__tab-pane">
-        <HqTranslationSettings />
-      </div>
+        <div v-show="activeTab === 'detection'" class="settings-modal__tab-pane">
+          <DetectionSettings />
+        </div>
 
-      <div v-show="activeTab === 'proofreading'" class="settings-modal__tab-pane">
-        <ProofreadingSettings />
-      </div>
+        <div v-show="activeTab === 'hq'" class="settings-modal__tab-pane">
+          <HqTranslationSettings />
+        </div>
 
-      <div v-show="activeTab === 'prompt-library'" class="settings-modal__tab-pane">
-        <PromptLibrary />
-      </div>
+        <div v-show="activeTab === 'proofreading'" class="settings-modal__tab-pane">
+          <ProofreadingSettings />
+        </div>
 
-      <div v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
-        <PluginManager />
-      </div>
+        <div v-show="activeTab === 'prompt-library'" class="settings-modal__tab-pane">
+          <PromptLibrary />
+        </div>
 
-      <div v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
-        <TextStyleDefaultsSettings
-          :is-open="isOpen"
-          :save-request-id="textDefaultsSaveRequestId"
-          @save-complete="handleTextDefaultsSaveComplete"
-        />
-      </div>
+        <div v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
+          <PluginManager />
+        </div>
 
-      <div v-show="activeTab === 'more'" class="settings-modal__tab-pane">
-        <MoreSettings />
+        <div v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
+          <TextStyleDefaultsSettings :is-open="isOpen" />
+        </div>
+
+        <div v-show="activeTab === 'more'" class="settings-modal__tab-pane">
+          <MoreSettings />
+        </div>
       </div>
-    </div>
+    </fieldset>
 
     <template #footer>
       <ProductActionRow
@@ -106,6 +117,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import OcrSettings from './OcrSettings.vue'
 import TranslationSettings from './TranslationSettings.vue'
 import DetectionSettings from './DetectionSettings.vue'
@@ -119,12 +131,6 @@ import { showToast } from '@/utils/toast'
 
 interface SettingsModalSavePayload {
   textDefaultsChanged: boolean
-}
-
-interface TextDefaultsSaveResult {
-  success: boolean
-  changed: boolean
-  error?: string
 }
 
 const props = defineProps<{
@@ -152,9 +158,6 @@ type SettingsTabId =
   | 'more'
 
 const activeTab = ref<SettingsTabId>('ocr')
-const textDefaultsSaveRequestId = ref(0)
-let textDefaultsSavePromise: Promise<TextDefaultsSaveResult> | null = null
-let resolveTextDefaultsSave: ((result: TextDefaultsSaveResult) => void) | null = null
 let settingsSnapshot: TranslationSettingsModel | null = null
 let providerSnapshot: ProviderConfigsCache | null = null
 let closeAfterSave = false
@@ -222,30 +225,12 @@ function handleClose() {
   emit('update:modelValue', false)
 }
 
-function requestTextDefaultsSave(): Promise<TextDefaultsSaveResult> {
-  if (textDefaultsSavePromise) return textDefaultsSavePromise
-
-  textDefaultsSavePromise = new Promise<TextDefaultsSaveResult>((resolve) => {
-    resolveTextDefaultsSave = resolve
-    textDefaultsSaveRequestId.value += 1
-  })
-
-  return textDefaultsSavePromise
-}
-
-function handleTextDefaultsSaveComplete(result: TextDefaultsSaveResult): void {
-  resolveTextDefaultsSave?.(result)
-  resolveTextDefaultsSave = null
-  textDefaultsSavePromise = null
-}
-
 async function handleSave() {
-  const textDefaultsResult = await requestTextDefaultsSave()
-
-  if (!textDefaultsResult.success) {
-    showToast(textDefaultsResult.error || '保存文本默认值失败', 'error')
-    return
-  }
+  const textDefaultsChanged = Boolean(
+    settingsSnapshot
+    && JSON.stringify(settingsSnapshot.textStyle)
+      !== JSON.stringify(settingsStore.settings.textStyle),
+  )
 
   const saved = await settingsStore.saveToBackend()
   if (!saved) {
@@ -253,7 +238,7 @@ async function handleSave() {
     return
   }
 
-  emit('save', { textDefaultsChanged: textDefaultsResult.changed })
+  emit('save', { textDefaultsChanged })
   closeAfterSave = true
   handleClose()
 }
@@ -269,6 +254,18 @@ async function handleSave() {
 .settings-modal__tabs {
   flex: 0 0 auto;
   margin: 14px 15px 0;
+}
+
+.settings-modal__restricted {
+  margin: 14px 15px 0;
+}
+
+.settings-modal__fieldset {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .settings-modal__tab-content {

@@ -28,6 +28,8 @@ export interface CharacterStudioChatSummaryBlock {
 export interface CharacterStudioChatSessionSummary {
   session_id: string
   title: string
+  revision?: number
+  generation?: number
   message_count: number
   updated_at: string
   archived_at?: string | null
@@ -47,6 +49,8 @@ export interface CharacterStudioChatSession {
   variables: Record<string, unknown>
   _runtime?: Record<string, unknown>
   last_prompt_preview: string
+  revision?: number
+  generation?: number
 }
 
 export interface CharacterStudioGreetingOption {

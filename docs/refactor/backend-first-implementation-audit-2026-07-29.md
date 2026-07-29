@@ -11,7 +11,7 @@
 结论：
 
 1. 后端中心化的基础架构已经建立，浏览器关闭后持久任务继续执行、SQLite 事实源、不可变资产、凭据版本、Worker 队列、operation fencing、缩略图和 v2-only 生产入口都不是空壳。
-2. 当前实现**不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约、HQ/多轮校对、任务重试/批次控制、翻译 Pool 进度/刷新恢复/章节设置记忆，以及快速工作区、书架批量产品流和任务中心系统控制已在审计后关闭；剩余主要缺口集中在 Insight 虚拟化和轮询清理、Studio 中止/归档删除接线、阅读器状态提示、设置受限态与验收矩阵。
+2. 当前实现**尚不能判定为“方案全部实现”**，也不应关闭重构计划。完整 API 契约、HQ/多轮校对、任务重试/批次控制、翻译 Pool 进度/刷新恢复/章节设置记忆、快速工作区、书架批量产品流、任务中心系统控制，以及 Insight/Studio/Reader/设置页面级缺口已在审计后关闭；当前剩余工作已收敛为最终存储、查询计划、故障注入、内存趋势和端到端验收矩阵。
 3. 本轮发现的 API Key 保存/使用故障不是后端没有保存，而是“后端凭据摘要”和“前端空白密钥输入框”之间的语义断裂。本轮已修复该故障及同类入口，并增加后端任务准入校验。
 4. 本轮还修复了翻译页“最后访问页只读不写”的数据闭环缺陷，并将导航更新改为与方案一致的独立 last-write-wins，不再因旧标签页 revision 产生普通切页冲突。
 5. 用户已确认的两项偏差不作为缺陷：
@@ -84,20 +84,20 @@
 | §6 快速工作区 | 完成 | 后端播种、bootstrap、reset、promote、423 保护和约束处理完整；前端已有“新建快速翻译”“保存到书架”、new/existing book 弹窗和任务中心引导，promote 保持资产原位并拒绝重复目标。 |
 | §7 统一任务系统 | 基本完成 | 持久队列、状态机、SSE、pause/resume/continue/cancel、reorder、关联 replacement retry、批次取消/优先/继续、脱敏详情、事件游标分页和安全点模型释放均已实现；完整跨领域故障矩阵仍待补齐。 |
 | §8 翻译任务后端化 | 基本完成 | 创建任务即冻结配置/资产/插件/凭据，Worker 流水线可脱离浏览器执行；HQ 稳定 ID 批处理、多轮校对、真实 render/save 分界、后端 Pool 进度和基于后端失败事实的关联重试均已闭环。 |
-| §9 Insight 任务统一 | 部分完成 | 全书/局部分析、派生物、向量、续写和导出均有持久任务；页面仍保留 3 秒轮询，未完全统一到全局 SSE/快照。 |
+| §9 Insight 任务统一 | 基本完成 | 全书/局部分析、派生物、向量、续写和导出均有持久任务；分析和向量重建已改为消费全局任务中心的 SSE/快照投影，不再保留页面级 3 秒轮询。 |
 | §10 插件 v3 | 基本完成 | 不可变版本、快照、能力/失败策略、Worker 执行、Agent handoff 和管理 API 已实现；运行时与 OpenAPI 已完成双向闭集。 |
 | §11 图片导入与缩略图 | 基本完成 | 普通图片逐页上传、容器后端任务、同步 source thumbnail、长条特判、无 Base64 响应已实现；完整导入失败矩阵和多场景大数据验收不足。 |
-| §12 媒体 API 与加载 | 部分完成 | asset URL/ETag/条件请求、翻译侧栏和编辑侧栏虚拟化、Reader 虚拟流存在；指定页码弹窗、Insight 大章节树和部分续写选择器仍一次创建大量缩略图节点。 |
-| §13 页面职责 | 基本完成 | 生产前端主要为投影和交互，业务长任务、Pool 进度恢复、章节工作态和失败项重试均由后端事实驱动；Insight 等处仍有前端轮询。 |
-| §14 实施阶段 | 部分完成 | 阶段 1–6 的大量基础代码已经提交，阶段 0 契约门禁已关闭；产品页和验收矩阵仍未全部满足。 |
-| §15 全局验收 | 部分完成 | OpenAPI 已覆盖全部 180 个运行时操作，后端 v2 有 100+ 测试，前端有大量单元/属性/视觉测试；仍缺 EXPLAIN QUERY PLAN、Insight/翻译 1000 页 DOM/内存、批量产品流和多项 crash-window 矩阵。 |
-| §16 翻译页 | 基本完成 | 后端任务、编辑 CAS、修复 operation、独立 render/save、文本/导出、HQ 稳定 ID batch、多轮校对、后端关联失败项重试、并行多行 Pool 进度和刷新恢复已闭环；剩余主要是指定页码大列表虚拟化和完整性能矩阵。 |
-| §17 Insight | 部分完成 | 主要分析/概览/时间线/问答/笔记/续写/设置功能已切 v2；PagesTree 展开章节会创建整章节点，状态与向量重建仍轮询，专项 1000 页验收缺失。 |
-| §18 Character Studio | 基本完成 | 文档 CAS、保存型 generate/chat/summary operation、SSE chunk、会话数据、导入导出和诊断主体完整；前端没有调用 abort API，也没有归档会话永久删除入口。 |
+| §12 媒体 API 与加载 | 基本完成 | asset URL/ETag/条件请求、翻译/编辑侧栏、指定页码弹窗、Insight 大章节树和续写参考图选择器均已窗口化；Reader 使用虚拟流和懒加载。剩余为跨场景浏览器进程内存趋势验收。 |
+| §13 页面职责 | 完成 | 生产前端主要负责交互和后端事实投影；长任务、Pool 进度恢复、章节工作态、失败项重试、Insight 分析和向量重建均由后端持久状态及全局 SSE/快照驱动。 |
+| §14 实施阶段 | 基本完成 | 阶段 0–6 的契约、后端能力和产品页面缺口均已关闭；只剩方案定义的最终验收矩阵。 |
+| §15 全局验收 | 部分完成 | OpenAPI 已覆盖全部运行时操作，后端 v2 有 100+ 测试，前端有 1700+ 单元/属性/视觉测试；仍缺 EXPLAIN QUERY PLAN、跨页面 1000 页内存趋势、完整删除/GC/secret canary 和多项 crash-window 矩阵。 |
+| §16 翻译页 | 基本完成 | 后端任务、编辑 CAS、修复 operation、独立 render/save、文本/导出、HQ 稳定 ID batch、多轮校对、后端关联失败项重试、并行多行 Pool 进度、刷新恢复和指定页码虚拟化已闭环；剩余为完整性能矩阵。 |
+| §17 Insight | 基本完成 | 分析/概览/时间线/问答/笔记/续写/设置已切 v2；PagesTree 与续写参考图大列表已虚拟化，分析及向量重建消费任务中心 SSE/快照。剩余为专项进程内存和故障矩阵。 |
+| §18 Character Studio | 基本完成 | 文档 CAS、保存型 generate/chat/summary operation、SSE chunk、会话数据、导入导出和诊断主体完整；前端停止操作会调用后端 abort 推进 generation fencing，归档会话支持携带 revision 永久删除。剩余为最终故障矩阵。 |
 | §19 书架 | 基本完成 | 后端 CRUD、搜索/标签/排序、批量删除/标签和 jobStatusSummary 已实现；前端已接入排序、书籍批量翻译/删除/标签、章节多选翻译、任务徽章和任务中心定位。剩余为完整批量产品流与并发删除验收。 |
 | §20 任务中心 | 基本完成 | 全局抽屉、队列/历史、SSE、暂停/继续/取消、产物下载、单任务排序、状态/类型/书籍筛选、脱敏详情、事件向前分页、整任务/失败项双策略重试、批次取消/优先/继续、释放显存、新建批量分析和跨页定位均已实现；剩余为完整 crash-window/200 批清理验收。 |
-| §21 阅读器 | 基本完成 | 后端页列表、translated→source 回退、VirtualPageStream 和懒加载存在；缺“未翻译”持久徽标和“已翻译 m/N”统计。 |
-| §22 设置/提示词/Provider | 基本完成 | SQLite 事实源、统一 transaction、不可变凭据、统一诊断、提示词、字体和章节级非样式 settings_memory 已接线；本轮修复凭据 UI/校验；受限态仍未统一禁止所有任务/Provider 操作，文本默认值仍保留父子特殊握手。 |
+| §21 阅读器 | 完成 | 后端页列表、translated→source 回退、VirtualPageStream 和懒加载存在；回退页显示“未翻译”持久徽标，顶栏显示“已翻译 m/N”。 |
+| §22 设置/提示词/Provider | 基本完成 | SQLite 事实源、统一 transaction、不可变凭据、统一诊断、提示词、字体和章节级非样式 settings_memory 已接线；设置加载失败时全站写请求及直连 Provider 调用统一受限，文本默认值直接进入同一 store 草稿和 transaction。剩余为最终 secret canary/故障验收。 |
 | §23 插件管理 | 基本完成 | v3 manifest/version/snapshot/runtime/Agent/管理 UI、契约和测试主体存在。 |
 | §24 当前不做事项 | 完成/接受偏差 | 未引入账号、多租户、云对象存储、瓦片金字塔或单图像素预算；符合用户最终口径。 |
 
@@ -178,38 +178,31 @@
 - 面板“新建批量分析”支持选择书籍、全书/增量/章节范围和章节多选，提交 Insight 后端任务。
 - 书架、翻译和其他入口通过 job/batch/book/chapter 目标打开抽屉、切换队列/历史、展开并滚动定位。
 
-### 5.4 Insight
+### 5.4 已关闭：Insight
 
-- `PagesTree.vue` 展开章节时直接调用 `createPageThumbnailItems(startPage, endPage)`，1000 页章节会创建整章缩略图 DOM。
-- 无章节时只有每次 100 页的“加载更多”，有章节时没有相同保护。
-- `InsightView.vue` 的任务状态和 `QAPanel.vue` 的向量重建仍使用 3 秒轮询。
-- 现有 100/500/1000 页 Playwright 内存测试只覆盖 Reader，没有覆盖 Insight 页面树。
+- 新增固定行虚拟缩略图网格；无章节和展开章节两种路径都只挂载视口附近节点，1000 页专项测试证明 DOM 有界。
+- 指定页码弹窗和续写漫画参考图复用同一虚拟网格。
+- `InsightView.vue` 和 `QAPanel.vue` 已移除 3 秒轮询，分析与向量重建状态统一投影全局任务中心队列/历史和 SSE 事件。
+- 切换书籍时会清理旧书籍的向量重建状态，避免跨书串态。
 
-### 5.5 Character Studio
+### 5.5 已关闭：Character Studio
 
-后端已有且测试过：
+- “停止”先调用 `/chat/sessions/{id}/abort` 推进后端 generation fencing，再中断本地订阅；服务端任务不会因浏览器断流继续向旧 generation 写入。
+- 归档会话列表增加永久删除入口，携带当前 revision 执行 CAS 删除。
+- API、store、事件透传和 UI 均有专项测试。
 
-- `/chat/sessions/{id}/abort` 的 generation fencing。
-- 归档会话永久删除。
+### 5.6 已关闭：阅读器
 
-前端缺：
+- translated 模式回退到 source 时显示“未翻译”持久徽标。
+- 顶栏显示后端页面摘要推导的“已翻译 m/N”。
+- 虚拟流仍只挂载窗口附近图片，回退不引入整章原图预载。
 
-- 主动中止按钮/API 调用；当前 `AbortController` 仅断开浏览器订阅，不执行服务端 abort 语义。
-- 归档会话永久删除入口/API wrapper。
+### 5.7 已关闭主体：设置受限态
 
-### 5.6 阅读器
-
-虚拟流和源图回退已完成，但方案要求的以下信息缺失：
-
-- translated 模式回退到 source 时的“未翻译”持久徽标。
-- 顶栏“已翻译 m/N”。
-
-### 5.7 设置受限态
-
-- `settingsStore.isBackendReady` 当前主要用于禁用“保存设置”。
-- 翻译、Insight、Studio、网页导入等任务/Provider 操作没有统一受限态门禁。
-- 后端设置加载失败时仍可能使用前端出厂默认参与 UI 校验或发起命令；后端会再次解析真实设置，但不符合方案“加载成功前禁止创建任务/调用 Provider”的明确口径。
-- `TextStyleDefaultsSettings` 最终确实与其他设置进入同一个 backend transaction，但仍通过 `saveRequestId/save-complete` 特殊父子握手，未完成 §22.8 要求的结构清理。
+- 应用启动时同步进入 restricted mode，后端设置成功 hydrate 后才解除。
+- restricted mode 下 API client 统一阻断 POST/PUT/PATCH/DELETE 和上传，Studio Agent、Insight QA 等直连 Provider 路径也执行同一门禁；GET 仍可用于恢复与诊断。
+- 全局状态条和设置弹窗均显示加载失败并提供重试，设置表单和保存动作不可用。
+- `TextStyleDefaultsSettings` 已移除 `saveRequestId/save-complete` 特殊握手，直接修改 settings store 草稿；取消恢复父级快照，保存只执行一次统一 transaction。
 
 ## 6. 图片与浏览器内存审计
 
@@ -221,15 +214,13 @@
 - 翻译右侧栏使用 `VirtualThumbnailList`。
 - 编辑缩略图有窗口化逻辑。
 - Reader 使用 `VirtualPageStream` 和 IntersectionObserver。
+- 指定页码弹窗、Insight PagesTree 和续写漫画参考图选择器使用固定行虚拟网格。
 - 当前翻译主图按 URL 加载，不在 Pinia 保存整章原图。
 - 媒体响应支持 ETag/If-None-Match。
 
 仍需完成：
 
-- `PageSelectionModal.vue` 使用普通 `ProductThumbnailGrid` 渲染全部候选。
-- `PagesTree.vue` 有章节时渲染整章节点。
-- 部分 continuation/reference selector 仍构造完整缩略图列表。
-- 内存趋势验收只覆盖 Reader；需要分别覆盖翻译页、指定页码弹窗、编辑缩略图、Insight 页面树。
+- 单元测试已经证明各大列表的 DOM 节点数量有界；浏览器进程内存趋势验收仍只覆盖 Reader，需要分别覆盖翻译页、指定页码弹窗、编辑缩略图、Insight 页面树。
 - Worker 有界队列/并发实现已有测试，但“章节总页数增长时 RSS 不线性增长”的端到端 Worker 证明不足。
 
 ## 7. 存储与数据加载审计
@@ -281,7 +272,7 @@
 本轮实际验证结果：
 
 - `npm run typecheck`、`npm run lint`、`npm run lint:css`、`npm run lint:ui` 全部通过。
-- 前端 Vitest：238 个测试文件、1712 项测试全部通过；typecheck、ESLint、Stylelint 和 UI architecture audit 同步通过。
+- 前端 Vitest：240 个测试文件、1725 项测试全部通过；typecheck、ESLint、Stylelint 和 UI architecture audit 同步通过。
 - 后端 v2 Pytest：136 项测试全部通过；2 条 warning 为 SQLAlchemy 对表达式索引反射的既有提示。
 - 生成类型确定性检查与运行时 Flask 路由双向闭集测试通过；OpenAPI/运行时均为 186 个操作。
 - `npm run build:check` 通过，生产静态包已更新。
@@ -290,8 +281,8 @@
 
 在再次宣布“重构完成”前，建议按以下门禁顺序处理：
 
-1. **加载门禁**：Insight/指定页码/续写缩略图虚拟化，并补齐各场景 1000 页内存测试。
-2. **Studio/Reader/设置门禁**：Studio 服务端 abort 与归档删除接线、Reader 徽标/统计、全站 settings restricted mode。
-3. **最终验收门禁**：执行方案 §15 和各页面章节的剩余故障注入、并发、删除、GC、查询计划、断线恢复和打包验收。
+1. **存储门禁**：补齐核心查询的 `EXPLAIN QUERY PLAN`、删除/GC 矩阵和 secret canary。
+2. **可靠性门禁**：补齐 API/Worker 重启、断线恢复、operation/job fencing、quick reset/promote 和并发删除的故障注入矩阵。
+3. **性能与发布门禁**：补齐翻译/编辑/指定页码/Insight 的 1000 页浏览器进程内存趋势、Worker RSS 趋势、批量产品流与最终打包验收。
 
-当前可以继续在该分支重构，但不能以“只剩零碎优化”描述剩余工作；多个页面级功能和最终验收仍属于正式方案范围内的未完成项。
+当前页面级功能缺口已关闭，剩余工作是方案正式定义的最终验收门禁；通过前仍不能宣布整个重构完成。

@@ -13,7 +13,6 @@ import {
   createInsightNote,
   deleteInsightNote,
   getInsightBootstrap,
-  getInsightJob,
   getInsightOverview,
   getInsightPage,
   getInsightTimeline,
@@ -30,6 +29,7 @@ import {
   type V2InsightNote,
   type V2InsightPageSummary,
 } from '@/api/v2/insight'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import {
   createV2Prompt,
   deleteV2Prompt,
@@ -267,28 +267,6 @@ export interface RebuildEmbeddingsResponse {
   task_id?: string
   status?: string
   message?: string
-  error?: string
-}
-
-export interface RebuildEmbeddingsStatusResponse {
-  success: boolean
-  task?: {
-    task_id: string
-    task_type: string
-    status: string
-    progress?: {
-      current_phase?: string
-      analyzed_pages?: number
-      total_pages?: number
-      percentage?: number
-    }
-    error_message?: string
-  } | null
-  stats?: {
-    available?: boolean
-    pages_count?: number
-    events_count?: number
-  }
   error?: string
 }
 
@@ -651,6 +629,7 @@ export async function sendChat(
     use_global_context?: boolean
   } = {},
 ): Promise<ChatResponse> {
+  assertBackendActionAllowed()
   const response = await fetch(insightQaUrl(bookId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -703,33 +682,6 @@ export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddin
     task_id: accepted.jobIds[0],
     status: accepted.status,
     message: '向量重建已进入任务中心',
-  }
-}
-
-export async function getRebuildEmbeddingsStatus(
-  _bookId: string,
-  taskId?: string,
-): Promise<RebuildEmbeddingsStatusResponse> {
-  if (!taskId) return { success: false, task: null, error: '缺少任务 ID' }
-  const job = await getInsightJob(taskId)
-  const progress = job.progress as Record<string, unknown>
-  return {
-    success: true,
-    task: {
-      task_id: job.jobId,
-      task_type: job.kind,
-      status: mapJobStatus(job.status),
-      progress: {
-        current_phase: String(progress.phase ?? progress.currentPhase ?? ''),
-        analyzed_pages: Number(progress.completed ?? progress.current ?? 0),
-        total_pages: Number(progress.total ?? 0),
-        percentage: Number(progress.percent ?? 0),
-      },
-      error_message: String(
-        ((job.progress as Record<string, unknown>).error as Record<string, unknown> | undefined)
-          ?.message ?? '',
-      ) || undefined,
-    },
   }
 }
 

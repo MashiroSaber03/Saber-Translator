@@ -17,10 +17,13 @@
       :chat-mutating="chatMutating"
       :chat-prompt-loading="chatPromptLoading"
       :chat-streaming="chatStreaming"
+      :chat-abortable="chatAbortable"
       :chat-summarizing="chatSummarizing"
       :document="document"
       :session="session"
+      @abort-chat="$emit('abort-chat')"
       @delete-message="$emit('delete-message', $event)"
+      @delete-session="$emit('delete-session', $event)"
       @edit-message="$emit('edit-message', $event)"
       @export-session="$emit('export-session')"
       @import-session="$emit('import-session', $event)"
@@ -104,6 +107,7 @@ const props = defineProps<{
   bookId: string
   canUndoPatch: boolean
   chatExporting: boolean
+  chatAbortable?: boolean
   chatImporting: boolean
   chatLoading: boolean
   chatMutating: boolean
@@ -118,8 +122,10 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  (event: 'abort-chat'): void
   (event: 'apply-patch'): void
   (event: 'delete-message', messageId: string): void
+  (event: 'delete-session', session: CharacterStudioChatSessionSummary): void
   (event: 'edit-message', value: { messageId: string; content: string }): void
   (event: 'export-session'): void
   (event: 'import-session', file: File): void

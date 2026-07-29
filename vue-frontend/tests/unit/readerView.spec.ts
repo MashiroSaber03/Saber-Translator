@@ -121,6 +121,54 @@ describe('ReaderView', () => {
     expect(wrapper.get('[aria-label="阅读设置"]').exists()).toBe(true)
   })
 
+  it('shows the persisted translated-page count from chapter metadata', async () => {
+    listChapterPagesMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'page-1',
+          chapterId: 'chapter-1',
+          ordinal: 1,
+          sourceUrl: '/source/1',
+          translatedUrl: '/translated/1',
+        },
+        {
+          id: 'page-2',
+          chapterId: 'chapter-1',
+          ordinal: 2,
+          sourceUrl: '/source/2',
+          translatedUrl: null,
+        },
+        {
+          id: 'page-3',
+          chapterId: 'chapter-1',
+          ordinal: 3,
+          sourceUrl: '/source/3',
+          translatedUrl: '/translated/3',
+        },
+      ],
+      nextCursor: null,
+      pageOrderRevision: 1,
+    })
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: true,
+          ReaderControls: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('.reader-header__translated-count').text()).toBe('已翻译 2/3')
+  })
+
   it('keeps the reader header free of legacy DOM id hooks', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
 

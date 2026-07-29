@@ -66,14 +66,15 @@
         <div class="reference-image-selector__section-label">
           <span>漫画图片</span>
         </div>
-        <div ref="thumbnailsGrid" class="reference-image-selector__scroll">
-          <ProductThumbnailGrid
-            class="reference-image-selector__thumbnail-grid"
-            aria-label="漫画参考图选择"
-            :items="selectableThumbnailItems"
-            @select="toggleSelectionByToken"
-          />
-        </div>
+        <VirtualThumbnailGrid
+          ref="thumbnailsGrid"
+          class="reference-image-selector__scroll reference-image-selector__thumbnail-grid"
+          aria-label="漫画参考图选择"
+          :items="selectableThumbnailItems"
+          :max-height="560"
+          :min-item-width="110"
+          @select="toggleSelectionByToken"
+        />
       </div>
     </div>
   </BaseModal>
@@ -87,6 +88,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
+import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import { ref, computed, watch, nextTick } from 'vue'
 import type { MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import * as insightApi from '@/api/insight'
@@ -109,7 +111,7 @@ const emit = defineEmits<{
 }>()
 
 const selectedTokens = ref<string[]>([])
-const thumbnailsGrid = ref<HTMLElement | null>(null)
+const thumbnailsGrid = ref<InstanceType<typeof VirtualThumbnailGrid> | null>(null)
 const selectedCount = computed(() => selectedTokens.value.length)
 const characterThumbnailItems = computed<ProductThumbnailGridItem[]>(() => {
   return props.characterForms.map(form => {
@@ -264,9 +266,7 @@ function clearSelection(): void {
 }
 
 function scrollToBottom(): void {
-  if (thumbnailsGrid.value) {
-    thumbnailsGrid.value.scrollTop = thumbnailsGrid.value.scrollHeight
-  }
+  thumbnailsGrid.value?.scrollToEnd()
 }
 
 function getOriginalThumbnailUrl(pageNum: number): string {
@@ -389,7 +389,6 @@ function handleCancel(): void {
 }
 
 .reference-image-selector__scroll {
-  overflow-y: auto;
   flex: 1;
   min-height: 0;
   padding-right: 4px;

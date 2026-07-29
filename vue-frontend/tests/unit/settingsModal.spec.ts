@@ -2,20 +2,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h, watch } from 'vue'
+import { defineComponent, h, onMounted } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
-const { saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
+const { saveToBackendMock, settingsStoreState } = vi.hoisted(() => ({
   saveToBackendMock: vi.fn(),
-  saveDefaultsMock: vi.fn(),
+  settingsStoreState: {
+    textStyle: {
+      fontSize: 16,
+    },
+  },
 }))
 
 vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     backendError: null,
     isBackendReady: true,
-    settings: {},
+    settings: settingsStoreState,
     providerConfigs: {},
     loadFromBackend: vi.fn().mockResolvedValue(true),
     saveToBackend: saveToBackendMock,
@@ -30,7 +34,8 @@ vi.mock('@/components/common/BaseModal.vue', () => ({
   default: defineComponent({
     props: ['modelValue', 'mobilePresentation', 'headerVariant'],
     emits: ['update:modelValue', 'close', 'open'],
-    setup(props, { slots }) {
+    setup(props, { emit, slots }) {
+      onMounted(() => emit('open'))
       return () => h('div', {
         'data-header-variant': props.headerVariant,
         'data-mobile-presentation': props.mobilePresentation,
@@ -69,21 +74,8 @@ vi.mock('@/components/settings/MoreSettings.vue', () => ({
 vi.mock('@/components/settings/TextStyleDefaultsSettings.vue', () => ({
   default: defineComponent({
     name: 'TextStyleDefaultsSettings',
-    props: {
-      isOpen: Boolean,
-      saveRequestId: {
-        type: Number,
-        default: 0,
-      },
-    },
-    emits: ['save-complete'],
-    setup(props, { emit }) {
-      watch(() => props.saveRequestId, async (requestId, previousRequestId) => {
-        if (requestId === previousRequestId || requestId === 0) return
-        emit('save-complete', await saveDefaultsMock())
-      })
-      return () => h('div', 'TextStyleDefaultsSettings stub')
-    },
+    props: { isOpen: Boolean },
+    setup: () => () => h('div', 'TextStyleDefaultsSettings stub'),
   }),
 }))
 
@@ -92,18 +84,18 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 describe('SettingsModal', () => {
   beforeEach(() => {
     saveToBackendMock.mockReset()
-    saveDefaultsMock.mockReset()
-
     saveToBackendMock.mockResolvedValue(true)
-    saveDefaultsMock.mockResolvedValue({ success: true, changed: true })
+    settingsStoreState.textStyle.fontSize = 16
   })
 
-  it('emits textDefaultsChanged when text default values are saved', async () => {
+  it('saves the shared settings draft once and reports text-default changes', async () => {
     const wrapper = mount(SettingsModal, {
       props: {
         modelValue: true,
       },
     })
+    await flushPromises()
+    settingsStoreState.textStyle.fontSize = 18
 
     const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存设置'))
     expect(saveButton).toBeTruthy()
@@ -117,7 +109,6 @@ describe('SettingsModal', () => {
       logSpy.mockRestore()
     }
 
-    expect(saveDefaultsMock).toHaveBeenCalledTimes(1)
     expect(saveToBackendMock).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual({ textDefaultsChanged: true })
   })
@@ -204,22 +195,33 @@ describe('SettingsModal', () => {
     expect(source).not.toContain('.settings-tab-pane')
   })
 
-  it('requests text default saves through a typed child result event', () => {
+  it('keeps text defaults in the parent settings draft and one save transaction', () => {
     const modalSource = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
     const textDefaultsSource = readFileSync(
       resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'),
       'utf8',
     )
 
-    expect(modalSource).toContain(':save-request-id="textDefaultsSaveRequestId"')
-    expect(modalSource).toContain('@save-complete="handleTextDefaultsSaveComplete"')
+    expect(modalSource).toContain('<TextStyleDefaultsSettings :is-open="isOpen" />')
+    expect(modalSource).toContain('settingsStore.saveToBackend()')
+    expect(modalSource).not.toContain('save-request-id')
+    expect(modalSource).not.toContain('save-complete')
     expect(modalSource).not.toContain('textStyleDefaultsRef')
     expect(modalSource).not.toContain('TextStyleDefaultsSettingsExposed')
     expect(modalSource).not.toContain('saveDefaults()')
 
-    expect(textDefaultsSource).toContain('saveRequestId')
-    expect(textDefaultsSource).toContain('save-complete')
+    expect(textDefaultsSource).toContain('settingsStore.updateTextStyle(normalized)')
+    expect(textDefaultsSource).not.toContain('saveRequestId')
+    expect(textDefaultsSource).not.toContain('save-complete')
     expect(textDefaultsSource).not.toContain('defineExpose')
+  })
+
+  it('disables all settings writes while backend settings are unavailable', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+
+    expect(source).toContain('title="设置受限模式"')
+    expect(source).toContain(':disabled="!settingsStore.isBackendReady"')
+    expect(source).toContain('{{ settingsStore.backendError')
   })
 
   it('uses the product dialog action row for modal footer actions', () => {

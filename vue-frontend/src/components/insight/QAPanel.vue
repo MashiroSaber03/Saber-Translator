@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
 import { useInsightStore, type QAMessage } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
@@ -13,6 +14,7 @@ import QASaveNoteModal from './qa/QASaveNoteModal.vue'
 import { useQANoteModal } from './useQANoteModal'
 
 const insightStore = useInsightStore()
+const taskCenterStore = useTaskCenterStore()
 const questionInput = ref('')
 const qaMode = ref<'precise' | 'global'>('precise')
 const useParentChild = ref(true)
@@ -22,12 +24,12 @@ const topK = ref(5)
 const threshold = ref(0)
 const isRebuildingEmbeddings = ref(false)
 const rebuildTaskId = ref<string | null>(null)
+const rebuildBookId = ref<string | null>(null)
 const rebuildProgressLabel = ref('')
-const rebuildPollingFailures = ref(0)
 const messageScrollRequestId = ref(0)
-let rebuildPollingTimer: ReturnType<typeof setInterval> | null = null
 let chatRequestSequence = 0
 let isQAPanelMounted = true
+let handledTerminalRebuildTaskId = ''
 
 const qaHistory = computed(() => insightStore.qaHistory)
 const isStreaming = computed(() => insightStore.isStreaming)
@@ -169,9 +171,9 @@ async function rebuildEmbeddings(): Promise<void> {
     }
 
     rebuildTaskId.value = response.task_id
+    rebuildBookId.value = bookId
     rebuildProgressLabel.value = '任务已启动'
-    rebuildPollingFailures.value = 0
-    startRebuildStatusPolling(bookId, response.task_id)
+    await taskCenterStore.refresh()
   } catch (error) {
     const message = error instanceof Error ? error.message : '重建向量索引失败'
     showToast(message, 'error')
@@ -179,86 +181,58 @@ async function rebuildEmbeddings(): Promise<void> {
   }
 }
 
-function stopRebuildStatusPolling(): void {
-  if (rebuildPollingTimer) {
-    clearInterval(rebuildPollingTimer)
-    rebuildPollingTimer = null
-  }
-}
-
 function resetRebuildState(): void {
-  stopRebuildStatusPolling()
   isRebuildingEmbeddings.value = false
   insightStore.setLoading(false)
   rebuildTaskId.value = null
+  rebuildBookId.value = null
   rebuildProgressLabel.value = ''
 }
 
-function isCurrentRebuildRequest(bookId: string, taskId: string): boolean {
-  return (
-    isQAPanelMounted &&
-    rebuildTaskId.value === taskId &&
-    insightStore.currentBookId === bookId
-  )
-}
-
-async function pollRebuildStatus(bookId: string, taskId: string): Promise<void> {
-  if (!isCurrentRebuildRequest(bookId, taskId)) {
+function projectRebuildJob(): void {
+  const bookId = insightStore.currentBookId
+  if (!bookId) {
     resetRebuildState()
     return
   }
-
-  const response = await insightApi.getRebuildEmbeddingsStatus(bookId, taskId)
-  if (!isCurrentRebuildRequest(bookId, taskId)) return
-
-  const task = response.task
-  if (!task) {
+  if (rebuildBookId.value && rebuildBookId.value !== bookId) {
     resetRebuildState()
-    showToast('重建失败: 未找到向量重建任务状态', 'error')
-    return
   }
-
-  rebuildPollingFailures.value = 0
-
-  const progress = task.progress
-  if (task.status === 'running' || task.status === 'pending') {
-    const phaseText = progress?.current_phase || '重建中'
-    const current = progress?.analyzed_pages ?? 0
-    const total = progress?.total_pages ?? 0
-    rebuildProgressLabel.value = total > 0 ? `${phaseText} (${current}/${total})` : phaseText
-  }
-
-  if (task.status === 'completed') {
-    resetRebuildState()
-
-    let message = '向量索引重建完成'
-    if (response.stats) {
-      message += `\n页面向量: ${response.stats.pages_count || 0} 条`
-      if (response.stats.events_count !== undefined) {
-        message += `\n事件向量: ${response.stats.events_count || 0} 条`
-      }
+  if (!rebuildTaskId.value) {
+    const active = taskCenterStore.queue.find(job => (
+      job.bookId === bookId && job.kind === 'vector_rebuild'
+    ))
+    if (active) {
+      rebuildTaskId.value = active.jobId
+      rebuildBookId.value = bookId
+      isRebuildingEmbeddings.value = true
+      insightStore.setLoading(true)
     }
-    showToast(message, 'success', 6000)
+  }
+  const taskId = rebuildTaskId.value
+  if (!taskId) return
+  const job = [...taskCenterStore.queue, ...taskCenterStore.history]
+    .find(item => item.jobId === taskId)
+  if (!job) return
+  if (['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)) {
+    const progress = job.progress as Record<string, unknown>
+    const phase = String(progress.phase ?? progress.currentPhase ?? '重建中')
+    const current = Number(
+      progress.completedItems ?? progress.completed ?? progress.current ?? 0,
+    )
+    const total = Number(progress.totalItems ?? progress.total ?? 0)
+    rebuildProgressLabel.value = total > 0 ? `${phase} (${current}/${total})` : phase
     return
   }
-
-  if (task.status === 'failed' || task.status === 'cancelled') {
-    resetRebuildState()
-    showToast('重建失败: ' + (task.error_message || response.error || '未知错误'), 'error')
-  }
-}
-
-function startRebuildStatusPolling(bookId: string, taskId: string): void {
-  stopRebuildStatusPolling()
-  rebuildPollingTimer = setInterval(() => {
-    void pollRebuildStatus(bookId, taskId).catch(() => {
-      rebuildPollingFailures.value += 1
-      if (rebuildPollingFailures.value >= 3) {
-        resetRebuildState()
-        showToast('重建失败: 无法获取任务状态，请稍后查看结果', 'error')
-      }
-    })
-  }, 3000)
+  if (handledTerminalRebuildTaskId === taskId) return
+  handledTerminalRebuildTaskId = taskId
+  const succeeded = job.status === 'completed' || job.status === 'completed_with_errors'
+  resetRebuildState()
+  showToast(
+    succeeded ? '向量索引重建完成' : '向量索引重建未完成，请在任务中心查看详情',
+    succeeded ? 'success' : 'error',
+    succeeded ? 6000 : undefined,
+  )
 }
 
 function renderMarkdown(content: string): string {
@@ -281,6 +255,7 @@ function handleSaveNote(message: QAMessage): void {
 
 onMounted(() => {
   scrollToBottom()
+  projectRebuildJob()
 })
 
 onUnmounted(() => {
@@ -288,8 +263,17 @@ onUnmounted(() => {
   chatRequestSequence += 1
   insightStore.removeLoadingMessages()
   insightStore.setStreaming(false)
-  stopRebuildStatusPolling()
 })
+
+watch(
+  [
+    () => taskCenterStore.queue,
+    () => taskCenterStore.history,
+    () => insightStore.currentBookId,
+  ],
+  projectRebuildJob,
+  { immediate: true },
+)
 </script>
 
 <template>

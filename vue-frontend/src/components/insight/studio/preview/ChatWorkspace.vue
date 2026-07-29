@@ -18,6 +18,7 @@ const props = defineProps<{
   archivedSessions: CharacterStudioChatSessionSummary[]
   bookId: string
   chatExporting: boolean
+  chatAbortable?: boolean
   chatImporting: boolean
   chatLoading: boolean
   chatMutating: boolean
@@ -29,6 +30,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  (event: 'abort-chat'): void
+  (event: 'delete-session', session: CharacterStudioChatSessionSummary): void
   (event: 'delete-message', messageId: string): void
   (event: 'edit-message', value: { messageId: string; content: string }): void
   (event: 'export-session'): void
@@ -101,6 +104,7 @@ function switchSession(sessionId: string) {
       :has-document="Boolean(document)"
       :has-session="Boolean(session)"
       @choose-session="switchSession"
+      @delete-session="$emit('delete-session', $event)"
       @export-session="$emit('export-session')"
       @import-session="$emit('import-session', $event)"
       @new-session="$emit('new-session')"
@@ -137,7 +141,9 @@ function switchSession(sessionId: string) {
         @regenerate-message="$emit('regenerate-message', $event)"
       />
       <ChatComposer
+        :chat-abortable="chatAbortable"
         :chat-streaming="chatStreaming"
+        @abort-chat="$emit('abort-chat')"
         @send-chat="$emit('send-chat', $event)"
       />
     </template>

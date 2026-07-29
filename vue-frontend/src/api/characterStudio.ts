@@ -1,12 +1,15 @@
 import { downloadBlob, readApiErrorMessage } from './download'
 import { readSseStream } from './sse'
 import { waitForOperation } from '@/api/v2/operations'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import {
   activateV2StudioSession,
+  abortV2StudioSession,
   createV2StudioDocument,
   createV2StudioSession,
   deleteV2StudioDocument,
   deleteV2StudioMessage,
+  deleteV2StudioSession,
   editV2StudioMessage,
   generateV2StudioDocument,
   getV2StudioCandidates,
@@ -199,6 +202,8 @@ function mapSession(raw: V2StudioSession): CharacterStudioChatSession {
     variables: raw.variables,
     _runtime: record(raw.runtimeState),
     last_prompt_preview: '',
+    revision: raw.revision,
+    generation: raw.generation,
   }
 }
 
@@ -206,6 +211,8 @@ function mapSessionSummary(value: Record<string, unknown>): CharacterStudioChatS
   return {
     session_id: String(value.sessionId ?? ''),
     title: String(value.title ?? ''),
+    revision: Number(value.revision ?? 0) || undefined,
+    generation: Number(value.generation ?? 0) || undefined,
     message_count: Number(value.messageCount ?? 0),
     updated_at: String(value.updatedAt ?? ''),
     archived_at: value.archived ? String(value.updatedAt ?? '') : null,
@@ -375,6 +382,7 @@ export async function runCharacterStudioAgent(
   docId: string,
   message: string,
 ): Promise<{ success: boolean; content?: string; context?: string; error?: string; message?: string }> {
+  assertBackendActionAllowed()
   const response = await fetch(v2StudioAgentUrl(docId), {
     method: 'POST',
     headers: {
@@ -427,6 +435,28 @@ export async function switchCharacterStudioChatSession(
   const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
   await activateV2StudioSession(sessionId, state.indexRevision)
   return refreshedChatState(docId)
+}
+
+export async function deleteCharacterStudioChatSession(
+  _bookId: string,
+  docId: string,
+  sessionId: string,
+  revision?: number,
+): Promise<CharacterStudioChatStateResponse> {
+  const current = revision
+    ?? sessionCache.get(sessionId)?.revision
+    ?? (await getV2StudioSession(sessionId)).revision
+  await deleteV2StudioSession(sessionId, current)
+  sessionCache.delete(sessionId)
+  return refreshedChatState(docId)
+}
+
+export async function abortCharacterStudioChatOperation(
+  sessionId: string,
+  operationId: string,
+): Promise<CharacterStudioChatSession> {
+  await abortV2StudioSession(sessionId, operationId)
+  return mapSession(await getV2StudioSession(sessionId))
 }
 
 export async function editCharacterStudioChatMessage(
@@ -548,6 +578,7 @@ export async function streamCharacterStudioChatMessage(
     content: string
     attachments?: File[]
     onEvent: (event: CharacterStudioChatStreamEvent) => void
+    onAccepted?: (operationId: string) => void
     signal?: AbortSignal
   },
 ): Promise<void> {
@@ -558,6 +589,7 @@ export async function streamCharacterStudioChatMessage(
     content: payload.content,
     assetIds: assets.map(asset => asset.assetId),
   })
+  payload.onAccepted?.(accepted.operationId)
   await followStudioOperation(
     accepted.operationId,
     payload.sessionId,
@@ -573,9 +605,11 @@ export async function regenerateCharacterStudioChatMessage(
   messageId: string,
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
   signal?: AbortSignal,
+  onAccepted?: (operationId: string) => void,
 ): Promise<void> {
   const session = cachedSession(sessionId)
   const accepted = await regenerateV2StudioMessage(messageId, session.revision)
+  onAccepted?.(accepted.operationId)
   await followStudioOperation(accepted.operationId, sessionId, onEvent, signal)
 }
 

@@ -1,16 +1,18 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import type { V2Job } from '@/api/v2/jobs'
 
 const {
   rebuildEmbeddingsMock,
-  getRebuildEmbeddingsStatusMock,
   showToastMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   rebuildEmbeddingsMock: vi.fn(),
-  getRebuildEmbeddingsStatusMock: vi.fn(),
   showToastMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
@@ -18,7 +20,6 @@ const {
 vi.mock('@/api/insight', () => ({
   sendChat: vi.fn(),
   rebuildEmbeddings: rebuildEmbeddingsMock,
-  getRebuildEmbeddingsStatus: getRebuildEmbeddingsStatusMock,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -31,51 +32,67 @@ vi.mock('@/composables/useProductConfirm', () => ({
 
 import QAPanel from '@/components/insight/QAPanel.vue'
 
-describe('QAPanel rebuild embeddings polling', () => {
+function vectorJob(overrides: Partial<V2Job> = {}): V2Job {
+  return {
+    jobId: 'vector-job-1',
+    kind: 'vector_rebuild',
+    retryOfJobId: null,
+    retryMode: null,
+    status: 'running',
+    queueRank: 1,
+    bookId: 'book-1',
+    progress: {
+      executionMode: 'sequential',
+      jobStatus: 'running',
+      totalItems: 10,
+      completedItems: 3,
+      failedItems: 0,
+      skippedItems: 0,
+      cancelledItems: 0,
+      pools: [],
+    },
+    target: {},
+    createdAt: null,
+    ...overrides,
+  }
+}
+
+describe('QAPanel vector rebuild task projection', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
     const pinia = createPinia()
     setActivePinia(pinia)
 
-    const store = useInsightStore()
-    store.currentBookId = 'book-1'
-    store.setLoading(false)
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    insightStore.setLoading(false)
 
     rebuildEmbeddingsMock.mockReset()
-    getRebuildEmbeddingsStatusMock.mockReset()
     showToastMock.mockReset()
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
-
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
-  it('stops polling and recovers UI when rebuild task cannot be found', async () => {
+  it('starts once, then projects progress and completion from the global task center', async () => {
     rebuildEmbeddingsMock.mockResolvedValue({
       success: true,
-      task_id: 'task-1',
+      task_id: 'vector-job-1',
     })
-    getRebuildEmbeddingsStatusMock.mockResolvedValue({
-      success: true,
-      task: null,
-    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    const taskCenterStore = useTaskCenterStore()
+    const refreshSpy = vi.spyOn(taskCenterStore, 'refresh').mockResolvedValue(undefined)
 
     const wrapper = mount(QAPanel, {
-      global: {
-        plugins: [createPinia()],
-      },
+      global: { plugins: [pinia] },
     })
-    const store = useInsightStore()
-    store.currentBookId = 'book-1'
 
     await wrapper.find('button[title="重建向量索引"]').trigger('click')
-    await flushPromises()
-    await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
 
     expect(confirmProductActionMock).toHaveBeenCalledWith({
@@ -85,79 +102,81 @@ describe('QAPanel rebuild embeddings polling', () => {
       cancelText: '取消',
       tone: 'danger',
     })
-    expect(window.confirm).not.toHaveBeenCalled()
-    expect(showToastMock).toHaveBeenCalledWith(
-      expect.stringContaining('未找到向量重建任务状态'),
-      'error'
-    )
+    expect(rebuildEmbeddingsMock).toHaveBeenCalledWith('book-1')
+    expect(refreshSpy).toHaveBeenCalledTimes(1)
+
+    taskCenterStore.queue = [vectorJob()]
+    await flushPromises()
+    expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建中 (3/10)')
+    expect(insightStore.isLoading).toBe(true)
+
+    taskCenterStore.queue = []
+    taskCenterStore.history = [vectorJob({
+      status: 'completed',
+      queueRank: null,
+      progress: {
+        executionMode: 'sequential',
+        jobStatus: 'completed',
+        totalItems: 10,
+        completedItems: 10,
+        failedItems: 0,
+        skippedItems: 0,
+        cancelledItems: 0,
+        pools: [],
+      },
+    })]
+    await flushPromises()
+
+    expect(showToastMock).toHaveBeenCalledWith('向量索引重建完成', 'success', 6000)
     expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
-    expect(store.isLoading).toBe(false)
+    expect(insightStore.isLoading).toBe(false)
   })
 
-  it('stops polling after repeated status request failures', async () => {
-    rebuildEmbeddingsMock.mockResolvedValue({
-      success: true,
-      task_id: 'task-2',
-    })
-    getRebuildEmbeddingsStatusMock.mockRejectedValue(new Error('network down'))
+  it('resumes an already-running rebuild from the global task snapshot on mount', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    const taskCenterStore = useTaskCenterStore()
+    taskCenterStore.queue = [vectorJob()]
 
     const wrapper = mount(QAPanel, {
-      global: {
-        plugins: [createPinia()],
-      },
+      global: { plugins: [pinia] },
     })
-    const store = useInsightStore()
-    store.currentBookId = 'book-1'
-
-    await wrapper.find('button[title="重建向量索引"]').trigger('click')
     await flushPromises()
 
-    await vi.advanceTimersByTimeAsync(9000)
-    await flushPromises()
-
-    expect(getRebuildEmbeddingsStatusMock).toHaveBeenCalledTimes(3)
-    expect(showToastMock).toHaveBeenCalledWith(
-      expect.stringContaining('无法获取任务状态'),
-      'error'
-    )
-    expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
-    expect(store.isLoading).toBe(false)
+    expect(rebuildEmbeddingsMock).not.toHaveBeenCalled()
+    expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建中 (3/10)')
+    expect(insightStore.isLoading).toBe(true)
   })
 
-  it('stops rebuild polling instead of applying an old task id to a newly selected book', async () => {
-    rebuildEmbeddingsMock.mockResolvedValue({
-      success: true,
-      task_id: 'task-from-book-1',
-    })
-    getRebuildEmbeddingsStatusMock.mockResolvedValue({
-      success: true,
-      task: {
-        status: 'running',
-        progress: {
-          current_phase: '向量化',
-          analyzed_pages: 1,
-          total_pages: 10,
-        },
-      },
-    })
+  it('drops the old rebuild projection when another book is selected', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    const taskCenterStore = useTaskCenterStore()
+    taskCenterStore.queue = [vectorJob()]
 
     const wrapper = mount(QAPanel, {
-      global: {
-        plugins: [createPinia()],
-      },
+      global: { plugins: [pinia] },
     })
-    const store = useInsightStore()
-    store.currentBookId = 'book-1'
+    await flushPromises()
+    expect(insightStore.isLoading).toBe(true)
 
-    await wrapper.find('button[title="重建向量索引"]').trigger('click')
+    insightStore.currentBookId = 'book-2'
     await flushPromises()
 
-    store.currentBookId = 'book-2'
-    await vi.advanceTimersByTimeAsync(3000)
-    await flushPromises()
-
-    expect(getRebuildEmbeddingsStatusMock).not.toHaveBeenCalled()
     expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
-    expect(store.isLoading).toBe(false)
+    expect(insightStore.isLoading).toBe(false)
+  })
+
+  it('contains no page-local timer or legacy task-status polling', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/QAPanel.vue'), 'utf8')
+
+    expect(source).not.toContain('setInterval(')
+    expect(source).not.toContain('setTimeout(')
+    expect(source).not.toContain('getRebuildEmbeddingsStatus')
+    expect(source).toContain('taskCenterStore.queue')
   })
 })

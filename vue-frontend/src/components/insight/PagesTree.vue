@@ -8,8 +8,8 @@ import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
+import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
@@ -21,7 +21,6 @@ const insightStore = useInsightStore()
 
 const expandedChapters = ref<Set<string>>(new Set())
 const pageAnalyzedMap = ref<Map<number, boolean>>(new Map())
-const displayedPageCount = ref(100)
 let analyzedPagesRequestSequence = 0
 let isPagesTreeMounted = true
 
@@ -85,13 +84,6 @@ function createPageThumbnailItems(startPage: number, endPage: number): ProductTh
 
 function selectThumbnailPage(pageId: string | number): void {
   selectPage(Number(pageId))
-}
-
-function loadMorePages(): void {
-  displayedPageCount.value = Math.min(
-    displayedPageCount.value + 100,
-    totalPages.value
-  )
 }
 
 function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boolean {
@@ -243,24 +235,15 @@ onUnmounted(() => {
         >
           导入或选择书籍后将在这里显示页面缩略图。
         </ProductStatusBanner>
-        <ProductThumbnailGrid
+        <VirtualThumbnailGrid
           v-else
           class="pages-tree-panel__all-pages"
           aria-label="所有页面导航"
           :columns="4"
-          :items="createPageThumbnailItems(1, Math.min(totalPages, displayedPageCount))"
+          :active-id="insightStore.selectedPageNum"
+          :items="createPageThumbnailItems(1, totalPages)"
           @select="selectThumbnailPage"
         />
-        <ProductActionRow
-          v-if="totalPages > displayedPageCount"
-          class="pages-tree-panel__load-more"
-          aria-label="页面导航加载操作"
-          justify="center"
-        >
-          <UiButton variant="secondary" @click="loadMorePages">
-            加载更多 (还有 {{ totalPages - displayedPageCount }} 页)
-          </UiButton>
-        </ProductActionRow>
       </template>
 
       <template v-else>
@@ -309,11 +292,12 @@ onUnmounted(() => {
             </ProductActionRow>
           </template>
 
-          <ProductThumbnailGrid
+          <VirtualThumbnailGrid
             v-if="isChapterExpanded(chapter.id)"
             class="pages-tree-panel__pages-grid"
             :aria-label="`${chapter.title}页面导航`"
             :columns="4"
+            :active-id="insightStore.selectedPageNum"
             :items="createPageThumbnailItems(chapter.startPage, chapter.endPage)"
             @select="selectThumbnailPage"
           />

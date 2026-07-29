@@ -153,7 +153,7 @@ describe('ReferenceImageSelector', () => {
     expect(wrapper.emitted('confirm')?.[0]).toEqual([['original:2']])
   })
 
-  it('keeps thumbnail columns owned by ProductThumbnailGrid instead of the scroll wrapper', () => {
+  it('keeps scrolling and columns owned by the virtual thumbnail grid', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/continuation/ReferenceImageSelector.vue'),
       'utf8'
@@ -165,9 +165,11 @@ describe('ReferenceImageSelector', () => {
     expect(source).not.toContain('reference-selector-scroll')
     expect(source).not.toContain('reference-thumbnail-grid')
     expect(source).not.toMatch(/\.thumbnails-grid\s*\{[\s\S]*?grid-template-columns/)
-    expect(scrollBlock).toContain('overflow-y: auto')
     expect(scrollBlock).toContain('min-height: 0')
     expect(scrollBlock).not.toMatch(/display:\s*grid|grid-template-columns|justify-content/)
+    expect(source).toContain("import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'")
+    expect(source).toContain(':min-item-width="110"')
+    expect(source).toContain(':max-height="560"')
     expect(productGridBlock).toContain('--product-thumbnail-grid-min-size: 110px')
   })
 

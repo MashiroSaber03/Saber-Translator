@@ -177,6 +177,8 @@ const generateCharacterStudioSectionMock = vi.fn()
 const getCharacterStudioChatStateMock = vi.fn()
 const createCharacterStudioChatSessionMock = vi.fn()
 const switchCharacterStudioChatSessionMock = vi.fn()
+const deleteCharacterStudioChatSessionMock = vi.fn()
+const abortCharacterStudioChatOperationMock = vi.fn()
 const streamCharacterStudioChatMessageMock = vi.fn()
 const editCharacterStudioChatMessageMock = vi.fn()
 const deleteCharacterStudioChatMessageMock = vi.fn()
@@ -252,6 +254,8 @@ vi.mock('@/api/characterStudio', () => ({
   createCharacterStudioDocument: createCharacterStudioDocumentMock,
   createCharacterStudioChatSession: createCharacterStudioChatSessionMock,
   switchCharacterStudioChatSession: switchCharacterStudioChatSessionMock,
+  deleteCharacterStudioChatSession: deleteCharacterStudioChatSessionMock,
+  abortCharacterStudioChatOperation: abortCharacterStudioChatOperationMock,
   getCharacterStudioChatState: getCharacterStudioChatStateMock,
   streamCharacterStudioChatMessage: streamCharacterStudioChatMessageMock,
   editCharacterStudioChatMessage: editCharacterStudioChatMessageMock,
@@ -280,6 +284,8 @@ describe('characterStudioStore', () => {
     getCharacterStudioChatStateMock.mockReset()
     createCharacterStudioChatSessionMock.mockReset()
     switchCharacterStudioChatSessionMock.mockReset()
+    deleteCharacterStudioChatSessionMock.mockReset()
+    abortCharacterStudioChatOperationMock.mockReset()
     streamCharacterStudioChatMessageMock.mockReset()
     editCharacterStudioChatMessageMock.mockReset()
     deleteCharacterStudioChatMessageMock.mockReset()
@@ -813,6 +819,92 @@ describe('characterStudioStore', () => {
       '编辑后的用户消息',
       '新的回答',
     ])
+  })
+
+  it('aborts the durable chat operation before disconnecting the local stream', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    const abortedSession = {
+      ...deepClone(demoChatSession),
+      revision: 3,
+      generation: 2,
+      messages: [
+        ...deepClone(demoChatSession.messages),
+        {
+          ...deepClone(demoChatSession.messages[0]!),
+          message_id: 'msg_user_abort',
+          role: 'user' as const,
+          content: '保留这条用户消息',
+        },
+      ],
+    }
+    abortCharacterStudioChatOperationMock.mockResolvedValueOnce(abortedSession)
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
+      _bookId: string,
+      _docId: string,
+      options: {
+        onAccepted?: (operationId: string) => void
+        signal: AbortSignal
+      },
+    ) => new Promise<void>((_resolve, reject) => {
+      options.onAccepted?.('chat-op-abort')
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+    }))
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    const sendPromise = store.sendChatMessage('保留这条用户消息')
+    await Promise.resolve()
+
+    expect(store.activeChatOperationId).toBe('chat-op-abort')
+    await store.abortActiveChatOperation()
+    await sendPromise
+
+    expect(abortCharacterStudioChatOperationMock).toHaveBeenCalledWith(
+      'chat_alpha',
+      'chat-op-abort',
+    )
+    expect(store.isChatStreaming).toBe(false)
+    expect(store.activeChatOperationId).toBeNull()
+    expect(store.activeChatSession?.messages.at(-1)?.content).toBe('保留这条用户消息')
+  })
+
+  it('permanently deletes an archived session with its current revision', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    getCharacterStudioChatStateMock.mockResolvedValueOnce({
+      success: true,
+      doc_id: 'doc_alpha',
+      active_session: deepClone(demoChatSession),
+      archived_sessions: [{
+        session_id: 'chat_archived',
+        title: '旧会话',
+        updated_at: '2026-05-14T00:00:00',
+        message_count: 3,
+        revision: 7,
+        generation: 1,
+      }],
+      available_greetings: [],
+    })
+    deleteCharacterStudioChatSessionMock.mockResolvedValueOnce({
+      success: true,
+      doc_id: 'doc_alpha',
+      active_session: deepClone(demoChatSession),
+      archived_sessions: [],
+      available_greetings: [],
+    })
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await store.deleteArchivedChatSession('chat_archived', 7)
+
+    expect(deleteCharacterStudioChatSessionMock).toHaveBeenCalledWith(
+      'book-demo',
+      'doc_alpha',
+      'chat_archived',
+      7,
+    )
+    expect(store.archivedChatSessions).toEqual([])
   })
 
   it('rehydrates chat state after full generation so opening and greetings refresh immediately', async () => {

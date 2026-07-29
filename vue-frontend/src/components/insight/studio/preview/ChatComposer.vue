@@ -7,10 +7,12 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { attachmentTypeLabel, type PendingAttachmentCard } from '../characterStudioPreviewHelpers'
 
 defineProps<{
+  chatAbortable?: boolean
   chatStreaming: boolean
 }>()
 
 const emit = defineEmits<{
+  (event: 'abort-chat'): void
   (event: 'send-chat', value: { content: string; attachments: File[] }): void
 }>()
 
@@ -104,15 +106,28 @@ onUnmounted(() => {
           <UiIcon name="plus" size="18" />
         </UiIconButton>
         <UiIconButton
+          v-if="chatStreaming"
+          variant="danger"
+          size="lg"
+          data-testid="chat-abort-trigger"
+          type="button"
+          :label="chatAbortable ? '中止本次生成' : '正在创建后端操作'"
+          :disabled="!chatAbortable"
+          @click="$emit('abort-chat')"
+        >
+          <UiIcon name="square" size="18" />
+        </UiIconButton>
+        <UiIconButton
+          v-else
           variant="primary"
           size="lg"
           data-testid="chat-send-trigger"
           type="button"
-          :label="chatStreaming ? '回复生成中...' : '发送消息'"
-          :disabled="chatStreaming || (!chatInput.trim() && pendingFiles.length === 0)"
+          label="发送消息"
+          :disabled="!chatInput.trim() && pendingFiles.length === 0"
           @click="sendChat"
         >
-          <UiIcon :name="chatStreaming ? 'loading' : 'send'" size="18" />
+          <UiIcon name="send" size="18" />
         </UiIconButton>
       </div>
     </div>

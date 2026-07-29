@@ -5,6 +5,7 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { formatSessionTime } from '../characterStudioPreviewHelpers'
 import type { CharacterStudioChatSessionSummary } from '@/types/characterStudio'
 
@@ -28,6 +29,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (event: 'choose-session', sessionId: string): void
+  (event: 'delete-session', session: CharacterStudioChatSessionSummary): void
   (event: 'export-session'): void
   (event: 'import-session', file: File): void
   (event: 'new-session'): void
@@ -137,23 +139,35 @@ onUnmounted(() => {
           >
             还没有归档会话。
           </ProductStatusBanner>
-          <UiButton
+          <div
             v-for="item in archivedSessions"
             :key="item.session_id"
-            variant="toolbar"
-            class="session-toolbar__session-item"
-            role="menuitem"
-            @click="chooseSession(item.session_id)"
+            class="session-toolbar__session-row"
           >
-            <div class="session-toolbar__session-item-main">
-              <strong class="session-toolbar__session-title">{{ item.title }}</strong>
-              <p class="session-toolbar__session-excerpt">{{ item.last_message_excerpt || '暂无摘要' }}</p>
-            </div>
-            <div class="session-toolbar__session-item-meta">
-              <span>{{ item.message_count }} 条</span>
-              <span>{{ formatSessionTime(item.updated_at) }}</span>
-            </div>
-          </UiButton>
+            <UiButton
+              variant="toolbar"
+              class="session-toolbar__session-item"
+              role="menuitem"
+              @click="chooseSession(item.session_id)"
+            >
+              <div class="session-toolbar__session-item-main">
+                <strong class="session-toolbar__session-title">{{ item.title }}</strong>
+                <p class="session-toolbar__session-excerpt">{{ item.last_message_excerpt || '暂无摘要' }}</p>
+              </div>
+              <div class="session-toolbar__session-item-meta">
+                <span>{{ item.message_count }} 条</span>
+                <span>{{ formatSessionTime(item.updated_at) }}</span>
+              </div>
+            </UiButton>
+            <UiIconButton
+              variant="danger"
+              size="xs"
+              :label="`永久删除归档会话：${item.title}`"
+              @click.stop="$emit('delete-session', item)"
+            >
+              <UiIcon name="trash" size="14" />
+            </UiIconButton>
+          </div>
         </div>
       </div>
 
@@ -336,6 +350,13 @@ onUnmounted(() => {
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.session-toolbar__session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
 }
 
 .session-toolbar__session-item:hover,

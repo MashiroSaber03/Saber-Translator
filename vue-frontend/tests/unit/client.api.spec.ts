@@ -7,10 +7,20 @@ const {
   requestUseMock,
   responseUseMock,
   createMock,
+  deleteRequestMock,
+  getRequestMock,
+  patchRequestMock,
+  postRequestMock,
+  putRequestMock,
 } = vi.hoisted(() => ({
   requestUseMock: vi.fn(),
   responseUseMock: vi.fn(),
   createMock: vi.fn(),
+  deleteRequestMock: vi.fn(),
+  getRequestMock: vi.fn(),
+  patchRequestMock: vi.fn(),
+  postRequestMock: vi.fn(),
+  putRequestMock: vi.fn(),
 }))
 
 vi.mock('axios', () => {
@@ -19,10 +29,11 @@ vi.mock('axios', () => {
       request: { use: requestUseMock },
       response: { use: responseUseMock },
     },
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
+    delete: deleteRequestMock,
+    get: getRequestMock,
+    patch: patchRequestMock,
+    post: postRequestMock,
+    put: putRequestMock,
   }
 
   createMock.mockReturnValue(instance)
@@ -39,6 +50,11 @@ type ResponseErrorHandler = (error: AxiosError) => Promise<never>
 
 describe('apiClient error normalization', () => {
   afterEach(() => {
+    deleteRequestMock.mockReset()
+    getRequestMock.mockReset()
+    patchRequestMock.mockReset()
+    postRequestMock.mockReset()
+    putRequestMock.mockReset()
     vi.restoreAllMocks()
   })
 
@@ -84,5 +100,42 @@ describe('apiClient error normalization', () => {
         section: 'full',
       },
     })
+  })
+
+  it('allows reads but blocks every mutation while settings are restricted', async () => {
+    const { apiClient } = await import('@/api/client')
+    const {
+      BackendAccessRestrictedError,
+      setBackendAccessRestricted,
+    } = await import('@/services/backendAccessGate')
+    getRequestMock.mockResolvedValue({ data: { ok: true } })
+    setBackendAccessRestricted(true, '设置加载失败')
+
+    try {
+      await expect(apiClient.get('/api/v2/books')).resolves.toEqual({ ok: true })
+      await expect(apiClient.post('/api/v2/jobs', {})).rejects.toBeInstanceOf(
+        BackendAccessRestrictedError,
+      )
+      await expect(apiClient.put('/api/v2/settings', {})).rejects.toBeInstanceOf(
+        BackendAccessRestrictedError,
+      )
+      await expect(apiClient.patch('/api/v2/pages/one', {})).rejects.toBeInstanceOf(
+        BackendAccessRestrictedError,
+      )
+      await expect(apiClient.delete('/api/v2/books/one')).rejects.toBeInstanceOf(
+        BackendAccessRestrictedError,
+      )
+      await expect(
+        apiClient.upload('/api/v2/fonts', new FormData()),
+      ).rejects.toBeInstanceOf(BackendAccessRestrictedError)
+
+      expect(getRequestMock).toHaveBeenCalledTimes(1)
+      expect(postRequestMock).not.toHaveBeenCalled()
+      expect(putRequestMock).not.toHaveBeenCalled()
+      expect(patchRequestMock).not.toHaveBeenCalled()
+      expect(deleteRequestMock).not.toHaveBeenCalled()
+    } finally {
+      setBackendAccessRestricted(false)
+    }
   })
 })

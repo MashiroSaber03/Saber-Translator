@@ -65,6 +65,36 @@ describe('ReaderCanvas', () => {
     ])
   })
 
+  it('marks source fallbacks as untranslated only in translated mode', async () => {
+    const untranslatedPage = {
+      ...pageImage,
+      id: 'page-2',
+      translatedUrl: null,
+    }
+    const wrapper = mount(ReaderCanvas, {
+      props: {
+        images: [untranslatedPage],
+        viewMode: 'translated',
+        isLoading: false,
+      },
+      global: {
+        stubs: { VirtualPageStream: VirtualPageStreamStub },
+      },
+    })
+
+    expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
+      expect.objectContaining({
+        badge: '未翻译',
+        url: '/api/v2/assets/source',
+      }),
+    ])
+
+    await wrapper.setProps({ viewMode: 'original' })
+    expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
+      expect.objectContaining({ badge: undefined }),
+    ])
+  })
+
   it('renders loading feedback through the shared spinner primitive', () => {
     const wrapper = mount(ReaderCanvas, {
       props: {

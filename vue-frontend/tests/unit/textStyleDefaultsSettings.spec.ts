@@ -61,18 +61,6 @@ const uiComboboxStub = {
   template: '<div class="ui-combobox-stub" :data-value="modelValue">{{ options?.length || 0 }}</div>',
 }
 
-async function requestDefaultsSave(wrapper: ReturnType<typeof mount>, requestId = 1) {
-  await wrapper.setProps({ saveRequestId: requestId, 'save-request-id': requestId })
-  expect(wrapper.props('saveRequestId')).toBe(requestId)
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await flushPromises()
-    const emissions = wrapper.emitted('save-complete') ?? wrapper.emitted('saveComplete')
-    const latest = emissions?.at(-1)?.[0]
-    if (latest) return latest
-  }
-  return undefined
-}
-
 describe('TextStyleDefaultsSettings', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -123,7 +111,7 @@ describe('TextStyleDefaultsSettings', () => {
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('26')
   })
 
-  it('restores factory defaults into draft only until save is called', async () => {
+  it('restores factory defaults into the shared parent draft without a standalone write', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
       props: { isOpen: true },
       global: {
@@ -138,11 +126,12 @@ describe('TextStyleDefaultsSettings', () => {
 
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('31')
+    expect(useSettingsStore().settings.textStyle).toEqual(factoryDefaults)
   })
 
-  it('saves modified draft defaults through the typed save request contract', async () => {
+  it('publishes modified defaults directly into the parent settings draft', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true, saveRequestId: 0 },
+      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -153,15 +142,14 @@ describe('TextStyleDefaultsSettings', () => {
     await flushPromises()
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
 
-    const result = await requestDefaultsSave(wrapper)
-    expect(result).toEqual({ success: true, changed: true })
     expect(useSettingsStore().settings.textStyle).toEqual(factoryDefaults)
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
+    expect(wrapper.emitted('save-complete')).toBeUndefined()
   })
 
   it('uses fixed select primitives for layout, alignment, and fill method fields', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true, saveRequestId: 0 },
+      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -190,7 +178,7 @@ describe('TextStyleDefaultsSettings', () => {
     expect(source).toContain('ProductActionRow')
 
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true, saveRequestId: 0 },
+      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -248,7 +236,7 @@ describe('TextStyleDefaultsSettings', () => {
     expect(source).not.toMatch(/target\.files|target\.value\s*=|@change="handleFontUpload"|ref<HTMLInputElement/)
 
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true, saveRequestId: 0 },
+      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -263,11 +251,8 @@ describe('TextStyleDefaultsSettings', () => {
 
     expect(uploadV2FontMock).toHaveBeenCalledWith(file)
     expect(wrapper.get('.ui-combobox-stub').attributes('data-value')).toBe('font-uploaded')
-    expect(await requestDefaultsSave(wrapper)).toEqual({
-      success: true,
-      changed: true,
-    })
     expect(useSettingsStore().settings.textStyle.fontFamily).toBe('font-uploaded')
+    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
   it('uses normal save when the user edits fields after resetting to factory defaults', async () => {
@@ -284,7 +269,6 @@ describe('TextStyleDefaultsSettings', () => {
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
     await wrapper.get('#textDefaultsFontSize').setValue('35')
 
-    expect(await requestDefaultsSave(wrapper)).toEqual({ success: true, changed: true })
     expect(useSettingsStore().settings.textStyle).toEqual({
       ...factoryDefaults,
       fontSize: 35,
@@ -292,8 +276,9 @@ describe('TextStyleDefaultsSettings', () => {
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
-  it('becomes a no-op when current defaults failed to load but the user did not touch text defaults', async () => {
+  it('shows a restricted error and leaves the parent draft unchanged when loading fails', async () => {
     getV2SettingsMock.mockRejectedValue(new Error('load failed'))
+    const before = { ...useSettingsStore().settings.textStyle }
 
     const wrapper = mount(TextStyleDefaultsSettings, {
       props: { isOpen: true },
@@ -306,33 +291,17 @@ describe('TextStyleDefaultsSettings', () => {
 
     await flushPromises()
 
-    expect(await requestDefaultsSave(wrapper)).toEqual({
-      success: true,
-      changed: false,
-    })
+    expect(wrapper.text()).toContain('load failed')
+    expect(useSettingsStore().settings.textStyle).toEqual(before)
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
-  it('still reports an error if the user edits text defaults after load failure', async () => {
-    getV2SettingsMock.mockRejectedValue(new Error('load failed'))
+  it('does not expose the removed child save handshake', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
 
-    const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
-      global: {
-        stubs: {
-          UiCombobox: uiComboboxStub,
-        },
-      },
-    })
-
-    await flushPromises()
-    await wrapper.get('#textDefaultsFontSize').setValue('40')
-
-    expect(await requestDefaultsSave(wrapper)).toEqual({
-      success: false,
-      changed: false,
-      error: '请先成功加载当前默认值，或先点击“恢复出厂默认”再保存'
-    })
-    expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
+    expect(source).not.toContain('saveRequestId')
+    expect(source).not.toContain('save-complete')
+    expect(source).not.toContain('defineExpose')
+    expect(source).toContain('settingsStore.updateTextStyle(normalized)')
   })
 })

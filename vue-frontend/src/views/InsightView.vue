@@ -13,6 +13,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useInsightStore } from '@/stores/insightStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import BookSelector from '@/components/insight/BookSelector.vue'
 import AnalysisProgress from '@/components/insight/AnalysisProgress.vue'
 import OverviewPanel from '@/components/insight/OverviewPanel.vue'
@@ -35,6 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const insightStore = useInsightStore()
 const bookshelfStore = useBookshelfStore()
+const taskCenterStore = useTaskCenterStore()
 
 type InsightTabId = 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'
 
@@ -50,10 +52,9 @@ const activeTab = ref<InsightTabId>('overview')
 const showSettingsModal = ref(false)
 const showMobileSidebar = ref(false)
 const showMobileWorkspace = ref(false)
-let statusPollingTimer: ReturnType<typeof setInterval> | null = null
-let refreshDataTimer: ReturnType<typeof setTimeout> | null = null
 let bookLoadSequence = 0
 let isInsightViewMounted = false
+let lastHandledTerminalEventId = 0
 
 const loadedBookDetail = ref<{
   id: string
@@ -165,10 +166,6 @@ async function loadBook(bookId: string): Promise<void> {
 
     router.replace({ query: { book: bookId } })
 
-    if (insightStore.isAnalyzing) {
-      startStatusPolling()
-    }
-
   } catch (error) {
     if (isCurrentBookLoad(loadId, bookId)) {
       insightStore.setError(error instanceof Error ? error.message : '加载书籍失败')
@@ -194,55 +191,49 @@ async function loadAnalysisStatus(bookId = insightStore.currentBookId): Promise<
       const resolvedStatus = resolveAnalysisStatus(response)
       insightStore.setAnalysisStatus(resolvedStatus)
 
-      if (resolvedStatus === 'running' && response.current_task?.progress) {
-        insightStore.updateProgress(
-          response.current_task.progress.analyzed_pages || 0,
-          response.current_task.progress.total_pages || 0
-        )
+      if (response.current_task) {
+        insightStore.setCurrentTaskId(response.current_task.task_id)
+        if (response.current_task.progress) {
+          insightStore.updateProgress(
+            response.current_task.progress.analyzed_pages || 0,
+            response.current_task.progress.total_pages || 0,
+          )
+        }
       }
     }
   } catch {
-    // 轮询失败时保持上一次可用状态，下一轮继续尝试。
+    // 保持最近一次后端快照；全局任务流仍可继续投影活动任务。
   }
 }
 
-function startStatusPolling(): void {
-  stopStatusPolling()
-  statusPollingTimer = setInterval(async () => {
-    const statusBeforePolling = insightStore.analysisStatus
-    await loadAnalysisStatus()
-
-    const status = insightStore.analysisStatus
-    const wasActiveTask = statusBeforePolling === 'running' || statusBeforePolling === 'paused'
-    if ((status === 'completed' || status === 'failed' || status === 'idle') && wasActiveTask) {
-      stopStatusPolling()
-
-      const refreshData = async () => {
-        await loadAnalysisStatus()
-        insightStore.triggerDataRefresh()
-      }
-
-      if (status === 'completed') {
-        refreshDataTimer = setTimeout(() => {
-          refreshDataTimer = null
-          void refreshData()
-        }, 1000)
-      } else {
-        await refreshData()
-      }
-    }
-  }, 3000)
-}
-
-function stopStatusPolling(): void {
-  if (statusPollingTimer) {
-    clearInterval(statusPollingTimer)
-    statusPollingTimer = null
-  }
-  if (refreshDataTimer) {
-    clearTimeout(refreshDataTimer)
-    refreshDataTimer = null
-  }
+function projectActiveInsightJob(): void {
+  const bookId = insightStore.currentBookId
+  if (!bookId) return
+  const active = taskCenterStore.queue.find(job => (
+    job.bookId === bookId
+    && job.kind === 'insight_analysis'
+  ))
+  if (!active) return
+  insightStore.setCurrentTaskId(active.jobId)
+  insightStore.setAnalysisStatus(
+    active.status === 'paused' ? 'paused' : 'running',
+  )
+  const progress = active.progress as Record<string, unknown>
+  insightStore.updateProgress(
+    Number(
+      progress.completedItems
+      ?? progress.completed
+      ?? progress.current
+      ?? 0,
+    ),
+    Number(
+      progress.totalItems
+      ?? progress.total
+      ?? insightStore.totalPageCount
+      ?? 0,
+    ),
+    String(progress.phase ?? progress.currentPhase ?? ''),
+  )
 }
 
 function openSettingsModal(): void {
@@ -319,16 +310,41 @@ onMounted(async () => {
 onUnmounted(() => {
   isInsightViewMounted = false
   bookLoadSequence += 1
-  stopStatusPolling()
 })
 
-watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
-  if (isAnalyzing) {
-    startStatusPolling()
-  } else {
-    stopStatusPolling()
-  }
-})
+watch(
+  [
+    () => taskCenterStore.queue,
+    () => insightStore.currentBookId,
+  ],
+  projectActiveInsightJob,
+  { immediate: true },
+)
+
+watch(
+  () => taskCenterStore.latestEvent,
+  async event => {
+    if (
+      !event
+      || event.eventId <= lastHandledTerminalEventId
+      || !['job_finished', 'job_failed', 'job_cancelled'].includes(event.type)
+      || event.jobId !== insightStore.currentTaskId
+    ) {
+      return
+    }
+    lastHandledTerminalEventId = event.eventId
+    const terminalStatus = event.type === 'job_finished'
+      ? 'completed'
+      : event.type === 'job_cancelled'
+        ? 'idle'
+        : 'failed'
+    await loadAnalysisStatus()
+    if (!isInsightViewMounted) return
+    insightStore.setAnalysisStatus(terminalStatus)
+    insightStore.setCurrentTaskId(null)
+    insightStore.triggerDataRefresh()
+  },
+)
 </script>
 
 <template>
@@ -424,11 +440,7 @@ watch(() => insightStore.isAnalyzing, (isAnalyzing) => {
           </div>
         </div>
 
-        <AnalysisProgress
-          v-if="hasSelectedBook"
-          @start-polling="startStatusPolling"
-          @stop-polling="stopStatusPolling"
-        />
+        <AnalysisProgress v-if="hasSelectedBook" />
 
         <PagesTree v-if="hasSelectedBook" />
       </template>

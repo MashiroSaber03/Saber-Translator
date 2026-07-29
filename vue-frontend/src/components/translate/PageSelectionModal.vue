@@ -5,8 +5,8 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductFolderCard from '@/components/product/ProductFolderCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
+import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { computed, ref, watch } from 'vue'
@@ -243,19 +243,23 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
             />
           </div>
 
-          <ProductThumbnailGrid
+          <VirtualThumbnailGrid
             v-if="currentFolderThumbnailItems.length > 0"
             class="page-selection-thumbnail-grid"
             aria-label="选择翻译页码"
+            :max-height="560"
+            :min-item-width="150"
             :items="currentFolderThumbnailItems"
             @select="handleThumbnailSelect"
           />
         </template>
 
         <template v-else>
-          <ProductThumbnailGrid
+          <VirtualThumbnailGrid
             class="page-selection-thumbnail-grid"
             aria-label="选择翻译页码"
+            :max-height="560"
+            :min-item-width="150"
             :items="flatThumbnailItems"
             @select="handleThumbnailSelect"
           />
@@ -344,7 +348,6 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
 
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   padding-right: 4px;
 }
 
@@ -368,8 +371,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
 }
 
 @media (--breakpoint-lg-down) {
-  .page-selection-folder-grid,
-  .page-selection-thumbnail-grid {
+  .page-selection-folder-grid {
     --product-thumbnail-grid-min-size: 120px;
 
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));

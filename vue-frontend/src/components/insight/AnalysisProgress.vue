@@ -12,6 +12,7 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore, type AnalysisMode } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
 import type { ApiError } from '@/types'
 import { confirmProductAction } from '@/composables/useProductConfirm'
@@ -33,12 +34,8 @@ const chapterOptions = computed(() => {
   return options
 })
 
-const emit = defineEmits<{
-  (e: 'start-polling'): void
-  (e: 'stop-polling'): void
-}>()
-
 const insightStore = useInsightStore()
+const taskCenterStore = useTaskCenterStore()
 
 const analysisMode = ref<AnalysisMode>('full')
 const selectedChapterId = ref('')
@@ -197,7 +194,7 @@ async function startAnalysis(): Promise<void> {
         insightStore.setCurrentTaskId(response.task_id)
       }
       insightStore.setAnalysisStatus('running')
-      emit('start-polling')
+      await taskCenterStore.refresh()
     } else {
       errorMessage.value = response.error || '启动分析失败'
     }
@@ -219,6 +216,7 @@ async function pauseAnalysis(): Promise<void> {
     )
     if (response.success) {
       insightStore.setAnalysisStatus('paused')
+      await taskCenterStore.refresh()
     } else {
       errorMessage.value = response.error || '暂停分析失败'
     }
@@ -238,7 +236,7 @@ async function resumeAnalysis(): Promise<void> {
     )
     if (response.success) {
       insightStore.setAnalysisStatus('running')
-      emit('start-polling')
+      await taskCenterStore.refresh()
     } else {
       errorMessage.value = response.error || '继续分析失败'
     }
@@ -267,7 +265,7 @@ async function cancelAnalysis(): Promise<void> {
     if (response.success) {
       insightStore.setAnalysisStatus('idle')
       insightStore.setCurrentTaskId(null)
-      emit('stop-polling')
+      await taskCenterStore.refresh()
     } else {
       errorMessage.value = response.error || '取消分析失败'
     }

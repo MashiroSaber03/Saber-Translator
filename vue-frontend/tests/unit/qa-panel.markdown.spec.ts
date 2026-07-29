@@ -16,7 +16,6 @@ const { sendChatMock } = vi.hoisted(() => ({
 vi.mock('@/api/insight', () => ({
   sendChat: sendChatMock,
   rebuildEmbeddings: vi.fn(),
-  getRebuildEmbeddingsStatus: vi.fn(),
 }))
 
 import QAPanel from '@/components/insight/QAPanel.vue'

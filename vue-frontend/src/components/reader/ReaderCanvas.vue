@@ -27,13 +27,15 @@ const streamItems = computed<VirtualPageStreamItem[]>(() => props.images.map((pa
     translated?: string
   }
   const source = page.sourceUrl || compatible.original || ''
+  const translated = page.translatedUrl || compatible.translated || ''
   return {
     alt: `第 ${index + 1} 页`,
+    badge: props.viewMode === 'translated' && !translated ? '未翻译' : undefined,
     height: page.height ?? 1,
     id: page.id || String(index),
     label: `${index + 1} / ${props.images.length}`,
     url: props.viewMode === 'translated'
-      ? page.translatedUrl || compatible.translated || source
+      ? translated || source
       : source,
     width: page.width ?? 1,
   }

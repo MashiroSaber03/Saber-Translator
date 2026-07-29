@@ -12,6 +12,7 @@ import { variableVirtualWindow } from './virtualWindow'
 
 export interface VirtualPageStreamItem {
   alt: string
+  badge?: string
   height: number
   id: string
   label?: string
@@ -142,6 +143,9 @@ onBeforeUnmount(() => {
           <span v-if="item.label" class="virtual-page-stream__label">
             {{ item.label }}
           </span>
+          <span v-if="item.badge" class="virtual-page-stream__badge">
+            {{ item.badge }}
+          </span>
         </figure>
       </div>
     </div>
@@ -190,6 +194,19 @@ onBeforeUnmount(() => {
 
 .virtual-page-stream__page:hover .virtual-page-stream__label {
   opacity: 1;
+}
+
+.virtual-page-stream__badge {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--color-text-inverse);
+  background: var(--color-status-warning);
+  box-shadow: 0 2px 8px var(--shadow-medium);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .virtual-page-stream__image {

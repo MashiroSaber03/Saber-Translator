@@ -27,7 +27,7 @@ import ProductBreadcrumbTrail from '@/components/product/ProductBreadcrumbTrail.
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import ProductFolderCard from '@/components/product/ProductFolderCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
+import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { useImageStore } from '@/stores/imageStore'
 
@@ -58,7 +58,7 @@ describe('PageSelectionModal', () => {
       },
     })
 
-    const thumbnailGrid = wrapper.getComponent(ProductThumbnailGrid)
+    const thumbnailGrid = wrapper.getComponent(VirtualThumbnailGrid)
     expect(thumbnailGrid.props('ariaLabel')).toBe('选择翻译页码')
     expect(thumbnailGrid.props('items')).toMatchObject([
       {
@@ -236,7 +236,7 @@ describe('PageSelectionModal', () => {
     ])
     breadcrumbTrail.vm.$emit('select', '')
 
-    const thumbnailGrid = wrapper.getComponent(ProductThumbnailGrid)
+    const thumbnailGrid = wrapper.getComponent(VirtualThumbnailGrid)
     expect(thumbnailGrid.props('items')).toMatchObject([
       {
         id: 0,

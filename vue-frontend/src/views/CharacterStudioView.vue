@@ -83,6 +83,7 @@
               :active-tab="store.activeWorkspaceTab"
               :chat-loading="store.isChatLoading"
               :chat-streaming="store.isChatStreaming"
+              :chat-abortable="Boolean(store.activeChatOperationId)"
               :chat-mutating="store.isChatMutating"
               :chat-summarizing="store.isChatSummarizing"
               :chat-exporting="store.isChatExporting"
@@ -93,6 +94,7 @@
               :pending-patch="store.pendingAgentPatch"
               :can-undo-patch="store.canUndoPatch"
               :agent-html-preview="store.agentHtmlPreview"
+              @abort-chat="abortChat"
               @update:active-tab="store.activeWorkspaceTab = $event"
               @send-chat="sendChat"
               @edit-message="editChatMessage"
@@ -100,6 +102,7 @@
               @regenerate-message="regenerateChatMessage"
               @new-session="createChatSession"
               @switch-session="switchChatSession"
+              @delete-session="deleteArchivedChatSession"
               @summarize-session="summarizeChatSession"
               @export-session="exportChatSession"
               @import-session="importChatSession"
@@ -155,6 +158,8 @@ import { useRouter } from 'vue-router'
 import { getCharacterStudioAvatarUrl } from '@/api/characterStudio'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { confirmProductAction } from '@/composables/useProductConfirm'
+import type { CharacterStudioChatSessionSummary } from '@/types/characterStudio'
 import CharacterStudioSidebar from '@/components/insight/studio/CharacterStudioSidebar.vue'
 import CharacterStudioEditor from '@/components/insight/studio/CharacterStudioEditor.vue'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
@@ -323,6 +328,27 @@ async function createChatSession(greetingId?: string) {
 async function switchChatSession(sessionId: string) {
   store.activeWorkspaceTab = 'chat'
   await runAction(() => store.switchChatSession(sessionId))
+}
+
+async function abortChat() {
+  store.activeWorkspaceTab = 'chat'
+  await runAction(() => store.abortActiveChatOperation())
+}
+
+async function deleteArchivedChatSession(
+  session: CharacterStudioChatSessionSummary,
+) {
+  const confirmed = await confirmProductAction({
+    title: '永久删除归档会话',
+    message: `确定永久删除“${session.title}”吗？聊天消息和附件引用将一并删除，无法恢复。`,
+    confirmText: '永久删除',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  await runAction(() => store.deleteArchivedChatSession(
+    session.session_id,
+    session.revision,
+  ))
 }
 
 async function sendChat(payload: { content: string; attachments: File[] }) {

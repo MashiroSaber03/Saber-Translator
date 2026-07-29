@@ -121,6 +121,21 @@ export function activateV2StudioSession(
   )
 }
 
+export function deleteV2StudioSession(
+  sessionId: string,
+  baseRevision: number,
+): Promise<{ deleted: boolean; sessionId: string }> {
+  return apiClient.delete(
+    `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      headers: {
+        ...commandHeaders(),
+        'If-Match': String(baseRevision),
+      },
+    },
+  )
+}
+
 export function sendV2StudioMessage(
   sessionId: string,
   command: {
@@ -132,6 +147,22 @@ export function sendV2StudioMessage(
   return apiClient.post(
     `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
     command,
+    { headers: commandHeaders() },
+  )
+}
+
+export function abortV2StudioSession(
+  sessionId: string,
+  operationId: string,
+): Promise<{
+  operationId: string
+  sessionGeneration: number
+  sessionRevision: number
+  status: 'cancelled'
+}> {
+  return apiClient.post(
+    `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}/abort`,
+    { operationId },
     { headers: commandHeaders() },
   )
 }

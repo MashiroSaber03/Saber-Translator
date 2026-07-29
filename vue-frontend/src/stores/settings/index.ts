@@ -15,6 +15,7 @@ import {
   updateV2WorkflowPreferences,
 } from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
+import { setBackendAccessRestricted } from '@/services/backendAccessGate'
 import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
 
 import type { ProviderConfigsCache } from './types'
@@ -207,6 +208,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function initSettings(): void {
     loadThemeFromStorage()
+    setBackendAccessRestricted(
+      true,
+      '正在读取后端设置',
+    )
   }
 
   function resetToDefaults(): void {
@@ -334,10 +339,12 @@ export const useSettingsStore = defineStore('settings', () => {
       applyBackendDocument(document)
       backendError.value = null
       isBackendReady.value = true
+      setBackendAccessRestricted(false)
       return true
     } catch (error) {
       isBackendReady.value = false
       backendError.value = error instanceof Error ? error.message : '设置加载失败'
+      setBackendAccessRestricted(true, backendError.value)
       return false
     }
   }
@@ -355,6 +362,7 @@ export const useSettingsStore = defineStore('settings', () => {
       } catch (error) {
         isBackendReady.value = false
         backendError.value = error instanceof Error ? error.message : '设置加载失败'
+        setBackendAccessRestricted(true, backendError.value)
         return false
       }
     })()
