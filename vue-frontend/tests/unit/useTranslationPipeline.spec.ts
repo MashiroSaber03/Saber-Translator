@@ -10,6 +10,7 @@ import { useImageStore } from '@/stores/imageStore'
 const mocks = vi.hoisted(() => ({
   createChapterTranslationJob: vi.fn(),
   jobsList: vi.fn(),
+  jobsRetryFailed: vi.fn(),
   toast: {
     error: vi.fn(),
     info: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('@/api/v2/jobs', () => ({
   jobsApi: {
     cancel: vi.fn(),
     list: mocks.jobsList,
+    retryFailed: mocks.jobsRetryFailed,
   },
 }))
 
@@ -46,6 +48,14 @@ describe('useTranslationPipeline', () => {
       status: 'queued',
     })
     mocks.jobsList.mockResolvedValue({ items: [], queueRevision: 1 })
+    mocks.jobsRetryFailed.mockResolvedValue({
+      batchId: 'retry-batch',
+      jobIds: ['retry-job'],
+      status: 'queued',
+      sourceJobId: 'source-job',
+      retryMode: 'current',
+      failedOnly: true,
+    })
   })
 
   it('submits selected pages to one durable backend job without changing navigation', async () => {
@@ -90,6 +100,49 @@ describe('useTranslationPipeline', () => {
 
     expect(result.success).toBe(false)
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+  })
+
+  it('retries durable failed items from the latest matching backend job', async () => {
+    const imageStore = useImageStore()
+    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+    imageStore.setTranslationStatus(0, 'failed')
+    mocks.jobsList.mockImplementation(async (scope: string) => ({
+      items: scope === 'history'
+        ? [{
+            jobId: 'source-job',
+            batchId: 'source-batch',
+            batchDisplayName: 'source',
+            kind: 'translation',
+            retryOfJobId: null,
+            retryMode: null,
+            status: 'completed_with_errors',
+            queueRank: null,
+            bookId: null,
+            chapterId: 'chapter-1',
+            pageId: null,
+            blockedReason: null,
+            blockedByJobId: null,
+            progress: { totalItems: 1, failedItems: 1 },
+            target: {},
+            createdAt: null,
+            startedAt: null,
+            finishedAt: null,
+          }]
+        : [],
+      queueRevision: 1,
+    }))
+
+    const retried = await useTranslation().retryFailedImages()
+
+    expect(retried).toBe(true)
+    expect(mocks.jobsRetryFailed).toHaveBeenCalledWith('source-job', 'current')
+    expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+    expect(mocks.toast.success).toHaveBeenCalledWith(
+      '失败项已按当前设置加入后端任务中心',
+    )
   })
 
   it('contains no browser pipeline, session persistence, or image payload processing', () => {

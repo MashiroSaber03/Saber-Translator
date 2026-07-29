@@ -1,6 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { jobsApi, type V2Job, type V2JobEvent } from '@/api/v2/jobs'
+import {
+  jobsApi,
+  type JobRetryAccepted,
+  type V2Job,
+  type V2JobDetail,
+  type V2JobEvent,
+  type V2JobStatus,
+} from '@/api/v2/jobs'
 import { groupJobsByBatch } from '@/stores/taskCenterProjection'
 
 const EVENT_TYPES = [
@@ -33,6 +40,13 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const connected = ref(false)
   const lastEventId = ref(0)
   const latestEvent = ref<V2JobEvent | null>(null)
+  const selectedDetail = ref<V2JobDetail | null>(null)
+  const detailLoading = ref(false)
+  const olderEventsLoading = ref(false)
+  const olderEventsExhausted = ref(false)
+  const statusFilter = ref<'' | V2JobStatus>('')
+  const kindFilter = ref<'' | V2Job['kind']>('')
+  const bookFilter = ref('')
   let eventSource: EventSource | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -40,8 +54,18 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     queue.value.filter(job => ['running', 'pausing', 'cancelling'].includes(job.status)).length
   ))
   const queuedCount = computed(() => queue.value.filter(job => job.status === 'queued').length)
-  const queueBatches = computed(() => groupJobsByBatch(queue.value))
-  const historyBatches = computed(() => groupJobsByBatch(history.value))
+  const filteredQueue = computed(() => filterJobs(queue.value))
+  const filteredHistory = computed(() => filterJobs(history.value))
+  const queueBatches = computed(() => groupJobsByBatch(filteredQueue.value))
+  const historyBatches = computed(() => groupJobsByBatch(filteredHistory.value))
+
+  function filterJobs(items: V2Job[]): V2Job[] {
+    return items.filter(job => (
+      (!statusFilter.value || job.status === statusFilter.value)
+      && (!kindFilter.value || job.kind === kindFilter.value)
+      && (!bookFilter.value || job.bookId === bookFilter.value)
+    ))
+  }
 
   async function refresh(): Promise<void> {
     loading.value = true
@@ -104,9 +128,87 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     connected.value = false
   }
 
-  async function runCommand(command: () => Promise<unknown>): Promise<void> {
-    await command()
+  async function runCommand<T>(command: () => Promise<T>): Promise<T> {
+    const result = await command()
     await refresh()
+    return result
+  }
+
+  async function loadDetail(jobId: string): Promise<void> {
+    detailLoading.value = true
+    olderEventsExhausted.value = false
+    try {
+      selectedDetail.value = await jobsApi.get(jobId)
+    } finally {
+      detailLoading.value = false
+    }
+  }
+
+  async function loadOlderEvents(): Promise<void> {
+    const detail = selectedDetail.value
+    const firstEvent = detail?.recentEvents[0]
+    if (!detail || !firstEvent || olderEventsExhausted.value) return
+    olderEventsLoading.value = true
+    try {
+      const page = await jobsApi.events(
+        detail.jobId,
+        { before: firstEvent.eventId, limit: 50 },
+      )
+      if (!page.items.length) {
+        olderEventsExhausted.value = true
+        return
+      }
+      const known = new Set(detail.recentEvents.map(event => event.eventId))
+      selectedDetail.value = {
+        ...detail,
+        recentEvents: [
+          ...page.items.filter(event => !known.has(event.eventId)),
+          ...detail.recentEvents,
+        ],
+      }
+    } finally {
+      olderEventsLoading.value = false
+    }
+  }
+
+  async function retry(
+    jobId: string,
+    strategy: 'current' | 'original' = 'current',
+  ): Promise<JobRetryAccepted> {
+    return runCommand(() => jobsApi.retry(jobId, strategy))
+  }
+
+  async function retryFailed(
+    jobId: string,
+    strategy: 'current' | 'original' = 'current',
+  ): Promise<JobRetryAccepted> {
+    return runCommand(() => jobsApi.retryFailed(jobId, strategy))
+  }
+
+  async function retryLatestFailed(
+    chapterId: string,
+    kinds: V2Job['kind'][],
+    strategy: 'current' | 'original' = 'current',
+  ): Promise<JobRetryAccepted | null> {
+    await refresh()
+    const source = history.value.find(job => (
+      job.chapterId === chapterId
+      && job.status === 'completed_with_errors'
+      && kinds.includes(job.kind)
+    ))
+    return source ? retryFailed(source.jobId, strategy) : null
+  }
+
+  async function moveQueued(jobId: string, delta: -1 | 1): Promise<void> {
+    const sortable = queue.value.filter(job => (
+      job.status === 'queued' && !job.blockedReason
+    ))
+    const index = sortable.findIndex(job => job.jobId === jobId)
+    const target = index + delta
+    if (index < 0 || target < 0 || target >= sortable.length) return
+    const ordered = sortable.map(job => job.jobId)
+    ;[ordered[index], ordered[target]] = [ordered[target]!, ordered[index]!]
+    await runCommand(() => jobsApi.reorder(ordered, queueRevision.value))
   }
 
   return {
@@ -117,6 +219,13 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     loading,
     connected,
     latestEvent,
+    selectedDetail,
+    detailLoading,
+    olderEventsLoading,
+    olderEventsExhausted,
+    statusFilter,
+    kindFilter,
+    bookFilter,
     activeCount,
     queuedCount,
     queueBatches,
@@ -130,6 +239,17 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     resume: (jobId: string) => runCommand(() => jobsApi.resume(jobId)),
     continueJob: (jobId: string) => runCommand(() => jobsApi.continue(jobId)),
     cancel: (jobId: string) => runCommand(() => jobsApi.cancel(jobId)),
+    retry,
+    retryFailed,
+    retryLatestFailed,
+    loadDetail,
+    loadOlderEvents,
+    moveQueued,
+    cancelBatch: (batchId: string) => runCommand(() => jobsApi.cancelBatch(batchId)),
+    prioritizeBatch: (batchId: string) => (
+      runCommand(() => jobsApi.prioritizeBatch(batchId, queueRevision.value))
+    ),
+    continueBatch: (batchId: string) => runCommand(() => jobsApi.continueBatch(batchId)),
     cancelQueued: () => runCommand(() => jobsApi.cancelQueued()),
     clearHistory: () => runCommand(() => jobsApi.clearHistory()),
   }

@@ -73,6 +73,9 @@ class AuxiliaryTranslationCommands:
         chapter_id: str,
         page_ids: list[str] | None,
         idempotency_key: str,
+        retry_of_job_id: str | None = None,
+        retry_mode: str | None = None,
+        idempotency_scope: str | None = None,
     ) -> dict[str, object]:
         chapter, ordered = self._chapter_pages(chapter_id, page_ids)
         resolved = self.settings.resolve_translation(
@@ -109,14 +112,18 @@ class AuxiliaryTranslationCommands:
                         "pageCount": len(ordered),
                     },
                     plugin_snapshots=plugin_snapshots,
+                    retry_of_job_id=retry_of_job_id,
+                    retry_mode=retry_mode,
                 )
             ],
-            idempotency_scope=f"chapter-detect:{chapter_id}",
+            idempotency_scope=idempotency_scope or f"chapter-detect:{chapter_id}",
             idempotency_key=idempotency_key,
             idempotency_payload={
                 "chapterId": chapter_id,
                 "pageIds": ordered,
                 "detector": config["detector"],
+                "retryOfJobId": retry_of_job_id,
+                "retryMode": retry_mode,
             },
         )
 
@@ -197,6 +204,12 @@ class AuxiliaryTranslationCommands:
                         "chapter": chapter["title"],
                         "pageCount": len(ordered),
                     },
+                    font_snapshots=(
+                        {"style": str(source["default_font_id"])}
+                        if "fontFamily" in selected
+                        and source["default_font_id"] is not None
+                        else None
+                    ),
                     plugin_snapshots=plugin_snapshots,
                 )
             ],

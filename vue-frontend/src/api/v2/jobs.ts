@@ -7,18 +7,43 @@ export type V2JobEvent = components['schemas']['JobEvent']
 export type V2JobBatch = components['schemas']['JobBatch']
 export type V2JobStatus = components['schemas']['JobStatus']
 export type JobListResponse = components['schemas']['JobList']
+export type JobRetryAccepted = components['schemas']['JobRetryAccepted']
+export type JobEventList = components['schemas']['JobEventList']
 
 function commandHeaders(): Record<string, string> {
   return { 'Idempotency-Key': crypto.randomUUID() }
 }
 
 export const jobsApi = {
-  list(scope: 'queue' | 'history'): Promise<JobListResponse> {
-    return apiClient.get(`/api/v2/jobs?scope=${scope}&limit=200`)
+  list(
+    scope: 'queue' | 'history',
+    filters: { status?: V2JobStatus; type?: V2Job['kind']; bookId?: string } = {},
+  ): Promise<JobListResponse> {
+    const query = new URLSearchParams({ scope, limit: '200' })
+    if (filters.status) query.set('status', filters.status)
+    if (filters.type) query.set('type', filters.type)
+    if (filters.bookId) query.set('book_id', filters.bookId)
+    return apiClient.get(`/api/v2/jobs?${query}`)
   },
 
   get(jobId: string): Promise<V2JobDetail> {
-    return apiClient.get(`/api/v2/jobs/${jobId}`)
+    return apiClient.get(`/api/v2/jobs/${encodeURIComponent(jobId)}`)
+  },
+
+  getBatch(batchId: string): Promise<V2JobBatch> {
+    return apiClient.get(`/api/v2/job-batches/${encodeURIComponent(batchId)}`)
+  },
+
+  events(
+    jobId: string,
+    cursor: { after?: number; before?: number; limit?: number } = {},
+  ): Promise<JobEventList> {
+    const query = new URLSearchParams({ limit: String(cursor.limit ?? 200) })
+    if (cursor.after !== undefined) query.set('after', String(cursor.after))
+    if (cursor.before !== undefined) query.set('before', String(cursor.before))
+    return apiClient.get(
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/events?${query}`,
+    )
   },
 
   pause(jobId: string): Promise<V2Job> {
@@ -53,6 +78,25 @@ export const jobsApi = {
     )
   },
 
+  retry(jobId: string, strategy: 'current' | 'original' = 'current'): Promise<JobRetryAccepted> {
+    return apiClient.post(
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/retry`,
+      { strategy },
+      { headers: commandHeaders() },
+    )
+  },
+
+  retryFailed(
+    jobId: string,
+    strategy: 'current' | 'original' = 'current',
+  ): Promise<JobRetryAccepted> {
+    return apiClient.post(
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/retry-failed`,
+      { strategy },
+      { headers: commandHeaders() },
+    )
+  },
+
   reorder(orderedJobIds: string[], baseRevision: number): Promise<{ queueRevision: number }> {
     return apiClient.post(
       '/api/v2/jobs/reorder',
@@ -72,6 +116,33 @@ export const jobsApi = {
   clearHistory(): Promise<{ removed: number }> {
     return apiClient.post(
       '/api/v2/jobs/history/clear',
+      undefined,
+      { headers: commandHeaders() },
+    )
+  },
+
+  cancelBatch(batchId: string): Promise<{ cancelled: number }> {
+    return apiClient.post(
+      `/api/v2/job-batches/${encodeURIComponent(batchId)}/cancel`,
+      undefined,
+      { headers: commandHeaders() },
+    )
+  },
+
+  prioritizeBatch(
+    batchId: string,
+    baseRevision: number,
+  ): Promise<{ queueRevision: number }> {
+    return apiClient.post(
+      `/api/v2/job-batches/${encodeURIComponent(batchId)}/prioritize`,
+      { baseRevision },
+      { headers: commandHeaders() },
+    )
+  },
+
+  continueBatch(batchId: string): Promise<components['schemas']['BatchContinueResult']> {
+    return apiClient.post(
+      `/api/v2/job-batches/${encodeURIComponent(batchId)}/continue`,
       undefined,
       { headers: commandHeaders() },
     )

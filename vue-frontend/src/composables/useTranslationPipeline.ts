@@ -258,12 +258,44 @@ export function useTranslation() {
   }
 
   async function retryFailedImages(): Promise<boolean> {
-    const failed = imageStore.getFailedImageIndices()
-    if (failed.length === 0) {
-      toast.info('没有失败的图片需要重新翻译')
-      return true
+    const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
+    if (!chapterId) {
+      toast.error('当前页面尚未写入后端章节')
+      return false
     }
-    return (await translatePages(failed, 'standard')).success
+    try {
+      const accepted = await taskCenterStore.retryLatestFailed(
+        chapterId,
+        ['translation'],
+        'current',
+      )
+      if (!accepted) {
+        toast.info('后端没有找到当前章节可重试的部分失败翻译任务')
+        return true
+      }
+      const jobId = accepted.jobIds[0]
+      if (!jobId) throw new Error('后端没有返回重试任务')
+      const durableFailedPages = imageStore.images
+        .filter(image => image.translationFailed)
+        .map(image => image.id)
+      activeJobId.value = jobId
+      activePageIds.value = durableFailedPages
+      progress.value = {
+        current: 0,
+        total: durableFailedPages.length,
+        completed: 0,
+        failed: 0,
+        isInProgress: true,
+        label: '失败项重试已进入后端队列',
+        percentage: 0,
+      }
+      imageStore.setBatchTranslationInProgress(durableFailedPages.length > 1)
+      toast.success('失败项已按当前设置加入后端任务中心')
+      return true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '创建失败项重试任务失败')
+      return false
+    }
   }
 
   async function executeHqTranslation(selection?: PageSelection): Promise<boolean> {

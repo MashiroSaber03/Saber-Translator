@@ -9,11 +9,12 @@ import uuid
 
 from PIL import Image, ImageDraw
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
@@ -32,6 +33,7 @@ from src.backend_v2.storage.schema import (
     job_items,
     job_step_asset_outputs,
     job_steps,
+    jobs,
     metadata,
     page_assets,
     pages,
@@ -337,6 +339,99 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
         )
 
     assert JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"] == []
+
+
+def test_failed_item_retry_refreezes_current_backend_settings(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    source = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=[platform["page_id"]],
+        idempotency_key="retry-source",
+    )
+    source_id = str(source["jobIds"][0])
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(job_items)
+            .where(job_items.c.job_id == source_id)
+            .values(status="failed", error_json='{"message":"fixture"}')
+        )
+        connection.execute(
+            update(job_steps)
+            .where(
+                job_steps.c.job_item_id.in_(
+                    select(job_items.c.id).where(job_items.c.job_id == source_id)
+                )
+            )
+            .values(status="failed", error_json='{"message":"fixture"}')
+        )
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == source_id)
+            .values(status="completed_with_errors", queue_rank=None)
+        )
+
+    settings_payload = default_translation_settings()
+    settings_payload["translation"] = {
+        **settings_payload["translation"],
+        "provider": "custom",
+    }
+    SettingsRepository(platform["engine"]).save_transaction(
+        settings=(
+            SettingMutation(
+                domain="translation",
+                payload=settings_payload,
+                base_revision=1,
+                schema_version=3,
+            ),
+        ),
+        credentials_edits=(
+            CredentialEdit(
+                domain="translation",
+                provider="custom",
+                secret={"api_key": "new-backend-only-key"},
+                base_revision=0,
+                client_ref="retry-custom",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="custom",
+                payload={
+                    "modelName": "retry-current-model",
+                    "customBaseUrl": "https://retry.example/v1",
+                },
+                base_revision=0,
+                credential_edit_ref="retry-custom",
+            ),
+        ),
+    )
+
+    retried = JobRetryService(platform["engine"]).retry(
+        job_id=source_id,
+        failed_only=True,
+        strategy="current",
+        idempotency_key="retry-current",
+    )
+    replacement_id = str(retried["jobIds"][0])
+    with platform["engine"].connect() as connection:
+        frozen = json.loads(
+            connection.execute(
+                select(job_config_snapshots.c.payload_json).where(
+                    job_config_snapshots.c.job_id == replacement_id
+                )
+            ).scalar_one()
+        )
+    detail = JobQueueRepository(platform["engine"]).get_job(replacement_id)
+    assert frozen["translation"]["provider"] == "custom"
+    assert frozen["translation"]["model_name"] == "retry-current-model"
+    assert "new-backend-only-key" not in json.dumps(frozen)
+    assert detail["retryOfJobId"] == source_id
+    assert detail["retryMode"] == "current"
+    assert detail["configSummary"]["translation"]["model"] == "retry-current-model"
 
 
 def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(

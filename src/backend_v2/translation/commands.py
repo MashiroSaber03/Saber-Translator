@@ -48,6 +48,9 @@ class TranslationJobCommandService:
         config: Mapping[str, Any],
         page_ids: Sequence[str] | None,
         idempotency_key: str,
+        retry_of_job_id: str | None = None,
+        retry_mode: str | None = None,
+        idempotency_scope: str | None = None,
     ) -> dict[str, object]:
         command = normalize_translation_command(config)
         chapter, ordered_pages = self._resolve_chapter_pages(
@@ -85,17 +88,23 @@ class TranslationJobCommandService:
                 "pageCount": len(ordered_pages),
             },
             plugin_snapshots=plugin_snapshots,
+            retry_of_job_id=retry_of_job_id,
+            retry_mode=retry_mode,
         )
         payload = {
             "chapterId": chapter_id,
             "pageIds": ordered_pages,
             "config": normalized,
+            "retryOfJobId": retry_of_job_id,
+            "retryMode": retry_mode,
         }
         return self.jobs.create_batch(
             kind=job_kind,
             display_name=f"{chapter['book_title']} / {chapter['title']}",
             specs=[spec],
-            idempotency_scope=f"chapter-translation:{chapter_id}",
+            idempotency_scope=(
+                idempotency_scope or f"chapter-translation:{chapter_id}"
+            ),
             idempotency_key=idempotency_key,
             idempotency_payload=payload,
         )

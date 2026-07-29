@@ -6,6 +6,8 @@ function job(overrides: Partial<V2Job>): V2Job {
   return {
     jobId: crypto.randomUUID(),
     kind: 'translation',
+    retryOfJobId: null,
+    retryMode: null,
     status: 'queued',
     queueRank: 1,
     progress: {},

@@ -526,6 +526,12 @@ jobs = Table(
     Column("id", String(UUID_LENGTH), primary_key=True),
     Column("batch_id", String(UUID_LENGTH), ForeignKey("job_batches.id", ondelete="SET NULL")),
     Column("kind", String(64), nullable=False),
+    Column(
+        "retry_of_job_id",
+        String(UUID_LENGTH),
+        ForeignKey("jobs.id", ondelete="RESTRICT"),
+    ),
+    Column("retry_mode", String(16)),
     Column("status", String(32), nullable=False),
     Column("queue_rank", Integer, unique=True),
     Column("book_id", String(UUID_LENGTH), ForeignKey("books.id", ondelete="SET NULL")),
@@ -566,6 +572,15 @@ jobs = Table(
     *_timestamps(),
     CheckConstraint(f"status IN ({_sql_values(JOB_STATUSES)})", name="status_values"),
     CheckConstraint(f"kind IN ({_sql_values(JOB_KINDS)})", name="kind_values"),
+    CheckConstraint(
+        "retry_mode IS NULL OR retry_mode IN ('current','original')",
+        name="retry_mode_values",
+    ),
+    CheckConstraint(
+        "(retry_of_job_id IS NULL AND retry_mode IS NULL) OR "
+        "(retry_of_job_id IS NOT NULL AND retry_mode IS NOT NULL)",
+        name="retry_lineage_complete",
+    ),
     CheckConstraint("queue_rank IS NULL OR queue_rank >= 1", name="queue_rank_positive"),
     CheckConstraint(
         "blocked_reason IS NULL OR blocked_reason IN ("
@@ -608,6 +623,7 @@ Index(
     ),
 )
 Index("ix_jobs_queue_claim", jobs.c.status, jobs.c.queue_rank)
+Index("ix_jobs_retry_source", jobs.c.retry_of_job_id)
 
 queue_state = Table(
     "queue_state",

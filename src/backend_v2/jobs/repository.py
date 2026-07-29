@@ -56,6 +56,7 @@ from src.backend_v2.storage.schema import (
     job_font_snapshots,
     job_plugin_snapshots,
     job_steps,
+    job_step_asset_outputs,
     jobs,
     operations,
     page_assets,
@@ -133,6 +134,8 @@ class JobSpec:
     credential_snapshots: Mapping[str, str] | None = None
     font_snapshots: Mapping[str, str] | None = None
     plugin_snapshots: Mapping[str, Mapping[str, Any]] | None = None
+    retry_of_job_id: str | None = None
+    retry_mode: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in JOB_KINDS:
@@ -141,6 +144,10 @@ class JobSpec:
             raise ValueError("job requires at least one item")
         if self.kind in WRITE_JOB_KINDS and not self.chapter_id:
             raise ValueError(f"{self.kind} jobs require a chapter_id")
+        if bool(self.retry_of_job_id) != bool(self.retry_mode):
+            raise ValueError("retry lineage requires both source job and mode")
+        if self.retry_mode not in {None, "current", "original"}:
+            raise ValueError("retry mode must be current or original")
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +287,8 @@ class JobQueueRepository:
                             id=job_id,
                             batch_id=batch_id,
                             kind=spec.kind,
+                            retry_of_job_id=spec.retry_of_job_id,
+                            retry_mode=spec.retry_mode,
                             status="queued",
                             queue_rank=next_rank,
                             book_id=spec.book_id,
@@ -493,41 +502,72 @@ class JobQueueRepository:
             ).mappings().one_or_none()
             if job is None:
                 raise JobNotFound("job not found")
-            item_rows = connection.execute(
+            item_rows = list(connection.execute(
                 select(job_items)
                 .where(job_items.c.job_id == job_id)
                 .order_by(job_items.c.ordinal)
-            ).mappings()
+            ).mappings())
             items: list[dict[str, object]] = []
+            failed_items: list[dict[str, object]] = []
             for row in item_rows:
-                step_rows = connection.execute(
+                step_rows = list(connection.execute(
                     select(job_steps)
                     .where(job_steps.c.job_item_id == row["id"])
                     .order_by(job_steps.c.ordinal)
-                ).mappings()
-                items.append(
+                ).mappings())
+                item_error = _load_json(row["error_json"], None)
+                serialized_steps = [
                     {
-                        "itemId": row["id"],
-                        "ordinal": row["ordinal"],
-                        "pageId": row["page_id"],
-                        "status": row["status"],
-                        "result": _load_json(row["result_json"], None),
-                        "error": _load_json(row["error_json"], None),
-                        "steps": [
-                            {
-                                "stepId": step["id"],
-                                "ordinal": step["ordinal"],
-                                "kind": step["kind"],
-                                "status": step["status"],
-                                "checkpoint": _load_json(
-                                    step["checkpoint_json"], None
-                                ),
-                                "error": _load_json(step["error_json"], None),
-                            }
-                            for step in step_rows
-                        ],
+                        "stepId": step["id"],
+                        "ordinal": step["ordinal"],
+                        "kind": step["kind"],
+                        "status": step["status"],
+                        "checkpoint": _load_json(step["checkpoint_json"], None),
+                        "error": _load_json(step["error_json"], None),
                     }
-                )
+                    for step in step_rows
+                ]
+                serialized_item = {
+                    "itemId": row["id"],
+                    "ordinal": row["ordinal"],
+                    "pageId": row["page_id"],
+                    "status": row["status"],
+                    "result": _load_json(row["result_json"], None),
+                    "error": item_error,
+                    "steps": serialized_steps,
+                }
+                items.append(serialized_item)
+                if str(row["status"]) == "failed":
+                    failed_step = next(
+                        (
+                            step
+                            for step in serialized_steps
+                            if step["status"] == "failed"
+                        ),
+                        None,
+                    )
+                    failed_items.append(
+                        {
+                            "itemId": row["id"],
+                            "ordinal": row["ordinal"],
+                            "pageId": row["page_id"],
+                            "stepId": (
+                                failed_step["stepId"] if failed_step else None
+                            ),
+                            "stepKind": (
+                                failed_step["kind"] if failed_step else None
+                            ),
+                            "error": (
+                                item_error
+                                if item_error is not None
+                                else (
+                                    failed_step["error"]
+                                    if failed_step
+                                    else None
+                                )
+                            ),
+                        }
+                    )
             artifact_rows = list(
                 connection.execute(
                     select(job_artifacts).where(
@@ -535,8 +575,73 @@ class JobQueueRepository:
                     )
                 ).mappings()
             )
+            resource_rows = list(
+                connection.execute(
+                    select(
+                        job_step_asset_outputs.c.job_step_id,
+                        job_step_asset_outputs.c.role,
+                        job_step_asset_outputs.c.asset_id,
+                        assets.c.mime_type,
+                        assets.c.byte_size,
+                        assets.c.integrity_status,
+                    )
+                    .join(
+                        job_steps,
+                        job_steps.c.id
+                        == job_step_asset_outputs.c.job_step_id,
+                    )
+                    .join(
+                        job_items,
+                        job_items.c.id == job_steps.c.job_item_id,
+                    )
+                    .join(
+                        assets,
+                        assets.c.id == job_step_asset_outputs.c.asset_id,
+                    )
+                    .where(job_items.c.job_id == job_id)
+                    .order_by(job_items.c.ordinal, job_steps.c.ordinal)
+                ).mappings()
+            )
+            recent_event_rows = list(
+                connection.execute(
+                    select(job_events)
+                    .where(job_events.c.job_id == job_id)
+                    .order_by(job_events.c.id.desc())
+                    .limit(20)
+                ).mappings()
+            )
         result = self._job_dto(job)
+        progress = result["progress"]
+        counts: dict[str, int] = {}
+        for row in item_rows:
+            status = str(row["status"])
+            counts[status] = counts.get(status, 0) + 1
+        result["counts"] = {
+            "total": len(item_rows),
+            "pending": counts.get("pending", 0),
+            "running": counts.get("running", 0),
+            "completed": counts.get("completed", 0),
+            "failed": counts.get("failed", 0),
+            "skipped": counts.get("skipped", 0),
+            "cancelled": counts.get("cancelled", 0),
+        }
+        result["durationMs"] = self._duration_ms(
+            job.get("started_at"),
+            job.get("finished_at"),
+            running=str(job["status"]) in NONTERMINAL_JOB_STATUSES,
+        )
+        result["error"] = (
+            progress.get("error")
+            if isinstance(progress, Mapping)
+            else None
+        )
+        if result["error"] is None and failed_items:
+            result["error"] = failed_items[0]["error"]
+        result["configSummary"] = self._config_summary(
+            _load_json(job.get("config_json"), {})
+        )
         result["items"] = items
+        result["failedItems"] = failed_items
         result["artifacts"] = [
             {
                 "kind": row["kind"],
@@ -545,6 +650,21 @@ class JobQueueRepository:
                 "expiresAt": self._iso(row["expires_at"]),
             }
             for row in artifact_rows
+        ]
+        result["resources"] = [
+            {
+                "stepId": row["job_step_id"],
+                "role": row["role"],
+                "assetId": row["asset_id"],
+                "url": f"/api/v2/assets/{row['asset_id']}",
+                "mimeType": row["mime_type"],
+                "byteSize": int(row["byte_size"]),
+                "integrityStatus": row["integrity_status"],
+            }
+            for row in resource_rows
+        ]
+        result["recentEvents"] = [
+            self._event_dto(row) for row in reversed(recent_event_rows)
         ]
         return result
 
@@ -590,16 +710,32 @@ class JobQueueRepository:
                 .order_by(job_events.c.id)
                 .limit(limit)
             ).mappings()
-        return [
-                {
-                    "eventId": int(row["id"]),
-                    "jobId": row["job_id"],
-                    "type": row["event_type"],
-                    "payload": _load_json(row["payload_json"], {}),
-                    "createdAt": self._iso(row["created_at"]),
-                }
-            for row in rows
-        ]
+        return [self._event_dto(row) for row in rows]
+
+    def events_before(
+        self,
+        *,
+        before: int,
+        job_id: str,
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        if before < 1:
+            raise ValueError("event cursor must be positive")
+        if limit < 1 or limit > 1000:
+            raise ValueError("event limit must be between 1 and 1000")
+        with self.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    select(job_events)
+                    .where(
+                        job_events.c.job_id == job_id,
+                        job_events.c.id < before,
+                    )
+                    .order_by(job_events.c.id.desc())
+                    .limit(limit)
+                ).mappings()
+            )
+        return [self._event_dto(row) for row in reversed(rows)]
 
     def latest_event_id(self) -> int:
         with self.engine.connect() as connection:
@@ -640,37 +776,63 @@ class JobQueueRepository:
                 raise JobConflict(
                     "only the complete ordinary queued set may be reordered"
                 )
-            # Avoid transient UNIQUE(queue_rank) collisions.
-            for temporary_rank, job_id in enumerate(ordered_job_ids, start=1):
+            self._reorder_ordinary(
+                connection,
+                ordered_job_ids=ordered_job_ids,
+                now=now,
+            )
+            return self._bump_queue_revision(connection, now)
+
+    def prioritize_batch(self, *, batch_id: str, base_revision: int) -> int:
+        """Move ordinary queued members to the front without splitting their order."""
+
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            exists_batch = connection.execute(
+                select(job_batches.c.id).where(job_batches.c.id == batch_id)
+            ).scalar_one_or_none()
+            if exists_batch is None:
+                raise JobNotFound("job batch not found")
+            revision = int(
                 connection.execute(
-                    update(jobs)
-                    .where(jobs.c.id == job_id)
-                    .values(queue_rank=-temporary_rank, updated_at=now)
-                )
-            prefix_max = int(
-                connection.execute(
-                    select(func.coalesce(func.max(jobs.c.queue_rank), 0)).where(
-                        or_(
-                            jobs.c.status != "queued",
-                            jobs.c.id.not_in(ordered_job_ids),
-                        ),
-                        jobs.c.queue_rank.is_not(None),
+                    select(queue_state.c.queue_revision).where(
+                        queue_state.c.singleton_id == 1
                     )
                 ).scalar_one()
             )
-            for offset, job_id in enumerate(ordered_job_ids, start=1):
+            if revision != base_revision:
+                raise JobConflict("queue revision changed")
+            sortable = list(
                 connection.execute(
-                    update(jobs)
-                    .where(jobs.c.id == job_id)
-                    .values(queue_rank=prefix_max + offset, updated_at=now)
-                )
-                self._append_event(
-                    connection,
-                    job_id=job_id,
-                    event_type="job_reordered",
-                    payload={"queueRank": prefix_max + offset},
-                    now=now,
-                )
+                    select(jobs.c.id)
+                    .where(
+                        jobs.c.status == "queued",
+                        ~jobs.c.id.in_(select(chapter_write_intents.c.job_id)),
+                        ~jobs.c.id.in_(select(chapter_write_locks.c.job_id)),
+                    )
+                    .order_by(jobs.c.queue_rank, jobs.c.created_at)
+                ).scalars()
+            )
+            members = [
+                str(job_id)
+                for job_id in connection.execute(
+                    select(jobs.c.id)
+                    .where(
+                        jobs.c.batch_id == batch_id,
+                        jobs.c.id.in_(sortable),
+                    )
+                    .order_by(jobs.c.queue_rank, jobs.c.created_at)
+                ).scalars()
+            ]
+            if not members:
+                raise JobConflict("job batch has no ordinary queued members")
+            member_set = set(members)
+            ordered = [*members, *(value for value in sortable if value not in member_set)]
+            self._reorder_ordinary(
+                connection,
+                ordered_job_ids=ordered,
+                now=now,
+            )
             return self._bump_queue_revision(connection, now)
 
     def request_pause(self, job_id: str) -> dict[str, object]:
@@ -694,44 +856,150 @@ class JobQueueRepository:
                 ).scalars()
             )
             for job_id in ids:
-                connection.execute(
-                    update(jobs)
-                    .where(jobs.c.id == job_id, jobs.c.status == "queued")
-                    .values(
-                        status="cancelled",
-                        queue_rank=None,
-                        finished_at=now,
-                        updated_at=now,
-                    )
-                )
-                self._release_write_reservations(connection, job_id)
-                self._sync_domain_terminal(
+                self._cancel_queued_job(
                     connection,
                     job_id=str(job_id),
-                    status="cancelled",
-                    now=now,
-                )
-                self._append_event(
-                    connection,
-                    job_id=job_id,
-                    event_type="job_cancelled",
-                    payload={"source": "cancel_all_queued"},
+                    source="cancel_all_queued",
                     now=now,
                 )
             if ids:
                 self._bump_queue_revision(connection, now)
             return len(ids)
 
-    def clear_history(self) -> int:
+    def cancel_batch_queued(self, batch_id: str) -> int:
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            removable = list(
+            exists_batch = connection.execute(
+                select(job_batches.c.id).where(job_batches.c.id == batch_id)
+            ).scalar_one_or_none()
+            if exists_batch is None:
+                raise JobNotFound("job batch not found")
+            ids = list(
                 connection.execute(
-                    select(jobs.c.id).where(jobs.c.status.in_(TERMINAL_JOB_STATUSES))
+                    select(jobs.c.id)
+                    .where(
+                        jobs.c.batch_id == batch_id,
+                        jobs.c.status == "queued",
+                    )
+                    .order_by(jobs.c.queue_rank, jobs.c.created_at)
                 ).scalars()
             )
-            if removable:
-                connection.execute(delete(jobs).where(jobs.c.id.in_(removable)))
-            return len(removable)
+            for job_id in ids:
+                self._cancel_queued_job(
+                    connection,
+                    job_id=str(job_id),
+                    source="cancel_batch_queued",
+                    now=now,
+                )
+            if ids:
+                self._bump_queue_revision(connection, now)
+            return len(ids)
+
+    def continue_batch(self, batch_id: str) -> dict[str, object]:
+        """Resume paused and continue interrupted members in batch order."""
+
+        now = utcnow()
+        updated_jobs: list[dict[str, object]] = []
+        with immediate_transaction(self.engine) as connection:
+            exists_batch = connection.execute(
+                select(job_batches.c.id).where(job_batches.c.id == batch_id)
+            ).scalar_one_or_none()
+            if exists_batch is None:
+                raise JobNotFound("job batch not found")
+            rows = list(
+                connection.execute(
+                    select(jobs)
+                    .where(
+                        jobs.c.batch_id == batch_id,
+                        jobs.c.status.in_(("paused", "interrupted")),
+                    )
+                    .order_by(jobs.c.queue_rank, jobs.c.created_at)
+                ).mappings()
+            )
+            if not rows:
+                raise JobConflict("job batch has no paused or interrupted members")
+            for row in rows:
+                event = (
+                    JobEvent.RESUME
+                    if str(row["status"]) == "paused"
+                    else JobEvent.CONTINUE
+                )
+                values = {
+                    "status": "queued",
+                    "attempt_id": None,
+                    "lease_token": None,
+                    "lease_expires_at": None,
+                    "worker_epoch_id": None,
+                    "updated_at": now,
+                }
+                connection.execute(
+                    update(jobs).where(jobs.c.id == row["id"]).values(**values)
+                )
+                self._append_event(
+                    connection,
+                    job_id=str(row["id"]),
+                    event_type=f"job_{event.value}",
+                    payload={"from": row["status"], "to": "queued", "source": "batch"},
+                    now=now,
+                )
+                updated = dict(row)
+                updated.update(values)
+                updated_jobs.append(self._job_dto(updated))
+            self._bump_queue_revision(connection, now)
+            self._refresh_batch_summary(connection, str(rows[0]["id"]), now)
+        return {"continued": len(updated_jobs), "jobs": updated_jobs}
+
+    def clear_history(self) -> int:
+        with immediate_transaction(self.engine) as connection:
+            candidates = {
+                str(value)
+                for value in connection.execute(
+                    select(jobs.c.id).where(
+                        jobs.c.status.in_(TERMINAL_JOB_STATUSES)
+                    )
+                ).scalars()
+            }
+            if not candidates:
+                return 0
+            retry_edges = [
+                (str(child_id), str(source_id))
+                for child_id, source_id in connection.execute(
+                    select(jobs.c.id, jobs.c.retry_of_job_id).where(
+                        jobs.c.retry_of_job_id.is_not(None)
+                    )
+                )
+            ]
+            protected = {
+                source_id
+                for child_id, source_id in retry_edges
+                if child_id not in candidates
+            }
+            changed = True
+            while changed:
+                changed = False
+                for child_id, source_id in retry_edges:
+                    if child_id in protected and source_id not in protected:
+                        protected.add(source_id)
+                        changed = True
+            remaining = candidates - protected
+            removable_count = len(remaining)
+            while remaining:
+                referenced = {
+                    source_id
+                    for child_id, source_id in retry_edges
+                    if child_id in remaining and source_id in remaining
+                }
+                leaves = remaining - referenced
+                if not leaves:
+                    raise JobConflict("job retry lineage contains a cycle")
+                connection.execute(delete(jobs).where(jobs.c.id.in_(leaves)))
+                remaining -= leaves
+            connection.execute(
+                delete(job_batches).where(
+                    ~exists(select(jobs.c.id).where(jobs.c.batch_id == job_batches.c.id))
+                )
+            )
+            return removable_count
 
     def claim_next(self, *, worker_epoch_id: str) -> AttemptFence | None:
         """Claim the next executable job or advance its write-intent barrier."""
@@ -2279,6 +2547,107 @@ class JobQueueRepository:
             delete(chapter_write_locks).where(chapter_write_locks.c.job_id == job_id)
         )
 
+    def _cancel_queued_job(
+        self,
+        connection: Connection,
+        *,
+        job_id: str,
+        source: str,
+        now: datetime,
+    ) -> None:
+        item_ids = select(job_items.c.id).where(job_items.c.job_id == job_id)
+        connection.execute(
+            update(job_steps)
+            .where(
+                job_steps.c.job_item_id.in_(item_ids),
+                job_steps.c.status.in_(("pending", "running")),
+            )
+            .values(status="cancelled", updated_at=now)
+        )
+        connection.execute(
+            update(job_items)
+            .where(
+                job_items.c.job_id == job_id,
+                job_items.c.status.in_(("pending", "running")),
+            )
+            .values(status="cancelled", updated_at=now)
+        )
+        snapshot = self._progress_snapshot(connection, job_id)
+        result = connection.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id, jobs.c.status == "queued")
+            .values(
+                status="cancelled",
+                queue_rank=None,
+                latest_progress_json=_json(snapshot),
+                finished_at=now,
+                updated_at=now,
+            )
+        )
+        if result.rowcount != 1:
+            raise JobConflict("queued job changed during cancellation")
+        self._release_write_reservations(connection, job_id)
+        self._sync_domain_terminal(
+            connection,
+            job_id=job_id,
+            status="cancelled",
+            now=now,
+        )
+        self._append_event(
+            connection,
+            job_id=job_id,
+            event_type="job_cancelled",
+            payload={"source": source, "progress": snapshot},
+            now=now,
+        )
+        self._refresh_batch_summary(connection, job_id, now)
+
+    def _reorder_ordinary(
+        self,
+        connection: Connection,
+        *,
+        ordered_job_ids: Sequence[str],
+        now: datetime,
+    ) -> None:
+        # Move through a disjoint positive range to avoid transient UNIQUE
+        # collisions without violating the queue-rank CHECK constraint.
+        temporary_start = int(
+            connection.execute(
+                select(func.coalesce(func.max(jobs.c.queue_rank), 0))
+            ).scalar_one()
+        )
+        for offset, job_id in enumerate(ordered_job_ids, start=1):
+            connection.execute(
+                update(jobs)
+                .where(jobs.c.id == job_id)
+                .values(queue_rank=temporary_start + offset, updated_at=now)
+            )
+        prefix_max = int(
+            connection.execute(
+                select(func.coalesce(func.max(jobs.c.queue_rank), 0)).where(
+                    or_(
+                        jobs.c.status != "queued",
+                        jobs.c.id.not_in(ordered_job_ids),
+                    ),
+                    jobs.c.queue_rank.is_not(None),
+                )
+            ).scalar_one()
+        )
+        for offset, job_id in enumerate(ordered_job_ids, start=1):
+            queue_rank = prefix_max + offset
+            connection.execute(
+                update(jobs)
+                .where(jobs.c.id == job_id)
+                .values(queue_rank=queue_rank, updated_at=now)
+            )
+            self._append_event(
+                connection,
+                job_id=job_id,
+                event_type="job_reordered",
+                payload={"queueRank": queue_rank},
+                now=now,
+            )
+
     @staticmethod
     def _progress_snapshot(connection: Any, job_id: str) -> dict[str, int]:
         rows = connection.execute(
@@ -2297,12 +2666,114 @@ class JobQueueRepository:
         }
 
     @staticmethod
+    def _config_summary(value: object) -> dict[str, object]:
+        if not isinstance(value, Mapping):
+            return {}
+        scalar_keys = (
+            "mode",
+            "executionMode",
+            "sourceLanguage",
+            "targetLanguage",
+            "format",
+            "scope",
+            "method",
+            "repairMethod",
+            "batchSize",
+            "pageCount",
+            "selectedFields",
+        )
+        summary: dict[str, object] = {
+            key: value[key]
+            for key in scalar_keys
+            if key in value
+            and isinstance(value[key], (str, int, float, bool, list))
+        }
+        for section_name in (
+            "translation",
+            "ocr",
+            "agent",
+            "inpainting",
+            "style",
+        ):
+            section = value.get(section_name)
+            if not isinstance(section, Mapping):
+                continue
+            safe_section = {
+                key: section[key]
+                for key in (
+                    "provider",
+                    "model",
+                    "model_name",
+                    "method",
+                    "batchSize",
+                    "fontId",
+                    "selectedFields",
+                )
+                if key in section
+                and isinstance(section[key], (str, int, float, bool, list))
+            }
+            if "model_name" in safe_section and "model" not in safe_section:
+                safe_section["model"] = safe_section.pop("model_name")
+            if safe_section:
+                summary[section_name] = safe_section
+        rounds = value.get("proofreadingRounds")
+        if isinstance(rounds, list):
+            summary["proofreadingRounds"] = [
+                {
+                    key: round_config[key]
+                    for key in ("roundIndex", "name", "provider", "model", "batchSize")
+                    if key in round_config
+                    and isinstance(
+                        round_config[key],
+                        (str, int, float, bool),
+                    )
+                }
+                for round_config in rounds
+                if isinstance(round_config, Mapping)
+            ]
+        return summary
+
+    @staticmethod
+    def _duration_ms(
+        started_at: datetime | str | None,
+        finished_at: datetime | str | None,
+        *,
+        running: bool,
+    ) -> int | None:
+        started = JobQueueRepository._datetime(started_at)
+        if started is None:
+            return None
+        finished = JobQueueRepository._datetime(finished_at)
+        if finished is None and running:
+            finished = utcnow()
+        if finished is None:
+            return None
+        return max(0, int((finished - started).total_seconds() * 1000))
+
+    @staticmethod
+    def _datetime(value: datetime | str | None) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None)
+        normalized = value.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+
+    @staticmethod
     def _job_dto(row: Mapping[str, Any]) -> dict[str, object]:
         return {
             "jobId": row["id"],
             "batchId": row.get("batch_id"),
             "batchDisplayName": row.get("batch_display_name"),
             "kind": row["kind"],
+            "retryOfJobId": row.get("retry_of_job_id"),
+            "retryMode": row.get("retry_mode"),
             "status": row["status"],
             "queueRank": row.get("queue_rank"),
             "bookId": row.get("book_id"),
@@ -2315,6 +2786,16 @@ class JobQueueRepository:
             "createdAt": JobQueueRepository._iso(row.get("created_at")),
             "startedAt": JobQueueRepository._iso(row.get("started_at")),
             "finishedAt": JobQueueRepository._iso(row.get("finished_at")),
+        }
+
+    @staticmethod
+    def _event_dto(row: Mapping[str, Any]) -> dict[str, object]:
+        return {
+            "eventId": int(row["id"]),
+            "jobId": row["job_id"],
+            "type": row["event_type"],
+            "payload": _load_json(row["payload_json"], {}),
+            "createdAt": JobQueueRepository._iso(row["created_at"]),
         }
 
     @staticmethod

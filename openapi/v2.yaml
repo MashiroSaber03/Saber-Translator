@@ -558,6 +558,10 @@ paths:
         - name: after
           in: query
           schema: {type: integer, minimum: 0}
+        - name: before
+          in: query
+          description: Return the preceding event page in ascending display order.
+          schema: {type: integer, minimum: 1}
       responses:
         "200":
           description: One global resumable SSE stream for all job consumers.
@@ -644,6 +648,46 @@ paths:
               schema: {$ref: "#/components/schemas/Job"}
         "409":
           $ref: "#/components/responses/InvalidTransition"
+  /jobs/{job_id}/retry:
+    post:
+      tags: [jobs]
+      operationId: retryFailedJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/JobRetryCommand"}
+      responses:
+        "202":
+          description: A failed whole job was recreated as a related replacement job.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobRetryAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /jobs/{job_id}/retry-failed:
+    post:
+      tags: [jobs]
+      operationId: retryFailedJobItems
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/JobRetryCommand"}
+      responses:
+        "202":
+          description: Failed items from a partially successful job were recreated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobRetryAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /jobs/reorder:
     post:
       tags: [jobs]
@@ -706,6 +750,56 @@ paths:
               schema: {$ref: "#/components/schemas/JobBatch"}
         "404":
           $ref: "#/components/responses/NotFound"
+  /job-batches/{batch_id}/cancel:
+    post:
+      tags: [jobs]
+      operationId: cancelQueuedJobBatchMembers
+      parameters:
+        - $ref: "#/components/parameters/BatchId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: All queued members of the batch were atomically cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CancelledCount"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /job-batches/{batch_id}/prioritize:
+    post:
+      tags: [jobs]
+      operationId: prioritizeQueuedJobBatchMembers
+      parameters:
+        - $ref: "#/components/parameters/BatchId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BatchPrioritizeCommand"}
+      responses:
+        "200":
+          description: Queued ordinary members moved to the front in batch order.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/QueueRevision"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /job-batches/{batch_id}/continue:
+    post:
+      tags: [jobs]
+      operationId: continueJobBatchMembers
+      parameters:
+        - $ref: "#/components/parameters/BatchId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Paused and interrupted members returned to queued in batch order.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BatchContinueResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
   /jobs/{job_id}/continue:
     post:
       tags: [jobs]
@@ -3856,7 +3950,8 @@ components:
     Job:
       type: object
       additionalProperties: false
-      required: [jobId, kind, status, queueRank, progress, target, createdAt]
+      required:
+        [jobId, kind, retryOfJobId, retryMode, status, queueRank, progress, target, createdAt]
       properties:
         jobId:
           $ref: "#/components/schemas/Uuid"
@@ -3868,6 +3963,13 @@ components:
           type: [string, "null"]
         kind:
           $ref: "#/components/schemas/JobKind"
+        retryOfJobId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        retryMode:
+          type: [string, "null"]
+          enum: [null, current, original]
         status:
           $ref: "#/components/schemas/JobStatus"
         queueRank:
@@ -3925,20 +4027,149 @@ components:
           items: {$ref: "#/components/schemas/Job"}
         queueRevision: {type: integer, minimum: 1}
     JobDetail:
+      unevaluatedProperties: false
       allOf:
         - $ref: "#/components/schemas/Job"
         - type: object
-          required: [items, artifacts]
+          required:
+            - counts
+            - durationMs
+            - error
+            - configSummary
+            - items
+            - failedItems
+            - artifacts
+            - resources
+            - recentEvents
           properties:
+            counts:
+              $ref: "#/components/schemas/JobCounts"
+            durationMs:
+              type: [integer, "null"]
+              minimum: 0
+            error:
+              oneOf:
+                - $ref: "#/components/schemas/ErrorPayload"
+                - type: string
+                - type: "null"
+            configSummary:
+              $ref: "#/components/schemas/JobConfigSummary"
             items:
               type: array
-              items:
-                type: object
-                additionalProperties: true
+              items: {$ref: "#/components/schemas/JobItemDetail"}
+            failedItems:
+              type: array
+              items: {$ref: "#/components/schemas/JobFailureItem"}
             artifacts:
               type: array
               items:
                 $ref: "#/components/schemas/JobArtifact"
+            resources:
+              type: array
+              items: {$ref: "#/components/schemas/JobResource"}
+            recentEvents:
+              type: array
+              items: {$ref: "#/components/schemas/JobEvent"}
+    JobCounts:
+      type: object
+      additionalProperties: false
+      required: [total, pending, running, completed, failed, skipped, cancelled]
+      properties:
+        total: {type: integer, minimum: 0}
+        pending: {type: integer, minimum: 0}
+        running: {type: integer, minimum: 0}
+        completed: {type: integer, minimum: 0}
+        failed: {type: integer, minimum: 0}
+        skipped: {type: integer, minimum: 0}
+        cancelled: {type: integer, minimum: 0}
+    ErrorPayload:
+      type: object
+      additionalProperties: true
+    JobConfigSummary:
+      type: object
+      additionalProperties: true
+      description: Redacted task configuration summary; never contains credentials or secrets.
+    JobStepDetail:
+      type: object
+      additionalProperties: false
+      required: [stepId, ordinal, kind, status, checkpoint, error]
+      properties:
+        stepId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        kind: {type: string}
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped, cancelled]
+        checkpoint:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorPayload"
+            - type: "null"
+    JobItemDetail:
+      type: object
+      additionalProperties: false
+      required: [itemId, ordinal, pageId, status, result, error, steps]
+      properties:
+        itemId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped, cancelled]
+        result:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorPayload"
+            - type: "null"
+        steps:
+          type: array
+          items: {$ref: "#/components/schemas/JobStepDetail"}
+    JobFailureItem:
+      type: object
+      additionalProperties: false
+      required: [itemId, ordinal, pageId, stepId, stepKind, error]
+      properties:
+        itemId: {$ref: "#/components/schemas/Uuid"}
+        ordinal: {type: integer, minimum: 1}
+        pageId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        stepId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        stepKind: {type: [string, "null"]}
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorPayload"
+            - type: "null"
+    JobResource:
+      type: object
+      additionalProperties: false
+      required:
+        [stepId, role, assetId, url, mimeType, byteSize, integrityStatus]
+      properties:
+        stepId: {$ref: "#/components/schemas/Uuid"}
+        role: {type: string}
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        url: {type: string}
+        mimeType: {type: string}
+        byteSize: {type: integer, minimum: 0}
+        integrityStatus:
+          type: string
+          enum: [ok, missing]
     JobArtifact:
       type: object
       additionalProperties: false
@@ -3977,6 +4208,18 @@ components:
           uniqueItems: true
           minItems: 1
           items: {$ref: "#/components/schemas/Uuid"}
+    BatchPrioritizeCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision]
+      properties:
+        baseRevision: {type: integer, minimum: 1}
+    QueueRevision:
+      type: object
+      additionalProperties: false
+      required: [queueRevision]
+      properties:
+        queueRevision: {type: integer, minimum: 1}
     CancelledCount:
       type: object
       additionalProperties: false
@@ -4015,6 +4258,43 @@ components:
         status:
           type: string
           const: queued
+    JobRetryCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        strategy:
+          type: string
+          enum: [current, original]
+          default: current
+    JobRetryAccepted:
+      type: object
+      additionalProperties: false
+      required:
+        [batchId, jobIds, status, sourceJobId, retryMode, failedOnly]
+      properties:
+        batchId: {$ref: "#/components/schemas/Uuid"}
+        jobIds:
+          type: array
+          minItems: 1
+          items: {$ref: "#/components/schemas/Uuid"}
+        status:
+          type: string
+          const: queued
+        sourceJobId: {$ref: "#/components/schemas/Uuid"}
+        retryMode:
+          type: string
+          enum: [current, original]
+        failedOnly: {type: boolean}
+    BatchContinueResult:
+      type: object
+      additionalProperties: false
+      required: [continued, jobs]
+      properties:
+        continued: {type: integer, minimum: 1}
+        jobs:
+          type: array
+          minItems: 1
+          items: {$ref: "#/components/schemas/Job"}
     TranslationJobConfig:
       type: object
       additionalProperties: false

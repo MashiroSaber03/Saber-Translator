@@ -18,6 +18,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
+from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
@@ -308,6 +309,180 @@ def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
     finally:
         broadcaster.unsubscribe(subscription)
         broadcaster.close()
+
+
+def test_failed_item_retry_creates_related_replacement_from_durable_facts(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="export",
+        display_name="export source",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"format": "zip"},
+                items=(
+                    JobItemSpec(page_id=None, step_kinds=("package",)),
+                    JobItemSpec(page_id=None, step_kinds=("package",)),
+                ),
+            )
+        ],
+    )
+    source_id = str(created["jobIds"][0])
+    with engine.begin() as connection:
+        source_items = list(
+            connection.execute(
+                select(job_items.c.id)
+                .where(job_items.c.job_id == source_id)
+                .order_by(job_items.c.ordinal)
+            ).scalars()
+        )
+        connection.execute(
+            update(job_items)
+            .where(job_items.c.id == source_items[0])
+            .values(status="completed")
+        )
+        connection.execute(
+            update(job_items)
+            .where(job_items.c.id == source_items[1])
+            .values(status="failed", error_json='{"message":"fixture"}')
+        )
+        connection.execute(
+            update(job_steps)
+            .where(job_steps.c.job_item_id == source_items[1])
+            .values(status="failed", error_json='{"message":"fixture"}')
+        )
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == source_id)
+            .values(status="completed_with_errors", queue_rank=None)
+        )
+
+    retried = JobRetryService(engine).retry(
+        job_id=source_id,
+        failed_only=True,
+        strategy="original",
+        idempotency_key="retry-fixture",
+    )
+    replacement_id = str(retried["jobIds"][0])
+    detail = repository.get_job(replacement_id)
+    assert retried["sourceJobId"] == source_id
+    assert retried["failedOnly"] is True
+    assert detail["retryOfJobId"] == source_id
+    assert detail["retryMode"] == "original"
+    assert detail["counts"]["total"] == 1
+
+
+def test_batch_prioritize_cancel_and_continue_are_database_owned(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    first = repository.create_batch(
+        kind="export",
+        display_name="first",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={},
+                items=(JobItemSpec(page_id=None, step_kinds=("package",)),),
+            )
+        ],
+    )
+    target = repository.create_batch(
+        kind="export",
+        display_name="target",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={},
+                items=(JobItemSpec(page_id=None, step_kinds=("package",)),),
+            ),
+            JobSpec(
+                kind="export",
+                config={},
+                items=(JobItemSpec(page_id=None, step_kinds=("package",)),),
+            ),
+        ],
+    )
+    target_ids = [str(value) for value in target["jobIds"]]
+    queue_revision = int(repository.list_jobs()["queueRevision"])
+    repository.prioritize_batch(
+        batch_id=str(target["batchId"]),
+        base_revision=queue_revision,
+    )
+    assert [
+        row["jobId"] for row in repository.list_jobs()["items"]
+    ] == [*target_ids, str(first["jobIds"][0])]
+
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == target_ids[0])
+            .values(status="paused")
+        )
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == target_ids[1])
+            .values(status="interrupted")
+        )
+    continued = repository.continue_batch(str(target["batchId"]))
+    assert continued["continued"] == 2
+    assert [row["jobId"] for row in continued["jobs"]] == target_ids
+    assert all(row["status"] == "queued" for row in continued["jobs"])
+
+    assert repository.cancel_batch_queued(str(target["batchId"])) == 2
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(job_items.c.status)
+            .where(job_items.c.job_id.in_(target_ids))
+            .order_by(job_items.c.job_id)
+        ).scalars().all() == ["cancelled", "cancelled"]
+        assert connection.execute(
+            select(job_steps.c.status)
+            .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+            .where(job_items.c.job_id.in_(target_ids))
+            .order_by(job_items.c.job_id)
+        ).scalars().all() == ["cancelled", "cancelled"]
+
+
+def test_clear_history_deletes_retry_children_before_sources_and_protects_live_lineage(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    source_id = _create_job(repository)
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == source_id)
+            .values(status="failed", queue_rank=None)
+        )
+    child = repository.create_batch(
+        kind="export",
+        display_name="retry child",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={},
+                items=(JobItemSpec(page_id=None, step_kinds=("package",)),),
+                retry_of_job_id=source_id,
+                retry_mode="original",
+            )
+        ],
+    )
+    child_id = str(child["jobIds"][0])
+    assert repository.clear_history() == 0
+    assert repository.get_job(source_id)["status"] == "failed"
+
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == child_id)
+            .values(status="failed", queue_rank=None)
+        )
+    assert repository.clear_history() == 2
+    with pytest.raises(LookupError):
+        repository.get_job(source_id)
 
 
 def test_parallel_worker_uses_serial_stage_pools_with_cross_stage_overlap(

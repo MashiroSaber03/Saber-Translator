@@ -469,6 +469,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryFailedJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{job_id}/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryFailedJobItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/reorder": {
         parameters: {
             query?: never;
@@ -527,6 +559,54 @@ export interface paths {
         get: operations["getJobBatch"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/job-batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelQueuedJobBatchMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/job-batches/{batch_id}/prioritize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["prioritizeQueuedJobBatchMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/job-batches/{batch_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["continueJobBatchMembers"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2582,6 +2662,9 @@ export interface components {
             batchId?: components["schemas"]["Uuid"] | null;
             batchDisplayName?: string | null;
             kind: components["schemas"]["JobKind"];
+            retryOfJobId: components["schemas"]["Uuid"] | null;
+            /** @enum {string|null} */
+            retryMode: null | "current" | "original";
             status: components["schemas"]["JobStatus"];
             queueRank: number | null;
             bookId?: components["schemas"]["Uuid"] | null;
@@ -2608,10 +2691,72 @@ export interface components {
             queueRevision: number;
         };
         JobDetail: components["schemas"]["Job"] & {
-            items: {
-                [key: string]: unknown;
-            }[];
+            counts: components["schemas"]["JobCounts"];
+            durationMs: number | null;
+            error: components["schemas"]["ErrorPayload"] | string | null;
+            configSummary: components["schemas"]["JobConfigSummary"];
+            items: components["schemas"]["JobItemDetail"][];
+            failedItems: components["schemas"]["JobFailureItem"][];
             artifacts: components["schemas"]["JobArtifact"][];
+            resources: components["schemas"]["JobResource"][];
+            recentEvents: components["schemas"]["JobEvent"][];
+        };
+        JobCounts: {
+            total: number;
+            pending: number;
+            running: number;
+            completed: number;
+            failed: number;
+            skipped: number;
+            cancelled: number;
+        };
+        ErrorPayload: {
+            [key: string]: unknown;
+        };
+        /** @description Redacted task configuration summary; never contains credentials or secrets. */
+        JobConfigSummary: {
+            [key: string]: unknown;
+        };
+        JobStepDetail: {
+            stepId: components["schemas"]["Uuid"];
+            ordinal: number;
+            kind: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
+            checkpoint: {
+                [key: string]: unknown;
+            } | null;
+            error: components["schemas"]["ErrorPayload"] | null;
+        };
+        JobItemDetail: {
+            itemId: components["schemas"]["Uuid"];
+            ordinal: number;
+            pageId: components["schemas"]["Uuid"] | null;
+            /** @enum {string} */
+            status: "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
+            result: {
+                [key: string]: unknown;
+            } | null;
+            error: components["schemas"]["ErrorPayload"] | null;
+            steps: components["schemas"]["JobStepDetail"][];
+        };
+        JobFailureItem: {
+            itemId: components["schemas"]["Uuid"];
+            ordinal: number;
+            pageId: components["schemas"]["Uuid"] | null;
+            stepId: components["schemas"]["Uuid"] | null;
+            stepKind: string | null;
+            error: components["schemas"]["ErrorPayload"] | null;
+        };
+        JobResource: {
+            stepId: components["schemas"]["Uuid"];
+            role: string;
+            assetId: components["schemas"]["Uuid"];
+            url: string;
+            mimeType: string;
+            byteSize: number;
+            /** @enum {string} */
+            integrityStatus: "ok" | "missing";
         };
         JobArtifact: {
             kind: string;
@@ -2637,6 +2782,12 @@ export interface components {
             baseRevision: number;
             orderedJobIds: components["schemas"]["Uuid"][];
         };
+        BatchPrioritizeCommand: {
+            baseRevision: number;
+        };
+        QueueRevision: {
+            queueRevision: number;
+        };
         CancelledCount: {
             cancelled: number;
         };
@@ -2659,6 +2810,27 @@ export interface components {
             jobIds: components["schemas"]["Uuid"][];
             /** @constant */
             status: "queued";
+        };
+        JobRetryCommand: {
+            /**
+             * @default current
+             * @enum {string}
+             */
+            strategy: "current" | "original";
+        };
+        JobRetryAccepted: {
+            batchId: components["schemas"]["Uuid"];
+            jobIds: components["schemas"]["Uuid"][];
+            /** @constant */
+            status: "queued";
+            sourceJobId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            retryMode: "current" | "original";
+            failedOnly: boolean;
+        };
+        BatchContinueResult: {
+            continued: number;
+            jobs: components["schemas"]["Job"][];
         };
         TranslationJobConfig: {
             /** @enum {string} */
@@ -4750,6 +4922,8 @@ export interface operations {
         parameters: {
             query?: {
                 after?: number;
+                /** @description Return the preceding event page in ascending display order. */
+                before?: number;
             };
             header?: {
                 "Last-Event-ID"?: number;
@@ -4896,6 +5070,70 @@ export interface operations {
             409: components["responses"]["InvalidTransition"];
         };
     };
+    retryFailedJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobRetryCommand"];
+            };
+        };
+        responses: {
+            /** @description A failed whole job was recreated as a related replacement job. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRetryAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    retryFailedJobItems: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobRetryCommand"];
+            };
+        };
+        responses: {
+            /** @description Failed items from a partially successful job were recreated. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRetryAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
     reorderJobs: {
         parameters: {
             query?: never;
@@ -4993,6 +5231,91 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    cancelQueuedJobBatchMembers: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All queued members of the batch were atomically cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelledCount"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    prioritizeQueuedJobBatchMembers: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchPrioritizeCommand"];
+            };
+        };
+        responses: {
+            /** @description Queued ordinary members moved to the front in batch order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueRevision"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    continueJobBatchMembers: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paused and interrupted members returned to queued in batch order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchContinueResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     continueInterruptedJob: {

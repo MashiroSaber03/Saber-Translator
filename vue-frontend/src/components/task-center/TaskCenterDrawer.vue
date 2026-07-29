@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 import type { V2Job } from '@/api/v2/jobs'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { describeJobTarget, progressPercent } from '@/stores/taskCenterProjection'
@@ -15,6 +17,32 @@ const expanded = ref(new Set<string>())
 const downloading = ref(new Set<string>())
 
 const groups = computed(() => tab.value === 'queue' ? store.queueBatches : store.historyBatches)
+const availableKinds = computed(() => (
+  [...new Set([...store.queue, ...store.history].map(job => job.kind))].sort()
+))
+const statusOptions = computed<UiSelectOption[]>(() => [
+  { label: '全部', value: '' },
+  ...Object.entries(statusLabels).map(([value, label]) => ({ label, value })),
+])
+const kindOptions = computed<UiSelectOption[]>(() => [
+  { label: '全部', value: '' },
+  ...availableKinds.value.map(kind => ({ label: kind, value: kind })),
+])
+const bookOptions = computed<UiSelectOption[]>(() => {
+  const labels = new Map<string, string>()
+  for (const job of [...store.queue, ...store.history]) {
+    if (!job.bookId) continue
+    const target = job.target as Record<string, unknown>
+    labels.set(
+      job.bookId,
+      typeof target.book === 'string' && target.book ? target.book : job.bookId,
+    )
+  }
+  return [
+    { label: '全部', value: '' },
+    ...[...labels].map(([value, label]) => ({ label, value })),
+  ]
+})
 
 const statusLabels: Record<string, string> = {
   queued: '排队中',
@@ -41,6 +69,56 @@ function toggle(key: string) {
 
 function canCancel(job: V2Job) {
   return ['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)
+}
+
+function hasBatchContinuations(jobs: V2Job[]) {
+  return jobs.some(job => ['paused', 'interrupted'].includes(job.status))
+}
+
+async function runAction(action: () => Promise<unknown>, success: string) {
+  try {
+    await action()
+    showToast(success, 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '任务命令执行失败', 'error')
+  }
+}
+
+async function toggleDetail(job: V2Job) {
+  if (store.selectedDetail?.jobId === job.jobId) {
+    store.selectedDetail = null
+    return
+  }
+  try {
+    await store.loadDetail(job.jobId)
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '读取任务详情失败', 'error')
+  }
+}
+
+function retryJob(job: V2Job, strategy: 'current' | 'original') {
+  const command = job.status === 'completed_with_errors'
+    ? () => store.retryFailed(job.jobId, strategy)
+    : () => store.retry(job.jobId, strategy)
+  return runAction(command, strategy === 'current' ? '已按当前设置创建重试任务' : '已沿用原快照创建重试任务')
+}
+
+function formatPayload(value: unknown): string {
+  if (value === null || value === undefined) return '无'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, null, 2)
+}
+
+function setStatusFilter(value: UiSelectValue) {
+  store.statusFilter = String(value) as typeof store.statusFilter
+}
+
+function setKindFilter(value: UiSelectValue) {
+  store.kindFilter = String(value) as typeof store.kindFilter
+}
+
+function setBookFilter(value: UiSelectValue) {
+  store.bookFilter = String(value)
 }
 
 async function downloadArtifact(job: V2Job) {
@@ -136,6 +214,36 @@ async function downloadArtifact(job: V2Job) {
           </UiButton>
         </nav>
 
+        <div class="task-center__filters">
+          <label>
+            状态
+            <UiSelect
+              size="sm"
+              :model-value="store.statusFilter"
+              :options="statusOptions"
+              @change="setStatusFilter"
+            />
+          </label>
+          <label>
+            类型
+            <UiSelect
+              size="sm"
+              :model-value="store.kindFilter"
+              :options="kindOptions"
+              @change="setKindFilter"
+            />
+          </label>
+          <label>
+            书籍
+            <UiSelect
+              size="sm"
+              :model-value="store.bookFilter"
+              :options="bookOptions"
+              @change="setBookFilter"
+            />
+          </label>
+        </div>
+
         <main class="task-center__content">
           <p v-if="store.loading && !groups.length" class="task-center__empty">正在读取后端任务…</p>
           <p v-else-if="!groups.length" class="task-center__empty">这里还没有任务</p>
@@ -153,6 +261,31 @@ async function downloadArtifact(job: V2Job) {
               </span>
               <span>{{ expanded.has(group.key) || group.jobs.length === 1 ? '收起' : '展开' }}</span>
             </UiButton>
+            <div v-if="tab === 'queue' && group.batchId" class="task-batch__actions">
+              <UiButton
+                size="xs"
+                variant="ghost"
+                @click="runAction(() => store.prioritizeBatch(group.batchId!), '批次已移到普通排队任务前方')"
+              >
+                批次优先
+              </UiButton>
+              <UiButton
+                v-if="hasBatchContinuations(group.jobs)"
+                size="xs"
+                variant="ghost"
+                @click="runAction(() => store.continueBatch(group.batchId!), '批次中的暂停/中断任务已继续')"
+              >
+                继续批次
+              </UiButton>
+              <UiButton
+                size="xs"
+                variant="ghost"
+                tone="danger"
+                @click="runAction(() => store.cancelBatch(group.batchId!), '批次中仍在排队的任务已取消')"
+              >
+                取消批次排队
+              </UiButton>
+            </div>
 
             <div v-if="expanded.has(group.key) || group.jobs.length === 1" class="task-batch__jobs">
               <article v-for="job in group.jobs" :key="job.jobId" class="task-job">
@@ -185,7 +318,84 @@ async function downloadArtifact(job: V2Job) {
                   <UiButton v-if="job.status === 'running'" size="xs" variant="secondary" @click="store.pause(job.jobId)">暂停</UiButton>
                   <UiButton v-if="job.status === 'paused'" size="xs" variant="secondary" @click="store.resume(job.jobId)">继续</UiButton>
                   <UiButton v-if="job.status === 'interrupted'" size="xs" variant="secondary" @click="store.continueJob(job.jobId)">从检查点继续</UiButton>
+                  <UiButton v-if="job.status === 'queued' && !job.blockedReason" size="xs" variant="ghost" @click="store.moveQueued(job.jobId, -1)">上移</UiButton>
+                  <UiButton v-if="job.status === 'queued' && !job.blockedReason" size="xs" variant="ghost" @click="store.moveQueued(job.jobId, 1)">下移</UiButton>
+                  <UiButton
+                    v-if="job.status === 'failed' || job.status === 'completed_with_errors'"
+                    size="xs"
+                    variant="secondary"
+                    @click="retryJob(job, job.kind === 'style_apply' ? 'original' : 'current')"
+                  >
+                    {{ job.status === 'completed_with_errors' ? '重试失败项' : '重试任务' }}
+                  </UiButton>
+                  <UiButton
+                    v-if="(job.status === 'failed' || job.status === 'completed_with_errors') && job.kind !== 'style_apply'"
+                    size="xs"
+                    variant="ghost"
+                    @click="retryJob(job, 'original')"
+                  >
+                    沿用原快照
+                  </UiButton>
+                  <UiButton size="xs" variant="ghost" @click="toggleDetail(job)">
+                    {{ store.selectedDetail?.jobId === job.jobId ? '收起详情' : '详情' }}
+                  </UiButton>
                   <UiButton v-if="canCancel(job)" size="xs" variant="ghost" tone="danger" @click="store.cancel(job.jobId)">取消</UiButton>
+                </div>
+                <div
+                  v-if="store.selectedDetail?.jobId === job.jobId"
+                  class="task-job__detail"
+                >
+                  <p v-if="store.detailLoading">正在读取详情…</p>
+                  <template v-else>
+                    <dl>
+                      <div><dt>耗时</dt><dd>{{ store.selectedDetail.durationMs === null ? '—' : `${store.selectedDetail.durationMs} ms` }}</dd></div>
+                      <div><dt>完成</dt><dd>{{ store.selectedDetail.counts.completed }} / {{ store.selectedDetail.counts.total }}</dd></div>
+                      <div><dt>失败</dt><dd>{{ store.selectedDetail.counts.failed }}</dd></div>
+                      <div><dt>跳过</dt><dd>{{ store.selectedDetail.counts.skipped }}</dd></div>
+                    </dl>
+                    <section v-if="store.selectedDetail.error">
+                      <strong>任务错误</strong>
+                      <pre>{{ formatPayload(store.selectedDetail.error) }}</pre>
+                    </section>
+                    <section v-if="store.selectedDetail.failedItems.length">
+                      <strong>失败项</strong>
+                      <ul>
+                        <li v-for="item in store.selectedDetail.failedItems" :key="item.itemId">
+                          #{{ item.ordinal }} · {{ item.stepKind || '未知步骤' }} · {{ formatPayload(item.error) }}
+                        </li>
+                      </ul>
+                    </section>
+                    <section>
+                      <strong>配置摘要（已脱敏）</strong>
+                      <pre>{{ formatPayload(store.selectedDetail.configSummary) }}</pre>
+                    </section>
+                    <section v-if="store.selectedDetail.resources.length">
+                      <strong>步骤资源</strong>
+                      <ul>
+                        <li v-for="resource in store.selectedDetail.resources" :key="`${resource.stepId}:${resource.role}`">
+                          <a :href="resource.url" target="_blank" rel="noopener">{{ resource.role }}</a>
+                          · {{ resource.mimeType }} · {{ resource.byteSize }} B
+                        </li>
+                      </ul>
+                    </section>
+                    <section v-if="store.selectedDetail.recentEvents.length">
+                      <strong>最近事件</strong>
+                      <UiButton
+                        v-if="!store.olderEventsExhausted"
+                        size="xs"
+                        variant="ghost"
+                        :disabled="store.olderEventsLoading"
+                        @click="store.loadOlderEvents"
+                      >
+                        {{ store.olderEventsLoading ? '读取中…' : '加载更早事件' }}
+                      </UiButton>
+                      <ul>
+                        <li v-for="event in store.selectedDetail.recentEvents" :key="event.eventId">
+                          #{{ event.eventId }} · {{ event.type }}
+                        </li>
+                      </ul>
+                    </section>
+                  </template>
                 </div>
               </article>
             </div>
@@ -262,6 +472,21 @@ async function downloadArtifact(job: V2Job) {
   border-bottom: 1px solid var(--color-border-default);
 }
 
+.task-center__filters {
+  display: flex;
+  gap: 12px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.task-center__filters label {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 .task-center__tab--active {
   color: var(--color-action-primary);
   border-color: var(--color-action-primary);
@@ -314,6 +539,15 @@ async function downloadArtifact(job: V2Job) {
 
 .task-batch__jobs {
   display: grid;
+}
+
+.task-batch__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border-default);
 }
 
 .task-job {
@@ -369,6 +603,57 @@ async function downloadArtifact(job: V2Job) {
 }
 
 .task-job__actions {
+  flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.task-job__detail {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  font-size: 12px;
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+}
+
+.task-job__detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.task-job__detail dl div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.task-job__detail dt,
+.task-job__detail dd,
+.task-job__detail p,
+.task-job__detail ul {
+  margin: 0;
+}
+
+.task-job__detail section {
+  display: grid;
+  gap: 6px;
+}
+
+.task-job__detail pre {
+  max-height: 160px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--color-surface-base);
+  border-radius: 6px;
+}
+
+.task-job__detail ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
 }
 </style>

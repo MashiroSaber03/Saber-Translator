@@ -16,6 +16,7 @@ from src.backend_v2.jobs.repository import (
     JobNotFound,
     JobQueueRepository,
 )
+from src.backend_v2.jobs.retry import JobRetryService
 
 
 def create_jobs_blueprint(
@@ -25,6 +26,7 @@ def create_jobs_blueprint(
 ) -> Blueprint:
     blueprint = Blueprint("jobs_v2", __name__, url_prefix="/api/v2")
     repository = JobQueueRepository(engine)
+    retry_service = JobRetryService(engine)
 
     @blueprint.errorhandler(JobNotFound)
     def not_found(error: JobNotFound):
@@ -112,15 +114,24 @@ def create_jobs_blueprint(
     def get_job_events(job_id: str) -> Response:
         # Validate the target so an unknown ID is a true 404.
         repository.get_job(job_id)
-        return jsonify(
-            {
-                "items": repository.events_after(
-                    job_id=job_id,
-                    after=int(request.args.get("after", "0")),
-                    limit=int(request.args.get("limit", "200")),
-                )
-            }
+        before = request.args.get("before")
+        after = request.args.get("after")
+        if before is not None and after is not None:
+            raise ValueError("before and after cannot be used together")
+        items = (
+            repository.events_before(
+                job_id=job_id,
+                before=int(before),
+                limit=int(request.args.get("limit", "200")),
+            )
+            if before is not None
+            else repository.events_after(
+                job_id=job_id,
+                after=int(after or "0"),
+                limit=int(request.args.get("limit", "200")),
+            )
         )
+        return jsonify({"items": items})
 
     @blueprint.get("/jobs/<job_id>/download")
     def download_job_artifact(job_id: str) -> Response:
@@ -164,6 +175,30 @@ def create_jobs_blueprint(
         _require_idempotency_key()
         return jsonify(repository.request_cancel(job_id))
 
+    @blueprint.post("/jobs/<job_id>/retry")
+    def retry_job(job_id: str) -> Response:
+        body = _optional_json_body()
+        return jsonify(
+            retry_service.retry(
+                job_id=job_id,
+                failed_only=False,
+                strategy=str(body.get("strategy", "current")),
+                idempotency_key=_require_idempotency_key(),
+            )
+        ), 202
+
+    @blueprint.post("/jobs/<job_id>/retry-failed")
+    def retry_failed_job(job_id: str) -> Response:
+        body = _optional_json_body()
+        return jsonify(
+            retry_service.retry(
+                job_id=job_id,
+                failed_only=True,
+                strategy=str(body.get("strategy", "current")),
+                idempotency_key=_require_idempotency_key(),
+            )
+        ), 202
+
     @blueprint.post("/jobs/reorder")
     def reorder_jobs() -> Response:
         _require_idempotency_key()
@@ -193,6 +228,29 @@ def create_jobs_blueprint(
     def get_batch(batch_id: str) -> Response:
         return jsonify(repository.get_batch(batch_id))
 
+    @blueprint.post("/job-batches/<batch_id>/cancel")
+    def cancel_batch(batch_id: str) -> Response:
+        _require_idempotency_key()
+        return jsonify({"cancelled": repository.cancel_batch_queued(batch_id)})
+
+    @blueprint.post("/job-batches/<batch_id>/prioritize")
+    def prioritize_batch(batch_id: str) -> Response:
+        _require_idempotency_key()
+        body = _json_body()
+        return jsonify(
+            {
+                "queueRevision": repository.prioritize_batch(
+                    batch_id=batch_id,
+                    base_revision=int(body.get("baseRevision", 0)),
+                )
+            }
+        )
+
+    @blueprint.post("/job-batches/<batch_id>/continue")
+    def continue_batch(batch_id: str) -> Response:
+        _require_idempotency_key()
+        return jsonify(repository.continue_batch(batch_id))
+
     return blueprint
 
 
@@ -206,6 +264,15 @@ def _sse(event: dict[str, object]) -> str:
 
 def _json_body() -> dict[str, object]:
     body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        raise ValueError("request body must be a JSON object")
+    return body
+
+
+def _optional_json_body() -> dict[str, object]:
+    body = request.get_json(silent=True)
+    if body is None:
+        return {}
     if not isinstance(body, dict):
         raise ValueError("request body must be a JSON object")
     return body
