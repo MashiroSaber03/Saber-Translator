@@ -226,6 +226,100 @@ describe('useSettingsStore backend-first loading', () => {
     })
   })
 
+  it('keeps current-page text style separate from reloaded global defaults', async () => {
+    const settings = createDefaultSettings()
+    const globalTextDefaults = {
+      ...settings.textStyle,
+      inpaintMethod: 'solid' as const,
+      layoutDirection: 'auto' as const,
+    }
+    const document = {
+      settings: [
+        {
+          domain: 'translation',
+          revision: 0,
+          schemaVersion: 3,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 2,
+          schemaVersion: 1,
+          payload: globalTextDefaults,
+        },
+      ],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    }
+    settingsApiMocks.getV2Settings.mockResolvedValue(document)
+
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.hydrateChapterWorkState('chapter-1', {})).toBe(true)
+
+    store.updateTextStyle({
+      inpaintMethod: 'lama_mpe',
+      layoutDirection: 'horizontal',
+    })
+    expect(await store.loadFromBackend()).toBe(true)
+
+    expect(store.settings.textStyle.inpaintMethod).toBe('lama_mpe')
+    expect(store.settings.textStyle.layoutDirection).toBe('horizontal')
+    expect(store.textStyleDefaults.inpaintMethod).toBe('solid')
+    expect(store.textStyleDefaults.layoutDirection).toBe('auto')
+  })
+
+  it('saves global text defaults without replacing them with the current-page style', async () => {
+    const settings = createDefaultSettings()
+    settingsApiMocks.getV2Settings.mockResolvedValue({
+      settings: [
+        {
+          domain: 'translation',
+          revision: 0,
+          schemaVersion: 3,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 0,
+          schemaVersion: 1,
+          payload: settings.textStyle,
+        },
+      ],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
+
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.hydrateChapterWorkState('chapter-1', {})).toBe(true)
+    store.updateTextStyle({ inpaintMethod: 'lama_mpe' })
+    store.textStyleDefaults = {
+      ...store.textStyleDefaults,
+      inpaintMethod: 'litelama',
+    }
+
+    expect(await store.saveToBackend()).toBe(true)
+
+    const transaction = settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
+    const textDefaultsMutation = transaction.settings.find(
+      (entry: { domain: string }) => entry.domain === 'text_style_defaults',
+    )
+    const translationMutation = transaction.settings.find(
+      (entry: { domain: string }) => entry.domain === 'translation',
+    )
+    expect(textDefaultsMutation.payload.inpaintMethod).toBe('litelama')
+    expect(translationMutation.payload.textStyle.inpaintMethod).toBe('litelama')
+  })
+
   it('does not submit a partial Baidu OCR credential replacement', async () => {
     const settings = createDefaultSettings()
     settingsApiMocks.getV2Settings.mockResolvedValue({

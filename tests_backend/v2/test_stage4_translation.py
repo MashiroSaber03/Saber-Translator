@@ -62,6 +62,31 @@ class FakeAlgorithms(DeterministicFakeProvider):
     """Compatibility alias for failure-injection tests in this module."""
 
 
+class PageStyleRecordingAlgorithms(FakeAlgorithms):
+    def __init__(self) -> None:
+        super().__init__()
+        self.repair_configs: list[dict[str, Any]] = []
+        self.repair_masks: list[tuple[str, tuple[int, int], int] | None] = []
+
+    def repair(self, image, payloads, config, *, precise_mask=None):
+        self.repair_configs.append(dict(config))
+        self.repair_masks.append(
+            (
+                precise_mask.mode,
+                precise_mask.size,
+                int(precise_mask.getpixel((0, 0))),
+            )
+            if precise_mask is not None
+            else None
+        )
+        return super().repair(
+            image,
+            payloads,
+            config,
+            precise_mask=precise_mask,
+        )
+
+
 class ConstraintAwareFakeAlgorithms(FakeAlgorithms):
     def __init__(self) -> None:
         super().__init__()
@@ -136,6 +161,38 @@ def test_legacy_color_adapter_accepts_serialized_dictionary_results(
             [[{"polygon": [[3, 4], [20, 4]], "direction": "h"}]],
         )
     ]
+
+
+def test_legacy_repair_adapter_passes_precise_text_mask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import inpainting
+
+    captured: dict[str, Any] = {}
+
+    def fake_inpaint(image, _coords, **kwargs):
+        captured.update(kwargs)
+        return image.copy(), None
+
+    monkeypatch.setattr(inpainting, "inpaint_bubbles", fake_inpaint)
+    image = Image.new("RGB", (3, 2), "white")
+    precise_mask = Image.new("L", (3, 2), 0)
+    precise_mask.putpixel((1, 0), 255)
+
+    repaired = LegacyTranslationAlgorithms().repair(
+        image,
+        [{"coords": [0, 0, 3, 2], "polygon": []}],
+        {"method": "solid"},
+        precise_mask=precise_mask,
+    )
+
+    assert captured["precise_mask"].tolist() == [
+        [0, 255, 0],
+        [0, 0, 0],
+    ]
+    repaired.close()
+    precise_mask.close()
+    image.close()
 
 
 @pytest.fixture(autouse=True)
@@ -367,6 +424,64 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
         "translated",
         "thumbnail_translated",
     }.issubset(roles)
+
+
+def test_translation_uses_current_page_layout_and_inpainting_defaults(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    page_style = {
+        "fontSize": 26,
+        "autoFontSize": True,
+        "fontFamily": "00000000-0000-0000-0000-000000000010",
+        "layoutDirection": "horizontal",
+        "textColor": "#000000",
+        "fillColor": "#123456",
+        "inpaintMethod": "litelama",
+        "useAutoTextColor": False,
+        "strokeEnabled": True,
+        "strokeColor": "#FFFFFF",
+        "strokeWidth": 3,
+        "lineSpacing": 1.0,
+        "textAlign": "start",
+    }
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(page_style_defaults_json=json.dumps(page_style))
+        )
+
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "parallel"},
+        page_ids=[platform["page_id"]],
+        idempotency_key="page-style-translation",
+    )
+    algorithms = PageStyleRecordingAlgorithms()
+    _run_translation_job(platform, algorithms)
+
+    with platform["engine"].connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.page_id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+
+    assert payload["textDirection"] == "horizontal"
+    assert payload["autoTextDirection"] == "vertical"
+    assert algorithms.repair_configs == [
+        {
+            "method": "lama",
+            "lama_model": "litelama",
+            "fill_color": "#123456",
+            "mask_dilate_size": 10,
+            "mask_box_expand_ratio": 20,
+        }
+    ]
+    assert algorithms.repair_masks == [("L", (64, 64), 255)]
 
 
 def test_translation_constraints_are_frozen_extracted_and_consumed(

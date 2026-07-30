@@ -114,6 +114,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     eventSource = new EventSource(`/api/v2/jobs/events?after=${lastEventId.value}`)
     eventSource.onopen = () => {
       connected.value = true
+      void refresh()
     }
     eventSource.onerror = () => {
       connected.value = false
@@ -245,6 +246,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     open: (target?: TaskCenterFocus) => {
       focusTarget.value = target || null
       drawerOpen.value = true
+      void refresh()
     },
     close: () => { drawerOpen.value = false },
     pause: (jobId: string) => runCommand(() => jobsApi.pause(jobId)),

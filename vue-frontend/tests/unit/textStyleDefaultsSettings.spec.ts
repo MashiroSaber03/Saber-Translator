@@ -126,7 +126,7 @@ describe('TextStyleDefaultsSettings', () => {
 
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('31')
-    expect(useSettingsStore().settings.textStyle).toEqual(factoryDefaults)
+    expect(useSettingsStore().textStyleDefaults).toEqual(factoryDefaults)
   })
 
   it('publishes modified defaults directly into the parent settings draft', async () => {
@@ -142,7 +142,7 @@ describe('TextStyleDefaultsSettings', () => {
     await flushPromises()
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
 
-    expect(useSettingsStore().settings.textStyle).toEqual(factoryDefaults)
+    expect(useSettingsStore().textStyleDefaults).toEqual(factoryDefaults)
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('save-complete')).toBeUndefined()
   })
@@ -251,7 +251,7 @@ describe('TextStyleDefaultsSettings', () => {
 
     expect(uploadV2FontMock).toHaveBeenCalledWith(file)
     expect(wrapper.get('.ui-combobox-stub').attributes('data-value')).toBe('font-uploaded')
-    expect(useSettingsStore().settings.textStyle.fontFamily).toBe('font-uploaded')
+    expect(useSettingsStore().textStyleDefaults.fontFamily).toBe('font-uploaded')
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
@@ -269,7 +269,7 @@ describe('TextStyleDefaultsSettings', () => {
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
     await wrapper.get('#textDefaultsFontSize').setValue('35')
 
-    expect(useSettingsStore().settings.textStyle).toEqual({
+    expect(useSettingsStore().textStyleDefaults).toEqual({
       ...factoryDefaults,
       fontSize: 35,
     })
@@ -278,7 +278,7 @@ describe('TextStyleDefaultsSettings', () => {
 
   it('shows a restricted error and leaves the parent draft unchanged when loading fails', async () => {
     getV2SettingsMock.mockRejectedValue(new Error('load failed'))
-    const before = { ...useSettingsStore().settings.textStyle }
+    const before = { ...useSettingsStore().textStyleDefaults }
 
     const wrapper = mount(TextStyleDefaultsSettings, {
       props: { isOpen: true },
@@ -292,7 +292,7 @@ describe('TextStyleDefaultsSettings', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('load failed')
-    expect(useSettingsStore().settings.textStyle).toEqual(before)
+    expect(useSettingsStore().textStyleDefaults).toEqual(before)
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
@@ -302,6 +302,6 @@ describe('TextStyleDefaultsSettings', () => {
     expect(source).not.toContain('saveRequestId')
     expect(source).not.toContain('save-complete')
     expect(source).not.toContain('defineExpose')
-    expect(source).toContain('settingsStore.updateTextStyle(normalized)')
+    expect(source).toContain('settingsStore.textStyleDefaults = normalized')
   })
 })

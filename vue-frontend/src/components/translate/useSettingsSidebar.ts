@@ -389,6 +389,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   function handleInpaintMethodChange(value: string | number) {
     const strValue = String(value)
     settingsStore.updateTextStyle({ inpaintMethod: strValue as InpaintMethod })
+    emit('textStyleChanged', 'inpaintMethod', strValue)
   }
 
   function updateTextColor(value: string) {

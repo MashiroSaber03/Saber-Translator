@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { TranslationSettings } from '@/types/settings'
+import type { TextStyleSettings, TranslationSettings } from '@/types/settings'
 import { STORAGE_KEY_THEME } from '@/constants'
 import {
   getV2Settings,
@@ -155,8 +155,12 @@ function withoutApiKey<T extends Record<string, unknown>>(value: T): Omit<T, 'ap
   return payload
 }
 
-function sanitizedSettingsPayload(value: TranslationSettings): Record<string, unknown> {
+function sanitizedSettingsPayload(
+  value: TranslationSettings,
+  textStyle: TextStyleSettings = value.textStyle,
+): Record<string, unknown> {
   const payload = deepClone(value) as TranslationSettings
+  payload.textStyle = deepClone(textStyle)
   payload.translation.apiKey = ''
   payload.hqTranslation.apiKey = ''
   payload.pluginAgent.apiKey = ''
@@ -176,6 +180,12 @@ function credentialIdentity(domain: string, provider: string): string {
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<TranslationSettings>(createDefaultSettings())
+  // Global defaults and the active page style have different persistence
+  // owners. Keeping them separate prevents a settings reload from resetting
+  // the translation sidebar or writing global defaults into the current page.
+  const textStyleDefaults = ref<TextStyleSettings>(
+    normalizeTextStyleSettings(settings.value.textStyle),
+  )
   const themePreference = useThemePreference(STORAGE_KEY_THEME)
   const { theme, effectiveTheme, setTheme, toggleTheme, loadThemeFromStorage } = themePreference
   const providerConfigs = ref<ProviderConfigsCache>(emptyProviderConfigs())
@@ -235,6 +245,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function resetToDefaults(): void {
     settings.value = createDefaultSettings()
+    textStyleDefaults.value = normalizeTextStyleSettings(settings.value.textStyle)
   }
 
   function applyBackendDocument(document: V2SettingsDocument): void {
@@ -244,6 +255,9 @@ export const useSettingsStore = defineStore('settings', () => {
     // debounced chapter-memory write may still be in flight.
     const currentChapterWorkState = activeChapterWorkState
       ? chapterWorkStatePayload()
+      : null
+    const currentPageTextStyle = activeChapterWorkState
+      ? deepClone(settings.value.textStyle)
       : null
     const translationEntry = document.settings.find(row => row.domain === 'translation')
     const textStyleDefaultsEntry = document.settings.find(
@@ -263,10 +277,14 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     settings.value = parsed ?? createDefaultSettings()
     if (textStyleDefaultsEntry) {
-      settings.value.textStyle = normalizeTextStyleSettings(
+      textStyleDefaults.value = normalizeTextStyleSettings(
         textStyleDefaultsEntry.payload,
       )
+    } else {
+      textStyleDefaults.value = normalizeTextStyleSettings(settings.value.textStyle)
     }
+    settings.value.textStyle = currentPageTextStyle
+      ?? deepClone(textStyleDefaults.value)
     workflowPreferences.value = {
       rememberWorkflowModeEnabled: Boolean(
         workflowPreferencesEntry?.payload.rememberWorkflowModeEnabled,
@@ -540,13 +558,13 @@ export const useSettingsStore = defineStore('settings', () => {
       settings: [
         {
           domain: 'translation',
-          payload: sanitizedSettingsPayload(settings.value),
+          payload: sanitizedSettingsPayload(settings.value, textStyleDefaults.value),
           baseRevision: settingsRevision,
           schemaVersion: 3,
         },
         {
           domain: 'text_style_defaults',
-          payload: deepClone(settings.value.textStyle) as unknown as Record<string, unknown>,
+          payload: deepClone(textStyleDefaults.value) as unknown as Record<string, unknown>,
           baseRevision: textStyleDefaultsRevision,
           schemaVersion: 1,
         },
@@ -653,6 +671,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     settings,
+    textStyleDefaults,
     providerConfigs,
     credentialSummaries,
     fontCatalog,

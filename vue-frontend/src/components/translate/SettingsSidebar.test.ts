@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsSidebar from './SettingsSidebar.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 const apiMocks = vi.hoisted(() => ({
   getFontList: vi.fn(),
@@ -58,6 +59,33 @@ describe('SettingsSidebar defaults', () => {
     const rememberToggle = wrapper.findAllComponents(UiCheckbox)
       .find(toggle => toggle.props('label') === '记住操作模式')
     expect(rememberToggle?.props('modelValue')).toBe(false)
+  })
+
+  it('emits page-style persistence when the inpaint method changes', async () => {
+    const wrapper = mount(SettingsSidebar, {
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          UiCombobox: true,
+          ProductCollapsibleSection: {
+            name: 'ProductCollapsibleSection',
+            props: ['title', 'expanded'],
+            template: '<section><slot /></section>',
+          },
+          PageSelectionModal: true,
+        },
+      },
+    })
+    const inpaintSelect = wrapper.findAllComponents(UiSelect)
+      .find(select => select.attributes('id') === 'useInpainting')
+
+    inpaintSelect?.vm.$emit('change', 'lama_mpe')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('textStyleChanged')).toContainEqual([
+      'inpaintMethod',
+      'lama_mpe',
+    ])
   })
 
   it('maps parent shell colors through semantic tokens', () => {

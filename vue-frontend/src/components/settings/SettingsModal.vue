@@ -110,7 +110,10 @@
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import type { ProviderConfigsCache } from '@/stores/settings'
-import type { TranslationSettings as TranslationSettingsModel } from '@/types/settings'
+import type {
+  TextStyleSettings,
+  TranslationSettings as TranslationSettingsModel,
+} from '@/types/settings'
 import { deepClone } from '@/utils/deepClone'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -159,6 +162,7 @@ type SettingsTabId =
 
 const activeTab = ref<SettingsTabId>('ocr')
 let settingsSnapshot: TranslationSettingsModel | null = null
+let textStyleDefaultsSnapshot: TextStyleSettings | null = null
 let providerSnapshot: ProviderConfigsCache | null = null
 let closeAfterSave = false
 
@@ -207,6 +211,7 @@ watch(isOpen, (newVal) => {
 async function handleOpen() {
   await settingsStore.loadFromBackend()
   settingsSnapshot = deepClone(settingsStore.settings)
+  textStyleDefaultsSnapshot = deepClone(settingsStore.textStyleDefaults)
   providerSnapshot = deepClone(settingsStore.providerConfigs)
   if (props.initialTab && isSettingsTabId(props.initialTab)) {
     activeTab.value = props.initialTab
@@ -214,12 +219,19 @@ async function handleOpen() {
 }
 
 function handleClose() {
-  if (!closeAfterSave && settingsSnapshot && providerSnapshot) {
+  if (
+    !closeAfterSave
+    && settingsSnapshot
+    && textStyleDefaultsSnapshot
+    && providerSnapshot
+  ) {
     settingsStore.settings = deepClone(settingsSnapshot)
+    settingsStore.textStyleDefaults = deepClone(textStyleDefaultsSnapshot)
     settingsStore.providerConfigs = deepClone(providerSnapshot)
   }
   closeAfterSave = false
   settingsSnapshot = null
+  textStyleDefaultsSnapshot = null
   providerSnapshot = null
   isOpen.value = false
   emit('update:modelValue', false)
@@ -227,9 +239,9 @@ function handleClose() {
 
 async function handleSave() {
   const textDefaultsChanged = Boolean(
-    settingsSnapshot
-    && JSON.stringify(settingsSnapshot.textStyle)
-      !== JSON.stringify(settingsStore.settings.textStyle),
+    textStyleDefaultsSnapshot
+    && JSON.stringify(textStyleDefaultsSnapshot)
+      !== JSON.stringify(settingsStore.textStyleDefaults),
   )
 
   const saved = await settingsStore.saveToBackend()

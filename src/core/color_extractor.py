@@ -97,6 +97,14 @@ class ColorExtractor:
         self._ocr_handler = None
         self._initialized = False
         self._device = 'cpu'
+
+    def _handler_is_ready(self) -> bool:
+        """Return whether the underlying 48px model is still loaded."""
+        return (
+            self._ocr_handler is not None
+            and bool(getattr(self._ocr_handler, "initialized", False))
+            and getattr(self._ocr_handler, "model", None) is not None
+        )
     
     def initialize(self, device: Optional[str] = None) -> bool:
         """
@@ -111,14 +119,19 @@ class ColorExtractor:
         device = _resolve_preferred_device(device)
 
         if self._initialized and self._ocr_handler is not None:
-            if self._device == device:
+            if self._handler_is_ready():
+                if self._device == device:
+                    return True
+                if not self._ocr_handler.initialize(device):
+                    logger.error(f"48px OCR 模型切换到 {device} 失败，颜色提取不可用")
+                    return False
+                self._device = device
+                logger.info(f"✅ 颜色提取器已切换到设备: {device}")
                 return True
-            if not self._ocr_handler.initialize(device):
-                logger.error(f"48px OCR 模型切换到 {device} 失败，颜色提取不可用")
-                return False
-            self._device = device
-            logger.info(f"✅ 颜色提取器已切换到设备: {device}")
-            return True
+            # Worker 的空闲/手动模型释放会重置底层 48px 单例。
+            # 上层颜色提取器必须随之失效，以便本次调用重新获取并懒加载模型。
+            self._initialized = False
+            self._ocr_handler = None
         
         try:
             from src.interfaces.ocr_48px import get_48px_ocr_handler
@@ -140,7 +153,7 @@ class ColorExtractor:
     @property
     def is_initialized(self) -> bool:
         """是否已初始化"""
-        return self._initialized
+        return self._initialized and self._handler_is_ready()
     
     def extract_colors(
         self,

@@ -182,6 +182,77 @@ describe('useTranslationPipeline', () => {
     expect(bubbleStore.bubbles[0]?.translatedText).toBe('你好')
   })
 
+  it('reconciles a tracked job from durable queue and history snapshots', async () => {
+    const imageStore = useImageStore()
+    const taskCenterStore = useTaskCenterStore()
+    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+    const translation = useTranslation()
+    await translation.translatePages([0], 'standard')
+
+    taskCenterStore.queue = [{
+      jobId: 'job-1',
+      batchId: 'batch-1',
+      batchDisplayName: 'Book / Chapter',
+      kind: 'translation',
+      retryOfJobId: null,
+      retryMode: null,
+      status: 'running',
+      queueRank: null,
+      bookId: 'book-1',
+      chapterId: 'chapter-1',
+      pageId: null,
+      blockedReason: null,
+      blockedByJobId: null,
+      progress: {
+        totalItems: 1,
+        completedItems: 0,
+        failedItems: 0,
+        jobStatus: 'running',
+        executionMode: 'sequential',
+        pools: [],
+      },
+      target: { book: 'Book', chapter: 'Chapter', pageCount: 1 },
+      createdAt: null,
+      startedAt: null,
+      finishedAt: null,
+    }]
+    await nextTick()
+
+    expect(translation.progress.value.status).toBe('running')
+    expect(translation.progress.value.label).toBe('后端正在处理')
+
+    const runningJob = taskCenterStore.queue[0]
+    taskCenterStore.queue = []
+    taskCenterStore.history = [{
+      ...runningJob,
+      jobId: 'job-1',
+      batchId: 'batch-1',
+      batchDisplayName: 'Book / Chapter',
+      kind: 'translation',
+      retryOfJobId: null,
+      retryMode: null,
+      status: 'completed',
+      queueRank: null,
+      progress: {
+        totalItems: 1,
+        completedItems: 1,
+        failedItems: 0,
+        jobStatus: 'completed',
+        executionMode: 'sequential',
+        pools: [],
+      },
+      target: { book: 'Book', chapter: 'Chapter', pageCount: 1 },
+      createdAt: null,
+    }]
+    await nextTick()
+
+    expect(translation.progress.value.status).toBe('completed')
+    expect(translation.progress.value.isInProgress).toBe(false)
+  })
+
   it('retries durable failed items from the latest matching backend job', async () => {
     const imageStore = useImageStore()
     imageStore.addImage('001.png', '/api/v2/assets/source-1', {

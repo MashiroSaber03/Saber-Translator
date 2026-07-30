@@ -16,7 +16,7 @@ export function groupJobsByBatch(jobs: V2Job[]): JobBatchProjection[] {
       group = {
         key,
         batchId: job.batchId || null,
-        displayName: job.batchDisplayName || describeJobTarget(job),
+        displayName: describeJobBatch(job),
         jobs: [],
       }
       groups.set(key, group)
@@ -26,10 +26,35 @@ export function groupJobsByBatch(jobs: V2Job[]): JobBatchProjection[] {
   return [...groups.values()]
 }
 
+function targetText(job: V2Job, key: string): string {
+  const value = (job.target as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function targetPageCount(job: V2Job): number {
+  const value = Number((job.target as Record<string, unknown>).pageCount)
+  return Number.isInteger(value) && value > 0 ? value : 0
+}
+
+export function describeJobBatch(job: V2Job): string {
+  const book = targetText(job, 'book')
+  const chapter = targetText(job, 'chapter')
+  if (book && chapter) return `书籍：${book} · 章节：${chapter}`
+  if (book) return `书籍：${book}`
+  if (chapter) return `章节：${chapter}`
+  return job.batchDisplayName || describeJobTarget(job)
+}
+
 export function describeJobTarget(job: V2Job): string {
-  const target = job.target as Record<string, unknown>
-  const named = target.chapter || target.book || target.page || target.name
-  return typeof named === 'string' && named ? named : job.kind
+  const chapter = targetText(job, 'chapter')
+  const book = targetText(job, 'book')
+  const page = targetText(job, 'page')
+  const name = targetText(job, 'name')
+  const pageCount = targetPageCount(job)
+  if (chapter) return `章节：${chapter}${pageCount ? ` · ${pageCount} 页` : ''}`
+  if (book) return `书籍：${book}${pageCount ? ` · ${pageCount} 页` : ''}`
+  if (page) return `页面：${page}`
+  return name || job.kind
 }
 
 export function progressPercent(job: V2Job): number {

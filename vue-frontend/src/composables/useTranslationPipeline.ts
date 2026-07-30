@@ -340,17 +340,26 @@ export function useTranslation() {
   )
 
   watch(
-    () => taskCenterStore.queue,
-    queue => {
+    () => [taskCenterStore.queue, taskCenterStore.history] as const,
+    ([queue, history]) => {
       const jobId = activeJobId.value
       if (!jobId) return
-      const job = queue.find(item => item.jobId === jobId)
+      const job = [...queue, ...history].find(item => item.jobId === jobId)
       if (!job) return
       applyProgressSnapshot(
         job.progress,
         jobStatusLabel(job.status),
         { queuePosition: job.queueRank, status: job.status },
       )
+      if (ACTIVE_JOB_STATUSES.has(job.status)) return
+      imageStore.setBatchTranslationInProgress(false)
+      activeJobId.value = null
+      activePageIds.value = []
+      void refreshCurrentChapter(imageStore, bubbleStore).catch((error) => {
+        toast.error(
+          `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
+        )
+      })
     },
     { deep: true },
   )

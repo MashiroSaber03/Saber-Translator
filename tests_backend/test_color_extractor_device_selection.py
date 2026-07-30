@@ -62,6 +62,56 @@ class ColorExtractorDeviceSelectionTests(unittest.TestCase):
         handler.model.to.assert_called_once_with("cuda")
         self.assertEqual(handler.device, "cuda")
 
+    def test_color_extractor_reloads_48px_after_worker_releases_model(self):
+        extractor = color_extractor.ColorExtractor()
+        released_handler = mock.Mock()
+        released_handler.initialized = False
+        released_handler.model = None
+        extractor._ocr_handler = released_handler
+        extractor._initialized = True
+        extractor._device = "cpu"
+
+        loaded_handler = mock.Mock()
+        loaded_handler.initialized = False
+        loaded_handler.model = None
+
+        def initialize(_device):
+            loaded_handler.initialized = True
+            loaded_handler.model = object()
+            return True
+
+        loaded_handler.initialize.side_effect = initialize
+        loaded_handler.extract_colors_for_bubbles.return_value = [
+            mock.Mock(fg_color=(7, 8, 9), bg_color=(240, 241, 242), confidence=0.8)
+        ]
+        image = Image.new("RGB", (8, 8), color="white")
+
+        with mock.patch.object(
+            color_extractor,
+            "get_color_extractor",
+            return_value=extractor,
+        ), mock.patch(
+            "src.interfaces.ocr_48px.get_48px_ocr_handler",
+            return_value=loaded_handler,
+        ):
+            results = color_extractor.extract_bubble_colors(
+                image,
+                [(0, 0, 4, 4)],
+                device="cpu",
+            )
+
+        loaded_handler.initialize.assert_called_once_with("cpu")
+        self.assertEqual(
+            results,
+            [
+                {
+                    "fg_color": [7, 8, 9],
+                    "bg_color": [240, 241, 242],
+                    "confidence": 0.8,
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

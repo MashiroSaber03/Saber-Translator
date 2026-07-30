@@ -270,7 +270,7 @@ async function loadDefaults(): Promise<void> {
     if (!settingsStore.isBackendReady) {
       throw new Error(settingsStore.backendError || '获取文本默认值失败')
     }
-    const normalized = normalizeTextStyleSettings(settingsStore.settings.textStyle)
+    const normalized = normalizeTextStyleSettings(settingsStore.textStyleDefaults)
     draftDefaults.value = normalized
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '获取文本默认值失败'
@@ -295,7 +295,7 @@ function updateDraft(updates: Partial<TextStyleSettings>): void {
     ...updates,
   })
   draftDefaults.value = normalized
-  settingsStore.updateTextStyle(normalized)
+  settingsStore.textStyleDefaults = normalized
 }
 
 function updateFontSize(value: number | null): void {
@@ -356,7 +356,7 @@ function updateStrokeWidth(value: number | null): void {
 function resetDraftToFactory(): void {
   const normalized = normalizeTextStyleSettings(getFactoryTextStyleDefaults())
   draftDefaults.value = normalized
-  settingsStore.updateTextStyle(normalized)
+  settingsStore.textStyleDefaults = normalized
   errorMessage.value = ''
 }
 

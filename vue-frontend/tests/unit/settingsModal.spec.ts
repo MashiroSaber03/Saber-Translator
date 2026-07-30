@@ -9,7 +9,12 @@ import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 const { saveToBackendMock, settingsStoreState } = vi.hoisted(() => ({
   saveToBackendMock: vi.fn(),
   settingsStoreState: {
-    textStyle: {
+    settings: {
+      textStyle: {
+        fontSize: 16,
+      },
+    },
+    textStyleDefaults: {
       fontSize: 16,
     },
   },
@@ -19,7 +24,8 @@ vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     backendError: null,
     isBackendReady: true,
-    settings: settingsStoreState,
+    settings: settingsStoreState.settings,
+    textStyleDefaults: settingsStoreState.textStyleDefaults,
     providerConfigs: {},
     loadFromBackend: vi.fn().mockResolvedValue(true),
     saveToBackend: saveToBackendMock,
@@ -85,7 +91,8 @@ describe('SettingsModal', () => {
   beforeEach(() => {
     saveToBackendMock.mockReset()
     saveToBackendMock.mockResolvedValue(true)
-    settingsStoreState.textStyle.fontSize = 16
+    settingsStoreState.settings.textStyle.fontSize = 16
+    settingsStoreState.textStyleDefaults.fontSize = 16
   })
 
   it('saves the shared settings draft once and reports text-default changes', async () => {
@@ -95,7 +102,7 @@ describe('SettingsModal', () => {
       },
     })
     await flushPromises()
-    settingsStoreState.textStyle.fontSize = 18
+    settingsStoreState.textStyleDefaults.fontSize = 18
 
     const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存设置'))
     expect(saveButton).toBeTruthy()
@@ -195,7 +202,7 @@ describe('SettingsModal', () => {
     expect(source).not.toContain('.settings-tab-pane')
   })
 
-  it('keeps text defaults in the parent settings draft and one save transaction', () => {
+  it('keeps global text defaults in their isolated draft and one save transaction', () => {
     const modalSource = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
     const textDefaultsSource = readFileSync(
       resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'),
@@ -210,7 +217,7 @@ describe('SettingsModal', () => {
     expect(modalSource).not.toContain('TextStyleDefaultsSettingsExposed')
     expect(modalSource).not.toContain('saveDefaults()')
 
-    expect(textDefaultsSource).toContain('settingsStore.updateTextStyle(normalized)')
+    expect(textDefaultsSource).toContain('settingsStore.textStyleDefaults = normalized')
     expect(textDefaultsSource).not.toContain('saveRequestId')
     expect(textDefaultsSource).not.toContain('save-complete')
     expect(textDefaultsSource).not.toContain('defineExpose')

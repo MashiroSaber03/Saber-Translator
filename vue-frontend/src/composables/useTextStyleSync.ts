@@ -220,7 +220,7 @@ export function useTextStyleSync() {
     await persistStyle(
       { [settingKey]: newValue },
       bubbles,
-      [settingKey],
+      settingKey === 'inpaintMethod' ? [] : [settingKey],
       settingKey === 'fontFamily' ? String(newValue) : undefined,
     )
   }

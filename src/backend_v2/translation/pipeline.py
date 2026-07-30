@@ -96,6 +96,8 @@ class TranslationAlgorithms(Protocol):
         image: Image.Image,
         bubble_payloads: list[dict[str, Any]],
         config: Mapping[str, Any],
+        *,
+        precise_mask: Image.Image | None = None,
     ) -> Image.Image: ...
 
     def render(
@@ -716,7 +718,11 @@ class LegacyTranslationAlgorithms:
         image: Image.Image,
         bubble_payloads: list[dict[str, Any]],
         config: Mapping[str, Any],
+        *,
+        precise_mask: Image.Image | None = None,
     ) -> Image.Image:
+        import numpy as np
+
         from src.core.inpainting import inpaint_bubbles
 
         coords = [payload.get("coords", [0, 0, 0, 0]) for payload in bubble_payloads]
@@ -727,6 +733,11 @@ class LegacyTranslationAlgorithms:
             method=str(config.get("method", "solid")),
             fill_color=str(config.get("fill_color", "#FFFFFF")),
             bubble_polygons=polygons,
+            precise_mask=(
+                np.array(precise_mask, dtype=np.uint8)
+                if precise_mask is not None
+                else None
+            ),
             mask_dilate_size=int(config.get("mask_dilate_size", 0)),
             mask_box_expand_ratio=float(config.get("mask_box_expand_ratio", 0)),
             lama_model=str(config.get("lama_model", "lama_mpe")),
@@ -1554,14 +1565,36 @@ class TranslationPipelineService:
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
         image = self._open_bound_image(fence, step, page_id, "source")
+        precise_mask = self._open_completed_step_image(
+            fence,
+            step,
+            step_kind="detect",
+            role="text_mask",
+            mode="L",
+        )
+        # The job config freezes global settings, while page style defaults are
+        # the authoritative per-page overrides selected before translation.
+        inpainting = dict(self._config(step).get("inpainting", {}))
+        page_method = snapshot.style_defaults.get("inpaintMethod")
+        if page_method is not None:
+            method = str(page_method)
+            inpainting["method"] = "solid" if method == "solid" else "lama"
+            inpainting["lama_model"] = (
+                "litelama" if method == "litelama" else "lama_mpe"
+            )
+        if "fillColor" in snapshot.style_defaults:
+            inpainting["fill_color"] = snapshot.style_defaults["fillColor"]
         try:
             repaired = self.algorithms.repair(
                 image,
                 [dict(value) for value in snapshot.bubbles],
-                self._config(step).get("inpainting", {}),
+                inpainting,
+                precise_mask=precise_mask,
             )
         finally:
             image.close()
+            if precise_mask is not None:
+                precise_mask.close()
         record = self._publish_image(repaired)
         repaired.close()
 
@@ -1921,6 +1954,53 @@ class TranslationPipelineService:
             image.load()
         return image
 
+    def _open_completed_step_image(
+        self,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
+        *,
+        step_kind: str,
+        role: str,
+        mode: str,
+    ) -> Image.Image | None:
+        """Open an immutable image output produced earlier by this job item."""
+
+        with self.engine.connect() as connection:
+            relative_path = connection.execute(
+                select(assets.c.relative_path)
+                .join(
+                    job_step_asset_outputs,
+                    job_step_asset_outputs.c.asset_id == assets.c.id,
+                )
+                .join(
+                    job_steps,
+                    job_steps.c.id == job_step_asset_outputs.c.job_step_id,
+                )
+                .join(
+                    job_items,
+                    job_items.c.id == job_steps.c.job_item_id,
+                )
+                .where(
+                    job_items.c.id == str(step["itemId"]),
+                    job_items.c.job_id == fence.job_id,
+                    job_steps.c.kind == step_kind,
+                    job_steps.c.status == "completed",
+                    job_step_asset_outputs.c.role == role,
+                )
+            ).scalar_one_or_none()
+        if relative_path is None:
+            return None
+        image = Image.open(
+            self.storage.resolve_relative_path(str(relative_path))
+        )
+        if image.mode != mode:
+            converted = image.convert(mode)
+            image.close()
+            image = converted
+        else:
+            image.load()
+        return image
+
     def _config(self, step: Mapping[str, Any]) -> dict[str, Any]:
         value = step.get("config", {})
         return dict(value) if isinstance(value, Mapping) else {}
@@ -2192,6 +2272,8 @@ class TranslationPipelineService:
         }
         for key in defaults.keys() & style.keys():
             defaults[key] = style[key]
+        if style.get("layoutDirection") in {"vertical", "horizontal"}:
+            defaults["textDirection"] = style["layoutDirection"]
         return defaults
 
 
