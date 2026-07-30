@@ -253,6 +253,25 @@ class JobWorkerLoop:
                 if step is None:
                     pending, running = self.repository.active_step_counts(fence)
                     if pending or running:
+                        if pending and not running:
+                            unsupported = tuple(
+                                kind
+                                for kind in self.repository.pending_step_kinds(fence)
+                                if kind not in self.handlers
+                            )
+                            if unsupported:
+                                kinds = ", ".join(unsupported)
+                                LOGGER.error(
+                                    "任务步骤无处理器：job=%s kinds=%s",
+                                    _short(fence.job_id),
+                                    kinds,
+                                )
+                                self.repository.fail_job(
+                                    fence,
+                                    code="UNSUPPORTED_STEP_KIND",
+                                    message=f"Worker 没有以下步骤的处理器：{kinds}",
+                                )
+                                return
                         time.sleep(0.02)
                         continue
                     if self.plugin_runtime is not None:
@@ -284,7 +303,7 @@ class JobWorkerLoop:
                     self.repository.fail_job(
                         fence,
                         code="UNSUPPORTED_STEP_KIND",
-                        message=f"no Worker handler for {step['stepKind']}",
+                        message=f"Worker 没有步骤处理器：{step['stepKind']}",
                     )
                     return
                 step_kind, step_id, page_id = _step_log_fields(step)

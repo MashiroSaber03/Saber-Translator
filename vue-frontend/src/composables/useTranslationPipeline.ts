@@ -1,7 +1,11 @@
 import { computed, ref, watch } from 'vue'
 
 import { createChapterTranslationJob } from '@/api/v2/translation'
-import { listChapterPages, type V2TranslationBootstrap } from '@/api/v2/content'
+import {
+  getPageDocument,
+  listChapterPages,
+  type V2TranslationBootstrap,
+} from '@/api/v2/content'
 import type { components } from '@/api/generated/v2'
 import type { V2JobStatus } from '@/api/v2/jobs'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
@@ -9,7 +13,10 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
-import { hasPendingPageDocument } from '@/services/pageDocumentPersistence'
+import {
+  hasPendingPageDocument,
+  registerPageDocument,
+} from '@/services/pageDocumentPersistence'
 import { useToast } from '@/utils/toast'
 import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
@@ -234,9 +241,13 @@ export function restoreTranslationFromBootstrap(
   })
 }
 
-async function refreshCurrentChapter(imageStore: ReturnType<typeof useImageStore>): Promise<void> {
+async function refreshCurrentChapter(
+  imageStore: ReturnType<typeof useImageStore>,
+  bubbleStore: ReturnType<typeof useBubbleStore>,
+): Promise<void> {
   const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
   if (!chapterId) return
+  const currentPageId = imageStore.currentImage?.id
   const result = await listChapterPages(chapterId, { all: true })
   const summaries = new Map(result.items.map(page => [page.id, page]))
   for (const [index, image] of imageStore.images.entries()) {
@@ -259,6 +270,17 @@ async function refreshCurrentChapter(imageStore: ReturnType<typeof useImageStore
       width: mapped.width,
     })
   }
+  if (!currentPageId || imageStore.currentImage?.id !== currentPageId) return
+  const document = await getPageDocument(currentPageId)
+  if (imageStore.currentImage?.id !== currentPageId) return
+  const bubbles = registerPageDocument(document)
+  imageStore.updateCurrentImage({
+    bubbleStates: bubbles,
+    documentRevision: document.documentRevision,
+    hasUnsavedChanges: false,
+  })
+  bubbleStore.setBubbles(bubbles, true)
+  bubbleStore.saveAsInitial()
 }
 
 export function useTranslation() {
@@ -296,7 +318,11 @@ export function useTranslation() {
 
       // Any terminal task may have changed the open chapter. This also covers a task
       // that survived a browser restart and therefore has no local activeJobId.
-      void refreshCurrentChapter(imageStore)
+      void refreshCurrentChapter(imageStore, bubbleStore).catch((error) => {
+        toast.error(
+          `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
+        )
+      })
       if (event.jobId !== activeJobId.value) return
 
       const succeeded = event.type === 'job_finished'

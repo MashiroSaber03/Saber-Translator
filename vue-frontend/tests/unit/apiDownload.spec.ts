@@ -45,6 +45,14 @@ describe('api download helpers', () => {
     const jsonResponse = new Response(JSON.stringify({ error: 'json failed' }), { status: 500 })
     await expect(readApiErrorMessage(jsonResponse, 'fallback')).resolves.toBe('json failed')
 
+    const nestedJsonResponse = new Response(
+      JSON.stringify({ error: { code: 'validation_error', message: 'nested json failed' } }),
+      { status: 422 },
+    )
+    await expect(readApiErrorMessage(nestedJsonResponse, 'fallback')).resolves.toBe(
+      'nested json failed',
+    )
+
     const textResponse = new Response('plain failed', { status: 500 })
     await expect(readApiErrorMessage(textResponse, 'fallback')).resolves.toBe('plain failed')
 

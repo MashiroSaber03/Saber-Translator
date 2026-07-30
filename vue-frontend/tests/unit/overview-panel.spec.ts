@@ -93,6 +93,24 @@ describe('OverviewPanel', () => {
     expect(store.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 
+  it('shows durable queued feedback while a new overview is generated', async () => {
+    regenerateOverviewMock.mockResolvedValueOnce({
+      success: true,
+      task_id: 'overview-job-1',
+      message: '概览重建已进入任务中心',
+    })
+
+    const wrapper = mount(OverviewPanel)
+    await flushPromises()
+
+    await wrapper.findAllComponents(UiIconButton)[0]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('概览生成中')
+    expect(wrapper.text()).toContain('概览重建已进入任务中心')
+    expect(wrapper.text()).not.toContain('尚未生成概览')
+  })
+
   it('reloads generated overview data without routine console output when refresh key changes', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

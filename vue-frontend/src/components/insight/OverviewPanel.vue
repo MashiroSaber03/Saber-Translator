@@ -19,6 +19,7 @@ const insightStore = useInsightStore()
 
 const currentTemplate = ref<OverviewTemplateType>('no_spoiler')
 const overviewContent = ref('')
+const queuedMessage = ref('')
 const isLoading = ref(false)
 const generatedTemplates = ref<OverviewTemplateType[]>([])
 let overviewContentRequestSequence = 0
@@ -109,6 +110,7 @@ async function loadCachedOverview(
 
   isLoading.value = true
   overviewContent.value = ''
+  queuedMessage.value = ''
 
   try {
     const response = await insightApi.getOverview(
@@ -144,6 +146,7 @@ async function generateOverview(regenerate: boolean): Promise<void> {
 
   isLoading.value = true
   overviewContent.value = ''
+  queuedMessage.value = ''
 
   try {
     const response = await insightApi.regenerateOverview(
@@ -163,6 +166,8 @@ async function generateOverview(regenerate: boolean): Promise<void> {
         if (template === 'story_summary' && response.cached !== true) {
           insightStore.triggerDataRefresh()
         }
+      } else if (response.task_id) {
+        queuedMessage.value = response.message || '概览生成已进入任务中心，完成后将自动加载。'
       }
     } else {
       overviewContent.value = `生成失败: ${response.error || '未知错误'}`
@@ -291,6 +296,7 @@ async function refreshOverviewForCurrentBook(): Promise<void> {
   if (!bookId) return
 
   overviewContent.value = ''
+  queuedMessage.value = ''
   generatedTemplates.value = []
   recentAnalyzedPages.value = []
 
@@ -373,6 +379,15 @@ onUnmounted(() => {
           正在读取当前模板的概览内容。
         </ProductStatusBanner>
         <div v-else-if="overviewContent" v-html="renderedContent"></div>
+        <ProductStatusBanner
+          v-else-if="queuedMessage"
+          tone="neutral"
+          icon-name="refresh"
+          title="概览生成中"
+          aria-live="polite"
+        >
+          {{ queuedMessage }}
+        </ProductStatusBanner>
         <ProductStatusBanner
           v-else
           tone="neutral"

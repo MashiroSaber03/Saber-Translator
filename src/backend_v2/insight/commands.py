@@ -268,7 +268,7 @@ class InsightAnalysisCommandService:
                 selected.append(row)
         if not selected:
             if scope == "incremental":
-                raise ValueError("no pages require incremental analysis")
+                raise ValueError("没有需要增量分析的页面")
             raise ValueError("analysis target is empty")
         page_numbers = {
             str(row["page_id"]): index

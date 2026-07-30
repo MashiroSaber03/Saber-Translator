@@ -145,6 +145,16 @@ describe('backend-owned export/import contracts', () => {
       progress: { completedItems: 2, failedItems: 0, totalItems: 2 },
       status: 'completed',
     })
+    mocks.jobList.mockImplementation((scope: string) => Promise.resolve({
+      items: scope === 'queue'
+        ? [{
+            jobId: 'job-export-1',
+            progress: { completedItems: 2, failedItems: 0, totalItems: 2 },
+            status: 'completed',
+          }]
+        : [],
+      queueRevision: 1,
+    }))
 
     await useExportImport().downloadAllImages('cbz')
 

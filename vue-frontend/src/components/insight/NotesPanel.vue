@@ -86,12 +86,7 @@ async function saveNote(): Promise<void> {
   if (editingNote.value) {
     await insightStore.updateNote(editingNote.value.id, notePayload)
   } else {
-    await insightStore.addNote({
-      ...notePayload,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
+    await insightStore.addNote(notePayload)
   }
 
   closeNoteModal()

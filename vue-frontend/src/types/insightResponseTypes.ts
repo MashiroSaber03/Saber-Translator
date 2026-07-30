@@ -38,6 +38,8 @@ export interface InsightOverviewResponse {
 export interface InsightTimelineResponse {
   success: boolean
   timeline?: TimelineData
+  task_id?: string
+  message?: string
   error?: string
 }
 

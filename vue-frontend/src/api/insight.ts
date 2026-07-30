@@ -5,6 +5,7 @@ import type {
   InsightTimelineResponse,
 } from '@/types/insight'
 import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'
+import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
 import { jobsApi } from '@/api/v2/jobs'
 import {
@@ -435,7 +436,10 @@ export async function cancelAnalysis(_bookId: string, taskId?: string): Promise<
 export async function getAnalysisStatus(bookId: string): Promise<InsightStatusResponse> {
   const bootstrap = await getInsightBootstrap()
   const book = bootstrap.books.find(item => item.bookId === bookId)
-  const job = bootstrap.activeJobs.find(item => item.bookId === bookId)
+  const job = bootstrap.activeJobs.find(item => (
+    item.bookId === bookId
+    && item.kind === 'insight_analysis'
+  ))
   const progress = job?.progress ?? {}
   return {
     success: true,
@@ -571,8 +575,12 @@ export async function getOverview(
 export async function regenerateOverview(
   bookId: string,
   templateType: string,
-  _force = false,
+  force = false,
 ): Promise<OverviewContentResponse> {
+  if (!force) {
+    const cached = await getOverview(bookId, templateType)
+    if (cached.success) return cached
+  }
   const accepted = await rebuildInsightOverview(bookId, templateType)
   return {
     success: true,
@@ -594,13 +602,90 @@ export async function getGeneratedTemplates(bookId: string): Promise<GeneratedTe
 export async function getTimeline(bookId: string): Promise<InsightTimelineResponse> {
   try {
     const timeline = await getInsightTimeline(bookId)
+    const pages = await pagesForBook(bookId)
+    const pageNumbersById = new Map(
+      pages.map(page => [page.pageId, page.displayPageNumber]),
+    )
+    const rawEvents = Array.isArray(timeline.events)
+      ? timeline.events.filter(
+        (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
+      )
+      : []
+    const groups = rawEvents.map((event, index) => {
+      const pageNumbers = (
+        Array.isArray(event.page_ids) ? event.page_ids : []
+      ).flatMap(value => {
+        const pageNumber = pageNumbersById.get(String(value))
+        return pageNumber ? [pageNumber] : []
+      })
+      const fallbackPage = Math.min(index + 1, Math.max(pages.length, 1))
+      const start = pageNumbers.length ? Math.min(...pageNumbers) : fallbackPage
+      const end = pageNumbers.length ? Math.max(...pageNumbers) : start
+      const summary = typeof event.summary === 'string' ? event.summary : ''
+      return {
+        id: String(event.eventId ?? event.id ?? `event-${index + 1}`),
+        page_range: { start, end },
+        thumbnail_page: start,
+        summary,
+        events: summary ? [summary] : [],
+      }
+    })
+    const rawCharacters = Array.isArray(timeline.characters)
+      ? timeline.characters.filter(
+        (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
+      )
+      : []
+    const characters = rawCharacters.map((character, index) => {
+      const keyMoments = Array.isArray(character.key_moments)
+        ? character.key_moments.map(value => String(value))
+        : []
+      const firstAppearance = Math.max(
+        1,
+        Number(character.first_page ?? character.first_appearance ?? 1),
+      )
+      return {
+        name: String(character.name ?? `角色 ${index + 1}`),
+        description: typeof character.description === 'string'
+          ? character.description
+          : keyMoments[0] || `首次出现于第 ${firstAppearance} 页`,
+        first_appearance: firstAppearance,
+        key_moments: keyMoments.map(summary => {
+          const pageMatch = summary.match(/第\s*(\d+)\s*页/)
+          return {
+            summary,
+            ...(pageMatch ? { page: Number(pageMatch[1]) } : {}),
+          }
+        }),
+      }
+    })
+    const content = (
+      timeline.content && typeof timeline.content === 'object'
+        ? timeline.content
+        : {}
+    ) as Record<string, unknown>
+    const lastPage = groups.reduce(
+      (maximum, group) => Math.max(maximum, group.page_range.end),
+      0,
+    )
     return {
       success: true,
       timeline: {
-        ...(timeline.content as Record<string, unknown> ?? {}),
+        ...content,
         mode: timeline.mode,
-        events: timeline.events,
-        characters: timeline.characters,
+        events: rawEvents,
+        groups,
+        story_summary: typeof content.overview === 'string'
+          ? content.overview
+          : typeof content.story_summary === 'string'
+            ? content.story_summary
+            : '',
+        main_characters: characters,
+        characters,
+        stats: {
+          total_events: groups.length,
+          total_pages: pages.length || lastPage,
+          total_characters: characters.length,
+        },
       } as never,
     }
   } catch {
@@ -609,8 +694,13 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
 }
 
 export async function regenerateTimeline(bookId: string): Promise<InsightTimelineResponse> {
-  await rebuildInsightTimeline(bookId)
-  return { success: true, timeline: undefined }
+  const accepted = await rebuildInsightTimeline(bookId)
+  return {
+    success: true,
+    timeline: undefined,
+    task_id: accepted.jobIds[0],
+    message: '时间线重建已进入任务中心',
+  }
 }
 
 export function getChatStreamUrl(bookId: string): string {
@@ -635,7 +725,7 @@ export async function sendChat(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       question,
-      mode: options.use_global_context ? 'global' : 'precise',
+      mode: options.use_global_context ? 'global' : 'exact',
       useParentChild: options.use_parent_child,
       useReasoning: options.use_reasoning,
       useReranker: options.use_reranker,
@@ -643,7 +733,12 @@ export async function sendChat(
       threshold: options.threshold,
     }),
   })
-  if (!response.ok) return { success: false, error: `HTTP ${response.status}` }
+  if (!response.ok) {
+    return {
+      success: false,
+      error: await readApiErrorMessage(response, `HTTP ${response.status}`),
+    }
+  }
   let answer = ''
   let mode = options.use_global_context ? 'global' : 'precise'
   let citations: Array<{ page: number }> = []
@@ -658,9 +753,12 @@ export async function sendChat(
       } else if (message.event === 'context') {
         mode = String(message.data.mode ?? mode)
         const values = Array.isArray(message.data.citations) ? message.data.citations : []
-        citations = values.map(value => ({
-          page: Number((value as Record<string, unknown>).pageNumberSnapshot ?? 0),
-        }))
+        citations = values.map(value => {
+          const citation = value as Record<string, unknown>
+          return {
+            page: Number(citation.pageNumber ?? citation.pageNumberSnapshot ?? 0),
+          }
+        })
       } else if (message.event === 'done') {
         suggestedQuestions = Array.isArray(message.data.suggestedQuestions)
           ? message.data.suggestedQuestions.map(String)
@@ -686,7 +784,15 @@ export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddin
 }
 
 function noteMetadata(note: NoteData): Record<string, unknown> {
+  const text = [
+    note.comment,
+    note.question,
+    note.answer,
+    note.content,
+    note.title,
+  ].find(value => typeof value === 'string' && value.trim())?.trim() || '笔记'
   return {
+    text,
     question: note.question ?? '',
     answer: note.answer ?? '',
     comment: note.comment ?? '',

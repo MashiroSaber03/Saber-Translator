@@ -108,7 +108,7 @@ hiddenimports += [
     'sqlalchemy', 'alembic', 'waitress',
 
     # Flask 相关
-    'flask', 'flask_cors', 'werkzeug', 'werkzeug.serving', 'jinja2', 'itsdangerous', 'click',
+    'flask', 'werkzeug', 'werkzeug.serving', 'jinja2', 'itsdangerous', 'click',
     
     # Worker 算法实现（仍由 v2 services 在 Worker 内按需导入）
     'src',

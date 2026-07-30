@@ -11,7 +11,6 @@ import time
 from typing import Any, Callable
 
 from flask import Blueprint, Flask, Response, g, jsonify, request
-from flask_cors import CORS
 from sqlalchemy import Engine
 import yaml
 
@@ -145,6 +144,11 @@ def _install_request_logging(app: Flask) -> None:
 
     @app.teardown_request
     def log_unhandled_request_error(error: BaseException | None) -> None:
+        # Flask closes streaming response generators with GeneratorExit when an
+        # SSE client reloads, navigates away, or otherwise disconnects.  That is
+        # normal transport lifecycle, not an application failure.
+        if isinstance(error, GeneratorExit):
+            return
         if error is not None:
             LOGGER.error(
                 "HTTP %s %s raised an unhandled exception",
@@ -162,7 +166,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
         SABER_V2_DATA_ROOT=str(settings.data_root),
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
     )
-    CORS(app)
     _install_request_logging(app)
     app.register_blueprint(_create_v2_blueprint(settings))
     from src.backend_v2.content.routes import create_content_blueprint
@@ -208,6 +211,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
         RenderRequestRepository(engine),
         api_epoch_id=settings.identity.epoch_id,
         handler=render_service.prepare,
+        poll_seconds=0.05,
     )
     repair_service = PageRepairService(
         data_root=settings.data_root,

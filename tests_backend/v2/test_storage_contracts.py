@@ -605,6 +605,96 @@ def test_alembic_head_upgrades_and_downgrades_without_fk_damage(
     )
 
 
+def test_translation_constraint_migration_normalizes_legacy_arrays(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "constraint-migration.sqlite3"
+    environment = os.environ.copy()
+    environment["SABER_V2_DATABASE_URL"] = (
+        f"sqlite+pysqlite:///{database_path.resolve().as_posix()}"
+    )
+    command = [
+        sys.executable,
+        "-m",
+        "alembic",
+        "-c",
+        str(PROJECT_ROOT / "alembic.ini"),
+    ]
+    subprocess.run(
+        [*command, "upgrade", "0012"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.execute(
+            "INSERT INTO books (id, kind, title) VALUES (?, ?, ?)",
+            ("constraint-book", "library", "Constraint Migration"),
+        )
+        connection.execute(
+            "INSERT INTO translation_constraints "
+            "(book_id, payload_json, schema_version) VALUES (?, ?, 1)",
+            (
+                "constraint-book",
+                json.dumps(
+                    {
+                        "glossary": [
+                            {"source": "Saber", "target": "阿尔托莉雅"}
+                        ],
+                        "nonTranslate": ["Excalibur"],
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    subprocess.run(
+        [*command, "upgrade", "head"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    connection = sqlite3.connect(database_path)
+    try:
+        payload_json, schema_version = connection.execute(
+            "SELECT payload_json, schema_version FROM translation_constraints "
+            "WHERE book_id = ?",
+            ("constraint-book",),
+        ).fetchone()
+    finally:
+        connection.close()
+    payload = json.loads(payload_json)
+    assert schema_version == 2
+    assert payload["glossary"]["enabled"] is True
+    assert payload["glossary"]["entries"] == [
+        {
+            "source": "Saber",
+            "target": "阿尔托莉雅",
+            "note": "",
+            "matchMode": "text",
+        }
+    ]
+    assert payload["nonTranslate"] == {
+        "enabled": True,
+        "entries": [
+            {
+                "pattern": "Excalibur",
+                "note": "",
+                "matchMode": "text",
+            }
+        ],
+    }
+
+
 def test_studio_document_payload_is_migrated_into_domain_columns(
     tmp_path: Path,
 ) -> None:

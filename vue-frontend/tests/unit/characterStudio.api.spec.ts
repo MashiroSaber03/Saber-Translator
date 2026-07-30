@@ -214,6 +214,37 @@ describe('character studio v2 api facade', () => {
     )
   })
 
+  it('formats the structured backend prompt preview for display', async () => {
+    getMock.mockResolvedValue({
+      sessionId: 'session/id one',
+      promptPreview: {
+        system: '角色系统提示',
+        messages: [
+          { role: 'assistant', content: '你好', assetIds: [] },
+          { role: 'user', content: '开始审阅', assetIds: ['asset-1'] },
+        ],
+        lorebookHits: [{ id: 'entry-1', content: '世界书内容' }],
+      },
+    })
+    const { getCharacterStudioChatPromptPreview } = await import('@/api/characterStudio')
+
+    const result = await getCharacterStudioChatPromptPreview(
+      'book-1',
+      'doc-a',
+      'session/id one',
+    )
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/studio/chat/sessions/session%2Fid%20one/prompt-preview',
+    )
+    expect(result.prompt_preview).toContain('[system]\n角色系统提示')
+    expect(result.prompt_preview).toContain('[assistant]\n你好')
+    expect(result.prompt_preview).toContain(
+      '[user]\n开始审阅\n[assets] asset-1',
+    )
+    expect(result.prompt_preview).toContain('世界书内容')
+  })
+
   it('creates a durable chat operation before subscribing to its event stream', async () => {
     getMock.mockImplementation((url: string) => {
       if (url.endsWith('/documents/doc%2Fid%20one/chat')) return Promise.resolve(chatState)
@@ -268,6 +299,54 @@ describe('character studio v2 api facade', () => {
     expect(onEvent).toHaveBeenCalledWith({
       type: 'state',
       session: expect.objectContaining({ session_id: 'session/id one' }),
+    })
+  })
+
+  it('rehydrates the session after deleting a message chain mutation', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith('/documents/doc%2Fid%20one/chat')) return Promise.resolve(chatState)
+      if (url === '/api/v2/studio/chat/sessions/session%2Fid%20one') {
+        return Promise.resolve({
+          ...session,
+          generation: 2,
+          revision: 5,
+          messages: session.messages.slice(0, 1),
+        })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    deleteMock.mockResolvedValue({
+      sessionId: 'session/id one',
+      sessionRevision: 5,
+      sessionGeneration: 2,
+    })
+    const {
+      deleteCharacterStudioChatMessage,
+      getCharacterStudioChatState,
+    } = await import('@/api/characterStudio')
+
+    await getCharacterStudioChatState('book/id one', 'doc/id one')
+    const result = await deleteCharacterStudioChatMessage(
+      'book/id one',
+      'doc/id one',
+      'session/id one',
+      'msg-assistant',
+    )
+
+    expect(deleteMock).toHaveBeenCalledWith(
+      '/api/v2/studio/chat/messages/msg-assistant',
+      {
+        data: { baseSessionRevision: 4 },
+        headers: { 'Idempotency-Key': expect.any(String) },
+      },
+    )
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/studio/chat/sessions/session%2Fid%20one',
+    )
+    expect(result.session).toMatchObject({
+      generation: 2,
+      revision: 5,
+      session_id: 'session/id one',
     })
   })
 

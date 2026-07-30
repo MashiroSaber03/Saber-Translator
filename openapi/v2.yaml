@@ -1330,7 +1330,11 @@ paths:
               properties:
                 baseSessionRevision: {type: integer, minimum: 1}
       responses:
-        "200": {description: Target and later messages deleted without generation.}
+        "200":
+          description: Target and later messages deleted without generation.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StudioMessageChainMutation"}
         "423": {$ref: "#/components/responses/Locked"}
   /studio/chat/messages/{message_id}/regenerate:
     post:
@@ -5058,6 +5062,14 @@ components:
         messages:
           type: array
           items: {$ref: "#/components/schemas/StudioMessage"}
+    StudioMessageChainMutation:
+      type: object
+      additionalProperties: false
+      required: [sessionId, sessionRevision, sessionGeneration]
+      properties:
+        sessionId: {$ref: "#/components/schemas/Uuid"}
+        sessionRevision: {type: integer, minimum: 1}
+        sessionGeneration: {type: integer, minimum: 1}
     StudioSessionSummary:
       type: object
       additionalProperties: false
@@ -5872,23 +5884,63 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 200}
         color: {type: string}
+    TranslationConstraintMatchMode:
+      type: string
+      enum: [text, regex]
+    TranslationGlossaryEntry:
+      type: object
+      additionalProperties: false
+      required: [source, target, note, matchMode]
+      properties:
+        source: {type: string, minLength: 1, maxLength: 2000}
+        target: {type: string, minLength: 1, maxLength: 2000}
+        note: {type: string, maxLength: 10000}
+        matchMode: {$ref: "#/components/schemas/TranslationConstraintMatchMode"}
+    TranslationNonTranslateEntry:
+      type: object
+      additionalProperties: false
+      required: [pattern, note, matchMode]
+      properties:
+        pattern: {type: string, minLength: 1, maxLength: 2000}
+        note: {type: string, maxLength: 10000}
+        matchMode: {$ref: "#/components/schemas/TranslationConstraintMatchMode"}
+    TranslationGlossarySettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, autoExtractEnabled, autoExtractPrompt, entries]
+      properties:
+        enabled: {type: boolean}
+        autoExtractEnabled: {type: boolean}
+        autoExtractPrompt: {type: string, minLength: 1, maxLength: 100000}
+        entries:
+          type: array
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/TranslationGlossaryEntry"}
+    TranslationNonTranslateSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, entries]
+      properties:
+        enabled: {type: boolean}
+        entries:
+          type: array
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/TranslationNonTranslateEntry"}
     TranslationConstraintPayload:
       type: object
       additionalProperties: false
+      required: [glossary, nonTranslate]
       properties:
-        glossary:
-          type: array
-          items: {}
-        nonTranslate:
-          type: array
-          items: {}
+        glossary: {$ref: "#/components/schemas/TranslationGlossarySettings"}
+        nonTranslate: {$ref: "#/components/schemas/TranslationNonTranslateSettings"}
     TranslationConstraintDocument:
       type: object
       additionalProperties: false
-      required: [bookId, revision, payload]
+      required: [bookId, revision, schemaVersion, payload]
       properties:
         bookId: {$ref: "#/components/schemas/Uuid"}
         revision: {type: integer, minimum: 1}
+        schemaVersion: {type: integer, minimum: 2}
         payload: {$ref: "#/components/schemas/TranslationConstraintPayload"}
     TranslationConstraintUpdateCommand:
       type: object
@@ -6039,13 +6091,14 @@ components:
     InsightActiveJob:
       type: object
       additionalProperties: false
-      required: [jobId, bookId, status, progress]
+      required: [jobId, bookId, kind, status, progress]
       properties:
         jobId: {$ref: "#/components/schemas/Uuid"}
         bookId:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
+        kind: {$ref: "#/components/schemas/JobKind"}
         status: {$ref: "#/components/schemas/JobStatus"}
         progress: {type: object, additionalProperties: true}
     InsightBootstrap:
@@ -6799,7 +6852,7 @@ components:
         chapterId: {$ref: "#/components/schemas/Uuid"}
         status:
           type: string
-          enum: [extracting, ready, committing, completed, failed]
+          enum: [extracting, ready, committing, completed, failed, cancelled]
         revision: {type: integer, minimum: 1}
         sourceUrl: {type: string, format: uri}
         requestedEngine: {type: string, enum: [auto, gallery-dl, ai-agent]}

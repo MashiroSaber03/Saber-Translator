@@ -39,6 +39,7 @@ from src.backend_v2.redaction import (
     redact_sensitive_value,
     secret_values_from_json,
 )
+from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     CURRENT_JOB_STATUSES,
@@ -72,6 +73,7 @@ from src.backend_v2.storage.schema import (
     render_requests,
     analysis_runs,
     analysis_run_targets,
+    web_import_drafts,
 )
 
 
@@ -335,6 +337,7 @@ class JobQueueRepository:
                         select(func.coalesce(func.max(jobs.c.queue_rank), 0))
                     ).scalar_one()
                 )
+                current_plugin_snapshots = enabled_plugin_snapshots(connection)
                 for spec in specs:
                     next_rank += 1
                     job_id = str(uuid.uuid4())
@@ -405,7 +408,12 @@ class JobQueueRepository:
                                 for role, font_id in spec.font_snapshots.items()
                             ],
                         )
-                    if spec.plugin_snapshots:
+                    effective_plugin_snapshots = (
+                        spec.plugin_snapshots
+                        if spec.plugin_snapshots is not None
+                        else current_plugin_snapshots
+                    )
+                    if effective_plugin_snapshots:
                         connection.execute(
                             insert(job_plugin_snapshots),
                             [
@@ -415,7 +423,7 @@ class JobQueueRepository:
                                     "config_json": _json(dict(plugin_config)),
                                 }
                                 for version_id, plugin_config in (
-                                    spec.plugin_snapshots.items()
+                                    effective_plugin_snapshots.items()
                                 )
                             ],
                         )
@@ -1557,6 +1565,29 @@ class JobQueueRepository:
         counts = {str(status): int(count) for status, count in rows}
         return counts.get("pending", 0), counts.get("running", 0)
 
+    def pending_step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
+        """Return the durable step kinds that still need a Worker handler."""
+
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            rows = connection.execute(
+                select(job_steps.c.kind)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
+                    job_items.c.job_id == fence.job_id,
+                    job_steps.c.status == "pending",
+                )
+                .distinct()
+                .order_by(job_steps.c.kind)
+            ).scalars()
+            return tuple(str(kind) for kind in rows)
+
     def step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
         """Return only the durable pools that belong to this job graph."""
 
@@ -2326,6 +2357,10 @@ class JobQueueRepository:
                 fence.job_id,
                 job_status="failed",
             )
+            failed_progress["error"] = {
+                "code": code,
+                "message": message,
+            }
             connection.execute(
                 update(jobs)
                 .where(
@@ -2599,7 +2634,38 @@ class JobQueueRepository:
         status: str,
         now: datetime,
     ) -> None:
-        """Converge staging domain runs when their owning job terminates."""
+        """Converge domain state when its owning job terminates."""
+
+        job = connection.execute(
+            select(
+                jobs.c.kind,
+                jobs.c.web_import_draft_id,
+            ).where(jobs.c.id == job_id)
+        ).mappings().one_or_none()
+        if job is not None and job["web_import_draft_id"] is not None:
+            draft_source_status = {
+                "web_extract": "extracting",
+                "web_import_commit": "committing",
+            }.get(str(job["kind"]))
+            draft_terminal_status = {
+                "cancelled": "cancelled",
+                "completed_with_errors": "failed",
+                "failed": "failed",
+            }.get(status)
+            if draft_source_status and draft_terminal_status:
+                connection.execute(
+                    update(web_import_drafts)
+                    .where(
+                        web_import_drafts.c.id
+                        == str(job["web_import_draft_id"]),
+                        web_import_drafts.c.status == draft_source_status,
+                    )
+                    .values(
+                        status=draft_terminal_status,
+                        revision=web_import_drafts.c.revision + 1,
+                        updated_at=now,
+                    )
+                )
 
         run_id = connection.execute(
             select(analysis_runs.c.id).where(

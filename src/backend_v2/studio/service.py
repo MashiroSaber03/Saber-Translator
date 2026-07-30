@@ -520,8 +520,13 @@ class StudioOperationService:
             try:
                 system = (
                     "你是 Character Studio 卡片助手。根据当前角色卡提出具体改进。"
-                    "需要结构化修改时输出 ```json:patch 代码块，操作仅可使用 "
-                    "add/remove/replace/move/copy/test；需要视觉预览时可输出 "
+                    "需要结构化修改时输出 ```json:patch 代码块，内容必须是对象，"
+                    "可用顶层字段仅限 set、greeting_add、worldbook_add、"
+                    "worldbook_update、worldbook_delete、regex_add、regex_update、"
+                    "regex_delete、task_add、task_update、task_delete。"
+                    "普通字段修改放入 set，键使用点路径，例如 "
+                    '{"set":{"identity.description":"新的简介"}}；'
+                    "不要输出 RFC 6902 的操作数组。需要视觉预览时可输出 "
                     "```html 代码块。不要声称已直接保存文档。\n\n当前文档：\n"
                     + json.dumps(document, ensure_ascii=False)
                 )

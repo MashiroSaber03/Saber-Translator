@@ -49,7 +49,7 @@ export function classifyAppPath(path: string): RouteClassification {
 
 export function buildApiPath(endpoint: string): string {
   const cleanEndpoint = stripBoundarySlashes(endpoint)
-  return cleanEndpoint ? `/api/${cleanEndpoint}` : '/api'
+  return cleanEndpoint ? `/api/v2/${cleanEndpoint}` : '/api/v2'
 }
 
 export function buildStaticPath(resourceType: string, filename: string): string {

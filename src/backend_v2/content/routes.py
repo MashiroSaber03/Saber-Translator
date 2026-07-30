@@ -27,6 +27,27 @@ from src.backend_v2.storage.platform_repositories import (
 )
 
 
+def _asset_download_name(
+    requested_name: str | None,
+    *,
+    asset_id: str,
+    suffix: str,
+) -> str:
+    if requested_name:
+        # This value is only a Content-Disposition filename, but still discard
+        # caller-supplied path components and header control characters.
+        candidate = (
+            requested_name.replace("\\", "/")
+            .rsplit("/", 1)[-1]
+            .replace("\r", "")
+            .replace("\n", "")
+            .strip()
+        )
+        if candidate:
+            return candidate
+    return f"{asset_id}{suffix}"
+
+
 def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     blueprint = Blueprint("content_v2", __name__, url_prefix="/api/v2")
     repository = ContentRepository(engine)
@@ -434,9 +455,10 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             max_age=31536000,
             as_attachment=request.args.get("download") == "1",
             download_name=(
-                (
-                    request.args.get("filename", asset_id)
-                    + asset.path.suffix
+                _asset_download_name(
+                    request.args.get("filename"),
+                    asset_id=asset_id,
+                    suffix=asset.path.suffix,
                 )
                 if request.args.get("download") == "1"
                 else None

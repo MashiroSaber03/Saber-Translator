@@ -24,6 +24,8 @@ from src.backend_v2.jobs.repository import (
     JobSpec,
 )
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+from src.backend_v2.runtime_heartbeat import EpochHeartbeat
+from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import jobs, metadata
@@ -38,10 +40,12 @@ def main() -> int:
     seed_system_records(engine)
 
     worker_epoch_id = str(uuid.uuid4())
-    ProcessEpochRepository(engine).register(
+    worker_epoch_token = "worker-memory-probe"
+    epoch_repository = ProcessEpochRepository(engine)
+    epoch_repository.register(
         EpochRegistration(
             epoch_id=worker_epoch_id,
-            token="worker-memory-probe",
+            token=worker_epoch_token,
             role="worker",
             pid=psutil.Process().pid,
         )
@@ -80,6 +84,15 @@ def main() -> int:
         return {"done": True}
 
     stop_event = threading.Event()
+    epoch_heartbeat = EpochHeartbeat(
+        epoch_repository,
+        role="worker",
+        identity=RuntimeIdentity(
+            epoch_id=worker_epoch_id,
+            epoch_token=worker_epoch_token,
+        ),
+        on_fenced=stop_event.set,
+    )
     loop = JobWorkerLoop(
         repository,
         worker_epoch_id=worker_epoch_id,
@@ -91,8 +104,9 @@ def main() -> int:
         args=(stop_event,),
         daemon=True,
     )
+    epoch_heartbeat.start()
     worker_thread.start()
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + 240
     status = "queued"
     while time.monotonic() < deadline:
         sample()
@@ -108,6 +122,7 @@ def main() -> int:
 
     stop_event.set()
     worker_thread.join(timeout=5)
+    epoch_heartbeat.stop()
     sample()
     engine.dispose()
     gc.collect()

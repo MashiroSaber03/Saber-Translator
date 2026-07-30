@@ -121,6 +121,13 @@ describe('ImageResultDisplay', () => {
     expect(exportImportMock.importText).toHaveBeenCalledWith(file)
   })
 
+  it('prevents overlapping backend export submissions while one export is pending', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/result/ExportActions.vue'), 'utf8')
+
+    expect(source).toContain(':disabled="!hasImages || isDownloading"')
+    expect(source).toContain(':disabled="isDownloading"')
+  })
+
   it('updates image size through typed range model events', async () => {
     exportImportMock.state.isDownloading = false
     const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ImageResultDisplay.vue'), 'utf8')

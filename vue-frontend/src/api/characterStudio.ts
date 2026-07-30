@@ -63,6 +63,35 @@ function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function formatPromptPreview(value: unknown): string {
+  if (typeof value === 'string') return value
+  const preview = record(value)
+  const sections: string[] = []
+  const system = typeof preview.system === 'string' ? preview.system.trim() : ''
+  if (system) sections.push(`[system]\n${system}`)
+
+  for (const item of array(preview.messages)) {
+    const message = record(item)
+    const role = typeof message.role === 'string' && message.role.trim()
+      ? message.role.trim()
+      : 'message'
+    const content = typeof message.content === 'string' ? message.content : ''
+    const assetIds = array(message.assetIds).map(String).filter(Boolean)
+    const assets = assetIds.length
+      ? `\n[assets] ${assetIds.join(', ')}`
+      : ''
+    sections.push(`[${role}]\n${content}${assets}`)
+  }
+
+  const lorebookHits = array(preview.lorebookHits)
+  if (lorebookHits.length) {
+    sections.push(`[lorebook]\n${JSON.stringify(lorebookHits, null, 2)}`)
+  }
+  if (sections.length) return sections.join('\n\n')
+  if (value && typeof value === 'object') return JSON.stringify(value, null, 2)
+  return ''
+}
+
 function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
   documentCache.set(raw.id, raw)
   const origin = record(raw.origin)
@@ -479,8 +508,11 @@ export async function deleteCharacterStudioChatMessage(
   messageId: string,
 ): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
   const session = cachedSession(sessionId)
-  const updated = await deleteV2StudioMessage(messageId, session.revision)
-  return { success: true, session: mapSession(updated) }
+  await deleteV2StudioMessage(messageId, session.revision)
+  return {
+    success: true,
+    session: mapSession(await getV2StudioSession(sessionId)),
+  }
 }
 
 export async function summarizeCharacterStudioChatSession(
@@ -523,7 +555,10 @@ export async function getCharacterStudioChatPromptPreview(
   sessionId: string,
 ): Promise<CharacterStudioChatStateResponse> {
   const result = await getV2StudioPromptPreview(sessionId)
-  return { success: true, prompt_preview: result.promptPreview }
+  return {
+    success: true,
+    prompt_preview: formatPromptPreview(result.promptPreview),
+  }
 }
 
 export type CharacterStudioChatStreamEvent =

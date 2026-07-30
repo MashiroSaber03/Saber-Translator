@@ -212,6 +212,7 @@ function projectActiveInsightJob(): void {
   const active = taskCenterStore.queue.find(job => (
     job.bookId === bookId
     && job.kind === 'insight_analysis'
+    && job.status !== 'interrupted'
   ))
   if (!active) return
   insightStore.setCurrentTaskId(active.jobId)
@@ -328,11 +329,23 @@ watch(
       !event
       || event.eventId <= lastHandledTerminalEventId
       || !['job_finished', 'job_failed', 'job_cancelled'].includes(event.type)
+    ) {
+      return
+    }
+    const relatedJob = [...taskCenterStore.queue, ...taskCenterStore.history]
+      .find(job => job.jobId === event.jobId)
+    if (!relatedJob || relatedJob.bookId !== insightStore.currentBookId) return
+    lastHandledTerminalEventId = event.eventId
+    if (['derived_rebuild', 'vector_rebuild', 'continuation'].includes(relatedJob.kind)) {
+      insightStore.triggerDataRefresh()
+      return
+    }
+    if (
+      relatedJob.kind !== 'insight_analysis'
       || event.jobId !== insightStore.currentTaskId
     ) {
       return
     }
-    lastHandledTerminalEventId = event.eventId
     const terminalStatus = event.type === 'job_finished'
       ? 'completed'
       : event.type === 'job_cancelled'

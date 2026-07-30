@@ -8,9 +8,11 @@ import { useImageStore } from '@/stores/imageStore'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 const {
+  flushPageDocumentMock,
   getPageSummaryMock,
   queuePageDocumentSaveMock,
 } = vi.hoisted(() => ({
+  flushPageDocumentMock: vi.fn(),
   getPageSummaryMock: vi.fn(),
   queuePageDocumentSaveMock: vi.fn(),
 }))
@@ -20,6 +22,7 @@ vi.mock('@/api/v2/content', () => ({
 }))
 
 vi.mock('@/services/pageDocumentPersistence', () => ({
+  flushPageDocument: flushPageDocumentMock,
   queuePageDocumentSave: queuePageDocumentSaveMock,
 }))
 
@@ -62,6 +65,7 @@ function readySummary() {
 describe('useEditRender backend-first orchestration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    flushPageDocumentMock.mockReset().mockResolvedValue(undefined)
     queuePageDocumentSaveMock.mockReset().mockResolvedValue(undefined)
     getPageSummaryMock.mockReset().mockResolvedValue(readySummary())
     seedEditor()
@@ -78,6 +82,7 @@ describe('useEditRender backend-first orchestration', () => {
       3,
       useBubbleStore().bubbles,
     )
+    expect(flushPageDocumentMock).toHaveBeenCalledWith('page-1')
     expect(getPageSummaryMock).toHaveBeenCalledTimes(1)
     expect(getPageSummaryMock).toHaveBeenCalledWith('page-1')
     expect(onRenderSuccess).toHaveBeenCalledWith('/api/v2/assets/translated-1')

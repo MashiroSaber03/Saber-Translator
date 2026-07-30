@@ -270,6 +270,30 @@ describe('TimelinePanel', () => {
     expect(regenerateTimelineMock).toHaveBeenCalledWith('book-1')
   })
 
+  it('shows durable queued feedback until a generated timeline can be loaded', async () => {
+    getTimelineMock.mockResolvedValueOnce({
+      success: false,
+      error: '时间线尚未生成',
+    })
+    regenerateTimelineMock.mockResolvedValueOnce({
+      success: true,
+      task_id: 'timeline-job-1',
+      message: '时间线重建已进入任务中心',
+    })
+
+    const wrapper = mount(TimelinePanel)
+    await flushPromises()
+
+    const generateButton = wrapper.findAll('button')
+      .find(button => button.text().includes('生成时间线'))
+    await generateButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('时间线生成中')
+    expect(wrapper.text()).toContain('时间线重建已进入任务中心')
+    expect(wrapper.text()).not.toContain('时间线尚未生成')
+  })
+
   it('maps timeline owner shadows through semantic tokens', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''

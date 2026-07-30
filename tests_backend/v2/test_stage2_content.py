@@ -15,6 +15,9 @@ from src.backend_v2.content.repository import (
     ContentRepository,
     IdempotencyConflict,
 )
+from src.backend_v2.content.translation_constraints import (
+    empty_translation_constraints,
+)
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.rendering.fonts import materialize_render_payloads
 from src.backend_v2.storage.assets import AssetStorageService
@@ -564,6 +567,13 @@ def test_media_api_streams_immutable_asset_and_honors_conditional_get(
         headers={"If-None-Match": first.headers["ETag"]},
     )
     assert conditional.status_code == 304
+    download = client.get(
+        f'{result["page"]["thumbnailSourceUrl"]}?download=1'
+        "&filename=original_media.png",
+    )
+    assert download.status_code == 200
+    assert "original_media.png" in download.headers["Content-Disposition"]
+    assert "original_media.png.webp" not in download.headers["Content-Disposition"]
 
 
 def test_page_document_uses_stable_bubble_ids_and_revision_cas(
@@ -735,8 +745,9 @@ def test_page_document_command_is_idempotent_and_propagates_style(
         )
 
 
-def test_render_projection_materializes_backend_auto_style_and_font(
+def test_document_mutation_materializes_auto_style_before_render_projection(
     content_platform,
+    monkeypatch,
 ) -> None:
     _root, engine, repository, storage, importer, _book, chapter = (
         content_platform
@@ -750,7 +761,7 @@ def test_render_projection_materializes_backend_auto_style_and_font(
         key="auto-style",
     )
     page_id = str(imported["page"]["id"])
-    repository.mutate_page_document(
+    document = repository.mutate_page_document(
         page_id=page_id,
         base_revision=1,
         mutations=[
@@ -778,7 +789,22 @@ def test_render_projection_materializes_backend_auto_style_and_font(
             "useAutoTextColor",
         ],
     )
+    persisted_payload = document["bubbles"][0]["payload"]
+    assert persisted_payload["textDirection"] == "horizontal"
+    assert persisted_payload["textColor"] == "#010203"
+    assert persisted_payload["fillColor"] == "#0A0B0C"
+    assert persisted_payload["fontSize"] > 12
 
+    from src.core import rendering
+
+    def fail_if_recalculated(*_args, **_kwargs):
+        raise AssertionError("ordinary render projection recalculated auto font size")
+
+    monkeypatch.setattr(
+        rendering,
+        "calculate_auto_font_size",
+        fail_if_recalculated,
+    )
     with engine.connect() as connection:
         projected = materialize_render_payloads(
             connection,
@@ -790,7 +816,7 @@ def test_render_projection_materializes_backend_auto_style_and_font(
     assert persisted["textDirection"] == "horizontal"
     assert persisted["textColor"] == "#010203"
     assert persisted["fillColor"] == "#0A0B0C"
-    assert persisted["fontSize"] > 12
+    assert persisted["fontSize"] == persisted_payload["fontSize"]
     assert render_payload["fontFamily"]
     assert "00000000-0000-0000-0000-000000000010" not in str(
         render_payload["fontFamily"]
@@ -1015,8 +1041,29 @@ def test_quick_workspace_reset_clears_pages_and_constraints(
     repository.update_constraints(
         book_id=QUICK_WORKSPACE_BOOK_ID,
         payload={
-            "glossary": [{"source": "Saber", "target": "阿尔托莉雅"}],
-            "nonTranslate": ["Excalibur"],
+            "glossary": {
+                "enabled": True,
+                "autoExtractEnabled": False,
+                "autoExtractPrompt": "提取术语：{ocr_text}",
+                "entries": [
+                    {
+                        "source": "Saber",
+                        "target": "阿尔托莉雅",
+                        "note": "",
+                        "matchMode": "text",
+                    }
+                ],
+            },
+            "nonTranslate": {
+                "enabled": True,
+                "entries": [
+                    {
+                        "pattern": "Excalibur",
+                        "note": "",
+                        "matchMode": "text",
+                    }
+                ],
+            },
         },
         base_revision=1,
     )
@@ -1025,10 +1072,57 @@ def test_quick_workspace_reset_clears_pages_and_constraints(
 
     assert reset["chapterId"] != quick_chapter_id
     assert repository.list_pages(chapter_id=reset["chapterId"])["items"] == []
-    assert repository.get_constraints(QUICK_WORKSPACE_BOOK_ID)["payload"] == {
-        "glossary": [],
-        "nonTranslate": [],
-    }
+    assert (
+        repository.get_constraints(QUICK_WORKSPACE_BOOK_ID)["payload"]
+        == empty_translation_constraints()
+    )
+
+
+def test_translation_constraints_validate_regex_and_deduplicate_identical_rows(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, _importer, book, _chapter = (
+        content_platform
+    )
+    payload = empty_translation_constraints()
+    payload["glossary"]["enabled"] = True
+    payload["glossary"]["entries"] = [
+        {
+            "source": "Saber",
+            "target": "阿尔托莉雅",
+            "note": "",
+            "matchMode": "text",
+        },
+        {
+            "source": "Saber",
+            "target": "阿尔托莉雅",
+            "note": "",
+            "matchMode": "text",
+        },
+    ]
+    saved = repository.update_constraints(
+        book_id=str(book["id"]),
+        base_revision=1,
+        payload=payload,
+    )
+    assert len(saved["payload"]["glossary"]["entries"]) == 1
+    assert saved["schemaVersion"] == 2
+
+    invalid = empty_translation_constraints()
+    invalid["nonTranslate"]["enabled"] = True
+    invalid["nonTranslate"]["entries"] = [
+        {
+            "pattern": "[unterminated",
+            "note": "",
+            "matchMode": "regex",
+        }
+    ]
+    with pytest.raises(ValueError, match="invalid regular expression"):
+        repository.update_constraints(
+            book_id=str(book["id"]),
+            base_revision=2,
+            payload=invalid,
+        )
 
 
 def test_promote_to_existing_book_keeps_destination_constraints_and_resets_quick(
@@ -1053,16 +1147,49 @@ def test_promote_to_existing_book_keeps_destination_constraints_and_resets_quick
     repository.update_constraints(
         book_id=QUICK_WORKSPACE_BOOK_ID,
         payload={
-            "glossary": [{"source": "Quick", "target": "快速"}],
-            "nonTranslate": [],
+            "glossary": {
+                "enabled": True,
+                "autoExtractEnabled": False,
+                "autoExtractPrompt": "提取术语：{ocr_text}",
+                "entries": [
+                    {
+                        "source": "Quick",
+                        "target": "快速",
+                        "note": "",
+                        "matchMode": "text",
+                    }
+                ],
+            },
+            "nonTranslate": {"enabled": False, "entries": []},
         },
         base_revision=1,
     )
     repository.update_constraints(
         book_id=str(book["id"]),
         payload={
-            "glossary": [{"source": "Library", "target": "书架"}],
-            "nonTranslate": ["Keep"],
+            "glossary": {
+                "enabled": True,
+                "autoExtractEnabled": False,
+                "autoExtractPrompt": "提取术语：{ocr_text}",
+                "entries": [
+                    {
+                        "source": "Library",
+                        "target": "书架",
+                        "note": "",
+                        "matchMode": "text",
+                    }
+                ],
+            },
+            "nonTranslate": {
+                "enabled": True,
+                "entries": [
+                    {
+                        "pattern": "Keep",
+                        "note": "",
+                        "matchMode": "text",
+                    }
+                ],
+            },
         },
         base_revision=1,
     )
@@ -1074,10 +1201,31 @@ def test_promote_to_existing_book_keeps_destination_constraints_and_resets_quick
 
     assert promoted["chapterId"] == quick_chapter_id
     assert repository.get_constraints(str(book["id"]))["payload"] == {
-        "glossary": [{"source": "Library", "target": "书架"}],
-        "nonTranslate": ["Keep"],
+        "glossary": {
+            "enabled": True,
+            "autoExtractEnabled": False,
+            "autoExtractPrompt": "提取术语：{ocr_text}",
+            "entries": [
+                {
+                    "source": "Library",
+                    "target": "书架",
+                    "note": "",
+                    "matchMode": "text",
+                }
+            ],
+        },
+        "nonTranslate": {
+            "enabled": True,
+            "entries": [
+                {
+                    "pattern": "Keep",
+                    "note": "",
+                    "matchMode": "text",
+                }
+            ],
+        },
     }
-    assert repository.get_constraints(QUICK_WORKSPACE_BOOK_ID)["payload"] == {
-        "glossary": [],
-        "nonTranslate": [],
-    }
+    assert (
+        repository.get_constraints(QUICK_WORKSPACE_BOOK_ID)["payload"]
+        == empty_translation_constraints()
+    )

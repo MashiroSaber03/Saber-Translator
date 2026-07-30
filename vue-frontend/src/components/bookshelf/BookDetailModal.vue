@@ -180,7 +180,20 @@ async function saveChapter() {
       }
     }
   } catch (error) {
-    showToast('保存失败', 'error')
+    const status = (
+      error
+      && typeof error === 'object'
+      && 'status' in error
+    ) ? Number(error.status) : 0
+    if (status === 423) {
+      showToast('本章存在进行中的任务，请先在任务中心取消或等待任务结束', 'warning')
+      taskCenterStore.open({
+        bookId: currentBook.value.id,
+        chapterId: editingChapterId.value || undefined,
+      })
+    } else {
+      showToast(error instanceof Error ? error.message : '保存失败', 'error')
+    }
   }
 }
 

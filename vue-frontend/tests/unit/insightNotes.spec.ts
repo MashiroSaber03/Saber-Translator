@@ -43,6 +43,31 @@ describe('useInsightNotes', () => {
     expect(notesState.error.value).toBe('create failed')
   })
 
+  it('always persists new notes even if a caller supplies a client id', async () => {
+    createNoteMock.mockResolvedValueOnce({
+      success: true,
+      note: {
+        id: 'backend-note',
+        type: 'text',
+        content: 'persist me',
+        created_at: '2026-07-30T00:00:00.000Z',
+        updated_at: '2026-07-30T00:00:00.000Z',
+      },
+    })
+    const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
+    const notesState = useInsightNotes({ currentBookId: ref('book-1') })
+
+    const result = await notesState.addNote({
+      id: 'client-only-id',
+      type: 'text',
+      content: 'persist me',
+    } as Parameters<typeof notesState.addNote>[0])
+
+    expect(createNoteMock).toHaveBeenCalledOnce()
+    expect(result?.id).toBe('backend-note')
+    expect(notesState.notes.value[0]?.id).toBe('backend-note')
+  })
+
   it('ignores stale note loads after the selected book changes', async () => {
     let resolveBookOne!: (value: { success: boolean; notes: Array<Record<string, unknown>> }) => void
     getNotesMock.mockImplementationOnce(() => new Promise((resolve) => {

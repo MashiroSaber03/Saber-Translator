@@ -858,6 +858,12 @@ def test_chat_bootstrap_is_atomic_under_concurrency(
         idempotency_key="indexed-session",
     )
     assert created["indexRevision"] == 3
+    refreshed = repository.chat_state(str(document["id"]))
+    archived = next(
+        item for item in refreshed["sessions"] if item["archived"]
+    )
+    assert archived["messageCount"] == 1
+    assert archived["lastMessageExcerpt"] == "你好"
     with pytest.raises(StudioConflict, match="index revision"):
         repository.create_session(
             document_id=str(document["id"]),
@@ -1018,3 +1024,42 @@ def test_studio_http_short_commands_and_operation_event_catchup(
     )
     assert events.status_code == 200
     assert events.get_json()["items"][-1]["type"] == "operation_completed"
+
+
+def test_studio_exports_unicode_titles_with_wsgi_safe_headers(
+    studio_platform,
+) -> None:
+    app = create_api_app(
+        ApiSettings(
+            data_root=studio_platform["data_root"],
+            identity=RuntimeIdentity(
+                epoch_id="studio-export-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=studio_platform["engine"],
+        )
+    )
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="回归角色",
+    )
+    client = app.test_client()
+
+    for output_format in ("v3", "v2", "worldbook", "png"):
+        response = client.get(
+            f"/api/v2/studio/documents/{document['id']}/export",
+            query_string={"format": output_format},
+        )
+        assert response.status_code == 200
+        disposition = response.headers["Content-Disposition"]
+        disposition.encode("latin-1")
+        assert "attachment" in disposition
+        assert "filename*=UTF-8''" in disposition
+        if output_format == "png":
+            assert response.mimetype == "image/png"
+            assert response.data.startswith(b"\x89PNG")
+        else:
+            assert response.mimetype == "application/json"
+            assert json.loads(response.data.decode("utf-8"))

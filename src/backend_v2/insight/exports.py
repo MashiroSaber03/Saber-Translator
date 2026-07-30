@@ -73,7 +73,7 @@ class InsightExportCommandService:
                 )
             ).mappings().one_or_none()
             if run is None:
-                raise InsightNotFound("book has no active Insight analysis")
+                raise InsightNotFound("当前书籍还没有已发布的完整分析")
             artifact_ids = [
                 str(value)
                 for value in connection.execute(

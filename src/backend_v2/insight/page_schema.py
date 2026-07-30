@@ -135,6 +135,11 @@ def _extract_page(
         or isinstance(pages, (str, bytes, bytearray))
     ):
         raise InvalidPageAnalysis("pages must be an array")
+    if len(pages) == 1:
+        only_page = pages[0]
+        if not isinstance(only_page, Mapping):
+            raise InvalidPageAnalysis("pages[0] must be an object")
+        return only_page
     matches = []
     for page in pages:
         if not isinstance(page, Mapping):

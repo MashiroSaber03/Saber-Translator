@@ -870,9 +870,35 @@ class StudioRepository:
     def chat_state(self, document_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
             document = self._assert_document(connection, document_id)
+            message_count = (
+                select(func.count(studio_messages.c.id))
+                .where(
+                    studio_messages.c.session_id
+                    == studio_chat_sessions.c.id
+                )
+                .correlate(studio_chat_sessions)
+                .scalar_subquery()
+            )
+            last_message_excerpt = (
+                select(func.substr(studio_messages.c.content, 1, 160))
+                .where(
+                    studio_messages.c.session_id
+                    == studio_chat_sessions.c.id
+                )
+                .order_by(studio_messages.c.ordinal.desc())
+                .limit(1)
+                .correlate(studio_chat_sessions)
+                .scalar_subquery()
+            )
             sessions = list(
                 connection.execute(
-                    select(studio_chat_sessions)
+                    select(
+                        studio_chat_sessions,
+                        message_count.label("message_count"),
+                        last_message_excerpt.label(
+                            "last_message_excerpt"
+                        ),
+                    )
                     .where(studio_chat_sessions.c.document_id == document_id)
                     .order_by(studio_chat_sessions.c.updated_at.desc())
                 ).mappings()
@@ -903,6 +929,10 @@ class StudioRepository:
                         "generation": int(row["generation"]),
                         "archived": row["archived_at"] is not None,
                         "updatedAt": str(row["updated_at"]),
+                        "messageCount": int(row["message_count"]),
+                        "lastMessageExcerpt": str(
+                            row["last_message_excerpt"] or ""
+                        ),
                     }
                     for row in sessions
                 ],
@@ -1178,9 +1208,7 @@ class StudioRepository:
                 if through_index is not None:
                     message_dtos = message_dtos[through_index + 1 :]
             if not message_dtos:
-                raise StudioConflict(
-                    "studio session has no unsummarized messages"
-                )
+                raise StudioConflict("当前会话没有待总结的新消息")
             existing_summaries = _load(
                 session["summary_blocks_json"],
                 [],

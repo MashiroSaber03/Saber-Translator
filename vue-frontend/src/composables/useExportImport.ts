@@ -1,4 +1,11 @@
-import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
+import {
+  computed,
+  getCurrentInstance,
+  onUnmounted,
+  ref,
+  watch,
+  type WatchStopHandle,
+} from 'vue'
 
 import { jobsApi, type V2JobDetail } from '@/api/v2/jobs'
 import {
@@ -78,6 +85,8 @@ export function useExportImport() {
   const importProgressText = ref('')
   let importResetTimer: ReturnType<typeof setTimeout> | null = null
   let downloadResetTimer: ReturnType<typeof setTimeout> | null = null
+  let disposed = false
+  const exportWaitCancels = new Set<() => void>()
 
   const canExportText = computed(() => imageStore.hasImages)
   const canImportText = computed(() => imageStore.hasImages)
@@ -178,27 +187,82 @@ export function useExportImport() {
   }
 
   async function waitForExport(jobId: string): Promise<JobWithArtifacts> {
-    for (let attempt = 0; attempt < 3600; attempt += 1) {
-      const job = await jobsApi.get(jobId) as JobWithArtifacts
-      const total = progressValue(job.progress, 'totalItems')
-      const complete = (
-        progressValue(job.progress, 'completedItems')
-        + progressValue(job.progress, 'failedItems')
-      )
-      downloadProgress.value = total > 0
-        ? Math.min(95, Math.round(complete / total * 90) + 5)
-        : 5
-      downloadProgressText.value = `后端正在生成导出文件：${complete}/${total || 1}`
-      if (job.status === 'completed') return job
-      if (['cancelled', 'completed_with_errors', 'failed'].includes(job.status)) {
-        throw new Error(`导出任务状态：${job.status}`)
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      let stop: WatchStopHandle | null = null
+      let cancelWait = () => {}
+      const timeout = setTimeout(() => {
+        finish(() => reject(new Error('导出仍在后端运行，请稍后从任务中心下载')))
+      }, 30 * 60 * 1000)
+
+      function finish(action: () => void): void {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        exportWaitCancels.delete(cancelWait)
+        if (stop) {
+          stop()
+        }
+        action()
       }
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    throw new Error('导出仍在后端运行，请稍后从任务中心下载')
+
+      stop = watch(
+        () => {
+          const jobs = [...taskCenterStore.queue, ...taskCenterStore.history]
+          const job = jobs.find(item => item.jobId === jobId)
+          return job
+            ? {
+                status: job.status,
+                progress: job.progress,
+              }
+            : null
+        },
+        job => {
+          if (disposed) {
+            finish(() => reject(new Error('页面已关闭，导出任务继续在后端运行')))
+            return
+          }
+          if (!job) return
+
+          const total = progressValue(job.progress, 'totalItems')
+          const complete = (
+            progressValue(job.progress, 'completedItems')
+            + progressValue(job.progress, 'failedItems')
+          )
+          downloadProgress.value = total > 0
+            ? Math.min(95, Math.round(complete / total * 90) + 5)
+            : 5
+          downloadProgressText.value = `后端正在生成导出文件：${complete}/${total || 1}`
+
+          if (['completed', 'completed_with_errors'].includes(job.status)) {
+            finish(resolve)
+          } else if (job.status === 'interrupted') {
+            finish(() => reject(new Error('导出任务已中断，可在任务中心从检查点继续')))
+          } else if (['cancelled', 'failed'].includes(job.status)) {
+            const label = job.status === 'cancelled' ? '已取消' : '失败'
+            finish(() => reject(new Error(`导出任务${label}`)))
+          }
+        },
+        { immediate: true, deep: true },
+      )
+      cancelWait = () => {
+        finish(() => reject(new Error('页面已关闭，导出任务继续在后端运行')))
+      }
+      if (settled) {
+        stop()
+      } else {
+        exportWaitCancels.add(cancelWait)
+      }
+    })
+
+    return jobsApi.get(jobId) as Promise<JobWithArtifacts>
   }
 
   async function downloadAllImages(format: DownloadFormat = 'zip'): Promise<void> {
+    if (isDownloading.value) {
+      toast.info('已有导出任务正在等待后端完成')
+      return
+    }
     const chapterId = chapterIdFor(imageStore.images)
     if (!chapterId) {
       toast.warning('当前图片不属于同一个后端章节')
@@ -225,9 +289,15 @@ export function useExportImport() {
       triggerUrlDownload(
         downloadUrl(artifact.url, `chapter-export.${format}`),
       )
-      toast.success('后端导出完成，下载已开始')
+      if (job.status === 'completed_with_errors') {
+        toast.warning('后端导出已完成，但有部分页面失败；已下载可用结果')
+      } else {
+        toast.success('后端导出完成，下载已开始')
+      }
     } catch (error) {
-      toast.error(`下载失败：${error instanceof Error ? error.message : String(error)}`)
+      if (!disposed) {
+        toast.error(`下载失败：${error instanceof Error ? error.message : String(error)}`)
+      }
     } finally {
       isDownloading.value = false
       resetLater('download')
@@ -236,6 +306,9 @@ export function useExportImport() {
 
   if (getCurrentInstance()) {
     onUnmounted(() => {
+      disposed = true
+      exportWaitCancels.forEach(cancel => cancel())
+      exportWaitCancels.clear()
       if (importResetTimer) clearTimeout(importResetTimer)
       if (downloadResetTimer) clearTimeout(downloadResetTimer)
     })

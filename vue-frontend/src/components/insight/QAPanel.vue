@@ -200,7 +200,9 @@ function projectRebuildJob(): void {
   }
   if (!rebuildTaskId.value) {
     const active = taskCenterStore.queue.find(job => (
-      job.bookId === bookId && job.kind === 'vector_rebuild'
+      job.bookId === bookId
+      && job.kind === 'vector_rebuild'
+      && job.status !== 'interrupted'
     ))
     if (active) {
       rebuildTaskId.value = active.jobId
@@ -214,7 +216,7 @@ function projectRebuildJob(): void {
   const job = [...taskCenterStore.queue, ...taskCenterStore.history]
     .find(item => item.jobId === taskId)
   if (!job) return
-  if (['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)) {
+  if (['queued', 'running', 'pausing', 'paused', 'cancelling'].includes(job.status)) {
     const progress = job.progress as Record<string, unknown>
     const phase = String(progress.phase ?? progress.currentPhase ?? '重建中')
     const current = Number(

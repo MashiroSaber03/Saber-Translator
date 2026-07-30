@@ -42,9 +42,7 @@ export function useQANoteModal(insightStore: ReturnType<typeof useInsightStore>)
   async function saveNote(): Promise<void> {
     if (!insightStore.currentBookId || !pendingQAData.value) return
 
-    const now = new Date().toISOString()
     const noteData = {
-      id: Date.now().toString(),
       type: 'qa' as const,
       title: noteTitle.value || pendingQAData.value.question.substring(0, 30),
       content: pendingQAData.value.answer,
@@ -55,8 +53,6 @@ export function useQANoteModal(insightStore: ReturnType<typeof useInsightStore>)
         content: '',
       })),
       comment: noteComment.value || undefined,
-      createdAt: now,
-      updatedAt: now,
     }
 
     try {

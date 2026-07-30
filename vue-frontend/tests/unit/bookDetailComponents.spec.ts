@@ -416,6 +416,19 @@ describe('bookshelf detail child components', () => {
     expect(source).not.toContain('<template #footer>\n      <UiButton')
   })
 
+  it('surfaces chapter write locks and opens the owning task in task center', () => {
+    const modalSource = readFileSync(resolve(process.cwd(), 'src/components/bookshelf/BookDetailModal.vue'), 'utf8')
+    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/bookshelfStore.ts'), 'utf8')
+
+    expect(modalSource).toContain('status === 423')
+    expect(modalSource).toContain('taskCenterStore.open({')
+    expect(modalSource).toContain('chapterId: editingChapterId.value || undefined')
+    const updateChapterSource = storeSource.match(
+      /async function updateChapterApi[\s\S]*?\n {2}}\n\n {2}async function deleteChapterApi/,
+    )?.[0] ?? ''
+    expect(updateChapterSource).not.toContain('catch')
+  })
+
   it('keeps bookshelf wire aliases out of detail child UI owners', () => {
     const cardSource = readFileSync(
       resolve(process.cwd(), 'src/components/bookshelf/BookCard.vue'),

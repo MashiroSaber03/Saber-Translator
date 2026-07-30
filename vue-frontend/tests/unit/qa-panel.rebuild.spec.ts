@@ -150,6 +150,23 @@ describe('QAPanel vector rebuild task projection', () => {
     expect(insightStore.isLoading).toBe(true)
   })
 
+  it('does not leave the QA panel loading for an interrupted rebuild', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    const taskCenterStore = useTaskCenterStore()
+    taskCenterStore.queue = [vectorJob({ status: 'interrupted' })]
+
+    const wrapper = mount(QAPanel, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
+    expect(insightStore.isLoading).toBe(false)
+  })
+
   it('drops the old rebuild projection when another book is selected', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

@@ -54,7 +54,7 @@ const note = {
     sourceAnalysisId: null,
   }],
   commentCount: 1,
-  comments: [{ question: '', answer: '', comment: '' }],
+  comments: [{ text: 'note body', question: '', answer: '', comment: '' }],
   content: 'note body',
   createdAt: '2026-07-01T00:00:00Z',
   excerpt: 'note body',
@@ -138,7 +138,7 @@ describe('insight v2 api facade', () => {
     } = await import('@/api/insight')
 
     await regenerateOverview('book/id one', 'character_growth', true)
-    await regenerateTimeline('book/id one')
+    const timelineResult = await regenerateTimeline('book/id one')
     const vectorResult = await rebuildEmbeddings('book/id one')
 
     expect(postMock).toHaveBeenNthCalledWith(
@@ -147,6 +147,10 @@ describe('insight v2 api facade', () => {
       { bookId: 'book/id one' },
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
+    expect(timelineResult).toMatchObject({
+      success: true,
+      task_id: 'timeline-job',
+    })
     expect(postMock).toHaveBeenNthCalledWith(
       2,
       '/api/v2/insight/timeline',
@@ -160,6 +164,145 @@ describe('insight v2 api facade', () => {
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
     expect(vectorResult).toMatchObject({ success: true, task_id: 'vector-job' })
+  })
+
+  it('serializes precise QA with the backend exact-mode contract', async () => {
+    const body = [
+      'event: context',
+      'data: {"mode":"exact","citations":[{"pageId":"page-2","pageNumber":2}]}',
+      '',
+      'event: chunk',
+      'data: {"text":"回答"}',
+      '',
+      'event: done',
+      'data: {"suggestedQuestions":[]}',
+      '',
+      '',
+    ].join('\n')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { sendChat } = await import('@/api/insight')
+
+    const result = await sendChat('book/id one', '发生了什么？', {
+      use_parent_child: true,
+      use_reasoning: true,
+      use_reranker: true,
+      top_k: 5,
+      threshold: 0,
+    })
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      question: '发生了什么？',
+      mode: 'exact',
+      useParentChild: true,
+      useReasoning: true,
+      useReranker: true,
+      topK: 5,
+      threshold: 0,
+    })
+    expect(result).toMatchObject({
+      success: true,
+      answer: '回答',
+      citations: [{ page: 2 }],
+    })
+  })
+
+  it('loads an existing overview without creating a duplicate rebuild job', async () => {
+    getMock.mockResolvedValueOnce({
+      artifactId: 'overview-1',
+      bookId: 'book/id one',
+      dependencyFingerprint: 'fingerprint',
+      kind: 'overview',
+      payload: { content: 'cached overview' },
+      revision: 1,
+      runId: null,
+      status: 'ready',
+      template: 'no_spoiler',
+    })
+    const { regenerateOverview } = await import('@/api/insight')
+
+    const result = await regenerateOverview('book/id one', 'no_spoiler', false)
+
+    expect(result).toMatchObject({
+      success: true,
+      content: 'cached overview',
+      cached: true,
+    })
+    expect(postMock).not.toHaveBeenCalled()
+  })
+
+  it('does not project derived jobs as active page-analysis tasks', async () => {
+    getMock.mockResolvedValueOnce({
+      books: [{
+        activeRun: 'run-1',
+        analyzedPageCount: 14,
+        bookId: 'book/id one',
+        pageCount: 14,
+      }],
+      activeJobs: [{
+        bookId: 'book/id one',
+        jobId: 'timeline-job',
+        kind: 'derived_rebuild',
+        progress: { completedItems: 0, totalItems: 1 },
+        status: 'running',
+      }],
+    })
+    const { getAnalysisStatus } = await import('@/api/insight')
+
+    const result = await getAnalysisStatus('book/id one')
+
+    expect(result).toMatchObject({
+      success: true,
+      analyzed_pages_count: 14,
+      fully_analyzed: true,
+      status: 'completed',
+    })
+    expect(result.current_task).toBeUndefined()
+  })
+
+  it('maps durable timeline page IDs into renderable page-number groups', async () => {
+    getMock
+      .mockResolvedValueOnce({
+        content: { overview: '故事概述' },
+        mode: 'enhanced',
+        events: [{
+          eventId: 'event-1',
+          page_ids: ['page-1', 'page-2'],
+          summary: '关键事件',
+        }],
+        characters: [{
+          name: '主角',
+          first_page: 1,
+          key_moments: ['首次登场（第1页）'],
+        }],
+      })
+      .mockResolvedValueOnce({ items: pages, nextCursor: null })
+    const { getTimeline } = await import('@/api/insight')
+
+    const result = await getTimeline('book/id one')
+    const timeline = result.timeline as unknown as Record<string, unknown>
+
+    expect(timeline).toMatchObject({
+      story_summary: '故事概述',
+      groups: [{
+        id: 'event-1',
+        page_range: { start: 1, end: 2 },
+        events: ['关键事件'],
+      }],
+      main_characters: [{
+        name: '主角',
+        first_appearance: 1,
+      }],
+      stats: {
+        total_events: 1,
+        total_pages: 2,
+        total_characters: 1,
+      },
+    })
   })
 
   it('loads complete notes in one page and updates citations with stable page IDs', async () => {
@@ -205,11 +348,49 @@ describe('insight v2 api facade', () => {
       expect.objectContaining({
         baseRevision: 7,
         citations: [{ pageId: 'page-2', excerpt: 'updated evidence' }],
+        comments: [{
+          text: 'note body',
+          question: '',
+          answer: '',
+          comment: '',
+        }],
       }),
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
     expect(deleteMock).toHaveBeenCalledWith(
       '/api/v2/insight/notes/note%2Fid%20one?baseRevision=8',
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    )
+  })
+
+  it('creates backend-valid note metadata comments with stable page citations', async () => {
+    getMock.mockResolvedValueOnce({ items: pages, nextCursor: null })
+    postMock.mockResolvedValueOnce(note)
+    const { createNote } = await import('@/api/insight')
+
+    await createNote('book/id one', {
+      type: 'text',
+      title: 'Note',
+      content: 'note body',
+      page_num: 2,
+    })
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/insight/notes',
+      {
+        bookId: 'book/id one',
+        title: 'Note',
+        content: 'note body',
+        kind: 'text',
+        tags: [],
+        citations: [{ pageId: 'page-2', excerpt: '' }],
+        comments: [{
+          text: 'note body',
+          question: '',
+          answer: '',
+          comment: '',
+        }],
+      },
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
   })

@@ -86,9 +86,9 @@ def test_launcher_migration_seeds_one_persistent_quick_workspace(
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
     first = migrate_database(data_root)
-    assert first.upgraded_to == "0012"
+    assert first.upgraded_to == "0013"
     assert not first.backup_created
-    assert schema_smoke_test(first.database_path) == "0012"
+    assert schema_smoke_test(first.database_path) == "0013"
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:

@@ -93,6 +93,25 @@ class VLMClient:
     async def close(self):
         return None
 
+    async def _execute_with_total_timeout(self, *args, **kwargs):
+        """Bound the complete logical VLM call, including all retry layers.
+
+        ``httpx`` timeouts are inactivity timeouts. A remote endpoint that
+        keeps dripping bytes can therefore keep one worker step alive forever,
+        preventing pause/cancel from reaching the next safe point. The VLM
+        timeout is intentionally also a wall-clock deadline for the complete
+        executor call.
+        """
+        try:
+            return await asyncio.wait_for(
+                self._executor.execute(*args, **kwargs),
+                timeout=self._timeout,
+            )
+        except TimeoutError as exc:
+            raise TimeoutError(
+                f"视觉模型调用超过总时限（{self._timeout:g} 秒）"
+            ) from exc
+
     def is_configured(self) -> bool:
         return bool(self.config.model and (self.config.api_key or not provider_requires_api_key(self.provider)))
 
@@ -129,7 +148,7 @@ class VLMClient:
             if on_stream_chunk and delta:
                 on_stream_chunk(delta)
 
-        result = await self._executor.execute(
+        result = await self._execute_with_total_timeout(
             UnifiedChatRequest(
                 provider=self.provider,
                 api_key=self.config.api_key,
@@ -200,7 +219,7 @@ class VLMClient:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
 
         options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
-        result = await self._executor.execute(
+        result = await self._execute_with_total_timeout(
             UnifiedChatRequest(
                 provider=provider,
                 api_key=self.config.api_key,

@@ -206,6 +206,102 @@ describe('InsightView task event projection', () => {
     expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 
+  it('does not present a recoverable interrupted job as actively running', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    insightStore.setAnalysisStatus('failed')
+    insightStore.setCurrentTaskId(null)
+    stubBookshelfLoadBooks()
+
+    shallowMount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
+          ProductPageHeader: ProductPageHeaderStub,
+          ProductThemeToggle: false,
+          BookSelector: true,
+          AnalysisProgress: true,
+          OverviewPanel: true,
+          TimelinePanel: true,
+          QAPanel: true,
+          NotesPanel: true,
+          PageDetail: true,
+          PagesTree: true,
+          InsightSettingsModal: true,
+          ChapterSelectModal: true,
+          ContinuationPanel: true,
+          'router-link': { template: '<a><slot /></a>' },
+        },
+      },
+    })
+
+    await flushPromises()
+    const taskCenterStore = useTaskCenterStore()
+    taskCenterStore.queue = [insightJob({ status: 'interrupted' })]
+    await nextTick()
+
+    expect(insightStore.analysisStatus).toBe('failed')
+    expect(insightStore.currentTaskId).toBeNull()
+  })
+
+  it('refreshes derived Insight facts when a backend rebuild finishes', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    insightStore.dataRefreshKey = 0
+    stubBookshelfLoadBooks()
+
+    shallowMount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
+          ProductPageHeader: ProductPageHeaderStub,
+          ProductThemeToggle: false,
+          BookSelector: true,
+          AnalysisProgress: true,
+          OverviewPanel: true,
+          TimelinePanel: true,
+          QAPanel: true,
+          NotesPanel: true,
+          PageDetail: true,
+          PagesTree: true,
+          InsightSettingsModal: true,
+          ChapterSelectModal: true,
+          ContinuationPanel: true,
+          'router-link': { template: '<a><slot /></a>' },
+        },
+      },
+    })
+
+    await flushPromises()
+    const taskCenterStore = useTaskCenterStore()
+    const refreshKeyBefore = insightStore.dataRefreshKey
+    taskCenterStore.queue = [insightJob({
+      jobId: 'derived-job-1',
+      kind: 'derived_rebuild',
+    })]
+    await nextTick()
+
+    taskCenterStore.latestEvent = {
+      eventId: 103,
+      jobId: 'derived-job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+    }
+    await flushPromises()
+
+    expect(getAnalysisStatusMock).not.toHaveBeenCalled()
+    expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
+  })
+
   it('does not process task events after the view is unmounted', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

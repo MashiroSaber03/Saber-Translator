@@ -49,6 +49,7 @@ RETRYABLE_EXCEPTIONS = (
     httpx.WriteTimeout,
     httpx.ConnectError,
     httpx.ReadError,
+    httpx.RemoteProtocolError,
     ConnectionResetError,
 )
 

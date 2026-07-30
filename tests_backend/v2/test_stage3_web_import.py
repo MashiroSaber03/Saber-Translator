@@ -6,10 +6,11 @@ from pathlib import Path
 import uuid
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     ProviderSettingMutation,
@@ -24,8 +25,10 @@ from src.backend_v2.storage.epochs import (
 from src.backend_v2.storage.schema import (
     job_config_snapshots,
     job_credential_snapshots,
+    jobs,
     metadata,
     pages,
+    web_import_drafts,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.web_import.commands import WebImportCommandService
@@ -249,4 +252,230 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
     assert "firecrawl-secret" not in config_json
     assert '"model_name":"agent-model"' in config_json
     assert credential_count == 2
+    engine.dispose()
+
+
+def test_cancelled_web_extract_draft_is_not_restored_as_active(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Cancelled Web Book")
+    chapter = content.create_chapter(
+        book_id=str(book["id"]),
+        title="Chapter",
+    )
+    commands = WebImportCommandService(data_root=data_root, engine=engine)
+    accepted = commands.create_draft(
+        chapter_id=str(chapter["id"]),
+        source_url="https://example.test/cancelled",
+        requested_engine="auto",
+        config={},
+        idempotency_key="cancelled-web-draft",
+    )
+    draft_id = str(accepted["draftId"])
+    job_id = str(accepted["jobIds"][0])
+
+    assert content.translation_bootstrap(
+        book_id=str(book["id"]),
+        chapter_id=str(chapter["id"]),
+    )["activeWebImportDraft"]["id"] == draft_id
+    assert JobQueueRepository(engine).request_cancel(job_id)["status"] == "cancelled"
+    assert commands.get_draft(draft_id)["status"] == "cancelled"
+    assert content.translation_bootstrap(
+        book_id=str(book["id"]),
+        chapter_id=str(chapter["id"]),
+    )["activeWebImportDraft"] is None
+
+    # Older databases can contain an extracting draft whose owning job already
+    # reached a terminal state. Read paths must remain self-healing.
+    with engine.begin() as connection:
+        connection.execute(
+            update(web_import_drafts)
+            .where(web_import_drafts.c.id == draft_id)
+            .values(status="extracting")
+        )
+        assert connection.execute(
+            select(jobs.c.status).where(jobs.c.id == job_id)
+        ).scalar_one() == "cancelled"
+    assert commands.get_draft(draft_id)["status"] == "cancelled"
+    assert content.translation_bootstrap(
+        book_id=str(book["id"]),
+        chapter_id=str(chapter["id"]),
+    )["activeWebImportDraft"] is None
+    engine.dispose()
+
+
+def test_web_extract_retry_creates_a_fresh_durable_draft(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Retry Web Book")
+    chapter = content.create_chapter(
+        book_id=str(book["id"]),
+        title="Chapter",
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(epoch_id, "worker", "worker", 902)
+    )
+    repository = JobQueueRepository(engine)
+    commands = WebImportCommandService(data_root=data_root, engine=engine)
+    accepted = commands.create_draft(
+        chapter_id=str(chapter["id"]),
+        source_url="https://example.test/retry",
+        requested_engine="auto",
+        config={},
+        idempotency_key="failed-web-draft",
+    )
+    source_job_id = str(accepted["jobIds"][0])
+    source_draft_id = str(accepted["draftId"])
+    fence = repository.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    repository.fail_step(
+        fence,
+        step_id=str(step["stepId"]),
+        code="TEST_FAILURE",
+        message="simulated extraction failure",
+    )
+    assert repository.finish_if_complete(fence) == "completed_with_errors"
+    assert commands.get_draft(source_draft_id)["status"] == "failed"
+
+    retried = JobRetryService(engine).retry(
+        job_id=source_job_id,
+        failed_only=True,
+        strategy="current",
+        idempotency_key="retry-failed-web-draft",
+    )
+    retry_job_id = str(retried["jobIds"][0])
+    with engine.connect() as connection:
+        retry_job = connection.execute(
+            select(jobs).where(jobs.c.id == retry_job_id)
+        ).mappings().one()
+    retry_draft_id = str(retry_job["web_import_draft_id"])
+    assert retry_draft_id != source_draft_id
+    assert retry_job["retry_of_job_id"] == source_job_id
+    assert retry_job["retry_mode"] == "current"
+    assert commands.get_draft(retry_draft_id)["status"] == "extracting"
+    assert content.translation_bootstrap(
+        book_id=str(book["id"]),
+        chapter_id=str(chapter["id"]),
+    )["activeWebImportDraft"]["id"] == retry_draft_id
+    assert repository.request_cancel(retry_job_id)["status"] == "cancelled"
+    engine.dispose()
+
+
+def test_web_import_commit_retry_only_replays_failed_pages(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Retry Commit Book")
+    chapter = content.create_chapter(
+        book_id=str(book["id"]),
+        title="Chapter",
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(epoch_id, "worker", "worker", 903)
+    )
+    repository = JobQueueRepository(engine)
+    commands = WebImportCommandService(data_root=data_root, engine=engine)
+    worker = WebImportWorkerService(
+        data_root=data_root,
+        engine=engine,
+        jobs=repository,
+    )
+    monkeypatch.setattr(
+        worker,
+        "_extract_urls",
+        lambda *_args: (
+            [
+                "https://example.test/first.png",
+                "https://example.test/second.png",
+            ],
+            "html",
+        ),
+    )
+    payloads = {
+        "https://example.test/first.png": _png((200, 20, 20)),
+        "https://example.test/second.png": _png((20, 200, 20)),
+    }
+
+    def fake_download(url, target, _options):
+        payload = payloads[url]
+        target.write_bytes(payload)
+        return hashlib.sha256(payload).hexdigest()
+
+    monkeypatch.setattr(worker, "_download", fake_download)
+    accepted = commands.create_draft(
+        chapter_id=str(chapter["id"]),
+        source_url="https://example.test/chapter",
+        requested_engine="auto",
+        config={},
+        idempotency_key="retry-commit-extract",
+    )
+    _run_job(repository, worker, epoch_id)
+    draft_id = str(accepted["draftId"])
+    draft = commands.get_draft(draft_id)
+    commit = commands.commit(
+        draft_id=draft_id,
+        base_revision=int(draft["revision"]),
+        idempotency_key="retry-commit-source",
+    )
+    source_job_id = str(commit["jobIds"][0])
+    fence = repository.claim_next(worker_epoch_id=epoch_id)
+    if fence is None:
+        fence = repository.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    failed_step = repository.next_step(fence)
+    assert failed_step is not None
+    assert failed_step["stepKind"] == "web_import_commit_page"
+    repository.fail_step(
+        fence,
+        step_id=str(failed_step["stepId"]),
+        code="TEST_FAILURE",
+        message="simulated first-page commit failure",
+    )
+    while (step := repository.next_step(fence)) is not None:
+        result = worker.handle(fence, step)
+        assert result["__already_published__"]
+    assert repository.finish_if_complete(fence) == "completed_with_errors"
+    assert commands.get_draft(draft_id)["status"] == "completed"
+
+    retried = JobRetryService(engine).retry(
+        job_id=source_job_id,
+        failed_only=True,
+        strategy="current",
+        idempotency_key="retry-commit-failed-page",
+    )
+    retry_job_id = str(retried["jobIds"][0])
+    assert commands.get_draft(draft_id)["status"] == "committing"
+    assert _run_job(repository, worker, epoch_id) == retry_job_id
+    assert commands.get_draft(draft_id)["status"] == "completed"
+    with engine.connect() as connection:
+        imported = list(
+            connection.execute(
+                select(pages.c.logical_source_path)
+                .where(pages.c.chapter_id == chapter["id"])
+                .order_by(pages.c.ordinal)
+            ).scalars()
+        )
+    assert imported == ["second.png", "first.png"]
     engine.dispose()

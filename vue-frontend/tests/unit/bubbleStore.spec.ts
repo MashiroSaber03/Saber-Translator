@@ -53,6 +53,38 @@ describe('bubbleStore', () => {
     expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('initial translation')
   })
 
+  it('keeps the selected bubble when backend state replaces the same stable bubbles', () => {
+    const bubbleStore = useBubbleStore()
+    bubbleStore.setBubbles([
+      createBubbleState({
+        backendBubbleId: 'bubble-1',
+        coords: [0, 0, 200, 100],
+        translatedText: 'before',
+      }),
+      createBubbleState({
+        backendBubbleId: 'bubble-2',
+        coords: [20, 20, 120, 220],
+      }),
+    ])
+    bubbleStore.selectBubble(0)
+
+    bubbleStore.setBubbles([
+      createBubbleState({
+        backendBubbleId: 'bubble-1',
+        coords: [0, 0, 200, 100],
+        translatedText: 'after',
+      }),
+      createBubbleState({
+        backendBubbleId: 'bubble-2',
+        coords: [20, 20, 120, 220],
+      }),
+    ], true)
+
+    expect(bubbleStore.selectedIndex).toBe(0)
+    expect(bubbleStore.selectedBubble?.backendBubbleId).toBe('bubble-1')
+    expect(bubbleStore.selectedBubble?.translatedText).toBe('after')
+  })
+
   it('does not write routine console logs for normal bubble state transitions', () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
     const imageStore = useImageStore()

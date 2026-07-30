@@ -105,6 +105,25 @@ function mergeObjects(
   const result = deepClone(base)
   for (const [key, value] of Object.entries(override)) {
     const current = result[key]
+    if (Array.isArray(current) && Array.isArray(value)) {
+      result[key] = value.map((item, index) => {
+        const baseItem = current[index]
+        return (
+          baseItem
+          && item
+          && typeof baseItem === 'object'
+          && typeof item === 'object'
+          && !Array.isArray(baseItem)
+          && !Array.isArray(item)
+        )
+          ? mergeObjects(
+              baseItem as Record<string, unknown>,
+              item as Record<string, unknown>,
+            )
+          : deepClone(item)
+      })
+      continue
+    }
     result[key] = (
       current
       && value

@@ -39,6 +39,7 @@ from src.backend_v2.storage.schema import (
     metadata,
     page_assets,
     pages,
+    translation_constraints,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.translation.commands import (
@@ -59,6 +60,38 @@ from src.backend_v2.testing.fake_provider import (
 
 class FakeAlgorithms(DeterministicFakeProvider):
     """Compatibility alias for failure-injection tests in this module."""
+
+
+class ConstraintAwareFakeAlgorithms(FakeAlgorithms):
+    def __init__(self) -> None:
+        super().__init__()
+        self.extract_calls: list[dict[str, Any]] = []
+        self.translation_prompts: list[str] = []
+        self.translation_inputs: list[list[str]] = []
+
+    def extract_terms(self, texts, config, *, prompt):
+        self.extract_calls.append(
+            {
+                "texts": list(texts),
+                "credential": config.get("api_key"),
+                "prompt": prompt,
+            }
+        )
+        return {
+            "rawContent": '[{"source":"勇者","target":"勇者"}]',
+            "candidates": [{"source": "勇者", "target": "勇者"}],
+        }
+
+    def translate(self, texts, config, *, mode):
+        self.translation_prompts.append(str(config.get("prompt_content", "")))
+        self.translation_inputs.append(list(texts))
+        if texts and "SABER_NT" in texts[0]:
+            return {
+                "translated": list(texts),
+                "textbox": ["" for _text in texts],
+                "mode": mode,
+            }
+        return super().translate(texts, config, mode=mode)
 
 
 def test_legacy_color_adapter_accepts_serialized_dictionary_results(
@@ -334,6 +367,173 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
         "translated",
         "thumbnail_translated",
     }.issubset(roles)
+
+
+def test_translation_constraints_are_frozen_extracted_and_consumed(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    content = ContentRepository(platform["engine"])
+    saved = content.update_constraints(
+        book_id=str(platform["book"]["id"]),
+        base_revision=1,
+        payload={
+            "glossary": {
+                "enabled": True,
+                "autoExtractEnabled": True,
+                "autoExtractPrompt": "从 {ocr_text} 提取术语",
+                "entries": [
+                    {
+                        "source": "騎士",
+                        "target": "骑士",
+                        "note": "固定译名",
+                        "matchMode": "text",
+                    },
+                    {
+                        "source": "こんにちは",
+                        "target": "固定问候",
+                        "note": "用于检查告警",
+                        "matchMode": "text",
+                    },
+                ],
+            },
+            "nonTranslate": {
+                "enabled": True,
+                "entries": [
+                    {
+                        "pattern": "Excalibur",
+                        "note": "保留英文",
+                        "matchMode": "text",
+                    },
+                    {
+                        "pattern": "こんにちは",
+                        "note": "保护 OCR 原文",
+                        "matchMode": "text",
+                    },
+                ],
+            },
+        },
+    )
+    assert saved["revision"] == 2
+    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=[platform["page_id"]],
+        idempotency_key="constraints-job",
+    )
+    job_id = str(accepted["jobIds"][0])
+    algorithms = ConstraintAwareFakeAlgorithms()
+    assert _run_translation_job(platform, algorithms) == job_id
+
+    with platform["engine"].connect() as connection:
+        frozen = json.loads(
+            connection.execute(
+                select(job_config_snapshots.c.payload_json).where(
+                    job_config_snapshots.c.job_id == job_id
+                )
+            ).scalar_one()
+        )
+        auto_checkpoint = json.loads(
+            connection.execute(
+                select(job_steps.c.checkpoint_json)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
+                    job_items.c.job_id == job_id,
+                    job_steps.c.kind == "auto_terms",
+                )
+            ).scalar_one()
+        )
+        translate_checkpoint = json.loads(
+            connection.execute(
+                select(job_steps.c.checkpoint_json)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
+                    job_items.c.job_id == job_id,
+                    job_steps.c.kind == "translate",
+                )
+            ).scalar_one()
+        )
+        bubble_payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.page_id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+        current_constraints = connection.execute(
+            select(
+                translation_constraints.c.revision,
+                translation_constraints.c.payload_json,
+            ).where(
+                translation_constraints.c.book_id == str(platform["book"]["id"])
+            )
+        ).mappings().one()
+
+    assert frozen["translationConstraintRevision"] == 2
+    assert frozen["translationConstraints"]["glossary"]["entries"] == [
+        {
+            "source": "騎士",
+            "target": "骑士",
+            "note": "固定译名",
+            "matchMode": "text",
+        },
+        {
+            "source": "こんにちは",
+            "target": "固定问候",
+            "note": "用于检查告警",
+            "matchMode": "text",
+        },
+    ]
+    assert auto_checkpoint["candidateCount"] == 1
+    assert auto_checkpoint["duplicateCount"] == 0
+    assert auto_checkpoint["addedCount"] == 1
+    assert auto_checkpoint["delta"] == [
+        {
+            "source": "勇者",
+            "target": "勇者",
+            "note": "",
+            "matchMode": "text",
+        }
+    ]
+    assert algorithms.extract_calls == [
+        {
+            "texts": ["こんにちは"],
+            "credential": "fixture-secret",
+            "prompt": "从 {ocr_text} 提取术语",
+        }
+    ]
+    assert len(algorithms.translation_prompts) == 1
+    assert len(algorithms.translation_inputs) == 1
+    assert "SABER_NT" in algorithms.translation_inputs[0][0]
+    assert "こんにちは" not in algorithms.translation_inputs[0][0]
+    translated_prompt = algorithms.translation_prompts[0]
+    assert '"source":"騎士"' in translated_prompt
+    assert '"source":"勇者"' in translated_prompt
+    assert '"pattern":"Excalibur"' in translated_prompt
+    assert bubble_payload["translatedText"] == "こんにちは"
+    assert bubble_payload["translationWarnings"] == [
+        {
+            "bubbleIndex": 0,
+            "source": "こんにちは",
+            "expectedTarget": "固定问候",
+            "actualTranslation": "こんにちは",
+        }
+    ]
+    assert translate_checkpoint["constraintWarnings"] == [
+        {
+            "bubbleIndex": 0,
+            "source": "こんにちは",
+            "expectedTarget": "固定问候",
+            "actualTranslation": "こんにちは",
+        }
+    ]
+    assert current_constraints["revision"] == 3
+    assert [
+        entry["source"]
+        for entry in json.loads(current_constraints["payload_json"])["glossary"][
+            "entries"
+        ]
+    ] == ["騎士", "こんにちは", "勇者"]
 
 
 def test_multi_chapter_batch_creates_eligible_jobs_and_reports_skips(
@@ -1084,6 +1284,48 @@ def test_hq_batch_failure_isolated_and_later_batch_continues(
         "failed",
         "completed",
     ]
+
+
+def test_failed_hq_redetect_preserves_previous_published_text(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    command = TranslationJobCommandService(platform["engine"])
+    standard = command.create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="published-before-hq-failure",
+    )
+    standard_job_id = _run_translation_job(platform, FakeAlgorithms())
+    assert standard_job_id == standard["jobIds"][0]
+
+    _configure_hq_and_proofreading(platform)
+    hq = command.create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "hq", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="hq-failure-keeps-text",
+    )
+    hq_job_id = _run_translation_job(
+        platform,
+        FakeAlgorithms(fail_batch_calls={1}),
+    )
+    assert hq_job_id == hq["jobIds"][0]
+    assert (
+        JobQueueRepository(platform["engine"]).get_job(hq_job_id)["status"]
+        == "completed_with_errors"
+    )
+
+    with platform["engine"].connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json)
+                .where(bubbles.c.page_id == platform["page_id"])
+            ).scalar_one()
+        )
+    assert payload["originalText"] == "こんにちは"
+    assert payload["translatedText"] == "你好"
 
 
 def test_hq_pause_resume_keeps_completed_batch_checkpoint(

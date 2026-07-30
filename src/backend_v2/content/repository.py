@@ -12,9 +12,14 @@ import secrets
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, and_, delete, func, insert, or_, select, update
+from sqlalchemy import Engine, and_, delete, exists, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.content.translation_constraints import (
+    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
+    empty_translation_constraints,
+    validate_translation_constraints,
+)
 from src.backend_v2.storage.assets import AssetRecord
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
@@ -371,7 +376,8 @@ class ContentRepository:
             connection.execute(
                 insert(translation_constraints).values(
                     book_id=book_id,
-                    payload_json='{"glossary":[],"nonTranslate":[]}',
+                    payload_json=_json(empty_translation_constraints()),
+                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
             if tag_ids is not None:
@@ -738,7 +744,10 @@ class ContentRepository:
         return {
             "bookId": book_id,
             "revision": row["revision"],
-            "payload": json.loads(row["payload_json"]),
+            "schemaVersion": row["schema_version"],
+            "payload": validate_translation_constraints(
+                json.loads(row["payload_json"])
+            ),
         }
 
     def update_constraints(
@@ -748,12 +757,7 @@ class ContentRepository:
         base_revision: int,
         payload: dict[str, object],
     ) -> dict[str, object]:
-        if set(payload) - {"glossary", "nonTranslate"}:
-            raise ValueError("translation constraints contain unknown fields")
-        if not isinstance(payload.get("glossary", []), list) or not isinstance(
-            payload.get("nonTranslate", []), list
-        ):
-            raise ValueError("constraint lists must be arrays")
+        normalized = validate_translation_constraints(payload)
         with immediate_transaction(self.engine) as connection:
             changed = connection.execute(
                 update(translation_constraints)
@@ -762,7 +766,8 @@ class ContentRepository:
                     translation_constraints.c.revision == base_revision,
                 )
                 .values(
-                    payload_json=_json(payload),
+                    payload_json=_json(normalized),
+                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                     revision=base_revision + 1,
                     updated_at=_utcnow(),
                 )
@@ -777,7 +782,8 @@ class ContentRepository:
         return {
             "bookId": book_id,
             "revision": base_revision + 1,
-            "payload": payload,
+            "schemaVersion": TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
+            "payload": normalized,
         }
 
     def quick_workspace_context(self) -> dict[str, str]:
@@ -882,8 +888,34 @@ class ContentRepository:
                 .where(
                     web_import_drafts.c.chapter_id == chapter_id,
                     web_import_drafts.c.expires_at > _utcnow(),
-                    web_import_drafts.c.status.in_(
-                        ("extracting", "ready", "committing")
+                    or_(
+                        web_import_drafts.c.status == "ready",
+                        and_(
+                            web_import_drafts.c.status == "extracting",
+                            exists(
+                                select(jobs.c.id).where(
+                                    jobs.c.web_import_draft_id
+                                    == web_import_drafts.c.id,
+                                    jobs.c.kind == "web_extract",
+                                    jobs.c.status.in_(
+                                        NONTERMINAL_JOB_STATUSES
+                                    ),
+                                )
+                            ),
+                        ),
+                        and_(
+                            web_import_drafts.c.status == "committing",
+                            exists(
+                                select(jobs.c.id).where(
+                                    jobs.c.web_import_draft_id
+                                    == web_import_drafts.c.id,
+                                    jobs.c.kind == "web_import_commit",
+                                    jobs.c.status.in_(
+                                        NONTERMINAL_JOB_STATUSES
+                                    ),
+                                )
+                            ),
+                        ),
                     ),
                 )
                 .order_by(web_import_drafts.c.updated_at.desc())
@@ -921,9 +953,13 @@ class ContentRepository:
                 "payload": (
                     json.loads(constraints["payload_json"])
                     if constraints
-                    else {"glossary": [], "nonTranslate": []}
+                    else empty_translation_constraints()
                 ),
-                "schemaVersion": constraints["schema_version"] if constraints else 1,
+                "schemaVersion": (
+                    constraints["schema_version"]
+                    if constraints
+                    else TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
+                ),
                 "revision": constraints["revision"] if constraints else 0,
             },
             "activeJobs": [
@@ -1846,6 +1882,13 @@ class ContentRepository:
                 ).scalar_one_or_none()
                 is not None
             )
+            calculate_auto_font_size = None
+            if (
+                "autoFontSize" in propagation
+                and bool(style_patch.get("autoFontSize"))
+            ):
+                from src.core.rendering import calculate_auto_font_size
+                from src.shared import constants
             for mutation in mutations:
                 if not isinstance(mutation, dict):
                     raise ValueError("each bubble mutation must be an object")
@@ -1949,7 +1992,34 @@ class ContentRepository:
                                     payload["fillColor"] = _rgb_hex(
                                         payload["autoBgColor"]
                                     )
-                        elif field != "autoFontSize":
+                        elif field == "autoFontSize":
+                            if value and calculate_auto_font_size is not None:
+                                coords = payload.get("coords")
+                                text = str(payload.get("translatedText", ""))
+                                if (
+                                    text.strip()
+                                    and isinstance(coords, list)
+                                    and len(coords) == 4
+                                ):
+                                    payload["fontSize"] = calculate_auto_font_size(
+                                        text,
+                                        max(
+                                            0,
+                                            float(coords[2]) - float(coords[0]),
+                                        ),
+                                        max(
+                                            0,
+                                            float(coords[3]) - float(coords[1]),
+                                        ),
+                                        str(
+                                            payload.get(
+                                                "textDirection",
+                                                "vertical",
+                                            )
+                                        ),
+                                        constants.DEFAULT_FONT_RELATIVE_PATH,
+                                    )
+                        else:
                             payload[field] = value
                     document["payload"] = payload
 
@@ -2308,7 +2378,8 @@ class ContentRepository:
             connection.execute(
                 insert(translation_constraints).values(
                     book_id=book,
-                    payload_json='{"glossary":[],"nonTranslate":[]}',
+                    payload_json=_json(empty_translation_constraints()),
+                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
             connection.execute(
@@ -2389,12 +2460,12 @@ class ContentRepository:
                         payload_json=(
                             source_constraints["payload_json"]
                             if source_constraints
-                            else '{"glossary":[],"nonTranslate":[]}'
+                            else _json(empty_translation_constraints())
                         ),
                         schema_version=(
                             source_constraints["schema_version"]
                             if source_constraints
-                            else 1
+                            else TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
                         ),
                     )
                 )
@@ -2449,7 +2520,8 @@ class ContentRepository:
             connection.execute(
                 insert(translation_constraints).values(
                     book_id=quick_book_id,
-                    payload_json='{"glossary":[],"nonTranslate":[]}',
+                    payload_json=_json(empty_translation_constraints()),
+                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
             new_quick_chapter_id = str(uuid.uuid4())

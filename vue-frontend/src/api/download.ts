@@ -37,9 +37,21 @@ export async function readApiErrorMessage(
   if (!text) return fallbackMessage
 
   try {
-    const parsed = JSON.parse(text) as { error?: unknown; message?: unknown }
+    const parsed = JSON.parse(text) as {
+      error?: unknown
+      message?: unknown
+    }
     if (typeof parsed.error === 'string' && parsed.error) return parsed.error
     if (typeof parsed.message === 'string' && parsed.message) return parsed.message
+    if (
+      parsed.error
+      && typeof parsed.error === 'object'
+      && 'message' in parsed.error
+      && typeof parsed.error.message === 'string'
+      && parsed.error.message
+    ) {
+      return parsed.error.message
+    }
   } catch {
     return text
   }

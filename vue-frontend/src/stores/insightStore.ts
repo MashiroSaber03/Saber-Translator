@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-import { useInsightNotes } from './insight/useInsightNotes'
+import {
+  useInsightNotes,
+  type NewInsightNoteInput,
+} from './insight/useInsightNotes'
 import { useInsightQA } from './insight/useInsightQA'
 import { useInsightConfigManager, type ProviderConfigsCache } from './insight/useInsightConfigManager'
 import { buildInsightConfigApiPayload } from './insight/insightConfigApiPayload'
@@ -144,7 +147,7 @@ export const useInsightStore = defineStore('insight', () => {
   function setStreaming(streaming: boolean): void { qaComposable.setStreaming(streaming) }
   function setCurrentPage(pageNum: number): void { selectedPageNum.value = pageNum }
 
-  function addNote(note: NoteData): Promise<void> {
+  function addNote(note: NewInsightNoteInput): Promise<void> {
     return notesComposable.addNote(note).then(result => {
       if (!result) throw new Error('保存笔记失败')
     })

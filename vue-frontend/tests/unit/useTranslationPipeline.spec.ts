@@ -2,15 +2,20 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTranslation } from '@/composables/useTranslationPipeline'
+import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const mocks = vi.hoisted(() => ({
   createChapterTranslationJob: vi.fn(),
+  getPageDocument: vi.fn(),
   jobsList: vi.fn(),
   jobsRetryFailed: vi.fn(),
+  listChapterPages: vi.fn(),
   toast: {
     error: vi.fn(),
     info: vi.fn(),
@@ -23,7 +28,8 @@ vi.mock('@/api/v2/translation', () => ({
 }))
 
 vi.mock('@/api/v2/content', () => ({
-  listChapterPages: vi.fn(),
+  getPageDocument: mocks.getPageDocument,
+  listChapterPages: mocks.listChapterPages,
 }))
 
 vi.mock('@/api/v2/jobs', () => ({
@@ -55,6 +61,14 @@ describe('useTranslationPipeline', () => {
       sourceJobId: 'source-job',
       retryMode: 'current',
       failedOnly: true,
+    })
+    mocks.listChapterPages.mockResolvedValue({ items: [] })
+    mocks.getPageDocument.mockResolvedValue({
+      pageId: 'page-1',
+      documentRevision: 2,
+      defaultFontId: null,
+      pageStyleDefaults: {},
+      bubbles: [],
     })
   })
 
@@ -100,6 +114,72 @@ describe('useTranslationPipeline', () => {
 
     expect(result.success).toBe(false)
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+  })
+
+  it('rehydrates the current page document when a durable job finishes', async () => {
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    const taskCenterStore = useTaskCenterStore()
+    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 1,
+      id: 'page-1',
+    })
+    mocks.listChapterPages.mockResolvedValue({
+      items: [{
+        id: 'page-1',
+        chapterId: 'chapter-1',
+        ordinal: 1,
+        logicalSourcePath: '001.png',
+        width: 100,
+        height: 200,
+        sourceRevision: 1,
+        documentRevision: 2,
+        renderedRevision: 2,
+        renderStatus: 'ready',
+        detectionState: 'completed',
+        sourceUrl: '/api/v2/assets/source-1',
+        thumbnailSourceUrl: '/api/v2/assets/thumb-1',
+        cleanUrl: '/api/v2/assets/clean-1',
+        translatedUrl: '/api/v2/assets/translated-1',
+        thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
+      }],
+    })
+    mocks.getPageDocument.mockResolvedValue({
+      pageId: 'page-1',
+      documentRevision: 2,
+      defaultFontId: null,
+      pageStyleDefaults: {},
+      bubbles: [{
+        bubbleId: 'bubble-1',
+        ordinal: 1,
+        fontId: null,
+        payload: {
+          originalText: 'こんにちは',
+          translatedText: '你好',
+          coords: [1, 2, 30, 40],
+        },
+      }],
+    })
+
+    await useTranslation().translatePages([0], 'standard')
+    taskCenterStore.latestEvent = {
+      eventId: 999,
+      jobId: 'job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(imageStore.currentImage?.bubbleStates).toHaveLength(1)
+      expect(bubbleStore.bubbles).toHaveLength(1)
+    })
+    expect(imageStore.currentImage?.translatedAssetUrl).toBe(
+      '/api/v2/assets/translated-1',
+    )
+    expect(bubbleStore.bubbles[0]?.translatedText).toBe('你好')
   })
 
   it('retries durable failed items from the latest matching backend job', async () => {

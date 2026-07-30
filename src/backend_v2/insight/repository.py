@@ -283,6 +283,73 @@ class InsightRepository:
         return result_id
 
     @staticmethod
+    def copy_page_successes(
+        connection: Connection,
+        *,
+        run_id: str,
+        scope: str,
+        copies: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Copy immutable successes into a retry run with one count refresh."""
+
+        if not copies:
+            return
+        now = utcnow()
+        prepared: list[dict[str, Any]] = []
+        result_ids_by_page: dict[str, str] = {}
+        for copy in copies:
+            page_id = str(copy["page_id"])
+            result_id = str(uuid.uuid4())
+            result_ids_by_page[page_id] = result_id
+            prepared.append(
+                {
+                    "id": result_id,
+                    "run_id": run_id,
+                    "page_id": page_id,
+                    "source_asset_id": str(copy["source_asset_id"]),
+                    "source_checksum": str(copy["source_checksum"]),
+                    "page_id_snapshot": page_id,
+                    "page_number_snapshot": int(copy["page_number"]),
+                    "payload_json": _json(dict(copy["payload"])),
+                    "schema_version": 2,
+                    "status": "staging" if scope == "full" else "published",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+        connection.execute(insert(analysis_page_results), prepared)
+        page_ids = tuple(result_ids_by_page)
+        connection.execute(
+            update(analysis_run_targets)
+            .where(
+                analysis_run_targets.c.run_id == run_id,
+                analysis_run_targets.c.page_id_snapshot.in_(page_ids),
+            )
+            .values(status="completed", error_json=None)
+        )
+        InsightRepository._refresh_run_counts(connection, run_id, now)
+        if scope == "full":
+            return
+
+        book_id = connection.execute(
+            select(analysis_runs.c.book_id).where(analysis_runs.c.id == run_id)
+        ).scalar_one()
+        for page_id, result_id in result_ids_by_page.items():
+            InsightRepository._upsert_page_head(
+                connection,
+                book_id=str(book_id),
+                page_id=page_id,
+                run_id=run_id,
+                result_id=result_id,
+                now=now,
+            )
+        InsightRepository._mark_derived_stale(
+            connection,
+            book_id=str(book_id),
+            now=now,
+        )
+
+    @staticmethod
     def publish_page_failure(
         connection: Connection,
         *,
@@ -711,14 +778,14 @@ class InsightRepository:
                     select(chapters.c.book_id, func.count(pages.c.id))
                     .join(pages, pages.c.chapter_id == chapters.c.id)
                     .group_by(chapters.c.book_id)
-                )
+                ).tuples().all()
             )
             head_counts = dict(
                 connection.execute(
                     select(analysis_heads.c.book_id, func.count())
                     .where(analysis_heads.c.page_id.is_not(None))
                     .group_by(analysis_heads.c.book_id)
-                )
+                ).tuples().all()
             )
             active_runs = {
                 str(row["book_id"]): row
@@ -740,6 +807,7 @@ class InsightRepository:
                 {
                     "jobId": str(row["id"]),
                     "bookId": row["book_id"],
+                    "kind": str(row["kind"]),
                     "status": str(row["status"]),
                     "progress": _load(row["latest_progress_json"], {}),
                 }
@@ -747,6 +815,7 @@ class InsightRepository:
                     select(
                         jobs.c.id,
                         jobs.c.book_id,
+                        jobs.c.kind,
                         jobs.c.status,
                         jobs.c.latest_progress_json,
                     ).where(

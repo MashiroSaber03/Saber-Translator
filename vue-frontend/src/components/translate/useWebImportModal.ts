@@ -179,7 +179,11 @@ export function useWebImportModal() {
   }
 
   async function handleClose() {
-    if (isProcessing.value) {
+    const acceptedExtractContinuesInBackend = (
+      status.value === 'extracting'
+      && activeDraftId.value !== null
+    )
+    if (isProcessing.value && !acceptedExtractContinuesInBackend) {
       const confirmed = await confirmProductAction({
         title: '关闭网页导入',
         message: '后端任务会继续运行。确定关闭此窗口吗？',
@@ -193,6 +197,9 @@ export function useWebImportModal() {
     webImportStore.closeModal()
     webImportStore.resetState()
     urlInput.value = ''
+    activeDraftId.value = null
+    activeDraftRevision.value = 0
+    draftPageIdsByNumber.clear()
   }
 
   async function handleSaveSettings(showSuccessFeedback = true): Promise<boolean> {
@@ -347,6 +354,10 @@ export function useWebImportModal() {
         webImportStore.setError('后端网页提取任务失败，请在任务中心查看详情')
         return
       }
+      if (draft.status === 'cancelled') {
+        webImportStore.setError('后端网页提取任务已取消，可以重新开始提取')
+        return
+      }
       if (draft.status === 'committing' || draft.status === 'completed') {
         webImportStore.setStatus('completed')
         return
@@ -390,7 +401,7 @@ export function useWebImportModal() {
       const draft = bootstrap.activeWebImportDraft
       if (!draft) return
       activeDraftId.value = draft.id
-      webImportStore.setStatus(draft.status === 'ready' ? 'extracting' : 'extracting')
+      webImportStore.setStatus('extracting')
       await pollDraft(draft.id)
     } catch {
       // Opening the modal is still useful for starting a new draft.

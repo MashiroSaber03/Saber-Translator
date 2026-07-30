@@ -25,6 +25,7 @@ from .config_models import EmbeddingConfig, ChatLLMConfig
 logger = logging.getLogger("MangaInsight.Embedding")
 DEFAULT_EMBEDDING_MAX_RETRIES = 10
 DEFAULT_EMBEDDING_BUSINESS_RETRIES = 10
+DEFAULT_EMBEDDING_REQUEST_BATCH_SIZE = 16
 T = TypeVar("T")
 
 
@@ -86,6 +87,15 @@ class EmbeddingClient:
         if not self._base_url:
             raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
 
+        embeddings: List[List[float]] = []
+        for offset in range(0, len(texts), DEFAULT_EMBEDDING_REQUEST_BATCH_SIZE):
+            batch = texts[
+                offset : offset + DEFAULT_EMBEDDING_REQUEST_BATCH_SIZE
+            ]
+            embeddings.extend(await self._embed_request(batch))
+        return embeddings
+
+    async def _embed_request(self, texts: List[str]) -> List[List[float]]:
         last_error: Optional[Exception] = None
         total_attempts = self._business_retries + 1
 
@@ -151,6 +161,7 @@ class ChatClient:
         self.provider = provider
         self._base_url = get_base_url(provider, custom_url)
         self._timeout = 120.0
+        self._total_timeout = 300.0
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
@@ -199,25 +210,33 @@ class ChatClient:
         use_stream = options.execution.use_stream
         logger.debug(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
 
-        result = await self._executor.execute(
-            UnifiedChatRequest(
-                provider=self.provider,
-                api_key=self.config.api_key,
-                model=self.config.model,
-                messages=self._build_messages(prompt, system),
-                base_url=getattr(self.config, "base_url", None) or None,
-                capability="chat",
-                openai_options=options,
-                runtime_options=build_openai_compatible_runtime_options(
-                    timeout=self._timeout,
-                    print_stream_output=options.execution.use_stream,
-                    stream_output_label="漫画分析对话",
+        try:
+            result = await asyncio.wait_for(
+                self._executor.execute(
+                    UnifiedChatRequest(
+                        provider=self.provider,
+                        api_key=self.config.api_key,
+                        model=self.config.model,
+                        messages=self._build_messages(prompt, system),
+                        base_url=getattr(self.config, "base_url", None) or None,
+                        capability="chat",
+                        openai_options=options,
+                        runtime_options=build_openai_compatible_runtime_options(
+                            timeout=self._timeout,
+                            print_stream_output=options.execution.use_stream,
+                            stream_output_label="漫画分析对话",
+                        ),
+                    ),
+                    capability="chat",
+                    parser=parser,
+                    logger_instance=logger,
                 ),
-            ),
-            capability="chat",
-            parser=parser,
-            logger_instance=logger,
-        )
+                timeout=self._total_timeout,
+            )
+        except TimeoutError as exc:
+            raise TimeoutError(
+                f"对话模型调用超过总时限（{self._total_timeout:g} 秒）"
+            ) from exc
         return result.parsed
 
     async def generate(

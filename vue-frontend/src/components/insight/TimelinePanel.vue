@@ -21,6 +21,7 @@ const {
   isLoading,
   isRegenerating,
   mainCharacters,
+  pendingMessage,
   plotArcs,
   plotThreads,
   regenerateTimeline,
@@ -60,6 +61,17 @@ const {
         />
         <p>加载时间线...</p>
       </div>
+
+      <ProductStatusBanner
+        v-else-if="pendingMessage"
+        aria-live="polite"
+        class="timeline-panel__status-banner"
+        icon-name="refresh"
+        title="时间线生成中"
+        tone="neutral"
+      >
+        {{ pendingMessage }}
+      </ProductStatusBanner>
 
       <ProductEmptyState
         v-else-if="!hasTimelineData"

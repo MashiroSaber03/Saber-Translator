@@ -12,7 +12,7 @@ import zipfile
 from PIL import Image
 import pytest
 from flask import Flask
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
@@ -38,6 +38,7 @@ from src.backend_v2.insight.page_schema import (
     normalize_page_analysis,
 )
 from src.backend_v2.insight.qa import (
+    DefaultQARetrievalAlgorithms,
     InsightQACommandService,
     InsightQAWorkerService,
     QAConflict,
@@ -50,6 +51,7 @@ from src.backend_v2.insight.repository import (
 from src.backend_v2.insight.routes import create_insight_blueprint
 from src.backend_v2.insight.worker import InsightAnalysisWorkerService
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
@@ -62,6 +64,7 @@ from src.backend_v2.storage.schema import (
     analysis_layer_results,
     analysis_page_results,
     analysis_runs,
+    app_settings,
     assets,
     continuation_form_image_versions,
     job_asset_inputs,
@@ -208,6 +211,34 @@ class FakeQAApiAlgorithms:
     ):
         yield "答案"
         yield "内容"
+
+
+def test_qa_reasoning_queries_are_embedded_in_bounded_requests(
+    monkeypatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    async def fake_embed(_transport, request):
+        calls.append(list(request.inputs))
+        return [[float(len(calls)), 0.25]]
+
+    monkeypatch.setattr(
+        "src.shared.ai_transport.AsyncOpenAICompatibleTransport.embed",
+        fake_embed,
+    )
+    result = DefaultQARetrievalAlgorithms().embed_queries(
+        ["原问题", "推理问题一", "推理问题二"],
+        config={
+            "embedding": {
+                "provider": "siliconflow",
+                "model_name": "embedding-model",
+                "api_key": "test-key",
+            }
+        },
+    )
+
+    assert calls == [["原问题"], ["推理问题一"], ["推理问题二"]]
+    assert result == [[1.0, 0.25], [2.0, 0.25], [3.0, 0.25]]
 
 
 @pytest.fixture()
@@ -451,6 +482,192 @@ def test_full_analysis_degraded_publish_keeps_failed_page_missing(
     )
     assert page_one["analysisState"] == "ready"
     assert page_two["analysisState"] == "not_analyzed"
+    bootstrap = InsightRepository(platform["engine"]).bootstrap()
+    book = next(
+        item
+        for item in bootstrap["books"]
+        if item["bookId"] == str(platform["book"]["id"])
+    )
+    assert book["pageCount"] == 2
+    assert book["analyzedPageCount"] == 1
+    assert book["activeRun"]["status"] == "completed_with_errors"
+
+
+def test_full_analysis_failed_item_retry_refreshes_settings_and_republishes(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    accepted = InsightAnalysisCommandService(
+        platform["engine"]
+    ).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="retry-source",
+    )
+    assert (
+        _run_job(platform, FakeInsightAlgorithms(fail_page=2))
+        == "completed_with_errors"
+    )
+
+    with platform["engine"].begin() as connection:
+        settings_row = connection.execute(
+            select(
+                app_settings.c.payload_json,
+                app_settings.c.revision,
+            ).where(app_settings.c.domain == "insight")
+        ).mappings().one()
+        payload = json.loads(settings_row["payload_json"])
+        payload.setdefault("analysis", {}).setdefault("batch", {})[
+            "pagesPerBatch"
+        ] = 7
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "insight")
+            .values(
+                payload_json=json.dumps(payload, separators=(",", ":")),
+                revision=int(settings_row["revision"]) + 1,
+            )
+        )
+
+    retried = JobRetryService(platform["engine"]).retry(
+        job_id=str(accepted["jobIds"][0]),
+        failed_only=True,
+        strategy="current",
+        idempotency_key="retry-current",
+    )
+    retry_job_id = str(retried["jobIds"][0])
+    with platform["engine"].connect() as connection:
+        config = json.loads(
+            connection.execute(
+                select(jobs.c.config_json).where(jobs.c.id == retry_job_id)
+            ).scalar_one()
+        )
+
+    assert retried["retryMode"] == "current"
+    assert config["runId"] == retried["runId"]
+    assert retried["runId"] != accepted["runId"]
+    assert config["analysis"]["pagesPerBatch"] == 7
+    assert (
+        JobQueueRepository(platform["engine"])
+        .get_job(retry_job_id)["counts"]["total"]
+        == 2
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    run = InsightRepository(platform["engine"]).get_run(
+        str(retried["runId"])
+    )
+    assert run["status"] == "completed"
+    assert run["successCount"] == 2
+    assert run["failedCount"] == 0
+    assert run["missingPageIds"] == []
+
+
+@pytest.mark.parametrize("strategy", ("current", "original"))
+def test_partial_analysis_retry_creates_isolated_run_and_rebinds_source(
+    insight_platform,
+    strategy: str,
+) -> None:
+    platform = insight_platform
+    page_id = str(platform["page_ids"][1])
+    accepted = InsightAnalysisCommandService(
+        platform["engine"]
+    ).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "page",
+            "pageId": page_id,
+        },
+        idempotency_key=f"partial-retry-source-{strategy}",
+    )
+    assert (
+        _run_job(platform, FakeInsightAlgorithms(fail_page=2))
+        == "completed_with_errors"
+    )
+
+    with platform["engine"].connect() as connection:
+        original_asset_id = str(
+            connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == page_id,
+                    page_assets.c.role == "source",
+                )
+            ).scalar_one()
+        )
+    replacement = BytesIO()
+    with Image.new("RGB", (64, 64), (12, 34, 56)) as image:
+        image.save(replacement, format="PNG")
+    replacement_asset = AssetStorageService(
+        platform["data_root"],
+        platform["engine"],
+    ).publish_bytes(
+        replacement.getvalue(),
+        extension="png",
+        mime_type="image/png",
+        width=64,
+        height=64,
+        bind=lambda connection, asset_id: connection.execute(
+            update(page_assets)
+            .where(
+                page_assets.c.page_id == page_id,
+                page_assets.c.role == "source",
+            )
+            .values(asset_id=asset_id)
+        ),
+    )
+
+    retried = JobRetryService(platform["engine"]).retry(
+        job_id=str(accepted["jobIds"][0]),
+        failed_only=True,
+        strategy=strategy,
+        idempotency_key=f"partial-retry-{strategy}",
+    )
+    retry_job_id = str(retried["jobIds"][0])
+    expected_asset_id = replacement_asset.id
+    with platform["engine"].connect() as connection:
+        bound_asset_id = str(
+            connection.execute(
+                select(job_asset_inputs.c.asset_id).where(
+                    job_asset_inputs.c.job_id == retry_job_id,
+                    job_asset_inputs.c.role == "source",
+                )
+            ).scalar_one()
+        )
+        config = json.loads(
+            connection.execute(
+                select(jobs.c.config_json).where(jobs.c.id == retry_job_id)
+            ).scalar_one()
+        )
+
+    assert retried["retryMode"] == strategy
+    assert retried["runId"] != accepted["runId"]
+    assert config["runId"] == retried["runId"]
+    assert config["targetCount"] == 1
+    assert bound_asset_id == expected_asset_id
+    assert bound_asset_id != original_asset_id
+    assert (
+        JobQueueRepository(platform["engine"])
+        .get_job(retry_job_id)["counts"]["total"]
+        == 2
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    run = InsightRepository(platform["engine"]).get_run(
+        str(retried["runId"])
+    )
+    with platform["engine"].connect() as connection:
+        result_asset_id = str(
+            connection.execute(
+                select(analysis_page_results.c.source_asset_id).where(
+                    analysis_page_results.c.run_id == str(retried["runId"])
+                )
+            ).scalar_one()
+        )
+    assert run["status"] == "completed"
+    assert run["successCount"] == 1
+    assert result_asset_id == expected_asset_id
 
 
 def test_page_summaries_include_source_assets_but_only_thumbnail_urls(
@@ -548,6 +765,34 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
     )
     assert detail_page["items"][0]["content"] == "新内容"
     assert repository.get_note(note_id=note["noteId"])["content"] == "新内容"
+
+
+def test_insight_bootstrap_identifies_active_job_kinds(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="bootstrap-derived-source",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    accepted = InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=str(platform["book"]["id"]),
+        kind="timeline",
+        template="default",
+        idempotency_key="bootstrap-derived-kind",
+    )
+
+    active = next(
+        item
+        for item in InsightRepository(platform["engine"]).bootstrap()["activeJobs"]
+        if item["jobId"] == accepted["jobIds"][0]
+    )
+
+    assert active["kind"] == "derived_rebuild"
 
 
 def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
@@ -673,15 +918,36 @@ def test_vector_store_reports_and_removes_only_unowned_collections(
     assert after.orphaned == ()
 
 
-def test_page_analysis_schema_rejects_missing_or_mismatched_pages() -> None:
+def test_page_analysis_schema_uses_backend_identity_for_single_page() -> None:
+    normalized = normalize_page_analysis(
+        {
+            "pages": [
+                {
+                    "page_number": 24,
+                    "page_summary": "图片内印刷页码不同",
+                }
+            ]
+        },
+        page_id="page",
+        source_asset_id="asset",
+        source_checksum="0" * 64,
+        page_number=1,
+    )
+    assert normalized["page_number_snapshot"] == 1
+    assert normalized["page_summary"] == "图片内印刷页码不同"
+
     with pytest.raises(InvalidPageAnalysis, match="exactly one"):
         normalize_page_analysis(
             {
                 "pages": [
                     {
                         "page_number": 2,
-                        "page_summary": "wrong page",
-                    }
+                        "page_summary": "wrong page 2",
+                    },
+                    {
+                        "page_number": 3,
+                        "page_summary": "wrong page 3",
+                    },
                 ]
             },
             page_id="page",
@@ -1054,6 +1320,141 @@ def test_qa_vector_query_is_connection_bound_and_worker_owned(
         request_id=cancelled.request_id,
         connection_token=cancelled.connection_token,
     )
+
+
+def test_qa_accepts_page_scoped_snapshot_after_vector_rebuild(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    for index, page_id in enumerate(platform["page_ids"], start=1):
+        InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+            command={
+                "bookId": str(platform["book"]["id"]),
+                "scope": "page",
+                "pageId": page_id,
+            },
+            idempotency_key=f"qa-page-analysis-{index}",
+        )
+        assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    snapshot = InsightDerivedRepository(platform["engine"]).snapshot(
+        book_id=str(platform["book"]["id"]),
+    )
+    assert snapshot.source_run_id is None
+    InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=str(platform["book"]["id"]),
+        kind="vector",
+        template="default",
+        idempotency_key="qa-page-vector",
+    )
+    assert (
+        _run_derived_job(
+            platform,
+            algorithms=FakeDerivedAlgorithms(),
+            vector_store=FakeVectorStore(),
+        )
+        == "completed"
+    )
+
+    handle = InsightQACommandService(platform["engine"]).create(
+        book_id=str(platform["book"]["id"]),
+        command={
+            "question": "逐页结果能否用于问答？",
+            "mode": "exact",
+            "useParentChild": True,
+        },
+    )
+    with platform["engine"].connect() as connection:
+        request_payload = json.loads(
+            connection.execute(
+                select(transient_requests.c.request_json).where(
+                    transient_requests.c.id == handle.request_id
+                )
+            ).scalar_one()
+        )
+    assert request_payload["runId"] == ""
+    TransientRequestRepository(platform["engine"]).close(
+        request_id=handle.request_id,
+        connection_token=handle.connection_token,
+    )
+
+
+def test_global_qa_reads_published_artifacts_as_mapping_rows(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="qa-global-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    commands = InsightQACommandService(platform["engine"])
+    handle = commands.create(
+        book_id=str(platform["book"]["id"]),
+        command={"question": "全局发生了什么？", "mode": "global"},
+    )
+    requests = TransientRequestRepository(platform["engine"])
+    worker = InsightQAWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        worker_epoch_id=platform["epoch_id"],
+        repository=requests,
+        algorithms=FakeQARetrievalAlgorithms(),
+    )
+
+    assert worker.run_one()
+    result = requests.consume(
+        request_id=handle.request_id,
+        connection_token=handle.connection_token,
+    )
+    assert result["mode"] == "global"
+    assert {
+        candidate["id"] for candidate in result["candidates"]
+    }.issuperset(
+        {
+            "overview:story_summary",
+            "compressed_context:default",
+        }
+    )
+    requests.close(
+        request_id=handle.request_id,
+        connection_token=handle.connection_token,
+    )
+
+
+def test_global_qa_reports_incomplete_artifacts_as_conflict(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "page",
+            "pageId": platform["page_ids"][0],
+        },
+        idempotency_key="qa-global-partial-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=str(platform["book"]["id"]),
+        kind="overview",
+        template="no_spoiler",
+        idempotency_key="qa-global-partial-overview",
+    )
+    assert (
+        _run_derived_job(platform, algorithms=FakeDerivedAlgorithms())
+        == "completed"
+    )
+
+    with pytest.raises(QAConflict, match="missing or stale"):
+        InsightQACommandService(platform["engine"]).create(
+            book_id=str(platform["book"]["id"]),
+            command={"question": "全局内容？", "mode": "global"},
+        )
 
 
 def test_qa_http_response_streams_without_creating_job_history(

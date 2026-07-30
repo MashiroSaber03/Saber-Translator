@@ -221,7 +221,6 @@ def test_runtime_default_snapshot_and_reference_lock(
                         step_kinds=("export_package",),
                     ),
                 ),
-                plugin_snapshots=snapshots,
             )
         ],
     )

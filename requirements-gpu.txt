@@ -15,7 +15,6 @@
 
 # Flask related
 flask
-flask-cors
 waitress>=3.0,<4
 
 # Backend-first v2 persistence

@@ -8,8 +8,10 @@ export interface UseInsightNotesOptions {
   currentBookId: Ref<string | null>
 }
 
-type NewNoteInput = Omit<NoteData, 'id' | 'createdAt' | 'updatedAt'>
-  & Partial<Pick<NoteData, 'id' | 'createdAt' | 'updatedAt'>>
+export type NewInsightNoteInput = Omit<
+  NoteData,
+  'id' | 'createdAt' | 'updatedAt'
+>
 
 export function useInsightNotes(options: UseInsightNotesOptions) {
   const { currentBookId } = options
@@ -65,11 +67,13 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     }
   }
 
-  async function addNote(note: NewNoteInput): Promise<NoteData | null> {
+  async function addNote(
+    note: NewInsightNoteInput,
+  ): Promise<NoteData | null> {
     if (!currentBookId.value) return null
 
     const optimisticNote: NoteData = {
-      id: note.id || `note_${Date.now()}`,
+      id: `note_${Date.now()}`,
       type: note.type,
       content: note.content,
       pageNum: note.pageNum,
@@ -79,14 +83,10 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       answer: note.answer,
       citations: note.citations,
       comment: note.comment,
-      createdAt: note.createdAt || new Date().toISOString(),
-      updatedAt: note.updatedAt || new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
     notes.value.unshift(optimisticNote)
-
-    if (note.id) {
-      return optimisticNote
-    }
 
     function rollbackOptimisticNote(): void {
       notes.value = notes.value.filter(existing => existing.id !== optimisticNote.id)

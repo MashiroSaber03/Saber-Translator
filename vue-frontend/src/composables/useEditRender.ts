@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { getPageSummary } from '@/api/v2/content'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
 import {
+  flushPageDocument,
   queuePageDocumentSave,
 } from '@/services/pageDocumentPersistence'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -77,7 +78,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       if (Date.now() >= deadline) {
         throw new Error('后端渲染仍在继续，可稍后刷新查看结果')
       }
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await new Promise(resolve => setTimeout(resolve, 50))
     }
     return null
   }
@@ -98,11 +99,13 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
-      await queuePageDocumentSave(
+      const pendingSave = queuePageDocumentSave(
         image.id,
         image.documentRevision,
         bubbles.value,
       )
+      await flushPageDocument(image.id)
+      await pendingSave
       const url = await refreshUntilRendered(image.id, token)
       if (currentRenderToken !== token || isOwnerDisposed) return false
       if (!silentMode) callbacks?.onRenderSuccess?.(url ?? image.sourceAssetUrl)

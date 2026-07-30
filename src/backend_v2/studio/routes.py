@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 import json
 from pathlib import Path
 import threading
@@ -12,6 +13,7 @@ from flask import (
     Response,
     jsonify,
     request,
+    send_file,
     stream_with_context,
 )
 from sqlalchemy import Engine
@@ -277,8 +279,7 @@ def create_studio_blueprint(
             "degraded",
         }:
             raise ValueError(
-                "compressed Insight context is unavailable; "
-                "finish manga analysis and build the compressed overview first"
+                "漫画分析的压缩上下文尚不可用；请先完成漫画分析并生成压缩概览"
             )
         response = repository.create_generate_operation(
             document_id=document_id,
@@ -542,27 +543,29 @@ def create_studio_blueprint(
         if output_format not in {"v2", "v3", "png", "worldbook"}:
             raise ValueError("format must be v2, v3, png, or worldbook")
         if output_format == "png":
-            response = Response(
-                io_service.export_png(document),
-                content_type="image/png",
+            return send_file(
+                BytesIO(io_service.export_png(document)),
+                mimetype="image/png",
+                as_attachment=True,
+                download_name=(
+                    f"{_safe_filename(document['title'])}.png"
+                ),
             )
-            response.headers["Content-Disposition"] = (
-                f'attachment; filename="{_safe_filename(document["title"])}.png"'
-            )
-            return response
-        response = Response(
-            json.dumps(
-                bundle[output_format],
-                ensure_ascii=False,
-                indent=2,
+        return send_file(
+            BytesIO(
+                json.dumps(
+                    bundle[output_format],
+                    ensure_ascii=False,
+                    indent=2,
+                ).encode("utf-8")
             ),
-            content_type="application/json; charset=utf-8",
+            mimetype="application/json",
+            as_attachment=True,
+            download_name=(
+                f"{_safe_filename(document['title'])}"
+                f"-{output_format}.json"
+            ),
         )
-        response.headers["Content-Disposition"] = (
-            f'attachment; filename="{_safe_filename(document["title"])}'
-            f'-{output_format}.json"'
-        )
-        return response
 
     @blueprint.post("/books/<book_id>/imports")
     def import_document(book_id: str):

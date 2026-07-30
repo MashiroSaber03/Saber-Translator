@@ -16,7 +16,7 @@ const store = useTaskCenterStore()
       @click="store.open"
     >
       <span class="task-center-launcher__signal" :class="{ 'task-center-launcher__signal--active': store.activeCount > 0 }" />
-      <span>任务中心</span>
+      <span class="task-center-launcher__label">任务中心</span>
       <span v-if="store.activeCount + store.queuedCount" class="task-center-launcher__badge">
         {{ store.activeCount + store.queuedCount }}
       </span>
@@ -65,5 +65,17 @@ const store = useTaskCenterStore()
   text-align: center;
   background: var(--color-action-primary);
   border-radius: 999px;
+}
+
+@media (--breakpoint-md-down) {
+  .task-center-launcher {
+    right: 12px;
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  .task-center-launcher__label {
+    display: none;
+  }
 }
 </style>

@@ -39,8 +39,11 @@ def materialize_render_payloads(
     connection: Connection,
     storage: AssetStorageService,
     page_id: str,
+    *,
+    initialize_auto_styles: bool = False,
 ) -> list[tuple[str, dict[str, object], dict[str, object]]]:
-    from src.core.rendering import calculate_auto_font_size
+    if initialize_auto_styles:
+        from src.core.rendering import calculate_auto_font_size
 
     page = connection.execute(
         select(
@@ -68,16 +71,16 @@ def materialize_render_payloads(
             storage,
             row["font_id"] or page["default_font_id"],
         )
-        if style_defaults.get("layoutDirection") == "auto":
+        if initialize_auto_styles and style_defaults.get("layoutDirection") == "auto":
             auto_direction = persisted.get("autoTextDirection")
             if auto_direction in {"vertical", "horizontal"}:
                 persisted["textDirection"] = auto_direction
-        if style_defaults.get("useAutoTextColor"):
+        if initialize_auto_styles and style_defaults.get("useAutoTextColor"):
             if persisted.get("autoFgColor") is not None:
                 persisted["textColor"] = _rgb_hex(persisted["autoFgColor"])
             if persisted.get("autoBgColor") is not None:
                 persisted["fillColor"] = _rgb_hex(persisted["autoBgColor"])
-        if style_defaults.get("autoFontSize"):
+        if initialize_auto_styles and style_defaults.get("autoFontSize"):
             coords = persisted.get("coords")
             if isinstance(coords, list) and len(coords) == 4:
                 persisted["fontSize"] = calculate_auto_font_size(

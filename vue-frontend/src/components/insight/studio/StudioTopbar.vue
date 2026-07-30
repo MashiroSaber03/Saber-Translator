@@ -88,7 +88,7 @@ defineEmits<{
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  padding: 10px 20px;
+  padding: 10px 156px 10px 20px;
   position: sticky;
   top: 0;
   z-index: var(--z-app-header);
@@ -185,7 +185,7 @@ defineEmits<{
 @media (--breakpoint-lg-down) {
   .studio-topbar {
     flex-wrap: wrap;
-    padding: 12px 16px;
+    padding: 12px 156px 12px 16px;
   }
 
   .studio-topbar__left,
@@ -210,6 +210,12 @@ defineEmits<{
 
   .studio-topbar__status-pill--busy {
     max-width: none;
+  }
+}
+
+@media (--breakpoint-md-down) {
+  .studio-topbar {
+    padding-right: 84px;
   }
 }
 </style>

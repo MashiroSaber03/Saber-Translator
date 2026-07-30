@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import base64
+from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 from typing import Any, Protocol
 import uuid
 
@@ -16,6 +18,11 @@ from PIL import Image
 from sqlalchemy import Engine, delete, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.content.translation_constraints import (
+    empty_translation_constraints,
+    validate_translation_constraints,
+    with_glossary_delta,
+)
 from src.backend_v2.jobs.repository import AttemptFence, JobConflict, JobQueueRepository
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
@@ -23,10 +30,12 @@ from src.backend_v2.storage.schema import (
     bubbles,
     credential_versions,
     job_items,
+    jobs,
     job_steps,
     job_step_asset_outputs,
     page_assets,
     pages,
+    translation_constraints,
 )
 
 
@@ -56,6 +65,14 @@ class TranslationAlgorithms(Protocol):
         image: Image.Image,
         bubble_payloads: list[dict[str, Any]],
     ) -> list[Mapping[str, Any]]: ...
+
+    def extract_terms(
+        self,
+        texts: list[str],
+        config: Mapping[str, Any],
+        *,
+        prompt: str,
+    ) -> Mapping[str, Any]: ...
 
     def translate(
         self,
@@ -203,6 +220,7 @@ def _batch_input_fingerprint(
     bubbles: list[Mapping[str, Any]],
     mode: str,
     round_index: int | None,
+    constraint_context: Mapping[str, Any],
 ) -> str:
     payload = json.dumps(
         {
@@ -211,12 +229,188 @@ def _batch_input_fingerprint(
             "bubbles": bubbles,
             "mode": mode,
             "roundIndex": round_index,
+            "translationConstraints": constraint_context,
         },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _matching_fragments(
+    text: str,
+    *,
+    pattern: str,
+    match_mode: str,
+) -> list[str]:
+    if match_mode == "regex":
+        return [
+            match.group(0)
+            for match in re.finditer(pattern, text)
+            if match.group(0)
+        ]
+    return [pattern] if pattern and pattern in text else []
+
+
+def _protect_non_translate_text(
+    text: str,
+    entries: list[Mapping[str, Any]],
+    *,
+    token_prefix: str,
+    token_by_fragment: dict[str, str] | None = None,
+) -> tuple[str, dict[str, str]]:
+    protected = text
+    fragment_tokens = token_by_fragment if token_by_fragment is not None else {}
+    restore: dict[str, str] = {}
+    token_counter = len(fragment_tokens)
+    for entry in entries:
+        pattern = str(entry.get("pattern", ""))
+        match_mode = str(entry.get("matchMode", "text"))
+        fragments = _matching_fragments(
+            protected,
+            pattern=pattern,
+            match_mode=match_mode,
+        )
+        for fragment in fragments:
+            token = fragment_tokens.get(fragment)
+            if token is None:
+                digest = hashlib.sha256(fragment.encode("utf-8")).hexdigest()[:10]
+                token = f"⟦SABER_NT_{token_prefix}_{token_counter}_{digest}⟧"
+                token_counter += 1
+                fragment_tokens[fragment] = token
+            protected = protected.replace(fragment, token)
+            restore[token] = fragment
+    return protected, restore
+
+
+def _restore_non_translate_text(
+    text: str,
+    restore: Mapping[str, str],
+) -> str:
+    restored = text
+    for token, fragment in restore.items():
+        if token not in restored:
+            raise JobConflict(
+                f"translation response lost protected non-translate token {token}"
+            )
+        restored = restored.replace(token, fragment)
+    return restored
+
+
+def _translation_constraint_warnings(
+    originals: list[str],
+    translated: list[str],
+    constraints: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    glossary = constraints.get("glossary")
+    if not isinstance(glossary, Mapping) or not bool(glossary.get("enabled")):
+        return []
+    entries = glossary.get("entries")
+    if not isinstance(entries, list):
+        return []
+    warnings: list[dict[str, Any]] = []
+    for bubble_index, (source_text, translated_text) in enumerate(
+        zip(originals, translated)
+    ):
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            source = str(entry.get("source", ""))
+            target = str(entry.get("target", ""))
+            if (
+                _matching_fragments(
+                    source_text,
+                    pattern=source,
+                    match_mode=str(entry.get("matchMode", "text")),
+                )
+                and target not in translated_text
+            ):
+                warnings.append(
+                    {
+                        "bubbleIndex": bubble_index,
+                        "source": source,
+                        "expectedTarget": target,
+                        "actualTranslation": translated_text,
+                    }
+                )
+    return warnings
+
+
+_DETECTION_TEXT_FIELDS = (
+    "originalText",
+    "translatedText",
+    "textboxText",
+)
+
+
+def _box_iou(left: object, right: object) -> float:
+    if (
+        not isinstance(left, (list, tuple))
+        or not isinstance(right, (list, tuple))
+        or len(left) < 4
+        or len(right) < 4
+    ):
+        return 0.0
+    try:
+        left_x1, left_y1, left_x2, left_y2 = (float(value) for value in left[:4])
+        right_x1, right_y1, right_x2, right_y2 = (
+            float(value) for value in right[:4]
+        )
+    except (TypeError, ValueError):
+        return 0.0
+    left_x1, left_x2 = sorted((left_x1, left_x2))
+    left_y1, left_y2 = sorted((left_y1, left_y2))
+    right_x1, right_x2 = sorted((right_x1, right_x2))
+    right_y1, right_y2 = sorted((right_y1, right_y2))
+    intersection_width = max(
+        0.0,
+        min(left_x2, right_x2) - max(left_x1, right_x1),
+    )
+    intersection_height = max(
+        0.0,
+        min(left_y2, right_y2) - max(left_y1, right_y1),
+    )
+    intersection = intersection_width * intersection_height
+    left_area = max(0.0, left_x2 - left_x1) * max(0.0, left_y2 - left_y1)
+    right_area = max(0.0, right_x2 - right_x1) * max(
+        0.0,
+        right_y2 - right_y1,
+    )
+    union = left_area + right_area - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _preserve_detected_text(
+    detected: list[dict[str, Any]],
+    existing: tuple[dict[str, Any], ...],
+    *,
+    minimum_iou: float = 0.5,
+) -> list[dict[str, Any]]:
+    """Keep published text while re-detection replaces bubble geometry."""
+
+    unmatched = set(range(len(existing)))
+    reconciled: list[dict[str, Any]] = []
+    for payload in detected:
+        best_index: int | None = None
+        best_iou = minimum_iou
+        for index in unmatched:
+            overlap = _box_iou(
+                payload.get("coords"),
+                existing[index].get("coords"),
+            )
+            if overlap >= best_iou:
+                best_index = index
+                best_iou = overlap
+        current = dict(payload)
+        if best_index is not None:
+            previous = existing[best_index]
+            unmatched.remove(best_index)
+            for field in _DETECTION_TEXT_FIELDS:
+                if field in previous:
+                    current[field] = previous[field]
+        reconciled.append(current)
+    return reconciled
 
 
 class LegacyTranslationAlgorithms:
@@ -302,6 +496,74 @@ class LegacyTranslationAlgorithms:
             dict(result)
             for result in extract_bubble_colors(image, coords, textlines)
         ]
+
+    def extract_terms(
+        self,
+        texts: list[str],
+        config: Mapping[str, Any],
+        *,
+        prompt: str,
+    ) -> Mapping[str, Any]:
+        from src.shared.ai_providers import TRANSLATION_CAPABILITY
+        from src.shared.ai_transport import UnifiedChatRequest
+        from src.shared.openai_execution import (
+            OpenAICompatibleBusinessRetryableError,
+            OpenAICompatibleSyncExecutor,
+            build_openai_compatible_runtime_options,
+            parse_json_block_from_text,
+        )
+
+        rendered_prompt = (
+            prompt.replace(
+                "{ocr_text}",
+                json.dumps(texts, ensure_ascii=False, separators=(",", ":")),
+            )
+            if "{ocr_text}" in prompt
+            else (
+                f"{prompt.rstrip()}\n\nOCR 文本：\n"
+                f"{json.dumps(texts, ensure_ascii=False, separators=(',', ':'))}"
+            )
+        )
+        options = _openai_options(config.get("openai_options"))
+        options.request.force_json_output = False
+
+        def parse_terms(raw: str) -> list[Mapping[str, Any]]:
+            parsed = parse_json_block_from_text(raw)
+            if isinstance(parsed, Mapping):
+                parsed = parsed.get("terms")
+            if not isinstance(parsed, list) or any(
+                not isinstance(entry, Mapping) for entry in parsed
+            ):
+                raise OpenAICompatibleBusinessRetryableError(
+                    "自动术语提取必须返回 JSON 数组或包含 terms 数组的对象"
+                )
+            return [dict(entry) for entry in parsed]
+
+        request = UnifiedChatRequest(
+            provider=str(
+                config.get("provider", config.get("model_provider", "siliconflow"))
+            ),
+            api_key=str(config.get("api_key", "")),
+            model=str(config.get("model_name", "")),
+            messages=[{"role": "user", "content": rendered_prompt}],
+            base_url=(
+                str(config["custom_base_url"])
+                if config.get("custom_base_url")
+                else None
+            ),
+            openai_options=options,
+            runtime_options=build_openai_compatible_runtime_options(timeout=120),
+            capability=TRANSLATION_CAPABILITY,
+        )
+        result = OpenAICompatibleSyncExecutor().execute(
+            request,
+            capability=TRANSLATION_CAPABILITY,
+            parser=parse_terms,
+        )
+        return {
+            "rawContent": result.raw_content,
+            "candidates": result.parsed,
+        }
 
     def translate(
         self,
@@ -519,7 +781,7 @@ class TranslationPipelineService:
         elif kind == "color":
             result = self._color(fence, step, page_id)
         elif kind == "auto_terms":
-            result = self._checkpoint_only(fence, step, {"delta": []})
+            result = self._auto_terms(fence, step, page_id)
         elif kind == "translate":
             result = self._translate(fence, step, page_id, kind)
         elif kind in {"hq_translate", "proofread"}:
@@ -615,14 +877,73 @@ class TranslationPipelineService:
         if not prepared:
             return {"__already_published__": True, "skipped": len(steps)}
 
+        constraint_contexts = [
+            {
+                "pageId": snapshot.page_id,
+                "constraints": self._effective_constraints(
+                    step,
+                    include_current_page=True,
+                ),
+            }
+            for step, snapshot, _bubble_payloads in prepared
+        ]
+        constraint_context_by_page = {
+            str(context["pageId"]): context
+            for context in constraint_contexts
+        }
+        restore_by_page_bubble: dict[str, dict[str, dict[str, str]]] = {}
+        section = self._with_constraint_prompt(
+            section,
+            constraint_contexts=constraint_contexts,
+        )
         images: list[Image.Image] = []
         request_pages: list[dict[str, Any]] = []
         try:
             for step, snapshot, bubble_payloads in prepared:
+                constraints = constraint_context_by_page[snapshot.page_id][
+                    "constraints"
+                ]
+                non_translate = constraints["nonTranslate"]
+                protected_bubbles: list[dict[str, Any]] = []
+                restore_by_bubble: dict[str, dict[str, str]] = {}
+                for bubble_index, bubble in enumerate(bubble_payloads):
+                    protected = dict(bubble)
+                    token_by_fragment: dict[str, str] = {}
+                    original, original_restore = _protect_non_translate_text(
+                        str(bubble.get("originalText", "")),
+                        (
+                            non_translate["entries"]
+                            if bool(non_translate["enabled"])
+                            else []
+                        ),
+                        token_prefix=f"{snapshot.page_id[:8]}_{bubble_index}",
+                        token_by_fragment=token_by_fragment,
+                    )
+                    translated_text, translated_restore = (
+                        _protect_non_translate_text(
+                            str(bubble.get("translatedText", "")),
+                            (
+                                non_translate["entries"]
+                                if bool(non_translate["enabled"])
+                                else []
+                            ),
+                            token_prefix=f"{snapshot.page_id[:8]}_{bubble_index}",
+                            token_by_fragment=token_by_fragment,
+                        )
+                    )
+                    protected["originalText"] = original
+                    protected["translatedText"] = translated_text
+                    protected_bubbles.append(protected)
+                    restore_by_bubble[str(bubble["bubbleId"])] = (
+                        translated_restore
+                        if translated_restore
+                        else original_restore
+                    )
+                restore_by_page_bubble[snapshot.page_id] = restore_by_bubble
                 request_pages.append(
                     {
                         "pageId": snapshot.page_id,
-                        "bubbles": bubble_payloads,
+                        "bubbles": protected_bubbles,
                     }
                 )
                 images.append(
@@ -698,6 +1019,14 @@ class TranslationPipelineService:
         completed = 0
         for step, snapshot, requested_bubbles in prepared:
             translated_by_id = expected[snapshot.page_id]
+            for bubble_id, translated_text in translated_by_id.items():
+                translated_by_id[bubble_id] = _restore_non_translate_text(
+                    translated_text,
+                    restore_by_page_bubble[snapshot.page_id].get(
+                        bubble_id,
+                        {},
+                    ),
+                )
             updated = [dict(payload) for payload in snapshot.bubbles]
             index_by_id = {
                 bubble_id: index
@@ -708,12 +1037,34 @@ class TranslationPipelineService:
                 updated[index_by_id[bubble_id]]["translatedText"] = str(
                     translated_by_id[bubble_id]
                 )
+            warnings = _translation_constraint_warnings(
+                [
+                    str(bubble.get("originalText", ""))
+                    for bubble in requested_bubbles
+                ],
+                [
+                    str(translated_by_id[str(bubble["bubbleId"])])
+                    for bubble in requested_bubbles
+                ],
+                constraint_context_by_page[snapshot.page_id]["constraints"],
+            )
+            warnings_by_bubble: dict[int, list[dict[str, Any]]] = {}
+            for warning in warnings:
+                warnings_by_bubble.setdefault(
+                    int(warning["bubbleIndex"]),
+                    [],
+                ).append(warning)
+            for bubble_index, requested in enumerate(requested_bubbles):
+                updated[index_by_id[str(requested["bubbleId"])]][
+                    "translationWarnings"
+                ] = warnings_by_bubble.get(bubble_index, [])
             fingerprint = _batch_input_fingerprint(
                 page_id=snapshot.page_id,
                 document_revision=snapshot.document_revision,
                 bubbles=requested_bubbles,
                 mode=mode,
                 round_index=round_index,
+                constraint_context=constraint_context_by_page[snapshot.page_id],
             )
             self._publish_bubble_update(
                 fence,
@@ -727,6 +1078,7 @@ class TranslationPipelineService:
                     "roundIndex": round_index,
                     "rawAssetId": raw_asset.id,
                     "parsedBubbleCount": len(translated_by_id),
+                    "constraintWarnings": warnings,
                     "inputFingerprint": fingerprint,
                 },
                 input_fingerprint=fingerprint,
@@ -759,7 +1111,7 @@ class TranslationPipelineService:
         angles = list(result.get("angles", []))
         directions = list(result.get("auto_directions", []))
         textlines = list(result.get("textlines_per_bubble", []))
-        payloads = [
+        payloads = _preserve_detected_text([
             self._new_bubble_payload(
                 coords=value,
                 polygon=polygons[index] if index < len(polygons) else [],
@@ -771,7 +1123,7 @@ class TranslationPipelineService:
                 style=snapshot.style_defaults,
             )
             for index, value in enumerate(coords)
-        ]
+        ], snapshot.bubbles)
         mask_record: AssetRecord | None = None
         mask = result.get("raw_mask")
         if isinstance(mask, Image.Image):
@@ -908,6 +1260,197 @@ class TranslationPipelineService:
             {"colored": len(colors)},
         )
 
+    def _auto_terms(
+        self,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
+        page_id: str,
+    ) -> Mapping[str, Any]:
+        snapshot = self._snapshot(page_id)
+        texts = [
+            str(payload.get("originalText", "")).strip()
+            for payload in snapshot.bubbles
+            if str(payload.get("originalText", "")).strip()
+        ]
+        effective_before = self._effective_constraints(
+            step,
+            include_current_page=False,
+        )
+        glossary = effective_before["glossary"]
+        baseline_revision = int(
+            self._config(step).get("translationConstraintRevision", 0)
+        )
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "pageId": page_id,
+                    "texts": texts,
+                    "baselineRevision": baseline_revision,
+                    "effectiveGlossary": glossary["entries"],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+        if not bool(glossary["autoExtractEnabled"]) or not texts:
+            checkpoint = {
+                "baselineRevision": baseline_revision,
+                "candidateCount": 0,
+                "duplicateCount": 0,
+                "addedCount": 0,
+                "delta": [],
+                "skipped": (
+                    "disabled"
+                    if not bool(glossary["autoExtractEnabled"])
+                    else "no_ocr_text"
+                ),
+            }
+            self.jobs.complete_step(
+                fence,
+                step_id=str(step["stepId"]),
+                checkpoint=checkpoint,
+                input_fingerprint=fingerprint,
+            )
+            return checkpoint
+
+        section = self._with_credential(self._config(step).get("translation", {}))
+        extractor = getattr(self.algorithms, "extract_terms", None)
+        if not callable(extractor):
+            raise JobConflict("translation algorithms do not support term extraction")
+        result = extractor(
+            texts,
+            section,
+            prompt=str(glossary["autoExtractPrompt"]),
+        )
+        raw_candidates = result.get("candidates")
+        if not isinstance(raw_candidates, list):
+            raise JobConflict("automatic term extraction returned no candidate array")
+        candidates: list[dict[str, str]] = []
+        for index, raw in enumerate(raw_candidates):
+            if not isinstance(raw, Mapping):
+                raise JobConflict(
+                    f"automatic term candidate {index} must be an object"
+                )
+            source = str(raw.get("source", "")).strip()
+            target = str(raw.get("target", "")).strip()
+            if not source or not target:
+                raise JobConflict(
+                    f"automatic term candidate {index} requires source and target"
+                )
+            candidates.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "note": str(raw.get("note", "")).strip(),
+                    "matchMode": "text",
+                }
+            )
+
+        effective_after, added_count = with_glossary_delta(
+            effective_before,
+            candidates,
+        )
+        before_keys = {
+            (str(entry["matchMode"]), str(entry["source"]))
+            for entry in glossary["entries"]
+        }
+        delta = [
+            dict(entry)
+            for entry in effective_after["glossary"]["entries"]
+            if (str(entry["matchMode"]), str(entry["source"])) not in before_keys
+        ]
+        duplicate_count = len(candidates) - added_count
+        raw_content = str(
+            result.get(
+                "rawContent",
+                json.dumps(
+                    candidates,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+        )
+        raw_asset = self.storage.publish_bytes(
+            raw_content.encode("utf-8"),
+            extension="json",
+            mime_type="application/json",
+            bind=lambda connection, asset_id: connection.execute(
+                insert(job_step_asset_outputs)
+                .values(
+                    job_step_id=str(step["stepId"]),
+                    role="model_raw",
+                    asset_id=asset_id,
+                )
+                .prefix_with("OR REPLACE")
+            ),
+        )
+        checkpoint = {
+            "baselineRevision": baseline_revision,
+            "candidateCount": len(candidates),
+            "duplicateCount": duplicate_count,
+            "addedCount": added_count,
+            "delta": delta,
+            "rawAssetId": raw_asset.id,
+        }
+
+        def publish(connection: Connection) -> None:
+            if not delta:
+                return
+            book_id = connection.execute(
+                select(jobs.c.book_id).where(jobs.c.id == fence.job_id)
+            ).scalar_one_or_none()
+            if book_id is None:
+                raise JobConflict("translation job book no longer exists")
+            current = connection.execute(
+                select(
+                    translation_constraints.c.payload_json,
+                    translation_constraints.c.revision,
+                ).where(translation_constraints.c.book_id == book_id)
+            ).mappings().one_or_none()
+            if current is None:
+                raise JobConflict("translation constraints no longer exist")
+            merged, global_added = with_glossary_delta(
+                validate_translation_constraints(
+                    json.loads(current["payload_json"])
+                ),
+                delta,
+            )
+            if global_added == 0:
+                return
+            changed = connection.execute(
+                update(translation_constraints)
+                .where(
+                    translation_constraints.c.book_id == book_id,
+                    translation_constraints.c.revision == current["revision"],
+                )
+                .values(
+                    payload_json=json.dumps(
+                        merged,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    revision=int(current["revision"]) + 1,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            if changed.rowcount != 1:
+                raise JobConflict(
+                    "translation constraints changed during automatic term append"
+                )
+
+        self.jobs.complete_step(
+            fence,
+            step_id=str(step["stepId"]),
+            checkpoint=checkpoint,
+            input_fingerprint=fingerprint,
+            publisher=publish,
+        )
+        return checkpoint
+
     def _translate(
         self,
         fence: AttemptFence,
@@ -917,30 +1460,90 @@ class TranslationPipelineService:
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
         texts = [str(payload.get("originalText", "")) for payload in snapshot.bubbles]
-        section = self._with_credential(
-            self._config(step).get("translation", {})
+        constraints = self._effective_constraints(
+            step,
+            include_current_page=True,
+        )
+        section = self._with_constraint_prompt(
+            self._with_credential(
+                self._config(step).get("translation", {})
+            ),
+            constraint_contexts=[
+                {
+                    "pageId": page_id,
+                    "constraints": constraints,
+                }
+            ],
         )
         section.setdefault(
             "target_language",
             self._config(step).get("targetLanguage", "zh"),
         )
-        result = self.algorithms.translate(texts, section, mode=mode)
-        translated = list(result.get("translated", []))
+        non_translate = constraints["nonTranslate"]
+        protected_texts: list[str] = []
+        restore_by_index: list[dict[str, str]] = []
+        for index, text in enumerate(texts):
+            protected, restore = _protect_non_translate_text(
+                text,
+                (
+                    non_translate["entries"]
+                    if bool(non_translate["enabled"])
+                    else []
+                ),
+                token_prefix=f"{page_id[:8]}_{index}",
+            )
+            protected_texts.append(protected)
+            restore_by_index.append(restore)
+        result = self.algorithms.translate(protected_texts, section, mode=mode)
+        translated = [
+            _restore_non_translate_text(str(value), restore_by_index[index])
+            for index, value in enumerate(list(result.get("translated", [])))
+        ]
         textbox = list(result.get("textbox", []))
         if len(translated) != len(snapshot.bubbles):
             raise JobConflict("translation result count does not match bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
+        warnings = _translation_constraint_warnings(
+            texts,
+            translated,
+            constraints,
+        )
+        warnings_by_bubble: dict[int, list[dict[str, Any]]] = {}
+        for warning in warnings:
+            warnings_by_bubble.setdefault(
+                int(warning["bubbleIndex"]),
+                [],
+            ).append(warning)
         for index, payload in enumerate(updated):
             payload["translatedText"] = str(translated[index])
             payload["textboxText"] = (
                 str(textbox[index]) if index < len(textbox) else ""
             )
+            payload["translationWarnings"] = warnings_by_bubble.get(index, [])
         return self._publish_bubble_update(
             fence,
             step,
             snapshot,
             updated,
-            {"translated": len(translated), "mode": mode},
+            {
+                "translated": len(translated),
+                "mode": mode,
+                "constraintWarnings": warnings,
+            },
+            input_fingerprint=hashlib.sha256(
+                json.dumps(
+                    {
+                        "pageId": page_id,
+                        "documentRevision": snapshot.document_revision,
+                        "texts": texts,
+                        "mode": mode,
+                        "translationConstraints": constraints,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
         )
 
     def _repair(
@@ -1004,6 +1607,7 @@ class TranslationPipelineService:
                 connection,
                 self.storage,
                 page_id,
+                initialize_auto_styles=True,
             )
         render_payloads = [
             render_payload
@@ -1112,6 +1716,7 @@ class TranslationPipelineService:
                 connection,
                 self.storage,
                 page_id,
+                initialize_auto_styles=True,
             )
         records = {
             str(row["role"]): AssetRecord(
@@ -1319,6 +1924,112 @@ class TranslationPipelineService:
     def _config(self, step: Mapping[str, Any]) -> dict[str, Any]:
         value = step.get("config", {})
         return dict(value) if isinstance(value, Mapping) else {}
+
+    def _effective_constraints(
+        self,
+        step: Mapping[str, Any],
+        *,
+        include_current_page: bool,
+    ) -> dict[str, Any]:
+        config = self._config(step)
+        raw = config.get("translationConstraints")
+        constraints = validate_translation_constraints(
+            raw if isinstance(raw, Mapping) else empty_translation_constraints()
+        )
+        job_id = step.get("jobId")
+        item_ordinal = step.get("itemOrdinal")
+        if not isinstance(job_id, str) or not isinstance(item_ordinal, int):
+            return constraints
+        comparison = (
+            job_items.c.ordinal <= item_ordinal
+            if include_current_page
+            else job_items.c.ordinal < item_ordinal
+        )
+        with self.engine.connect() as connection:
+            checkpoints = list(
+                connection.execute(
+                    select(job_steps.c.checkpoint_json)
+                    .join(
+                        job_items,
+                        job_items.c.id == job_steps.c.job_item_id,
+                    )
+                    .where(
+                        job_items.c.job_id == job_id,
+                        comparison,
+                        job_steps.c.kind == "auto_terms",
+                        job_steps.c.status == "completed",
+                    )
+                    .order_by(job_items.c.ordinal)
+                ).scalars()
+            )
+        for checkpoint_json in checkpoints:
+            checkpoint = (
+                json.loads(checkpoint_json)
+                if isinstance(checkpoint_json, str)
+                else {}
+            )
+            delta = checkpoint.get("delta")
+            if isinstance(delta, list):
+                constraints, _added = with_glossary_delta(
+                    constraints,
+                    [
+                        entry
+                        for entry in delta
+                        if isinstance(entry, Mapping)
+                    ],
+                )
+        return constraints
+
+    @staticmethod
+    def _with_constraint_prompt(
+        section: Mapping[str, Any],
+        *,
+        constraint_contexts: list[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        result = dict(section)
+        active_contexts: list[dict[str, Any]] = []
+        for context in constraint_contexts:
+            raw_constraints = context.get("constraints")
+            constraints = validate_translation_constraints(
+                raw_constraints
+                if isinstance(raw_constraints, Mapping)
+                else empty_translation_constraints()
+            )
+            glossary = constraints["glossary"]
+            non_translate = constraints["nonTranslate"]
+            if not bool(glossary["enabled"]) and not bool(non_translate["enabled"]):
+                continue
+            active_contexts.append(
+                {
+                    "pageId": str(context.get("pageId", "")),
+                    "glossary": (
+                        glossary["entries"] if bool(glossary["enabled"]) else []
+                    ),
+                    "nonTranslate": (
+                        non_translate["entries"]
+                        if bool(non_translate["enabled"])
+                        else []
+                    ),
+                }
+            )
+        if not active_contexts:
+            return result
+        instruction = (
+            "必须遵守以下按 pageId 冻结的翻译约束。glossary 中 text/regex "
+            "规则规定原文到译文的固定映射；nonTranslate 中 text/regex 匹配到的"
+            "内容必须原样保留。不得把某一页稍后产生的术语反向用于更早页。\n"
+            + json.dumps(
+                {"pageConstraints": active_contexts},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        base_prompt = str(result.get("prompt_content", "")).rstrip()
+        result["prompt_content"] = (
+            f"{base_prompt}\n\n{instruction}" if base_prompt else instruction
+        )
+        return result
 
     def _with_credential(self, section: object) -> dict[str, Any]:
         result = dict(section) if isinstance(section, Mapping) else {}

@@ -223,10 +223,11 @@ export function useTranslateInit() {
       if (typeof document !== 'undefined') {
         document.title = `${bootstrap.chapter.title} - ${bootstrap.book.title} - Saber-Translator`
       }
-    } catch {
+    } catch (error) {
       if (!isOwnerAlive || requestId !== bookContextRequestId) return
       bookTranslationConstraintsStore.resetBookConstraints()
-      showToast('加载后端章节数据失败', 'error')
+      const message = error instanceof Error ? error.message : '未知错误'
+      showToast(`加载后端章节数据失败：${message}`, 'error')
     }
   }
 

@@ -33,9 +33,31 @@ const book = {
 const constraints = {
   bookId: book.id,
   revision: 2,
+  schemaVersion: 2,
   payload: {
-    glossary: {},
-    nonTranslate: {},
+    glossary: {
+      enabled: true,
+      autoExtractEnabled: false,
+      autoExtractPrompt: '提取 {ocr_text}',
+      entries: [
+        {
+          source: 'Saber',
+          target: '阿尔托莉雅',
+          note: '',
+          matchMode: 'text',
+        },
+      ],
+    },
+    nonTranslate: {
+      enabled: true,
+      entries: [
+        {
+          pattern: 'Excalibur',
+          note: '',
+          matchMode: 'text',
+        },
+      ],
+    },
   },
 }
 
@@ -71,9 +93,36 @@ describe('bookshelf v2 api contracts', () => {
       '/api/v2/books/book%2Fid%20one/translation-constraints',
     )
     expect(result.book?.translation_constraints).toEqual({
-      glossary: {},
-      non_translate: {},
+      glossary: constraints.payload.glossary,
+      non_translate: constraints.payload.nonTranslate,
     })
+  })
+
+  it('saves the structured constraint document through its dedicated CAS resource', async () => {
+    putMock.mockResolvedValue({
+      ...constraints,
+      revision: 3,
+    })
+    const { getBookDetail, updateBook } = await import('@/api/bookshelf')
+    await getBookDetail(book.id)
+    await updateBook(book.id, {
+      translation_constraints: {
+        glossary: constraints.payload.glossary,
+        non_translate: constraints.payload.nonTranslate,
+      },
+    })
+
+    expect(putMock).toHaveBeenCalledWith(
+      '/api/v2/books/book%2Fid%20one/translation-constraints',
+      {
+        baseRevision: 2,
+        payload: {
+          glossary: constraints.payload.glossary,
+          nonTranslate: constraints.payload.nonTranslate,
+        },
+      },
+      commandConfig,
+    )
   })
 
   it('uses direct chapter resources and idempotency headers', async () => {

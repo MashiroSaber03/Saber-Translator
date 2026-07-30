@@ -61,9 +61,23 @@ export const useBubbleStore = defineStore('bubble', () => {
   }
 
   function setBubbles(newBubbles: BubbleState[], skipSync: boolean = false): void {
+    const primaryBubbleId = selectedBubble.value?.backendBubbleId
+    const selectedBubbleIds = selectedIndices.value
+      .map(index => bubbles.value[index]?.backendBubbleId)
+      .filter((id): id is string => Boolean(id))
     bubbles.value = newBubbles
     initialStates.value = cloneBubbleStates(newBubbles)
-    clearSelection()
+    const indexById = new Map(
+      newBubbles
+        .map((bubble, index) => [bubble.backendBubbleId, index] as const)
+        .filter((entry): entry is readonly [string, number] => Boolean(entry[0])),
+    )
+    selectedIndices.value = selectedBubbleIds
+      .map(id => indexById.get(id))
+      .filter((index): index is number => index !== undefined)
+    selectedIndex.value = primaryBubbleId
+      ? (indexById.get(primaryBubbleId) ?? -1)
+      : -1
     if (!skipSync) {
       syncToCurrentImage()
     }

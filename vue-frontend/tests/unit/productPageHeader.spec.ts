@@ -234,4 +234,17 @@ describe('ProductPageHeader', () => {
     expect(mobileBlock).toMatch(/\.product-page-header--fixed \.product-page-header__name\s*\{[\s\S]*display:\s*none/)
     expect(mobileBlock).toMatch(/\.product-page-header--fixed \.product-page-header__nav,\s*\.product-page-header--fixed \.product-page-header__actions\s*\{[\s\S]*gap:\s*8px/)
   })
+
+  it('reserves header action space for the global task-center launcher', () => {
+    const headerSource = readFileSync(resolve(process.cwd(), 'src/components/product/ProductPageHeader.vue'), 'utf8')
+    const launcherSource = readFileSync(resolve(process.cwd(), 'src/components/task-center/TaskCenterLauncher.vue'), 'utf8')
+    const studioTopbarSource = readFileSync(resolve(process.cwd(), 'src/components/insight/studio/StudioTopbar.vue'), 'utf8')
+
+    expect(headerSource).toMatch(/\.product-page-header--brand \.product-page-header__actions,\s*\.product-page-header--fixed \.product-page-header__actions,\s*\.product-page-header--reader \.product-page-header__actions\s*\{[^}]*margin-right:\s*136px/)
+    expect(headerSource).toMatch(/@media \(--breakpoint-md-down\)[\s\S]*margin-right:\s*72px/)
+    expect(launcherSource).toContain('task-center-launcher__label')
+    expect(launcherSource).toMatch(/@media \(--breakpoint-md-down\)[\s\S]*\.task-center-launcher__label\s*\{[^}]*display:\s*none/)
+    expect(studioTopbarSource).toContain('padding: 10px 156px 10px 20px')
+    expect(studioTopbarSource).toMatch(/@media \(--breakpoint-md-down\)[\s\S]*padding-right:\s*84px/)
+  })
 })

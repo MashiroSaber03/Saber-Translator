@@ -236,6 +236,12 @@ withDefaults(defineProps<{
   gap: 16px;
 }
 
+.product-page-header--brand .product-page-header__actions,
+.product-page-header--fixed .product-page-header__actions,
+.product-page-header--reader .product-page-header__actions {
+  margin-right: 136px;
+}
+
 .product-page-header--fixed .product-page-header__name {
   font-size: 18px;
   font-weight: 600;
@@ -349,6 +355,12 @@ withDefaults(defineProps<{
   .product-page-header--fixed .product-page-header__nav,
   .product-page-header--fixed .product-page-header__actions {
     gap: 8px;
+  }
+
+  .product-page-header--brand .product-page-header__actions,
+  .product-page-header--fixed .product-page-header__actions,
+  .product-page-header--reader .product-page-header__actions {
+    margin-right: 72px;
   }
 }
 </style>

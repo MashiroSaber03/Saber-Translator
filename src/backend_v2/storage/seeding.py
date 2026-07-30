@@ -7,6 +7,10 @@ import uuid
 
 from sqlalchemy import Engine, case, insert, select, update
 
+from src.backend_v2.content.translation_constraints import (
+    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
+    empty_translation_constraints,
+)
 from src.backend_v2.storage.defaults import (
     DEFAULT_FONT_ID,
     DEFAULT_TEXT_STYLE,
@@ -69,7 +73,13 @@ def seed_system_records(engine: Engine) -> None:
             connection.execute(
                 insert(translation_constraints).values(
                     book_id=quick_book_id,
-                    payload_json='{"glossary":[],"nonTranslate":[]}',
+                    payload_json=json.dumps(
+                        empty_translation_constraints(),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
 

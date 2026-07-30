@@ -79,6 +79,78 @@ def test_openapi_operations_match_the_runtime_route_set(tmp_path: Path) -> None:
         engine.dispose()
 
 
+def test_lan_writes_are_not_restricted_by_origin_without_wildcard_cors(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="origin-contract",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    try:
+        same_origin = client.post(
+            "/api/v2/books",
+            json={"title": "same origin"},
+            headers={
+                "Host": "192.168.1.8:5000",
+                "Origin": "http://192.168.1.8:5000",
+                "Idempotency-Key": "same-origin-book",
+            },
+        )
+        assert same_origin.status_code == 201
+        assert "Access-Control-Allow-Origin" not in same_origin.headers
+
+        local_alias = client.post(
+            "/api/v2/books",
+            json={"title": "local alias"},
+            headers={
+                "Host": "127.0.0.1:5000",
+                "Origin": "http://localhost:5000",
+                "Idempotency-Key": "local-alias-book",
+            },
+        )
+        assert local_alias.status_code == 201
+        assert "Access-Control-Allow-Origin" not in local_alias.headers
+
+        cross_origin = client.post(
+            "/api/v2/books",
+            json={"title": "cross origin"},
+            headers={
+                "Host": "192.168.1.8:5000",
+                "Origin": "http://malicious.example:5000",
+                "Idempotency-Key": "cross-origin-book",
+            },
+        )
+        assert cross_origin.status_code == 201
+        assert "Access-Control-Allow-Origin" not in cross_origin.headers
+
+        command_line_client = client.post(
+            "/api/v2/books",
+            json={"title": "trusted LAN client"},
+            headers={
+                "Host": "192.168.1.8:5000",
+                "Idempotency-Key": "trusted-lan-book",
+            },
+        )
+        assert command_line_client.status_code == 201
+        assert "Access-Control-Allow-Origin" not in command_line_client.headers
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+        engine.dispose()
+
+
 def test_openapi_contract_is_closed_and_all_local_refs_resolve() -> None:
     document = _document()
     assert document["openapi"].startswith("3.1.")

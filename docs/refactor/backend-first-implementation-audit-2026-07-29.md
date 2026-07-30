@@ -4,7 +4,7 @@
 
 审计基线：
 
-- 唯一方案：`docs/refactor/backend-first-architecture-plan.md`（4086 行、24 节）。
+- 唯一方案：`docs/refactor/backend-first-architecture-plan.md`（4088 行、24 节）。
 - 实现分支：`codex/backend-first-v2`。
 - 审计范围：Launcher/API/Worker、SQLite/Alembic/资产、jobs/operations、翻译、Insight、Character Studio、书架、任务中心、阅读器、设置、插件、媒体加载、生产静态包和自动化验收。
 
@@ -14,8 +14,8 @@
 2. 浏览器已退化为交互和显示端。已提交的翻译、分析、导入导出、续写、Character Studio 保存型操作等由后端持久状态驱动，浏览器关闭或崩溃不会使任务事实和已完成产物丢失。
 3. SQLite 是结构化事实源，不可变 assets 是文件事实源；任务、步骤、事件、快照、凭据版本、插件版本、operation attempt、进程 epoch 和写锁均可恢复、可 fencing。
 4. 图片列表统一消费缩略图并窗口化；主图只按当前页或阅读器视口加载。100/500/1000 页浏览器和 Worker 趋势验收均已通过。
-5. 用户确认的两项偏差作为最终需求，不是缺陷：
-   - 可信局域网完全开放，不增加 Origin/鉴权限制。
+5. 用户确认的两项最终边界：
+   - 可信局域网完全开放且免鉴权；API 不增加 Origin/同源写保护，带任意 `Origin` 或不带 `Origin` 的请求执行相同业务逻辑。
    - 不增加单图像素预算、解码安全切片等机制；采用逐页解码、及时释放和有界队列。
 
 ## 2. API Key 故障结论与修复
@@ -57,7 +57,7 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 | --- | --- | --- |
 | §1–§3 决策与边界 | 完成 | v2-only 生产入口、浏览器仅交互/显示、后端事实源和任务范围边界成立。 |
 | §4 运行架构 | 完成 | Launcher/API/Worker 分进程、单实例、epoch/heartbeat/fencing、自失租退出和独立拉起均有进程集成测试。局域网开放按用户最终口径执行。 |
-| §5 存储架构 | 完成 | Alembic head `0012`；SQLite WAL/FK/busy timeout；明确 FK、删除语义和热路径索引；不可变资产、journal、凭据/插件版本及所有领域关系闭环。 |
+| §5 存储架构 | 完成 | Alembic head `0013`；SQLite WAL/FK/busy timeout；明确 FK、删除语义和热路径索引；不可变资产、journal、凭据/插件版本及所有领域关系闭环。 |
 | §6 快速工作区 | 完成 | 固定系统书/章、显式 reset、快速 bootstrap、new/existing book promote、约束处理和 job/operation/import lease 423 保护。 |
 | §7 统一任务系统 | 完成 | 单全局队列、批次、排序、暂停/继续/取消/drain、replacement retry、SSE、事件游标、最近 200 批历史、Worker 控制命令和 crash recovery。 |
 | §8 翻译后端化 | 完成 | 章节独立 job、批量创建、冻结配置/凭据/插件/字体、顺序/并行 Pool、HQ 稳定 ID batch、多轮校对、render/save 分界和失败项重试。 |
@@ -93,7 +93,7 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 
 ### 5.2 查询与删除
 
-- 迁移 `0012` 为所有 FK 和核心过滤/排序组合补齐索引。
+- 迁移 `0012` 为所有 FK 和核心过滤/排序组合补齐索引；`0013` 将书籍术语表/禁翻表收口为规范化、可约束、可 revision/CAS 的后端事实。
 - `EXPLAIN QUERY PLAN` 回归覆盖 1000 pages/assets、200 batches/jobs、10000 events 和 200 drafts，断言命中预期索引。
 - 删除矩阵覆盖 book/chapter/page、Insight run、Studio、plugin/font、终态历史 `SET NULL` 和非终态领域保护。
 - 快速 reset/promote 覆盖 job、operation、import lease、两种 promote 和 constraints 组合。
@@ -132,13 +132,34 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 
 在项目 `venv/` 和前端本地依赖中完成：
 
-- 全部后端：`268 passed`；其中 v2 独立套件 `166 passed`。
+- 全部后端：`297 passed`。
 - 后端仅有 2 条 SQLAlchemy/Alembic 反射 SQLite 表达式索引的已知 warning，不影响迁移或运行。
-- 前端 Vitest：`240` 个测试文件、`1725 passed`。
+- 前端 Vitest：`243` 个测试文件、`1752 passed`。
 - Playwright：`32 passed`，包含全部 100/500/1000 页内存趋势和桌面/移动端视觉契约。
 - `npm run typecheck`、`npm run lint`、`npm run lint:css`、`npm run lint:ui` 全部通过。
-- `npm run check:api` 通过，OpenAPI 生成类型无漂移；运行时 Flask route set 与 OpenAPI operation set 双向闭集相等。
-- `npm run build:check` 通过，`src/backend_v2/static/vue` 已由当前源码重建。
+- OpenAPI TypeScript 生成前后 SHA-256 一致；运行时 Flask route set 与 OpenAPI operation set 双向闭集相等。
+- `npm run build` 与独立 `vue-tsc` 均通过，`src/backend_v2/static/vue` 已由当前源码重建。
+- Python `compileall` 与 `git diff --check` 通过。
+
+## 7.1 2026-07-30 最终复审补强
+
+在上述全量门禁之前，又完成一轮按方案逐项反查和真实后端联调，补齐了以下边界：
+
+- Insight 失败项重试现在始终创建隔离的新 run；成功页批量复制到新 staging，当前设置/原快照、凭据与插件版本的重试语义明确，失败 run 不会切换旧 active head。
+- Insight embedding 按固定上限分批请求，远程协议中断进入可重试错误；避免一次发送全书向量造成连接被上游关闭。
+- 所有 job 在创建事务中默认冻结当时启用的插件版本；显式空快照和沿用原快照仍保持各自语义。
+- 网页提取重试创建全新的 durable draft；网页提交重试只重放失败 draft page，不重复导入成功页。取消/失败 job 会同步 draft 终态，旧数据也会在 bootstrap/读取时自愈，不再恢复为不可操作的“活动草稿”。
+- 前端网页导入在任务已由后端接受后允许立即关闭；后端任务继续运行，终态取消时表单会解除锁定。
+- 通用路径帮助器只按单一规则生成 `/api/v2`，测试样例不再保留已下线的旧 API 名称或额外输入兼容。
+- Character Studio 卡片助手只接受项目定义的领域 patch 对象，不再同时维护 RFC 6902 转换方言。
+- 已删除浏览器写请求的 Origin/同源保护及其地址别名判断；新建书籍等写接口不再因 `Origin` 或 Host 表达形式返回 403，符合可信局域网完全开放口径。
+
+真实 Launcher + API + Worker 和应用内浏览器复验覆盖了书架、快速翻译、翻译/编辑/阅读、设置、任务中心、图片/PDF/CBZ/文本/网页导入导出、Insight 概览/页面/时间线/问答/笔记、Character Studio 与插件；按用户要求未执行漫画续写。额外确认：
+
+- 浏览器页面切换和后端重启不丢失任务事实，队列恢复后仍由 Worker 继续裁决。
+- 任务中心对失败网页提取执行“重试失败项”后，数据库出现新的 job、新的 draft id 和新的临时目录，旧终态 draft 未被复用。
+- 一次 Insight 全书失败项重试中，13 个成功页被隔离复制；外部 VLM 与聚合 LLM 分别在 300 秒总时限后超时，新 run 正确进入 `failed` 且没有覆盖旧正式结果。此前已发布的概览、时间线、14 页页面结果、问答笔记和 active vector generation 继续可读。
+- 测试创建的临时书籍及其章节已通过书架 UI 删除；下载/导入测试文件已移出工作树。
 
 ## 8. 收口判断
 

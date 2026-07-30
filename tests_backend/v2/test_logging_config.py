@@ -131,3 +131,16 @@ def test_api_request_logging_records_timing_without_query_values(caplog) -> None
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "HTTP GET /ping -> 200" in messages
     assert "sk-query-secret" not in messages
+
+
+def test_api_request_logging_ignores_normal_stream_disconnects(caplog) -> None:
+    app = Flask(__name__)
+    _install_request_logging(app)
+    teardown = app.teardown_request_funcs[None][-1]
+
+    with app.test_request_context("/api/v2/jobs/events"):
+        with caplog.at_level(logging.ERROR, logger="saber.api.http"):
+            teardown(GeneratorExit())
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "raised an unhandled exception" not in messages

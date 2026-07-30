@@ -276,6 +276,86 @@ describe('WebImportModal', () => {
     expect(webImportStore.status).toBe('idle')
   })
 
+  it('closes immediately after the backend has accepted an extraction task', async () => {
+    const webImportStore = useWebImportStore()
+    webImportStore.modalVisible = true
+    webImportStore.settings.ui.autoImport = false
+    webImportStore.draftSettings.ui.autoImport = false
+    const pendingDraft = createDeferred<{
+      id: string
+      sourceUrl: string
+      status: string
+      revision: number
+      candidateCount: number
+      failedCount: number
+      actualEngine: string
+    }>()
+    getWebImportDraftMock.mockReset()
+    getWebImportDraftMock.mockReturnValueOnce(pendingDraft.promise)
+
+    const wrapper = mount(WebImportModal)
+    await wrapper.get('#webImportSourceUrl').setValue('https://example.com/chapter-1')
+    await wrapper.get('form[aria-label="网页导入提取"]').trigger('submit')
+    await flushPromises()
+
+    expect(createWebImportDraftMock).toHaveBeenCalled()
+    expect(webImportStore.status).toBe('extracting')
+
+    await wrapper.get('.modal-close').trigger('click')
+    await flushPromises()
+
+    expect(confirmProductActionMock).not.toHaveBeenCalled()
+    expect(webImportStore.modalVisible).toBe(false)
+    expect(webImportStore.status).toBe('idle')
+
+    pendingDraft.resolve({
+      id: 'draft-1',
+      sourceUrl: 'https://example.com/chapter-1',
+      status: 'ready',
+      revision: 1,
+      candidateCount: 0,
+      failedCount: 0,
+      actualEngine: 'ai-agent',
+    })
+    await flushPromises()
+  })
+
+  it('recovers a cancelled backend draft without locking the import form', async () => {
+    const webImportStore = useWebImportStore()
+    getTranslationBootstrapMock.mockResolvedValueOnce({
+      activeWebImportDraft: {
+        id: 'cancelled-draft',
+        status: 'extracting',
+        revision: 1,
+        expiresAt: '2030-01-01T00:00:00Z',
+      },
+      chapter: { id: 'chapter-1' },
+    })
+    getWebImportDraftMock.mockResolvedValueOnce({
+      id: 'cancelled-draft',
+      sourceUrl: 'https://example.com/cancelled',
+      status: 'cancelled',
+      revision: 2,
+      candidateCount: 0,
+      failedCount: 0,
+      actualEngine: null,
+      jobs: [
+        { id: 'job-1', kind: 'web_extract', status: 'cancelled' },
+      ],
+    })
+
+    const wrapper = mount(WebImportModal)
+    webImportStore.modalVisible = true
+    await flushPromises()
+
+    expect(webImportStore.status).toBe('error')
+    expect(webImportStore.error).toContain('已取消')
+    const input = wrapper.get('#webImportSourceUrl')
+    expect(input.attributes('disabled')).toBeUndefined()
+    await input.setValue('https://example.com/new-chapter')
+    expect(wrapper.get('.web-import-extract-bar__submit').attributes('disabled')).toBeUndefined()
+  })
+
   it('keeps modal shell visuals on typed BaseModal variants instead of a global style entry', () => {
     const webImportStore = useWebImportStore()
     webImportStore.modalVisible = true

@@ -41,7 +41,7 @@ describe('route path source contracts', () => {
     expect(isKnownFrontendRoute('/insight/character-studio?book=book-1')).toBe(true)
     expect(isKnownFrontendRoute('/missing')).toBe(false)
 
-    expect(classifyAppPath('/api/bookshelf/books')).toEqual({
+    expect(classifyAppPath('/api/v2/books')).toEqual({
       isFrontendRoute: false,
       isApiRoute: true,
       isStaticRoute: false,
@@ -57,7 +57,7 @@ describe('route path source contracts', () => {
       isStaticRoute: false,
     })
 
-    expect(buildApiPath('/bookshelf/books')).toBe('/api/bookshelf/books')
+    expect(buildApiPath('/books')).toBe('/api/v2/books')
     expect(buildStaticPath('/css', '/layout.css')).toBe('/static/css/layout.css')
     expect(buildVueStaticAssetPath('main.abc123.js')).toBe('/js/main.abc123.js')
     expect(buildVueStaticAssetPath('assets/index.abc123.css')).toBe('/assets/index.abc123.css')

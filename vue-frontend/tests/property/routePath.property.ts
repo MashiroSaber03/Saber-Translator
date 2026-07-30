@@ -15,12 +15,12 @@ describe('route path properties', () => {
     fc.assert(
       fc.property(
         fc.constantFrom(
-          'bookshelf/books',
-          'sessions/save',
+          'books',
+          'jobs',
           'plugins',
-          'get_prompts',
-          'manga-insight/test/analyze/start',
-          'test_ollama_connection'
+          'settings',
+          'insight/runs',
+          'system/health'
         ),
         endpoint => {
           expect(classifyAppPath(buildApiPath(endpoint))).toEqual({
@@ -74,7 +74,7 @@ describe('route path properties', () => {
           '/reader',
           '/insight',
           '/insight/character-studio',
-          '/api/bookshelf/books',
+          '/api/v2/books',
           '/static/css/layout.css',
           '/js/bundle.abc123.js',
           '/assets/index.abc123.css',

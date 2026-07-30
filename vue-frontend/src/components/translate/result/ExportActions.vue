@@ -79,7 +79,7 @@ function handleImportFile(files: File[]): void {
       <div class="result-export-actions__download-all">
         <UiButton
           variant="primary"
-          :disabled="!hasImages"
+          :disabled="!hasImages || isDownloading"
           @click="$emit('downloadAll')"
         >
           <UiIcon name="download" />
@@ -89,6 +89,7 @@ function handleImportFile(files: File[]): void {
           <UiSelect
             :model-value="downloadFormat"
             :options="downloadFormatOptions"
+            :disabled="isDownloading"
             size="sm"
             aria-label="下载格式"
             @update:model-value="updateDownloadFormat"

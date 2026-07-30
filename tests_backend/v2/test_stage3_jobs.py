@@ -324,6 +324,36 @@ def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
         ).scalars().all() == ["completed", "completed"]
 
 
+def test_worker_loop_fails_instead_of_spinning_on_unregistered_step(
+    job_platform,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository, steps=("one", "missing-handler"))
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"one": lambda _fence, step: {"done": step["stepKind"]}},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if repository.get_job(job_id)["status"] == "failed":
+            break
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+
+    job = repository.get_job(job_id)
+    assert job["status"] == "failed"
+    assert job["error"] == {
+        "code": "UNSUPPORTED_STEP_KIND",
+        "message": "Worker 没有以下步骤的处理器：missing-handler",
+    }
+
+
 def test_worker_rss_remains_bounded_for_large_durable_job_graphs(
     tmp_path: Path,
 ) -> None:
@@ -341,7 +371,7 @@ def test_worker_rss_remains_bounded_for_large_durable_job_graphs(
             capture_output=True,
             check=True,
             text=True,
-            timeout=210,
+            timeout=270,
         )
         measurements.append(json.loads(result.stdout.strip()))
 

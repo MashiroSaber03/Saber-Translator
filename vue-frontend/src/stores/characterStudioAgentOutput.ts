@@ -5,13 +5,20 @@ export interface CharacterStudioAgentOutput {
   htmlPreview: string
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function parseAgentPatch(content: string): CharacterStudioAgentPatchV2 | null {
   const match = content.match(/```json:patch\s*([\s\S]*?)```/i)
   if (!match) return null
   try {
-    return JSON.parse(match[1]!.trim()) as CharacterStudioAgentPatchV2
-  } catch {
-    return null
+    const parsed: unknown = JSON.parse(match[1]!.trim())
+    if (isRecord(parsed)) return parsed as CharacterStudioAgentPatchV2
+    throw new Error('卡片助手 patch 必须为对象')
+  } catch (error) {
+    if (error instanceof SyntaxError) return null
+    throw error
   }
 }
 

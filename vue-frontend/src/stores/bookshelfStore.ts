@@ -464,16 +464,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function createChapterApi(bookId: string, title: string): Promise<ChapterData | null> {
-    try {
-      const response = await bookshelfApi.createChapter(bookId, title)
-      if (response.success && response.chapter) {
-        addChapter(bookId, response.chapter)
-        return response.chapter
-      }
-      return null
-    } catch {
-      return null
+    const response = await bookshelfApi.createChapter(bookId, title)
+    if (response.success && response.chapter) {
+      addChapter(bookId, response.chapter)
+      return response.chapter
     }
+    return null
   }
 
   async function updateChapterApi(
@@ -481,16 +477,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     chapterId: string,
     title: string,
   ): Promise<boolean> {
-    try {
-      const response = await bookshelfApi.updateChapter(bookId, chapterId, title)
-      if (response.success) {
-        updateChapter(bookId, chapterId, { title })
-        return true
-      }
-      return false
-    } catch {
-      return false
+    const response = await bookshelfApi.updateChapter(bookId, chapterId, title)
+    if (response.success) {
+      updateChapter(bookId, chapterId, { title })
+      return true
     }
+    return false
   }
 
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<boolean> {

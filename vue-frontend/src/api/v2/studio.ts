@@ -9,6 +9,7 @@ export type V2StudioChatState = components['schemas']['StudioChatState']
 export type V2StudioDocument = components['schemas']['StudioDocument']
 export type V2StudioIndex = components['schemas']['StudioIndex']
 export type V2StudioOperationAccepted = components['schemas']['OperationAccepted']
+export type V2StudioMessageChainMutation = components['schemas']['StudioMessageChainMutation']
 export type V2StudioSession = components['schemas']['StudioChatSession']
 
 function commandHeaders(): Record<string, string> {
@@ -193,7 +194,7 @@ export function regenerateV2StudioMessage(
 export function deleteV2StudioMessage(
   messageId: string,
   baseSessionRevision: number,
-): Promise<V2StudioSession> {
+): Promise<V2StudioMessageChainMutation> {
   return apiClient.delete(
     `${ROOT}/chat/messages/${encodeURIComponent(messageId)}`,
     {
@@ -272,7 +273,7 @@ export function importV2StudioSession(
 }
 
 export function getV2StudioPromptPreview(sessionId: string): Promise<{
-  promptPreview: string
+  promptPreview: unknown
   sessionId: string
 }> {
   return apiClient.get(

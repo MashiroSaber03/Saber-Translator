@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest import mock
 import sys
@@ -26,6 +27,15 @@ if "openai" not in sys.modules:
 
 
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
+    def test_incomplete_http_response_is_transport_retryable(self) -> None:
+        import httpx
+
+        from src.shared.ai_transport import RETRYABLE_EXCEPTIONS
+
+        self.assertTrue(
+            issubclass(httpx.RemoteProtocolError, RETRYABLE_EXCEPTIONS)
+        )
+
     def test_shared_json_parser_ignores_reasoning_tags_before_extracting_json(self) -> None:
         from src.shared.openai_execution import parse_json_block_from_text
 
@@ -168,6 +178,31 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_chat_client_bounds_the_complete_logical_call(self) -> None:
+        from src.core.manga_insight.config_models import ChatLLMConfig
+        from src.core.manga_insight.embedding_client import ChatClient
+
+        async def never_finishes(*_args, **_kwargs):
+            await asyncio.Event().wait()
+
+        config = ChatLLMConfig(
+            provider="custom",
+            api_key="test-key",
+            model="chat-model",
+            base_url="https://example.com/v1",
+        )
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(side_effect=never_finishes),
+        ):
+            client = ChatClient(config)
+            client._total_timeout = 0.01
+            with self.assertRaisesRegex(
+                TimeoutError,
+                "对话模型调用超过总时限（0.01 秒）",
+            ):
+                await client.generate("用户问题")
+
     async def test_embedding_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import EmbeddingConfig
         from src.core.manga_insight.embedding_client import EmbeddingClient
@@ -219,6 +254,44 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client._transport.max_retries, 10)
         request = embed_mock.call_args.args[0]
         self.assertIsNone(request.timeout)
+
+    async def test_embedding_client_chunks_large_batches_and_preserves_order(self) -> None:
+        from src.core.manga_insight.config_models import EmbeddingConfig
+        from src.core.manga_insight.embedding_client import EmbeddingClient
+
+        config = EmbeddingConfig(
+            provider="custom",
+            api_key="test-key",
+            model="embedding-model",
+            base_url="https://example.com/v1",
+            rpm_limit=0,
+            transport_retries=0,
+            business_retries=0,
+            timeout_seconds=0,
+        )
+        requests = []
+
+        async def embed_batch(request):
+            requests.append(request)
+            return [[float(text)] for text in request.inputs]
+
+        with mock.patch(
+            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.embed",
+            new=mock.AsyncMock(side_effect=embed_batch),
+        ):
+            client = EmbeddingClient(config)
+            embeddings = await client.embed_batch(
+                [str(index) for index in range(35)]
+            )
+
+        self.assertEqual(
+            [len(request.inputs) for request in requests],
+            [16, 16, 3],
+        )
+        self.assertEqual(
+            embeddings,
+            [[float(index)] for index in range(35)],
+        )
 
     async def test_embedding_client_retries_empty_business_result(self) -> None:
         from src.core.manga_insight.config_models import EmbeddingConfig
@@ -397,6 +470,41 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(content, '{"pages": []}')
         self.assertEqual(complete_mock.await_count, 2)
+
+    async def test_vlm_client_bounds_the_complete_retrying_call_by_wall_clock(self) -> None:
+        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        config = VLMConfig(
+            provider="custom",
+            api_key="test-key",
+            model="vlm-model",
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(
+                    use_stream=False,
+                    transport_retries=10,
+                    business_retries=10,
+                ),
+            ),
+            image_max_size=0,
+        )
+
+        async def never_finishes(*_args, **_kwargs):
+            await asyncio.sleep(60)
+            return '{"pages": []}'
+
+        with mock.patch(
+            "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(side_effect=never_finishes),
+        ):
+            client = VLMClient(config, PromptsConfig())
+            client._timeout = 0.01
+            with self.assertRaisesRegex(
+                TimeoutError,
+                "视觉模型调用超过总时限（0.01 秒）",
+            ):
+                await client._call_vlm([b"fake-image"], "分析这页漫画")
 
     async def test_vlm_test_connection_does_not_send_default_max_tokens(self) -> None:
         from src.core.manga_insight.config_models import VLMConfig

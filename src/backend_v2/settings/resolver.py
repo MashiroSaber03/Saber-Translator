@@ -8,6 +8,11 @@ from typing import Any, Mapping
 
 from sqlalchemy import Engine, select
 
+from src.backend_v2.content.translation_constraints import (
+    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
+    empty_translation_constraints,
+    validate_translation_constraints,
+)
 from src.backend_v2.storage.schema import (
     app_settings,
     book_settings,
@@ -15,6 +20,7 @@ from src.backend_v2.storage.schema import (
     pages,
     prompts,
     provider_settings,
+    translation_constraints,
 )
 
 
@@ -160,12 +166,22 @@ class SettingsResolver:
             ).mappings().one_or_none()
             chapter_row = connection.execute(
                 select(
+                    chapters.c.book_id,
                     chapters.c.settings_memory_json,
                     chapters.c.settings_memory_revision,
                 ).where(chapters.c.id == chapter_id)
             ).mappings().one_or_none()
             if chapter_row is None:
                 raise ValueError("chapter not found")
+            constraint_row = connection.execute(
+                select(
+                    translation_constraints.c.payload_json,
+                    translation_constraints.c.revision,
+                    translation_constraints.c.schema_version,
+                ).where(
+                    translation_constraints.c.book_id == chapter_row["book_id"]
+                )
+            ).mappings().one_or_none()
             raw_provider_rows = connection.execute(
                 select(
                     provider_settings.c.domain,
@@ -188,6 +204,11 @@ class SettingsResolver:
             _object(json.loads(app_row["payload_json"])) if app_row else {}
         )
         chapter_memory = _object(json.loads(chapter_row["settings_memory_json"]))
+        constraints = validate_translation_constraints(
+            json.loads(constraint_row["payload_json"])
+            if constraint_row
+            else empty_translation_constraints()
+        )
         effective = _deep_merge(global_settings, chapter_memory)
         mode = str(command.get("mode", "standard"))
 
@@ -335,6 +356,15 @@ class SettingsResolver:
             ),
             "inpainting": inpainting,
             "render": {},
+            "translationConstraints": constraints,
+            "translationConstraintRevision": (
+                int(constraint_row["revision"]) if constraint_row else 0
+            ),
+            "translationConstraintSchemaVersion": (
+                int(constraint_row["schema_version"])
+                if constraint_row
+                else TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
+            ),
             "skipCompleted": bool(command.get("skipCompleted", False)),
             "reuseExistingBubbles": bool(
                 command.get("reuseExistingBubbles", False)
@@ -343,6 +373,9 @@ class SettingsResolver:
                 "appRevision": int(app_row["revision"]) if app_row else 0,
                 "chapterMemoryRevision": int(
                     chapter_row["settings_memory_revision"]
+                ),
+                "translationConstraintRevision": (
+                    int(constraint_row["revision"]) if constraint_row else 0
                 ),
                 "providerRevision": next(iter(provider_revisions.values()), 0),
                 "providerRevisions": provider_revisions,

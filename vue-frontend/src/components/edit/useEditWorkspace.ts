@@ -11,6 +11,7 @@ import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWor
 import { useEditWorkspaceProcessingActions } from '@/composables/edit/useEditWorkspaceProcessingActions'
 import { useEditWorkspaceResizeActions } from '@/composables/edit/useEditWorkspaceResizeActions'
 import {
+  flushPageDocument,
   queuePageDocumentSave,
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
@@ -240,11 +241,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const image = currentImage.value
     if (!image || image.documentRevision === undefined) return
     saveBubbleStatesToImage()
-    await queuePageDocumentSave(
+    const pendingSave = queuePageDocumentSave(
       image.id,
       image.documentRevision,
       bubbles.value,
     )
+    await flushPageDocument(image.id)
+    await pendingSave
   }
 
   async function prepareForNavigation(): Promise<void> {

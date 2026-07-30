@@ -67,6 +67,12 @@ class WebImportCommandService:
         requested_engine: str,
         config: Mapping[str, Any],
         idempotency_key: str,
+        resolved_options: Mapping[str, Any] | None = None,
+        retry_of_job_id: str | None = None,
+        retry_mode: str | None = None,
+        retry_failed_only: bool = False,
+        credential_snapshots: Mapping[str, str] | None = None,
+        plugin_snapshots: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> dict[str, object]:
         normalized_url = _validated_url(source_url)
         if requested_engine not in WEB_ENGINES:
@@ -82,15 +88,18 @@ class WebImportCommandService:
         temp_relative = (
             Path("temp") / "web-import" / draft_id
         ).as_posix()
-        resolved_options = self.settings.resolve_web_import(
-            source_url=normalized_url,
-        )
+        if resolved_options is None:
+            frozen_options = self.settings.resolve_web_import(
+                source_url=normalized_url,
+            )
+        else:
+            frozen_options = dict(resolved_options)
         frozen_config = {
             "draftId": draft_id,
             "sourceUrl": normalized_url,
             "requestedEngine": requested_engine,
             "actualEngine": None,
-            "options": resolved_options,
+            "options": frozen_options,
             "executionMode": "sequential",
         }
         now = utcnow()
@@ -120,6 +129,10 @@ class WebImportCommandService:
                     chapter_id=chapter_id,
                     web_import_draft_id=draft_id,
                     config=frozen_config,
+                    credential_snapshots=credential_snapshots,
+                    plugin_snapshots=plugin_snapshots,
+                    retry_of_job_id=retry_of_job_id,
+                    retry_mode=retry_mode,
                     items=(
                         JobItemSpec(
                             page_id=None,
@@ -131,16 +144,38 @@ class WebImportCommandService:
                         "chapter": chapter["title"],
                         "url": normalized_url,
                         "engine": requested_engine,
+                        **(
+                            {
+                                "retryOfJobId": retry_of_job_id,
+                                "retryItemCount": 1,
+                            }
+                            if retry_of_job_id
+                            else {}
+                        ),
                     },
                 )
             ],
-            idempotency_scope=f"web-extract:{chapter_id}",
+            idempotency_scope=(
+                f"job-retry:{retry_of_job_id}:"
+                f"{'failed' if retry_failed_only else 'all'}"
+                if retry_of_job_id
+                else f"web-extract:{chapter_id}"
+            ),
             idempotency_key=idempotency_key,
             idempotency_payload={
                 "chapterId": chapter_id,
                 "sourceUrl": normalized_url,
                 "engine": requested_engine,
-                "config": resolved_options,
+                "config": frozen_options,
+                **(
+                    {
+                        "sourceJobId": retry_of_job_id,
+                        "failedOnly": retry_failed_only,
+                        "strategy": retry_mode,
+                    }
+                    if retry_of_job_id
+                    else {}
+                ),
             },
             transaction_initializer=initialize,
         )
@@ -172,11 +207,15 @@ class WebImportCommandService:
                 ).mappings()
             )
         config = json.loads(draft["config_json"])
+        effective_status = _effective_draft_status(
+            str(draft["status"]),
+            job_rows,
+        )
         return {
             "id": draft["id"],
             "bookId": draft["book_id"],
             "chapterId": draft["chapter_id"],
-            "status": draft["status"],
+            "status": effective_status,
             "revision": draft["revision"],
             "sourceUrl": config.get("sourceUrl"),
             "requestedEngine": config.get("requestedEngine"),
@@ -556,6 +595,31 @@ def _validated_url(value: str) -> str:
     if len(normalized) > 8_000:
         raise ValueError("sourceUrl is too long")
     return normalized
+
+
+def _effective_draft_status(
+    stored_status: str,
+    job_rows: list[Mapping[str, Any]],
+) -> str:
+    """Recover stale processing drafts from the durable owning-job state."""
+
+    owning_kind = {
+        "extracting": "web_extract",
+        "committing": "web_import_commit",
+    }.get(stored_status)
+    if owning_kind is None:
+        return stored_status
+    owning_jobs = [
+        row for row in job_rows if str(row["kind"]) == owning_kind
+    ]
+    if not owning_jobs:
+        return "failed"
+    latest_status = str(owning_jobs[-1]["status"])
+    if latest_status == "cancelled":
+        return "cancelled"
+    if latest_status in {"failed", "completed_with_errors"}:
+        return "failed"
+    return stored_status
 
 
 def _reject_plaintext_secrets(value: object, path: str = "config") -> None:

@@ -3233,6 +3233,11 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        StudioMessageChainMutation: {
+            sessionId: components["schemas"]["Uuid"];
+            sessionRevision: number;
+            sessionGeneration: number;
+        };
         StudioSessionSummary: {
             sessionId: components["schemas"]["Uuid"];
             title: string;
@@ -3673,13 +3678,37 @@ export interface components {
             name: string;
             color: string;
         };
+        /** @enum {string} */
+        TranslationConstraintMatchMode: "text" | "regex";
+        TranslationGlossaryEntry: {
+            source: string;
+            target: string;
+            note: string;
+            matchMode: components["schemas"]["TranslationConstraintMatchMode"];
+        };
+        TranslationNonTranslateEntry: {
+            pattern: string;
+            note: string;
+            matchMode: components["schemas"]["TranslationConstraintMatchMode"];
+        };
+        TranslationGlossarySettings: {
+            enabled: boolean;
+            autoExtractEnabled: boolean;
+            autoExtractPrompt: string;
+            entries: components["schemas"]["TranslationGlossaryEntry"][];
+        };
+        TranslationNonTranslateSettings: {
+            enabled: boolean;
+            entries: components["schemas"]["TranslationNonTranslateEntry"][];
+        };
         TranslationConstraintPayload: {
-            glossary?: unknown[];
-            nonTranslate?: unknown[];
+            glossary: components["schemas"]["TranslationGlossarySettings"];
+            nonTranslate: components["schemas"]["TranslationNonTranslateSettings"];
         };
         TranslationConstraintDocument: {
             bookId: components["schemas"]["Uuid"];
             revision: number;
+            schemaVersion: number;
             payload: components["schemas"]["TranslationConstraintPayload"];
         };
         TranslationConstraintUpdateCommand: {
@@ -3766,6 +3795,7 @@ export interface components {
         InsightActiveJob: {
             jobId: components["schemas"]["Uuid"];
             bookId: components["schemas"]["Uuid"] | null;
+            kind: components["schemas"]["JobKind"];
             status: components["schemas"]["JobStatus"];
             progress: {
                 [key: string]: unknown;
@@ -4166,7 +4196,7 @@ export interface components {
             bookId: components["schemas"]["Uuid"];
             chapterId: components["schemas"]["Uuid"];
             /** @enum {string} */
-            status: "extracting" | "ready" | "committing" | "completed" | "failed";
+            status: "extracting" | "ready" | "committing" | "completed" | "failed" | "cancelled";
             revision: number;
             /** Format: uri */
             sourceUrl: string;
@@ -6252,7 +6282,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StudioMessageChainMutation"];
+                };
             };
             423: components["responses"]["Locked"];
         };

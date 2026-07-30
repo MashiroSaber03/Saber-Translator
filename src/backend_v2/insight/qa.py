@@ -38,10 +38,8 @@ from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
-    analysis_heads,
     analysis_layer_result_pages,
     analysis_layer_results,
-    analysis_runs,
     credential_versions,
     transient_requests,
     vector_generations,
@@ -521,20 +519,35 @@ class DefaultQARetrievalAlgorithms:
         )
         if not provider or not model:
             raise QAConflict("Insight embedding provider/model is not configured")
-        request = UnifiedEmbeddingRequest(
-            provider=provider,
-            api_key=_api_key(section),
-            model=model,
-            inputs=list(queries),
-            base_url=_base_url(section),
-            timeout=float(section.get("timeout_seconds", 120) or 120),
-        )
-
         async def execute() -> Sequence[Sequence[float]]:
             transport = AsyncOpenAICompatibleTransport(
                 max_retries=int(section.get("transport_retries", 2) or 2)
             )
-            return await transport.embed(request)
+            output: list[Sequence[float]] = []
+            # Reasoning retrieval expands one question into several variants.
+            # Some OpenAI-compatible providers truncate the large JSON response
+            # produced by batching multiple high-dimensional query vectors.
+            # Query vectors are tiny in count, so embed them individually to
+            # keep response bodies and retry scope bounded.
+            for query in queries:
+                vectors = await transport.embed(
+                    UnifiedEmbeddingRequest(
+                        provider=provider,
+                        api_key=_api_key(section),
+                        model=model,
+                        inputs=[str(query)],
+                        base_url=_base_url(section),
+                        timeout=float(
+                            section.get("timeout_seconds", 120) or 120
+                        ),
+                    )
+                )
+                if len(vectors) != 1:
+                    raise QAConflict(
+                        "query embedding provider returned an invalid count"
+                    )
+                output.append(vectors[0])
+            return output
 
         return asyncio.run(execute())
 
@@ -816,7 +829,7 @@ class InsightQAWorkerService:
                             )
                         ),
                     )
-                )
+                ).mappings()
             )
         if not rows:
             raise QAConflict("global QA context is missing")
@@ -1090,23 +1103,6 @@ class InsightQACommandService:
             book_id=book_id,
             command={"scope": "qa"},
         )
-        with self.engine.connect() as connection:
-            head = connection.execute(
-                select(
-                    analysis_heads.c.active_run_id,
-                    analysis_runs.c.status,
-                )
-                .join(
-                    analysis_runs,
-                    analysis_runs.c.id == analysis_heads.c.active_run_id,
-                )
-                .where(
-                    analysis_heads.c.book_id == book_id,
-                    analysis_heads.c.page_id.is_(None),
-                )
-            ).mappings().one_or_none()
-        if head is None:
-            raise QAConflict("Insight analysis is missing")
         snapshot = self.derived.snapshot(book_id=book_id)
         vector_generation = 0
         if mode == "exact":
@@ -1134,7 +1130,11 @@ class InsightQACommandService:
             variants.extend(processed["reasoningQueries"])
         payload = {
             "bookId": book_id,
-            "runId": str(head["active_run_id"]),
+            # A valid snapshot may be assembled from page-scoped runs and then
+            # receive freshly rebuilt derived artifacts. In that case there is
+            # deliberately no book head; parent-layer enrichment simply has no
+            # single canonical run to attach.
+            "runId": snapshot.source_run_id or "",
             "question": question,
             "mode": mode,
             "keywords": processed["keywords"],
@@ -1198,7 +1198,7 @@ class InsightQACommandService:
                         analysis_artifacts.c.book_id == book_id,
                         analysis_artifacts.c.is_active.is_(True),
                     )
-                )
+                ).mappings()
             )
         available = {
             (str(row["kind"]), str(row["template"]))

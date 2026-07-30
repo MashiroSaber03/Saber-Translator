@@ -41,6 +41,7 @@ export function useTimelinePanel() {
   const timelineData = ref<TimelineData | null>(null)
   const expandedGroups = ref<Set<string>>(new Set())
   const errorMessage = ref('')
+  const pendingMessage = ref('')
   let dataRequestId = 0
   let loadRequestId = 0
   let regenerateRequestId = 0
@@ -83,8 +84,11 @@ export function useTimelinePanel() {
 
       if (response.success) {
         timelineData.value = normalizeTimelineResponse(response)
+        pendingMessage.value = ''
       } else {
-        errorMessage.value = response.error || '加载时间线失败'
+        if (!pendingMessage.value) {
+          errorMessage.value = response.error || '加载时间线失败'
+        }
       }
     } catch (error) {
       if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
@@ -105,14 +109,20 @@ export function useTimelinePanel() {
 
     isRegenerating.value = true
     errorMessage.value = ''
+    pendingMessage.value = ''
 
     try {
       const response = await insightApi.regenerateTimeline(bookId) as TimelineApiResponse
       if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
 
       if (response.success) {
-        timelineData.value = normalizeTimelineResponse(response)
-        insightStore.triggerDataRefresh()
+        if (response.task_id) {
+          timelineData.value = null
+          pendingMessage.value = response.message || '时间线生成已进入任务中心，完成后将自动加载。'
+        } else {
+          timelineData.value = normalizeTimelineResponse(response)
+          insightStore.triggerDataRefresh()
+        }
       } else {
         errorMessage.value = '重新生成失败'
       }
@@ -155,6 +165,7 @@ export function useTimelinePanel() {
     if (newBookId) {
       timelineData.value = null
       expandedGroups.value = new Set()
+      pendingMessage.value = ''
       loadTimeline()
     } else {
       dataRequestId++
@@ -162,6 +173,7 @@ export function useTimelinePanel() {
       expandedGroups.value = new Set()
       isLoading.value = false
       isRegenerating.value = false
+      pendingMessage.value = ''
     }
   })
 
@@ -190,6 +202,7 @@ export function useTimelinePanel() {
     mainCharacters,
     plotArcs,
     plotThreads,
+    pendingMessage,
     regenerateTimeline,
     showPageDetail,
     storySummary,
