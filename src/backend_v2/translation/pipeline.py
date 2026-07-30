@@ -1253,15 +1253,18 @@ class TranslationPipelineService:
         if len(colors) != len(snapshot.bubbles):
             raise JobConflict("color result count does not match persisted bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
+        uses_auto_color = bool(
+            snapshot.style_defaults.get("useAutoTextColor", False)
+        )
         for payload, color in zip(updated, colors):
             foreground = color.get("fg_color")
             background = color.get("bg_color")
             payload["autoFgColor"] = foreground
             payload["autoBgColor"] = background
             payload["colorConfidence"] = float(color.get("confidence", 0))
-            if foreground is not None:
+            if uses_auto_color and foreground is not None:
                 payload["textColor"] = _rgb_hex(foreground)
-            if background is not None:
+            if uses_auto_color and background is not None:
                 payload["fillColor"] = _rgb_hex(background)
         return self._publish_bubble_update(
             fence,

@@ -431,19 +431,19 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
 ) -> None:
     platform = translation_platform
     page_style = {
-        "fontSize": 26,
-        "autoFontSize": True,
+        "fontSize": 37,
+        "autoFontSize": False,
         "fontFamily": "00000000-0000-0000-0000-000000000010",
         "layoutDirection": "horizontal",
         "textColor": "#000000",
         "fillColor": "#123456",
         "inpaintMethod": "litelama",
         "useAutoTextColor": False,
-        "strokeEnabled": True,
-        "strokeColor": "#FFFFFF",
-        "strokeWidth": 3,
-        "lineSpacing": 1.0,
-        "textAlign": "start",
+        "strokeEnabled": False,
+        "strokeColor": "#AABBCC",
+        "strokeWidth": 7,
+        "lineSpacing": 1.4,
+        "textAlign": "end",
     }
     with platform["engine"].begin() as connection:
         connection.execute(
@@ -472,6 +472,17 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
 
     assert payload["textDirection"] == "horizontal"
     assert payload["autoTextDirection"] == "vertical"
+    assert payload["autoFgColor"] == [10, 20, 30]
+    assert payload["autoBgColor"] == [245, 246, 247]
+    assert payload["textColor"] == "#000000"
+    assert payload["fillColor"] == "#123456"
+    assert payload["fontSize"] == 37
+    assert payload["strokeEnabled"] is False
+    assert payload["strokeColor"] == "#AABBCC"
+    assert payload["strokeWidth"] == 7
+    assert payload["lineSpacing"] == 1.4
+    assert payload["textAlign"] == "end"
+    assert payload["inpaintMethod"] == "litelama"
     assert algorithms.repair_configs == [
         {
             "method": "lama",
@@ -482,6 +493,54 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
         }
     ]
     assert algorithms.repair_masks == [("L", (64, 64), 255)]
+
+
+def test_translation_applies_extracted_colors_only_when_auto_color_is_enabled(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    with platform["engine"].begin() as connection:
+        page_style = json.loads(
+            connection.execute(
+                select(pages.c.page_style_defaults_json).where(
+                    pages.c.id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+        page_style.update(
+            {
+                "textColor": "#112233",
+                "fillColor": "#DDEEFF",
+                "useAutoTextColor": True,
+            }
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(page_style_defaults_json=json.dumps(page_style))
+        )
+
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=[platform["page_id"]],
+        idempotency_key="auto-color-enabled-translation",
+    )
+    _run_translation_job(platform, FakeAlgorithms())
+
+    with platform["engine"].connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.page_id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+
+    assert payload["autoFgColor"] == [10, 20, 30]
+    assert payload["autoBgColor"] == [245, 246, 247]
+    assert payload["textColor"] == "#0A141E"
+    assert payload["fillColor"] == "#F5F6F7"
 
 
 def test_translation_constraints_are_frozen_extracted_and_consumed(
