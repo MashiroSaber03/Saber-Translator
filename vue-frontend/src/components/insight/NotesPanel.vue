@@ -154,7 +154,6 @@ function goToPage(pageNum: number): void {
 .notes-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   padding: 20px 18px;
 }

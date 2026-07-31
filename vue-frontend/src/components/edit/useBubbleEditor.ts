@@ -40,12 +40,13 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const defaultBubble: BubbleState = createBubbleState({
     coords: [0, 0, 0, 0],
     polygon: [],
+    fontFamily: '',
   })
 
   const localOriginalText = ref('')
   const localTranslatedText = ref('')
   const localFontSize = ref(TEXT_STYLE_DEFAULTS.fontSize)
-  const localFontFamily = ref(TEXT_STYLE_DEFAULTS.fontFamily)
+  const localFontFamily = ref('')
   const localTextDirection = ref<TextDirection>('vertical')
   const localTextColor = ref(TEXT_STYLE_DEFAULTS.textColor)
   const localFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
@@ -70,14 +71,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
   let isOwnerMounted = true
 
-  const systemFonts = ref<{ name: string; path: string }[]>([
-    { name: '思源黑体', path: TEXT_STYLE_DEFAULTS.fontFamily },
-    { name: '华文楷体', path: 'fonts/STKAITI.TTF' },
-    { name: '华文细黑', path: 'fonts/STXIHEI.TTF' },
-    { name: '黑体', path: 'fonts/SIMHEI.TTF' },
-    { name: '宋体', path: 'fonts/SIMSUN.TTC' },
-  ])
-  const customFonts = ref<{ name: string; path: string }[]>([])
+  const systemFonts = ref<{ name: string; id: string }[]>([])
+  const customFonts = ref<{ name: string; id: string }[]>([])
 
   const positionX = computed(() => {
     if (!props.bubble) return 0
@@ -90,16 +85,28 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   })
 
   const fontSelectGroups = computed(() => {
-    const groups = [
-      {
+    const knownFontIds = new Set([
+      ...systemFonts.value.map(font => font.id),
+      ...customFonts.value.map(font => font.id),
+    ])
+    const currentFontId = localFontFamily.value
+    const currentOptions = currentFontId && !knownFontIds.has(currentFontId)
+      ? [{ label: `当前字体 (${currentFontId})`, value: currentFontId }]
+      : []
+    const groups = []
+    if (systemFonts.value.length > 0 || currentOptions.length > 0) {
+      groups.push({
         label: '系统字体',
-        options: systemFonts.value.map(f => ({ label: f.name, value: f.path })),
-      },
-    ]
+        options: [
+          ...currentOptions,
+          ...systemFonts.value.map(font => ({ label: font.name, value: font.id })),
+        ],
+      })
+    }
     if (customFonts.value.length > 0) {
       groups.push({
         label: '自定义字体',
-        options: customFonts.value.map(f => ({ label: f.name, value: f.path })),
+        options: customFonts.value.map(font => ({ label: font.name, value: font.id })),
       })
     }
     return groups
@@ -402,13 +409,13 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     try {
       const fonts = await listV2Fonts()
       if (!isOwnerMounted) return
-      const system: { name: string; path: string }[] = []
-      const custom: { name: string; path: string }[] = []
+      const system: { name: string; id: string }[] = []
+      const custom: { name: string; id: string }[] = []
 
       for (const font of fonts) {
         const fontItem = {
           name: font.displayName,
-          path: font.id,
+          id: font.id,
         }
         if (font.kind === 'builtin') {
           system.push(fontItem)
@@ -417,12 +424,11 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
         }
       }
 
-      if (system.length > 0) {
-        systemFonts.value = system
-      }
+      systemFonts.value = system
       customFonts.value = custom
     } catch {
       if (isOwnerMounted) {
+        systemFonts.value = []
         customFonts.value = []
       }
     }

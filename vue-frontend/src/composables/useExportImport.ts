@@ -22,7 +22,7 @@ import { useToast } from '@/utils/toast'
 
 export const DOWNLOAD_FORMATS = ['zip', 'pdf', 'cbz'] as const
 export type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number]
-export type DownloadImageType = 'translated' | 'original'
+export type DownloadImageType = 'translated' | 'clean' | 'original'
 
 export interface DownloadImageEntry {
   index: number
@@ -50,6 +50,7 @@ export function resolveDownloadFileName(
 export function collectDownloadImageEntries(images: ImageData[]): DownloadImageEntry[] {
   return images.flatMap<DownloadImageEntry>((image, index) => {
     if (image.translatedAssetUrl) return [{ index, type: 'translated' }]
+    if (image.cleanAssetUrl) return [{ index, type: 'clean' }]
     if (image.sourceAssetUrl) return [{ index, type: 'original' }]
     return []
   })
@@ -116,7 +117,10 @@ export function useExportImport() {
       toast.warning('当前图片不属于同一个后端章节')
       return
     }
-    triggerUrlDownload(getChapterTextExportUrl(chapterId))
+    triggerUrlDownload(
+      getChapterTextExportUrl(chapterId),
+      `chapter-${chapterId}-text.json`,
+    )
     toast.success('后端文本导出已开始')
   }
 
@@ -169,14 +173,20 @@ export function useExportImport() {
 
   function downloadCurrentImage(): void {
     const image = imageStore.currentImage
-    const assetUrl = image?.translatedAssetUrl || image?.sourceAssetUrl
+    const assetUrl = (
+      image?.translatedAssetUrl
+      || image?.cleanAssetUrl
+      || image?.sourceAssetUrl
+    )
     if (!image || !assetUrl) {
       toast.warning('没有可下载的图片')
       return
     }
-    const type: DownloadImageType = (
-      image.translatedAssetUrl
-    ) ? 'translated' : 'original'
+    const type: DownloadImageType = image.translatedAssetUrl
+      ? 'translated'
+      : image.cleanAssetUrl
+        ? 'clean'
+        : 'original'
     const filename = resolveDownloadFileName(
       image.fileName,
       imageStore.currentImageIndex,

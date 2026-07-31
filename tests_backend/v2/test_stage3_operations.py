@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import uuid
+import zipfile
 
 from PIL import Image
 import pytest
@@ -22,6 +23,8 @@ from src.backend_v2.operations.repository import (
     RenderRequestRepository,
 )
 from src.backend_v2.operations.repair import PageRepairService
+from src.backend_v2.plugins.repository import PluginRegistry
+from src.backend_v2.plugins.runtime import PluginOperationRuntime
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import (
     create_sqlite_engine,
@@ -171,7 +174,110 @@ def test_page_operation_is_idempotent_fenced_and_persistent(
     assert stored["result"] == {"text": "hello"}
 
 
-def test_worker_operation_runner_applies_injected_plugin_runtime(
+def test_page_detect_publishes_precise_mask_and_keeps_page_state_consistent(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == platform["bubble_id"])
+            .values(
+                payload_json=json.dumps(
+                    {
+                        "coords": [4, 4, 20, 20],
+                        "fillColor": "#ff0000",
+                        "inpaintMethod": "solid",
+                        "originalText": "保留原文",
+                        "translatedText": "",
+                    }
+                )
+            )
+        )
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="page_detect",
+        base_revision=1,
+        bubble_id=None,
+        payload={},
+        idempotency_key="detect-with-precise-mask",
+    )
+
+    class DetectAlgorithms:
+        def detect(self, image, _config):
+            mask = Image.new("L", image.size, 0)
+            mask.putpixel((8, 9), 255)
+            return {
+                "coords": [[4, 4, 20, 20]],
+                "polygons": [[]],
+                "angles": [0],
+                "auto_directions": ["h"],
+                "textlines_per_bubble": [[]],
+                "raw_mask": mask,
+            }
+
+    service = InteractivePageOperationService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+        algorithms=DetectAlgorithms(),
+    )
+    claimed = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("page_detect",),
+    )
+    assert claimed is not None
+    fence, operation = claimed
+    result = service.handle(fence, operation)
+
+    with platform["engine"].connect() as connection:
+        page = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.detection_state,
+                pages.c.rendered_revision,
+                pages.c.render_status,
+            ).where(pages.c.id == platform["page_id"])
+        ).one()
+        bubble_payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.page_id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+        mask_row = connection.execute(
+            select(
+                page_assets.c.asset_id,
+                page_assets.c.input_document_revision,
+                page_assets.c.producer_operation_id,
+                assets.c.relative_path,
+                assets.c.width,
+                assets.c.height,
+            )
+            .join(assets, assets.c.id == page_assets.c.asset_id)
+            .where(
+                page_assets.c.page_id == platform["page_id"],
+                page_assets.c.role == "text_mask",
+            )
+        ).mappings().one()
+    assert page == (2, "processed", None, "not_rendered")
+    assert bubble_payload["originalText"] == "保留原文"
+    assert bubble_payload["autoTextDirection"] == "horizontal"
+    assert result["textMaskAssetId"] == mask_row["asset_id"]
+    assert mask_row["input_document_revision"] == 2
+    assert mask_row["producer_operation_id"] == accepted["operationId"]
+    assert (mask_row["width"], mask_row["height"]) == (64, 64)
+    with Image.open(
+        platform["data_root"] / Path(mask_row["relative_path"])
+    ) as stored_mask:
+        assert stored_mask.mode == "L"
+        assert stored_mask.getpixel((8, 9)) == 255
+
+
+def test_worker_operation_runner_delegates_claimed_operation_to_handler(
     operation_platform,
 ) -> None:
     platform = operation_platform
@@ -186,38 +292,113 @@ def test_worker_operation_runner_applies_injected_plugin_runtime(
     )
     calls: list[tuple[str, object]] = []
 
-    class FakePluginRuntime:
-        def before(self, fence, operation):
-            calls.append(("before", fence.operation_id))
-            return {**operation, "pluginInput": True}
-
-        def after(self, fence, operation, result):
-            calls.append(("after", operation["pluginInput"]))
-            return {**result, "pluginOutput": True}
-
     def handle(fence, operation):
-        calls.append(("handler", operation["pluginInput"]))
+        calls.append(("handler", operation["kind"]))
         return {"operationId": fence.operation_id}
 
     runner = WorkerOperationRunner(
         repository,
         worker_epoch_id=platform["worker_epoch_id"],
         handlers={"page_detect": handle},
-        plugin_runtime=FakePluginRuntime(),
     )
 
     assert runner.run_one() is True
-    assert calls == [
-        ("before", accepted["operationId"]),
-        ("handler", True),
-        ("after", True),
-    ]
+    assert calls == [("handler", "page_detect")]
     stored = repository.get(accepted["operationId"])
     assert stored["status"] == "completed"
-    assert stored["result"] == {
-        "operationId": accepted["operationId"],
-        "pluginOutput": True,
+    assert stored["result"] == {"operationId": accepted["operationId"]}
+
+
+def test_worker_ocr_plugin_mutates_domain_result_before_publish(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    manifest = {
+        "schema_version": 3,
+        "plugin_id": "operation_ocr_mutation",
+        "display_name": "Operation OCR mutation",
+        "package_version": "1.0.0",
+        "entrypoint": "plugin.py:Plugin",
+        "hooks": ["after_ocr"],
+        "supported_steps": ["ocr"],
+        "supported_modes": ["standard"],
+        "priority": 100,
+        "failure_policy": "fail",
+        "default_enabled": True,
+        "config_schema": {},
     }
+    archive_payload = BytesIO()
+    with zipfile.ZipFile(
+        archive_payload,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        archive.writestr("plugin.json", json.dumps(manifest))
+        archive.writestr(
+            "plugin.py",
+            (
+                "class Plugin:\n"
+                "    def after_ocr(self, context, data):\n"
+                "        result = dict(data)\n"
+                "        result['originalTexts'] = [\n"
+                "            value + '【hook】' for value in data['originalTexts']\n"
+                "        ]\n"
+                "        return result\n"
+            ),
+        )
+    PluginRegistry(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+    ).import_archive(
+        data=archive_payload.getvalue(),
+        base_revision=0,
+        idempotency_key="operation-ocr-mutation-v1",
+    )
+    repository = OperationRepository(platform["engine"])
+    repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_ocr",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="operation-ocr-mutation",
+    )
+
+    class OcrAlgorithms:
+        def ocr(self, _image, _bubbles, _config):
+            return {
+                "texts": ["こんにちは"],
+                "results": [{"confidence": 1.0}],
+            }
+
+    runtime = PluginOperationRuntime(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    service = InteractivePageOperationService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+        algorithms=OcrAlgorithms(),
+        plugin_runtime=runtime,
+    )
+    runner = WorkerOperationRunner(
+        repository,
+        worker_epoch_id=platform["worker_epoch_id"],
+        handlers={"bubble_ocr": service.handle},
+    )
+    assert runner.run_one() is True
+
+    with platform["engine"].connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.id == platform["bubble_id"]
+                )
+            ).scalar_one()
+        )
+    assert payload["originalText"] == "こんにちは【hook】"
 
 
 def test_zero_row_operation_renewal_fences_all_late_writes(

@@ -88,6 +88,39 @@ describe('SettingsSidebar defaults', () => {
     ])
   })
 
+  it('persists an uploaded font through the same page-style command as selection', async () => {
+    apiMocks.getFontList.mockResolvedValue([{
+      id: 'font-custom',
+      displayName: 'Custom',
+      kind: 'uploaded',
+    }])
+    const wrapper = mount(SettingsSidebar, {
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          UiCombobox: true,
+          ProductCollapsibleSection: {
+            name: 'ProductCollapsibleSection',
+            props: ['title', 'expanded'],
+            template: '<section><slot /></section>',
+          },
+          PageSelectionModal: true,
+        },
+      },
+    })
+
+    await (wrapper.vm as unknown as {
+      handleFontUpload: (files: File[]) => Promise<void>
+    }).handleFontUpload([
+      new File(['font'], 'custom.ttf', { type: 'font/ttf' }),
+    ])
+
+    expect(wrapper.emitted('textStyleChanged')).toContainEqual([
+      'fontFamily',
+      'font-custom',
+    ])
+  })
+
   it('maps parent shell colors through semantic tokens', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/SettingsSidebar.vue'),

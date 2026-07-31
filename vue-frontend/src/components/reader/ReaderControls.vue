@@ -6,7 +6,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
 import {
   DEFAULT_READER_SETTINGS,
@@ -32,6 +32,14 @@ const isSettingsPanelOpen = ref(false)
 const settingsDialogRef = ref<HTMLElement | null>(null)
 const showScrollTopBtn = ref(false)
 const bgColorPresets = READER_BG_COLOR_PRESETS
+let scrollContainer: HTMLElement | null = null
+
+function bindScrollContainer() {
+  scrollContainer?.removeEventListener('scroll', handleScroll)
+  scrollContainer = document.querySelector<HTMLElement>('.reader-canvas__stream')
+  scrollContainer?.addEventListener('scroll', handleScroll, { passive: true })
+  handleScroll()
+}
 
 function openSettings() {
   isSettingsPanelOpen.value = true
@@ -42,12 +50,11 @@ function closeSettings() {
 }
 
 function scrollToTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  scrollContainer?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function handleScroll() {
-  const scrollTop = window.scrollY
-  showScrollTopBtn.value = scrollTop > 500
+  showScrollTopBtn.value = (scrollContainer?.scrollTop ?? 0) > 500
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -64,10 +71,13 @@ function handleKeydown(e: KeyboardEvent) {
       }
       break
     case 'Home':
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      scrollContainer?.scrollTo({ top: 0, behavior: 'smooth' })
       break
     case 'End':
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+      scrollContainer?.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: 'smooth',
+      })
       break
   }
 }
@@ -123,16 +133,20 @@ watch(() => props.settingsRequestId, (requestId, previousRequestId) => {
     openSettings()
   }
 })
+watch(() => props.showChapterNav, () => {
+  void nextTick(bindScrollContainer)
+})
 
 onMounted(() => {
   loadSettings()
 
-  window.addEventListener('scroll', handleScroll)
+  void nextTick(bindScrollContainer)
   document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('scroll', handleScroll)
+  scrollContainer?.removeEventListener('scroll', handleScroll)
+  scrollContainer = null
   document.removeEventListener('keydown', handleKeydown)
 
   document.documentElement.style.removeProperty('--reader-page-background')

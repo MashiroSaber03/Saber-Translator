@@ -27,12 +27,20 @@ function backendDocument(
   settings.pluginAgent.provider = 'siliconflow'
   settings.pluginAgent.modelName = agentModel
   return {
-    settings: [{
-      domain: 'translation',
-      payload: settings as unknown as Record<string, unknown>,
-      revision,
-      schemaVersion: 3,
-    }],
+    settings: [
+      {
+        domain: 'translation',
+        payload: settings as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 3,
+      },
+      {
+        domain: 'text_style_defaults',
+        payload: settings.textStyle as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 1,
+      },
+    ],
     bookSettings: [],
     providerSettings: [{
       domain: 'plugin_agent',
@@ -158,7 +166,7 @@ describe('settings store plugin agent configuration', () => {
 
     expect(settingsApiMocks.getV2Settings).toHaveBeenNthCalledWith(
       2,
-      ['translation', 'plugin_agent'],
+      ['translation', 'text_style_defaults', 'plugin_agent'],
     )
     const transaction = (
       settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
@@ -174,9 +182,12 @@ describe('settings store plugin agent configuration', () => {
       pluginAgent: {
         modelName: 'agent-model',
         customBaseUrl: 'https://agent.example/v1',
-        apiKey: '',
       },
     })
+    expect(
+      (transaction.settings?.[0]?.payload.pluginAgent as Record<string, unknown>)
+        .apiKey,
+    ).toBeUndefined()
     expect(transaction.providerSettings).toEqual([
       expect.objectContaining({
         domain: 'plugin_agent',

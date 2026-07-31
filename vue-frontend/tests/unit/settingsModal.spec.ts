@@ -6,8 +6,15 @@ import { defineComponent, h, onMounted } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
-const { saveToBackendMock, settingsStoreState } = vi.hoisted(() => ({
+const {
+  loadFromBackendMock,
+  saveToBackendMock,
+  settingsStoreState,
+  translationSettingsSetupMock,
+} = vi.hoisted(() => ({
+  loadFromBackendMock: vi.fn(),
   saveToBackendMock: vi.fn(),
+  translationSettingsSetupMock: vi.fn(),
   settingsStoreState: {
     settings: {
       textStyle: {
@@ -27,7 +34,7 @@ vi.mock('@/stores/settings', () => ({
     settings: settingsStoreState.settings,
     textStyleDefaults: settingsStoreState.textStyleDefaults,
     providerConfigs: {},
-    loadFromBackend: vi.fn().mockResolvedValue(true),
+    loadFromBackend: loadFromBackendMock,
     saveToBackend: saveToBackendMock,
   }),
 }))
@@ -57,7 +64,13 @@ vi.mock('@/components/settings/OcrSettings.vue', () => ({
   default: defineComponent({ name: 'OcrSettings', setup: () => () => h('div', 'OcrSettings stub') }),
 }))
 vi.mock('@/components/settings/TranslationSettings.vue', () => ({
-  default: defineComponent({ name: 'TranslationSettings', setup: () => () => h('div', 'TranslationSettings stub') }),
+  default: defineComponent({
+    name: 'TranslationSettings',
+    setup: () => {
+      translationSettingsSetupMock()
+      return () => h('div', 'TranslationSettings stub')
+    },
+  }),
 }))
 vi.mock('@/components/settings/DetectionSettings.vue', () => ({
   default: defineComponent({ name: 'DetectionSettings', setup: () => () => h('div', 'DetectionSettings stub') }),
@@ -89,8 +102,11 @@ import SettingsModal from '@/components/settings/SettingsModal.vue'
 
 describe('SettingsModal', () => {
   beforeEach(() => {
+    loadFromBackendMock.mockReset()
+    loadFromBackendMock.mockResolvedValue(true)
     saveToBackendMock.mockReset()
     saveToBackendMock.mockResolvedValue(true)
+    translationSettingsSetupMock.mockReset()
     settingsStoreState.settings.textStyle.fontSize = 16
     settingsStoreState.textStyleDefaults.fontSize = 16
   })
@@ -221,6 +237,29 @@ describe('SettingsModal', () => {
     expect(textDefaultsSource).not.toContain('saveRequestId')
     expect(textDefaultsSource).not.toContain('save-complete')
     expect(textDefaultsSource).not.toContain('defineExpose')
+  })
+
+  it('mounts setting forms only after the latest backend load completes', async () => {
+    let resolveLoad!: (value: boolean) => void
+    loadFromBackendMock.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+      resolveLoad = resolve
+    }))
+
+    const wrapper = mount(SettingsModal, {
+      props: {
+        modelValue: true,
+      },
+    })
+    await flushPromises()
+
+    expect(translationSettingsSetupMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('正在读取后端设置')
+
+    resolveLoad(true)
+    await flushPromises()
+
+    expect(translationSettingsSetupMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('TranslationSettings stub')
   })
 
   it('disables all settings writes while backend settings are unavailable', () => {

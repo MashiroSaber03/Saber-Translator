@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BubbleCoords, BubbleState } from '@/types/bubble'
@@ -11,7 +11,7 @@ type ViewMode = 'dual' | 'original' | 'translated'
 type LayoutMode = 'horizontal' | 'vertical'
 type ViewportName = 'original' | 'translated'
 
-defineProps<{
+const props = defineProps<{
   viewMode: ViewMode
   layoutMode: LayoutMode
   currentImage: ImageData | null | undefined
@@ -32,6 +32,21 @@ defineProps<{
   isOcrLoading: boolean
   isTranslateLoading: boolean
 }>()
+
+const processedImageUrl = computed(
+  () => props.currentImage?.translatedAssetUrl
+    || props.currentImage?.cleanAssetUrl
+    || props.currentImage?.sourceAssetUrl
+    || '',
+)
+
+const processedImageLabel = computed(() =>
+  props.currentImage?.translatedAssetUrl
+    ? '翻译图 (中文)'
+    : props.currentImage?.cleanAssetUrl
+      ? '消字图'
+      : '结果图',
+)
 
 const emit = defineEmits<{
   wheelPanel: [event: WheelEvent, viewport: ViewportName]
@@ -181,7 +196,7 @@ defineExpose({
         <div class="edit-image-comparison__panel-header">
           <span class="edit-image-comparison__panel-title">
             <UiIcon name="file-text" size="14" />
-            <span>翻译图 (中文)</span>
+            <span>{{ processedImageLabel }}</span>
           </span>
           <UiIconButton
             class="edit-image-comparison__panel-toggle"
@@ -207,15 +222,15 @@ defineExpose({
             :style="translatedTransformStyle"
           >
             <img
-              v-if="currentImage?.translatedAssetUrl || currentImage?.sourceAssetUrl"
+              v-if="processedImageUrl"
               ref="translatedImageRef"
               class="edit-image-comparison__image"
-              :src="currentImage?.translatedAssetUrl || currentImage?.sourceAssetUrl"
-              alt="翻译图"
+              :src="processedImageUrl"
+              :alt="processedImageLabel"
               @load="emit('imageLoad', 'translated')"
             >
             <BubbleOverlay
-              v-if="currentImage?.translatedAssetUrl || currentImage?.sourceAssetUrl"
+              v-if="processedImageUrl"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"

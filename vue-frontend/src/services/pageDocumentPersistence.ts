@@ -226,34 +226,54 @@ async function persistLoop(
       const sentPropagation = [...state.desiredPropagateStyleFields]
       const sentDefaultFont = state.desiredDefaultFontId
       const sentDefaultFontChanged = state.defaultFontChanged
+      const hasStyleCommand = (
+        Object.keys(sentStylePatch).length > 0
+        || sentDefaultFontChanged
+        || sentPropagation.length > 0
+      )
       if (
         mutations.length === 0
-        && Object.keys(sentStylePatch).length === 0
-        && !sentDefaultFontChanged
+        && !hasStyleCommand
       ) return
+      // A sidebar propagation and editor bubble delta are separate domain
+      // commands. Flush the bubble delta first so the backend never has to
+      // guess an overwrite order for the same bubble field.
+      const sendStyleCommand = mutations.length === 0 && hasStyleCommand
       const document = await mutatePageDocument(pageId, {
         baseRevision: state.documentRevision,
         mutations,
-        ...(sentDefaultFontChanged ? { defaultFontId: sentDefaultFont } : {}),
-        ...(Object.keys(sentStylePatch).length > 0
+        ...(sendStyleCommand && sentDefaultFontChanged
+          ? { defaultFontId: sentDefaultFont }
+          : {}),
+        ...(sendStyleCommand && Object.keys(sentStylePatch).length > 0
           ? {
               pageStyleDefaultsPatch: sentStylePatch,
+            }
+          : {}),
+        ...(sendStyleCommand && sentPropagation.length > 0
+          ? {
               propagateStyleFields: sentPropagation as V2PageDocumentBatchMutation['propagateStyleFields'],
             }
           : {}),
       })
-      for (const [field, value] of Object.entries(sentStylePatch)) {
-        if (canonical(state.desiredStylePatch[field]) === canonical(value)) {
-          delete state.desiredStylePatch[field]
-          state.desiredPropagateStyleFields.delete(field)
+      if (sendStyleCommand) {
+        for (const [field, value] of Object.entries(sentStylePatch)) {
+          if (canonical(state.desiredStylePatch[field]) === canonical(value)) {
+            delete state.desiredStylePatch[field]
+          }
         }
-      }
-      if (
-        sentDefaultFontChanged
-        && state.defaultFontChanged
-        && state.desiredDefaultFontId === sentDefaultFont
-      ) {
-        state.defaultFontChanged = false
+        if (sentVersion === state.desiredVersion) {
+          for (const field of sentPropagation) {
+            state.desiredPropagateStyleFields.delete(field)
+          }
+        }
+        if (
+          sentDefaultFontChanged
+          && state.defaultFontChanged
+          && state.desiredDefaultFontId === sentDefaultFont
+        ) {
+          state.defaultFontChanged = false
+        }
       }
       state.documentRevision = document.documentRevision
       state.persisted = pageDocumentToBubbles(document)
@@ -279,6 +299,7 @@ async function persistLoop(
         if (
           Object.keys(state.desiredStylePatch).length === 0
           && !state.defaultFontChanged
+          && state.desiredPropagateStyleFields.size === 0
         ) return
       }
     }

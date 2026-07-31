@@ -89,6 +89,25 @@ describe('webImportStore backend settings workflow', () => {
     expect(store.hasCredential('web_import_agent', 'deepseek')).toBe(true)
   })
 
+  it('rejects a missing or empty backend settings fact instead of using browser defaults', async () => {
+    const store = useWebImportStore()
+    mocks.getSettings.mockResolvedValue({
+      credentials: [],
+      providerSettings: [],
+      settings: [{
+        domain: 'web_import',
+        payload: {},
+        revision: 1,
+        schemaVersion: 1,
+      }],
+    })
+
+    expect(await store.loadFromBackend()).toBe(false)
+    await store.acceptDisclaimer()
+    expect(store.modalVisible).toBe(false)
+    expect(store.error).toBe('网页导入设置加载失败')
+  })
+
   it('saves settings, provider values, and secret edits in one backend transaction', async () => {
     const store = useWebImportStore()
     await store.loadFromBackend()

@@ -78,6 +78,8 @@ def to_storage(document: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     identity.pop("name", None)
     meta = _object(canonical.get("meta"))
     status = _object(canonical.get("status"))
+    export_artifacts = _object(canonical.get("exportArtifacts"))
+    last_review = export_artifacts.get("last_review")
     last_diagnostics = status.get("last_diagnostics")
     return title, {
         "origin_type": origin_type,
@@ -100,6 +102,11 @@ def to_storage(document: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
         "frozen_sections_json": _json(
             status.get("frozen_sections", [])
         ),
+        "last_review_json": (
+            _json(last_review)
+            if last_review is not None
+            else None
+        ),
         "last_diagnostics_json": (
             _json(last_diagnostics)
             if last_diagnostics is not None
@@ -116,6 +123,7 @@ def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
     avatar_id = row.get("avatar_asset_id")
     identity = _load_object(row.get("identity_json"))
     identity["name"] = title
+    last_review = _load_nullable(row.get("last_review_json"))
     last_diagnostics = _load_nullable(row.get("last_diagnostics_json"))
     return {
         "id": str(row["id"]),
@@ -149,7 +157,11 @@ def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
         "lorebook": _load_object(row.get("lorebook_json")),
         "regexScripts": _load_list(row.get("regex_scripts_json")),
         "stateTasks": _load_list(row.get("state_tasks_json")),
-        "exportArtifacts": {},
+        "exportArtifacts": (
+            {"last_review": last_review}
+            if last_review is not None
+            else {}
+        ),
         "revision": int(row["revision"]),
         "avatarAssetId": avatar_id,
         "avatarUrl": (

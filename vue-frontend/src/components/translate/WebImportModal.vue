@@ -8,6 +8,10 @@ import WebImportLogsPanel from './web-import/WebImportLogsPanel.vue'
 import WebImportResultsGrid from './web-import/WebImportResultsGrid.vue'
 import WebImportSettingsPanel from './web-import/WebImportSettingsPanel.vue'
 
+const emit = defineEmits<{
+  commitAccepted: [jobIds: string[]]
+}>()
+
 const {
   activeSettingsTab,
   agentProviderOptions,
@@ -57,7 +61,9 @@ const {
   toggleAll,
   togglePage,
   urlInput,
-} = useWebImportModal()
+} = useWebImportModal({
+  onCommitAccepted: accepted => emit('commitAccepted', accepted.jobIds),
+})
 </script>
 
 <template>

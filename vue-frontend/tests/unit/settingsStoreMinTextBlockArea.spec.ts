@@ -20,12 +20,20 @@ function settingsDocument(
   revision = 4,
 ): V2SettingsDocument {
   return {
-    settings: [{
-      domain: 'translation',
-      payload: settings as unknown as Record<string, unknown>,
-      revision,
-      schemaVersion: 3,
-    }],
+    settings: [
+      {
+        domain: 'translation',
+        payload: settings as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 3,
+      },
+      {
+        domain: 'text_style_defaults',
+        payload: settings.textStyle as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 1,
+      },
+    ],
     bookSettings: [],
     providerSettings: [],
     credentials: [],

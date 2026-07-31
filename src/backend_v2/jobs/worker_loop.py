@@ -67,7 +67,17 @@ class AttemptHeartbeat:
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval_seconds):
-            renewed = self.repository.renew_attempt(self.fence)
+            try:
+                renewed = self.repository.renew_attempt(self.fence)
+            except Exception:
+                LOGGER.exception(
+                    "任务 attempt 心跳执行失败，立即放弃本次 attempt："
+                    "job=%s attempt=%s",
+                    _short(self.fence.job_id),
+                    _short(self.fence.attempt_id),
+                )
+                self.fenced.set()
+                return
             if renewed is None:
                 LOGGER.warning(
                     "任务租约失效：job=%s attempt=%s",
@@ -316,24 +326,10 @@ class JobWorkerLoop:
                     page_id,
                 )
                 try:
-                    effective_step = (
-                        self.plugin_runtime.before_step(
-                            heartbeat.fence,
-                            step,
-                        )
-                        if self.plugin_runtime is not None
-                        else step
-                    )
                     checkpoint = handler(
                         heartbeat.fence,
-                        effective_step,
+                        step,
                     )
-                    if self.plugin_runtime is not None:
-                        checkpoint = self.plugin_runtime.after_step(
-                            heartbeat.fence,
-                            effective_step,
-                            checkpoint,
-                        )
                 except Exception as exc:
                     LOGGER.exception(
                         "步骤失败：job=%s kind=%s step=%s page=%s duration=%.2fs",
@@ -511,25 +507,10 @@ class JobWorkerLoop:
                     )
                     try:
                         def execute_step() -> Mapping[str, Any]:
-                            effective_step = (
-                                self.plugin_runtime.before_step(
-                                    heartbeat.fence,
-                                    step,
-                                )
-                                if self.plugin_runtime is not None
-                                else step
-                            )
-                            checkpoint = handler(
+                            return handler(
                                 heartbeat.fence,
-                                effective_step,
+                                step,
                             )
-                            if self.plugin_runtime is not None:
-                                checkpoint = self.plugin_runtime.after_step(
-                                    heartbeat.fence,
-                                    effective_step,
-                                    checkpoint,
-                                )
-                            return checkpoint
 
                         if pool_kind in DEEP_LEARNING_STEP_KINDS:
                             acquired = deep_learning_admission.acquire(blocking=False)
@@ -686,16 +667,8 @@ class JobWorkerLoop:
             len(steps),
             step_ids,
         )
-        effective_steps = [
-            (
-                self.plugin_runtime.before_step(heartbeat.fence, step)
-                if self.plugin_runtime is not None
-                else step
-            )
-            for step in steps
-        ]
         try:
-            checkpoint = handler(heartbeat.fence, effective_steps)
+            checkpoint = handler(heartbeat.fence, steps)
         except Exception as exc:
             LOGGER.exception(
                 "批处理失败：job=%s kind=%s count=%s duration=%.2fs",
@@ -724,13 +697,6 @@ class JobWorkerLoop:
             len(steps),
             time.monotonic() - started_at,
         )
-        if self.plugin_runtime is not None:
-            for step in effective_steps:
-                self.plugin_runtime.after_step(
-                    heartbeat.fence,
-                    step,
-                    checkpoint,
-                )
         if checkpoint.get("__already_published__"):
             return
         per_step = checkpoint.get("steps")

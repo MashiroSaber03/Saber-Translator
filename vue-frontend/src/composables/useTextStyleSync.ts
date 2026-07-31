@@ -7,7 +7,6 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { queuePageDocumentMutation } from '@/services/pageDocumentPersistence'
-import type { BubbleState } from '@/types/bubble'
 import { showToast } from '@/utils/toast'
 
 export interface ApplySettingsOptions {
@@ -23,18 +22,6 @@ export interface ApplySettingsOptions {
   textAlign: boolean
 }
 
-const STYLE_TO_BUBBLE_FIELD: Record<string, keyof BubbleState> = {
-  fillColor: 'fillColor',
-  fontFamily: 'fontFamily',
-  fontSize: 'fontSize',
-  lineSpacing: 'lineSpacing',
-  strokeColor: 'strokeColor',
-  strokeEnabled: 'strokeEnabled',
-  strokeWidth: 'strokeWidth',
-  textAlign: 'textAlign',
-  textColor: 'textColor',
-}
-
 const RENDERED_STYLE_FIELDS = new Set([
   'fontSize',
   'fontFamily',
@@ -46,35 +33,6 @@ const RENDERED_STYLE_FIELDS = new Set([
   'lineSpacing',
   'textAlign',
 ])
-
-function rgbToHex(rgb: [number, number, number] | null | undefined): string | null {
-  if (!rgb || rgb.length !== 3) return null
-  return `#${rgb.map(value => (
-    Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')
-  )).join('')}`
-}
-
-function withStyle(
-  bubbles: BubbleState[],
-  settingKey: string,
-  value: unknown,
-): BubbleState[] {
-  if (settingKey === 'layoutDirection') {
-    return bubbles.map(bubble => ({
-      ...bubble,
-      textDirection: value === 'auto'
-        ? (
-            bubble.autoTextDirection === 'horizontal'
-              ? 'horizontal'
-              : 'vertical'
-          )
-        : value as 'horizontal' | 'vertical',
-    }))
-  }
-  const target = STYLE_TO_BUBBLE_FIELD[settingKey]
-  if (!target) return bubbles.map(bubble => ({ ...bubble }))
-  return bubbles.map(bubble => ({ ...bubble, [target]: value }))
-}
 
 export function useTextStyleSync() {
   const imageStore = useImageStore()
@@ -152,17 +110,17 @@ export function useTextStyleSync() {
 
   async function persistStyle(
     pageStyleDefaultsPatch: Record<string, unknown>,
-    bubbles: BubbleState[],
     propagateStyleFields: string[],
     defaultFontId?: string,
+    expectsRender = false,
   ): Promise<void> {
     const image = currentImage.value
     if (!image || image.documentRevision === undefined) return
-    const baseRevision = image.documentRevision
+    const bubbles = image.bubbleStates ?? bubbleStore.bubbles
     try {
       await queuePageDocumentMutation(
         image.id,
-        baseRevision,
+        image.documentRevision,
         bubbles,
         {
           ...(defaultFontId ? { defaultFontId } : {}),
@@ -177,11 +135,9 @@ export function useTextStyleSync() {
       )
       return
     }
-    if (
-      !Object.keys(pageStyleDefaultsPatch).some(field => RENDERED_STYLE_FIELDS.has(field))
-      || !image.translatedAssetUrl
-    ) return
-    void refreshRenderedAsset(image.id, baseRevision + 1)
+    const committed = imageStore.images.find(candidate => candidate.id === image.id)
+    if (!expectsRender || !image.translatedAssetUrl || !committed?.documentRevision) return
+    void refreshRenderedAsset(image.id, committed.documentRevision)
   }
 
   async function refreshRenderedAsset(pageId: string, minimumRevision: number): Promise<void> {
@@ -213,15 +169,15 @@ export function useTextStyleSync() {
   async function handleTextStyleChanged(settingKey: string, newValue: unknown) {
     const image = currentImage.value
     if (!image) return
-    const source = image.bubbleStates ?? bubbleStore.bubbles
-    const bubbles = withStyle(source, settingKey, newValue)
-    imageStore.updateCurrentImage({ bubbleStates: bubbles, hasUnsavedChanges: true })
-    bubbleStore.setBubbles(bubbles)
+    imageStore.updateCurrentImage({
+      [settingKey]: newValue,
+      hasUnsavedChanges: true,
+    })
     await persistStyle(
-      { [settingKey]: newValue },
-      bubbles,
+      settingKey === 'fontFamily' ? {} : { [settingKey]: newValue },
       settingKey === 'inpaintMethod' ? [] : [settingKey],
       settingKey === 'fontFamily' ? String(newValue) : undefined,
+      RENDERED_STYLE_FIELDS.has(settingKey),
     )
   }
 
@@ -229,48 +185,41 @@ export function useTextStyleSync() {
     const image = currentImage.value
     if (!image) return
     const fixedFontSize = settingsStore.settings.textStyle.fontSize
-    const source = image.bubbleStates ?? bubbleStore.bubbles
-    const bubbles = autoFontSize
-      ? source.map(bubble => ({ ...bubble }))
-      : withStyle(source, 'fontSize', fixedFontSize)
     imageStore.updateCurrentImage({
       autoFontSize,
-      bubbleStates: bubbles,
       hasUnsavedChanges: true,
     })
-    bubbleStore.setBubbles(bubbles)
     await persistStyle(
       { autoFontSize, fontSize: fixedFontSize },
-      bubbles,
-      ['autoFontSize', 'fontSize'],
+      ['fontSize'],
+      undefined,
+      true,
     )
   }
 
   async function handleAutoTextColorChanged(useAutoTextColor: boolean) {
     const image = currentImage.value
     if (!image) return
-    const source = image.bubbleStates ?? bubbleStore.bubbles
-    const bubbles = useAutoTextColor
-      ? source.map(bubble => ({
-          ...bubble,
-          fillColor: rgbToHex(bubble.autoBgColor)
-            ?? bubble.fillColor
-            ?? settingsStore.settings.textStyle.fillColor,
-          textColor: rgbToHex(bubble.autoFgColor)
-            ?? bubble.textColor
-            ?? settingsStore.settings.textStyle.textColor,
-        }))
-      : source.map(bubble => ({ ...bubble }))
+    const textStyle = settingsStore.settings.textStyle
     imageStore.updateCurrentImage({
-      bubbleStates: bubbles,
       hasUnsavedChanges: true,
       useAutoTextColor,
     })
-    bubbleStore.setBubbles(bubbles)
     await persistStyle(
-      { useAutoTextColor },
-      bubbles,
-      ['useAutoTextColor'],
+      {
+        useAutoTextColor,
+        ...(
+          useAutoTextColor
+            ? {}
+            : {
+                textColor: textStyle.textColor,
+                fillColor: textStyle.fillColor,
+              }
+        ),
+      },
+      ['textColor', 'fillColor'],
+      undefined,
+      true,
     )
   }
 

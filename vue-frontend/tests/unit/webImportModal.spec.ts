@@ -188,6 +188,7 @@ describe('WebImportModal', () => {
 
     expect(updateWebImportSelectionMock).toHaveBeenCalledWith('draft-1', 1, ['draft-page-1'])
     expect(commitWebImportDraftMock).toHaveBeenCalledWith('draft-1', 2)
+    expect(wrapper.emitted('commitAccepted')).toEqual([[['job-2']]])
     expect(webImportStore.status).toBe('idle')
   })
 

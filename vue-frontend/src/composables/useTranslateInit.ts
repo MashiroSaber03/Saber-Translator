@@ -24,7 +24,7 @@ import {
   queuePageDocumentSave,
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
-import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
+import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
 
 export interface InitState {
   isInitializing: boolean
@@ -352,10 +352,11 @@ export function useTranslateInit() {
           || imageStore.currentImage?.id !== pageId
         ) return
         const bubbles = registerPageDocument(document)
-        const pageTextStyle = normalizeTextStyleSettings({
+        const pageTextStyle = parseCompleteTextStyleSettings({
           ...document.pageStyleDefaults,
-          fontFamily: document.defaultFontId
-            ?? document.pageStyleDefaults.fontFamily,
+          ...(document.defaultFontId
+            ? { fontFamily: document.defaultFontId }
+            : {}),
         })
         imageStore.updateCurrentImage({
           ...pageTextStyle,

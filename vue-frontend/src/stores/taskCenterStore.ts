@@ -46,6 +46,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const focusTarget = ref<TaskCenterFocus | null>(null)
   const loading = ref(false)
   const connected = ref(false)
+  const workerOnline = ref(true)
   const lastEventId = ref(0)
   const latestEvent = ref<V2JobEvent | null>(null)
   const selectedDetail = ref<V2JobDetail | null>(null)
@@ -59,32 +60,37 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   const activeCount = computed(() => (
-    queue.value.filter(job => ['running', 'pausing', 'cancelling'].includes(job.status)).length
+    queue.value.filter(
+      job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status),
+    ).length
   ))
   const queuedCount = computed(() => queue.value.filter(job => job.status === 'queued').length)
-  const filteredQueue = computed(() => filterJobs(queue.value))
-  const filteredHistory = computed(() => filterJobs(history.value))
-  const queueBatches = computed(() => groupJobsByBatch(filteredQueue.value))
-  const historyBatches = computed(() => groupJobsByBatch(filteredHistory.value))
-
-  function filterJobs(items: V2Job[]): V2Job[] {
-    return items.filter(job => (
-      (!statusFilter.value || job.status === statusFilter.value)
-      && (!kindFilter.value || job.kind === kindFilter.value)
-      && (!bookFilter.value || job.bookId === bookFilter.value)
-    ))
-  }
+  const interruptedCount = computed(() => (
+    history.value.filter(job => job.status === 'interrupted').length
+  ))
+  const currentJobs = computed(() => queue.value.filter(
+    job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status),
+  ))
+  const waitingJobs = computed(() => queue.value.filter(job => job.status === 'queued'))
+  const queueBatches = computed(() => groupJobsByBatch(queue.value))
+  const waitingBatches = computed(() => groupJobsByBatch(waitingJobs.value))
+  const historyBatches = computed(() => groupJobsByBatch(history.value))
 
   async function refresh(): Promise<void> {
     loading.value = true
     try {
       const [queueResult, historyResult] = await Promise.all([
         jobsApi.list('queue'),
-        jobsApi.list('history'),
+        jobsApi.list('history', {
+          ...(statusFilter.value ? { status: statusFilter.value } : {}),
+          ...(kindFilter.value ? { type: kindFilter.value } : {}),
+          ...(bookFilter.value ? { bookId: bookFilter.value } : {}),
+        }),
       ])
       queue.value = queueResult.items
       history.value = historyResult.items
       queueRevision.value = queueResult.queueRevision
+      workerOnline.value = queueResult.workerOnline !== false
     } finally {
       loading.value = false
     }
@@ -220,6 +226,18 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     await runCommand(() => jobsApi.reorder(ordered, queueRevision.value))
   }
 
+  async function prioritizeQueued(jobId: string): Promise<void> {
+    const sortable = queue.value.filter(job => (
+      job.status === 'queued' && !job.blockedReason
+    ))
+    const index = sortable.findIndex(job => job.jobId === jobId)
+    if (index <= 0) return
+    const ordered = sortable.map(job => job.jobId)
+    ordered.splice(index, 1)
+    ordered.unshift(jobId)
+    await runCommand(() => jobsApi.reorder(ordered, queueRevision.value))
+  }
+
   return {
     queue,
     history,
@@ -228,6 +246,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     focusTarget,
     loading,
     connected,
+    workerOnline,
     latestEvent,
     selectedDetail,
     detailLoading,
@@ -238,7 +257,10 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     bookFilter,
     activeCount,
     queuedCount,
+    interruptedCount,
+    currentJobs,
     queueBatches,
+    waitingBatches,
     historyBatches,
     initialize,
     disconnect,
@@ -259,6 +281,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     loadDetail,
     loadOlderEvents,
     moveQueued,
+    prioritizeQueued,
     cancelBatch: (batchId: string) => runCommand(() => jobsApi.cancelBatch(batchId)),
     prioritizeBatch: (batchId: string) => (
       runCommand(() => jobsApi.prioritizeBatch(batchId, queueRevision.value))

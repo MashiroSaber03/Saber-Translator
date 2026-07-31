@@ -289,6 +289,7 @@ def create_studio_blueprint(
                 book_id=str(document["bookId"]),
                 command={"scope": "full", "force": False},
             ),
+            analysis_context=compressed,
             idempotency_key=_idempotency_key(),
         )
         return jsonify(response), 202

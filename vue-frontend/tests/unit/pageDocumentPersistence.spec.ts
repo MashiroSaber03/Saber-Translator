@@ -34,8 +34,8 @@ describe('page document persistence coordinator', () => {
     }
   }
 
-  it('commits bubble and page style changes in one CAS without image payloads', async () => {
-    mutateMock.mockResolvedValue({
+  it('flushes a bubble delta before the page style CAS without image payloads', async () => {
+    mutateMock.mockResolvedValueOnce({
       bubbles: [{
         bubbleId: 'bubble-1',
         fontId: 'font-2',
@@ -52,6 +52,24 @@ describe('page document persistence coordinator', () => {
       documentRevision: 2,
       pageId: 'page-1',
       pageStyleDefaults: {},
+      pageStyleSchemaVersion: 1,
+    }).mockResolvedValueOnce({
+      bubbles: [{
+        bubbleId: 'bubble-1',
+        fontId: 'font-2',
+        ordinal: 1,
+        payload: {
+          coords: [0, 0, 100, 80],
+          fontSize: 28,
+          translatedText: '译文',
+        },
+        updatedRevision: 3,
+      }],
+      chapterId: 'chapter-1',
+      defaultFontId: 'font-2',
+      documentRevision: 3,
+      pageId: 'page-1',
+      pageStyleDefaults: { fontSize: 28 },
       pageStyleSchemaVersion: 1,
     })
     const {
@@ -78,13 +96,12 @@ describe('page document persistence coordinator', () => {
 
     await queuePageDocumentMutation('page-1', 1, [bubble], {
       defaultFontId: 'font-2',
-      pageStyleDefaultsPatch: { fontFamily: 'font-2', fontSize: 28 },
+      pageStyleDefaultsPatch: { fontSize: 28 },
       propagateStyleFields: ['fontFamily', 'fontSize'],
     })
 
-    expect(mutateMock).toHaveBeenCalledWith('page-1', {
+    expect(mutateMock).toHaveBeenNthCalledWith(1, 'page-1', {
       baseRevision: 1,
-      defaultFontId: 'font-2',
       mutations: [{
         bubbleId: 'bubble-1',
         fields: expect.objectContaining({
@@ -94,8 +111,12 @@ describe('page document persistence coordinator', () => {
         }),
         op: 'create',
       }],
+    })
+    expect(mutateMock).toHaveBeenNthCalledWith(2, 'page-1', {
+      baseRevision: 2,
+      defaultFontId: 'font-2',
+      mutations: [],
       pageStyleDefaultsPatch: {
-        fontFamily: 'font-2',
         fontSize: 28,
       },
       propagateStyleFields: ['fontFamily', 'fontSize'],

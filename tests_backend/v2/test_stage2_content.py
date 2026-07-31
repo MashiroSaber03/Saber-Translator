@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
 from pathlib import Path
 
 from PIL import Image
@@ -24,10 +25,12 @@ from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.backend_v2.storage.schema import (
+    app_settings,
     assets,
     books,
     chapter_write_locks,
     chapters,
+    fonts,
     jobs,
     metadata,
     operations,
@@ -168,8 +171,9 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     assert translation["revision"] == 1
     assert translation["payload"]["settingsSchemaVersion"] == 3
     assert translation["payload"]["translation"]["provider"]
-    assert translation["payload"]["textStyle"]["fontFamily"]
+    assert "textStyle" not in translation["payload"]
     assert translation["payload"]["pluginAgent"]["provider"]
+    assert settings_by_domain["text_style_defaults"]["payload"]["fontFamily"]
 
     workflow = settings_by_domain["workflow_preferences"]["payload"]
     assert workflow == {
@@ -248,6 +252,12 @@ def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
                 }
             },
         )
+    with pytest.raises(ValueError, match="translation.textDetector is invalid"):
+        repository.update_chapter_settings_memory(
+            chapter_id=chapter_id,
+            base_revision=2,
+            payload={"textDetector": "browser-only-fallback"},
+        )
 def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
     content_platform,
 ) -> None:
@@ -289,6 +299,95 @@ def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
     with Image.open(storage.resolve_relative_path(thumbnail.relative_path)) as decoded:
         assert decoded.format == "WEBP"
         assert decoded.size == (320, 213)
+
+
+def test_page_import_materializes_the_saved_default_font_as_a_foreign_key(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, importer, _book, chapter = content_platform
+    font_id = "10000000-0000-0000-0000-000000000001"
+    with engine.begin() as connection:
+        connection.execute(
+            insert(fonts).values(
+                id=font_id,
+                display_name="测试字体",
+                kind="builtin",
+                builtin_key="test-font",
+            )
+        )
+        style = json.loads(
+            connection.execute(
+                select(app_settings.c.payload_json).where(
+                    app_settings.c.domain == "text_style_defaults"
+                )
+            ).scalar_one()
+        )
+        style["fontFamily"] = font_id
+        style["layoutDirection"] = "horizontal"
+        style["inpaintMethod"] = "litelama"
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "text_style_defaults")
+            .values(payload_json=json.dumps(style))
+        )
+
+    result, _replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((64, 96)),
+        logical_path="font-default.png",
+        key="font-default-import",
+    )
+    page_id = str(result["page"]["id"])
+
+    with engine.connect() as connection:
+        stored = connection.execute(
+            select(
+                pages.c.default_font_id,
+                pages.c.page_style_defaults_json,
+            ).where(pages.c.id == page_id)
+        ).mappings().one()
+    page_style = json.loads(stored["page_style_defaults_json"])
+    assert stored["default_font_id"] == font_id
+    assert "fontFamily" not in page_style
+    assert page_style["layoutDirection"] == "horizontal"
+    assert page_style["inpaintMethod"] == "litelama"
+
+
+@pytest.mark.parametrize(
+    ("patch", "message"),
+    [
+        ({"fontSize": 0}, "fontSize"),
+        ({"textColor": "black"}, "textColor"),
+        ({"layoutDirection": "diagonal"}, "layoutDirection"),
+        ({"lineSpacing": float("inf")}, "lineSpacing"),
+        ({"inpaintMethod": "auto"}, "inpaintMethod"),
+        ({"fontFamily": DEFAULT_FONT_ID}, "unknown page style fields"),
+    ],
+)
+def test_page_style_patch_is_validated_by_the_backend_domain(
+    content_platform,
+    patch,
+    message,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    result, _replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((64, 96)),
+        logical_path="style-validation.png",
+        key=f"style-validation-{message}",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        repository.mutate_page_document(
+            page_id=str(result["page"]["id"]),
+            base_revision=1,
+            mutations=[],
+            page_style_defaults_patch=patch,
+        )
 
 
 def test_long_strip_thumbnail_uses_width_cap_and_top_crop(content_platform) -> None:
@@ -396,6 +495,77 @@ def test_page_listing_is_cursor_paginated_metadata_only(content_platform) -> Non
     summary = repository.get_page_summary(page_id)
     assert summary == first["items"][0]
     assert summary["sourceUrl"].startswith("/api/v2/assets/")
+
+
+def test_clear_chapter_pages_is_one_guarded_atomic_backend_command(
+    content_platform,
+) -> None:
+    root, engine, repository, _storage, importer, book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    for index in range(2):
+        _import(
+            repository,
+            importer,
+            chapter_id=chapter_id,
+            payload=_image_bytes((16 + index, 24)),
+            logical_path=f"clear-{index}.png",
+            key=f"clear-{index}",
+        )
+    with engine.connect() as connection:
+        revision_before = connection.execute(
+            select(chapters.c.page_order_revision).where(
+                chapters.c.id == chapter_id
+            )
+        ).scalar_one()
+    with engine.begin() as connection:
+        connection.execute(
+            insert(jobs).values(
+                id="clear-pages-blocker",
+                kind="translation",
+                status="queued",
+                book_id=str(book["id"]),
+                chapter_id=chapter_id,
+                config_json="{}",
+            )
+        )
+
+    app = create_api_app(
+        ApiSettings(
+            data_root=root,
+            identity=RuntimeIdentity(
+                epoch_id="test-clear-pages-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    blocked = client.delete(
+        f"/api/v2/chapters/{chapter_id}/pages",
+        headers={"Idempotency-Key": "clear-pages-blocked"},
+    )
+    assert blocked.status_code == 423
+    assert len(repository.list_pages(chapter_id=chapter_id, all_pages=True)["items"]) == 2
+
+    with engine.begin() as connection:
+        connection.execute(
+            jobs.delete().where(jobs.c.id == "clear-pages-blocker")
+        )
+    cleared = client.delete(
+        f"/api/v2/chapters/{chapter_id}/pages",
+        headers={"Idempotency-Key": "clear-pages-success"},
+    )
+    assert cleared.status_code == 200
+    assert cleared.get_json() == {"deletedCount": 2}
+    assert repository.list_pages(chapter_id=chapter_id, all_pages=True)["items"] == []
+    with engine.connect() as connection:
+        revision_after = connection.execute(
+            select(chapters.c.page_order_revision).where(
+                chapters.c.id == chapter_id
+            )
+        ).scalar_one()
+    assert revision_after == revision_before + 1
 
 
 def test_single_page_summary_route_returns_only_requested_page(content_platform) -> None:
@@ -574,6 +744,15 @@ def test_media_api_streams_immutable_asset_and_honors_conditional_get(
     assert download.status_code == 200
     assert "original_media.png" in download.headers["Content-Disposition"]
     assert "original_media.png.webp" not in download.headers["Content-Disposition"]
+    extensionless_download = client.get(
+        f'{result["page"]["thumbnailSourceUrl"]}?download=1'
+        "&filename=task-artifact",
+    )
+    assert extensionless_download.status_code == 200
+    assert (
+        "task-artifact.webp"
+        in extensionless_download.headers["Content-Disposition"]
+    )
 
 
 def test_page_document_uses_stable_bubble_ids_and_revision_cas(
@@ -697,6 +876,29 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
     assert updated["documentRevision"] == 3
     assert updated["defaultFontId"] == DEFAULT_FONT_ID
 
+    invalid_font_response = client.patch(
+        f"/api/v2/pages/{page_id}/document",
+        headers={"Idempotency-Key": "editor-route-invalid-font"},
+        json={
+            "baseRevision": 3,
+            "mutations": [
+                {
+                    "op": "patch",
+                    "bubbleId": bubble_id,
+                    "fields": {
+                        "fontId": "",
+                        "translatedText": "不能写入无效字体",
+                    },
+                }
+            ],
+        },
+    )
+
+    assert invalid_font_response.status_code == 422
+    unchanged = repository.get_page_document(page_id)
+    assert unchanged["documentRevision"] == 3
+    assert unchanged["bubbles"][0]["payload"]["translatedText"] == "编辑写入"
+
 
 def test_page_document_command_is_idempotent_and_propagates_style(
     content_platform,
@@ -719,11 +921,14 @@ def test_page_document_command_is_idempotent_and_propagates_style(
             {
                 "op": "create",
                 "bubbleId": bubble_id,
-                "fields": {"translatedText": "hello", "fontSize": 18},
+                "fields": {"translatedText": "hello"},
             }
         ],
         "idempotency_key": "document-command",
-        "page_style_defaults_patch": {"fontSize": 30},
+        "page_style_defaults_patch": {
+            "autoFontSize": False,
+            "fontSize": 30,
+        },
         "propagate_style_fields": ["fontSize"],
     }
     first, replayed = repository.mutate_page_document(**command)
@@ -774,7 +979,6 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
                     "autoTextDirection": "horizontal",
                     "autoFgColor": [1, 2, 3],
                     "autoBgColor": [10, 11, 12],
-                    "fontSize": 12,
                 },
             }
         ],
@@ -784,9 +988,10 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
             "useAutoTextColor": True,
         },
         propagate_style_fields=[
-            "autoFontSize",
+            "fontSize",
             "layoutDirection",
-            "useAutoTextColor",
+            "textColor",
+            "fillColor",
         ],
     )
     persisted_payload = document["bubbles"][0]["payload"]
@@ -821,6 +1026,24 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
     assert "00000000-0000-0000-0000-000000000010" not in str(
         render_payload["fontFamily"]
     )
+
+    manual = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=2,
+        mutations=[],
+        page_style_defaults_patch={
+            "useAutoTextColor": False,
+            "textColor": "#123456",
+            "fillColor": "#ABCDEF",
+        },
+        propagate_style_fields=["textColor", "fillColor"],
+    )
+    manual_payload = manual["bubbles"][0]["payload"]
+    assert manual["pageStyleDefaults"]["useAutoTextColor"] is False
+    assert manual_payload["textColor"] == "#123456"
+    assert manual_payload["fillColor"] == "#ABCDEF"
+    assert manual_payload["autoFgColor"] == [1, 2, 3]
+    assert manual_payload["autoBgColor"] == [10, 11, 12]
 
 
 def test_quick_workspace_promote_moves_relations_without_moving_assets(

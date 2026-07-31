@@ -173,7 +173,8 @@ describe('useWebImportModal', () => {
   })
 
   it('commits the selected backend draft page ids without loading image payloads', async () => {
-    const exposed = mountComposableHost()
+    const onCommitAccepted = vi.fn()
+    const exposed = mountComposableHost({ onCommitAccepted })
     const webImportStore = useWebImportStore()
     getTranslationBootstrapMock.mockResolvedValue({
       activeWebImportDraft: null,
@@ -216,6 +217,11 @@ describe('useWebImportModal', () => {
 
     expect(updateWebImportSelectionMock).toHaveBeenCalledWith('draft-1', 2, ['page-2', 'page-4'])
     expect(commitWebImportDraftMock).toHaveBeenCalledWith('draft-1', 3)
+    expect(onCommitAccepted).toHaveBeenCalledWith({
+      status: 'queued',
+      batchId: 'batch-2',
+      jobIds: ['job-2'],
+    })
     expect(showToastMock).toHaveBeenCalledWith('入库任务已进入后端任务中心，可安全关闭页面', 'success')
   })
 
@@ -229,11 +235,13 @@ describe('useWebImportModal', () => {
   })
 })
 
-function mountComposableHost() {
+function mountComposableHost(
+  callbacks: Parameters<typeof useWebImportModal>[0] = {},
+) {
   let api: ReturnType<typeof useWebImportModal> | null = null
   const Host = defineComponent({
     setup() {
-      api = useWebImportModal()
+      api = useWebImportModal(callbacks)
       return () => null
     },
   })

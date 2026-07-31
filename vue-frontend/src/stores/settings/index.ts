@@ -16,7 +16,10 @@ import {
 } from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
 import { setBackendAccessRestricted } from '@/services/backendAccessGate'
-import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
+import {
+  normalizeTextStyleSettings,
+  parseCompleteTextStyleSettings,
+} from '@/defaults/textStyleDefaults'
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
@@ -155,23 +158,78 @@ function withoutApiKey<T extends Record<string, unknown>>(value: T): Omit<T, 'ap
   return payload
 }
 
+function proofreadingProviderPayload(
+  round: TranslationSettings['proofreading']['rounds'][number],
+): Record<string, unknown> {
+  const {
+    apiKey: _apiKey,
+    name: _name,
+    provider: _provider,
+    ...payload
+  } = deepClone(round)
+  return payload as unknown as Record<string, unknown>
+}
+
 function sanitizedSettingsPayload(
   value: TranslationSettings,
-  textStyle: TextStyleSettings = value.textStyle,
 ): Record<string, unknown> {
   const payload = deepClone(value) as TranslationSettings
-  payload.textStyle = deepClone(textStyle)
-  payload.translation.apiKey = ''
-  payload.hqTranslation.apiKey = ''
-  payload.pluginAgent.apiKey = ''
-  payload.aiVisionOcr.apiKey = ''
-  payload.baiduOcr.apiKey = ''
-  payload.baiduOcr.secretKey = ''
+  delete (payload.translation as Partial<typeof payload.translation>).apiKey
+  delete (payload.hqTranslation as Partial<typeof payload.hqTranslation>).apiKey
+  delete (payload.pluginAgent as Partial<typeof payload.pluginAgent>).apiKey
+  delete (payload.aiVisionOcr as Partial<typeof payload.aiVisionOcr>).apiKey
+  delete (payload.baiduOcr as Partial<typeof payload.baiduOcr>).apiKey
+  delete (payload.baiduOcr as Partial<typeof payload.baiduOcr>).secretKey
   payload.proofreading.rounds.forEach((round) => {
-    round.apiKey = ''
+    delete (round as Partial<typeof round>).apiKey
   })
   payload.settingsSchemaVersion = 3
-  return payload as unknown as Record<string, unknown>
+  const backendPayload = payload as unknown as Record<string, unknown>
+  delete backendPayload.textStyle
+  return backendPayload
+}
+
+function parseBackendTranslationPayload(
+  value: Record<string, unknown>,
+  textStyle: TextStyleSettings,
+): TranslationSettings | null {
+  const payload = {
+    ...deepClone(value),
+    textStyle: deepClone(textStyle),
+  } as Record<string, unknown>
+  for (const key of [
+    'translation',
+    'hqTranslation',
+    'pluginAgent',
+    'aiVisionOcr',
+  ]) {
+    const section = payload[key]
+    if (section && typeof section === 'object' && !Array.isArray(section)) {
+      (section as Record<string, unknown>).apiKey = ''
+    }
+  }
+  const baidu = payload.baiduOcr
+  if (baidu && typeof baidu === 'object' && !Array.isArray(baidu)) {
+    const section = baidu as Record<string, unknown>
+    section.apiKey = ''
+    section.secretKey = ''
+  }
+  const proofreading = payload.proofreading
+  if (
+    proofreading
+    && typeof proofreading === 'object'
+    && !Array.isArray(proofreading)
+  ) {
+    const rounds = (proofreading as Record<string, unknown>).rounds
+    if (Array.isArray(rounds)) {
+      (proofreading as Record<string, unknown>).rounds = rounds.map(round => (
+        round && typeof round === 'object' && !Array.isArray(round)
+          ? { ...round, apiKey: '' }
+          : round
+      ))
+    }
+  }
+  return parseCurrentSettings(payload)
 }
 
 function credentialIdentity(domain: string, provider: string): string {
@@ -266,23 +324,36 @@ export const useSettingsStore = defineStore('settings', () => {
     const workflowPreferencesEntry = document.settings.find(
       row => row.domain === 'workflow_preferences',
     )
-    settingsRevision = translationEntry?.revision ?? 0
-    textStyleDefaultsRevision = textStyleDefaultsEntry?.revision ?? 0
-    workflowPreferencesRevision = workflowPreferencesEntry?.revision ?? 0
-    const parsed = translationEntry
-      ? parseCurrentSettings(translationEntry.payload)
-      : null
-    if (translationEntry && !parsed) {
-      throw new Error('后端翻译设置格式无效')
+    if (!translationEntry) {
+      throw new Error('后端翻译设置缺失')
     }
-    settings.value = parsed ?? createDefaultSettings()
-    if (textStyleDefaultsEntry) {
-      textStyleDefaults.value = normalizeTextStyleSettings(
+    if (!textStyleDefaultsEntry) {
+      throw new Error('后端文字样式默认设置缺失')
+    }
+    let parsedTextStyleDefaults: TextStyleSettings
+    try {
+      parsedTextStyleDefaults = parseCompleteTextStyleSettings(
         textStyleDefaultsEntry.payload,
       )
-    } else {
-      textStyleDefaults.value = normalizeTextStyleSettings(settings.value.textStyle)
+    } catch (error) {
+      throw new Error(
+        `后端文字样式默认设置格式无效：${
+          error instanceof Error ? error.message : '未知格式错误'
+        }`,
+      )
     }
+    const parsed = parseBackendTranslationPayload(
+      translationEntry.payload,
+      parsedTextStyleDefaults,
+    )
+    if (!parsed) {
+      throw new Error('后端翻译设置格式无效')
+    }
+    settingsRevision = translationEntry.revision
+    textStyleDefaultsRevision = textStyleDefaultsEntry.revision
+    workflowPreferencesRevision = workflowPreferencesEntry?.revision ?? 0
+    textStyleDefaults.value = parsedTextStyleDefaults
+    settings.value = parsed
     settings.value.textStyle = currentPageTextStyle
       ?? deepClone(textStyleDefaults.value)
     workflowPreferences.value = {
@@ -545,11 +616,10 @@ export const useSettingsStore = defineStore('settings', () => {
     })
 
     settings.value.proofreading.rounds.forEach((round, index) => {
-      const config = deepClone(round) as unknown as Record<string, unknown>
       addProviderMutation(providerSettings, credentialEdits, {
         domain: `proofreading_${index}`,
         provider: round.provider,
-        rawPayload: config,
+        rawPayload: proofreadingProviderPayload(round),
         secret: { api_key: round.apiKey },
       })
     })
@@ -558,7 +628,7 @@ export const useSettingsStore = defineStore('settings', () => {
       settings: [
         {
           domain: 'translation',
-          payload: sanitizedSettingsPayload(settings.value, textStyleDefaults.value),
+          payload: sanitizedSettingsPayload(settings.value),
           baseRevision: settingsRevision,
           schemaVersion: 3,
         },
@@ -592,15 +662,25 @@ export const useSettingsStore = defineStore('settings', () => {
     const localDraft = deepClone(settings.value)
     const localProviderDraft = deepClone(providerConfigs.value)
     try {
-      const authoritative = await getV2Settings(['translation', 'plugin_agent'])
+      const authoritative = await getV2Settings([
+        'translation',
+        'text_style_defaults',
+        'plugin_agent',
+      ])
       const translationEntry = authoritative.settings.find(
         row => row.domain === 'translation',
       )
-      const authoritativeSettings = translationEntry
-        ? parseCurrentSettings(translationEntry.payload)
+      const textStyleEntry = authoritative.settings.find(
+        row => row.domain === 'text_style_defaults',
+      )
+      const authoritativeSettings = translationEntry && textStyleEntry
+        ? parseBackendTranslationPayload(
+            translationEntry.payload,
+            parseCompleteTextStyleSettings(textStyleEntry.payload),
+          )
         : null
-      if (!translationEntry || !authoritativeSettings) {
-        throw new Error('后端翻译设置缺失或格式无效')
+      if (!translationEntry || !textStyleEntry || !authoritativeSettings) {
+        throw new Error('后端翻译或文字样式设置缺失或格式无效')
       }
 
       pluginAgentModule.savePluginAgentProviderConfig(

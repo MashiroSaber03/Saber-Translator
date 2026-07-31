@@ -56,7 +56,13 @@ class _LeaseHeartbeat:
 
     def _run(self) -> None:
         while not self.stop_event.wait(self.interval_seconds):
-            if self.renew() is None:
+            try:
+                renewed = self.renew()
+            except Exception:
+                LOGGER.exception("operation/render attempt 心跳执行失败，放弃本次发布")
+                self.fenced.set()
+                return
+            if renewed is None:
                 self.fenced.set()
                 return
 
@@ -71,7 +77,6 @@ class DurableOperationExecutor:
         executor_role: str,
         executor_epoch_id: str,
         handlers: Mapping[str, OperationHandler],
-        plugin_runtime: Any | None = None,
         max_workers: int,
         poll_seconds: float = 0.25,
     ) -> None:
@@ -79,7 +84,6 @@ class DurableOperationExecutor:
         self.executor_role = executor_role
         self.executor_epoch_id = executor_epoch_id
         self.handlers = dict(handlers)
-        self.plugin_runtime = plugin_runtime
         self.max_workers = max_workers
         self.poll_seconds = poll_seconds
         self._stop = threading.Event()
@@ -118,6 +122,14 @@ class DurableOperationExecutor:
                 self._admission.release()
                 self._stop.set()
                 return
+            except Exception:
+                self._admission.release()
+                LOGGER.exception(
+                    "%s operation 调度器领取失败，将继续轮询",
+                    self.executor_role,
+                )
+                self._stop.wait(max(1.0, self.poll_seconds))
+                continue
             if claimed is None:
                 self._admission.release()
                 continue
@@ -189,12 +201,10 @@ class WorkerOperationRunner:
         *,
         worker_epoch_id: str,
         handlers: Mapping[str, OperationHandler],
-        plugin_runtime: Any | None = None,
     ) -> None:
         self.repository = repository
         self.worker_epoch_id = worker_epoch_id
         self.handlers = dict(handlers)
-        self.plugin_runtime = plugin_runtime
 
     def run_one(self) -> bool:
         claimed = self.repository.claim_next(
@@ -215,21 +225,10 @@ class WorkerOperationRunner:
         heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
         heartbeat.start()
         try:
-            effective_operation = (
-                self.plugin_runtime.before(fence, operation)
-                if self.plugin_runtime is not None
-                else operation
-            )
             result = self.handlers[str(operation["kind"])](
                 fence,
-                effective_operation,
+                operation,
             )
-            if self.plugin_runtime is not None:
-                result = self.plugin_runtime.after(
-                    fence,
-                    effective_operation,
-                    result,
-                )
             if (
                 not heartbeat.fenced.is_set()
                 and not result.get("__already_published__")
@@ -308,6 +307,10 @@ class DurableRenderExecutor:
             except OperationFenced:
                 self._stop.set()
                 return
+            except Exception:
+                LOGGER.exception("render 调度器领取失败，将继续轮询")
+                self._stop.wait(max(1.0, self.poll_seconds))
+                continue
             if fence is None:
                 continue
             started_at = time.monotonic()

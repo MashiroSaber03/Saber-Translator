@@ -13,6 +13,7 @@ from src.shared.ai_providers import (
 )
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
 from src.shared.openai_execution import (
+    OpenAICompatibleBusinessRetryableError,
     OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
     parse_json_block_from_text,
@@ -138,6 +139,7 @@ class PluginAgentController:
                 agent_config,
                 label="PluginAgent-Execution",
                 on_stream_chunk=lambda _chunk, content: emit_streaming_assistant(content),
+                require_action=True,
             )
 
             assistant_message = str(envelope.get("assistant_message") or "").strip()
@@ -195,6 +197,7 @@ class PluginAgentController:
         *,
         label: str,
         on_stream_chunk: Optional[Callable[[str, str], None]] = None,
+        require_action: bool = False,
     ) -> Dict[str, Any]:
         provider = normalize_provider_id(agent_config.get("provider"))
         api_key = agent_config.get("api_key", "")
@@ -235,19 +238,47 @@ class PluginAgentController:
             parser=lambda content: self._parse_agent_envelope(
                 content,
                 force_json_output=openai_options.request.force_json_output,
+                require_action=require_action,
             ),
             logger_instance=logger,
         )
         return result.parsed
 
     @staticmethod
-    def _parse_agent_envelope(content: str, *, force_json_output: bool) -> Dict[str, Any]:
-        if force_json_output:
-            parsed = json.loads(content)
-        else:
-            parsed = parse_json_block_from_text(content)
+    def _parse_agent_envelope(
+        content: str,
+        *,
+        force_json_output: bool,
+        require_action: bool = False,
+    ) -> Dict[str, Any]:
+        try:
+            if force_json_output:
+                parsed = json.loads(content)
+            else:
+                parsed = parse_json_block_from_text(content)
+        except OpenAICompatibleBusinessRetryableError:
+            raise
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise OpenAICompatibleBusinessRetryableError(
+                f"Agent JSON 解析失败: {exc}"
+            ) from exc
         if not isinstance(parsed, dict):
-            raise ValueError("Agent 返回结果必须是 JSON 对象")
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent 返回结果必须是 JSON 对象"
+            )
+        if require_action:
+            action = parsed.get("action")
+            if (
+                not isinstance(action, dict)
+                or not str(action.get("tool") or "").strip()
+            ):
+                raise OpenAICompatibleBusinessRetryableError(
+                    "Agent 未返回有效工具动作"
+                )
+            if "args" in action and not isinstance(action["args"], dict):
+                raise OpenAICompatibleBusinessRetryableError(
+                    "Agent 工具动作 args 必须是 JSON 对象"
+                )
         return parsed
 
     def _build_planning_system_prompt(self, session: PluginAgentSession) -> str:

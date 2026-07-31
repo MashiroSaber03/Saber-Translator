@@ -180,6 +180,23 @@ class PluginAgentWorkerService:
                 "validation": validation,
                 "touchedFiles": touched,
             }
+        except Exception as exc:
+            run_state = (
+                "cancelled"
+                if self.jobs.control_status(fence) == "cancelling"
+                else "failed"
+            )
+            emit(
+                "error",
+                {
+                    "run_state": run_state,
+                    "message": self.jobs.redact_attempt_message(
+                        fence,
+                        exc,
+                    ),
+                },
+            )
+            raise
         finally:
             if worktree.exists():
                 shutil.rmtree(worktree, ignore_errors=True)

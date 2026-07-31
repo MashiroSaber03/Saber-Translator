@@ -98,6 +98,10 @@ class Plugin:
         return result
 ```
 
+Worker 使用无参 `Plugin()` 创建入口类。不要定义要求传入 `context` 的
+`__init__`；上下文会在每次 Hook 调用时通过 `context` 参数传入。Hook 必须是
+普通的同步实例方法，不能使用 `async`、`@staticmethod` 或 `@classmethod`。
+
 每个 Hook 的签名是：
 
 ```python
@@ -105,6 +109,23 @@ hook(context, data) -> dict
 ```
 
 必须返回 JSON 兼容对象。不要返回 `None`，也不要原地修改后不返回。
+
+原子 Hook 使用固定领域字段，返回时必须保留必填字段与数组长度：
+
+| step | before 数据 | after 数据 |
+|---|---|---|
+| `detect` | `pageId`, `sourceAssetId`, `detectorConfig` | `pageId`, `bubbles`, `textMaskAssetId` |
+| `ocr` | `pageId`, `sourceAssetId`, `bubbles`, `ocrConfig` | `pageId`, `originalTexts`, `ocrResults` |
+| `color` | `pageId`, `sourceAssetId`, `bubbles` | `pageId`, `colors`（每项含 `fgColor`、`bgColor`、`confidence`） |
+| `translate` | `pageId`, `originalTexts`, `translationConfig` | `pageId`, `originalTexts`, `translations`, `textboxTexts` |
+| `ai_translate` | `pageId`, `originalTexts`, `translations` | `pageId`, `originalTexts`, `translations` |
+| `inpaint` | `pageId`, `sourceAssetId`, `inputAssetId`, `textMaskAssetId`, `bubbles`, `method`, `fillColor` | `pageId`, `cleanAssetId`, `documentRevision` |
+| `render` | `pageId`, `inputAssetId`, `bubbles`, `renderConfig` | `pageId`, `translatedAssetId`, `thumbnailAssetId`, `documentRevision` |
+
+例如译文替换必须读写 `data["translations"]`，不存在
+`translated_text` 之类的单数字段。`originalTexts`、`translations` 和
+`textboxTexts` 都是字符串数组，`textboxTexts` 不是字典。每个插件返回后都会立即进行领域结构校验，
+校验通过的结果才会交给算法或持久化。
 
 ## Context
 
@@ -114,7 +135,8 @@ hook(context, data) -> dict
 - `mode`, `step`, `scope`
 - `config`：该任务/操作冻结的插件配置
 - `repository`：只读领域查询，例如 `get_page()`、`get_bubbles()`
-- `assets`：只读资产元数据与受大小限制的 `read_bytes(asset_id)`
+- `assets`：资产元数据、受大小限制的 `read_bytes(asset_id)`，以及发布派生资产并
+  返回资产 ID 的 `publish_bytes(...)`
 - `logger`：`info()`、`warning()`、`error()`，输出进入持久任务/操作事件
 
 插件不得依赖浏览器状态，不得访问用户在前端内存中的图片或翻译结果。图片和

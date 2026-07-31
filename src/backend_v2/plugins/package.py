@@ -21,6 +21,7 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_EXPANDED_BYTES = 128 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 2_000
 MANIFEST_NAME = "plugin.json"
+_PYTHON_CACHE_SUFFIXES = frozenset({".pyc", ".pyo"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,10 @@ def parse_archive(data: bytes) -> ParsedPluginArchive:
             path = _safe_member_path(info)
             if info.is_dir():
                 continue
+            if _is_python_runtime_cache(path):
+                raise PluginContractError(
+                    "plugin archive must not contain Python runtime cache files"
+                )
             total += int(info.file_size)
             if total > MAX_EXPANDED_BYTES:
                 raise PluginContractError(
@@ -93,7 +98,12 @@ def extract_archive(
 def directory_checksum(root: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(
-        value for value in root.rglob("*") if value.is_file()
+        value
+        for value in root.rglob("*")
+        if value.is_file()
+        and not _is_python_runtime_cache(
+            PurePosixPath(value.relative_to(root).as_posix())
+        )
     ):
         relative = path.relative_to(root).as_posix()
         digest.update(relative.encode("utf-8"))
@@ -112,7 +122,12 @@ def build_archive(root: Path) -> bytes:
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
         for path in sorted(
-            value for value in root.rglob("*") if value.is_file()
+            value
+            for value in root.rglob("*")
+            if value.is_file()
+            and not _is_python_runtime_cache(
+                PurePosixPath(value.relative_to(root).as_posix())
+            )
         ):
             info = zipfile.ZipInfo(path.relative_to(root).as_posix())
             info.date_time = (1980, 1, 1, 0, 0, 0)
@@ -134,3 +149,10 @@ def _safe_member_path(info: zipfile.ZipInfo) -> PurePosixPath:
     ):
         raise PluginContractError("plugin archive contains an unsafe path")
     return path
+
+
+def _is_python_runtime_cache(path: PurePosixPath) -> bool:
+    return (
+        "__pycache__" in path.parts
+        or path.suffix.lower() in _PYTHON_CACHE_SUFFIXES
+    )

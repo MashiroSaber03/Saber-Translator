@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InsightSettingsModal from '@/components/insight/InsightSettingsModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import { useInsightStore } from '@/stores/insightStore'
 
 const apiMocks = vi.hoisted(() => ({
   getGlobalConfig: vi.fn(),
@@ -237,6 +238,122 @@ describe('InsightSettingsModal', () => {
       }),
       prompts: expect.objectContaining({ qa_response: '回答提示词 draft' }),
     }))
+  })
+
+  it('restores the authoritative config and provider cache when saving fails', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    apiMocks.saveGlobalConfig.mockResolvedValueOnce({
+      success: false,
+      error: 'write conflict',
+    })
+
+    const wrapper = mount(InsightSettingsModal, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          BaseModal: baseModalStub,
+          VlmSettingsTab: createSettingsTabStub({
+            provider: 'unsaved-vlm',
+            apiKey: 'unsaved-key',
+            model: 'unsaved-model',
+          }),
+          LlmSettingsTab: createSettingsTabStub(),
+          BatchSettingsTab: createSettingsTabStub(),
+          EmbeddingSettingsTab: createSettingsTabStub(),
+          RerankerSettingsTab: createSettingsTabStub(),
+          PromptsSettingsTab: createPromptsTabStub(),
+          ImageGenSettingsTab: createSettingsTabStub(),
+        },
+      },
+    })
+
+    await flushPromises()
+    const authoritativeState = insightStore.snapshotConfigState()
+
+    const saveButton = wrapper.findAll('button').find(button => button.text() === '保存')
+    expect(saveButton).toBeTruthy()
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.saveGlobalConfig).toHaveBeenCalledWith(expect.objectContaining({
+      vlm: expect.objectContaining({ provider: 'unsaved-vlm' }),
+    }))
+    expect(insightStore.snapshotConfigState()).toEqual(authoritativeState)
+    expect(wrapper.text()).toContain('保存失败')
+  })
+
+  it('rolls back config and provider-cache mutations when the user cancels', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+
+    const wrapper = mount(InsightSettingsModal, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          BaseModal: baseModalStub,
+          VlmSettingsTab: createSettingsTabStub(),
+          LlmSettingsTab: createSettingsTabStub(),
+          BatchSettingsTab: createSettingsTabStub(),
+          EmbeddingSettingsTab: createSettingsTabStub(),
+          RerankerSettingsTab: createSettingsTabStub(),
+          PromptsSettingsTab: createPromptsTabStub(),
+          ImageGenSettingsTab: createSettingsTabStub(),
+        },
+      },
+    })
+
+    await flushPromises()
+    const authoritativeState = insightStore.snapshotConfigState()
+    insightStore.updateVlmConfig({
+      provider: 'cancelled-provider',
+      apiKey: 'cancelled-key',
+      model: 'cancelled-model',
+    })
+    expect(insightStore.snapshotConfigState()).not.toEqual(authoritativeState)
+
+    const cancelButton = wrapper.findAll('button').find(button => button.text() === '取消')
+    expect(cancelButton).toBeTruthy()
+    await cancelButton!.trigger('click')
+
+    expect(insightStore.snapshotConfigState()).toEqual(authoritativeState)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('rolls back config and provider-cache mutations when its owner unmounts', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+
+    const wrapper = mount(InsightSettingsModal, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          BaseModal: baseModalStub,
+          VlmSettingsTab: createSettingsTabStub(),
+          LlmSettingsTab: createSettingsTabStub(),
+          BatchSettingsTab: createSettingsTabStub(),
+          EmbeddingSettingsTab: createSettingsTabStub(),
+          RerankerSettingsTab: createSettingsTabStub(),
+          PromptsSettingsTab: createPromptsTabStub(),
+          ImageGenSettingsTab: createSettingsTabStub(),
+        },
+      },
+    })
+
+    await flushPromises()
+    const authoritativeState = insightStore.snapshotConfigState()
+    insightStore.updateVlmConfig({
+      provider: 'unmounted-provider',
+      apiKey: 'unmounted-key',
+      model: 'unmounted-model',
+    })
+
+    wrapper.unmount()
+
+    expect(insightStore.snapshotConfigState()).toEqual(authoritativeState)
   })
 
   it('does not wire settings tabs through exposed child instance methods', () => {

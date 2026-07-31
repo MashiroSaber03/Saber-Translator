@@ -18,6 +18,7 @@ from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.image_import import ImageImportService
+from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
     ContentRepository,
     _deduplicate_logical_path,
@@ -31,7 +32,6 @@ from src.backend_v2.jobs.repository import (
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
-    app_settings,
     chapter_write_locks,
     chapters,
     job_artifacts,
@@ -39,7 +39,6 @@ from src.backend_v2.storage.schema import (
     job_items,
     job_steps,
     jobs,
-    fonts,
     page_assets,
     pages,
 )
@@ -253,25 +252,19 @@ class TransferWorkerService:
                 ).scalar_one_or_none()
                 or 0
             ) + 1
+            default_font_id, style_defaults = resolve_new_page_style(connection)
             connection.execute(
                 insert(pages).values(
                     id=page_id,
                     chapter_id=chapter_id,
                     ordinal=ordinal,
                     logical_source_path=final_path,
-                    default_font_id=connection.execute(
-                        select(fonts.c.id)
-                        .where(fonts.c.kind == "builtin")
-                        .order_by(fonts.c.created_at)
-                        .limit(1)
-                    ).scalar_one_or_none(),
-                    page_style_defaults_json=(
-                        connection.execute(
-                            select(app_settings.c.payload_json).where(
-                                app_settings.c.domain == "text_style_defaults"
-                            )
-                        ).scalar_one_or_none()
-                        or "{}"
+                    default_font_id=default_font_id,
+                    page_style_defaults_json=json.dumps(
+                        style_defaults,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
                     ),
                     created_at=now,
                     updated_at=now,
@@ -603,9 +596,12 @@ class TransferWorkerService:
         used: set[str],
     ) -> str:
         logical = PurePosixPath(str(entry["logicalPath"]))
+        role = str(entry.get("assetRole") or "")
         prefix = (
             "translated"
-            if entry.get("assetRole") == "translated"
+            if role == "translated"
+            else "clean"
+            if role == "clean"
             else "original"
         )
         extension = Path(str(entry["relativePath"])).suffix.lower() or ".png"

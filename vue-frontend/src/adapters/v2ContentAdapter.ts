@@ -40,13 +40,15 @@ export function pageSummaryToImage(page: V2PageSummary): ImageDataLoadInput {
 }
 
 export function pageDocumentToBubbles(document: V2PageDocument): BubbleState[] {
-  return document.bubbles.map(bubble => createBubbleState({
-    ...(bubble.payload as Partial<BubbleState>),
-    backendBubbleId: bubble.bubbleId,
-    fontFamily: (
-      typeof bubble.payload.fontFamily === 'string'
-        ? bubble.payload.fontFamily
-        : bubble.fontId || undefined
-    ),
-  }))
+  return document.bubbles.map(bubble => {
+    const fontId = bubble.fontId || document.defaultFontId
+    if (!fontId) {
+      throw new Error(`页面 ${document.pageId} 的气泡 ${bubble.bubbleId} 缺少后端字体 ID`)
+    }
+    return createBubbleState({
+      ...(bubble.payload as Partial<BubbleState>),
+      backendBubbleId: bubble.bubbleId,
+      fontFamily: fontId,
+    })
+  })
 }

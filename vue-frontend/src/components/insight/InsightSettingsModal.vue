@@ -5,7 +5,10 @@ import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import { useInsightStore } from '@/stores/insightStore'
+import {
+  useInsightStore,
+  type InsightConfigStateSnapshot,
+} from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type {
   BatchConfig,
@@ -35,11 +38,14 @@ type InsightSettingsTabId = 'vlm' | 'llm' | 'batch' | 'embedding' | 'reranker' |
 
 const activeSettingsTab = ref<InsightSettingsTabId>('vlm')
 const isSaving = ref(false)
+const isLoadingConfig = ref(true)
+const backendConfigReady = ref(false)
 const testMessage = ref('')
 const testMessageType = ref<'success' | 'error' | ''>('')
 const messageTone = computed(() => testMessageType.value === 'error' ? 'danger' : 'success')
 let messageTimer: ReturnType<typeof setTimeout> | null = null
 let closeTimer: ReturnType<typeof setTimeout> | null = null
+let initialConfigState: InsightConfigStateSnapshot | null = null
 
 const syncRequestId = ref(0)
 
@@ -111,6 +117,17 @@ function updateSettingsTab(tabId: string): void {
 function close(): void {
   clearMessageTimer()
   clearCloseTimer()
+  if (initialConfigState) {
+    insightStore.restoreConfigState(initialConfigState)
+    initialConfigState = null
+  }
+  emit('close')
+}
+
+function closeAfterCommit(): void {
+  clearMessageTimer()
+  clearCloseTimer()
+  initialConfigState = null
   emit('close')
 }
 
@@ -165,16 +182,29 @@ async function saveSettings(): Promise<void> {
   isSaving.value = true
 
   try {
-    applyDraftsToStore()
-    const apiConfig = insightStore.getConfigForApi()
+    let apiConfig: Record<string, unknown>
+    try {
+      applyDraftsToStore()
+      apiConfig = insightStore.getConfigForApi()
+    } finally {
+      if (initialConfigState) {
+        insightStore.restoreConfigState(initialConfigState)
+      }
+    }
     const response = await insightApi.saveGlobalConfig(apiConfig as insightApi.AnalysisConfig)
 
     if (response.success) {
+      backendConfigReady.value = await loadConfig()
+      if (!backendConfigReady.value) {
+        showMessage('设置已保存，但重新读取后端配置失败，请重试打开设置', 'error')
+        return
+      }
+      initialConfigState = insightStore.snapshotConfigState()
       showMessage('设置已保存', 'success')
       clearCloseTimer()
       closeTimer = setTimeout(() => {
         closeTimer = null
-        close()
+        closeAfterCommit()
       }, 500)
     } else {
       showMessage('保存失败: ' + (response.error || '未知错误'), 'error')
@@ -186,17 +216,21 @@ async function saveSettings(): Promise<void> {
   }
 }
 
-async function loadConfig(): Promise<void> {
+async function loadConfig(): Promise<boolean> {
   try {
     const response = await insightApi.getGlobalConfig()
     if (response.success && response.config) {
       insightStore.setConfigFromApi(response.config as Record<string, unknown>)
+      requestTabsSyncFromStore()
+      return true
     }
-
+    showMessage(`加载后端配置失败${response.error ? `：${response.error}` : ''}`, 'error')
     requestTabsSyncFromStore()
+    return false
   } catch {
     showMessage('加载后端配置失败', 'error')
     requestTabsSyncFromStore()
+    return false
   }
 }
 
@@ -206,25 +240,25 @@ function requestTabsSyncFromStore(): void {
 }
 
 onMounted(async () => {
-  await loadConfig()
+  backendConfigReady.value = await loadConfig()
+  if (backendConfigReady.value) {
+    initialConfigState = insightStore.snapshotConfigState()
+  }
+  isLoadingConfig.value = false
 })
 
 onBeforeUnmount(() => {
   clearMessageTimer()
   clearCloseTimer()
+  if (initialConfigState) {
+    insightStore.restoreConfigState(initialConfigState)
+    initialConfigState = null
+  }
 })
 </script>
 
 <template>
   <BaseModal title="漫画分析设置" size="large" custom-class="insight-settings-modal" @close="close">
-    <ProductSegmentedTabs
-      :tabs="settingsTabs"
-      :active-tab="activeSettingsTab"
-      aria-label="漫画分析设置分类"
-      class="insight-settings-tabs"
-      @update:active-tab="updateSettingsTab"
-    />
-
     <ProductStatusBanner
       v-if="testMessage"
       class="insight-settings-message"
@@ -234,53 +268,68 @@ onBeforeUnmount(() => {
       {{ testMessage }}
     </ProductStatusBanner>
 
-    <VlmSettingsTab
-      v-show="activeSettingsTab === 'vlm'"
-      :sync-request-id="syncRequestId"
-      @update:config="vlmDraft = $event"
-      @show-message="showMessage"
-    />
+    <p v-if="isLoadingConfig" class="insight-settings-loading">正在读取后端配置…</p>
+    <fieldset
+      v-else
+      class="insight-settings-fields"
+      :disabled="!backendConfigReady"
+    >
+      <ProductSegmentedTabs
+        :tabs="settingsTabs"
+        :active-tab="activeSettingsTab"
+        aria-label="漫画分析设置分类"
+        class="insight-settings-tabs"
+        @update:active-tab="updateSettingsTab"
+      />
 
-    <LlmSettingsTab
-      v-show="activeSettingsTab === 'llm'"
-      :sync-request-id="syncRequestId"
-      @update:config="llmDraft = $event"
-      @show-message="showMessage"
-    />
+      <VlmSettingsTab
+        v-show="activeSettingsTab === 'vlm'"
+        :sync-request-id="syncRequestId"
+        @update:config="vlmDraft = $event"
+        @show-message="showMessage"
+      />
 
-    <BatchSettingsTab
-      v-show="activeSettingsTab === 'batch'"
-      :sync-request-id="syncRequestId"
-      @update:config="batchDraft = $event"
-    />
+      <LlmSettingsTab
+        v-show="activeSettingsTab === 'llm'"
+        :sync-request-id="syncRequestId"
+        @update:config="llmDraft = $event"
+        @show-message="showMessage"
+      />
 
-    <EmbeddingSettingsTab
-      v-show="activeSettingsTab === 'embedding'"
-      :sync-request-id="syncRequestId"
-      @update:config="embeddingDraft = $event"
-      @show-message="showMessage"
-    />
+      <BatchSettingsTab
+        v-show="activeSettingsTab === 'batch'"
+        :sync-request-id="syncRequestId"
+        @update:config="batchDraft = $event"
+      />
 
-    <RerankerSettingsTab
-      v-show="activeSettingsTab === 'reranker'"
-      :sync-request-id="syncRequestId"
-      @update:config="rerankerDraft = $event"
-      @show-message="showMessage"
-    />
+      <EmbeddingSettingsTab
+        v-show="activeSettingsTab === 'embedding'"
+        :sync-request-id="syncRequestId"
+        @update:config="embeddingDraft = $event"
+        @show-message="showMessage"
+      />
 
-    <PromptsSettingsTab
-      v-show="activeSettingsTab === 'prompts'"
-      :sync-request-id="syncRequestId"
-      @update:prompts="promptsDraft = $event"
-      @show-message="showMessage"
-    />
+      <RerankerSettingsTab
+        v-show="activeSettingsTab === 'reranker'"
+        :sync-request-id="syncRequestId"
+        @update:config="rerankerDraft = $event"
+        @show-message="showMessage"
+      />
 
-    <ImageGenSettingsTab
-      v-show="activeSettingsTab === 'imagegen'"
-      :sync-request-id="syncRequestId"
-      @update:config="imageGenDraft = $event"
-      @show-message="showMessage"
-    />
+      <PromptsSettingsTab
+        v-show="activeSettingsTab === 'prompts'"
+        :sync-request-id="syncRequestId"
+        @update:prompts="promptsDraft = $event"
+        @show-message="showMessage"
+      />
+
+      <ImageGenSettingsTab
+        v-show="activeSettingsTab === 'imagegen'"
+        :sync-request-id="syncRequestId"
+        @update:config="imageGenDraft = $event"
+        @show-message="showMessage"
+      />
+    </fieldset>
 
     <template #footer>
       <ProductActionRow
@@ -288,7 +337,11 @@ onBeforeUnmount(() => {
         variant="dialog"
       >
         <UiButton variant="secondary" @click="close">取消</UiButton>
-        <UiButton variant="primary" :disabled="isSaving" @click="saveSettings">
+        <UiButton
+          variant="primary"
+          :disabled="isSaving || isLoadingConfig || !backendConfigReady"
+          @click="saveSettings"
+        >
           {{ isSaving ? '保存中...' : '保存' }}
         </UiButton>
       </ProductActionRow>
@@ -303,5 +356,19 @@ onBeforeUnmount(() => {
 
 .insight-settings-message {
   margin-bottom: 12px;
+}
+
+.insight-settings-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.insight-settings-loading {
+  margin: 0;
+  padding: 48px 24px;
+  color: var(--color-text-muted);
+  text-align: center;
 }
 </style>

@@ -4,17 +4,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTranslateViewActions } from '@/views/useTranslateViewActions'
 
 const mocks = vi.hoisted(() => ({
+  clearChapterPages: vi.fn(),
   deletePage: vi.fn(),
   resetQuickWorkspace: vi.fn(),
 }))
 
 vi.mock('@/api/v2/content', () => ({
+  clearChapterPages: mocks.clearChapterPages,
   deletePage: mocks.deletePage,
   resetQuickWorkspace: mocks.resetQuickWorkspace,
 }))
 
 function createOptions() {
-  const image = { id: 'page-1', fileName: 'page.png' }
+  const image = { id: 'page-1', chapterId: 'chapter-1', fileName: 'page.png' }
   return {
     imageStore: {
       currentImage: image,
@@ -97,6 +99,7 @@ describe('useTranslateViewActions', () => {
       tone: 'danger',
     })
     expect(mocks.deletePage).toHaveBeenCalledWith('page-1')
+    expect(mocks.clearChapterPages).toHaveBeenCalledWith('chapter-1')
     expect(options.translateInit.initializeBookChapterContext).toHaveBeenCalledTimes(2)
     expect(browserConfirm).not.toHaveBeenCalled()
   })

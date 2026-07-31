@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 import queue
 import threading
 from typing import Any
 
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.storage.epochs import ProcessEpochRepository
+
+
+LOGGER = logging.getLogger("saber.api.job_events")
 
 
 @dataclass(eq=False, slots=True)
@@ -21,10 +26,12 @@ class JobEventBroadcaster:
         self,
         repository: JobQueueRepository,
         *,
+        epoch_repository: ProcessEpochRepository | None = None,
         poll_seconds: float = 0.5,
         subscriber_capacity: int = 256,
     ) -> None:
         self.repository = repository
+        self.epoch_repository = epoch_repository
         self.poll_seconds = poll_seconds
         self.subscriber_capacity = subscriber_capacity
         self._stop = threading.Event()
@@ -79,10 +86,15 @@ class JobEventBroadcaster:
 
     def _run(self) -> None:
         while not self._stop.wait(self.poll_seconds):
-            events = self.repository.events_after(
-                after=self._cursor,
-                limit=1000,
-            )
+            try:
+                self._recover_expired_workers()
+                events = self.repository.events_after(
+                    after=self._cursor,
+                    limit=1000,
+                )
+            except Exception:
+                LOGGER.exception("任务事件与 Worker 租约共享轮询失败，将继续重试")
+                continue
             if not events:
                 continue
             self._cursor = int(events[-1]["eventId"])
@@ -98,6 +110,21 @@ class JobEventBroadcaster:
                         # A slow browser never backpressures the shared poller.
                         self.unsubscribe(subscription)
                         self._offer_close(subscription)
+
+    def _recover_expired_workers(self) -> None:
+        if self.epoch_repository is None:
+            return
+        for epoch_id in self.epoch_repository.expired_worker_epochs():
+            result = self.epoch_repository.reconcile_dead_worker(epoch_id)
+            if result.changed:
+                LOGGER.error(
+                    "Worker 租约已过期，已执行权威恢复：epoch=%s interrupted=%s "
+                    "cancelled=%s operations_requeued=%s",
+                    epoch_id[:8],
+                    result.jobs_interrupted,
+                    result.jobs_cancelled,
+                    result.operations_requeued,
+                )
 
     @staticmethod
     def _offer_close(subscription: EventSubscription) -> None:

@@ -1844,7 +1844,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 - 自动字号表示“翻译渲染初始化/显式重新应用”，不是每次渲染都动态计算。开启时，API 后端使用现有纯 CPU 排版算法，针对已有且含译文的 bubbles 计算字号，并把具体结果与 `autoFontSize=true` 一起在本次 document CAS 中持久化；无译文 bubble 保留当前具体字号，待 translation workflow 产生译文时计算。关闭时把本页 `fontSize` 固定值写入全部已有 bubbles。普通文字、字体、几何、颜色或编辑器样式修改以及普通 render_request 一律 preserve 已物化字号，不因页级开关仍为 true 而偷偷重算。
 - 自动字号计算基于本次 `base_revision` 的译文、框尺寸、实际方向和 font_id。计算可在短写事务之前完成，但提交事务必须重新验证同一 revision；冲突时丢弃计算结果并返回 409。render executor 只读取已经提交的具体 `fontSize`，不得反向修改 bubbles、推进 document_revision 或递归制造 render_request。
 - 检测阶段始终保存 `autoTextDirection`。`layoutDirection=auto` 时，把每泡 `textDirection` 设置为其已保存的 `autoTextDirection`，缺失/非法时回退 `vertical`；强制 vertical/horizontal 时只覆盖实际 `textDirection`，绝不破坏自动备份。切回 auto 不重新检测；需要新检测结果时由用户显式执行检测。
-- standard/HQ 流水线无论自动颜色开关是否开启都执行颜色步骤并保存 `autoFgColor/autoBgColor`，因此之后通常可以无模型调用地切回自动颜色。`useAutoTextColor=true` 时，把已有自动前景/背景色分别物化到 `textColor/fillColor`；某一自动备份缺失时保留该泡对应的当前有效颜色，当前值也非法才回退页级手动颜色。自动颜色 checkbox 是前景+背景的共享模式，切换它时一次命令处理两种颜色；手动文字色或填充色输入只传播自身字段。物化 textColor 会按资格触发文字重渲染，物化 fillColor 只更新 repair 参数，绝不隐式重做 clean 或 fan-out page_repair。关闭自动颜色只把页级开关改为 false，既有 bubbles 当前已经物化的颜色保持不变，用户随后可手动修改；不得猜测并恢复某个历史手动色。
+- standard/HQ 流水线无论自动颜色开关是否开启都执行颜色步骤并保存 `autoFgColor/autoBgColor`，因此之后通常可以无模型调用地切回自动颜色。`useAutoTextColor=true` 时，把已有自动前景/背景色分别物化到 `textColor/fillColor`；某一自动备份缺失时保留该泡对应的当前有效颜色，当前值也非法才回退页级手动颜色。自动颜色 checkbox 是前景+背景的共享模式，切换它时一次命令处理两种颜色；手动文字色或填充色输入只传播自身字段。物化 textColor 会按资格触发文字重渲染，物化 fillColor 只更新 repair 参数，绝不隐式重做 clean 或 fan-out page_repair。页级 `textColor/fillColor` 始终保留用户当前选择的手动颜色；关闭自动颜色时在同一次 document CAS 中把开关改为 false，并将这两个页级手动颜色重新传播到已有 bubbles。该行为只恢复当前页明确保存的手动默认值，不维护或猜测额外的历史颜色栈。
 - 普通编辑和重渲染只使用上述已存自动备份与物化值，不自动重新提色。单泡 `bubble_color` operation 仅在用户显式要求重新提取时执行；成功后在一个 document revision 中更新该泡自动备份，若该页当前启用自动颜色则同时更新物化颜色。只有实际改变 `textColor` 且满足 §16.2.4 资格时才 upsert render_request；仅改变 `fillColor` 时只保存为下次 repair 参数，绝不隐式修复 clean。
 
 **当前页提交、重渲染与锁**：
@@ -2138,7 +2138,7 @@ ZIP、CBZ、PDF：
 - 新页面从全局 `text_style_defaults` 初始化完整 page defaults；修改全局默认不改变既有页面。切页/hydrate 只回读该页样式，不产生 document/settings_memory PATCH。
 - 十项普通字段逐项验证：有 bubbles 时页默认与对应泡级字段在一个 CAS 中同时更新，document_revision 只增加一次；无 bubbles 时只改默认。font/fontSize/layoutDirection/textColor/stroke/lineSpacing/textAlign 按 §16.2.4 的资格触发文字 render_request；fillColor 只更新 repair 参数，不重做 clean/translated；`inpaintMethod` 只改页默认、不覆盖每泡值，也不创建 render_request。
 - standard/HQ 在自动颜色关闭时仍保存 `autoFgColor/autoBgColor`，检测始终保存 `autoTextDirection`；刷新、重启和任务继续后这些备份与物化值完全恢复。普通编辑/重渲染 preserve 已存字号和颜色，不重新计算/提取。
-- 自动字号开启会在后端计算并持久化具体 bubble fontSize，关闭会用页固定字号覆盖；自动方向在 auto/固定/auto 往返后可从每泡备份恢复；自动颜色开启从每泡备份物化，缺失时保留当前有效值，关闭不回滚当前颜色，也不隐式创建颜色或 page_repair operations。autoBgColor 物化为 fillColor 后必须等用户显式修复才改变 clean。
+- 自动字号开启会在后端计算并持久化具体 bubble fontSize，关闭会用页固定字号覆盖；自动方向在 auto/固定/auto 往返后可从每泡备份恢复；自动颜色开启从每泡备份物化，缺失时保留当前有效值，关闭会把当前页明确保存的手动 `textColor/fillColor` 重新传播到已有 bubbles，但不维护额外历史颜色栈，也不隐式创建颜色或 page_repair operations。autoBgColor 物化为 fillColor 后必须等用户显式修复才改变 clean。
 - 左侧栏与编辑器使用同一串行 CAS coordinator：编辑器存在待提交 delta 时先 flush；快速连续输入不并发 PATCH，切页/失焦/受控离开 flush。两窗口旧 revision 返回 409 且不覆盖新事实。
 - 章节写入意图建立时最后一次可提交修改按数据库事务顺序决定；意图先提交时 flush 返回 423，侧栏与编辑器均转只读并回填服务端 DTO。排空后锁原子升级无需第二个可写窗口，取消/结束任务后 reload revision 才恢复编辑。
 - `style_apply` 精确冻结当前章节 page_id 集合、十项 selected_fields、自动标志和值/font_id；后导入页不加入。无 bubble 页仍更新默认，实际改变文字层字段且有可绘制译文的页面只推进一次文档 revision 并由 Worker 最多发布一次新译图，不创建 API render_request；仅选择 fillColor 时只更新 repair 参数、不渲染。浏览器关闭后继续，部分失败可按失败页创建关联重试。
@@ -3143,6 +3143,7 @@ lorebook            JSON（name + entries 树）
 regex_scripts       JSON
 state_tasks         JSON
 frozen_sections     JSON
+last_review         JSON（可空；AI 审查结果，与结构诊断相互独立）
 last_diagnostics    JSON（可空）
 last_validated_at
 revision

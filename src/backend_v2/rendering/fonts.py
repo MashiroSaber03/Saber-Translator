@@ -40,9 +40,9 @@ def materialize_render_payloads(
     storage: AssetStorageService,
     page_id: str,
     *,
-    initialize_auto_styles: bool = False,
+    initialize_auto_fields: frozenset[str] = frozenset(),
 ) -> list[tuple[str, dict[str, object], dict[str, object]]]:
-    if initialize_auto_styles:
+    if "fontSize" in initialize_auto_fields:
         from src.core.rendering import calculate_auto_font_size
 
     page = connection.execute(
@@ -71,16 +71,31 @@ def materialize_render_payloads(
             storage,
             row["font_id"] or page["default_font_id"],
         )
-        if initialize_auto_styles and style_defaults.get("layoutDirection") == "auto":
+        if (
+            "layoutDirection" in initialize_auto_fields
+            and style_defaults.get("layoutDirection") == "auto"
+        ):
             auto_direction = persisted.get("autoTextDirection")
             if auto_direction in {"vertical", "horizontal"}:
                 persisted["textDirection"] = auto_direction
-        if initialize_auto_styles and style_defaults.get("useAutoTextColor"):
-            if persisted.get("autoFgColor") is not None:
+        if (
+            initialize_auto_fields.intersection({"textColor", "fillColor"})
+            and style_defaults.get("useAutoTextColor")
+        ):
+            if (
+                "textColor" in initialize_auto_fields
+                and persisted.get("autoFgColor") is not None
+            ):
                 persisted["textColor"] = _rgb_hex(persisted["autoFgColor"])
-            if persisted.get("autoBgColor") is not None:
+            if (
+                "fillColor" in initialize_auto_fields
+                and persisted.get("autoBgColor") is not None
+            ):
                 persisted["fillColor"] = _rgb_hex(persisted["autoBgColor"])
-        if initialize_auto_styles and style_defaults.get("autoFontSize"):
+        if (
+            "fontSize" in initialize_auto_fields
+            and style_defaults.get("autoFontSize")
+        ):
             coords = persisted.get("coords")
             if isinstance(coords, list) and len(coords) == 4:
                 persisted["fontSize"] = calculate_auto_font_size(

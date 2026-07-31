@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -16,7 +17,7 @@ from src.backend_v2.operations.repository import (
     OperationRepository,
     RenderRequestRepository,
 )
-from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
     bubbles,
@@ -28,6 +29,7 @@ from src.backend_v2.translation.pipeline import (
     LegacyTranslationAlgorithms,
     TranslationAlgorithms,
     TranslationPipelineService,
+    _preserve_detected_text,
     _rgb_hex,
 )
 
@@ -40,12 +42,14 @@ class InteractivePageOperationService:
         engine: Engine,
         repository: OperationRepository,
         algorithms: TranslationAlgorithms | None = None,
+        plugin_runtime: Any | None = None,
     ) -> None:
         self.engine = engine
         self.repository = repository
         self.storage = AssetStorageService(data_root, engine)
         self.algorithms = algorithms or LegacyTranslationAlgorithms()
         self.renders = RenderRequestRepository(engine)
+        self.plugin_runtime = plugin_runtime
 
     def handle(
         self,
@@ -72,17 +76,45 @@ class InteractivePageOperationService:
     ) -> Mapping[str, Any]:
         page, rows = self._snapshot(str(operation["pageId"]))
         index = self._bubble_index(rows, str(operation["bubbleId"]))
-        image = self._open_input(operation, "source")
+        page_id = str(operation["pageId"])
+        source_asset_id = self._input_asset_id(operation, "source")
+        raw_config = self._payload(operation)
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="ocr",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": source_asset_id,
+                "bubbles": [dict(rows[index]["payload"])],
+                "ocrConfig": raw_config,
+            },
+        )
+        image = self._open_asset(str(before["sourceAssetId"]), "RGB")
         try:
             result = self.algorithms.ocr(
                 image,
-                [dict(rows[index]["payload"])],
-                self._with_credential(self._payload(operation)),
+                [dict(value) for value in before["bubbles"]],
+                self._with_credential(before["ocrConfig"]),
             )
         finally:
             image.close()
         texts = list(result.get("texts", []))
         details = list(result.get("results", []))
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="ocr",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "originalTexts": [str(value) for value in texts],
+                "ocrResults": details,
+            },
+        )
+        texts = list(after["originalTexts"])
+        details = list(after["ocrResults"])
         if len(texts) != 1:
             raise RuntimeError("single-bubble OCR returned an invalid result count")
         payload = dict(rows[index]["payload"])
@@ -176,13 +208,62 @@ class InteractivePageOperationService:
     ) -> Mapping[str, Any]:
         page, rows = self._snapshot(str(operation["pageId"]))
         index = self._bubble_index(rows, str(operation["bubbleId"]))
-        image = self._open_input(operation, "source")
+        page_id = str(operation["pageId"])
+        source_asset_id = self._input_asset_id(operation, "source")
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="color",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": source_asset_id,
+                "bubbles": [dict(rows[index]["payload"])],
+            },
+        )
+        image = self._open_asset(str(before["sourceAssetId"]), "RGB")
         try:
             colors = self.algorithms.colors(
-                image, [dict(rows[index]["payload"])]
+                image,
+                [dict(value) for value in before["bubbles"]],
             )
         finally:
             image.close()
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="color",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "colors": [
+                    {
+                        "fgColor": (
+                            list(value["fg_color"])
+                            if value.get("fg_color") is not None
+                            else None
+                        ),
+                        "bgColor": (
+                            list(value["bg_color"])
+                            if value.get("bg_color") is not None
+                            else None
+                        ),
+                        "confidence": float(
+                            value.get("confidence", 0)
+                        ),
+                    }
+                    for value in colors
+                ],
+            },
+        )
+        colors = [
+            {
+                "fg_color": value.get("fgColor"),
+                "bg_color": value.get("bgColor"),
+                "confidence": value.get("confidence", 0),
+            }
+            for value in after["colors"]
+        ]
         if len(colors) != 1:
             raise RuntimeError("single-bubble color returned an invalid result count")
         color = colors[0]
@@ -232,9 +313,25 @@ class InteractivePageOperationService:
         operation: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         page, _rows = self._snapshot(str(operation["pageId"]))
-        image = self._open_input(operation, "source")
+        page_id = str(operation["pageId"])
+        source_asset_id = self._input_asset_id(operation, "source")
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="detect",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": source_asset_id,
+                "detectorConfig": self._payload(operation),
+            },
+        )
+        image = self._open_asset(str(before["sourceAssetId"]), "RGB")
         try:
-            detected = self.algorithms.detect(image, self._payload(operation))
+            detected = self.algorithms.detect(
+                image,
+                dict(before["detectorConfig"]),
+            )
         finally:
             image.close()
         coords = list(detected.get("coords", []))
@@ -243,7 +340,7 @@ class InteractivePageOperationService:
         directions = list(detected.get("auto_directions", []))
         textlines = list(detected.get("textlines_per_bubble", []))
         style = json.loads(page["page_style_defaults_json"] or "{}")
-        payloads = [
+        payloads = _preserve_detected_text([
             TranslationPipelineService._new_bubble_payload(
                 coords=value,
                 polygon=polygons[index] if index < len(polygons) else [],
@@ -255,7 +352,38 @@ class InteractivePageOperationService:
                 style=style,
             )
             for index, value in enumerate(coords)
-        ]
+        ], tuple(row["payload"] for row in _rows))
+        mask_record: AssetRecord | None = None
+        raw_mask = detected.get("raw_mask")
+        if isinstance(raw_mask, Image.Image):
+            mask_record = self._publish_image(raw_mask, mode="L")
+            raw_mask.close()
+        elif raw_mask is not None:
+            mask_image = Image.fromarray(raw_mask)
+            try:
+                mask_record = self._publish_image(mask_image, mode="L")
+            finally:
+                mask_image.close()
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="detect",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "bubbles": payloads,
+                "textMaskAssetId": (
+                    mask_record.id if mask_record is not None else None
+                ),
+            },
+        )
+        payloads = [dict(value) for value in after["bubbles"]]
+        mask_asset_id = after.get("textMaskAssetId")
+        mask_record = (
+            self._asset_record(str(mask_asset_id))
+            if mask_asset_id is not None
+            else None
+        )
         new_revision = int(page["document_revision"]) + 1
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
@@ -266,6 +394,20 @@ class InteractivePageOperationService:
             ).scalar_one_or_none()
             if current != page["document_revision"]:
                 raise RuntimeError("page revision changed")
+            has_translated_asset = (
+                connection.execute(
+                    select(page_assets.c.asset_id).where(
+                        page_assets.c.page_id == operation["pageId"],
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
+            has_drawable_text = any(
+                str(payload.get("translatedText", "")).strip()
+                for payload in payloads
+            )
+            needs_render = has_translated_asset or has_drawable_text
             connection.execute(
                 delete(bubbles).where(bubbles.c.page_id == operation["pageId"])
             )
@@ -298,15 +440,37 @@ class InteractivePageOperationService:
                 .values(
                     document_revision=new_revision,
                     detection_state="processed",
-                    render_status="stale",
+                    rendered_revision=(
+                        page["rendered_revision"]
+                        if needs_render
+                        else None
+                    ),
+                    render_status=(
+                        "stale" if needs_render else "not_rendered"
+                    ),
                 )
             )
-            if connection.execute(
-                select(page_assets.c.asset_id).where(
+            connection.execute(
+                delete(page_assets).where(
                     page_assets.c.page_id == operation["pageId"],
-                    page_assets.c.role == "translated",
+                    page_assets.c.role == "text_mask",
                 )
-            ).scalar_one_or_none() is not None:
+            )
+            if mask_record is not None:
+                connection.execute(
+                    insert(page_assets).values(
+                        page_id=operation["pageId"],
+                        role="text_mask",
+                        asset_id=mask_record.id,
+                        input_source_revision=page["source_revision"],
+                        input_document_revision=new_revision,
+                        parent_asset_id=None,
+                        producer_job_step_id=None,
+                        producer_operation_id=fence.operation_id,
+                        producer_render_request_id=None,
+                    )
+                )
+            if needs_render:
                 self.renders.upsert(
                     connection,
                     page_id=str(operation["pageId"]),
@@ -317,9 +481,29 @@ class InteractivePageOperationService:
         response = {
             "bubbleCount": len(payloads),
             "documentRevision": new_revision,
+            "textMaskAssetId": mask_record.id if mask_record else None,
         }
         self.repository.complete(fence, result=response, publisher=publish)
         return response
+
+    def _publish_image(
+        self,
+        image: Image.Image,
+        *,
+        mode: str,
+    ) -> AssetRecord:
+        converted = image if image.mode == mode else image.convert(mode)
+        output = BytesIO()
+        converted.save(output, format="PNG")
+        if converted is not image:
+            converted.close()
+        return self.storage.publish_bytes(
+            output.getvalue(),
+            extension="png",
+            mime_type="image/png",
+            width=image.width,
+            height=image.height,
+        )
 
     def _snapshot(self, page_id: str):
         with self.engine.connect() as connection:
@@ -339,24 +523,85 @@ class InteractivePageOperationService:
             ]
         return page, rows
 
-    def _open_input(
-        self,
+    @staticmethod
+    def _input_asset_id(
         operation: Mapping[str, Any],
         role: str,
-    ) -> Image.Image:
+    ) -> str:
         inputs = operation.get("inputs")
         if not isinstance(inputs, Mapping) or role not in inputs:
             raise RuntimeError(f"operation has no frozen {role} input")
+        return str(inputs[role])
+
+    def _open_asset(
+        self,
+        asset_id: str,
+        mode: str,
+    ) -> Image.Image:
         with self.engine.connect() as connection:
             relative_path = connection.execute(
                 select(assets.c.relative_path).where(
-                    assets.c.id == inputs[role]
+                    assets.c.id == asset_id
                 )
-            ).scalar_one()
+            ).scalar_one_or_none()
+        if relative_path is None:
+            raise RuntimeError("plugin referenced an unknown asset")
         opened = Image.open(self.storage.resolve_relative_path(relative_path))
-        converted = opened.convert("RGB")
+        converted = opened.convert(mode)
         opened.close()
         return converted
+
+    def _asset_record(self, asset_id: str) -> AssetRecord:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    assets.c.id,
+                    assets.c.relative_path,
+                    assets.c.mime_type,
+                    assets.c.checksum,
+                    assets.c.byte_size,
+                    assets.c.width,
+                    assets.c.height,
+                ).where(assets.c.id == asset_id)
+            ).mappings().one_or_none()
+        if row is None:
+            raise RuntimeError("plugin referenced an unknown asset")
+        return AssetRecord(
+            id=str(row["id"]),
+            relative_path=str(row["relative_path"]),
+            mime_type=str(row["mime_type"]),
+            checksum=str(row["checksum"]),
+            byte_size=int(row["byte_size"]),
+            width=(
+                int(row["width"])
+                if row["width"] is not None
+                else None
+            ),
+            height=(
+                int(row["height"])
+                if row["height"] is not None
+                else None
+            ),
+        )
+
+    def _atomic_hook(
+        self,
+        fence: OperationFence,
+        *,
+        phase: str,
+        scope: str,
+        page_id: str,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if self.plugin_runtime is None:
+            return dict(data)
+        return self.plugin_runtime.run_atomic(
+            fence,
+            phase=phase,
+            step=scope,
+            page_id=page_id,
+            data=data,
+        )
 
     @staticmethod
     def _bubble_index(rows: list[dict[str, Any]], bubble_id: str) -> int:

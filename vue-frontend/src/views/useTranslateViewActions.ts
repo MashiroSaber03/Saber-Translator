@@ -6,7 +6,7 @@ import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useTranslateInit } from '@/composables/useTranslateInit'
 import { confirmProductAction, type ProductConfirmAction } from '@/composables/useProductConfirm'
 import type { WorkflowRunRequest } from '@/types/workflow'
-import { deletePage, resetQuickWorkspace } from '@/api/v2/content'
+import { clearChapterPages, deletePage, resetQuickWorkspace } from '@/api/v2/content'
 
 type TranslateValidationMode = 'normal' | 'hq' | 'proofread'
 
@@ -179,9 +179,9 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     if (!translateInit.isBookshelfMode.value) {
       await resetQuickWorkspace()
     } else {
-      for (const image of [...imageStore.images]) {
-        await deletePage(image.id)
-      }
+      const chapterId = imageStore.currentImage?.chapterId ?? imageStore.images[0]?.chapterId
+      if (!chapterId) throw new Error('当前图片不属于后端章节')
+      await clearChapterPages(chapterId)
     }
     await translateInit.initializeBookChapterContext()
     showToast('所有图片已清除', 'success')

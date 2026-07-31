@@ -91,6 +91,10 @@ describe('NotesPanel', () => {
     expect(stack.props('ariaLabel')).toBe('笔记列表')
     expect(stack.props('empty')).toBe(true)
     expect(wrapper.text()).toContain('暂无笔记')
+
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/notes/NotesList.vue'), 'utf8')
+    expect(source).toContain('flex: 0 0 auto')
+    expect(source).toContain('overflow-y: visible')
   })
 
   it('renders the empty notes state through product status feedback', () => {
@@ -125,6 +129,7 @@ describe('NotesPanel', () => {
     expect(source).toContain('class="notes-panel__add-button"')
     expect(source).not.toContain('workspace-section notes-section')
     expect(source).not.toContain('.workspace-section.notes-section')
+    expect(source).not.toContain('height: 100%')
     expect(source).toContain('<UiIcon name="plus"')
   })
 

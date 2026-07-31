@@ -34,11 +34,13 @@ class PageRepairService:
         data_root: Path,
         engine: Engine,
         repository: OperationRepository,
+        plugin_runtime: Any | None = None,
     ) -> None:
         self.engine = engine
         self.repository = repository
         self.storage = AssetStorageService(data_root, engine)
         self.renders = RenderRequestRepository(engine)
+        self.plugin_runtime = plugin_runtime
 
     def create_for_bubble(
         self,
@@ -204,20 +206,47 @@ class PageRepairService:
         inputs = operation.get("inputs")
         if not isinstance(inputs, Mapping):
             raise RuntimeError("repair operation inputs are missing")
-        source = self._open_asset(str(inputs["source"]), "RGB")
-        parent = (
-            self._open_asset(str(inputs["parent_clean"]), "RGB")
-            if inputs.get("parent_clean")
-            else source.copy()
+        page_id = str(operation["pageId"])
+        with self.engine.connect() as connection:
+            bubble_payloads = [
+                json.loads(value)
+                for value in connection.execute(
+                    select(bubbles.c.payload_json)
+                    .where(bubbles.c.page_id == page_id)
+                    .order_by(bubbles.c.ordinal)
+                ).scalars()
+            ]
+        source_asset_id = str(inputs["source"])
+        input_asset_id = str(
+            inputs.get("parent_clean") or inputs["source"]
         )
-        mask = self._open_asset(str(inputs["repair_mask"]), "L")
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": source_asset_id,
+                "inputAssetId": input_asset_id,
+                "textMaskAssetId": str(inputs["repair_mask"]),
+                "bubbles": bubble_payloads,
+                "method": method,
+                "fillColor": request.get("fillColor"),
+            },
+        )
+        method = str(before["method"])
+        source = self._open_asset(str(before["sourceAssetId"]), "RGB")
+        parent = (
+            self._open_asset(str(before["inputAssetId"]), "RGB")
+        )
+        mask = self._open_asset(str(before["textMaskAssetId"]), "L")
         try:
             if method == "solid":
                 repaired = parent.copy()
                 fill = Image.new(
                     "RGB",
                     repaired.size,
-                    str(request.get("fillColor", "#FFFFFF")),
+                    str(before.get("fillColor") or "#FFFFFF"),
                 )
                 repaired.paste(fill, mask=mask)
                 fill.close()
@@ -232,7 +261,7 @@ class PageRepairService:
                     parent,
                     [(0, 0, parent.width, parent.height)],
                     method="lama",
-                    fill_color=str(request["fillColor"]),
+                    fill_color=str(before.get("fillColor") or "#FFFFFF"),
                     user_mask=np.array(mask),
                     lama_model=method,
                 )
@@ -253,8 +282,18 @@ class PageRepairService:
             parent.close()
             mask.close()
 
-        page_id = str(operation["pageId"])
         revision = int(operation["baseRevision"])
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "cleanAssetId": record.id,
+                "documentRevision": revision,
+            },
+        )
+        record = self._asset_record(str(after["cleanAssetId"]))
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
             source_revision = int(
@@ -351,6 +390,39 @@ class PageRepairService:
             height=image.height,
         )
 
+    def _asset_record(self, asset_id: str) -> AssetRecord:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    assets.c.id,
+                    assets.c.relative_path,
+                    assets.c.mime_type,
+                    assets.c.checksum,
+                    assets.c.byte_size,
+                    assets.c.width,
+                    assets.c.height,
+                ).where(assets.c.id == asset_id)
+            ).mappings().one_or_none()
+        if row is None:
+            raise RuntimeError("plugin referenced an unknown asset")
+        return AssetRecord(
+            id=str(row["id"]),
+            relative_path=str(row["relative_path"]),
+            mime_type=str(row["mime_type"]),
+            checksum=str(row["checksum"]),
+            byte_size=int(row["byte_size"]),
+            width=(
+                int(row["width"])
+                if row["width"] is not None
+                else None
+            ),
+            height=(
+                int(row["height"])
+                if row["height"] is not None
+                else None
+            ),
+        )
+
     def _open_asset(self, asset_id: str, mode: str) -> Image.Image:
         with self.engine.connect() as connection:
             relative = connection.execute(
@@ -358,3 +430,21 @@ class PageRepairService:
             ).scalar_one()
         with Image.open(self.storage.resolve_relative_path(relative)) as opened:
             return opened.convert(mode)
+
+    def _atomic_hook(
+        self,
+        fence: OperationFence,
+        *,
+        phase: str,
+        page_id: str,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if self.plugin_runtime is None:
+            return dict(data)
+        return self.plugin_runtime.run_atomic(
+            fence,
+            phase=phase,
+            step="inpaint",
+            page_id=page_id,
+            data=data,
+        )

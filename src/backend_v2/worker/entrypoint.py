@@ -159,10 +159,16 @@ def run_worker(args: object) -> int:
             from src.backend_v2.worker.maintenance import WorkerMaintenance
 
             job_repository = JobQueueRepository(engine)
+            plugin_job_runtime = PluginJobRuntime(
+                data_root=data_root,
+                engine=engine,
+                repository=job_repository,
+            )
             translation = TranslationPipelineService(
                 data_root=data_root,
                 engine=engine,
                 jobs=job_repository,
+                plugin_runtime=plugin_job_runtime,
             )
             translation_steps = {
                 "detect",
@@ -287,20 +293,22 @@ def run_worker(args: object) -> int:
             )
             job_handlers["plugin_agent_execute"] = plugin_agent.handle
             operation_repository = OperationRepository(engine)
+            plugin_operation_runtime = PluginOperationRuntime(
+                data_root=data_root,
+                engine=engine,
+                repository=operation_repository,
+            )
             interactive = InteractivePageOperationService(
                 data_root=data_root,
                 engine=engine,
                 repository=operation_repository,
+                plugin_runtime=plugin_operation_runtime,
             )
             repairs = PageRepairService(
                 data_root=data_root,
                 engine=engine,
                 repository=operation_repository,
-            )
-            plugin_operation_runtime = PluginOperationRuntime(
-                data_root=data_root,
-                engine=engine,
-                repository=operation_repository,
+                plugin_runtime=plugin_operation_runtime,
             )
             operation_runner = WorkerOperationRunner(
                 operation_repository,
@@ -311,18 +319,11 @@ def run_worker(args: object) -> int:
                     "page_detect": interactive.handle,
                     "page_repair": repairs.handle,
                 },
-                plugin_runtime=plugin_operation_runtime,
             )
             qa_runner = InsightQAWorkerService(
                 data_root=data_root,
                 engine=engine,
                 worker_epoch_id=identity.epoch_id,
-            )
-
-            plugin_job_runtime = PluginJobRuntime(
-                data_root=data_root,
-                engine=engine,
-                repository=job_repository,
             )
             model_lifecycle = WorkerModelLifecycle(
                 WorkerModelControlRepository(engine),

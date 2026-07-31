@@ -9,7 +9,7 @@ import json
 import secrets
 from typing import Literal
 
-from sqlalchemy import Engine, and_, delete, func, insert, select, update
+from sqlalchemy import Engine, and_, delete, exists, func, insert, select, update
 
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
@@ -201,6 +201,45 @@ class ProcessEpochRepository:
                     )
                 ).scalars()
             )
+
+    def is_active_epoch(
+        self,
+        *,
+        role: Literal["api", "worker"],
+        epoch_id: str,
+    ) -> bool:
+        with self.engine.connect() as connection:
+            return bool(
+                connection.execute(
+                    select(
+                        exists().where(
+                            process_epochs.c.id == epoch_id,
+                            process_epochs.c.role == role,
+                            process_epochs.c.status == "active",
+                        )
+                    )
+                ).scalar()
+            )
+
+    def expired_worker_epochs(self) -> list[str]:
+        now = utcnow()
+        with self.engine.connect() as connection:
+            return [
+                str(value)
+                for value in connection.execute(
+                    select(process_epochs.c.id)
+                    .join(
+                        worker_leases,
+                        worker_leases.c.worker_epoch_id == process_epochs.c.id,
+                    )
+                    .where(
+                        process_epochs.c.role == "worker",
+                        process_epochs.c.status == "active",
+                        process_epochs.c.lease_expires_at <= now,
+                        worker_leases.c.lease_expires_at <= now,
+                    )
+                ).scalars()
+            ]
 
     def reconcile_dead_worker(self, epoch_id: str) -> ReconcileResult:
         now = utcnow()

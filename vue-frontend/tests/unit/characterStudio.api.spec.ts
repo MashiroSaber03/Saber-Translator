@@ -59,7 +59,17 @@ const document = {
   regexScripts: [],
   revision: 3,
   stateTasks: [],
-  status: { is_favorite: false, frozen_sections: [] },
+  status: {
+    is_favorite: false,
+    frozen_sections: [],
+    last_diagnostics: {
+      valid: true,
+      errors: [],
+      warnings: ['测试警告'],
+      checks: { document: true },
+    },
+    last_validated_at: '2026-07-01T00:00:00Z',
+  },
   title: 'Saber',
   updatedAt: '2026-07-01T00:00:00Z',
 }
@@ -168,6 +178,12 @@ describe('character studio v2 api facade', () => {
     await generateCharacterStudioSection('book/id one', 'doc/id one', 'identity')
 
     expect(index.documents?.[0]).toMatchObject({ id: 'doc/id one', title: 'Saber' })
+    expect(loaded.document?.status.last_diagnostics).toEqual({
+      valid: true,
+      errors: [],
+      warnings: ['测试警告'],
+      checks: { document: true },
+    })
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/studio/books/book%2Fid%20one/index',
     )

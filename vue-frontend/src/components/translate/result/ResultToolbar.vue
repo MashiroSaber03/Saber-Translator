@@ -8,9 +8,10 @@ import UiInput from '@/components/ui/UiInput.vue'
 defineProps<{
   failedImageCount: number
   hasFailedImages: boolean
-  hasTranslatedImage: boolean
+  hasProcessedImage: boolean
   imageSize: number
   isEditMode: boolean
+  processedImageLabel: string
   showOriginal: boolean
 }>()
 
@@ -29,12 +30,12 @@ defineEmits<{
     justify="center"
   >
     <UiButton
-      v-if="hasTranslatedImage"
+      v-if="hasProcessedImage"
       variant="secondary"
       @click="$emit('toggleImageView')"
     >
       <UiIcon name="eye" />
-      {{ showOriginal ? '查看翻译图' : '查看原图' }}
+      {{ showOriginal ? `查看${processedImageLabel}` : '查看原图' }}
     </UiButton>
 
     <UiButton

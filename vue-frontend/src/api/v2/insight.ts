@@ -13,6 +13,7 @@ export type V2InsightChapter = components['schemas']['InsightChapter']
 export type V2InsightNote = components['schemas']['InsightNote']
 export type V2InsightPageDetail = components['schemas']['InsightPageDetail']
 export type V2InsightPageSummary = components['schemas']['InsightPageSummary']
+export type V2InsightQaStatus = components['schemas']['InsightQaStatus']
 
 export function getInsightBootstrap(): Promise<V2InsightBootstrap> {
   return apiClient.get(`${ROOT}/bootstrap`)
@@ -88,8 +89,19 @@ export function rebuildInsightTimeline(bookId: string): Promise<V2AcceptedJob> {
   )
 }
 
-export function getInsightQaStatus(bookId: string): Promise<Record<string, unknown>> {
-  return apiClient.get(`${ROOT}/qa/status`, { params: { bookId } })
+export function getInsightQaStatus(
+  bookId: string,
+  mode: 'exact' | 'global' = 'exact',
+): Promise<V2InsightQaStatus> {
+  return apiClient.get(`${ROOT}/qa/status`, { params: { bookId, mode } })
+}
+
+export function rebuildInsightCompressedContext(bookId: string): Promise<V2AcceptedJob> {
+  return apiClient.post(
+    `${ROOT}/books/${encodeURIComponent(bookId)}/compressed-context/rebuild`,
+    {},
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
 }
 
 export function rebuildInsightVectors(bookId: string): Promise<V2AcceptedJob> {

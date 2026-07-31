@@ -225,8 +225,11 @@ async function exportAnalysisData(): Promise<void> {
     } else {
       showToast('导出失败: ' + (response.error || '未知错误'), 'error')
     }
-  } catch {
-    showToast('导出失败', 'error')
+  } catch (error) {
+    showToast(
+      error instanceof Error ? error.message : '导出失败',
+      'error',
+    )
   } finally {
     isExporting.value = false
   }

@@ -63,6 +63,30 @@ describe('ImageResultDisplay', () => {
     expect(wrapper.find('.progress').exists()).toBe(false)
   })
 
+  it('shows a clean asset as the final remove-text result and can toggle back to source', async () => {
+    exportImportMock.state.isDownloading = false
+    const imageStore = useImageStore()
+    imageStore.addImage('page.png', '/api/v2/assets/source-1', {
+      cleanAssetUrl: '/api/v2/assets/clean-1',
+    })
+
+    const wrapper = mount(ImageResultDisplay)
+    const resultImage = wrapper.get('.result-image-canvas__image')
+
+    expect(resultImage.attributes('src')).toBe('/api/v2/assets/clean-1')
+    expect(resultImage.attributes('alt')).toBe('消字图：page.png')
+    const toggle = wrapper
+      .findAllComponents(UiButton)
+      .find(button => button.text().includes('查看原图'))
+    expect(toggle).toBeTruthy()
+
+    await toggle!.trigger('click')
+
+    expect(resultImage.attributes('src')).toBe('/api/v2/assets/source-1')
+    expect(resultImage.attributes('alt')).toBe('原图：page.png')
+    expect(wrapper.text()).toContain('查看消字图')
+  })
+
   it('uses the product select primitive for fixed download formats', async () => {
     exportImportMock.state.isDownloading = false
     const imageStore = useImageStore()

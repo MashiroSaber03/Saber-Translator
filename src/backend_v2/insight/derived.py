@@ -1237,7 +1237,14 @@ class InsightDerivedRepository:
             "dependencyFingerprint": str(row["dependency_fingerprint"]),
         }
 
-    def qa_status(self, *, book_id: str) -> dict[str, Any]:
+    def qa_status(
+        self,
+        *,
+        book_id: str,
+        mode: str = "exact",
+    ) -> dict[str, Any]:
+        if mode not in {"exact", "global"}:
+            raise ValueError("mode must be exact or global")
         try:
             current = self.snapshot(book_id=book_id)
         except InsightConflict:
@@ -1245,6 +1252,60 @@ class InsightDerivedRepository:
                 "available": False,
                 "reason": "analysis_missing",
                 "repairAction": "analyze",
+            }
+        if mode == "global":
+            with self.engine.connect() as connection:
+                rows = list(
+                    connection.execute(
+                        select(
+                            analysis_artifacts.c.kind,
+                            analysis_artifacts.c.template,
+                            analysis_artifacts.c.status,
+                            analysis_artifacts.c.dependency_fingerprint,
+                        ).where(
+                            analysis_artifacts.c.book_id == book_id,
+                            analysis_artifacts.c.is_active.is_(True),
+                        )
+                    ).mappings()
+                )
+            artifacts = {
+                (str(row["kind"]), str(row["template"])): row
+                for row in rows
+            }
+            required = (
+                (
+                    ("overview", "story_summary"),
+                    "global_summary_missing",
+                    "global_summary_stale",
+                    "overview_rebuild",
+                ),
+                (
+                    ("compressed_context", "default"),
+                    "compressed_context_missing",
+                    "compressed_context_stale",
+                    "compressed_context_rebuild",
+                ),
+            )
+            for key, missing_reason, stale_reason, repair_action in required:
+                row = artifacts.get(key)
+                if row is None:
+                    return {
+                        "available": False,
+                        "reason": missing_reason,
+                        "repairAction": repair_action,
+                    }
+                if (
+                    str(row["status"]) not in {"ready", "degraded"}
+                    or str(row["dependency_fingerprint"]) != current.fingerprint
+                ):
+                    return {
+                        "available": False,
+                        "reason": stale_reason,
+                        "repairAction": repair_action,
+                    }
+            return {
+                "available": True,
+                "reason": None,
             }
         with self.engine.connect() as connection:
             vector = connection.execute(

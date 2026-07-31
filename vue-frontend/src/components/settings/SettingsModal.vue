@@ -49,7 +49,7 @@
         @update:active-tab="setActiveTab"
       />
 
-      <div class="settings-modal__tab-content">
+      <div v-if="contentReady" class="settings-modal__tab-content">
         <div v-show="activeTab === 'ocr'" class="settings-modal__tab-pane">
           <OcrSettings />
         </div>
@@ -86,6 +86,7 @@
           <MoreSettings />
         </div>
       </div>
+      <p v-else class="settings-modal__loading">正在读取后端设置…</p>
     </fieldset>
 
     <template #footer>
@@ -96,7 +97,7 @@
         <UiButton variant="secondary" @click="handleClose">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!settingsStore.isBackendReady"
+          :disabled="!contentReady || !settingsStore.isBackendReady"
           @click="handleSave"
         >
           保存设置
@@ -107,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import type { ProviderConfigsCache } from '@/stores/settings'
 import type {
@@ -161,10 +162,12 @@ type SettingsTabId =
   | 'more'
 
 const activeTab = ref<SettingsTabId>('ocr')
+const contentReady = ref(false)
 let settingsSnapshot: TranslationSettingsModel | null = null
 let textStyleDefaultsSnapshot: TextStyleSettings | null = null
 let providerSnapshot: ProviderConfigsCache | null = null
 let closeAfterSave = false
+let openRequestId = 0
 
 const tabs = [
   { id: 'ocr', label: 'OCR识别' },
@@ -209,16 +212,21 @@ watch(isOpen, (newVal) => {
 })
 
 async function handleOpen() {
+  const requestId = ++openRequestId
+  contentReady.value = false
   await settingsStore.loadFromBackend()
+  if (requestId !== openRequestId || !isOpen.value) return
   settingsSnapshot = deepClone(settingsStore.settings)
   textStyleDefaultsSnapshot = deepClone(settingsStore.textStyleDefaults)
   providerSnapshot = deepClone(settingsStore.providerConfigs)
+  contentReady.value = true
   if (props.initialTab && isSettingsTabId(props.initialTab)) {
     activeTab.value = props.initialTab
   }
 }
 
 function handleClose() {
+  openRequestId += 1
   if (
     !closeAfterSave
     && settingsSnapshot
@@ -233,9 +241,28 @@ function handleClose() {
   settingsSnapshot = null
   textStyleDefaultsSnapshot = null
   providerSnapshot = null
+  contentReady.value = false
   isOpen.value = false
   emit('update:modelValue', false)
 }
+
+onBeforeUnmount(() => {
+  openRequestId += 1
+  if (
+    !closeAfterSave
+    && settingsSnapshot
+    && textStyleDefaultsSnapshot
+    && providerSnapshot
+  ) {
+    settingsStore.settings = deepClone(settingsSnapshot)
+    settingsStore.textStyleDefaults = deepClone(textStyleDefaultsSnapshot)
+    settingsStore.providerConfigs = deepClone(providerSnapshot)
+  }
+  settingsSnapshot = null
+  textStyleDefaultsSnapshot = null
+  providerSnapshot = null
+  contentReady.value = false
+})
 
 async function handleSave() {
   const textDefaultsChanged = Boolean(
@@ -270,6 +297,14 @@ async function handleSave() {
 
 .settings-modal__restricted {
   margin: 14px 15px 0;
+}
+
+.settings-modal__loading {
+  flex: 1;
+  margin: 0;
+  padding: 48px 24px;
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 .settings-modal__fieldset {

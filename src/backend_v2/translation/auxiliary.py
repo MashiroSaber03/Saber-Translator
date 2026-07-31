@@ -103,7 +103,10 @@ class AuxiliaryTranslationCommands:
                     chapter_id=chapter_id,
                     config=config,
                     items=tuple(
-                        JobItemSpec(page_id=page_id, step_kinds=("detect",))
+                        JobItemSpec(
+                            page_id=page_id,
+                            step_kinds=("detect", "render", "save"),
+                        )
                         for page_id in ordered
                     ),
                     target_display={
@@ -195,7 +198,11 @@ class AuxiliaryTranslationCommands:
                     items=tuple(
                         JobItemSpec(
                             page_id=page_id,
-                            step_kinds=("style_apply_document", "render"),
+                            step_kinds=(
+                                "style_apply_document",
+                                "render",
+                                "save",
+                            ),
                         )
                         for page_id in ordered
                     ),
@@ -540,7 +547,11 @@ class AuxiliaryTranslationCommands:
                     items=tuple(
                         JobItemSpec(
                             page_id=str(item["pageId"]),
-                            step_kinds=("text_import_apply", "render"),
+                            step_kinds=(
+                                "text_import_apply",
+                                "render",
+                                "save",
+                            ),
                             asset_inputs={
                                 "source": str(item["sourceAssetId"])
                             },
@@ -654,6 +665,20 @@ class StyleApplyWorkerService:
         for field in selected:
             if field == "fontFamily":
                 default_font_id = frozen.get(field)
+            elif (
+                field == "fontSize"
+                and bool(frozen.get("autoFontSize", False))
+            ):
+                # Automatic mode is shared, but every target page keeps its own
+                # fixed-size fallback for a later switch back to manual mode.
+                continue
+            elif (
+                field in {"textColor", "fillColor"}
+                and bool(frozen.get("useAutoTextColor", False))
+            ):
+                # Automatic mode consumes each target bubble's own backups. The
+                # target page's manual fallback colors remain page-local facts.
+                continue
             else:
                 new_defaults[field] = frozen.get(field)
         if "fontSize" in selected:
@@ -669,10 +694,17 @@ class StyleApplyWorkerService:
             new_defaults != defaults
             or default_font_id != page["default_font_id"]
         )
+        render_changed = False
         has_drawable_text = False
         for row in bubble_rows:
             payload = json.loads(row["payload_json"])
             updated = dict(payload)
+            if (
+                "fontFamily" in selected
+                and row["font_id"] != default_font_id
+            ):
+                changed = True
+                render_changed = True
             for field in selected:
                 if field == "fontFamily":
                     continue
@@ -692,33 +724,51 @@ class StyleApplyWorkerService:
                     field == "fontSize"
                     and bool(frozen.get("autoFontSize", False))
                 ):
-                    pass
+                    if str(updated.get("translatedText", "")).strip():
+                        # The following render step recalculates and persists the
+                        # concrete size. Force a fresh revision even when the
+                        # target page was already in automatic mode.
+                        changed = True
+                        render_changed = True
                 elif (
-                    field == "textColor"
+                    field in {"textColor", "fillColor"}
                     and bool(frozen.get("useAutoTextColor", False))
-                    and updated.get("autoFgColor") is not None
                 ):
-                    updated["textColor"] = _rgb_hex(
-                        updated["autoFgColor"]
+                    automatic_field = (
+                        "autoFgColor"
+                        if field == "textColor"
+                        else "autoBgColor"
                     )
-                elif (
-                    field == "fillColor"
-                    and bool(frozen.get("useAutoTextColor", False))
-                    and updated.get("autoBgColor") is not None
-                ):
-                    updated["fillColor"] = _rgb_hex(
-                        updated["autoBgColor"]
-                    )
+                    automatic = updated.get(automatic_field)
+                    if automatic is not None:
+                        updated[field] = _rgb_hex(automatic)
+                    # Missing automatic backup preserves the target bubble's
+                    # current effective value instead of copying a source-page
+                    # manual fallback.
                 else:
                     updated[field] = value
+                if (
+                    field in RENDER_STYLE_FIELDS
+                    and field != "fontFamily"
+                    and updated.get(
+                        "textDirection"
+                        if field == "layoutDirection"
+                        else field
+                    )
+                    != payload.get(
+                        "textDirection"
+                        if field == "layoutDirection"
+                        else field
+                    )
+                ):
+                    render_changed = True
             changed = changed or updated != payload
             has_drawable_text = has_drawable_text or bool(
                 str(updated.get("translatedText", "")).strip()
             )
             updated_payloads.append((str(row["id"]), updated))
         needs_render = bool(
-            changed
-            and selected.intersection(RENDER_STYLE_FIELDS)
+            render_changed
             and (has_translated_asset or has_drawable_text)
         )
         base_revision = int(page["document_revision"])
@@ -805,7 +855,7 @@ class StyleApplyWorkerService:
                     update(job_steps)
                     .where(
                         job_steps.c.job_item_id == step["itemId"],
-                        job_steps.c.kind == "render",
+                        job_steps.c.kind.in_(("render", "save")),
                         job_steps.c.status == "pending",
                     )
                     .values(status="skipped")

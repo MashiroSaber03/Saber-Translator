@@ -71,6 +71,7 @@ const showSettingsModal = ref(false)
 const showBookGlossaryModal = ref(false)
 const showBookNonTranslateModal = ref(false)
 const showQuickPromoteModal = ref(false)
+const pendingContentImportJobIds = ref<Set<string>>(new Set())
 
 const showSponsorModal = ref(false)
 
@@ -207,6 +208,41 @@ const {
   hasFailedImages,
   isEditMode,
 })
+
+function handleWebImportCommitAccepted(jobIds: string[]): void {
+  pendingContentImportJobIds.value = new Set([
+    ...pendingContentImportJobIds.value,
+    ...jobIds,
+  ])
+  void taskCenterStore.refresh()
+}
+
+watch(
+  () => [...taskCenterStore.queue, ...taskCenterStore.history],
+  async jobs => {
+    if (pendingContentImportJobIds.value.size === 0) return
+    const terminal = jobs.filter(job => (
+      pendingContentImportJobIds.value.has(job.jobId)
+      && [
+        'completed',
+        'completed_with_errors',
+        'failed',
+        'cancelled',
+        'interrupted',
+      ].includes(job.status)
+    ))
+    if (terminal.length === 0) return
+
+    const remaining = new Set(pendingContentImportJobIds.value)
+    terminal.forEach(job => remaining.delete(job.jobId))
+    pendingContentImportJobIds.value = remaining
+
+    imageStore.clearImages()
+    bubbleStore.clearBubbles()
+    await loadChapterSession()
+  },
+  { deep: false },
+)
 
 function openSettings() {
   showSettingsModal.value = true
@@ -431,7 +467,7 @@ async function handleQuickWorkspacePromoted(_result: QuickWorkspacePromotion) {
 
     <WebImportDisclaimer />
 
-    <WebImportModal />
+    <WebImportModal @commit-accepted="handleWebImportCommitAccepted" />
   </AppShell>
 </template>
 

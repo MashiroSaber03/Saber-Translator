@@ -18,12 +18,14 @@ from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
     InvalidJobTransition,
+    JobConflict,
     JobItemSpec,
     JobQueueRepository,
     JobSpec,
+    utcnow,
 )
 from src.backend_v2.jobs.retry import JobRetryService
-from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+from src.backend_v2.jobs.worker_loop import AttemptHeartbeat, JobWorkerLoop
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
@@ -41,6 +43,8 @@ from src.backend_v2.storage.schema import (
     jobs,
     metadata,
     operations,
+    process_epochs,
+    worker_leases,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 
@@ -91,6 +95,43 @@ def _create_job(
         ],
     )
     return str(result["jobIds"][0])
+
+
+def test_history_list_limit_counts_batches_not_member_jobs(job_platform) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    batch_ids: list[str] = []
+    for index in range(3):
+        result = repository.create_batch(
+            kind="export",
+            display_name=f"history batch {index}",
+            specs=[
+                JobSpec(
+                    kind="export",
+                    config={"index": index, "member": member},
+                    items=(JobItemSpec(page_id=None, step_kinds=("package",)),),
+                )
+                for member in range(2)
+            ],
+        )
+        batch_ids.append(str(result["batchId"]))
+        now = utcnow()
+        with engine.begin() as connection:
+            connection.execute(
+                update(jobs)
+                .where(jobs.c.batch_id == result["batchId"])
+                .values(
+                    status="completed",
+                    queue_rank=None,
+                    finished_at=now,
+                    updated_at=now,
+                )
+            )
+
+    history = repository.list_jobs(scope="history", limit=2)
+    returned_batch_ids = {str(row["batchId"]) for row in history["items"]}
+
+    assert returned_batch_ids == set(batch_ids[-2:])
+    assert len(history["items"]) == 4
 
 
 def test_chapter_write_intent_drains_then_atomically_upgrades_and_releases(
@@ -219,6 +260,16 @@ def test_pause_resume_cancel_and_attempt_fencing(job_platform) -> None:
         ).scalar_one() == job_id
 
     assert repository.resume(job_id)["status"] == "queued"
+    queue_snapshot = repository.list_jobs(scope="queue")
+    queued_job = next(
+        row for row in queue_snapshot["items"] if row["jobId"] == job_id
+    )
+    assert queued_job["blockedReason"] == "retained_chapter_lock"
+    with pytest.raises(JobConflict):
+        repository.reorder(
+            ordered_job_ids=[job_id],
+            base_revision=int(queue_snapshot["queueRevision"]),
+        )
     with pytest.raises(InvalidJobTransition):
         repository.continue_interrupted(job_id)
     resumed = repository.claim_next(worker_epoch_id=worker_epoch_id)
@@ -475,6 +526,69 @@ def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
         broadcaster.close()
 
 
+def test_shared_event_poller_recovers_an_expired_worker_without_a_browser(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    expired_at = utcnow() - timedelta(seconds=1)
+    with engine.begin() as connection:
+        connection.execute(
+            update(process_epochs)
+            .where(process_epochs.c.id == worker_epoch_id)
+            .values(lease_expires_at=expired_at)
+        )
+        connection.execute(
+            update(worker_leases)
+            .where(worker_leases.c.worker_epoch_id == worker_epoch_id)
+            .values(lease_expires_at=expired_at)
+        )
+
+    epochs = ProcessEpochRepository(engine)
+    broadcaster = JobEventBroadcaster(
+        repository,
+        epoch_repository=epochs,
+        poll_seconds=0.01,
+    )
+    broadcaster.start()
+    try:
+        deadline = time.monotonic() + 2
+        while (
+            epochs.is_active_epoch(role="worker", epoch_id=worker_epoch_id)
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+        assert not epochs.is_active_epoch(
+            role="worker",
+            epoch_id=worker_epoch_id,
+        )
+    finally:
+        broadcaster.close()
+
+
+def test_job_attempt_heartbeat_exception_cannot_silently_lose_its_lease() -> None:
+    class FailingRepository:
+        def renew_attempt(self, _fence):
+            raise RuntimeError("database unavailable")
+
+    heartbeat = AttemptHeartbeat(
+        FailingRepository(),  # type: ignore[arg-type]
+        AttemptFence(
+            job_id="00000000-0000-0000-0000-000000000001",
+            attempt_id="00000000-0000-0000-0000-000000000002",
+            lease_token="lease",
+            worker_epoch_id="00000000-0000-0000-0000-000000000003",
+            lease_expires_at=utcnow() + timedelta(seconds=10),
+        ),
+        interval_seconds=0.01,
+    )
+
+    heartbeat.start()
+    try:
+        assert heartbeat.fenced.wait(1)
+    finally:
+        heartbeat.stop()
+
+
 def test_failed_item_retry_creates_related_replacement_from_durable_facts(
     job_platform,
 ) -> None:
@@ -608,6 +722,27 @@ def test_batch_prioritize_cancel_and_continue_are_database_owned(
             .where(job_items.c.job_id.in_(target_ids))
             .order_by(job_items.c.job_id)
         ).scalars().all() == ["cancelled", "cancelled"]
+
+
+def test_interrupted_job_is_listed_only_in_history(job_platform) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(status="interrupted", queue_rank=None)
+        )
+
+    assert all(
+        row["jobId"] != job_id
+        for row in repository.list_jobs(scope="queue")["items"]
+    )
+    assert [
+        row["jobId"]
+        for row in repository.list_jobs(scope="history")["items"]
+        if row["jobId"] == job_id
+    ] == [job_id]
 
 
 def test_clear_history_deletes_retry_children_before_sources_and_protects_live_lineage(

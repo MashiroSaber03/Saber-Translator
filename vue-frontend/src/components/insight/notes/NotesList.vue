@@ -48,7 +48,9 @@ defineEmits<{
 
 <style scoped>
 .notes-list {
+  flex: 0 0 auto;
   margin-bottom: 12px;
+  overflow-y: visible;
 }
 
 .notes-list__empty-status {

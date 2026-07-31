@@ -27,6 +27,7 @@ from src.backend_v2.plugins.contract import (
     PluginContractError,
     PluginManifest,
     parse_manifest,
+    validate_atomic_hook_data,
     validate_hook_data,
 )
 from src.backend_v2.plugins.package import directory_checksum
@@ -44,20 +45,6 @@ from src.backend_v2.storage.schema import (
     plugin_versions,
     plugins,
 )
-
-
-STEP_HOOK_SCOPE = {
-    "detect": "detect",
-    "ocr": "ocr",
-    "color": "color",
-    "auto_terms": "translate",
-    "translate": "translate",
-    "hq_translate": "ai_translate",
-    "proofread": "translate",
-    "repair": "inpaint",
-    "publish_clean": "inpaint",
-    "render": "render",
-}
 
 
 class PluginHookFailure(RuntimeError):
@@ -128,8 +115,8 @@ class ReadOnlyPluginRepository:
             ]
 
 
-class ReadOnlyPluginAssets:
-    """Read-only asset facade; hook payloads still carry IDs, never Base64."""
+class PluginAssetAccess:
+    """Bounded asset facade; binary data never travels inside hook payloads."""
 
     MAX_READ_BYTES = 64 * 1024 * 1024
 
@@ -171,6 +158,27 @@ class ReadOnlyPluginAssets:
         return self.storage.resolve_relative_path(
             str(row["relative_path"])
         ).read_bytes()
+
+    def publish_bytes(
+        self,
+        payload: bytes,
+        *,
+        extension: str,
+        mime_type: str,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> str:
+        if not isinstance(payload, bytes):
+            raise TypeError("plugin asset payload must be bytes")
+        if len(payload) > self.MAX_READ_BYTES:
+            raise ValueError("plugin asset write exceeds 64 MiB")
+        return self.storage.publish_bytes(
+            payload,
+            extension=extension,
+            mime_type=mime_type,
+            width=width,
+            height=height,
+        ).id
 
 
 class _PluginLogger:
@@ -223,7 +231,7 @@ class _PluginLoader:
         self.plugins_root = (self.data_root / "plugins").resolve()
         self.engine = engine
         self.repository = ReadOnlyPluginRepository(engine)
-        self.assets = ReadOnlyPluginAssets(
+        self.assets = PluginAssetAccess(
             data_root=self.data_root,
             engine=engine,
         )
@@ -397,13 +405,19 @@ class _PluginLoader:
             raise PluginContractError("plugin entrypoint cannot be loaded")
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
+        previous_dont_write_bytecode = sys.dont_write_bytecode
         try:
+            # Version directories are immutable package facts. Prevent normal
+            # Python imports from writing __pycache__ beside those source files.
+            sys.dont_write_bytecode = True
             spec.loader.exec_module(module)
             plugin_type = getattr(module, class_name)
             instance = plugin_type()
         except Exception:
             sys.modules.pop(module_name, None)
             raise
+        finally:
+            sys.dont_write_bytecode = previous_dont_write_bytecode
         self._instances[version_id] = (checksum, instance)
         return instance
 
@@ -452,39 +466,32 @@ class PluginJobRuntime:
             data=data,
         )
 
-    def before_step(
+    def run_atomic(
         self,
         fence: AttemptFence,
-        step: Mapping[str, Any],
+        *,
+        phase: str,
+        step: str,
+        page_id: str,
+        data: Mapping[str, Any],
     ) -> dict[str, Any]:
-        scope = STEP_HOOK_SCOPE.get(str(step["stepKind"]))
-        if scope is None:
-            return dict(step)
+        if data.get("pageId") != page_id:
+            raise PluginContractError(
+                "atomic hook pageId does not match its context"
+            )
         return self._run(
             fence=fence,
-            hook=f"before_{scope}",
-            step=scope,
+            hook=f"{phase}_{step}",
+            step=step,
             scope="atomic",
-            data=step,
-            page_id=_optional_text(step.get("pageId")),
-        )
-
-    def after_step(
-        self,
-        fence: AttemptFence,
-        step: Mapping[str, Any],
-        result: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        scope = STEP_HOOK_SCOPE.get(str(step["stepKind"]))
-        if scope is None:
-            return dict(result)
-        return self._run(
-            fence=fence,
-            hook=f"after_{scope}",
-            step=scope,
-            scope="atomic",
-            data=result,
-            page_id=_optional_text(step.get("pageId")),
+            data=data,
+            page_id=page_id,
+            validator=lambda value: _validate_atomic_page(
+                step,
+                phase,
+                page_id,
+                value,
+            ),
         )
 
     def after_pipeline(
@@ -522,6 +529,7 @@ class PluginJobRuntime:
         scope: str,
         data: Mapping[str, Any],
         page_id: str | None = None,
+        validator: Callable[[object], dict[str, Any]] = validate_hook_data,
     ) -> dict[str, Any]:
         if scope in {"job", "pipeline"} and self.jobs.plugin_stage_completed(
             fence,
@@ -548,6 +556,7 @@ class PluginJobRuntime:
             },
             repository=self.loader.repository,
             assets=self.loader.assets,
+            validator=validator,
             emit=lambda event_type, payload: (
                 self.jobs.append_plugin_event(
                     fence,
@@ -598,43 +607,19 @@ class PluginOperationRuntime:
     def release_cached_instances(self) -> None:
         self.loader.release_cached_instances()
 
-    def before(
+    def run_atomic(
         self,
         fence: OperationFence,
-        operation: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        return self._run(fence, operation, phase="before")
-
-    def after(
-        self,
-        fence: OperationFence,
-        operation: Mapping[str, Any],
-        result: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        return self._run(
-            fence,
-            operation,
-            phase="after",
-            data=result,
-        )
-
-    def _run(
-        self,
-        fence: OperationFence,
-        operation: Mapping[str, Any],
         *,
         phase: str,
-        data: Mapping[str, Any] | None = None,
+        step: str,
+        page_id: str,
+        data: Mapping[str, Any],
     ) -> dict[str, Any]:
-        step = {
-            "bubble_ocr": "ocr",
-            "bubble_color": "color",
-            "page_detect": "detect",
-            "page_repair": "inpaint",
-        }.get(str(operation["kind"]))
-        source = dict(data if data is not None else operation)
-        if step is None:
-            return source
+        if data.get("pageId") != page_id:
+            raise PluginContractError(
+                "atomic hook pageId does not match its context"
+            )
         metadata = self._operation_metadata(fence.operation_id)
         return _execute_hooks(
             plugins=self.loader.load_operation(fence.operation_id),
@@ -647,7 +632,7 @@ class PluginOperationRuntime:
                     "standard",
                 )
             ),
-            data=source,
+            data=data,
             context_fields={
                 "job_id": None,
                 "batch_id": None,
@@ -655,10 +640,16 @@ class PluginOperationRuntime:
                 "chapter_id": _optional_text(
                     metadata.get("chapter_id")
                 ),
-                "page_id": _optional_text(metadata.get("page_id")),
+                "page_id": page_id,
             },
             repository=self.loader.repository,
             assets=self.loader.assets,
+            validator=lambda value: _validate_atomic_page(
+                step,
+                phase,
+                page_id,
+                value,
+            ),
             emit=lambda event_type, payload: (
                 self.operations.append_event(
                     fence,
@@ -700,9 +691,10 @@ def _execute_hooks(
     context_fields: Mapping[str, str | None],
     repository: object,
     assets: object,
+    validator: Callable[[object], dict[str, Any]],
     emit: Callable[[str, Mapping[str, Any]], None],
 ) -> dict[str, Any]:
-    current = validate_hook_data(data)
+    current = validator(data)
     for loaded in plugins:
         manifest = loaded.manifest
         if (
@@ -751,7 +743,7 @@ def _execute_hooks(
             logger=logger,
         )
         try:
-            current = validate_hook_data(callback(context, current))
+            current = validator(callback(context, current))
         except Exception as exc:
             emit(
                 "plugin_hook_failed",
@@ -790,6 +782,20 @@ def _json_object(raw: object) -> dict[str, Any]:
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _validate_atomic_page(
+    step: str,
+    phase: str,
+    page_id: str,
+    value: object,
+) -> dict[str, Any]:
+    result = validate_atomic_hook_data(step, phase, value)
+    if result["pageId"] != page_id:
+        raise PluginContractError(
+            "atomic hook pageId does not match its context"
+        )
+    return result
 
 
 def _optional_text(value: object) -> str | None:

@@ -7,6 +7,8 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import QAComposer from './qa/QAComposer.vue'
 import QAMessageList from './qa/QAMessageList.vue'
 import QAOptionsBar from './qa/QAOptionsBar.vue'
@@ -26,13 +28,54 @@ const isRebuildingEmbeddings = ref(false)
 const rebuildTaskId = ref<string | null>(null)
 const rebuildBookId = ref<string | null>(null)
 const rebuildProgressLabel = ref('')
+const qaStatus = ref<insightApi.QAStatusResponse | null>(null)
+const isQaStatusLoading = ref(false)
+const isRepairingQaDependency = ref(false)
 const messageScrollRequestId = ref(0)
 let chatRequestSequence = 0
+let qaStatusRequestSequence = 0
 let isQAPanelMounted = true
 let handledTerminalRebuildTaskId = ''
 
 const qaHistory = computed(() => insightStore.qaHistory)
 const isStreaming = computed(() => insightStore.isStreaming)
+const qaComposerDisabled = computed(() => (
+  isStreaming.value
+  || isQaStatusLoading.value
+  || isRepairingQaDependency.value
+  || qaStatus.value?.available !== true
+))
+const qaStatusTitle = computed(() => {
+  if (isQaStatusLoading.value) return '正在检查问答依赖'
+  return qaMode.value === 'global' ? '全局问答暂不可用' : '精确问答暂不可用'
+})
+const qaStatusMessage = computed(() => {
+  if (isQaStatusLoading.value) return '正在从后端读取当前书籍的问答可用性。'
+  const reason = qaStatus.value?.reason
+  const messages: Record<string, string> = {
+    analysis_missing: '当前书籍还没有可用的分析结果，请先在左侧启动漫画分析。',
+    vector_missing: '精确问答需要先构建向量索引，重建完成后即可提问。',
+    vector_stale: '漫画分析结果已经变化，现有向量索引已过期，请重建后再提问。',
+    global_summary_missing: '全局问答需要故事概要，请先生成故事概要。',
+    global_summary_stale: '故事概要已过期，请重新生成后再使用全局问答。',
+    compressed_context_missing: '全局问答需要压缩上下文，请先重建压缩上下文。',
+    compressed_context_stale: '压缩上下文已过期，请重建后再使用全局问答。',
+    status_unavailable: '暂时无法确认问答依赖状态，请稍后重试。',
+  }
+  return messages[String(reason ?? '')] ?? '当前问答依赖尚未准备完成。'
+})
+const qaRepairLabel = computed(() => {
+  switch (qaStatus.value?.repairAction) {
+    case 'vector_rebuild':
+      return '重建向量'
+    case 'overview_rebuild':
+      return '生成故事概要'
+    case 'compressed_context_rebuild':
+      return '重建压缩上下文'
+    default:
+      return ''
+  }
+})
 const globalModeExamples = [
   '故事的主题是什么？',
   '主角的性格有什么变化？',
@@ -52,7 +95,7 @@ const {
 async function sendQuestion(): Promise<void> {
   const question = questionInput.value.trim()
   const bookId = insightStore.currentBookId
-  if (!question || !bookId || isStreaming.value) return
+  if (!question || !bookId || qaComposerDisabled.value) return
 
   const requestId = ++chatRequestSequence
 
@@ -189,6 +232,74 @@ function resetRebuildState(): void {
   rebuildProgressLabel.value = ''
 }
 
+async function refreshQAStatus(): Promise<void> {
+  const bookId = insightStore.currentBookId
+  const mode = qaMode.value
+  const requestId = ++qaStatusRequestSequence
+  if (!bookId) {
+    qaStatus.value = null
+    isQaStatusLoading.value = false
+    return
+  }
+  isQaStatusLoading.value = true
+  try {
+    const status = await insightApi.getQAStatus(bookId, mode)
+    if (
+      !isQAPanelMounted
+      || requestId !== qaStatusRequestSequence
+      || insightStore.currentBookId !== bookId
+      || qaMode.value !== mode
+    ) return
+    qaStatus.value = status
+  } catch {
+    if (
+      requestId !== qaStatusRequestSequence
+      || insightStore.currentBookId !== bookId
+      || qaMode.value !== mode
+    ) return
+    qaStatus.value = {
+      available: false,
+      reason: 'status_unavailable',
+    }
+  } finally {
+    if (
+      requestId === qaStatusRequestSequence
+      && insightStore.currentBookId === bookId
+      && qaMode.value === mode
+    ) {
+      isQaStatusLoading.value = false
+    }
+  }
+}
+
+async function repairQAStatus(): Promise<void> {
+  const bookId = insightStore.currentBookId
+  const repairAction = qaStatus.value?.repairAction
+  if (!bookId || !repairAction || isRepairingQaDependency.value) return
+  if (repairAction === 'vector_rebuild') {
+    await rebuildEmbeddings()
+    return
+  }
+  if (repairAction === 'analyze') return
+
+  isRepairingQaDependency.value = true
+  try {
+    const response = repairAction === 'overview_rebuild'
+      ? await insightApi.regenerateOverview(bookId, 'story_summary', true)
+      : await insightApi.rebuildCompressedContext(bookId)
+    if (!response.success) {
+      showToast(response.error || '修复任务创建失败', 'error')
+      return
+    }
+    await taskCenterStore.refresh()
+    showToast(response.message || '修复任务已进入任务中心', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '修复任务创建失败', 'error')
+  } finally {
+    isRepairingQaDependency.value = false
+  }
+}
+
 function projectRebuildJob(): void {
   const bookId = insightStore.currentBookId
   if (!bookId) {
@@ -235,6 +346,7 @@ function projectRebuildJob(): void {
     succeeded ? 'success' : 'error',
     succeeded ? 6000 : undefined,
   )
+  if (succeeded) void refreshQAStatus()
 }
 
 function renderMarkdown(content: string): string {
@@ -263,6 +375,7 @@ onMounted(() => {
 onUnmounted(() => {
   isQAPanelMounted = false
   chatRequestSequence += 1
+  qaStatusRequestSequence += 1
   insightStore.removeLoadingMessages()
   insightStore.setStreaming(false)
 })
@@ -274,6 +387,16 @@ watch(
     () => insightStore.currentBookId,
   ],
   projectRebuildJob,
+  { immediate: true },
+)
+
+watch(
+  [
+    () => insightStore.currentBookId,
+    () => qaMode.value,
+    () => insightStore.dataRefreshKey,
+  ],
+  refreshQAStatus,
   { immediate: true },
 )
 </script>
@@ -303,9 +426,31 @@ watch(
         @rebuild="rebuildEmbeddings"
       />
 
+      <ProductStatusBanner
+        v-if="isQaStatusLoading || qaStatus?.available !== true"
+        class="qa-panel__status"
+        :title="qaStatusTitle"
+        :tone="isQaStatusLoading ? 'neutral' : 'warning'"
+        role="status"
+        aria-live="polite"
+      >
+        {{ qaStatusMessage }}
+        <template v-if="qaRepairLabel" #actions>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :disabled="isRepairingQaDependency || isRebuildingEmbeddings"
+            @click="repairQAStatus"
+          >
+            {{ qaRepairLabel }}
+          </UiButton>
+        </template>
+      </ProductStatusBanner>
+
       <QAComposer
         v-model:question="questionInput"
         :is-streaming="isStreaming"
+        :disabled="qaComposerDisabled"
         @submit="sendQuestion"
       />
     </div>
@@ -333,5 +478,9 @@ watch(
   padding: 16px;
   border-top: 1px solid var(--color-border-muted);
   background: var(--insight-surface-secondary);
+}
+
+.qa-panel__status {
+  margin-bottom: 12px;
 }
 </style>

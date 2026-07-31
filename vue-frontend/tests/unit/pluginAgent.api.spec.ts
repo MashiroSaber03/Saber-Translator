@@ -240,6 +240,45 @@ describe('plugin agent v2 api', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('closes the running session when the durable job ends with an error', async () => {
+    postMock.mockResolvedValue({
+      session: { ...session, run_state: 'running' },
+      batchId: 'batch-1',
+      jobId: 'job-1',
+    })
+    getMock.mockResolvedValue({
+      items: [
+        {
+          eventId: 7,
+          type: 'job_finished',
+          payload: { status: 'completed_with_errors' },
+          createdAt: '2026-01-01T00:00:03Z',
+        },
+      ],
+    })
+    const {
+      startPluginAgentExecution,
+      subscribePluginAgentEvents,
+    } = await import('@/api/pluginAgent')
+    await startPluginAgentExecution('session-1', agentConfig)
+    const onEvent = vi.fn()
+
+    await subscribePluginAgentEvents('session-1', {
+      onEvent,
+      onError: vi.fn(),
+    })
+
+    expect(onEvent).toHaveBeenCalledWith({
+      id: 7,
+      type: 'error',
+      payload: {
+        run_state: 'failed',
+        message: '插件 Agent 执行未成功，请在任务中心查看错误详情',
+      },
+      timestamp: '2026-01-01T00:00:03Z',
+    })
+  })
+
   it('does not report polling errors after an abort', async () => {
     postMock.mockResolvedValue({
       session: { ...session, run_state: 'running' },

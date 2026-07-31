@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import Engine
@@ -44,7 +45,7 @@ def _asset_download_name(
             .strip()
         )
         if candidate:
-            return candidate
+            return candidate if Path(candidate).suffix else f"{candidate}{suffix}"
     return f"{asset_id}{suffix}"
 
 
@@ -256,6 +257,13 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 all_pages=all_pages,
             )
         )
+
+    @blueprint.delete("/chapters/<chapter_id>/pages")
+    def clear_chapter_pages(chapter_id: str) -> Response:
+        _require_idempotency_key()
+        deleted_count = repository.clear_chapter_pages(chapter_id)
+        storage.collect_garbage()
+        return jsonify({"deletedCount": deleted_count})
 
     @blueprint.get("/pages/<page_id>")
     def get_page(page_id: str) -> Response:

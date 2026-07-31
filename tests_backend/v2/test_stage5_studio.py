@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import json
 from pathlib import Path
+import threading
 from typing import Any, Mapping
 import uuid
 
@@ -24,6 +25,7 @@ from src.backend_v2.storage.epochs import (
     ProcessEpochRepository,
 )
 from src.backend_v2.storage.schema import (
+    analysis_artifacts,
     metadata,
     studio_documents,
     timeline_characters,
@@ -37,7 +39,12 @@ from src.backend_v2.studio.repository import (
 )
 from src.backend_v2.studio.io import StudioIOService
 from src.backend_v2.studio.media import read_card_png
-from src.backend_v2.studio.service import StudioOperationService
+from src.backend_v2.studio.service import (
+    DefaultStudioAlgorithms,
+    StudioOperationService,
+    _provider_config,
+    _validate_generated_payload,
+)
 from src.backend_v2.studio.service import _apply_generated_section
 
 
@@ -48,6 +55,7 @@ class FakeStudioAlgorithms:
         *,
         section: str,
         config: Mapping[str, Any],
+        analysis_context: Mapping[str, Any] | None = None,
         on_chunk=None,
     ) -> Mapping[str, Any]:
         if on_chunk:
@@ -100,6 +108,176 @@ class FakeStudioAlgorithms:
 
     def summarize(self, messages, *, config, on_chunk=None):
         return {"summary": f"{len(messages)} messages"}
+
+
+def test_studio_generation_prompt_consumes_analysis_context(
+    monkeypatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def chat_json(
+        self,
+        prompt: str,
+        *,
+        config: Mapping[str, Any],
+        on_chunk=None,
+    ) -> object:
+        captured["prompt"] = prompt
+        return {
+            "identity": {
+                "name": "Darmil",
+                "description": "在陨石坑发现碎片的研究者",
+            }
+        }
+
+    monkeypatch.setattr(
+        DefaultStudioAlgorithms,
+        "_chat_json",
+        chat_json,
+    )
+    result = DefaultStudioAlgorithms().generate(
+        {"title": "Darmil", "origin": {"source_character": "Darmil"}},
+        section="identity",
+        config={},
+        analysis_context={
+            "artifactId": "context-1",
+            "payload": {
+                "summary": "Darmil 在陨石坑发现了神秘碎片。",
+            },
+        },
+    )
+    assert result["identity"]["description"].startswith("在陨石坑")
+    assert "Darmil 在陨石坑发现了神秘碎片" in captured["prompt"]
+    assert (
+        '顶层结构必须为：{"identity":{"name":"角色名"'
+        in captured["prompt"]
+    )
+    assert "当前角色文档" in captured["prompt"]
+
+
+def test_studio_complete_respects_saved_nonstream_setting(
+    monkeypatch,
+) -> None:
+    from src.shared.ai_transport import OpenAICompatibleChatTransport
+
+    captured: dict[str, Any] = {}
+
+    def complete(self, request) -> str:
+        captured["use_stream"] = (
+            request.openai_options.execution.use_stream
+        )
+        captured["has_callback"] = (
+            request.runtime_options.on_stream_chunk is not None
+        )
+        return "{}"
+
+    monkeypatch.setattr(
+        OpenAICompatibleChatTransport,
+        "complete",
+        complete,
+    )
+    result = DefaultStudioAlgorithms._complete(
+        [{"role": "user", "content": "test"}],
+        config={
+            "chat": {
+                "provider": "test",
+                "modelName": "test-model",
+                "openai_options": {
+                    "execution": {"use_stream": False},
+                },
+            }
+        },
+        temperature=0.3,
+        force_json=True,
+        on_chunk=lambda _chunk, _full: None,
+    )
+    assert result == "{}"
+    assert captured == {
+        "use_stream": False,
+        "has_callback": True,
+    }
+
+
+def test_studio_agent_emits_complete_nonstream_response(
+    tmp_path: Path,
+) -> None:
+    class NonStreamingStudioAlgorithms(FakeStudioAlgorithms):
+        def chat(
+            self,
+            *,
+            messages,
+            system: str,
+            config: Mapping[str, Any],
+            on_chunk=None,
+        ) -> str:
+            return "非流式卡片助手回复"
+
+    service = StudioOperationService(
+        engine=create_sqlite_engine(tmp_path / "agent.sqlite3"),
+        algorithms=NonStreamingStudioAlgorithms(),
+    )
+
+    assert list(
+        service.agent_chunks(
+            document={"identity": {"name": "测试角色"}},
+            messages=[{"role": "user", "content": "请审查"}],
+            config={},
+            cancelled=threading.Event(),
+        )
+    ) == ["非流式卡片助手回复"]
+
+
+def test_full_generation_rejects_partial_top_level_payload() -> None:
+    with pytest.raises(ValueError, match="coreMessages.*lorebook"):
+        _validate_generated_payload(
+            {"status": {"frozen_sections": []}},
+            {"identity": {"name": "Darmil"}},
+            section="full",
+        )
+
+
+def test_studio_chat_uses_vlm_for_image_attachments(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def complete(
+        messages,
+        *,
+        config,
+        temperature,
+        force_json,
+        on_chunk,
+        prefer_vlm=False,
+    ):
+        captured["messages"] = messages
+        captured["prefer_vlm"] = prefer_vlm
+        return "图片已收到"
+
+    monkeypatch.setattr(
+        DefaultStudioAlgorithms,
+        "_complete",
+        staticmethod(complete),
+    )
+    result = DefaultStudioAlgorithms().chat(
+        messages=[
+            {
+                "role": "user",
+                "content": "看图回答",
+                "attachmentDataUrls": ["data:image/png;base64,AAAA"],
+            }
+        ],
+        system="系统提示",
+        config={},
+    )
+    assert result == "图片已收到"
+    assert captured["prefer_vlm"] is True
+    assert captured["messages"][1]["content"][0]["type"] == "image_url"
+    assert _provider_config(
+        {
+            "chat": {"provider": "text", "modelName": "text-model"},
+            "vlm": {"provider": "vision", "modelName": "vision-model"},
+        },
+        prefer_vlm=True,
+    )["model"] == "vision-model"
 
 
 @pytest.fixture()
@@ -240,6 +418,84 @@ def test_book_delete_rejects_active_studio_work_then_preserves_terminal_history(
                 studio_documents.c.id == document["id"]
             )
         ).scalar_one_or_none() is None
+
+
+def test_generate_operation_freezes_analysis_context(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="Context Character",
+    )
+    context = {
+        "artifactId": "compressed-1",
+        "revision": 3,
+        "dependencyFingerprint": "context-fingerprint",
+        "payload": {"summary": "角色在第六页发现碎片"},
+    }
+    accepted = repository.create_generate_operation(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        section="identity",
+        config={},
+        analysis_context=context,
+        idempotency_key="context-generate",
+    )
+    stored = OperationRepository(studio_platform["engine"]).get(
+        str(accepted["operationId"])
+    )
+    assert stored["request"]["analysisContext"] == context
+
+
+def test_generate_rejects_unchanged_document_without_revision_bump(
+    studio_platform,
+) -> None:
+    class NoopStudioAlgorithms(FakeStudioAlgorithms):
+        def generate(
+            self,
+            document: Mapping[str, Any],
+            *,
+            section: str,
+            config: Mapping[str, Any],
+            analysis_context: Mapping[str, Any] | None = None,
+            on_chunk=None,
+        ) -> Mapping[str, Any]:
+            return dict(document)
+
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="No-op Character",
+    )
+    repository.create_generate_operation(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        section="full",
+        config={},
+        analysis_context={"payload": {"summary": "source"}},
+        idempotency_key="noop-generate",
+    )
+    operations = OperationRepository(studio_platform["engine"])
+    claimed = operations.claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_generate",),
+    )
+    assert claimed is not None
+    with pytest.raises(ValueError, match="no document changes"):
+        StudioOperationService(
+            engine=studio_platform["engine"],
+            repository=repository,
+            algorithms=NoopStudioAlgorithms(),
+        ).handle(*claimed)
+    operations.fail(
+        claimed[0],
+        code="NO_DOCUMENT_CHANGES",
+        message="no changes",
+    )
+    restored = repository.get_document(str(document["id"]))
+    assert restored["revision"] == document["revision"]
 
 
 def test_chat_operation_persists_reply_after_request_lifecycle(
@@ -454,6 +710,220 @@ def test_message_delete_truncates_chain_without_creating_operation(
     restored = repository.get_session(str(session["sessionId"]))
     assert result["sessionRevision"] == session["revision"] + 1
     assert restored["messages"] == []
+
+
+def test_new_chat_session_runs_initialization_state_tasks(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="Saber",
+    )
+    changed = dict(document)
+    changed["stateTasks"] = [
+        {
+            "id": "task-initialization",
+            "name": "初始化信任值",
+            "triggerTiming": "initialization",
+            "interval": 0,
+            "commands": (
+                "<<taskjs>>\n"
+                'await STscript("/setvar key=trust_score 20");\n'
+                "<</taskjs>>"
+            ),
+            "disabled": False,
+        }
+    ]
+    document = repository.update_document(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        title=str(document["title"]),
+        document=changed,
+    )
+
+    session = repository.create_session(
+        document_id=str(document["id"]),
+        title="初始化回归",
+        greeting="开场",
+    )
+    assert session["variables"] == {"trust_score": "20"}
+    assert session["runtimeState"] == {
+        "event_counts": {
+            "message_received": 0,
+            "message_sent": 0,
+        },
+        "matched_lorebook_ids": [],
+    }
+    assert session["messages"][0]["variablesSnapshot"] == {
+        "trust_score": "20"
+    }
+    assert session["messages"][0]["runtimeLog"] == [
+        {
+            "type": "task",
+            "name": "初始化信任值",
+            "event": "initialization",
+            "interval": 0,
+        }
+    ]
+
+
+def test_chat_chain_rewrite_restores_runtime_and_variables(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="Saber",
+    )
+    changed = dict(document)
+    changed["lorebook"] = {
+        "name": "测试世界书",
+        "entries": [
+            {
+                "id": "lore-saber",
+                "keys": ["Saber"],
+                "secondary_keys": [],
+                "comment": "Saber 设定",
+                "content": "Saber 的任务由后端执行。",
+                "constant": True,
+                "selective": True,
+                "enabled": True,
+                "position": "before_char",
+                "priority": 100,
+                "probability": 100,
+                "prevent_recursion": True,
+            }
+        ],
+    }
+    changed["stateTasks"] = [
+        {
+            "id": "task-received",
+            "name": "收到消息",
+            "triggerTiming": "message_received",
+            "interval": 1,
+            "commands": (
+                "<<taskjs>>\n"
+                "/setvar key=phase received\n"
+                "<</taskjs>>"
+            ),
+            "disabled": False,
+        },
+        {
+            "id": "task-sent",
+            "name": "发送消息",
+            "triggerTiming": "message_sent",
+            "interval": 1,
+            "commands": (
+                "<<taskjs>>\n"
+                "/setvar key=phase sent\n"
+                "<</taskjs>>"
+            ),
+            "disabled": False,
+        },
+    ]
+    document = repository.update_document(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        title=str(document["title"]),
+        document=changed,
+    )
+    session = repository.create_session(
+        document_id=str(document["id"]),
+        title="运行态回归",
+        greeting="开场",
+    )
+    sent = repository.send_message(
+        session_id=str(session["sessionId"]),
+        base_revision=int(session["revision"]),
+        content="Saber",
+        asset_ids=[],
+        config={},
+        idempotency_key="runtime-first-turn",
+    )
+    operations = OperationRepository(studio_platform["engine"])
+    service = StudioOperationService(
+        engine=studio_platform["engine"],
+        repository=repository,
+        algorithms=FakeStudioAlgorithms(),
+    )
+    claimed = operations.claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_chat",),
+    )
+    assert claimed is not None
+    service.handle(*claimed)
+
+    completed = repository.get_session(str(session["sessionId"]))
+    assistant = completed["messages"][-1]
+    assert [item["type"] for item in assistant["runtimeLog"]] == [
+        "lorebook",
+        "task",
+        "task",
+    ]
+    assert assistant["variablesSnapshot"] == {"phase": "sent"}
+    assert completed["variables"] == {"phase": "sent"}
+    assert completed["runtimeState"] == {
+        "event_counts": {
+            "message_received": 1,
+            "message_sent": 1,
+        },
+        "matched_lorebook_ids": ["lore-saber"],
+    }
+
+    edited = repository.edit_or_regenerate_message(
+        message_id=str(sent["userMessageId"]),
+        base_revision=int(completed["revision"]),
+        content="Saber 修改后",
+        config={},
+        idempotency_key="runtime-edit-turn",
+    )
+    claimed = operations.claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_chat",),
+    )
+    assert claimed is not None
+    assert claimed[1]["operationId"] == edited["operationId"]
+    assert claimed[1]["request"]["variables"] == {}
+    assert claimed[1]["request"]["runtimeState"] == {
+        "event_counts": {
+            "message_received": 0,
+            "message_sent": 0,
+        },
+        "matched_lorebook_ids": [],
+    }
+    service.handle(*claimed)
+
+    regenerated = repository.get_session(str(session["sessionId"]))
+    assert [item["type"] for item in regenerated["messages"][-1]["runtimeLog"]] == [
+        "lorebook",
+        "task",
+        "task",
+    ]
+    assert regenerated["runtimeState"]["event_counts"] == {
+        "message_received": 1,
+        "message_sent": 1,
+    }
+    assert regenerated["runtimeState"]["matched_lorebook_ids"] == [
+        "lore-saber"
+    ]
+
+    repository.delete_message_chain(
+        message_id=str(regenerated["messages"][-1]["messageId"]),
+        base_revision=int(regenerated["revision"]),
+    )
+    rolled_back = repository.get_session(str(session["sessionId"]))
+    assert rolled_back["messages"][-1]["role"] == "user"
+    assert rolled_back["variables"] == {}
+    assert rolled_back["runtimeState"] == {
+        "event_counts": {
+            "message_received": 0,
+            "message_sent": 0,
+        },
+        "matched_lorebook_ids": [],
+    }
 
 
 def test_png_and_session_portable_roundtrip_uses_asset_ids(
@@ -754,6 +1224,92 @@ def test_diagnostics_validate_state_tasks_and_replay_without_extra_revision(
     assert restored["status"]["last_diagnostics"] == first["diagnostics"]
 
 
+def test_ai_review_persists_without_overwriting_structural_diagnostics(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="审查角色",
+    )
+    validated = repository.validate_document(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        idempotency_key="review-preserves-diagnostics",
+    )
+    document = repository.get_document(str(document["id"]))
+    accepted = repository.create_generate_operation(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        section="review",
+        config={},
+        idempotency_key="review-once",
+    )
+    claimed = OperationRepository(studio_platform["engine"]).claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_generate",),
+    )
+    assert claimed is not None
+    StudioOperationService(
+        engine=studio_platform["engine"],
+        repository=repository,
+        algorithms=FakeStudioAlgorithms(),
+    ).handle(*claimed)
+
+    restored = repository.get_document(str(document["id"]))
+    assert restored["revision"] == document["revision"] + 1
+    assert (
+        restored["status"]["last_diagnostics"]
+        == validated["diagnostics"]
+    )
+    assert restored["exportArtifacts"]["last_review"] == {
+        "summary": "review",
+        "issues": [],
+        "suggestions": [],
+    }
+    operation = OperationRepository(studio_platform["engine"]).get(
+        str(accepted["operationId"])
+    )
+    assert operation["status"] == "completed"
+    assert operation["result"] == {
+        "documentId": str(document["id"]),
+        "documentRevision": document["revision"] + 1,
+    }
+
+    accepted_identity = repository.create_generate_operation(
+        document_id=str(document["id"]),
+        base_revision=int(restored["revision"]),
+        section="identity",
+        config={},
+        idempotency_key="identity-invalidates-diagnostics",
+    )
+    claimed_identity = OperationRepository(
+        studio_platform["engine"]
+    ).claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_generate",),
+    )
+    assert claimed_identity is not None
+    StudioOperationService(
+        engine=studio_platform["engine"],
+        repository=repository,
+        algorithms=FakeStudioAlgorithms(),
+    ).handle(*claimed_identity)
+    regenerated = repository.get_document(str(document["id"]))
+    assert regenerated["status"]["last_diagnostics"] is None
+    assert regenerated["status"]["last_validated_at"] is None
+    assert regenerated["exportArtifacts"]["last_review"] == {
+        "summary": "review",
+        "issues": [],
+        "suggestions": [],
+    }
+    assert OperationRepository(studio_platform["engine"]).get(
+        str(accepted_identity["operationId"])
+    )["result"]["documentRevision"] == regenerated["revision"]
+
+
 def test_full_generation_respects_all_frozen_section_names() -> None:
     document = {
         "status": {
@@ -1024,6 +1580,68 @@ def test_studio_http_short_commands_and_operation_event_catchup(
     )
     assert events.status_code == 200
     assert events.get_json()["items"][-1]["type"] == "operation_completed"
+
+
+def test_studio_generate_route_freezes_ready_compressed_context(
+    studio_platform,
+) -> None:
+    book_id = str(studio_platform["book"]["id"])
+    context_id = str(uuid.uuid4())
+    context_payload = {
+        "summary": "Darmil 在陨石坑发现了碎片。",
+        "characters": [{"name": "Darmil"}],
+    }
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            insert(analysis_artifacts).values(
+                id=context_id,
+                book_id=book_id,
+                run_id=None,
+                kind="compressed_context",
+                template="default",
+                status="ready",
+                revision=2,
+                is_active=True,
+                dependency_fingerprint="compressed-fingerprint",
+                payload_json=json.dumps(
+                    context_payload,
+                    ensure_ascii=False,
+                ),
+            )
+        )
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=book_id,
+        title="Darmil",
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=studio_platform["data_root"],
+            identity=RuntimeIdentity(
+                epoch_id="studio-generate-route-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=studio_platform["engine"],
+        )
+    )
+    response = app.test_client().post(
+        f"/api/v2/studio/documents/{document['id']}/generate",
+        json={
+            "baseRevision": document["revision"],
+            "section": "full",
+        },
+        headers={"Idempotency-Key": "studio-route-context"},
+    )
+    assert response.status_code == 202
+    operation = OperationRepository(studio_platform["engine"]).get(
+        response.get_json()["operationId"]
+    )
+    frozen = operation["request"]["analysisContext"]
+    assert frozen["artifactId"] == context_id
+    assert frozen["revision"] == 2
+    assert frozen["dependencyFingerprint"] == "compressed-fingerprint"
+    assert frozen["payload"] == context_payload
 
 
 def test_studio_exports_unicode_titles_with_wsgi_safe_headers(

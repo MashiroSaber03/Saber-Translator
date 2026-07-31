@@ -12,7 +12,6 @@ import { showToast } from '@/utils/toast'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import {
-  BUILTIN_FONTS,
   clampLineSpacing,
   getFontDisplayName,
   inpaintMethodOptions,
@@ -284,12 +283,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function applyFontCatalog(): void {
-    const fonts = settingsStore.fontCatalog
-    if (fonts.length > 0) {
-      fontList.value = fonts.map(font => font.id)
-    } else {
-      fontList.value = [...BUILTIN_FONTS]
-    }
+    fontList.value = settingsStore.fontCatalog.map(font => font.id)
   }
 
   function applyWorkflowPreferences(preferences: V2WorkflowPreferences): void {
@@ -362,6 +356,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       const fonts = await listV2Fonts()
       settingsStore.hydrateResourceCatalogs(fonts, settingsStore.promptCatalog)
       settingsStore.updateTextStyle({ fontFamily: response.id })
+      emit('textStyleChanged', 'fontFamily', response.id)
       showToast('字体上传成功', 'success')
     } catch {
       showToast('字体上传失败', 'error')

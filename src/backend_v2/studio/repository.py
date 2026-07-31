@@ -39,6 +39,7 @@ from src.backend_v2.studio.model import (
     normalize_document,
     to_storage,
 )
+from src.backend_v2.studio.pure import run_state_tasks
 
 
 ACTIVE_OPERATION_STATUSES = ("pending", "running")
@@ -67,6 +68,16 @@ def _json(value: object) -> str:
 
 def _load(value: str | None, default: object) -> object:
     return json.loads(value) if value else default
+
+
+def _default_chat_runtime_state() -> dict[str, Any]:
+    return {
+        "event_counts": {
+            "message_received": 0,
+            "message_sent": 0,
+        },
+        "matched_lorebook_ids": [],
+    }
 
 
 class StudioRepository:
@@ -419,6 +430,17 @@ class StudioRepository:
             now,
         ) -> tuple[dict[str, Any], str]:
             document = self._assert_document(connection, document_id)
+            session_work: dict[str, Any] = {
+                "variables": {},
+                "_runtime": _default_chat_runtime_state(),
+            }
+            initial_runtime_log = run_state_tasks(
+                session_work,
+                from_storage(document).get("stateTasks", []),
+                event="initialization",
+            )
+            initial_variables = _mapping(session_work.get("variables"))
+            initial_runtime = _mapping(session_work.get("_runtime"))
             if (
                 base_index_revision is not None
                 and int(document["chat_index_revision"])
@@ -452,18 +474,10 @@ class StudioRepository:
                     revision=1,
                     generation=1,
                     greeting_source_json=_json(dict(greeting_source or {})),
-                    variables_json="{}",
+                    variables_json=_json(initial_variables),
                     summary_blocks_json="[]",
                     summary_generation=0,
-                    runtime_state_json=_json(
-                        {
-                            "event_counts": {
-                                "message_received": 0,
-                                "message_sent": 0,
-                            },
-                            "matched_lorebook_ids": [],
-                        }
-                    ),
+                    runtime_state_json=_json(initial_runtime),
                     runtime_schema_version=1,
                     created_at=now,
                     updated_at=now,
@@ -477,9 +491,14 @@ class StudioRepository:
                         ordinal=1,
                         role="assistant",
                         content=greeting,
-                        runtime_log="",
-                        variables_snapshot_json="{}",
-                        generation_meta_json=_json({"source": "greeting"}),
+                        runtime_log=_json(initial_runtime_log),
+                        variables_snapshot_json=_json(initial_variables),
+                        generation_meta_json=_json(
+                            {
+                                "source": "greeting",
+                                "runtimeState": initial_runtime,
+                            }
+                        ),
                         metadata_json="{}",
                         created_at=now,
                         updated_at=now,
@@ -950,6 +969,7 @@ class StudioRepository:
         base_revision: int,
         section: str,
         config: Mapping[str, Any],
+        analysis_context: Mapping[str, Any] | None = None,
         idempotency_key: str,
     ) -> dict[str, Any]:
         if section not in {
@@ -971,6 +991,11 @@ class StudioRepository:
                     "documentId": document_id,
                     "baseRevision": base_revision,
                     "section": section,
+                    "analysisContext": (
+                        dict(analysis_context)
+                        if analysis_context is not None
+                        else None
+                    ),
                 }
             ).encode("utf-8")
         ).hexdigest()
@@ -992,6 +1017,11 @@ class StudioRepository:
                 "section": section,
                 "document": document,
                 "config": dict(config),
+                "analysisContext": (
+                    dict(analysis_context)
+                    if analysis_context is not None
+                    else None
+                ),
             }
             response = self._insert_operation(
                 connection,
@@ -1075,7 +1105,14 @@ class StudioRepository:
                     content=content,
                     runtime_log="",
                     variables_snapshot_json=session["variables_json"],
-                    generation_meta_json="{}",
+                    generation_meta_json=_json(
+                        {
+                            "runtimeState": _load(
+                                session["runtime_state_json"],
+                                _default_chat_runtime_state(),
+                            )
+                        }
+                    ),
                     metadata_json="{}",
                     created_at=now,
                     updated_at=now,
@@ -1521,11 +1558,19 @@ class StudioRepository:
                     studio_messages.c.ordinal >= message["ordinal"],
                 )
             )
+            restored_variables, restored_runtime = (
+                self._chat_state_from_messages(
+                    connection,
+                    str(message["session_id"]),
+                )
+            )
             revision = base_revision + 1
             generation = int(session["generation"]) + 1
             session_values: dict[str, Any] = {
                 "revision": revision,
                 "generation": generation,
+                "variables_json": _json(restored_variables),
+                "runtime_state_json": _json(restored_runtime),
                 "updated_at": now,
             }
             if clear_summary:
@@ -1651,11 +1696,16 @@ class StudioRepository:
                     studio_messages.c.ordinal > target["ordinal"],
                 )
             )
+            restored_variables, restored_runtime = (
+                self._chat_state_from_messages(connection, session_id)
+            )
             committed_revision = base_revision + 1
             committed_generation = int(session["generation"]) + 1
             session_values = {
                 "revision": committed_revision,
                 "generation": committed_generation,
+                "variables_json": _json(restored_variables),
+                "runtime_state_json": _json(restored_runtime),
                 "updated_at": now,
             }
             if clear_summary:
@@ -1689,11 +1739,8 @@ class StudioRepository:
                 request_payload={
                     "document": from_storage(document_row),
                     "messages": message_dtos,
-                    "variables": _load(session["variables_json"], {}),
-                    "runtimeState": _load(
-                        session["runtime_state_json"],
-                        {},
-                    ),
+                    "variables": restored_variables,
+                    "runtimeState": restored_runtime,
                     "summaryBlocks": (
                         []
                         if clear_summary
@@ -1756,8 +1803,7 @@ class StudioRepository:
             if review is not None:
                 title = str(row["title"])
                 storage_values = {
-                    "last_diagnostics_json": _json(dict(review)),
-                    "last_validated_at": utcnow(),
+                    "last_review_json": _json(dict(review)),
                 }
             else:
                 canonical = normalize_document(
@@ -1766,6 +1812,27 @@ class StudioRepository:
                     document=generated_document,
                 )
                 title, storage_values = to_storage(canonical)
+                generated_values = {
+                    "title": title,
+                    **storage_values,
+                }
+                content_fields = (
+                    "title",
+                    "identity_json",
+                    "core_messages_json",
+                    "lorebook_json",
+                    "regex_scripts_json",
+                    "state_tasks_json",
+                )
+                if all(
+                    row[field] == generated_values[field]
+                    for field in content_fields
+                ):
+                    raise ValueError(
+                        "Studio generation returned no document changes"
+                    )
+                storage_values["last_diagnostics_json"] = None
+                storage_values["last_validated_at"] = None
             revision = int(row["revision"]) + 1
             changed = connection.execute(
                 update(studio_documents)
@@ -1844,7 +1911,10 @@ class StudioRepository:
                     runtime_log=_json(list(runtime_log)),
                     variables_snapshot_json=_json(dict(variables)),
                     generation_meta_json=_json(
-                        {"generation": int(session["generation"])}
+                        {
+                            "generation": int(session["generation"]),
+                            "runtimeState": dict(runtime_state),
+                        }
                     ),
                     metadata_json="{}",
                     created_at=utcnow(),
@@ -2366,6 +2436,75 @@ class StudioRepository:
                 .order_by(studio_messages.c.ordinal)
             ).mappings()
         )
+
+    @staticmethod
+    def _chat_state_from_messages(
+        connection: Connection,
+        session_id: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Restore the session state represented by the retained linear chain."""
+        variables: dict[str, Any] = {}
+        runtime = _default_chat_runtime_state()
+        pending_user = False
+
+        for row in StudioRepository._message_rows(connection, session_id):
+            snapshot = _load(row["variables_snapshot_json"], {})
+            if isinstance(snapshot, Mapping):
+                variables = dict(snapshot)
+
+            generation_meta = _load(row["generation_meta_json"], {})
+            meta = (
+                dict(generation_meta)
+                if isinstance(generation_meta, Mapping)
+                else {}
+            )
+            runtime_snapshot = meta.get("runtimeState")
+            if isinstance(runtime_snapshot, Mapping):
+                runtime = json.loads(_json(dict(runtime_snapshot)))
+
+            role = str(row["role"])
+            if role == "user":
+                pending_user = True
+                continue
+            if role != "assistant":
+                continue
+            if isinstance(runtime_snapshot, Mapping):
+                pending_user = False
+                continue
+            if meta.get("source") == "greeting" or not pending_user:
+                pending_user = False
+                continue
+
+            counts = runtime.setdefault("event_counts", {})
+            if not isinstance(counts, dict):
+                counts = {}
+                runtime["event_counts"] = counts
+            counts["message_received"] = int(
+                counts.get("message_received", 0)
+            ) + 1
+            counts["message_sent"] = int(
+                counts.get("message_sent", 0)
+            ) + 1
+
+            matched = runtime.setdefault("matched_lorebook_ids", [])
+            if not isinstance(matched, list):
+                matched = []
+                runtime["matched_lorebook_ids"] = matched
+            logs = _load(row["runtime_log"], [])
+            for item in logs if isinstance(logs, list) else []:
+                if not isinstance(item, Mapping):
+                    continue
+                entry_id = item.get("id")
+                if (
+                    item.get("type") == "lorebook"
+                    and isinstance(entry_id, str)
+                    and entry_id
+                    and entry_id not in matched
+                ):
+                    matched.append(entry_id)
+            pending_user = False
+
+        return variables, runtime
 
     @staticmethod
     def _message_dto(

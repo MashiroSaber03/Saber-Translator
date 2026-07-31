@@ -4,7 +4,7 @@
 
 审计基线：
 
-- 唯一方案：`docs/refactor/backend-first-architecture-plan.md`（4088 行、24 节）。
+- 唯一方案：`docs/refactor/backend-first-architecture-plan.md`（4089 行、24 节）。
 - 实现分支：`codex/backend-first-v2`。
 - 审计范围：Launcher/API/Worker、SQLite/Alembic/资产、jobs/operations、翻译、Insight、Character Studio、书架、任务中心、阅读器、设置、插件、媒体加载、生产静态包和自动化验收。
 
@@ -57,7 +57,7 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 | --- | --- | --- |
 | §1–§3 决策与边界 | 完成 | v2-only 生产入口、浏览器仅交互/显示、后端事实源和任务范围边界成立。 |
 | §4 运行架构 | 完成 | Launcher/API/Worker 分进程、单实例、epoch/heartbeat/fencing、自失租退出和独立拉起均有进程集成测试。局域网开放按用户最终口径执行。 |
-| §5 存储架构 | 完成 | Alembic head `0013`；SQLite WAL/FK/busy timeout；明确 FK、删除语义和热路径索引；不可变资产、journal、凭据/插件版本及所有领域关系闭环。 |
+| §5 存储架构 | 完成 | Alembic head `0017`；SQLite WAL/FK/busy timeout；明确 FK、删除语义和热路径索引；不可变资产、journal、凭据/插件版本及所有领域关系闭环。 |
 | §6 快速工作区 | 完成 | 固定系统书/章、显式 reset、快速 bootstrap、new/existing book promote、约束处理和 job/operation/import lease 423 保护。 |
 | §7 统一任务系统 | 完成 | 单全局队列、批次、排序、暂停/继续/取消/drain、replacement retry、SSE、事件游标、最近 200 批历史、Worker 控制命令和 crash recovery。 |
 | §8 翻译后端化 | 完成 | 章节独立 job、批量创建、冻结配置/凭据/插件/字体、顺序/并行 Pool、HQ 稳定 ID batch、多轮校对、render/save 分界和失败项重试。 |
@@ -93,7 +93,7 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 
 ### 5.2 查询与删除
 
-- 迁移 `0012` 为所有 FK 和核心过滤/排序组合补齐索引；`0013` 将书籍术语表/禁翻表收口为规范化、可约束、可 revision/CAS 的后端事实。
+- 迁移 `0012` 为所有 FK 和核心过滤/排序组合补齐索引；`0013` 将书籍术语表/禁翻表收口为规范化、可约束、可 revision/CAS 的后端事实；`0014`–`0016` 继续完成页面字体事实、Studio AI 审阅事实和完整后端设置播种；`0017` 精准修复关闭自动颜色后仍残留的旧自动颜色实体化数据，并保留自动颜色旁路备份。
 - `EXPLAIN QUERY PLAN` 回归覆盖 1000 pages/assets、200 batches/jobs、10000 events 和 200 drafts，断言命中预期索引。
 - 删除矩阵覆盖 book/chapter/page、Insight run、Studio、plugin/font、终态历史 `SET NULL` 和非终态领域保护。
 - 快速 reset/promote 覆盖 job、operation、import lease、两种 promote 和 constraints 组合。
@@ -132,9 +132,9 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 
 在项目 `venv/` 和前端本地依赖中完成：
 
-- 全部后端：`297 passed`。
-- 后端仅有 2 条 SQLAlchemy/Alembic 反射 SQLite 表达式索引的已知 warning，不影响迁移或运行。
-- 前端 Vitest：`243` 个测试文件、`1752 passed`。
+- 全部后端：`315 passed`。
+- 后端仅有 5 条 SQLAlchemy/Alembic 反射 SQLite 表达式索引的已知 warning，不影响迁移或运行。
+- 前端 Vitest：`245` 个测试文件、`1782 passed`。
 - Playwright：`32 passed`，包含全部 100/500/1000 页内存趋势和桌面/移动端视觉契约。
 - `npm run typecheck`、`npm run lint`、`npm run lint:css`、`npm run lint:ui` 全部通过。
 - OpenAPI TypeScript 生成前后 SHA-256 一致；运行时 Flask route set 与 OpenAPI operation set 双向闭集相等。
@@ -160,6 +160,14 @@ API 与 Worker 的业务协作只通过 SQLite 和不可变文件资产。epoch�
 - 任务中心对失败网页提取执行“重试失败项”后，数据库出现新的 job、新的 draft id 和新的临时目录，旧终态 draft 未被复用。
 - 一次 Insight 全书失败项重试中，13 个成功页被隔离复制；外部 VLM 与聚合 LLM 分别在 300 秒总时限后超时，新 run 正确进入 `failed` 且没有覆盖旧正式结果。此前已发布的概览、时间线、14 页页面结果、问答笔记和 active vector generation 继续可读。
 - 测试创建的临时书籍及其章节已通过书架 UI 删除；下载/导入测试文件已移出工作树。
+
+## 7.2 2026-07-31 要求级复核与全页面实测
+
+- 再次按主方案 §6.9、§15、§16.5、§17.18、§18.12、§19.12、§20.11、§21.10、§22.12、§23.12 和 §24 逐条反查当前代码、契约、测试与运行证据；生产源中未发现旧业务 API 调用、浏览器业务设置副本、API 进程模型依赖或未实现占位。
+- 使用 14 张测试图片和用户提供的 SiliconFlow 测试模型，重新覆盖书架、快速工作区、翻译与编辑、阅读器、任务中心、设置、网页导入、Insight、Character Studio、插件 Agent、导入导出与辅助处理；按用户要求仅排除漫画续写生图。
+- 真实翻译结果确认手动文字颜色、背景色、排版方向、修复方式和描边等页面设置被后端冻结并物化；关闭自动颜色时不会误用自动颜色。编辑选择保持、150ms 尾随提交和约 278ms 的持久化/重渲染反馈也完成实测。
+- 上一轮实测数据根通过 `scripts.check_v2_consistency`：外键、资产路径、缺失文件、完整性状态、孤儿 object 和向量集合均为零异常。
+- Playwright 视觉 fixture 已同步页面字体、网页导入设置和 QA 状态的当前后端契约；完整 32 项视觉/内存套件通过，其中 Reader 与四个缩略图表面均覆盖 100/500/1000 页趋势门禁。
 
 ## 8. 收口判断
 

@@ -793,6 +793,16 @@ class OperationRepository:
                 connection,
                 fence.operation_id,
             )
+            if row["page_id"] is not None and row["base_revision"] is not None:
+                revision = connection.execute(
+                    select(pages.c.document_revision).where(
+                        pages.c.id == row["page_id"]
+                    )
+                ).scalar_one_or_none()
+                if revision != row["base_revision"]:
+                    raise OperationFenced("page revision changed before operation publish")
+            if publisher is not None:
+                publisher(connection, row)
             safe_result = (
                 redact_sensitive_value(
                     dict(result),
@@ -809,16 +819,6 @@ class OperationRepository:
                 if error is not None
                 else None
             )
-            if row["page_id"] is not None and row["base_revision"] is not None:
-                revision = connection.execute(
-                    select(pages.c.document_revision).where(
-                        pages.c.id == row["page_id"]
-                    )
-                ).scalar_one_or_none()
-                if revision != row["base_revision"]:
-                    raise OperationFenced("page revision changed before operation publish")
-            if publisher is not None:
-                publisher(connection, row)
             status = "completed" if error is None else "failed"
             if error is not None and row["kind"] == "page_repair":
                 connection.execute(
@@ -1114,6 +1114,24 @@ class RenderRequestRepository:
         return str(existing["id"])
 
     def claim_next(self, *, api_epoch_id: str) -> RenderFence | None:
+        # The render executor polls frequently.  Avoid taking SQLite's write
+        # reservation when there is no eligible work; the transactional query
+        # below remains the authoritative claim and safely handles races.
+        with self.engine.connect() as connection:
+            has_pending = connection.execute(
+                select(render_requests.c.id)
+                .join(pages, pages.c.id == render_requests.c.page_id)
+                .where(
+                    render_requests.c.status == "pending",
+                    pages.c.render_status.not_in(
+                        ("awaiting_repair", "repair_failed")
+                    ),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+        if has_pending is None:
+            return None
+
         now = utcnow()
         expires = now + timedelta(seconds=self.attempt_lease_seconds)
         with immediate_transaction(self.engine) as connection:
@@ -1122,16 +1140,17 @@ class RenderRequestRepository:
             )
             row = connection.execute(
                 select(render_requests)
-                .where(render_requests.c.status == "pending")
+                .join(pages, pages.c.id == render_requests.c.page_id)
+                .where(
+                    render_requests.c.status == "pending",
+                    pages.c.render_status.not_in(
+                        ("awaiting_repair", "repair_failed")
+                    ),
+                )
                 .order_by(render_requests.c.updated_at)
                 .limit(1)
             ).mappings().one_or_none()
             if row is None:
-                return None
-            page = connection.execute(
-                select(pages.c.render_status).where(pages.c.id == row["page_id"])
-            ).scalar_one_or_none()
-            if page in {"awaiting_repair", "repair_failed"}:
                 return None
             attempt_id = str(uuid.uuid4())
             lease_token = secrets.token_urlsafe(32)

@@ -160,6 +160,10 @@ async function refreshFontList() {
   isLoadingFonts.value = true
   try {
     fontList.value = await listV2Fonts()
+    settingsStore.hydrateResourceCatalogs(
+      fontList.value,
+      settingsStore.promptCatalog,
+    )
     toast.success(`获取到 ${fontList.value.length} 个字体`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '获取字体列表失败'

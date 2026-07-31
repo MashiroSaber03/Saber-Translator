@@ -12,13 +12,20 @@ const store = useTaskCenterStore()
       class="task-center-launcher"
       variant="ghost"
       size="sm"
-      :aria-label="`打开任务中心，${store.activeCount} 个运行中，${store.queuedCount} 个排队中`"
+      :aria-label="`打开任务中心，${store.activeCount} 个活动任务，${store.queuedCount} 个排队中，${store.interruptedCount} 个中断待处理`"
       @click="store.open"
     >
       <span class="task-center-launcher__signal" :class="{ 'task-center-launcher__signal--active': store.activeCount > 0 }" />
       <span class="task-center-launcher__label">任务中心</span>
       <span v-if="store.activeCount + store.queuedCount" class="task-center-launcher__badge">
         {{ store.activeCount + store.queuedCount }}
+      </span>
+      <span
+        v-if="store.interruptedCount"
+        class="task-center-launcher__interrupted"
+        title="有中断任务待处理"
+      >
+        待处理 {{ store.interruptedCount }}
       </span>
     </UiButton>
   </OverlayLayer>
@@ -64,6 +71,14 @@ const store = useTaskCenterStore()
   color: var(--color-text-inverse);
   text-align: center;
   background: var(--color-action-primary);
+  border-radius: 999px;
+}
+
+.task-center-launcher__interrupted {
+  padding: 1px 6px;
+  color: var(--color-text-danger);
+  font-size: 12px;
+  background: var(--color-surface-danger-soft);
   border-radius: 999px;
 }
 

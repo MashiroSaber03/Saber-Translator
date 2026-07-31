@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
 import secrets
 from typing import Any
@@ -20,8 +20,16 @@ from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
     validate_translation_constraints,
 )
-from src.backend_v2.storage.assets import AssetRecord
+from src.backend_v2.content.page_style import (
+    PAGE_STYLE_FIELDS,
+    resolve_new_page_style,
+    validate_page_style,
+)
+from src.backend_v2.rendering.fonts import resolve_font_path
+from src.backend_v2.settings.validation import validate_setting_payload
+from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.defaults import default_translation_settings
 from src.backend_v2.storage.schema import (
     assets,
     book_tags,
@@ -32,7 +40,6 @@ from src.backend_v2.storage.schema import (
     chapter_navigation_state,
     chapters,
     idempotency_records,
-    app_settings,
     fonts,
     import_leases,
     job_items,
@@ -175,6 +182,25 @@ def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
 
     visit(payload)
 
+    def merge(
+        base: dict[str, object],
+        override: dict[str, object],
+    ) -> dict[str, object]:
+        result = json.loads(_json(base))
+        for key, value in override.items():
+            current = result.get(key)
+            if isinstance(current, dict) and isinstance(value, dict):
+                result[key] = merge(current, value)
+            else:
+                result[key] = value
+        return result
+
+    validate_setting_payload(
+        "translation",
+        merge(default_translation_settings(), payload),
+        schema_version=3,
+    )
+
 
 def normalize_logical_path(raw_path: str) -> str:
     normalized = raw_path.replace("\\", "/").strip()
@@ -224,6 +250,12 @@ def _rgb_hex(value: object) -> str:
 class ContentRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
+        database_path = engine.url.database
+        self.storage = (
+            AssetStorageService(Path(database_path).resolve().parent, engine)
+            if database_path and database_path != ":memory:"
+            else None
+        )
 
     def list_books(
         self,
@@ -921,6 +953,15 @@ class ContentRepository:
                 .order_by(web_import_drafts.c.updated_at.desc())
                 .limit(1)
             ).mappings().one_or_none()
+        if constraints is None:
+            raise ContentNotFound("translation constraints not found")
+        settings_memory = json.loads(row["settings_memory_json"])
+        if not isinstance(settings_memory, dict):
+            raise ValueError("chapter settings memory must be an object")
+        _validate_chapter_settings_memory(settings_memory)
+        constraint_payload = validate_translation_constraints(
+            json.loads(constraints["payload_json"])
+        )
         return {
             "book": {
                 "id": row["book_id"],
@@ -931,7 +972,7 @@ class ContentRepository:
                 "id": row["chapter_id"],
                 "title": row["chapter_title"],
                 "pageOrderRevision": row["page_order_revision"],
-                "settingsMemory": json.loads(row["settings_memory_json"]),
+                "settingsMemory": settings_memory,
                 "settingsMemorySchemaVersion": row[
                     "settings_memory_schema_version"
                 ],
@@ -950,17 +991,9 @@ class ContentRepository:
                 "revision": navigation["revision"] if navigation else 0,
             },
             "constraints": {
-                "payload": (
-                    json.loads(constraints["payload_json"])
-                    if constraints
-                    else empty_translation_constraints()
-                ),
-                "schemaVersion": (
-                    constraints["schema_version"]
-                    if constraints
-                    else TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
-                ),
-                "revision": constraints["revision"] if constraints else 0,
+                "payload": constraint_payload,
+                "schemaVersion": constraints["schema_version"],
+                "revision": constraints["revision"],
             },
             "activeJobs": [
                 {
@@ -1302,6 +1335,33 @@ class ContentRepository:
                 )
             )
 
+    def clear_chapter_pages(self, chapter_id: str) -> int:
+        with immediate_transaction(self.engine) as connection:
+            chapter = connection.execute(
+                select(chapters.c.book_id).where(chapters.c.id == chapter_id)
+            ).mappings().one_or_none()
+            if chapter is None:
+                raise ContentNotFound("chapter not found")
+            self._assert_targets_idle(
+                connection,
+                str(chapter["book_id"]),
+                [chapter_id],
+            )
+            removed = connection.execute(
+                delete(pages).where(pages.c.chapter_id == chapter_id)
+            )
+            deleted_count = int(removed.rowcount or 0)
+            if deleted_count:
+                connection.execute(
+                    update(chapters)
+                    .where(chapters.c.id == chapter_id)
+                    .values(
+                        page_order_revision=chapters.c.page_order_revision + 1,
+                        updated_at=_utcnow(),
+                    )
+                )
+            return deleted_count
+
     def replace_page_source(
         self,
         *,
@@ -1507,17 +1567,7 @@ class ContentRepository:
                 + 1
             )
             page_id = str(uuid.uuid4())
-            style_payload = connection.execute(
-                select(app_settings.c.payload_json).where(
-                    app_settings.c.domain == "text_style_defaults"
-                )
-            ).scalar_one_or_none() or "{}"
-            default_font_id = connection.execute(
-                select(fonts.c.id)
-                .where(fonts.c.kind == "builtin")
-                .order_by(fonts.c.created_at)
-                .limit(1)
-            ).scalar_one_or_none()
+            default_font_id, style_defaults = resolve_new_page_style(connection)
             connection.execute(
                 insert(pages).values(
                     id=page_id,
@@ -1525,7 +1575,7 @@ class ContentRepository:
                     ordinal=ordinal,
                     logical_source_path=final_logical_path,
                     default_font_id=default_font_id,
-                    page_style_defaults_json=style_payload,
+                    page_style_defaults_json=_json(style_defaults),
                 )
             )
             connection.execute(
@@ -1738,33 +1788,60 @@ class ContentRepository:
             raise ValueError(
                 "command must mutate bubbles, the default font, or page style"
             )
-        allowed_style_fields = {
-            "fontSize",
-            "autoFontSize",
-            "fontFamily",
-            "layoutDirection",
-            "textColor",
-            "fillColor",
-            "inpaintMethod",
-            "strokeEnabled",
-            "strokeColor",
-            "strokeWidth",
-            "lineSpacing",
-            "textAlign",
-            "useAutoTextColor",
-        }
-        unknown_style = set(style_patch) - allowed_style_fields
-        if unknown_style:
-            raise ValueError(
-                "unknown page style fields: "
-                + ", ".join(sorted(unknown_style))
-            )
+        style_patch = validate_page_style(style_patch, partial=True)
         if len(propagation) != len(set(propagation)):
             raise ValueError("propagateStyleFields must contain unique fields")
-        if not set(propagation).issubset(style_patch):
+        allowed_propagation = frozenset(
+            {
+                "fontSize",
+                "fontFamily",
+                "layoutDirection",
+                "textColor",
+                "fillColor",
+                "strokeEnabled",
+                "strokeColor",
+                "strokeWidth",
+                "lineSpacing",
+                "textAlign",
+            }
+        )
+        unknown_propagation = set(propagation) - allowed_propagation
+        if unknown_propagation:
             raise ValueError(
-                "propagateStyleFields must be present in pageStyleDefaultsPatch"
+                "unknown propagateStyleFields: "
+                + ", ".join(sorted(unknown_propagation))
             )
+        if "fontFamily" in propagation and default_font_id is _MISSING:
+            raise ValueError(
+                "fontFamily propagation requires defaultFontId"
+            )
+        propagated_bubble_fields = {
+            "fontSize": "fontSize",
+            "fontFamily": "fontId",
+            "layoutDirection": "textDirection",
+            "textColor": "textColor",
+            "fillColor": "fillColor",
+            "strokeEnabled": "strokeEnabled",
+            "strokeColor": "strokeColor",
+            "strokeWidth": "strokeWidth",
+            "lineSpacing": "lineSpacing",
+            "textAlign": "textAlign",
+        }
+        propagated_targets = {
+            propagated_bubble_fields[field] for field in propagation
+        }
+        for mutation in mutations:
+            if not isinstance(mutation, dict):
+                continue
+            fields = mutation.get("fields", mutation.get("payload", {}))
+            if not isinstance(fields, dict):
+                continue
+            conflicts = propagated_targets.intersection(fields)
+            if conflicts:
+                raise ValueError(
+                    "bubble mutation conflicts with propagated style fields: "
+                    + ", ".join(sorted(conflicts))
+                )
         request_payload = {
             "baseRevision": base_revision,
             "mutations": mutations,
@@ -1837,41 +1914,28 @@ class ContentRepository:
             deleted_ids: set[str] = set()
             created_ids: set[str] = set()
             renderable_change = False
-            if default_font_id is not _MISSING:
-                if default_font_id is not None and not isinstance(
-                    default_font_id, str
-                ):
-                    raise ValueError("defaultFontId must be a string or null")
-                if default_font_id is not None and connection.execute(
-                    select(fonts.c.id).where(fonts.c.id == default_font_id)
+            validated_font_ids: set[str] = set()
+
+            def validate_font_reference(value: object, *, field: str) -> None:
+                if value is None:
+                    return
+                if not isinstance(value, str) or not value:
+                    raise ValueError(f"{field} must be a non-empty string or null")
+                if value in validated_font_ids:
+                    return
+                if connection.execute(
+                    select(fonts.c.id).where(fonts.c.id == value)
                 ).scalar_one_or_none() is None:
-                    raise ContentNotFound("default font not found")
-                renderable_change = (
-                    renderable_change
-                    or default_font_id != page["default_font_id"]
-                )
-            current_style = json.loads(page["page_style_defaults_json"])
-            if not isinstance(current_style, dict):
-                current_style = {}
+                    raise ContentNotFound("font not found")
+                validated_font_ids.add(value)
+
+            if default_font_id is not _MISSING:
+                validate_font_reference(default_font_id, field="defaultFontId")
+            current_style = validate_page_style(
+                json.loads(page["page_style_defaults_json"]),
+                partial=False,
+            )
             if style_patch:
-                renderable_style_fields = {
-                    "fontSize",
-                    "autoFontSize",
-                    "fontFamily",
-                    "layoutDirection",
-                    "textColor",
-                    "useAutoTextColor",
-                    "strokeEnabled",
-                    "strokeColor",
-                    "strokeWidth",
-                    "lineSpacing",
-                    "textAlign",
-                }
-                renderable_change = renderable_change or any(
-                    key in renderable_style_fields
-                    and current_style.get(key) != value
-                    for key, value in style_patch.items()
-                )
                 current_style.update(style_patch)
             has_current_translated = (
                 connection.execute(
@@ -1883,12 +1947,10 @@ class ContentRepository:
                 is not None
             )
             calculate_auto_font_size = None
-            if (
-                "autoFontSize" in propagation
-                and bool(style_patch.get("autoFontSize"))
+            if "fontSize" in propagation and bool(
+                current_style["autoFontSize"]
             ):
                 from src.core.rendering import calculate_auto_font_size
-                from src.shared import constants
             for mutation in mutations:
                 if not isinstance(mutation, dict):
                     raise ValueError("each bubble mutation must be an object")
@@ -1924,6 +1986,7 @@ class ContentRepository:
                         raise ContentConflict("bubble id already exists in this document")
                     if not isinstance(fields, dict):
                         raise ValueError("create fields must be an object")
+                    validate_font_reference(fields.get("fontId"), field="fontId")
                     documents[bubble_id] = {
                         "bubbleId": bubble_id,
                         "fontId": fields.get("fontId"),
@@ -1948,32 +2011,56 @@ class ContentRepository:
                 if not isinstance(fields, dict):
                     raise ValueError("patch/reset fields must be an object")
                 current = documents[bubble_id]
+                before_font_id = current["fontId"]
+                before_payload = dict(current["payload"])  # type: ignore[arg-type]
                 if "fontId" in fields:
+                    validate_font_reference(fields["fontId"], field="fontId")
                     current["fontId"] = fields["fontId"]
                 payload_fields = {
                     key: value
                     for key, value in fields.items()
                     if key not in {"fontId", "ordinal"}
                 }
-                if "fontId" in fields or self._affects_render(payload_fields):
-                    renderable_change = True
                 if operation == "reset":
                     current["payload"] = payload_fields
                 else:
-                    current_payload = dict(current["payload"])  # type: ignore[arg-type]
+                    current_payload = dict(before_payload)
                     current_payload.update(payload_fields)
                     current["payload"] = current_payload
+                renderable_change = renderable_change or (
+                    current["fontId"] != before_font_id
+                    or self._render_payload_changed(
+                        before_payload,
+                        dict(current["payload"]),  # type: ignore[arg-type]
+                    )
+                )
 
             if propagation:
+                propagation_order = (
+                    "fontFamily",
+                    "layoutDirection",
+                    "textColor",
+                    "fillColor",
+                    "strokeEnabled",
+                    "strokeColor",
+                    "strokeWidth",
+                    "lineSpacing",
+                    "textAlign",
+                    "fontSize",
+                )
                 for document in documents.values():
                     payload = dict(document["payload"])  # type: ignore[arg-type]
-                    for field in propagation:
-                        value = style_patch[field]
+                    for field in propagation_order:
+                        if field not in propagation:
+                            continue
                         if field == "fontFamily":
+                            value = default_font_id
                             if document["fontId"] != value:
                                 renderable_change = True
                             document["fontId"] = value
-                        elif field == "layoutDirection":
+                            continue
+                        if field == "layoutDirection":
+                            value = current_style[field]
                             direction = (
                                 payload.get("autoTextDirection", "vertical")
                                 if value == "auto"
@@ -1981,19 +2068,34 @@ class ContentRepository:
                             )
                             if direction not in {"vertical", "horizontal"}:
                                 direction = "vertical"
+                            if payload.get("textDirection") != direction:
+                                renderable_change = True
                             payload["textDirection"] = direction
-                        elif field == "useAutoTextColor":
-                            if value:
-                                if payload.get("autoFgColor") is not None:
-                                    payload["textColor"] = _rgb_hex(
-                                        payload["autoFgColor"]
-                                    )
-                                if payload.get("autoBgColor") is not None:
-                                    payload["fillColor"] = _rgb_hex(
-                                        payload["autoBgColor"]
-                                    )
-                        elif field == "autoFontSize":
-                            if value and calculate_auto_font_size is not None:
+                        elif field in {"textColor", "fillColor"}:
+                            materialized: object | None = None
+                            if bool(current_style["useAutoTextColor"]):
+                                automatic_field = (
+                                    "autoFgColor"
+                                    if field == "textColor"
+                                    else "autoBgColor"
+                                )
+                                automatic = payload.get(automatic_field)
+                                if automatic is not None:
+                                    materialized = _rgb_hex(automatic)
+                            elif field in style_patch:
+                                materialized = current_style[field]
+                            if (
+                                materialized is not None
+                                and payload.get(field) != materialized
+                            ):
+                                if field == "textColor":
+                                    renderable_change = True
+                                payload[field] = materialized
+                        elif field == "fontSize":
+                            if (
+                                bool(current_style["autoFontSize"])
+                                and calculate_auto_font_size is not None
+                            ):
                                 coords = payload.get("coords")
                                 text = str(payload.get("translatedText", ""))
                                 if (
@@ -2001,7 +2103,25 @@ class ContentRepository:
                                     and isinstance(coords, list)
                                     and len(coords) == 4
                                 ):
-                                    payload["fontSize"] = calculate_auto_font_size(
+                                    font_id = document["fontId"] or (
+                                        default_font_id
+                                        if default_font_id is not _MISSING
+                                        else page["default_font_id"]
+                                    )
+                                    font_path = (
+                                        resolve_font_path(
+                                            connection,
+                                            self.storage,
+                                            str(font_id) if font_id else None,
+                                        )
+                                        if self.storage is not None
+                                        else None
+                                    )
+                                    if font_path is None:
+                                        from src.shared import constants
+
+                                        font_path = constants.DEFAULT_FONT_RELATIVE_PATH
+                                    calculated = calculate_auto_font_size(
                                         text,
                                         max(
                                             0,
@@ -2017,9 +2137,23 @@ class ContentRepository:
                                                 "vertical",
                                             )
                                         ),
-                                        constants.DEFAULT_FONT_RELATIVE_PATH,
+                                        font_path,
                                     )
+                                    if payload.get("fontSize") != calculated:
+                                        renderable_change = True
+                                    payload["fontSize"] = calculated
+                            else:
+                                value = current_style["fontSize"]
+                                if payload.get("fontSize") != value:
+                                    renderable_change = True
+                                payload["fontSize"] = value
                         else:
+                            value = current_style[field]
+                            if (
+                                field != "fillColor"
+                                and payload.get(field) != value
+                            ):
+                                renderable_change = True
                             payload[field] = value
                     document["payload"] = payload
 
@@ -2185,13 +2319,16 @@ class ContentRepository:
         }
 
     @staticmethod
-    def _affects_render(fields: dict[str, object]) -> bool:
-        return bool(
-            {
+    def _render_payload_changed(
+        before: dict[str, object],
+        after: dict[str, object],
+    ) -> bool:
+        return any(
+            before.get(field) != after.get(field)
+            for field in (
                 "translatedText",
                 "coords",
                 "fontSize",
-                "fontFamily",
                 "textDirection",
                 "textColor",
                 "rotationAngle",
@@ -2201,8 +2338,7 @@ class ContentRepository:
                 "strokeWidth",
                 "lineSpacing",
                 "textAlign",
-            }
-            & fields.keys()
+            )
         )
 
     @staticmethod

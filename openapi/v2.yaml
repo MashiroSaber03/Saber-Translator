@@ -1909,6 +1909,24 @@ paths:
           $ref: "#/components/responses/Locked"
         "422":
           $ref: "#/components/responses/ValidationError"
+    delete:
+      tags: [content]
+      operationId: clearChapterPages
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: All chapter pages were deleted atomically.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [deletedCount]
+                properties:
+                  deletedCount: {type: integer, minimum: 0}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "423": {$ref: "#/components/responses/Locked"}
   /pages/{page_id}:
     parameters:
       - $ref: "#/components/parameters/PageId"
@@ -2547,6 +2565,9 @@ paths:
           in: query
           required: true
           schema: {$ref: "#/components/schemas/Uuid"}
+        - name: mode
+          in: query
+          schema: {type: string, enum: [exact, global], default: exact}
       responses:
         "200":
           description: Backend-authoritative QA readiness and repair action.
@@ -4110,6 +4131,7 @@ components:
             - blocked_by_job
             - blocked_by_import_lease
             - draining_immediate_writes
+            - retained_chapter_lock
         blockedByJobId:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
@@ -4131,12 +4153,13 @@ components:
     JobList:
       type: object
       additionalProperties: false
-      required: [items, queueRevision]
+      required: [items, queueRevision, workerOnline]
       properties:
         items:
           type: array
           items: {$ref: "#/components/schemas/Job"}
         queueRevision: {type: integer, minimum: 1}
+        workerOnline: {type: boolean}
     JobDetail:
       unevaluatedProperties: false
       allOf:
@@ -4678,13 +4701,10 @@ components:
       type: string
       enum:
         - fontSize
-        - autoFontSize
         - fontFamily
         - layoutDirection
         - textColor
         - fillColor
-        - inpaintMethod
-        - useAutoTextColor
         - strokeEnabled
         - strokeColor
         - strokeWidth
@@ -4697,7 +4717,6 @@ components:
       properties:
         fontSize: {type: integer, minimum: 1, maximum: 512}
         autoFontSize: {type: boolean}
-        fontFamily: {$ref: "#/components/schemas/Uuid"}
         layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
         textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
@@ -4754,7 +4773,6 @@ components:
           required:
             - fontSize
             - autoFontSize
-            - fontFamily
             - layoutDirection
             - textColor
             - fillColor
@@ -6374,7 +6392,13 @@ components:
       properties:
         available: {type: boolean}
         reason: {type: [string, "null"]}
-        repairAction: {type: string, enum: [analyze, vector_rebuild]}
+        repairAction:
+          type: string
+          enum:
+            - analyze
+            - vector_rebuild
+            - overview_rebuild
+            - compressed_context_rebuild
         generation: {type: integer, minimum: 1}
         coverage:
           type: object

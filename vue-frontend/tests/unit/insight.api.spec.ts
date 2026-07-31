@@ -166,6 +166,40 @@ describe('insight v2 api facade', () => {
     expect(vectorResult).toMatchObject({ success: true, task_id: 'vector-job' })
   })
 
+  it('reads mode-specific QA readiness and rebuilds global compressed context', async () => {
+    getMock.mockResolvedValueOnce({
+      available: false,
+      reason: 'compressed_context_missing',
+      repairAction: 'compressed_context_rebuild',
+    })
+    postMock.mockResolvedValueOnce(accepted('compressed-context-job'))
+    const {
+      getQAStatus,
+      rebuildCompressedContext,
+    } = await import('@/api/insight')
+
+    const status = await getQAStatus('book/id one', 'global')
+    const rebuild = await rebuildCompressedContext('book/id one')
+
+    expect(status).toMatchObject({
+      available: false,
+      repairAction: 'compressed_context_rebuild',
+    })
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/insight/qa/status',
+      { params: { bookId: 'book/id one', mode: 'global' } },
+    )
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/insight/books/book%2Fid%20one/compressed-context/rebuild',
+      {},
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    )
+    expect(rebuild).toMatchObject({
+      success: true,
+      task_id: 'compressed-context-job',
+    })
+  })
+
   it('serializes precise QA with the backend exact-mode contract', async () => {
     const body = [
       'event: context',

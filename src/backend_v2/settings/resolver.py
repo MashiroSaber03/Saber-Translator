@@ -9,9 +9,11 @@ from typing import Any, Mapping
 from sqlalchemy import Engine, select
 
 from src.backend_v2.content.translation_constraints import (
-    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
-    empty_translation_constraints,
     validate_translation_constraints,
+)
+from src.backend_v2.settings.validation import (
+    validate_book_setting_payload,
+    validate_setting_payload,
 )
 from src.backend_v2.storage.schema import (
     app_settings,
@@ -162,6 +164,7 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
+                    app_settings.c.schema_version,
                 ).where(app_settings.c.domain == "translation")
             ).mappings().one_or_none()
             chapter_row = connection.execute(
@@ -200,16 +203,24 @@ class SettingsResolver:
                 for row in raw_provider_rows
             }
 
-        global_settings = (
-            _object(json.loads(app_row["payload_json"])) if app_row else {}
+        if app_row is None:
+            raise ValueError("translation settings are missing")
+        if constraint_row is None:
+            raise ValueError("translation constraints are missing")
+        global_settings = validate_setting_payload(
+            "translation",
+            json.loads(app_row["payload_json"]),
+            schema_version=int(app_row["schema_version"]),
         )
         chapter_memory = _object(json.loads(chapter_row["settings_memory_json"]))
         constraints = validate_translation_constraints(
             json.loads(constraint_row["payload_json"])
-            if constraint_row
-            else empty_translation_constraints()
         )
-        effective = _deep_merge(global_settings, chapter_memory)
+        effective = validate_setting_payload(
+            "translation",
+            _deep_merge(global_settings, chapter_memory),
+            schema_version=int(app_row["schema_version"]),
+        )
         mode = str(command.get("mode", "standard"))
 
         proofreading = _object(effective.get("proofreading"))
@@ -284,7 +295,6 @@ class SettingsResolver:
                 )
             )
 
-        text_style = _object(effective.get("textStyle"))
         box_expand = _object(effective.get("boxExpand"))
         detector = {
             "detector_type": effective.get("textDetector", "default"),
@@ -320,11 +330,7 @@ class SettingsResolver:
         ocr = self._ocr_section(effective, provider_rows)
         precise_mask = _object(effective.get("preciseMask"))
         parallel = _object(effective.get("parallel"))
-        method = str(text_style.get("inpaintMethod", "solid"))
         inpainting = {
-            "method": "solid" if method == "solid" else "lama",
-            "lama_model": "litelama" if method == "litelama" else "lama_mpe",
-            "fill_color": text_style.get("fillColor", "#FFFFFF"),
             "mask_dilate_size": precise_mask.get("dilateSize", 10),
             "mask_box_expand_ratio": precise_mask.get("boxExpandRatio", 20),
         }
@@ -358,24 +364,22 @@ class SettingsResolver:
             "render": {},
             "translationConstraints": constraints,
             "translationConstraintRevision": (
-                int(constraint_row["revision"]) if constraint_row else 0
+                int(constraint_row["revision"])
             ),
             "translationConstraintSchemaVersion": (
                 int(constraint_row["schema_version"])
-                if constraint_row
-                else TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
             ),
             "skipCompleted": bool(command.get("skipCompleted", False)),
             "reuseExistingBubbles": bool(
                 command.get("reuseExistingBubbles", False)
             ),
             "settingsSnapshot": {
-                "appRevision": int(app_row["revision"]) if app_row else 0,
+                "appRevision": int(app_row["revision"]),
                 "chapterMemoryRevision": int(
                     chapter_row["settings_memory_revision"]
                 ),
                 "translationConstraintRevision": (
-                    int(constraint_row["revision"]) if constraint_row else 0
+                    int(constraint_row["revision"])
                 ),
                 "providerRevision": next(iter(provider_revisions.values()), 0),
                 "providerRevisions": provider_revisions,
@@ -446,6 +450,7 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
+                    app_settings.c.schema_version,
                 ).where(app_settings.c.domain == "web_import")
             ).mappings().one_or_none()
             raw_provider_rows = connection.execute(
@@ -474,7 +479,13 @@ class SettingsResolver:
                 for row in raw_provider_rows
             }
 
-        effective = _object(json.loads(app_row["payload_json"])) if app_row else {}
+        if app_row is None:
+            raise ValueError("web_import settings are missing")
+        effective = validate_setting_payload(
+            "web_import",
+            json.loads(app_row["payload_json"]),
+            schema_version=int(app_row["schema_version"]),
+        )
         download = _object(effective.get("download"))
         extraction = _object(effective.get("extraction"))
         agent_selected = _object(effective.get("agent"))
@@ -515,7 +526,7 @@ class SettingsResolver:
                 _object(effective.get("advanced")).get("bypassProxy", False)
             ),
             "settingsSnapshot": {
-                "appRevision": int(app_row["revision"]) if app_row else 0,
+                "appRevision": int(app_row["revision"]),
                 "agentProviderRevision": int(
                     provider_rows.get(
                         (
@@ -567,6 +578,7 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
+                    app_settings.c.schema_version,
                 ).where(app_settings.c.domain == "insight")
             ).mappings().one_or_none()
             book_row = connection.execute(
@@ -607,11 +619,20 @@ class SettingsResolver:
                 ).mappings()
             )
 
-        global_settings = (
-            _object(json.loads(app_row["payload_json"])) if app_row else {}
+        if app_row is None:
+            raise ValueError("insight settings are missing")
+        global_settings = validate_setting_payload(
+            "insight",
+            json.loads(app_row["payload_json"]),
+            schema_version=int(app_row["schema_version"]),
         )
         per_book = (
-            _object(json.loads(book_row["payload_json"])) if book_row else {}
+            validate_book_setting_payload(
+                "insight",
+                json.loads(book_row["payload_json"]),
+            )
+            if book_row
+            else {}
         )
         effective = _deep_merge(global_settings, per_book)
         selected_prompts = _object(effective.get("prompts"))
@@ -630,7 +651,9 @@ class SettingsResolver:
                 else factory_by_type.get(prompt_type)
             )
             if row is None:
-                continue
+                raise ValueError(
+                    f"Insight prompt is missing for type {prompt_type}"
+                )
             frozen_prompts[prompt_type] = {
                 "promptId": str(row["id"]),
                 "revision": int(row["revision"]),
@@ -668,9 +691,15 @@ class SettingsResolver:
         if not 0 <= context_batch_count <= 10:
             raise ValueError("Insight contextBatchCount must be between 0 and 10")
 
+        vlm_section = provider("insight_vlm", "vlm")
+        chat_settings = _object(effective.get("chat"))
         sections = {
-            "vlm": provider("insight_vlm", "vlm"),
-            "chat": provider("insight_chat", "chat"),
+            "vlm": vlm_section,
+            "chat": (
+                deepcopy(vlm_section)
+                if bool(chat_settings.get("useSameAsVlm"))
+                else provider("insight_chat", "chat")
+            ),
             "embedding": provider("insight_embedding", "embedding"),
             "reranker": provider("insight_reranker", "reranker"),
             "imageGen": provider("insight_image_gen", "imageGen"),
@@ -707,7 +736,7 @@ class SettingsResolver:
                 effective.get("maxSourceBytes", 100 * 1024 * 1024)
             ),
             "settingsSnapshot": {
-                "appRevision": int(app_row["revision"]) if app_row else 0,
+                "appRevision": int(app_row["revision"]),
                 "bookRevision": int(book_row["revision"]) if book_row else 0,
                 "providerRevisions": provider_revisions,
             },

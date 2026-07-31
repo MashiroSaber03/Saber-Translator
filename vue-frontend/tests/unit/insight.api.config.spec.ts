@@ -20,7 +20,21 @@ vi.mock('@/api/client', () => {
 const settingsDocument = {
   settings: [{
     domain: 'insight',
-    payload: { vlm: { provider: 'gemini' } },
+    payload: {
+      analysis: {
+        batch: {
+          pagesPerBatch: 5,
+          contextBatchCount: 3,
+          architecturePreset: 'standard',
+          customLayers: [],
+        },
+      },
+      vlm: { provider: 'gemini' },
+      chat: { provider: 'gemini', useSameAsVlm: false },
+      embedding: { provider: 'openai' },
+      reranker: { provider: 'jina' },
+      imageGen: { provider: 'gpt2api' },
+    },
     revision: 3,
     schemaVersion: 1,
   }],
@@ -88,6 +102,27 @@ describe('insight v2 settings ownership', () => {
     expect(getMock).toHaveBeenCalledWith('/api/v2/prompts', { params: {} })
   })
 
+  it('rejects an incomplete backend Insight fact instead of applying browser defaults', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/api/v2/settings') {
+        return Promise.resolve({
+          ...settingsDocument,
+          settings: [{
+            domain: 'insight',
+            payload: {},
+            revision: 3,
+            schemaVersion: 1,
+          }],
+        })
+      }
+      if (url === '/api/v2/prompts') return Promise.resolve({ items: [] })
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const { getGlobalConfig } = await import('@/api/insight')
+
+    await expect(getGlobalConfig()).rejects.toThrow('Insight 设置字段不完整')
+  })
+
   it('saves configuration atomically with CAS revisions and a credential edit', async () => {
     const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
     await getGlobalConfig()
@@ -125,5 +160,62 @@ describe('insight v2 settings ownership', () => {
       }),
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
+  })
+
+  it('only sends OpenAI execution options for Insight providers that own them', async () => {
+    const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
+    await getGlobalConfig()
+
+    await saveGlobalConfig({
+      vlm: {
+        provider: 'siliconflow',
+        model: 'vlm-model',
+        openai_options: {
+          request: { force_json_output: true },
+          execution: {
+            use_stream: false,
+            rpm_limit: 30,
+            transport_retries: 2,
+            business_retries: 1,
+          },
+        },
+      },
+      chat_llm: {
+        provider: 'siliconflow',
+        model: 'chat-model',
+        openai_options: {
+          request: { force_json_output: false },
+          execution: {
+            use_stream: true,
+            rpm_limit: 60,
+            transport_retries: 3,
+            business_retries: 2,
+          },
+        },
+      },
+      embedding: {
+        provider: 'siliconflow',
+        model: 'embedding-model',
+      },
+      reranker: {
+        provider: 'siliconflow',
+        model: 'reranker-model',
+      },
+    })
+
+    const request = putMock.mock.calls.at(-1)?.[1] as {
+      providerSettings: Array<{
+        domain: string
+        payload: Record<string, unknown>
+      }>
+    }
+    const byDomain = Object.fromEntries(
+      request.providerSettings.map(row => [row.domain, row.payload]),
+    )
+
+    expect(byDomain.insight_vlm).toHaveProperty('openaiOptions')
+    expect(byDomain.insight_chat).toHaveProperty('openaiOptions')
+    expect(byDomain.insight_embedding).not.toHaveProperty('openaiOptions')
+    expect(byDomain.insight_reranker).not.toHaveProperty('openaiOptions')
   })
 })

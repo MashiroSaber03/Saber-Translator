@@ -48,6 +48,7 @@ describe('ReaderControls', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     localStorage.clear()
+    document.querySelectorAll('.reader-canvas__stream').forEach(element => element.remove())
     document.documentElement.style.removeProperty('--reader-page-background')
     document.documentElement.style.removeProperty('--reader-image-width')
     document.documentElement.style.removeProperty('--reader-gap')
@@ -106,6 +107,45 @@ describe('ReaderControls', () => {
     expect(document.documentElement.style.getPropertyValue('--reader-image-width')).toBe('80%')
     expect(document.documentElement.style.getPropertyValue('--reader-gap')).toBe('12px')
     expect(document.documentElement.style.getPropertyValue('--reader-page-background')).toBe('#ffffff')
+  })
+
+  it('tracks and scrolls the virtual page stream instead of the window', async () => {
+    const stream = document.createElement('div')
+    stream.className = 'reader-canvas__stream'
+    Object.defineProperty(stream, 'scrollTop', {
+      configurable: true,
+      value: 0,
+      writable: true,
+    })
+    Object.defineProperty(stream, 'scrollHeight', {
+      configurable: true,
+      value: 4000,
+    })
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      stream.scrollTop = Number(options.top ?? 0)
+      stream.dispatchEvent(new Event('scroll'))
+    })
+    stream.scrollTo = scrollTo
+    document.body.appendChild(stream)
+
+    const wrapper = mountControls()
+    await nextTick()
+
+    stream.scrollTop = 800
+    stream.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(wrapper.get('.reader-controls__scroll-top-layer').isVisible()).toBe(true)
+
+    const scrollTopButton = wrapper.findAllComponents(UiIconButton)
+      .find(item => item.props('label') === '回到顶部')
+    await scrollTopButton!.trigger('click')
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'smooth' })
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }))
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 4000, behavior: 'smooth' })
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home' }))
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'smooth' })
   })
 
   it('renders reader settings fields through the shared settings field primitive', async () => {

@@ -16,6 +16,7 @@ import {
   getInsightBootstrap,
   getInsightOverview,
   getInsightPage,
+  getInsightQaStatus,
   getInsightTimeline,
   insightCurrentExportUrl,
   insightPageExportUrl,
@@ -24,6 +25,7 @@ import {
   listAllInsightPages,
   listInsightChapters,
   rebuildInsightOverview,
+  rebuildInsightCompressedContext,
   rebuildInsightTimeline,
   rebuildInsightVectors,
   updateInsightNote,
@@ -269,6 +271,21 @@ export interface RebuildEmbeddingsResponse {
   status?: string
   message?: string
   error?: string
+}
+
+export interface QAStatusResponse {
+  available: boolean
+  coverage?: {
+    events: number
+    pages: number
+  }
+  generation?: number
+  reason: string | null
+  repairAction?:
+    | 'analyze'
+    | 'vector_rebuild'
+    | 'overview_rebuild'
+    | 'compressed_context_rebuild'
 }
 
 export interface GlobalConfigResponse {
@@ -783,6 +800,25 @@ export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddin
   }
 }
 
+export function getQAStatus(
+  bookId: string,
+  mode: 'precise' | 'global' = 'precise',
+): Promise<QAStatusResponse> {
+  return getInsightQaStatus(bookId, mode === 'global' ? 'global' : 'exact')
+}
+
+export async function rebuildCompressedContext(
+  bookId: string,
+): Promise<RebuildEmbeddingsResponse> {
+  const accepted = await rebuildInsightCompressedContext(bookId)
+  return {
+    success: true,
+    task_id: accepted.jobIds[0],
+    status: accepted.status,
+    message: '压缩上下文重建已进入任务中心',
+  }
+}
+
 function noteMetadata(note: NoteData): Record<string, unknown> {
   const text = [
     note.comment,
@@ -946,6 +982,29 @@ function providerSettingsWire(document: V2SettingsDocument): AnalysisConfig['pro
   )
 }
 
+function requireInsightAppPayload(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('后端 Insight 设置格式无效')
+  }
+  const payload = value as Record<string, unknown>
+  const required = ['analysis', 'vlm', 'chat', 'embedding', 'reranker', 'imageGen']
+  if (
+    Object.keys(payload).length !== required.length
+    || required.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
+  ) {
+    throw new Error('后端 Insight 设置字段不完整')
+  }
+  const analysis = payload.analysis
+  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
+    throw new Error('后端 Insight 分析设置格式无效')
+  }
+  const batch = (analysis as Record<string, unknown>).batch
+  if (!batch || typeof batch !== 'object' || Array.isArray(batch)) {
+    throw new Error('后端 Insight 批量设置格式无效')
+  }
+  return payload
+}
+
 export function hasInsightCredential(domain: string, provider: string): boolean {
   return credentialSummaries.some(
     row => row.domain === domain && row.provider === provider && row.hasKey,
@@ -960,7 +1019,9 @@ export async function getGlobalConfig(): Promise<GlobalConfigResponse> {
   settingsDocument = document
   credentialSummaries = document.credentials
   promptCache = prompts
-  const app = document.settings.find(row => row.domain === 'insight')?.payload ?? {}
+  const appEntry = document.settings.find(row => row.domain === 'insight')
+  if (!appEntry) throw new Error('后端 Insight 设置缺失')
+  const app = requireInsightAppPayload(appEntry.payload)
   const section = (
     key: keyof typeof SECTION_DOMAINS,
     appKey: string = key,
@@ -1010,7 +1071,9 @@ function providerPayload(section: Record<string, unknown>): Record<string, unkno
   return {
     modelName: String(section.model ?? ''),
     customBaseUrl: String(section.base_url ?? ''),
-    openaiOptions: section.openai_options ?? {},
+    ...(section.openai_options && typeof section.openai_options === 'object'
+      ? { openaiOptions: section.openai_options }
+      : {}),
     imageMaxSize: section.image_max_size,
     rpmLimit: section.rpm_limit,
     topK: section.top_k,
@@ -1025,6 +1088,7 @@ export async function saveGlobalConfig(config: AnalysisConfig): Promise<ApiRespo
   settingsDocument = document
   credentialSummaries = document.credentials
   const currentApp = document.settings.find(row => row.domain === 'insight')
+  if (!currentApp) throw new Error('后端 Insight 设置缺失')
   const providerSettings: V2ProviderSettingMutation[] = []
   const credentialEdits: V2CredentialEdit[] = []
   const sections = [
@@ -1102,7 +1166,7 @@ export async function saveGlobalConfig(config: AnalysisConfig): Promise<ApiRespo
     settings: [{
       domain: 'insight',
       payload: appPayload,
-      baseRevision: currentApp?.revision ?? 0,
+      baseRevision: currentApp.revision,
       schemaVersion: 1,
     }],
     providerSettings,

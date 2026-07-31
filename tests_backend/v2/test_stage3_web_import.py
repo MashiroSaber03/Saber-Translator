@@ -170,20 +170,43 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
             SettingMutation(
                 domain="web_import",
                 payload={
+                    "firecrawl": {},
                     "agent": {
                         "provider": "custom",
+                        "customBaseUrl": "https://agent.example/v1",
+                        "modelName": "agent-model",
                         "useStream": False,
                         "forceJsonOutput": True,
                         "maxRetries": 2,
                         "timeout": 60,
                     },
                     "download": {
+                        "concurrency": 4,
                         "timeout": 30,
                         "retries": 2,
                         "delay": 0,
                         "useReferer": True,
                     },
                     "extraction": {"prompt": "extract", "maxIterations": 4},
+                    "imagePreprocess": {
+                        "enabled": False,
+                        "autoRotate": True,
+                        "compression": {
+                            "enabled": False,
+                            "quality": 85,
+                            "maxWidth": 0,
+                            "maxHeight": 0,
+                        },
+                        "formatConvert": {
+                            "enabled": False,
+                            "targetFormat": "original",
+                        },
+                    },
+                    "advanced": {"bypassProxy": False},
+                    "ui": {
+                        "showAgentLogs": True,
+                        "autoImport": False,
+                    },
                 },
                 base_revision=1,
             ),

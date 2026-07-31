@@ -109,6 +109,17 @@ export const PADDLEOCR_VL_LANG_MAP: Record<string, string> = {
   hebrew: '希伯来语',
 }
 
+export function inferPaddleOcrVlPromptLanguage(
+  prompt: string,
+  fallback = 'japanese',
+): string {
+  const normalizedPrompt = prompt.trim()
+  const matched = Object.entries(PADDLEOCR_VL_LANG_MAP).find(
+    ([, languageName]) => normalizedPrompt === getPaddleOcrVlPrompt(languageName),
+  )
+  return matched?.[0] ?? fallback
+}
+
 export const DEFAULT_HQ_TRANSLATE_PROMPT = `你是一个漫画翻译助手。我会同时提供多张连续的漫画原图和对应的JSON翻译文件，请帮我将原文翻译成中文。
 
 【关键要求 - 必须严格遵守】

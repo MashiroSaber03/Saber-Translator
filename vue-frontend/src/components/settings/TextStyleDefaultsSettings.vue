@@ -217,7 +217,6 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
-  BUILTIN_FONTS,
   clampLineSpacing,
   getFontDisplayName,
   inpaintMethodOptions,
@@ -243,10 +242,14 @@ const fontSelectOptions = computed(() => {
     value: font.id,
   }))
   const known = new Set(backendOptions.map(option => option.value))
-  const legacyOptions = BUILTIN_FONTS
-    .filter(font => !known.has(font))
-    .map(font => ({ label: getFontDisplayName(font), value: font }))
-  const options = [...backendOptions, ...legacyOptions]
+  const options = [...backendOptions]
+  const currentFont = draftDefaults.value.fontFamily
+  if (currentFont && !known.has(currentFont)) {
+    options.unshift({
+      label: getFontDisplayName(currentFont),
+      value: currentFont,
+    })
+  }
   options.push({ label: '自定义字体...', value: 'custom-font' })
   return options
 })
@@ -254,6 +257,10 @@ const fontSelectOptions = computed(() => {
 async function loadFontList(): Promise<void> {
   try {
     fontList.value = await listV2Fonts()
+    settingsStore.hydrateResourceCatalogs(
+      fontList.value,
+      settingsStore.promptCatalog,
+    )
   } catch {
     fontList.value = []
   }

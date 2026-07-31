@@ -78,6 +78,7 @@
               :document="store.currentDocument"
               :session="store.activeChatSession"
               :archived-sessions="store.archivedChatSessions"
+              :available-greetings="store.availableChatGreetings"
               :prompt-preview="store.chatPromptPreview"
               :prompt-preview-error="store.chatPromptPreviewError"
               :active-tab="store.activeWorkspaceTab"

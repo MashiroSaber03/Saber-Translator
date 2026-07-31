@@ -7,6 +7,19 @@ export interface JobBatchProjection {
   jobs: V2Job[]
 }
 
+export interface JobProgressCounts {
+  completed: number
+  total: number
+}
+
+export interface JobPoolProjection {
+  kind: string
+  waiting: number
+  processing: number
+  completed: number
+  lockWaiting: boolean
+}
+
 export function groupJobsByBatch(jobs: V2Job[]): JobBatchProjection[] {
   const groups = new Map<string, JobBatchProjection>()
   for (const job of jobs) {
@@ -58,10 +71,81 @@ export function describeJobTarget(job: V2Job): string {
 }
 
 export function progressPercent(job: V2Job): number {
+  const counts = progressCounts(job)
+  if (counts.total <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round(counts.completed / counts.total * 100)))
+}
+
+export function progressCounts(job: V2Job): JobProgressCounts {
   const progress = job.progress as Record<string, unknown>
-  const total = Number(progress.totalItems || 0)
-  const completed = Number(progress.completedItems || 0)
-  const failed = Number(progress.failedItems || 0)
-  if (!Number.isFinite(total) || total <= 0) return 0
-  return Math.max(0, Math.min(100, Math.round(((completed + failed) / total) * 100)))
+  const finiteCount = (value: unknown): number => {
+    const count = Number(value)
+    return Number.isFinite(count) && count > 0 ? count : 0
+  }
+  const total = finiteCount(progress.totalItems)
+  const completed = (
+    finiteCount(progress.completedItems)
+    + finiteCount(progress.failedItems)
+    + finiteCount(progress.skippedItems)
+    + finiteCount(progress.cancelledItems)
+  )
+  return {
+    completed: Math.min(completed, total),
+    total,
+  }
+}
+
+export function batchProgressCounts(jobs: V2Job[]): JobProgressCounts {
+  return jobs.reduce<JobProgressCounts>(
+    (summary, job) => {
+      const counts = progressCounts(job)
+      summary.completed += counts.completed
+      summary.total += counts.total
+      return summary
+    },
+    { completed: 0, total: 0 },
+  )
+}
+
+export function batchStatusCounts(jobs: V2Job[]): Array<[V2Job['status'], number]> {
+  const counts = new Map<V2Job['status'], number>()
+  for (const job of jobs) counts.set(job.status, (counts.get(job.status) ?? 0) + 1)
+  return [...counts]
+}
+
+export function currentStepLabel(job: V2Job): string {
+  const progress = job.progress as Record<string, unknown>
+  const current = progress.currentStep
+  if (!current || typeof current !== 'object' || Array.isArray(current)) return ''
+  const step = current as Record<string, unknown>
+  const kind = typeof step.kind === 'string' ? step.kind : ''
+  const ordinal = Number(step.itemOrdinal)
+  const page = typeof step.pageId === 'string' ? step.pageId.slice(0, 8) : ''
+  const target = Number.isInteger(ordinal) && ordinal > 0
+    ? `第 ${ordinal} 项`
+    : page
+      ? `页面 ${page}`
+      : ''
+  return [target, kind].filter(Boolean).join(' · ')
+}
+
+export function poolProgress(job: V2Job): JobPoolProjection[] {
+  const progress = job.progress as Record<string, unknown>
+  if (progress.executionMode !== 'parallel' || !Array.isArray(progress.pools)) return []
+  const count = (value: unknown): number => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+  }
+  return progress.pools.flatMap((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    const pool = value as Record<string, unknown>
+    if (typeof pool.kind !== 'string' || !pool.kind) return []
+    return [{
+      kind: pool.kind,
+      waiting: count(pool.waiting),
+      processing: count(pool.processing),
+      completed: count(pool.completed),
+      lockWaiting: Boolean(pool.lockWaiting),
+    }]
+  })
 }

@@ -477,6 +477,38 @@ describe('characterStudioStore', () => {
     expect(store.currentDocument?.identity.name).toBe('阿尔法')
   })
 
+  it('restores persisted diagnostics and invalidates them on document edits', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    const diagnosedDocument = deepClone(demoDocument) as CharacterStudioDocument
+    diagnosedDocument.status.last_diagnostics = {
+      valid: true,
+      errors: [],
+      warnings: ['待确认'],
+      checks: { document: true },
+    }
+    diagnosedDocument.status.last_validated_at = '2026-07-01T00:00:00Z'
+    getCharacterStudioDocumentMock.mockResolvedValueOnce({
+      success: true,
+      document: diagnosedDocument,
+    })
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    expect(store.diagnostics).toEqual(diagnosedDocument.status.last_diagnostics)
+
+    store.updateCurrentDocument({
+      ...store.currentDocument!,
+      identity: {
+        ...store.currentDocument!.identity,
+        description: '诊断后发生编辑',
+      },
+    })
+    expect(store.diagnostics).toBeNull()
+    expect(store.currentDocument?.status.last_diagnostics).toBeNull()
+    expect(store.currentDocument?.status.last_validated_at).toBeNull()
+  })
+
   it('ignores stale workspace responses after a newer book load starts', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()

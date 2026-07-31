@@ -12,7 +12,7 @@ export function buildCharacterStudioGreetingOptions(
   const firstMessage = String(document.coreMessages.first_message || '').trim()
   if (firstMessage) {
     greetings.push({
-      greeting_id: 'first_message',
+      greeting_id: 'first',
       label: '主问候',
       content: firstMessage,
       source: { type: 'first_message', index: 0 },
@@ -23,10 +23,10 @@ export function buildCharacterStudioGreetingOptions(
     const content = String(item || '').trim()
     if (!content) continue
     greetings.push({
-      greeting_id: `alternate_${index + 1}`,
+      greeting_id: `alternate-${index}`,
       label: `备用问候 ${index + 1}`,
       content,
-      source: { type: 'alternate_greetings', index },
+      source: { type: 'alternate_greeting', index },
     })
   }
 

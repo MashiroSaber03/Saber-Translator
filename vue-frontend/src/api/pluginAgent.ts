@@ -329,6 +329,7 @@ export async function subscribePluginAgentEvents(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/events?after=${cursor}&limit=200`,
       { signal: options.signal },
     )
+    let sawPluginTerminal = false
     for (const event of response.items) {
       jobEventCursors.set(
         sessionId,
@@ -337,11 +338,32 @@ export async function subscribePluginAgentEvents(
           event.eventId,
         ),
       )
-      if (!event.type.startsWith('plugin_agent_')) continue
+      if (event.type.startsWith('plugin_agent_')) {
+        const type = event.type.slice('plugin_agent_'.length)
+        sawPluginTerminal ||= type === 'done' || type === 'error'
+        options.onEvent({
+          id: event.eventId,
+          type,
+          payload: event.payload,
+          timestamp: event.createdAt,
+        })
+        continue
+      }
+      if (event.type !== 'job_finished' || sawPluginTerminal) continue
+      const status = String(event.payload.status || event.payload.to || '')
+      const runState = status === 'cancelled' ? 'cancelled' : 'failed'
+      if (!['cancelled', 'completed_with_errors', 'failed', 'interrupted'].includes(status)) {
+        continue
+      }
       options.onEvent({
         id: event.eventId,
-        type: event.type.slice('plugin_agent_'.length),
-        payload: event.payload,
+        type: 'error',
+        payload: {
+          run_state: runState,
+          message: status === 'cancelled'
+            ? '插件 Agent 任务已取消'
+            : '插件 Agent 执行未成功，请在任务中心查看错误详情',
+        },
         timestamp: event.createdAt,
       })
     }

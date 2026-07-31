@@ -35,6 +35,63 @@ describe('useSettingsStore backend-first loading', () => {
     expect(store.backendError).toContain('后端设置尚未加载')
   })
 
+  it('rejects a backend document without the authoritative text-style defaults domain', async () => {
+    const settings = createDefaultSettings()
+    settingsApiMocks.getV2Settings.mockResolvedValue({
+      settings: [{
+        domain: 'translation',
+        revision: 0,
+        schemaVersion: 3,
+        payload: {
+          ...settings,
+          textStyle: {
+            ...settings.textStyle,
+            textColor: '#FA0000',
+            useAutoTextColor: true,
+          },
+        },
+      }],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
+
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(false)
+    expect(store.isBackendReady).toBe(false)
+    expect(store.backendError).toContain('文字样式默认设置缺失')
+    expect(store.settings.textStyle).toEqual(createDefaultSettings().textStyle)
+  })
+
+  it('rejects a partial text-style defaults fact instead of filling missing fields in the browser', async () => {
+    const settings = createDefaultSettings()
+    const { useAutoTextColor: _missing, ...partialTextStyle } = settings.textStyle
+    settingsApiMocks.getV2Settings.mockResolvedValue({
+      settings: [
+        {
+          domain: 'translation',
+          revision: 0,
+          schemaVersion: 3,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 0,
+          schemaVersion: 1,
+          payload: partialTextStyle,
+        },
+      ],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
+
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(false)
+    expect(store.backendError).toContain('fields are incomplete')
+    expect(store.settings.textStyle.useAutoTextColor).toBe(false)
+  })
+
   it('loads provider memory without hydrating stored secrets into the browser', async () => {
     const settings = createDefaultSettings()
     settings.translation = {
@@ -45,12 +102,20 @@ describe('useSettingsStore backend-first loading', () => {
       customBaseUrl: 'https://translation.example.com/v1',
     }
     settingsApiMocks.getV2Settings.mockResolvedValue({
-      settings: [{
-        domain: 'translation',
-        revision: 4,
-        schemaVersion: 3,
-        payload: settings,
-      }],
+      settings: [
+        {
+          domain: 'translation',
+          revision: 4,
+          schemaVersion: 3,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 0,
+          schemaVersion: 1,
+          payload: settings.textStyle,
+        },
+      ],
       bookSettings: [],
       providerSettings: [{
         domain: 'translation',
@@ -94,12 +159,20 @@ describe('useSettingsStore backend-first loading', () => {
       modelName: 'deepseek-chat',
     }
     const initialDocument = {
-      settings: [{
-        domain: 'translation',
-        revision: 0,
-        schemaVersion: 3,
-        payload: initialSettings,
-      }],
+      settings: [
+        {
+          domain: 'translation',
+          revision: 0,
+          schemaVersion: 3,
+          payload: initialSettings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 0,
+          schemaVersion: 1,
+          payload: initialSettings.textStyle,
+        },
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
@@ -112,12 +185,20 @@ describe('useSettingsStore backend-first loading', () => {
       modelName: 'deepseek-chat',
     }
     const persistedDocument = {
-      settings: [{
-        domain: 'translation',
-        revision: 1,
-        schemaVersion: 3,
-        payload: persistedSettings,
-      }],
+      settings: [
+        {
+          domain: 'translation',
+          revision: 1,
+          schemaVersion: 3,
+          payload: persistedSettings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 0,
+          schemaVersion: 1,
+          payload: persistedSettings.textStyle,
+        },
+      ],
       bookSettings: [],
       providerSettings: [{
         domain: 'translation',
@@ -181,23 +262,39 @@ describe('useSettingsStore backend-first loading', () => {
     persistedSettings.parallel.deepLearningLockSize = 2
     settingsApiMocks.getV2Settings
       .mockResolvedValueOnce({
-        settings: [{
-          domain: 'translation',
-          revision: 0,
-          schemaVersion: 3,
-          payload: initialSettings,
-        }],
+        settings: [
+          {
+            domain: 'translation',
+            revision: 0,
+            schemaVersion: 3,
+            payload: initialSettings,
+          },
+          {
+            domain: 'text_style_defaults',
+            revision: 0,
+            schemaVersion: 1,
+            payload: initialSettings.textStyle,
+          },
+        ],
         bookSettings: [],
         providerSettings: [],
         credentials: [],
       })
       .mockResolvedValueOnce({
-        settings: [{
-          domain: 'translation',
-          revision: 1,
-          schemaVersion: 3,
-          payload: persistedSettings,
-        }],
+        settings: [
+          {
+            domain: 'translation',
+            revision: 1,
+            schemaVersion: 3,
+            payload: persistedSettings,
+          },
+          {
+            domain: 'text_style_defaults',
+            revision: 0,
+            schemaVersion: 1,
+            payload: persistedSettings.textStyle,
+          },
+        ],
         bookSettings: [],
         providerSettings: [],
         credentials: [],
@@ -258,14 +355,25 @@ describe('useSettingsStore backend-first loading', () => {
     expect(await store.loadFromBackend()).toBe(true)
     expect(store.hydrateChapterWorkState('chapter-1', {})).toBe(true)
 
-    store.updateTextStyle({
-      inpaintMethod: 'lama_mpe',
-      layoutDirection: 'horizontal',
-    })
+    const currentPageStyle = {
+      autoFontSize: false,
+      fillColor: '#102030',
+      fontFamily: 'page-font-id',
+      fontSize: 41,
+      inpaintMethod: 'lama_mpe' as const,
+      layoutDirection: 'horizontal' as const,
+      lineSpacing: 1.7,
+      strokeColor: '#405060',
+      strokeEnabled: false,
+      strokeWidth: 5,
+      textAlign: 'end' as const,
+      textColor: '#708090',
+      useAutoTextColor: false,
+    }
+    store.updateTextStyle(currentPageStyle)
     expect(await store.loadFromBackend()).toBe(true)
 
-    expect(store.settings.textStyle.inpaintMethod).toBe('lama_mpe')
-    expect(store.settings.textStyle.layoutDirection).toBe('horizontal')
+    expect(store.settings.textStyle).toEqual(currentPageStyle)
     expect(store.textStyleDefaults.inpaintMethod).toBe('solid')
     expect(store.textStyleDefaults.layoutDirection).toBe('auto')
   })
@@ -317,18 +425,26 @@ describe('useSettingsStore backend-first loading', () => {
       (entry: { domain: string }) => entry.domain === 'translation',
     )
     expect(textDefaultsMutation.payload.inpaintMethod).toBe('litelama')
-    expect(translationMutation.payload.textStyle.inpaintMethod).toBe('litelama')
+    expect(translationMutation.payload).not.toHaveProperty('textStyle')
   })
 
   it('does not submit a partial Baidu OCR credential replacement', async () => {
     const settings = createDefaultSettings()
     settingsApiMocks.getV2Settings.mockResolvedValue({
-      settings: [{
-        domain: 'translation',
-        revision: 0,
-        schemaVersion: 3,
-        payload: settings,
-      }],
+      settings: [
+        {
+          domain: 'translation',
+          revision: 0,
+          schemaVersion: 3,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 0,
+          schemaVersion: 1,
+          payload: settings.textStyle,
+        },
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],

@@ -66,7 +66,7 @@ describe('useTranslationPipeline', () => {
     mocks.getPageDocument.mockResolvedValue({
       pageId: 'page-1',
       documentRevision: 2,
-      defaultFontId: null,
+      defaultFontId: 'font-default',
       pageStyleDefaults: {},
       bubbles: [],
     })
@@ -148,7 +148,7 @@ describe('useTranslationPipeline', () => {
     mocks.getPageDocument.mockResolvedValue({
       pageId: 'page-1',
       documentRevision: 2,
-      defaultFontId: null,
+      defaultFontId: 'font-default',
       pageStyleDefaults: {},
       bubbles: [{
         bubbleId: 'bubble-1',

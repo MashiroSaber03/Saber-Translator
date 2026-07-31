@@ -22,12 +22,20 @@ function settingsDocument(
   revision = 8,
 ): V2SettingsDocument {
   return {
-    settings: [{
-      domain: 'translation',
-      payload: settings as unknown as Record<string, unknown>,
-      revision,
-      schemaVersion: 3,
-    }],
+    settings: [
+      {
+        domain: 'translation',
+        payload: settings as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 3,
+      },
+      {
+        domain: 'text_style_defaults',
+        payload: settings.textStyle as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 1,
+      },
+    ],
     bookSettings: [],
     providerSettings: [],
     credentials: [],
@@ -136,6 +144,23 @@ describe('settings store current schema boundaries', () => {
     expect(proofreading.rounds[0]).toMatchObject({
       openaiOptions: { execution: { rpmLimit: 7 } },
     })
+    const proofreadingProvider = transaction.providerSettings?.find(
+      row => row.domain === 'proofreading_0',
+    )
+    expect(proofreadingProvider).toMatchObject({
+      domain: 'proofreading_0',
+      provider: 'siliconflow',
+      payload: {
+        modelName: 'proof-model',
+        customBaseUrl: '',
+        prompt: 'proof',
+        batchSize: 2,
+        openaiOptions: { execution: { rpmLimit: 7 } },
+      },
+    })
+    expect(proofreadingProvider?.payload).not.toHaveProperty('apiKey')
+    expect(proofreadingProvider?.payload).not.toHaveProperty('name')
+    expect(proofreadingProvider?.payload).not.toHaveProperty('provider')
   })
 
   it('keeps proofreading UI patches inside nested OpenAI options', () => {

@@ -231,7 +231,12 @@ def create_insight_blueprint(
         book_id = request.args.get("bookId", "")
         if not book_id:
             raise ValueError("bookId is required")
-        return jsonify(derived.qa_status(book_id=book_id))
+        return jsonify(
+            derived.qa_status(
+                book_id=book_id,
+                mode=request.args.get("mode", "exact"),
+            )
+        )
 
     @blueprint.post("/books/<book_id>/qa")
     def ask_question(book_id: str) -> Response:

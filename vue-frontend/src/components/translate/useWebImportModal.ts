@@ -11,6 +11,7 @@ import {
   testAgentConnection,
   testFirecrawlConnection,
   updateWebImportSelection,
+  type WebImportDraftAccepted,
 } from '@/api/v2/webImport'
 import { getTranslationBootstrap } from '@/api/v2/content'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
@@ -22,7 +23,11 @@ import { useAiModelDiscovery } from '@/composables/useAiModelDiscovery'
 import { fetchModels as fetchV2Models } from '@/api/v2/diagnostics'
 import type { WebImportSettingsActions } from './web-import/webImportSettingsActions'
 
-export function useWebImportModal() {
+export interface WebImportModalCallbacks {
+  onCommitAccepted?: (accepted: WebImportDraftAccepted) => void
+}
+
+export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const webImportStore = useWebImportStore()
   const route = useRoute()
 
@@ -327,7 +332,14 @@ export function useWebImportModal() {
         selectedIds,
       )
       activeDraftRevision.value = selection.revision
-      await commitWebImportDraft(activeDraftId.value, activeDraftRevision.value)
+      const accepted = await commitWebImportDraft(
+        activeDraftId.value,
+        activeDraftRevision.value,
+      )
+      if (!accepted.jobIds.length) {
+        throw new Error('后端没有返回网页导入任务')
+      }
+      callbacks.onCommitAccepted?.(accepted)
       webImportStore.setStatus('completed')
       showToast('入库任务已进入后端任务中心，可安全关闭页面', 'success')
       await handleClose()

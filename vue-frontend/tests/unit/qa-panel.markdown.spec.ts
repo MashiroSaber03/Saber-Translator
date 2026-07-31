@@ -9,11 +9,13 @@ import ProductComposer from '@/components/product/ProductComposer.vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
-const { sendChatMock } = vi.hoisted(() => ({
+const { getQAStatusMock, sendChatMock } = vi.hoisted(() => ({
+  getQAStatusMock: vi.fn(),
   sendChatMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
+  getQAStatus: getQAStatusMock,
   sendChat: sendChatMock,
   rebuildEmbeddings: vi.fn(),
 }))
@@ -35,6 +37,11 @@ describe('QAPanel Markdown rendering', () => {
     setActivePinia(pinia)
     const store = useInsightStore()
     store.currentBookId = 'book-1'
+    getQAStatusMock.mockReset()
+    getQAStatusMock.mockResolvedValue({
+      available: true,
+      reason: null,
+    })
     sendChatMock.mockReset()
   })
 
@@ -56,6 +63,7 @@ describe('QAPanel Markdown rendering', () => {
         plugins: [pinia],
       },
     })
+    await flushPromises()
 
     const composer = wrapper.getComponent(ProductComposer)
     await composer.get('textarea').setValue('这页发生了什么？')
@@ -118,6 +126,7 @@ describe('QAPanel Markdown rendering', () => {
         plugins: [pinia],
       },
     })
+    await flushPromises()
 
     const composer = wrapper.getComponent(ProductComposer)
     await composer.get('textarea').setValue('这页发生了什么？')

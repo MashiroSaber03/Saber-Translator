@@ -6,10 +6,11 @@ import uuid
 import zipfile
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
@@ -115,6 +116,43 @@ def test_container_import_and_export_are_worker_owned_and_durable(
     assert roles.count("source") == 2
     assert roles.count("thumbnail_source") == 2
 
+    storage = AssetStorageService(data_root, engine)
+    clean_assets = []
+    for index, page in enumerate(imported_pages):
+        clean_assets.append(
+            storage.publish_bytes(
+                _png((0, 0, 64 + index)),
+                extension="png",
+                mime_type="image/png",
+                width=32,
+                height=40,
+                bind=lambda connection, asset_id, page_id=page.id: connection.execute(
+                    insert(page_assets).values(
+                        page_id=page_id,
+                        role="clean",
+                        asset_id=asset_id,
+                        input_source_revision=1,
+                    )
+                ),
+            )
+        )
+    storage.publish_bytes(
+        _png((64, 0, 0)),
+        extension="png",
+        mime_type="image/png",
+        width=32,
+        height=40,
+        bind=lambda connection, asset_id: connection.execute(
+            insert(page_assets).values(
+                page_id=imported_pages[0].id,
+                role="translated",
+                asset_id=asset_id,
+                input_source_revision=1,
+                input_document_revision=1,
+            )
+        ),
+    )
+
     export = commands.create_export(
         chapter_id=str(chapter["id"]),
         export_format="cbz",
@@ -132,7 +170,6 @@ def test_container_import_and_export_are_worker_owned_and_durable(
     artifact_url = jobs.get_job(export_job_id)["artifacts"][0]["url"]
     assert artifact_url == f"/api/v2/assets/{artifact_id}"
 
-    from src.backend_v2.storage.assets import AssetStorageService
     from src.backend_v2.storage.schema import assets
 
     with engine.connect() as connection:
@@ -143,7 +180,7 @@ def test_container_import_and_export_are_worker_owned_and_durable(
         AssetStorageService(data_root, engine).resolve_relative_path(relative)
     ) as packaged:
         assert packaged.namelist() == [
-            "chapter/original_001.png",
-            "chapter/original_002.png",
+            "chapter/translated_001.png",
+            "chapter/clean_002.png",
         ]
     engine.dispose()

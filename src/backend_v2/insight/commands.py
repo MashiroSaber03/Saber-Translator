@@ -27,6 +27,12 @@ from src.backend_v2.storage.schema import (
     pages,
     jobs,
 )
+from src.shared.ai_providers import (
+    CHAT_CAPABILITY,
+    EMBEDDING_CAPABILITY,
+    VLM_CAPABILITY,
+    get_provider_manifest,
+)
 
 
 ANALYSIS_SCOPES = frozenset({"full", "incremental", "chapter", "page"})
@@ -88,6 +94,7 @@ class InsightAnalysisCommandService:
             book_id=book_id,
             command=normalized,
         )
+        validate_insight_job_requirements(config, scope=scope)
         config["runId"] = run_id
         config["bookId"] = book_id
         config["targetCount"] = len(targets)
@@ -348,3 +355,61 @@ def _scope_label(scope: str) -> str:
         "chapter": "章节分析",
         "page": "页面分析",
     }[scope]
+
+
+def validate_insight_job_requirements(
+    config: Mapping[str, Any],
+    *,
+    scope: str,
+) -> None:
+    """Reject incomplete model settings before admitting a durable run."""
+
+    _validate_provider_section(
+        config.get("vlm"),
+        capability=VLM_CAPABILITY,
+        label="漫画分析 VLM",
+    )
+    if scope == "full":
+        _validate_provider_section(
+            config.get("chat"),
+            capability=CHAT_CAPABILITY,
+            label="漫画分析 LLM",
+        )
+        _validate_provider_section(
+            config.get("embedding"),
+            capability=EMBEDDING_CAPABILITY,
+            label="漫画分析 Embedding",
+        )
+
+
+def _validate_provider_section(
+    value: object,
+    *,
+    capability: str,
+    label: str,
+) -> None:
+    section = dict(value) if isinstance(value, Mapping) else {}
+    provider = str(
+        section.get("provider", section.get("model_provider", ""))
+    ).strip()
+    if not provider:
+        raise ValueError(f"{label} 未选择服务商，请先在分析设置中完成配置")
+    manifest = get_provider_manifest(provider)
+    if capability not in manifest.capabilities:
+        raise ValueError(
+            f"{label} 服务商 {manifest.display_name} 不支持当前任务"
+        )
+    if manifest.requires_api_key and not section.get("credentialVersionId"):
+        raise ValueError(
+            f"{label} 缺少已保存的 API Key，请先在分析设置中填写并保存"
+        )
+    model_name = str(section.get("model_name", "")).strip()
+    if manifest.requires_model and not model_name:
+        raise ValueError(
+            f"{label} 缺少模型名称，请先在分析设置中填写并保存"
+        )
+    base_url = str(section.get("custom_base_url", "")).strip()
+    if manifest.requires_base_url and not base_url:
+        raise ValueError(
+            f"{label} 缺少 Base URL，请先在分析设置中填写并保存"
+        )

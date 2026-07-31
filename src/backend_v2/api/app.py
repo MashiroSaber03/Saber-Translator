@@ -38,6 +38,7 @@ class ApiRuntimeServices:
     executors: tuple[Any, ...] = ()
 
     def start(self) -> None:
+        self.job_events.start()
         for executor in self.executors:
             executor.start()
 
@@ -200,9 +201,13 @@ def create_api_app(settings: ApiSettings) -> Flask:
     from src.backend_v2.api.web import create_web_blueprint
     from src.backend_v2.api.system_routes import create_system_blueprint
     from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
+    from src.backend_v2.storage.epochs import ProcessEpochRepository
 
     engine = settings.engine or create_sqlite_engine(database_path_for(settings.data_root))
-    broadcaster = JobEventBroadcaster(JobQueueRepository(engine))
+    broadcaster = JobEventBroadcaster(
+        JobQueueRepository(engine),
+        epoch_repository=ProcessEpochRepository(engine),
+    )
     render_service = AuthoritativeRenderService(
         data_root=settings.data_root,
         engine=engine,

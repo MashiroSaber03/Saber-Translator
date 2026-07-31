@@ -90,7 +90,7 @@ function rebuildIntersectionObserver(): void {
     emit('visibleChange', props.items
       .filter(item => next.has(item.id))
       .map(item => item.id))
-  }, { root, rootMargin: '200% 0px 200% 0px' })
+  }, { root })
   root.querySelectorAll<HTMLElement>('[data-page-id]').forEach(element => {
     intersectionObserver?.observe(element)
   })
@@ -131,7 +131,10 @@ onBeforeUnmount(() => {
           :key="item.id"
           class="virtual-page-stream__page"
           :data-page-id="item.id"
-          :style="{ marginBlockEnd: `${gap}px` }"
+          :style="{
+            aspectRatio: `${Math.max(1, item.width)} / ${Math.max(1, item.height)}`,
+            marginBlockEnd: `${gap}px`,
+          }"
         >
           <img
             class="virtual-page-stream__image"

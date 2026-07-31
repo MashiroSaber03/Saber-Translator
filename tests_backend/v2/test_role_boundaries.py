@@ -11,9 +11,19 @@ from urllib.request import urlopen
 
 import psutil
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
-from src.backend_v2.launcher.entrypoint import _child_environment
+from src.backend_v2.launcher.entrypoint import (
+    API_HEALTH_CHECK_INTERVAL_SECONDS,
+    API_HEALTH_FAILURE_LIMIT,
+    MAX_CONSECUTIVE_RESTARTS,
+    RESTART_STABILITY_SECONDS,
+    ManagedChild,
+    _api_health_requires_restart,
+    _child_environment,
+    _reset_restart_count_after_stable_run,
+    _start_child_with_retries,
+)
 from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
@@ -21,6 +31,7 @@ from src.backend_v2.runtime_identity import (
     WORKER_EPOCH_TOKEN_ENV,
 )
 from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
+from src.backend_v2.storage.epochs import EpochRegistration
 from src.backend_v2.storage.schema import process_epochs
 
 
@@ -165,6 +176,133 @@ def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
         _child_environment(tmp_path, "renderer")
 
 
+def test_launcher_requires_repeated_api_health_failures_before_restart(
+    monkeypatch,
+) -> None:
+    registration = EpochRegistration(
+        epoch_id="api-epoch",
+        token="token",
+        role="api",
+        pid=123,
+    )
+    managed = ManagedChild(
+        role="api",
+        process=object(),  # type: ignore[arg-type]
+        registration=registration,
+        ready_at=0.0,
+        next_health_check_at=0.0,
+    )
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint._api_is_healthy",
+        lambda _port, *, expected_epoch_id: False,
+    )
+
+    for failure in range(1, API_HEALTH_FAILURE_LIMIT):
+        now = failure * API_HEALTH_CHECK_INTERVAL_SECONDS
+        assert not _api_health_requires_restart(managed, port=5000, now=now)
+        assert managed.health_failures == failure
+
+    now = API_HEALTH_FAILURE_LIMIT * API_HEALTH_CHECK_INTERVAL_SECONDS
+    assert _api_health_requires_restart(managed, port=5000, now=now)
+    assert managed.health_failures == API_HEALTH_FAILURE_LIMIT
+
+
+def test_launcher_resets_only_stable_consecutive_restart_count() -> None:
+    managed = ManagedChild(
+        role="worker",
+        process=object(),  # type: ignore[arg-type]
+        registration=EpochRegistration(
+            epoch_id="worker-epoch",
+            token="token",
+            role="worker",
+            pid=456,
+        ),
+        restart_count=2,
+        ready_at=100.0,
+    )
+
+    _reset_restart_count_after_stable_run(
+        managed,
+        now=100.0 + RESTART_STABILITY_SECONDS - 0.1,
+    )
+    assert managed.restart_count == 2
+
+    _reset_restart_count_after_stable_run(
+        managed,
+        now=100.0 + RESTART_STABILITY_SECONDS,
+    )
+    assert managed.restart_count == 0
+
+
+def test_launcher_retries_child_startup_up_to_the_consecutive_limit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    attempts: list[int] = []
+    expected = object()
+
+    def fake_start_child(**kwargs):
+        attempts.append(int(kwargs["restart_count"]))
+        if len(attempts) < 3:
+            raise RuntimeError("startup failed")
+        return expected
+
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint._start_child",
+        fake_start_child,
+    )
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint.time.sleep",
+        lambda _seconds: None,
+    )
+
+    result = _start_child_with_retries(
+        role="api",
+        data_root=tmp_path,
+        host="127.0.0.1",
+        port=5000,
+        repository=object(),  # type: ignore[arg-type]
+        child_job=object(),  # type: ignore[arg-type]
+        restart_count=0,
+    )
+
+    assert result is expected
+    assert attempts == [0, 1, 2]
+
+
+def test_launcher_stops_after_the_consecutive_startup_retry_limit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    attempts: list[int] = []
+
+    def fail_start_child(**kwargs):
+        attempts.append(int(kwargs["restart_count"]))
+        raise RuntimeError("startup failed")
+
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint._start_child",
+        fail_start_child,
+    )
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint.time.sleep",
+        lambda _seconds: None,
+    )
+
+    with pytest.raises(RuntimeError, match="exceeded"):
+        _start_child_with_retries(
+            role="worker",
+            data_root=tmp_path,
+            host="127.0.0.1",
+            port=5000,
+            repository=object(),  # type: ignore[arg-type]
+            child_job=object(),  # type: ignore[arg-type]
+            restart_count=0,
+        )
+
+    assert attempts == list(range(MAX_CONSECUTIVE_RESTARTS + 1))
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job Object integration")
 def test_launcher_health_and_kill_on_close(tmp_path: Path) -> None:
     port = _free_port()
@@ -294,6 +432,113 @@ def test_worker_self_fences_and_launcher_restarts_it_without_restarting_api(
             timeout=1,
         ) as response:
             assert json.loads(response.read())["epochId"] == api_epoch
+        descendants = [
+            child.pid
+            for child in psutil.Process(process.pid).children(recursive=True)
+        ]
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        process.wait(timeout=10)
+
+    _wait_until(
+        lambda: all(not psutil.pid_exists(pid) for pid in descendants),
+        timeout=10,
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows process supervision integration")
+def test_api_self_fences_and_launcher_restarts_it_without_restarting_worker(
+    tmp_path: Path,
+) -> None:
+    port = _free_port()
+    data_root = tmp_path / "runtime"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(ENTRYPOINT),
+            "--role",
+            "launcher",
+            "--data-dir",
+            str(data_root),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--no-browser",
+        ],
+        cwd=PROJECT_ROOT,
+        env=_clean_role_environment(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    descendants: list[int] = []
+    try:
+        marker_path = data_root / "runtime" / "worker-ready.json"
+
+        def initial_state() -> tuple[str, dict[str, object]] | None:
+            if not marker_path.exists():
+                return None
+            try:
+                marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{port}/api/v2/health",
+                    timeout=0.5,
+                ) as response:
+                    payload = json.loads(response.read())
+            except (OSError, json.JSONDecodeError):
+                return None
+            if response.status != 200:
+                return None
+            return str(payload["epochId"]), marker
+
+        state: tuple[str, dict[str, object]] | None = None
+
+        def capture_initial_state() -> bool:
+            nonlocal state
+            state = initial_state()
+            return state is not None
+
+        _wait_until(capture_initial_state, timeout=30)
+        assert state is not None
+        initial_api_epoch, initial_worker_marker = state
+
+        engine = create_sqlite_engine(database_path_for(data_root))
+        with engine.begin() as connection:
+            initial_api_pid = int(
+                connection.execute(
+                    select(process_epochs.c.pid).where(
+                        process_epochs.c.id == initial_api_epoch
+                    )
+                ).scalar_one()
+            )
+            connection.execute(
+                update(process_epochs)
+                .where(process_epochs.c.id == initial_api_epoch)
+                .values(status="lost")
+            )
+        engine.dispose()
+
+        replacement_epoch: str | None = None
+
+        def api_restarted() -> bool:
+            nonlocal replacement_epoch
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{port}/api/v2/health",
+                    timeout=0.5,
+                ) as response:
+                    payload = json.loads(response.read())
+            except (OSError, json.JSONDecodeError):
+                return False
+            replacement_epoch = str(payload.get("epochId", ""))
+            return response.status == 200 and replacement_epoch != initial_api_epoch
+
+        _wait_until(api_restarted, timeout=20)
+        _wait_until(lambda: not psutil.pid_exists(initial_api_pid), timeout=10)
+        current_worker_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert current_worker_marker["epochId"] == initial_worker_marker["epochId"]
+        assert current_worker_marker["pid"] == initial_worker_marker["pid"]
         descendants = [
             child.pid
             for child in psutil.Process(process.pid).children(recursive=True)

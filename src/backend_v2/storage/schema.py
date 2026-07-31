@@ -935,6 +935,7 @@ studio_documents = Table(
     Column("regex_scripts_json", Text, nullable=False, server_default="[]"),
     Column("state_tasks_json", Text, nullable=False, server_default="[]"),
     Column("frozen_sections_json", Text, nullable=False, server_default="[]"),
+    Column("last_review_json", Text),
     Column("last_diagnostics_json", Text),
     Column("last_validated_at", DateTime(timezone=True)),
     Column("schema_version", Integer, nullable=False, server_default="2"),

@@ -39,7 +39,7 @@ describe('download export property contracts', () => {
 
   it('resolves current-image filenames through the production helper', () => {
     fc.assert(
-      fc.property(validFileNameArb, fc.nat(100), fc.constantFrom('translated', 'original'), (
+      fc.property(validFileNameArb, fc.nat(100), fc.constantFrom('translated', 'clean', 'original'), (
         fileName,
         imageIndex,
         type,
@@ -56,7 +56,7 @@ describe('download export property contracts', () => {
 
   it('uses the current fallback filename when the image has no name', () => {
     fc.assert(
-      fc.property(fc.nat(100), fc.constantFrom('translated', 'original'), (imageIndex, type) => {
+      fc.property(fc.nat(100), fc.constantFrom('translated', 'clean', 'original'), (imageIndex, type) => {
         expect(resolveDownloadFileName('', imageIndex, type)).toBe(
           `${type}_image_${imageIndex}.png`,
         )
@@ -72,6 +72,7 @@ describe('download export property contracts', () => {
           fc.record({
             fileName: validFileNameArb,
             hasOriginal: fc.boolean(),
+            hasClean: fc.boolean(),
             hasTranslated: fc.boolean(),
           }),
           { minLength: 1, maxLength: 10 },
@@ -87,11 +88,14 @@ describe('download export property contracts', () => {
             if (image && config.hasTranslated) {
               image.translatedAssetUrl = dataURL
             }
+            if (image && config.hasClean) {
+              image.cleanAssetUrl = dataURL
+            }
           }
 
           const entries = collectDownloadImageEntries(store.images)
           const validImageCount = imageConfigs.filter(
-            config => config.hasOriginal || config.hasTranslated,
+            config => config.hasOriginal || config.hasClean || config.hasTranslated,
           ).length
 
           expect(entries).toHaveLength(validImageCount)
@@ -121,6 +125,25 @@ describe('download export property contracts', () => {
 
         expect(collectDownloadImageEntries(store.images)).toEqual([
           { index: 0, type: 'translated' },
+        ])
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it('uses clean data when no translated image exists', () => {
+    fc.assert(
+      fc.property(validFileNameArb, mockDataURLArb, (fileName, dataURL) => {
+        setActivePinia(createPinia())
+        const store = useImageStore()
+        store.addImage(fileName, dataURL)
+        const image = store.images[0]
+        if (image) {
+          image.cleanAssetUrl = dataURL
+        }
+
+        expect(collectDownloadImageEntries(store.images)).toEqual([
+          { index: 0, type: 'clean' },
         ])
       }),
       { numRuns: 100 },

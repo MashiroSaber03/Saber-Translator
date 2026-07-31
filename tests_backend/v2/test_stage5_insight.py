@@ -12,7 +12,7 @@ import zipfile
 from PIL import Image
 import pytest
 from flask import Flask
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
@@ -42,6 +42,8 @@ from src.backend_v2.insight.qa import (
     InsightQACommandService,
     InsightQAWorkerService,
     QAConflict,
+    TransientFence,
+    TransientHeartbeat,
     TransientRequestRepository,
 )
 from src.backend_v2.insight.repository import (
@@ -52,6 +54,7 @@ from src.backend_v2.insight.routes import create_insight_blueprint
 from src.backend_v2.insight.worker import InsightAnalysisWorkerService
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.jobs.retry import JobRetryService
+from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
@@ -71,6 +74,7 @@ from src.backend_v2.storage.schema import (
     jobs,
     metadata,
     page_assets,
+    provider_settings,
     timeline_versions,
     transient_requests,
     vector_generations,
@@ -248,6 +252,46 @@ def insight_platform(tmp_path: Path):
     engine = create_sqlite_engine(data_root / "saber.sqlite3")
     metadata.create_all(engine)
     seed_system_records(engine)
+    with engine.begin() as connection:
+        insight_row = connection.execute(
+            select(app_settings.c.payload_json).where(
+                app_settings.c.domain == "insight"
+            )
+        ).scalar_one()
+        insight_payload = json.loads(insight_row)
+        insight_payload["vlm"] = {"provider": "ollama"}
+        insight_payload["chat"] = {
+            "provider": "ollama",
+            "useSameAsVlm": False,
+        }
+        insight_payload["embedding"] = {"provider": "ollama"}
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "insight")
+            .values(payload_json=json.dumps(insight_payload))
+        )
+        connection.execute(
+            insert(provider_settings),
+            [
+                {
+                    "domain": "insight_vlm",
+                    "provider": "ollama",
+                    "payload_json": json.dumps({"modelName": "fake-vlm"}),
+                },
+                {
+                    "domain": "insight_chat",
+                    "provider": "ollama",
+                    "payload_json": json.dumps({"modelName": "fake-chat"}),
+                },
+                {
+                    "domain": "insight_embedding",
+                    "provider": "ollama",
+                    "payload_json": json.dumps(
+                        {"modelName": "fake-embedding"}
+                    ),
+                },
+            ],
+        )
     content = ContentRepository(engine)
     book = content.create_book(title="Insight Book")
     chapter = content.create_chapter(
@@ -330,6 +374,67 @@ def _run_job(platform, algorithms: FakeInsightAlgorithms) -> str:
     final = queue.finish_if_complete(fence)
     assert final is not None
     return final
+
+
+def test_analysis_rejects_incomplete_vlm_settings_before_queue(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(provider_settings)
+            .where(
+                provider_settings.c.domain == "insight_vlm",
+                provider_settings.c.provider == "ollama",
+            )
+            .values(payload_json="{}")
+        )
+
+    with pytest.raises(ValueError, match="漫画分析 VLM 缺少模型名称"):
+        InsightAnalysisCommandService(
+            platform["engine"]
+        ).create_analysis_job(
+            command={
+                "bookId": str(platform["book"]["id"]),
+                "scope": "page",
+                "pageId": platform["page_ids"][0],
+            },
+            idempotency_key="missing-vlm-model",
+        )
+
+    with platform["engine"].connect() as connection:
+        assert connection.execute(
+            select(jobs.c.id).where(jobs.c.kind == "insight_analysis")
+        ).scalar_one_or_none() is None
+
+
+def test_insight_chat_can_reuse_the_frozen_vlm_provider(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    with platform["engine"].begin() as connection:
+        raw = connection.execute(
+            select(app_settings.c.payload_json).where(
+                app_settings.c.domain == "insight"
+            )
+        ).scalar_one()
+        payload = json.loads(raw)
+        payload["chat"] = {
+            "provider": "gemini",
+            "useSameAsVlm": True,
+        }
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "insight")
+            .values(payload_json=json.dumps(payload))
+        )
+
+    config = SettingsResolver(platform["engine"]).resolve_insight(
+        book_id=str(platform["book"]["id"]),
+        command={"scope": "full"},
+    )
+
+    assert config["chat"] == config["vlm"]
 
 
 def _run_derived_job(
@@ -847,6 +952,51 @@ def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
     assert timeline["events"][0]["summary"] == "event"
     assert timeline["characters"][0]["name"] == "Saber"
 
+    global_status = repository.qa_status(
+        book_id=str(platform["book"]["id"]),
+        mode="global",
+    )
+    assert global_status == {
+        "available": True,
+        "reason": None,
+    }
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(analysis_artifacts)
+            .where(
+                analysis_artifacts.c.book_id == str(platform["book"]["id"]),
+                analysis_artifacts.c.kind == "compressed_context",
+                analysis_artifacts.c.template == "default",
+                analysis_artifacts.c.is_active.is_(True),
+            )
+            .values(status="stale")
+        )
+    assert repository.qa_status(
+        book_id=str(platform["book"]["id"]),
+        mode="global",
+    ) == {
+        "available": False,
+        "reason": "compressed_context_stale",
+        "repairAction": "compressed_context_rebuild",
+    }
+    commands.create_job(
+        book_id=str(platform["book"]["id"]),
+        kind="compressed_context",
+        template="default",
+        idempotency_key="compressed-context-1",
+    )
+    assert (
+        _run_derived_job(platform, algorithms=FakeDerivedAlgorithms())
+        == "completed"
+    )
+    assert repository.qa_status(
+        book_id=str(platform["book"]["id"]),
+        mode="global",
+    ) == {
+        "available": True,
+        "reason": None,
+    }
+
     vector_store = FakeVectorStore()
     commands.create_job(
         book_id=str(platform["book"]["id"]),
@@ -1235,6 +1385,28 @@ def test_insight_export_job_freezes_run_and_builds_backend_zip(
             "timeline.json",
             "report.md",
         }.issubset(archive.namelist())
+
+
+def test_transient_heartbeat_exception_cannot_silently_lose_its_lease() -> None:
+    class FailingRepository:
+        lease_seconds = 3
+
+        def renew(self, _fence):
+            raise RuntimeError("database unavailable")
+
+    heartbeat = TransientHeartbeat(
+        FailingRepository(),  # type: ignore[arg-type]
+        TransientFence(
+            request_id="00000000-0000-0000-0000-000000000001",
+            attempt_id="00000000-0000-0000-0000-000000000002",
+            lease_token="lease",
+            worker_epoch_id="00000000-0000-0000-0000-000000000003",
+        ),
+        interval_seconds=0.01,
+    )
+
+    with heartbeat:
+        assert heartbeat.fenced.wait(1)
 
 
 def test_qa_vector_query_is_connection_bound_and_worker_owned(

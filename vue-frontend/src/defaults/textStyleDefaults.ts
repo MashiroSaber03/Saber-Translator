@@ -25,6 +25,22 @@ type ImageTextStyleFields = Pick<
 >
 
 type TextStyleFieldSource = Partial<Record<keyof TextStyleSettings, unknown>>
+const TEXT_STYLE_FIELDS = [
+  'fontSize',
+  'autoFontSize',
+  'fontFamily',
+  'layoutDirection',
+  'textColor',
+  'fillColor',
+  'strokeEnabled',
+  'strokeColor',
+  'strokeWidth',
+  'inpaintMethod',
+  'useAutoTextColor',
+  'lineSpacing',
+  'textAlign',
+] as const satisfies readonly (keyof TextStyleSettings)[]
+const COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/
 
 function failInvalidConfig(message: string): never {
   throw new Error(`[textStyleDefaults] ${message}`)
@@ -144,6 +160,40 @@ export function normalizeTextStyleSettings(
 ): TextStyleSettings {
   const base = getTextStyleDefaults()
   return buildTextStyleFields(style ?? {}, base)
+}
+
+export function parseCompleteTextStyleSettings(value: unknown): TextStyleSettings {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return failInvalidConfig('backend text style must be an object')
+  }
+  const source = value as Record<string, unknown>
+  const actual = Object.keys(source)
+  if (
+    actual.length !== TEXT_STYLE_FIELDS.length
+    || TEXT_STYLE_FIELDS.some(field => !Object.prototype.hasOwnProperty.call(source, field))
+  ) {
+    return failInvalidConfig('backend text style fields are incomplete')
+  }
+  const parsed = buildTextStyleFields(source)
+  if (parsed.fontSize > 512) {
+    return failInvalidConfig('fontSize must be at most 512')
+  }
+  if (parsed.strokeWidth > 64) {
+    return failInvalidConfig('strokeWidth must be at most 64')
+  }
+  if (parsed.lineSpacing > 10) {
+    return failInvalidConfig('lineSpacing must be at most 10')
+  }
+  for (const [field, color] of [
+    ['textColor', parsed.textColor],
+    ['fillColor', parsed.fillColor],
+    ['strokeColor', parsed.strokeColor],
+  ] as const) {
+    if (!COLOR_PATTERN.test(color)) {
+      return failInvalidConfig(`${field} must be a #RRGGBB color`)
+    }
+  }
+  return parsed
 }
 
 export function resolveBubbleTextDirection(

@@ -10,6 +10,7 @@
     <ChatWorkspace
       v-if="activeTab === 'chat'"
       :archived-sessions="archivedSessions"
+      :available-greetings="availableGreetings"
       :book-id="bookId"
       :chat-exporting="chatExporting"
       :chat-importing="chatImporting"
@@ -96,6 +97,7 @@ import type {
   CharacterStudioChatSession,
   CharacterStudioChatSessionSummary,
   CharacterStudioDocument,
+  CharacterStudioGreetingOption,
 } from '@/types/characterStudio'
 
 const props = defineProps<{
@@ -104,6 +106,7 @@ const props = defineProps<{
   agentHtmlPreview: string
   agentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   archivedSessions: CharacterStudioChatSessionSummary[]
+  availableGreetings?: CharacterStudioGreetingOption[]
   bookId: string
   canUndoPatch: boolean
   chatExporting: boolean
@@ -157,15 +160,22 @@ const latestRuntimeMessage = computed(() => {
   return [...messages].reverse().find(item => item.role === 'assistant' && item.runtime_log.length > 0) || null
 })
 
-const displayGreetings = computed(() => buildCharacterStudioGreetingOptions(props.document))
+const displayGreetings = computed(() => (
+  props.availableGreetings?.length
+    ? props.availableGreetings
+    : buildCharacterStudioGreetingOptions(props.document)
+))
 const currentGreetingId = computed(() => {
   const source = props.session?.greeting_source || {}
   if (source.type === 'first_message') {
-    const hasFirstMessage = displayGreetings.value.some(item => item.greeting_id === 'first_message')
-    if (hasFirstMessage) return 'first_message'
+    const hasFirstMessage = displayGreetings.value.some(item => item.greeting_id === 'first')
+    if (hasFirstMessage) return 'first'
   }
-  if (source.type === 'alternate_greetings' && typeof source.index === 'number') {
-    const greetingId = `alternate_${source.index + 1}`
+  if (
+    (source.type === 'alternate_greeting' || source.type === 'alternate_greetings')
+    && typeof source.index === 'number'
+  ) {
+    const greetingId = `alternate-${source.index}`
     const hasAlternate = displayGreetings.value.some(item => item.greeting_id === greetingId)
     if (hasAlternate) return greetingId
   }

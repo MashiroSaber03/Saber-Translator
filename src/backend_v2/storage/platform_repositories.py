@@ -13,6 +13,13 @@ from typing import Any
 from sqlalchemy import Engine, and_, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.content.page_style import validate_text_style_defaults
+from src.backend_v2.settings.validation import (
+    validate_book_setting_payload,
+    validate_credential_secret,
+    validate_provider_setting_payload,
+    validate_setting_payload,
+)
 from src.backend_v2.storage.defaults import FACTORY_PROMPTS
 from src.backend_v2.storage.schema import (
     PROMPT_TYPES,
@@ -342,7 +349,18 @@ class SettingsRepository:
     def _save_setting(connection: object, mutation: SettingMutation) -> dict[str, object]:
         if mutation.base_revision < 0 or mutation.schema_version < 1:
             raise ValueError("setting revisions must be non-negative")
-        payload_json = _canonical_json(_require_object(mutation.payload, "setting payload"))
+        payload = validate_setting_payload(
+            mutation.domain,
+            mutation.payload,
+            schema_version=mutation.schema_version,
+        )
+        if mutation.domain == "text_style_defaults":
+            font_id, page_style = validate_text_style_defaults(  # type: ignore[arg-type]
+                connection,
+                payload,
+            )
+            payload = {**page_style, "fontFamily": font_id}
+        payload_json = _canonical_json(payload)
         current = connection.execute(  # type: ignore[attr-defined]
             select(app_settings.c.revision).where(app_settings.c.domain == mutation.domain)
         ).scalar_one_or_none()
@@ -387,7 +405,11 @@ class SettingsRepository:
         if mutation.base_revision < 0 or mutation.schema_version < 1:
             raise ValueError("provider setting revisions must be non-negative")
         payload_json = _canonical_json(
-            _require_object(mutation.payload, "provider setting payload")
+            validate_provider_setting_payload(
+                mutation.domain,
+                mutation.provider,
+                mutation.payload,
+            )
         )
         key = and_(
             provider_settings.c.domain == mutation.domain,
@@ -468,7 +490,10 @@ class SettingsRepository:
         ).scalar_one_or_none()
         values = {
             "payload_json": _canonical_json(
-                _require_object(mutation.payload, "book setting payload")
+                validate_book_setting_payload(
+                    mutation.domain,
+                    mutation.payload,
+                )
             ),
             "schema_version": mutation.schema_version,
         }
@@ -507,7 +532,11 @@ class SettingsRepository:
 
     @staticmethod
     def _save_credential(connection: object, edit: CredentialEdit) -> dict[str, object]:
-        secret = _require_object(edit.secret, "credential secret")
+        secret = validate_credential_secret(
+            edit.domain,
+            edit.provider,
+            edit.secret,
+        )
         if not secret or not any(value not in (None, "") for value in secret.values()):
             raise ValueError("credential secret must contain at least one value")
         secret_json = _canonical_json(secret)

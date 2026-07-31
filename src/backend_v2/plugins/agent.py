@@ -256,7 +256,9 @@ class PluginAgentSessionService:
     def get(self, session_id: str) -> dict[str, Any]:
         self._cleanup()
         with self._lock:
-            return self._dto(self._require(session_id))
+            session = self._require(session_id)
+            self._reconcile_execution(session)
+            return self._dto(session)
 
     def delete(self, session_id: str) -> dict[str, Any]:
         """Delete planning state only; a queued/running job is unaffected."""
@@ -491,6 +493,91 @@ class PluginAgentSessionService:
                 "Plugin Agent session not found or expired"
             )
         return session
+
+    def _reconcile_execution(
+        self,
+        session: PluginAgentSession,
+    ) -> None:
+        if session.run_state != "running":
+            return
+        job_id = self._job_ids.get(session.session_id)
+        if not job_id:
+            return
+        job = self.jobs.get_job(job_id)
+        started_at = job.get("startedAt")
+        if started_at and not session.execution_started_at:
+            session.execution_started_at = str(started_at)
+        status = str(job["status"])
+        terminal_state = {
+            "completed": "completed",
+            "completed_with_errors": "failed",
+            "failed": "failed",
+            "interrupted": "failed",
+            "cancelled": "cancelled",
+        }.get(status)
+        if terminal_state is None:
+            return
+        outcome: dict[str, Any] = {}
+        for item in job.get("items", []):
+            if not isinstance(item, Mapping):
+                continue
+            result = item.get("result")
+            if not isinstance(result, Mapping):
+                continue
+            checkpoint = result.get("lastCheckpoint")
+            if isinstance(checkpoint, Mapping):
+                outcome.update(checkpoint)
+        for event in reversed(job.get("recentEvents", [])):
+            if (
+                isinstance(event, Mapping)
+                and event.get("type") == "plugin_agent_done"
+                and isinstance(event.get("payload"), Mapping)
+            ):
+                outcome.update(event["payload"])
+                break
+        touched_files = outcome.get("touchedFiles")
+        if isinstance(touched_files, list):
+            session.touched_files = [
+                str(item) for item in touched_files if str(item).strip()
+            ]
+        file_previews = outcome.get("filePreviews")
+        if isinstance(file_previews, Mapping):
+            session.file_previews = {
+                str(path): str(content)
+                for path, content in file_previews.items()
+            }
+        validation = outcome.get("validation")
+        if isinstance(validation, Mapping):
+            session.last_validation = dict(validation)
+        final_message = str(outcome.get("message", "")).strip()
+        if final_message:
+            session.messages.append(
+                PluginAgentMessage(
+                    id=f"assistant_{uuid.uuid4().hex[:12]}",
+                    role="assistant",
+                    content=final_message,
+                )
+            )
+            self._append_event(
+                session,
+                "assistant",
+                {
+                    "phase": "execution",
+                    "message": final_message,
+                },
+            )
+        session.run_state = terminal_state
+        session.execution_finished_at = (
+            str(job["finishedAt"])
+            if job.get("finishedAt")
+            else session.execution_finished_at
+        )
+        error = job.get("error")
+        if isinstance(error, Mapping):
+            message = str(error.get("message", "")).strip()
+            session.last_error = message or None
+        session.touch()
+        self._append_state(session, job_id=job_id)
 
     def _cleanup(self) -> None:
         cutoff = time.time() - self.ttl_seconds

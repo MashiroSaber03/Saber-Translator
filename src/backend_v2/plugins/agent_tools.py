@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.backend_v2.plugins.contract import validate_hook_source_contract
 from src.backend_v2.plugins.package import build_archive, parse_archive
 from src.backend_v2.redaction import redact_sensitive_text
 
@@ -156,6 +157,15 @@ class PluginAgentWorktreeTools:
                     path.relative_to(self.worktree).as_posix(),
                     "exec",
                 )
+            module_path = parsed.manifest.entrypoint.rsplit(":", 1)[0]
+            entrypoint = self.worktree.joinpath(
+                *module_path.replace("\\", "/").split("/")
+            )
+            validate_hook_source_contract(
+                parsed.manifest,
+                entrypoint.read_text(encoding="utf-8"),
+                filename=module_path,
+            )
             return {
                 "success": True,
                 "plugin_id": parsed.manifest.plugin_id,

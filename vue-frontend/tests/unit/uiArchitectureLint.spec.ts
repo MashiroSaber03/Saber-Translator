@@ -502,7 +502,10 @@ describe('UI architecture CSS variable ownership lint', () => {
       frontendRoot,
       'src/components/translate/__UiArchitectureUnusedOwnerTokenFixture.vue'
     )
-    const testPath = join(frontendRoot, 'tests/unit/__uiArchitectureUnusedOwnerTokenFixture.spec.ts')
+    // Keep the temporary source outside Vitest's *.spec.ts discovery pattern;
+    // otherwise the runner can collect the file while this test is executing
+    // and then report it as an empty suite after the fixture is removed.
+    const testPath = join(frontendRoot, 'tests/unit/__uiArchitectureUnusedOwnerTokenFixture.fixture.ts')
 
     writeFileSync(componentPath, `
       <template><aside class="ui-architecture-unused-owner-token-fixture"></aside></template>

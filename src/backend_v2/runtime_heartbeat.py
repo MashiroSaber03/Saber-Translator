@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
 import threading
 
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.storage.epochs import ProcessEpochRepository
+
+
+LOGGER = logging.getLogger("saber.runtime.heartbeat")
 
 
 class EpochHeartbeat:
@@ -46,18 +50,30 @@ class EpochHeartbeat:
 
     def _run(self) -> None:
         while not self._stop.wait(self._interval_seconds):
-            renewed = self._repository.renew(
-                role=self._role,  # type: ignore[arg-type]
-                epoch_id=self._identity.epoch_id,
-                token=self._identity.epoch_token,
-            )
+            try:
+                renewed = self._repository.renew(
+                    role=self._role,  # type: ignore[arg-type]
+                    epoch_id=self._identity.epoch_id,
+                    token=self._identity.epoch_token,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "%s epoch 心跳执行失败，执行器立即自我隔离",
+                    self._role.upper(),
+                )
+                self._fence()
+                return
             if renewed:
                 continue
-            self._fenced.set()
-            self._stop.set()
-            if self._on_fenced is not None:
-                self._on_fenced()
+            LOGGER.error("%s epoch 心跳失租，执行器立即自我隔离", self._role.upper())
+            self._fence()
             return
+
+    def _fence(self) -> None:
+        self._fenced.set()
+        self._stop.set()
+        if self._on_fenced is not None:
+            self._on_fenced()
 
     def stop(self) -> None:
         self._stop.set()

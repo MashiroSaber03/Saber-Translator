@@ -25,6 +25,7 @@ import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import { useWebImportStore } from '@/stores/webImportStore'
+import { createDefaultWebImportSettings } from '@/stores/settings/modules/webImport'
 
 const BaseModalStub = defineComponent({
   props: {
@@ -52,7 +53,12 @@ describe('WebImportDisclaimer', () => {
     getV2SettingsMock.mockReset()
     saveV2SettingsTransactionMock.mockReset()
     getV2SettingsMock.mockResolvedValue({
-      settings: [],
+      settings: [{
+        domain: 'web_import',
+        payload: createDefaultWebImportSettings(),
+        revision: 1,
+        schemaVersion: 1,
+      }],
       bookSettings: [],
       providerSettings: [],
       credentials: [],

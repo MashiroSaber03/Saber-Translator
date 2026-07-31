@@ -6,6 +6,7 @@ from pathlib import Path
 import threading
 from typing import Any, Mapping
 import uuid
+import zipfile
 
 from PIL import Image
 import pytest
@@ -13,9 +14,11 @@ from sqlalchemy import select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
-from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.repository import JobConflict, JobQueueRepository
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+from src.backend_v2.plugins.repository import PluginRegistry
+from src.backend_v2.plugins.runtime import PluginJobRuntime
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     ProviderSettingMutation,
@@ -46,9 +49,15 @@ from src.backend_v2.translation.commands import (
     TranslationJobCommandService,
     normalize_translation_command,
 )
+from src.backend_v2.translation.auxiliary import (
+    AuxiliaryTranslationCommands,
+    StyleApplyWorkerService,
+    TextImportWorkerService,
+)
 from src.backend_v2.translation.pipeline import (
     LegacyTranslationAlgorithms,
     TranslationPipelineService,
+    _restore_non_translate_text,
     _validate_stable_batch_result,
 )
 from src.backend_v2.testing.fake_provider import (
@@ -60,6 +69,52 @@ from src.backend_v2.testing.fake_provider import (
 
 class FakeAlgorithms(DeterministicFakeProvider):
     """Compatibility alias for failure-injection tests in this module."""
+
+
+class PluginMutationAlgorithms(FakeAlgorithms):
+    def __init__(self) -> None:
+        super().__init__()
+        self.translation_inputs: list[list[str]] = []
+
+    def translate(self, texts, _config, *, mode):
+        self.translation_inputs.append(list(texts))
+        return {
+            "translated": ["你好"],
+            "textbox": ["你好"],
+            "mode": mode,
+        }
+
+
+def test_non_translate_restore_accepts_model_returned_fragment() -> None:
+    token = "⟦SABER_NT_page_0_deadbeef00⟧"
+
+    assert _restore_non_translate_text(
+        "ガラッ",
+        {token: "ガラッ"},
+    ) == "ガラッ"
+
+
+def test_non_translate_restore_still_rejects_missing_token_and_fragment() -> None:
+    token = "⟦SABER_NT_page_0_deadbeef00⟧"
+
+    with pytest.raises(JobConflict, match="lost protected non-translate token"):
+        _restore_non_translate_text(
+            "开门声",
+            {token: "ガラッ"},
+        )
+
+
+def test_new_translation_bubble_keeps_font_as_relational_fact() -> None:
+    payload = TranslationPipelineService._new_bubble_payload(
+        coords=[0, 0, 100, 80],
+        polygon=[],
+        angle=0,
+        auto_direction="v",
+        textlines=[],
+        style={"fontSize": 26, "layoutDirection": "auto"},
+    )
+
+    assert "fontFamily" not in payload
 
 
 class PageStyleRecordingAlgorithms(FakeAlgorithms):
@@ -426,6 +481,117 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     }.issubset(roles)
 
 
+def test_translation_plugins_mutate_domain_text_before_persistence(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    manifest = {
+        "schema_version": 3,
+        "plugin_id": "translation_domain_mutation",
+        "display_name": "Translation domain mutation",
+        "package_version": "1.0.0",
+        "entrypoint": "plugin.py:Plugin",
+        "hooks": ["before_translate", "after_translate"],
+        "supported_steps": ["translate"],
+        "supported_modes": ["standard"],
+        "priority": 100,
+        "failure_policy": "fail",
+        "default_enabled": True,
+        "config_schema": {},
+    }
+    archive_payload = BytesIO()
+    with zipfile.ZipFile(
+        archive_payload,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        archive.writestr("plugin.json", json.dumps(manifest))
+        archive.writestr(
+            "plugin.py",
+            (
+                "class Plugin:\n"
+                "    def before_translate(self, context, data):\n"
+                "        result = dict(data)\n"
+                "        result['originalTexts'] = [\n"
+                "            '[hook]' + value for value in data['originalTexts']\n"
+                "        ]\n"
+                "        return result\n"
+                "    def after_translate(self, context, data):\n"
+                "        result = dict(data)\n"
+                "        result['translations'] = [\n"
+                "            value + '【hook】' for value in data['translations']\n"
+                "        ]\n"
+                "        return result\n"
+            ),
+        )
+    PluginRegistry(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+    ).import_archive(
+        data=archive_payload.getvalue(),
+        base_revision=0,
+        idempotency_key="translation-domain-mutation-v1",
+    )
+    accepted = TranslationJobCommandService(
+        platform["engine"]
+    ).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="translation-domain-mutation-job",
+    )
+    repository = JobQueueRepository(platform["engine"])
+    runtime = PluginJobRuntime(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    algorithms = PluginMutationAlgorithms()
+    service = TranslationPipelineService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=repository,
+        algorithms=algorithms,
+        plugin_runtime=runtime,
+    )
+    fence = repository.claim_next(worker_epoch_id=platform["epoch_id"])
+    if fence is None:
+        fence = repository.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    JobWorkerLoop(
+        repository,
+        worker_epoch_id=platform["epoch_id"],
+        handlers={
+            kind: service.handler
+            for kind in (
+                "detect",
+                "ocr",
+                "color",
+                "auto_terms",
+                "translate",
+                "repair",
+                "render",
+                "save",
+            )
+        },
+        plugin_runtime=runtime,
+    )._run_attempt(fence, threading.Event())
+
+    assert fence.job_id == accepted["jobIds"][0]
+    assert repository.get_job(fence.job_id)["status"] == "completed"
+    assert algorithms.translation_inputs == [["[hook]こんにちは"]]
+    with platform["engine"].connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.page_id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+    assert payload["originalText"] == "こんにちは"
+    assert payload["translatedText"] == "你好【hook】"
+
+
 def test_translation_uses_current_page_layout_and_inpainting_defaults(
     translation_platform,
 ) -> None:
@@ -433,7 +599,6 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     page_style = {
         "fontSize": 37,
         "autoFontSize": False,
-        "fontFamily": "00000000-0000-0000-0000-000000000010",
         "layoutDirection": "horizontal",
         "textColor": "#000000",
         "fillColor": "#123456",
@@ -541,6 +706,269 @@ def test_translation_applies_extracted_colors_only_when_auto_color_is_enabled(
     assert payload["autoBgColor"] == [245, 246, 247]
     assert payload["textColor"] == "#0A141E"
     assert payload["fillColor"] == "#F5F6F7"
+
+
+def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    content = ContentRepository(platform["engine"])
+    source_page_id = platform["page_id"]
+    target_page_id = _import_extra_page(platform, "style-target.png")
+
+    source = content.mutate_page_document(
+        page_id=source_page_id,
+        base_revision=1,
+        mutations=[],
+        page_style_defaults_patch={
+            "autoFontSize": True,
+            "fontSize": 88,
+            "useAutoTextColor": True,
+            "textColor": "#DEADBE",
+            "fillColor": "#EFCAFE",
+        },
+    )
+    target_payload = TranslationPipelineService._new_bubble_payload(
+        coords=[0, 0, 56, 48],
+        polygon=[],
+        angle=0,
+        auto_direction="v",
+        textlines=[],
+        style={
+            "fontSize": 41,
+            "layoutDirection": "auto",
+            "textColor": "#445566",
+            "fillColor": "#778899",
+        },
+    )
+    target_payload.update(
+        {
+            "translatedText": "",
+            "fontSize": 41,
+            "textColor": "#445566",
+            "fillColor": "#778899",
+            "autoFgColor": None,
+            "autoBgColor": [1, 2, 3],
+        }
+    )
+    content.mutate_page_document(
+        page_id=target_page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "bubbleId": "00000000-0000-0000-0000-000000000401",
+                "fields": target_payload,
+            }
+        ],
+        page_style_defaults_patch={
+            "autoFontSize": False,
+            "fontSize": 41,
+            "useAutoTextColor": False,
+            "textColor": "#112233",
+            "fillColor": "#AABBCC",
+        },
+    )
+    target_payload["translatedText"] = "目标页自动样式"
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+            .where(
+                bubbles.c.id
+                == "00000000-0000-0000-0000-000000000401"
+            )
+            .values(payload_json=json.dumps(target_payload))
+        )
+
+    AuxiliaryTranslationCommands(platform["engine"]).create_style_apply_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        source_page_id=source_page_id,
+        source_document_revision=int(source["documentRevision"]),
+        selected_fields=["fontSize", "textColor", "fillColor"],
+        idempotency_key="style-auto-fallbacks",
+    )
+    _run_auxiliary_job(platform, kind="style_apply")
+
+    target = content.get_page_document(target_page_id)
+    style = target["pageStyleDefaults"]
+    payload = target["bubbles"][0]["payload"]
+    assert style["autoFontSize"] is True
+    assert style["fontSize"] == 41
+    assert style["useAutoTextColor"] is True
+    assert style["textColor"] == "#112233"
+    assert style["fillColor"] == "#AABBCC"
+    assert payload["fontSize"] != 41
+    assert payload["textColor"] == "#445566"
+    assert payload["fillColor"] == "#010203"
+
+    with platform["engine"].connect() as connection:
+        page = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.rendered_revision,
+                pages.c.render_status,
+            ).where(pages.c.id == target_page_id)
+        ).one()
+        translated = connection.execute(
+            select(page_assets.c.asset_id).where(
+                page_assets.c.page_id == target_page_id,
+                page_assets.c.role == "translated",
+            )
+        ).scalar_one_or_none()
+    assert page == (3, 3, "ready")
+    assert translated is not None
+
+
+def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    content = ContentRepository(platform["engine"])
+    page_id = platform["page_id"]
+    bubble_id = "00000000-0000-0000-0000-000000000402"
+    payload = TranslationPipelineService._new_bubble_payload(
+        coords=[0, 0, 56, 48],
+        polygon=[],
+        angle=0,
+        auto_direction="v",
+        textlines=[],
+        style={
+            "fontSize": 47,
+            "layoutDirection": "auto",
+            "textColor": "#123456",
+            "fillColor": "#654321",
+        },
+    )
+    payload.update(
+        {
+            "originalText": "原文",
+            "translatedText": "",
+            "fontSize": 47,
+            "textColor": "#123456",
+            "fillColor": "#654321",
+            "autoFgColor": [250, 1, 2],
+            "autoBgColor": [3, 4, 5],
+        }
+    )
+    content.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "bubbleId": bubble_id,
+                "fields": payload,
+            }
+        ],
+        page_style_defaults_patch={
+            "autoFontSize": True,
+            "useAutoTextColor": True,
+        },
+    )
+    payload["translatedText"] = "旧译文"
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == bubble_id)
+            .values(payload_json=json.dumps(payload))
+        )
+
+    commands = AuxiliaryTranslationCommands(platform["engine"])
+    exported = commands.export_text(str(platform["chapter"]["id"]))
+    imported = json.loads(json.dumps(exported))
+    imported["pages"][0]["bubbles"][0]["translated_text"] = "文本导入后的译文"
+    preview = commands.preview_text_import(
+        chapter_id=str(platform["chapter"]["id"]),
+        document=imported,
+    )
+    commands.create_text_import_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        confirmed_pages=[
+            row for row in preview["pages"] if row["status"] == "match"
+        ],
+        idempotency_key="text-import-preserves-auto-materialization",
+    )
+    _run_auxiliary_job(platform, kind="text_import")
+
+    document = content.get_page_document(page_id)
+    persisted = document["bubbles"][0]["payload"]
+    assert persisted["translatedText"] == "文本导入后的译文"
+    assert persisted["fontSize"] == 47
+    assert persisted["textColor"] == "#123456"
+    assert persisted["fillColor"] == "#654321"
+    with platform["engine"].connect() as connection:
+        page = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.rendered_revision,
+                pages.c.render_status,
+            ).where(pages.c.id == page_id)
+        ).one()
+        translated = connection.execute(
+            select(page_assets.c.asset_id).where(
+                page_assets.c.page_id == page_id,
+                page_assets.c.role == "translated",
+            )
+        ).scalar_one_or_none()
+    assert page == (3, 3, "ready")
+    assert translated is not None
+
+
+def test_batch_detect_republishes_changed_translated_page_and_precise_mask(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=[platform["page_id"]],
+        idempotency_key="translate-before-batch-detect",
+    )
+    _run_translation_job(platform, FakeAlgorithms())
+
+    AuxiliaryTranslationCommands(platform["engine"]).create_detect_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        page_ids=[platform["page_id"]],
+        idempotency_key="batch-detect-rerender",
+    )
+    job_id = _run_auxiliary_job(platform, kind="detect")
+
+    with platform["engine"].connect() as connection:
+        page = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.rendered_revision,
+                pages.c.render_status,
+            ).where(pages.c.id == platform["page_id"])
+        ).one()
+        step_rows = list(
+            connection.execute(
+                select(job_steps.c.kind, job_steps.c.status)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(job_items.c.job_id == job_id)
+                .order_by(job_steps.c.ordinal)
+            )
+        )
+        roles = {
+            row.role: row
+            for row in connection.execute(
+                select(
+                    page_assets.c.role,
+                    page_assets.c.input_document_revision,
+                    page_assets.c.producer_job_step_id,
+                ).where(page_assets.c.page_id == platform["page_id"])
+            ).mappings()
+        }
+    assert page == (6, 6, "ready")
+    assert step_rows == [
+        ("detect", "completed"),
+        ("render", "completed"),
+        ("save", "completed"),
+    ]
+    assert roles["text_mask"]["input_document_revision"] == 6
+    assert roles["text_mask"]["producer_job_step_id"] is not None
+    assert roles["translated"]["input_document_revision"] == 6
+    assert roles["translated"]["producer_job_step_id"] is not None
 
 
 def test_translation_constraints_are_frozen_extracted_and_consumed(
@@ -948,31 +1376,24 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
 ) -> None:
     platform = translation_platform
     settings = SettingsRepository(platform["engine"])
+    payload = default_translation_settings()
+    payload["parallel"] = {
+        "enabled": True,
+        "deepLearningLockSize": 3,
+    }
+    payload["translation"] = {
+        **payload["translation"],
+        "provider": "custom",
+        "batchNormalPrompt": "backend prompt",
+        "batchJsonPrompt": "backend json prompt",
+        "singleNormalPrompt": "single",
+        "singleJsonPrompt": "single json",
+    }
     settings.save_transaction(
         settings=(
             SettingMutation(
                 domain="translation",
-                payload={
-                    "settingsSchemaVersion": 3,
-                    "sourceLanguage": "japanese",
-                    "targetLanguage": "zh",
-                    "parallel": {
-                        "enabled": True,
-                        "deepLearningLockSize": 3,
-                    },
-                    "translation": {
-                        "provider": "custom",
-                        "translationMode": "batch",
-                        "batchNormalPrompt": "backend prompt",
-                        "batchJsonPrompt": "backend json prompt",
-                        "singleNormalPrompt": "single",
-                        "singleJsonPrompt": "single json",
-                        "openaiOptions": {
-                            "request": {"forceJsonOutput": False},
-                            "execution": {},
-                        },
-                    },
-                },
+                payload=payload,
                 base_revision=1,
                 schema_version=3,
             ),
@@ -1178,6 +1599,48 @@ def _run_translation_job(
             "hq_translate": service.batch_handler,
             "proofread": service.batch_handler,
         },
+    )._run_attempt(fence, threading.Event())
+    return fence.job_id
+
+
+def _run_auxiliary_job(
+    platform: Mapping[str, Any],
+    *,
+    kind: str,
+) -> str:
+    repository = JobQueueRepository(platform["engine"])
+    pipeline = TranslationPipelineService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=repository,
+        algorithms=FakeAlgorithms(),
+    )
+    handlers = {
+        "render": pipeline.handler,
+        "save": pipeline.handler,
+    }
+    if kind == "style_apply":
+        handlers["style_apply_document"] = StyleApplyWorkerService(
+            engine=platform["engine"],
+            jobs=repository,
+        ).handle
+    elif kind == "text_import":
+        handlers["text_import_apply"] = TextImportWorkerService(
+            engine=platform["engine"],
+            jobs=repository,
+        ).handle
+    elif kind == "detect":
+        handlers["detect"] = pipeline.handler
+    else:
+        raise AssertionError(f"unsupported auxiliary test job: {kind}")
+    fence = repository.claim_next(worker_epoch_id=platform["epoch_id"])
+    if fence is None:
+        fence = repository.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    JobWorkerLoop(
+        repository,
+        worker_epoch_id=platform["epoch_id"],
+        handlers=handlers,
     )._run_attempt(fence, threading.Event())
     return fence.job_id
 

@@ -60,6 +60,7 @@ describe('useTextStyleSync backend ownership', () => {
       autoBgColor: [10, 11, 12],
       autoFgColor: [1, 2, 3],
       coords: [0, 0, 120, 80],
+      fontFamily: 'font-id-1',
       fontSize: 22,
       polygon: [],
       translatedText: '第一页译文',
@@ -68,6 +69,7 @@ describe('useTextStyleSync backend ownership', () => {
       bubbleStates: [bubble],
       chapterId: 'chapter-1',
       documentRevision: 4,
+      fontFamily: 'font-id-1',
     })
     bubbleStore.setBubbles([bubble])
     return { bubbleStore, image, imageStore }
@@ -86,7 +88,7 @@ describe('useTextStyleSync backend ownership', () => {
     expect(source).toContain('createChapterStyleApplyJob')
   })
 
-  it('writes one page style and its bubble projection through the CAS coordinator', async () => {
+  it('submits one font domain command without projecting bubble styles in the browser', async () => {
     const { image } = mountPage()
     const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
 
@@ -95,16 +97,18 @@ describe('useTextStyleSync backend ownership', () => {
     expect(queueMutationMock).toHaveBeenCalledWith(
       image.id,
       4,
-      [expect.objectContaining({ fontFamily: 'font-id-2' })],
+      [expect.objectContaining({
+        fontFamily: 'font-id-1',
+      })],
       {
         defaultFontId: 'font-id-2',
-        pageStyleDefaultsPatch: { fontFamily: 'font-id-2' },
+        pageStyleDefaultsPatch: {},
         propagateStyleFields: ['fontFamily'],
       },
     )
   })
 
-  it('materializes stored automatic colors before the backend CAS', async () => {
+  it('delegates automatic color materialization to the backend CAS', async () => {
     const { image, imageStore } = mountPage()
     useSettingsStore().updateTextStyle({ useAutoTextColor: true })
     const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
@@ -112,19 +116,19 @@ describe('useTextStyleSync backend ownership', () => {
     await useTextStyleSync().handleAutoTextColorChanged(true)
 
     expect(imageStore.currentImage?.bubbleStates?.[0]).toMatchObject({
-      fillColor: '#0a0b0c',
-      textColor: '#010203',
+      fillColor: '#FFFFFF',
+      textColor: '#000000',
     })
     expect(queueMutationMock).toHaveBeenCalledWith(
       image.id,
       4,
       [expect.objectContaining({
-        fillColor: '#0a0b0c',
-        textColor: '#010203',
+        fillColor: '#FFFFFF',
+        textColor: '#000000',
       })],
       {
         pageStyleDefaultsPatch: { useAutoTextColor: true },
-        propagateStyleFields: ['useAutoTextColor'],
+        propagateStyleFields: ['textColor', 'fillColor'],
       },
     )
   })

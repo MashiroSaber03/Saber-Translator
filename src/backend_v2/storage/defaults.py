@@ -26,6 +26,93 @@ DEFAULT_WORKFLOW_PREFERENCES: dict[str, object] = {
     "lastWorkflowMode": "translate-current",
 }
 
+DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT = """你是一个专业的漫画数据提取助手。请针对当前网页执行以下提取任务:
+
+## 1. 交互行为
+- 请模拟用户行为，缓慢向下滚动页面至底部，以触发所有采用"懒加载"技术的漫画图片。
+- 在滚动过程中，请确保等待图片加载完成，识别并提取真实的漫画内容图片。
+
+## 2. 提取逻辑
+- **图片过滤**: 忽略所有加载占位图（如 loading.gif、spacer.gif）、广告图或图标，仅提取属于漫画正文的图片。
+- **属性识别**: 优先提取 `data-src`、`data-original`、`original` 或 `file` 等包含真实高清原图地址的属性。如果这些属性不存在，再提取 `src` 属性。
+- **元数据**: 提取漫画的名称（comic_title）和当前章节的名称（chapter_title）。
+
+## 3. 数据结构
+- 必须按图片在页面中显示的先后顺序提取，并为每张图片分配一个从 1 开始的 `page_number`（页码序号）。
+- 最终结果以 JSON 格式输出，包含漫画名称、章节名以及包含序号和图片链接的列表。
+
+## 4. 输出格式 (Valid JSON Only)
+严格按照以下 JSON 格式输出，不要包含 Markdown 代码块标记（如 ```json）：
+
+{
+  "comic_title": "漫画名称",
+  "chapter_title": "第X话 章节标题",
+  "pages": [
+    {"page_number": 1, "image_url": "https://..."},
+    {"page_number": 2, "image_url": "https://..."}
+  ],
+  "total_pages": 1
+}"""
+
+DEFAULT_WEB_IMPORT_SETTINGS: dict[str, object] = {
+    "firecrawl": {},
+    "agent": {
+        "provider": "openai",
+        "customBaseUrl": "",
+        "modelName": "gpt-4o-mini",
+        "useStream": False,
+        "forceJsonOutput": True,
+        "maxRetries": 3,
+        "timeout": 120,
+    },
+    "extraction": {
+        "prompt": DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT,
+        "maxIterations": 10,
+    },
+    "download": {
+        "concurrency": 3,
+        "timeout": 30,
+        "retries": 3,
+        "delay": 100,
+        "useReferer": True,
+    },
+    "imagePreprocess": {
+        "enabled": False,
+        "autoRotate": True,
+        "compression": {
+            "enabled": False,
+            "quality": 85,
+            "maxWidth": 0,
+            "maxHeight": 0,
+        },
+        "formatConvert": {
+            "enabled": False,
+            "targetFormat": "original",
+        },
+    },
+    "advanced": {"bypassProxy": False},
+    "ui": {
+        "showAgentLogs": True,
+        "autoImport": False,
+    },
+}
+
+DEFAULT_INSIGHT_SETTINGS: dict[str, object] = {
+    "analysis": {
+        "batch": {
+            "pagesPerBatch": 5,
+            "contextBatchCount": 3,
+            "architecturePreset": "standard",
+            "customLayers": [],
+        }
+    },
+    "vlm": {"provider": "gemini"},
+    "chat": {"provider": "gemini", "useSameAsVlm": False},
+    "embedding": {"provider": "openai"},
+    "reranker": {"provider": "jina"},
+    "imageGen": {"provider": "gpt2api"},
+}
+
 FACTORY_PROMPTS: dict[str, str] = {
     "translate": (
         "将输入内容准确、自然地翻译为简体中文，仅输出译文；"
@@ -99,7 +186,6 @@ def default_translation_settings() -> dict[str, object]:
 
     return {
         "settingsSchemaVersion": 3,
-        "textStyle": dict(DEFAULT_TEXT_STYLE),
         "ocrEngine": "manga_ocr",
         "sourceLanguage": "japanese",
         "textDetector": "default",
@@ -110,15 +196,12 @@ def default_translation_settings() -> dict[str, object]:
         "enableSaberYoloRefine": True,
         "saberYoloRefineOverlapThreshold": 50,
         "baiduOcr": {
-            "apiKey": "",
-            "secretKey": "",
             "version": "standard",
             "sourceLanguage": "JAP",
         },
         "paddleOcrVl": {"sourceLanguage": "japanese"},
         "aiVisionOcr": {
             "provider": "gemini",
-            "apiKey": "",
             "modelName": "",
             "prompt": FACTORY_PROMPTS["ai_vision_ocr"],
             "promptMode": "normal",
@@ -138,7 +221,6 @@ def default_translation_settings() -> dict[str, object]:
         },
         "translation": {
             "provider": "siliconflow",
-            "apiKey": "",
             "modelName": "",
             "customBaseUrl": "",
             "openaiOptions": openai_options(
@@ -159,7 +241,6 @@ def default_translation_settings() -> dict[str, object]:
         "textboxPrompt": "",
         "hqTranslation": {
             "provider": "siliconflow",
-            "apiKey": "",
             "modelName": "",
             "customBaseUrl": "",
             "openaiOptions": openai_options(
@@ -173,7 +254,6 @@ def default_translation_settings() -> dict[str, object]:
         },
         "pluginAgent": {
             "provider": "siliconflow",
-            "apiKey": "",
             "modelName": "",
             "customBaseUrl": "",
             "openaiOptions": openai_options(

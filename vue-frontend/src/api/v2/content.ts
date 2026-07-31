@@ -196,6 +196,14 @@ export async function deletePage(pageId: string): Promise<void> {
   )
 }
 
+export async function clearChapterPages(chapterId: string): Promise<number> {
+  const result = await apiClient.delete<{ deletedCount: number }>(
+    `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/pages`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+  return result.deletedCount
+}
+
 export async function resetQuickWorkspace(): Promise<V2TranslationBootstrap> {
   await apiClient.post(
     `${API_ROOT}/quick-workspace/reset`,

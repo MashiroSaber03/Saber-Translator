@@ -45,18 +45,26 @@ const hasImages = computed(() => imageStore.hasImages)
 
 const currentImage = computed(() => imageStore.currentImage)
 
-const hasTranslatedImage = computed(() => !!currentImage.value?.translatedAssetUrl)
+const processedImageUrl = computed(
+  () => currentImage.value?.translatedAssetUrl || currentImage.value?.cleanAssetUrl || '',
+)
+
+const processedImageLabel = computed(() =>
+  currentImage.value?.translatedAssetUrl ? '翻译图' : '消字图',
+)
+
+const hasProcessedImage = computed(() => !!processedImageUrl.value)
 
 const hasDownloadableImage = computed(
-  () => !!(currentImage.value?.translatedAssetUrl || currentImage.value?.sourceAssetUrl)
+  () => !!(processedImageUrl.value || currentImage.value?.sourceAssetUrl)
 )
 
 const displayImageUrl = computed(() => {
   if (!currentImage.value) return ''
-  if (showOriginal.value || !currentImage.value.translatedAssetUrl) {
+  if (showOriginal.value) {
     return currentImage.value.sourceAssetUrl
   }
-  return currentImage.value.translatedAssetUrl
+  return processedImageUrl.value || currentImage.value.sourceAssetUrl
 })
 
 const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
@@ -64,9 +72,9 @@ const failedImageCount = computed(() => imageStore.failedImageCount)
 
 const displayImageAlt = computed(() => {
   const fileName = currentImage.value?.fileName || '当前图片'
-  return showOriginal.value || !currentImage.value?.translatedAssetUrl
+  return showOriginal.value || !processedImageUrl.value
     ? `原图：${fileName}`
-    : `翻译图：${fileName}`
+    : `${processedImageLabel.value}：${fileName}`
 })
 
 const useTextboxPrompt = computed(() => settingsStore.settings.useTextboxPrompt)
@@ -132,9 +140,10 @@ function handleImportText(file: File): void {
     <ResultToolbar
       :failed-image-count="failedImageCount"
       :has-failed-images="hasFailedImages"
-      :has-translated-image="hasTranslatedImage"
+      :has-processed-image="hasProcessedImage"
       :image-size="imageSize"
       :is-edit-mode="isEditMode"
+      :processed-image-label="processedImageLabel"
       :show-original="showOriginal"
       @retry-failed="retryFailed"
       @toggle-edit-mode="toggleEditMode"

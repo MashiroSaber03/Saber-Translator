@@ -39,6 +39,7 @@ import type {
   CharacterStudioCandidate,
   CharacterStudioDocument,
   CharacterStudioEditorPendingState,
+  CharacterStudioGreetingOption,
   CharacterStudioSummary,
   ExportDiagnostic,
 } from '@/types/characterStudio'
@@ -52,6 +53,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const currentDocument = ref<CharacterStudioDocument | null>(null)
   const activeChatSession = ref<CharacterStudioChatSession | null>(null)
   const archivedChatSessions = ref<CharacterStudioChatSessionSummary[]>([])
+  const availableChatGreetings = ref<CharacterStudioGreetingOption[]>([])
   const chatPromptPreview = ref('')
   const chatPromptPreviewError = ref('')
   const diagnostics = ref<ExportDiagnostic | null>(null)
@@ -173,6 +175,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     chatPromptPreviewRequestId += 1
     activeChatSession.value = null
     archivedChatSessions.value = []
+    availableChatGreetings.value = []
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
     pendingChatRehydrate.value = false
@@ -229,6 +232,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function invalidateDocumentDerivedCaches() {
     diagnostics.value = null
+    if (currentDocument.value) {
+      currentDocument.value.status.last_diagnostics = null
+      currentDocument.value.status.last_validated_at = null
+    }
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
   }
@@ -318,7 +325,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         currentDocument.value = document
         markDocumentSynced(document)
         resetChatState()
-        diagnostics.value = null
+        diagnostics.value = document.status.last_diagnostics
+          ? deepClone(document.status.last_diagnostics)
+          : null
         agentMessages.value = []
         pendingAgentPatch.value = null
         agentHtmlPreview.value = ''
@@ -526,6 +535,13 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         warnings: response.warnings || [],
         checks: response.checks || {},
       }
+      if (response.document) {
+        const refreshedDocument = response.document
+        await runWithoutAutosave(async () => {
+          currentDocument.value = refreshedDocument
+          markDocumentSynced(refreshedDocument)
+        })
+      }
     } catch (error) {
       throw createActionError(error, '诊断失败')
     } finally {
@@ -586,6 +602,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   function applyChatStatePayload(payload: {
     active_session?: CharacterStudioChatSession
     archived_sessions?: CharacterStudioChatSessionSummary[]
+    available_greetings?: CharacterStudioGreetingOption[]
     session?: CharacterStudioChatSession
     prompt_preview?: string
   }) {
@@ -598,6 +615,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
     if (payload.archived_sessions) {
       archivedChatSessions.value = payload.archived_sessions
+    }
+    if (payload.available_greetings) {
+      availableChatGreetings.value = payload.available_greetings
     }
     if (typeof payload.prompt_preview === 'string') {
       chatPromptPreview.value = payload.prompt_preview
@@ -894,6 +914,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     currentDocument,
     activeChatSession,
     archivedChatSessions,
+    availableChatGreetings,
     chatPromptPreview,
     chatPromptPreviewError,
     diagnostics,

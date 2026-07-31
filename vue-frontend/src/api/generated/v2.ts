@@ -1387,7 +1387,7 @@ export interface paths {
         get: operations["listChapterPages"];
         put?: never;
         post: operations["importChapterPage"];
-        delete?: never;
+        delete: operations["clearChapterPages"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2732,7 +2732,7 @@ export interface components {
             chapterId?: components["schemas"]["Uuid"] | null;
             pageId?: components["schemas"]["Uuid"] | null;
             /** @enum {string|null} */
-            blockedReason?: null | "blocked_by_job" | "blocked_by_import_lease" | "draining_immediate_writes";
+            blockedReason?: null | "blocked_by_job" | "blocked_by_import_lease" | "draining_immediate_writes" | "retained_chapter_lock";
             blockedByJobId?: components["schemas"]["Uuid"] | null;
             progress: components["schemas"]["JobProgress"];
             target: {
@@ -2748,6 +2748,7 @@ export interface components {
         JobList: {
             items: components["schemas"]["Job"][];
             queueRevision: number;
+            workerOnline: boolean;
         };
         JobDetail: components["schemas"]["Job"] & {
             counts: components["schemas"]["JobCounts"];
@@ -3018,11 +3019,10 @@ export interface components {
             propagateStyleFields?: components["schemas"]["PageStyleField"][];
         };
         /** @enum {string} */
-        PageStyleField: "fontSize" | "autoFontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign";
+        PageStyleField: "fontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign";
         PageStyleDefaultsPatch: {
             fontSize?: number;
             autoFontSize?: boolean;
-            fontFamily?: components["schemas"]["Uuid"];
             /** @enum {string} */
             layoutDirection?: "auto" | "vertical" | "horizontal";
             textColor?: string;
@@ -3050,7 +3050,7 @@ export interface components {
             chapterId: components["schemas"]["Uuid"];
             documentRevision: number;
             defaultFontId: components["schemas"]["Uuid"] | null;
-            pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign">;
+            pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign">;
             pageStyleSchemaVersion: number;
             bubbles: components["schemas"]["BubbleDocument"][];
         };
@@ -3940,7 +3940,7 @@ export interface components {
             available: boolean;
             reason: string | null;
             /** @enum {string} */
-            repairAction?: "analyze" | "vector_rebuild";
+            repairAction?: "analyze" | "vector_rebuild" | "overview_rebuild" | "compressed_context_rebuild";
             generation?: number;
             coverage?: {
                 pages: number;
@@ -7146,6 +7146,35 @@ export interface operations {
             423: components["responses"]["Locked"];
         };
     };
+    clearChapterPages: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All chapter pages were deleted atomically. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deletedCount: number;
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            423: components["responses"]["Locked"];
+        };
+    };
     getPageSummary: {
         parameters: {
             query?: never;
@@ -8111,6 +8140,7 @@ export interface operations {
         parameters: {
             query: {
                 bookId: components["schemas"]["Uuid"];
+                mode?: "exact" | "global";
             };
             header?: never;
             path?: never;

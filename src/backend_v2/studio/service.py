@@ -35,6 +35,7 @@ class StudioAlgorithms(Protocol):
         *,
         section: str,
         config: Mapping[str, Any],
+        analysis_context: Mapping[str, Any] | None = None,
         on_chunk: Callable[[str, str], None] | None = None,
     ) -> Mapping[str, Any]: ...
 
@@ -63,13 +64,97 @@ class DefaultStudioAlgorithms:
         *,
         section: str,
         config: Mapping[str, Any],
+        analysis_context: Mapping[str, Any] | None = None,
         on_chunk: Callable[[str, str], None] | None = None,
     ) -> Mapping[str, Any]:
-        prompt = (
-            f"请为 Character Studio 文档生成 {section} 区段。"
-            "只输出 JSON；保留未要求修改的字段。\n\n"
-            + json.dumps(document, ensure_ascii=False)
+        context_json = json.dumps(
+            dict(analysis_context or {}),
+            ensure_ascii=False,
         )
+        document_json = json.dumps(document, ensure_ascii=False)
+        if section == "review":
+            prompt = (
+                "请结合漫画分析压缩上下文审查以下 Character Studio 角色文档，"
+                "重点检查角色事实是否与原作一致、各字段是否自洽且可实际使用。"
+                "只输出一个 JSON 对象，且只允许包含："
+                "summary（字符串）、issues（字符串数组）、"
+                "suggestions（字符串数组）。不要回传原文档。\n\n"
+                f"漫画分析压缩上下文：\n{context_json}\n\n"
+                f"当前角色文档：\n{document_json}"
+            )
+        else:
+            contracts = {
+                "identity": (
+                    '{"identity":{"name":"角色名","aliases":[],'
+                    '"description":"角色简介","personality":"性格",'
+                    '"scenario":"当前场景"}}'
+                ),
+                "greetings": (
+                    '{"coreMessages":{"first_message":"第一人称开场白",'
+                    '"message_example":"示例对话","alternate_greetings":[],'
+                    '"system_prompt":"","post_history_instructions":"",'
+                    '"creator_notes":"","character_version":"2.0.0"}}'
+                ),
+                "lorebook": (
+                    '{"lorebook":{"name":"世界书名称","entries":['
+                    '{"id":"稳定唯一ID","keys":["触发词"],'
+                    '"secondary_keys":[],"comment":"条目名称",'
+                    '"content":"原作事实","constant":false,'
+                    '"selective":false,"enabled":true,'
+                    '"position":"before_char","priority":100,'
+                    '"probability":100,"prevent_recursion":true}]}}'
+                ),
+                "regex": '{"regexScripts":[]}',
+                "state-tasks": '{"stateTasks":[]}',
+                "translate": (
+                    '{"identity":{"name":"","aliases":[],'
+                    '"description":"","personality":"","scenario":""},'
+                    '"coreMessages":{"first_message":"",'
+                    '"message_example":"","alternate_greetings":[],'
+                    '"system_prompt":"","post_history_instructions":"",'
+                    '"creator_notes":"","character_version":"2.0.0"},'
+                    '"lorebook":{"name":"","entries":[]},'
+                    '"regexScripts":[],"stateTasks":[]}'
+                ),
+                "full": (
+                    '{"identity":{"name":"角色名","aliases":[],'
+                    '"description":"角色简介","personality":"性格",'
+                    '"scenario":"场景"},'
+                    '"coreMessages":{"first_message":"第一人称开场白",'
+                    '"message_example":"示例对话",'
+                    '"alternate_greetings":[],'
+                    '"system_prompt":"角色扮演约束",'
+                    '"post_history_instructions":"",'
+                    '"creator_notes":"基于原作分析生成",'
+                    '"character_version":"2.0.0"},'
+                    '"lorebook":{"name":"角色世界书","entries":[]},'
+                    '"regexScripts":[],"stateTasks":[]}'
+                ),
+            }
+            instruction = (
+                "把当前角色文档中的自然语言内容完整翻译为中文；"
+                "保留 ID、正则表达式、模板变量和数据结构"
+                if section == "translate"
+                else "依据漫画分析中的原作事实生成并补全指定区段"
+            )
+            full_requirement = (
+                "identity、coreMessages、lorebook、regexScripts、"
+                "stateTasks 五个顶层键必须全部出现；"
+                "至少补全角色简介、性格、场景、第一人称开场白和世界书，"
+                "没有必要生成脚本或任务时也必须返回对应空数组。"
+                if section == "full"
+                else ""
+            )
+            prompt = (
+                f"请{instruction}。目标角色是当前文档的角色名或 source_character，"
+                "不要混入其他角色的设定。漫画分析压缩上下文是生成事实依据，"
+                "必须实际使用；当前文档已有的非空内容应在不冲突时保留。"
+                f"只输出 JSON 对象，顶层结构必须为：{contracts[section]}。"
+                f"{full_requirement}"
+                "不要回传数据库元数据、revision、status、meta 或解释文字。\n\n"
+                f"漫画分析压缩上下文：\n{context_json}\n\n"
+                f"当前角色文档：\n{document_json}"
+            )
         result = self._chat_json(
             prompt,
             config=config,
@@ -88,6 +173,7 @@ class DefaultStudioAlgorithms:
         on_chunk: Callable[[str, str], None] | None = None,
     ) -> str:
         remote_messages: list[dict[str, Any]] = []
+        has_image_attachments = False
         if system:
             remote_messages.append({"role": "system", "content": system})
         for raw in messages:
@@ -95,6 +181,7 @@ class DefaultStudioAlgorithms:
             content = str(raw.get("content", ""))
             attachments = raw.get("attachmentDataUrls", [])
             if role == "user" and isinstance(attachments, list) and attachments:
+                has_image_attachments = True
                 parts: list[dict[str, Any]] = [
                     {
                         "type": "image_url",
@@ -113,6 +200,7 @@ class DefaultStudioAlgorithms:
             temperature=0.7,
             force_json=False,
             on_chunk=on_chunk,
+            prefer_vlm=has_image_attachments,
         )
 
     def summarize(
@@ -167,6 +255,7 @@ class DefaultStudioAlgorithms:
         temperature: float,
         force_json: bool,
         on_chunk: Callable[[str, str], None] | None,
+        prefer_vlm: bool = False,
     ) -> str:
         from src.shared.ai_transport import (
             OpenAICompatibleChatTransport,
@@ -177,7 +266,7 @@ class DefaultStudioAlgorithms:
         )
         from src.shared.openai_options import OpenAICompatibleOptions
 
-        section = _provider_config(config)
+        section = _provider_config(config, prefer_vlm=prefer_vlm)
         provider = str(section.get("provider", ""))
         model = str(section.get("model", ""))
         if not provider or not model:
@@ -185,7 +274,6 @@ class DefaultStudioAlgorithms:
         options = OpenAICompatibleOptions.from_dict(
             _object(section.get("openai_options"))
         )
-        options.execution.use_stream = on_chunk is not None
         options.request.force_json_output = force_json
         if options.request.temperature is None:
             options.request.temperature = temperature
@@ -242,14 +330,22 @@ class StudioOperationService:
                 document,
                 section=section,
                 config=config,
+                analysis_context=_object(
+                    request.get("analysisContext")
+                ),
                 on_chunk=on_chunk,
             )
             if section == "review":
                 return self.repository.publish_generate(
                     fence,
                     generated_document=document,
-                    review=generated,
+                    review=_normalize_review(generated),
                 )
+            _validate_generated_payload(
+                document,
+                generated,
+                section=section,
+            )
             merged = _apply_generated_section(
                 document,
                 generated,
@@ -495,11 +591,13 @@ class StudioOperationService:
     ) -> Iterator[str]:
         chunks: queue.Queue[object] = queue.Queue(maxsize=128)
         done = object()
+        emitted_stream_chunk = threading.Event()
 
         class AgentDisconnected(RuntimeError):
             pass
 
         def on_chunk(chunk: str, _full_text: str) -> None:
+            emitted_stream_chunk.set()
             while not cancelled.is_set():
                 try:
                     chunks.put(chunk, timeout=0.1)
@@ -530,12 +628,18 @@ class StudioOperationService:
                     "```html 代码块。不要声称已直接保存文档。\n\n当前文档：\n"
                     + json.dumps(document, ensure_ascii=False)
                 )
-                self.algorithms.chat(
+                result = self.algorithms.chat(
                     messages=messages,
                     system=system,
                     config=self._with_credentials(config),
                     on_chunk=on_chunk,
                 )
+                # The saved model configuration may intentionally disable
+                # streaming. In that mode the transport returns the complete
+                # response without invoking ``on_chunk``; the SSE endpoint
+                # still has to deliver that response to the browser.
+                if result and not emitted_stream_chunk.is_set():
+                    publish_control(str(result))
             except Exception as exc:
                 if not isinstance(exc, AgentDisconnected):
                     publish_control(exc)
@@ -622,10 +726,16 @@ class StudioOperationService:
         return result
 
 
-def _provider_config(config: Mapping[str, Any]) -> dict[str, Any]:
-    section = _object(config.get("chat"))
+def _provider_config(
+    config: Mapping[str, Any],
+    *,
+    prefer_vlm: bool = False,
+) -> dict[str, Any]:
+    primary = "vlm" if prefer_vlm else "chat"
+    fallback = "chat" if prefer_vlm else "vlm"
+    section = _object(config.get(primary))
     if not section.get("provider"):
-        section = _object(config.get("vlm"))
+        section = _object(config.get(fallback))
     return {
         "provider": section.get("provider", ""),
         "api_key": section.get("api_key", section.get("apiKey", "")),
@@ -672,6 +782,73 @@ def _build_system_prompt(
         )
         if value
     )
+
+
+def _normalize_review(generated: Mapping[str, Any]) -> dict[str, Any]:
+    nested = generated.get("review")
+    source = dict(nested) if isinstance(nested, Mapping) else dict(generated)
+    summary = str(
+        source.get("summary")
+        or source.get("notes")
+        or ""
+    ).strip()
+    if not summary:
+        raise ValueError("Studio review did not return a summary")
+
+    def string_list(value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [
+            rendered
+            for item in value
+            if (rendered := str(item).strip())
+        ]
+
+    return {
+        "summary": summary,
+        "issues": string_list(source.get("issues")),
+        "suggestions": string_list(source.get("suggestions")),
+    }
+
+
+def _validate_generated_payload(
+    document: Mapping[str, Any],
+    generated: Mapping[str, Any],
+    *,
+    section: str,
+) -> None:
+    if section not in {"full", "translate"}:
+        return
+    frozen = set(
+        _object(document.get("status")).get("frozen_sections", [])
+    )
+    section_keys = {
+        "identity": "identity",
+        "greetings": "coreMessages",
+        "lorebook": "lorebook",
+        "regex": "regexScripts",
+        "state-tasks": "stateTasks",
+    }
+    missing = [
+        key
+        for section_name, key in section_keys.items()
+        if section_name not in frozen and key not in generated
+    ]
+    if missing:
+        raise ValueError(
+            "Studio full-document generation omitted required fields: "
+            + ", ".join(missing)
+        )
+    for key in ("identity", "coreMessages", "lorebook"):
+        if key in generated and not isinstance(generated[key], Mapping):
+            raise ValueError(
+                f"Studio generation field {key} must be an object"
+            )
+    for key in ("regexScripts", "stateTasks"):
+        if key in generated and not isinstance(generated[key], list):
+            raise ValueError(
+                f"Studio generation field {key} must be an array"
+            )
 
 
 def _apply_generated_section(

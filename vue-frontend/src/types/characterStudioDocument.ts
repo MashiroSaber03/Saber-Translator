@@ -1,3 +1,5 @@
+import type { ExportDiagnostic } from './characterStudioApi'
+
 export interface LorebookEntryNode {
   id: string
   comment: string
@@ -53,6 +55,7 @@ export interface CharacterStudioDocument {
   status: {
     is_favorite: boolean
     frozen_sections: string[]
+    last_diagnostics?: ExportDiagnostic | null
     last_validated_at?: string | null
   }
   meta: {

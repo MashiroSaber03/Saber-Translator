@@ -88,7 +88,56 @@ function mountComparison() {
   })
 }
 
+function mountCleanComparison() {
+  return mount(EditImageComparison, {
+    props: {
+      viewMode: 'translated',
+      layoutMode: 'horizontal',
+      currentImage: {
+        id: 'page-1',
+        name: 'page-1.png',
+        sourceAssetUrl: '/api/v2/assets/page1',
+        translatedAssetUrl: null,
+        cleanAssetUrl: '/api/v2/assets/page1-clean',
+      },
+      bubbles: [baseBubble],
+      selectedBubble: baseBubble,
+      selectedBubbleIndex: 0,
+      selectedIndices: [0],
+      scale: 1,
+      originalScale: 1,
+      isDrawingMode: false,
+      brushMode: null,
+      currentImageWidth: 1000,
+      currentImageHeight: 1200,
+      currentDrawingRect: null,
+      drawingRectStyle: {},
+      originalTransformStyle: {},
+      translatedTransformStyle: {},
+      isOcrLoading: false,
+      isTranslateLoading: false,
+    },
+    global: {
+      stubs: {
+        BubbleOverlay: BubbleOverlayStub,
+        BubbleEditor: true,
+      },
+    },
+  })
+}
+
 describe('EditImageComparison event forwarding', () => {
+  it('uses the clean asset as the editable result when no translated asset exists', () => {
+    const wrapper = mountCleanComparison()
+    const image = wrapper.get(
+      '.edit-image-comparison__image-panel--translated .edit-image-comparison__image',
+    )
+
+    expect(image.attributes('src')).toBe('/api/v2/assets/page1-clean')
+    expect(image.attributes('alt')).toBe('消字图')
+    expect(wrapper.text()).toContain('消字图')
+  })
+
   it('renders panel collapse controls through shared plus and minus icons', async () => {
     const wrapper = mountComparison()
     const toggle = wrapper.findAllComponents(UiIconButton)[0]

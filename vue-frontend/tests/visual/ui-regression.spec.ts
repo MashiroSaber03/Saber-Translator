@@ -516,6 +516,55 @@ function fixtureSettingsDocument() {
         revision: 1,
         schemaVersion: 1,
       },
+      {
+        domain: 'web_import',
+        payload: {
+          firecrawl: {},
+          agent: {
+            provider: 'openai',
+            customBaseUrl: '',
+            modelName: 'gpt-4o-mini',
+            useStream: false,
+            forceJsonOutput: true,
+            maxRetries: 3,
+            timeout: 120,
+          },
+          extraction: {
+            prompt: '提取网页中的漫画图片。',
+            maxIterations: 10,
+          },
+          download: {
+            concurrency: 3,
+            timeout: 30,
+            retries: 3,
+            delay: 100,
+            useReferer: true,
+          },
+          imagePreprocess: {
+            enabled: false,
+            autoRotate: true,
+            compression: {
+              enabled: false,
+              quality: 85,
+              maxWidth: 0,
+              maxHeight: 0,
+            },
+            formatConvert: {
+              enabled: false,
+              targetFormat: 'original',
+            },
+          },
+          advanced: {
+            bypassProxy: false,
+          },
+          ui: {
+            showAgentLogs: true,
+            autoImport: false,
+          },
+        },
+        revision: 1,
+        schemaVersion: 1,
+      },
     ],
     bookSettings: [],
     providerSettings: [],
@@ -721,7 +770,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       ? [{
           bubbleId: 'demo-bubble-1',
           ordinal: 1,
-          fontId: null,
+          fontId: 'font-source-han',
           payload: demoBubbleState,
         }]
       : []
@@ -729,7 +778,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       pageId,
       chapterId: 'demo-chapter',
       documentRevision: 1,
-      defaultFontId: null,
+      defaultFontId: 'font-source-han',
       pageStyleDefaults: fixtureTextStyle,
       pageStyleSchemaVersion: 1,
       bubbles: bubble,
@@ -1026,6 +1075,19 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       content: {},
       events: [],
       characters: [],
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/qa/status') {
+    await fulfillJson({
+      available: true,
+      reason: null,
+      generation: 1,
+      coverage: {
+        pages: fixturePages.length,
+        events: 0,
+      },
     })
     return
   }

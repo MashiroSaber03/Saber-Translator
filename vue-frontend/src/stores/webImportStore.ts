@@ -58,6 +58,22 @@ function parseCustomHeaders(value: string): Record<string, string> | undefined {
   return Object.keys(headers).length > 0 ? headers : undefined
 }
 
+function hydrateBackendWebImportSettings(value: unknown): unknown {
+  const payload = deepClone(value) as Record<string, unknown>
+  if (payload.firecrawl && typeof payload.firecrawl === 'object') {
+    (payload.firecrawl as Record<string, unknown>).apiKey = ''
+  }
+  if (payload.agent && typeof payload.agent === 'object') {
+    (payload.agent as Record<string, unknown>).apiKey = ''
+  }
+  if (payload.advanced && typeof payload.advanced === 'object') {
+    const advanced = payload.advanced as Record<string, unknown>
+    advanced.customCookie = ''
+    advanced.customHeaders = ''
+  }
+  return payload
+}
+
 export const useWebImportStore = defineStore('webImport', () => {
   const settings = ref<WebImportSettings>(createDefaultWebImportSettings())
   const providerConfigs = ref<WebImportProviderConfigs>(createDefaultWebImportProviderConfigs())
@@ -125,7 +141,11 @@ export const useWebImportStore = defineStore('webImport', () => {
     try {
       const response = await getV2Settings(['web_import', 'web_import_agent', 'web_import_firecrawl', 'web_import_http'])
       const entry = response.settings.find(row => row.domain === 'web_import')
-      settingsRevision = entry?.revision ?? 0
+      if (!entry) {
+        hasLoadedBackendSettings.value = false
+        return false
+      }
+      settingsRevision = entry.revision
       providerRevisions = new Map(
         response.providerSettings.map(row => [`${row.domain}\u0000${row.provider}`, row.revision]),
       )
@@ -139,15 +159,13 @@ export const useWebImportStore = defineStore('webImport', () => {
           customBaseUrl: String(row.payload.customBaseUrl ?? ''),
         }
       }
-      const loadedSettings = entry?.payload && Object.keys(entry.payload).length > 0
-        ? entry.payload
-        : createDefaultWebImportSettings()
+      const loadedSettings = hydrateBackendWebImportSettings(entry.payload)
       if (!applyLoadedPayload({
         settings: loadedSettings,
         providerConfigs: loadedProviderConfigs,
       })) {
-        settings.value = createDefaultWebImportSettings()
-        providerConfigs.value = loadedProviderConfigs
+        hasLoadedBackendSettings.value = false
+        return false
       }
       settings.value.firecrawl.apiKey = ''
       settings.value.agent.apiKey = ''
@@ -159,6 +177,7 @@ export const useWebImportStore = defineStore('webImport', () => {
       hasLoadedBackendSettings.value = true
       return true
     } catch {
+      hasLoadedBackendSettings.value = false
       return false
     }
   }
@@ -231,10 +250,10 @@ export const useWebImportStore = defineStore('webImport', () => {
       )
 
       const payload = deepClone(settings.value)
-      payload.firecrawl.apiKey = ''
-      payload.agent.apiKey = ''
-      payload.advanced.customCookie = ''
-      payload.advanced.customHeaders = ''
+      delete (payload.firecrawl as Partial<typeof payload.firecrawl>).apiKey
+      delete (payload.agent as Partial<typeof payload.agent>).apiKey
+      delete (payload.advanced as Partial<typeof payload.advanced>).customCookie
+      delete (payload.advanced as Partial<typeof payload.advanced>).customHeaders
       await saveV2SettingsTransaction({
         settings: [{
           domain: 'web_import',
@@ -326,6 +345,10 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
 
     await initSettings()
+    if (!hasLoadedBackendSettings.value) {
+      error.value = '网页导入设置加载失败'
+      return
+    }
     beginSettingsEdit()
     modalVisible.value = true
   }
@@ -341,6 +364,10 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
 
     await initSettings()
+    if (!hasLoadedBackendSettings.value) {
+      error.value = '网页导入设置加载失败'
+      return
+    }
     beginSettingsEdit()
     modalVisible.value = true
   }

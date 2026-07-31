@@ -13,7 +13,9 @@ from src.backend_v2.content.translation_constraints import (
 )
 from src.backend_v2.storage.defaults import (
     DEFAULT_FONT_ID,
+    DEFAULT_INSIGHT_SETTINGS,
     DEFAULT_TEXT_STYLE,
+    DEFAULT_WEB_IMPORT_SETTINGS,
     DEFAULT_WORKFLOW_PREFERENCES,
     FACTORY_PROMPTS,
     default_translation_settings,
@@ -91,8 +93,8 @@ def seed_system_records(engine: Engine) -> None:
             "rendering": {},
             "workflow_preferences": DEFAULT_WORKFLOW_PREFERENCES,
             "text_style_defaults": DEFAULT_TEXT_STYLE,
-            "insight": {},
-            "web_import": {},
+            "insight": DEFAULT_INSIGHT_SETTINGS,
+            "web_import": DEFAULT_WEB_IMPORT_SETTINGS,
             "plugin_agent": {},
         }
         default_schema_versions = {

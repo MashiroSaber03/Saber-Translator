@@ -14,6 +14,7 @@ import {
 } from './insight/insightConfigDefaults'
 import { applyInsightProviderSettingsFromApi } from './insight/insightProviderSettingsHydration'
 import { applyActiveInsightConfigFromApi } from './insight/insightConfigApiHydration'
+import { deepClone } from '@/utils/deepClone'
 
 import type {
   AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
@@ -35,6 +36,10 @@ export type EmbeddingConfig = StoreEmbeddingConfig
 export type RerankerConfig = StoreRerankerConfig
 export type ImageGenConfig = StoreImageGenConfig
 export type InsightConfig = StoreInsightConfig
+export interface InsightConfigStateSnapshot {
+  config: StoreInsightConfig
+  providerConfigs: ProviderConfigsCache
+}
 
 export const useInsightStore = defineStore('insight', () => {
   const currentBookId = ref<string | null>(null)
@@ -261,6 +266,18 @@ export const useInsightStore = defineStore('insight', () => {
     return buildInsightConfigApiPayload(config.value, providerConfigs.value)
   }
 
+  function snapshotConfigState(): InsightConfigStateSnapshot {
+    return {
+      config: deepClone(config.value),
+      providerConfigs: deepClone(providerConfigs.value),
+    }
+  }
+
+  function restoreConfigState(snapshot: InsightConfigStateSnapshot): void {
+    config.value = deepClone(snapshot.config)
+    providerConfigs.value = deepClone(snapshot.providerConfigs)
+  }
+
   function setConfigFromApi(apiConfig: Record<string, unknown>): void {
     applyActiveInsightConfigFromApi(config.value, apiConfig)
     applyInsightProviderSettingsFromApi(providerConfigs.value, apiConfig.provider_settings)
@@ -280,7 +297,7 @@ export const useInsightStore = defineStore('insight', () => {
     progressPercent, isAnalyzing, isAnalysisCompleted, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes, selectedPage,
     setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setAnalysisMode, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, setPageData, setPages, selectPage, setOverview, setGeneratedTemplates, setTimeline, dataRefreshKey, triggerDataRefresh,
     addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
-    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, getConfigForApi, setConfigFromApi, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
+    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, getConfigForApi, setConfigFromApi, snapshotConfigState, restoreConfigState, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
     switchVlmProviderDraft, switchLlmProviderDraft, switchEmbeddingProviderDraft, switchRerankerProviderDraft, switchImageGenProviderDraft,
     resetAnalysis, reset
   }

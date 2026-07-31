@@ -75,6 +75,7 @@ describe('backend-owned export/import contracts', () => {
     expect(mocks.getChapterTextExportUrl).toHaveBeenCalledWith('chapter-1')
     expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
       '/api/v2/chapters/chapter-1/text-export',
+      'chapter-chapter-1-text.json',
     )
   })
 

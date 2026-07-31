@@ -138,11 +138,12 @@ class TransferCommandService:
                     .join(assets, assets.c.id == page_assets.c.asset_id)
                     .where(
                         pages.c.chapter_id == chapter_id,
-                        page_assets.c.role.in_(("source", "translated")),
+                        page_assets.c.role.in_(("source", "clean", "translated")),
                     )
                     .order_by(
                         pages.c.ordinal,
                         (page_assets.c.role == "translated").desc(),
+                        (page_assets.c.role == "clean").desc(),
                     )
                 ).mappings()
             )

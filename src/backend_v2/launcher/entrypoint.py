@@ -43,6 +43,9 @@ from src.backend_v2.storage.single_instance import DataRootLock
 
 
 MAX_CONSECUTIVE_RESTARTS = 3
+API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
+API_HEALTH_FAILURE_LIMIT = 3
+RESTART_STABILITY_SECONDS = 30.0
 LOGGER = logging.getLogger("saber.launcher")
 
 
@@ -52,6 +55,9 @@ class ManagedChild:
     process: subprocess.Popen[str]
     registration: EpochRegistration
     restart_count: int = 0
+    ready_at: float = 0.0
+    next_health_check_at: float = 0.0
+    health_failures: int = 0
 
 
 def _role_command(role: str, *, data_root: Path, host: str, port: int) -> list[str]:
@@ -156,6 +162,85 @@ def _wait_for_api(
     raise RuntimeError(f"v2 API did not become healthy within {timeout_seconds:.0f}s")
 
 
+def _api_is_healthy(port: int, *, expected_epoch_id: str) -> bool:
+    url = f"http://127.0.0.1:{port}/api/v2/health"
+    try:
+        with urlopen(url, timeout=0.5) as response:
+            payload = json.loads(response.read())
+    except (OSError, URLError, ValueError):
+        return False
+    return bool(
+        response.status == 200
+        and isinstance(payload, dict)
+        and payload.get("status") == "ok"
+        and payload.get("epochId") == expected_epoch_id
+    )
+
+
+def _api_health_requires_restart(
+    managed: ManagedChild,
+    *,
+    port: int,
+    now: float,
+) -> bool:
+    if managed.role != "api" or now < managed.next_health_check_at:
+        return False
+    managed.next_health_check_at = now + API_HEALTH_CHECK_INTERVAL_SECONDS
+    if _api_is_healthy(
+        port,
+        expected_epoch_id=managed.registration.epoch_id,
+    ):
+        managed.health_failures = 0
+        return False
+    managed.health_failures += 1
+    LOGGER.warning(
+        "API 运行期健康检查失败：epoch=%s，连续失败=%s/%s",
+        managed.registration.epoch_id[:8],
+        managed.health_failures,
+        API_HEALTH_FAILURE_LIMIT,
+    )
+    return managed.health_failures >= API_HEALTH_FAILURE_LIMIT
+
+
+def _worker_epoch_requires_restart(
+    managed: ManagedChild,
+    *,
+    repository: ProcessEpochRepository,
+    now: float,
+) -> bool:
+    if managed.role != "worker" or now < managed.next_health_check_at:
+        return False
+    managed.next_health_check_at = now + API_HEALTH_CHECK_INTERVAL_SECONDS
+    try:
+        return not repository.is_active_epoch(
+            role="worker",
+            epoch_id=managed.registration.epoch_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "读取 Worker epoch 状态失败，将在下一轮重试：epoch=%s",
+            managed.registration.epoch_id[:8],
+        )
+        return False
+
+
+def _reset_restart_count_after_stable_run(
+    managed: ManagedChild,
+    *,
+    now: float,
+) -> None:
+    if (
+        managed.restart_count > 0
+        and now - managed.ready_at >= RESTART_STABILITY_SECONDS
+    ):
+        LOGGER.info(
+            "%s 子进程已稳定运行 %.0f 秒，连续重启计数清零",
+            managed.role.upper(),
+            RESTART_STABILITY_SECONDS,
+        )
+        managed.restart_count = 0
+
+
 def _wait_for_worker(
     data_root: Path,
     *,
@@ -228,6 +313,7 @@ def _start_child(
     registration = _new_registration(role)
     repository.register(registration)
     started_at = time.monotonic()
+    process: subprocess.Popen[str] | None = None
     LOGGER.info(
         "正在启动 %s 子进程（epoch=%s，restart=%s）",
         role.upper(),
@@ -267,6 +353,8 @@ def _start_child(
             role.upper(),
             registration.epoch_id[:8],
         )
+        if process is not None:
+            _stop_children([process])
         if role == "api":
             repository.reconcile_dead_api(registration.epoch_id)
         else:
@@ -279,11 +367,54 @@ def _start_child(
         registration.epoch_id[:8],
         time.monotonic() - started_at,
     )
+    ready_at = time.monotonic()
     return ManagedChild(
         role=role,
         process=process,
         registration=registration,
         restart_count=restart_count,
+        ready_at=ready_at,
+        next_health_check_at=ready_at + API_HEALTH_CHECK_INTERVAL_SECONDS,
+    )
+
+
+def _start_child_with_retries(
+    *,
+    role: str,
+    data_root: Path,
+    host: str,
+    port: int,
+    repository: ProcessEpochRepository,
+    child_job: ChildProcessJob,
+    restart_count: int,
+    log_level: str | None = None,
+) -> ManagedChild:
+    current_restart_count = restart_count
+    while current_restart_count <= MAX_CONSECUTIVE_RESTARTS:
+        try:
+            return _start_child(
+                role=role,
+                data_root=data_root,
+                host=host,
+                port=port,
+                repository=repository,
+                child_job=child_job,
+                restart_count=current_restart_count,
+                log_level=log_level,
+            )
+        except Exception:
+            current_restart_count += 1
+            if current_restart_count > MAX_CONSECUTIVE_RESTARTS:
+                break
+            LOGGER.warning(
+                "%s 子进程启动失败，将执行第 %s/%s 次连续重启",
+                role.upper(),
+                current_restart_count,
+                MAX_CONSECUTIVE_RESTARTS,
+            )
+            time.sleep(0.25)
+    raise RuntimeError(
+        f"v2 {role} exceeded {MAX_CONSECUTIVE_RESTARTS} consecutive restarts"
     )
 
 
@@ -344,7 +475,7 @@ def run_launcher(args: object) -> int:
             with ChildProcessJob() as child_job:
                 try:
                     for role in ("api", "worker"):
-                        children[role] = _start_child(
+                        children[role] = _start_child_with_retries(
                             role=role,
                             data_root=data_root,
                             host=host,
@@ -369,8 +500,45 @@ def run_launcher(args: object) -> int:
                     )
 
                     while True:
+                        now = time.monotonic()
                         for role, managed in list(children.items()):
+                            _reset_restart_count_after_stable_run(
+                                managed,
+                                now=now,
+                            )
                             return_code = managed.process.poll()
+                            if (
+                                return_code is None
+                                and _api_health_requires_restart(
+                                    managed,
+                                    port=port,
+                                    now=now,
+                                )
+                            ):
+                                LOGGER.error(
+                                    "API 进程仍存活但健康检查持续失败，"
+                                    "先终止旧进程再执行 epoch 恢复：pid=%s，epoch=%s",
+                                    managed.process.pid,
+                                    managed.registration.epoch_id[:8],
+                                )
+                                _stop_children([managed.process])
+                                return_code = managed.process.poll()
+                            if (
+                                return_code is None
+                                and _worker_epoch_requires_restart(
+                                    managed,
+                                    repository=repository,
+                                    now=now,
+                                )
+                            ):
+                                LOGGER.error(
+                                    "Worker epoch 已失效但旧进程仍存活，"
+                                    "正在终止旧进程后重启：pid=%s，epoch=%s",
+                                    managed.process.pid,
+                                    managed.registration.epoch_id[:8],
+                                )
+                                _stop_children([managed.process])
+                                return_code = managed.process.poll()
                             if return_code is None:
                                 continue
                             LOGGER.warning(
@@ -393,7 +561,7 @@ def run_launcher(args: object) -> int:
                                     f"v2 {role} exceeded "
                                     f"{MAX_CONSECUTIVE_RESTARTS} consecutive restarts"
                                 )
-                            children[role] = _start_child(
+                            children[role] = _start_child_with_retries(
                                 role=role,
                                 data_root=data_root,
                                 host=host,

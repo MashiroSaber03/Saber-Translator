@@ -19,7 +19,6 @@ from sqlalchemy import Engine, delete, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.translation_constraints import (
-    empty_translation_constraints,
     validate_translation_constraints,
     with_glossary_delta,
 )
@@ -293,6 +292,12 @@ def _restore_non_translate_text(
     restored = text
     for token, fragment in restore.items():
         if token not in restored:
+            # Vision models can read the protected fragment directly from the
+            # page image and return it verbatim instead of echoing our token.
+            # That already satisfies the non-translate constraint, so do not
+            # reject an otherwise valid translation.
+            if fragment in restored:
+                continue
             raise JobConflict(
                 f"translation response lost protected non-translate token {token}"
             )
@@ -767,12 +772,14 @@ class TranslationPipelineService:
         engine: Engine,
         jobs: JobQueueRepository,
         algorithms: TranslationAlgorithms | None = None,
+        plugin_runtime: Any | None = None,
     ) -> None:
         self.data_root = data_root
         self.engine = engine
         self.jobs = jobs
         self.storage = AssetStorageService(data_root, engine)
         self.algorithms = algorithms or LegacyTranslationAlgorithms()
+        self.plugin_runtime = plugin_runtime
 
     def handler(
         self,
@@ -911,6 +918,38 @@ class TranslationPipelineService:
         request_pages: list[dict[str, Any]] = []
         try:
             for step, snapshot, bubble_payloads in prepared:
+                before = self._atomic_hook(
+                    fence,
+                    phase="before",
+                    scope="ai_translate",
+                    page_id=snapshot.page_id,
+                    data={
+                        "pageId": snapshot.page_id,
+                        "originalTexts": [
+                            str(bubble.get("originalText", ""))
+                            for bubble in bubble_payloads
+                        ],
+                        "translations": [
+                            str(bubble.get("translatedText", ""))
+                            for bubble in bubble_payloads
+                        ],
+                    },
+                )
+                original_texts = list(before["originalTexts"])
+                current_translations = list(
+                    before.get("translations", [])
+                )
+                if len(original_texts) != len(bubble_payloads) or (
+                    current_translations
+                    and len(current_translations) != len(bubble_payloads)
+                ):
+                    raise JobConflict(
+                        "AI translation plugin result count does not match bubbles"
+                    )
+                for index, bubble in enumerate(bubble_payloads):
+                    bubble["originalText"] = original_texts[index]
+                    if current_translations:
+                        bubble["translatedText"] = current_translations[index]
                 constraints = constraint_context_by_page[snapshot.page_id][
                     "constraints"
                 ]
@@ -1038,6 +1077,36 @@ class TranslationPipelineService:
                         {},
                     ),
                 )
+            ordered_ids = [
+                str(bubble["bubbleId"])
+                for bubble in requested_bubbles
+            ]
+            after = self._atomic_hook(
+                fence,
+                phase="after",
+                scope="ai_translate",
+                page_id=snapshot.page_id,
+                data={
+                    "pageId": snapshot.page_id,
+                    "originalTexts": [
+                        str(bubble.get("originalText", ""))
+                        for bubble in requested_bubbles
+                    ],
+                    "translations": [
+                        str(translated_by_id[bubble_id])
+                        for bubble_id in ordered_ids
+                    ],
+                },
+            )
+            plugin_translations = list(after["translations"])
+            if len(plugin_translations) != len(ordered_ids):
+                raise JobConflict(
+                    "AI translation plugin result count does not match bubbles"
+                )
+            translated_by_id = {
+                bubble_id: plugin_translations[index]
+                for index, bubble_id in enumerate(ordered_ids)
+            }
             updated = [dict(payload) for payload in snapshot.bubbles]
             index_by_id = {
                 bubble_id: index
@@ -1109,11 +1178,25 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
-        image = self._open_bound_image(fence, step, page_id, "source")
+        source = self._bound_asset(fence, step, page_id, "source")
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="detect",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": str(source["id"]),
+                "detectorConfig": dict(
+                    self._config(step).get("detector", {})
+                ),
+            },
+        )
+        image = self._open_asset(str(before["sourceAssetId"]), "RGB")
         try:
             result = self.algorithms.detect(
                 image,
-                self._config(step).get("detector", {}),
+                dict(before["detectorConfig"]),
             )
         finally:
             image.close()
@@ -1139,13 +1222,56 @@ class TranslationPipelineService:
         mask = result.get("raw_mask")
         if isinstance(mask, Image.Image):
             mask_record = self._publish_image(mask, mode="L")
+            mask.close()
         elif mask is not None:
-            mask_record = self._publish_image(Image.fromarray(mask), mode="L")
+            mask_image = Image.fromarray(mask)
+            try:
+                mask_record = self._publish_image(mask_image, mode="L")
+            finally:
+                mask_image.close()
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="detect",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "bubbles": payloads,
+                "textMaskAssetId": (
+                    mask_record.id if mask_record is not None else None
+                ),
+            },
+        )
+        payloads = [dict(value) for value in after["bubbles"]]
+        mask_asset_id = after.get("textMaskAssetId")
+        mask_record = (
+            self._asset_record(str(mask_asset_id))
+            if mask_asset_id is not None
+            else None
+        )
         new_revision = snapshot.document_revision + 1
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
+            )
+            standalone_detect = str(step.get("jobKind", "")) == "detect"
+            has_translated_asset = (
+                connection.execute(
+                    select(page_assets.c.asset_id).where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
+            has_drawable_text = any(
+                str(payload.get("translatedText", "")).strip()
+                for payload in payloads
+            )
+            needs_render = bool(
+                standalone_detect
+                and (has_translated_asset or has_drawable_text)
             )
             connection.execute(delete(bubbles).where(bubbles.c.page_id == page_id))
             if payloads:
@@ -1163,16 +1289,29 @@ class TranslationPipelineService:
                         for index, payload in enumerate(payloads, start=1)
                     ],
                 )
+            page_values: dict[str, object] = {
+                "document_revision": new_revision,
+                "detection_state": "processed",
+                "render_status": (
+                    "stale"
+                    if not standalone_detect or needs_render
+                    else "not_rendered"
+                ),
+            }
+            if standalone_detect and not needs_render:
+                page_values["rendered_revision"] = None
             connection.execute(
                 update(pages)
                 .where(
                     pages.c.id == page_id,
                     pages.c.document_revision == snapshot.document_revision,
                 )
-                .values(
-                    document_revision=new_revision,
-                    detection_state="processed",
-                    render_status="stale",
+                .values(**page_values)
+            )
+            connection.execute(
+                delete(page_assets).where(
+                    page_assets.c.page_id == page_id,
+                    page_assets.c.role == "text_mask",
                 )
             )
             if mask_record is not None:
@@ -1184,6 +1323,16 @@ class TranslationPipelineService:
                     source_revision=snapshot.source_revision,
                     document_revision=new_revision,
                     step_id=str(step["stepId"]),
+                )
+            if standalone_detect and not needs_render:
+                connection.execute(
+                    update(job_steps)
+                    .where(
+                        job_steps.c.job_item_id == step["itemId"],
+                        job_steps.c.kind.in_(("render", "save")),
+                        job_steps.c.status == "pending",
+                    )
+                    .values(status="skipped")
                 )
 
         checkpoint = {
@@ -1205,22 +1354,53 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
-        image = self._open_bound_image(fence, step, page_id, "source")
+        source = self._bound_asset(fence, step, page_id, "source")
+        raw_section = self._config(step).get("ocr", {})
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="ocr",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": str(source["id"]),
+                "bubbles": [dict(value) for value in snapshot.bubbles],
+                "ocrConfig": (
+                    dict(raw_section)
+                    if isinstance(raw_section, Mapping)
+                    else {}
+                ),
+            },
+        )
+        image = self._open_asset(str(before["sourceAssetId"]), "RGB")
         try:
-            section = self._with_credential(self._config(step).get("ocr", {}))
+            section = self._with_credential(before["ocrConfig"])
             section.setdefault(
                 "source_language",
                 self._config(step).get("sourceLanguage", "japanese"),
             )
             result = self.algorithms.ocr(
                 image,
-                [dict(value) for value in snapshot.bubbles],
+                [dict(value) for value in before["bubbles"]],
                 section,
             )
         finally:
             image.close()
         texts = list(result.get("texts", []))
         details = list(result.get("results", []))
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="ocr",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "originalTexts": [str(value) for value in texts],
+                "ocrResults": details,
+            },
+        )
+        texts = list(after["originalTexts"])
+        details = list(after["ocrResults"])
         updated = [dict(payload) for payload in snapshot.bubbles]
         if len(texts) != len(updated):
             raise JobConflict("OCR result count does not match persisted bubbles")
@@ -1242,14 +1422,61 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
-        image = self._open_bound_image(fence, step, page_id, "source")
+        source = self._bound_asset(fence, step, page_id, "source")
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="color",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": str(source["id"]),
+                "bubbles": [dict(value) for value in snapshot.bubbles],
+            },
+        )
+        image = self._open_asset(str(before["sourceAssetId"]), "RGB")
         try:
             colors = self.algorithms.colors(
                 image,
-                [dict(value) for value in snapshot.bubbles],
+                [dict(value) for value in before["bubbles"]],
             )
         finally:
             image.close()
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="color",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "colors": [
+                    {
+                        "fgColor": (
+                            list(color["fg_color"])
+                            if color.get("fg_color") is not None
+                            else None
+                        ),
+                        "bgColor": (
+                            list(color["bg_color"])
+                            if color.get("bg_color") is not None
+                            else None
+                        ),
+                        "confidence": float(
+                            color.get("confidence", 0)
+                        ),
+                    }
+                    for color in colors
+                ],
+            },
+        )
+        colors = [
+            {
+                "fg_color": color.get("fgColor"),
+                "bg_color": color.get("bgColor"),
+                "confidence": color.get("confidence", 0),
+            }
+            for color in after["colors"]
+        ]
         if len(colors) != len(snapshot.bubbles):
             raise JobConflict("color result count does not match persisted bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
@@ -1473,14 +1700,34 @@ class TranslationPipelineService:
         mode: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
-        texts = [str(payload.get("originalText", "")) for payload in snapshot.bubbles]
+        persisted_texts = [
+            str(payload.get("originalText", ""))
+            for payload in snapshot.bubbles
+        ]
         constraints = self._effective_constraints(
             step,
             include_current_page=True,
         )
+        raw_section = self._config(step).get("translation", {})
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="translate",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "originalTexts": persisted_texts,
+                "translationConfig": (
+                    dict(raw_section)
+                    if isinstance(raw_section, Mapping)
+                    else {}
+                ),
+            },
+        )
+        texts = list(before["originalTexts"])
         section = self._with_constraint_prompt(
             self._with_credential(
-                self._config(step).get("translation", {})
+                before["translationConfig"]
             ),
             constraint_contexts=[
                 {
@@ -1514,11 +1761,25 @@ class TranslationPipelineService:
             for index, value in enumerate(list(result.get("translated", [])))
         ]
         textbox = list(result.get("textbox", []))
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="translate",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "originalTexts": texts,
+                "translations": translated,
+                "textboxTexts": [str(value) for value in textbox],
+            },
+        )
+        translated = list(after["translations"])
+        textbox = list(after.get("textboxTexts", []))
         if len(translated) != len(snapshot.bubbles):
             raise JobConflict("translation result count does not match bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
         warnings = _translation_constraint_warnings(
-            texts,
+            persisted_texts,
             translated,
             constraints,
         )
@@ -1567,30 +1828,47 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
-        image = self._open_bound_image(fence, step, page_id, "source")
-        precise_mask = self._open_completed_step_image(
+        source = self._bound_asset(fence, step, page_id, "source")
+        precise_mask_asset_id = self._completed_step_asset_id(
             fence,
             step,
             step_kind="detect",
             role="text_mask",
-            mode="L",
         )
-        # The job config freezes global settings, while page style defaults are
-        # the authoritative per-page overrides selected before translation.
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="inpaint",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "sourceAssetId": str(source["id"]),
+                "inputAssetId": str(source["id"]),
+                "textMaskAssetId": precise_mask_asset_id,
+                "bubbles": [dict(value) for value in snapshot.bubbles],
+                "method": str(snapshot.style_defaults["inpaintMethod"]),
+                "fillColor": snapshot.style_defaults.get("fillColor"),
+            },
+        )
+        image = self._open_asset(str(before["inputAssetId"]), "RGB")
+        precise_mask = (
+            self._open_asset(str(before["textMaskAssetId"]), "L")
+            if before.get("textMaskAssetId") is not None
+            else None
+        )
+        # Precise-mask expansion is frozen as task configuration. Repair method
+        # and fill color are page facts bound when this item starts.
         inpainting = dict(self._config(step).get("inpainting", {}))
-        page_method = snapshot.style_defaults.get("inpaintMethod")
-        if page_method is not None:
-            method = str(page_method)
-            inpainting["method"] = "solid" if method == "solid" else "lama"
-            inpainting["lama_model"] = (
-                "litelama" if method == "litelama" else "lama_mpe"
-            )
-        if "fillColor" in snapshot.style_defaults:
-            inpainting["fill_color"] = snapshot.style_defaults["fillColor"]
+        method = str(before["method"])
+        inpainting["method"] = "solid" if method == "solid" else "lama"
+        inpainting["lama_model"] = (
+            "litelama" if method == "litelama" else "lama_mpe"
+        )
+        inpainting["fill_color"] = before.get("fillColor") or "#FFFFFF"
         try:
             repaired = self.algorithms.repair(
                 image,
-                [dict(value) for value in snapshot.bubbles],
+                [dict(value) for value in before["bubbles"]],
                 inpainting,
                 precise_mask=precise_mask,
             )
@@ -1600,6 +1878,18 @@ class TranslationPipelineService:
                 precise_mask.close()
         record = self._publish_image(repaired)
         repaired.close()
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="inpaint",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "cleanAssetId": record.id,
+                "documentRevision": snapshot.document_revision,
+            },
+        )
+        record = self._asset_record(str(after["cleanAssetId"]))
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
@@ -1638,37 +1928,121 @@ class TranslationPipelineService:
             materialize_render_payloads,
         )
 
+        job_kind = str(step.get("jobKind", ""))
+        initialize_auto_fields: frozenset[str]
+        if job_kind == "translation":
+            initialize_auto_fields = frozenset(
+                {"fontSize", "layoutDirection", "textColor", "fillColor"}
+            )
+        elif job_kind == "style_apply":
+            config = self._config(step)
+            selected = config.get("selectedFields", [])
+            frozen = config.get("frozenStyle", {})
+            initialize_auto_fields = (
+                frozenset({"fontSize"})
+                if (
+                    isinstance(selected, list)
+                    and "fontSize" in selected
+                    and isinstance(frozen, Mapping)
+                    and bool(frozen.get("autoFontSize", False))
+                )
+                else frozenset()
+            )
+        else:
+            # Text import and any future ordinary render jobs must preserve the
+            # concrete bubble values already stored in the page document.
+            initialize_auto_fields = frozenset()
         with self.engine.connect() as connection:
             projected = materialize_render_payloads(
                 connection,
                 self.storage,
                 page_id,
-                initialize_auto_styles=True,
+                initialize_auto_fields=initialize_auto_fields,
             )
         render_payloads = [
             render_payload
             for _bubble_id, _payload, render_payload in projected
         ]
+        persisted_payloads = [
+            (bubble_id, payload)
+            for bubble_id, payload, _render_payload in projected
+        ]
         try:
-            clean = self._open_bound_image(fence, step, page_id, "clean")
+            input_asset = self._bound_asset(
+                fence,
+                step,
+                page_id,
+                "clean",
+            )
         except JobConflict:
-            clean = self._open_bound_image(fence, step, page_id, "source")
+            input_asset = self._bound_asset(
+                fence,
+                step,
+                page_id,
+                "source",
+            )
+        render_section = self._config(step).get("render", {})
+        before = self._atomic_hook(
+            fence,
+            phase="before",
+            scope="render",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "inputAssetId": str(input_asset["id"]),
+                "bubbles": render_payloads,
+                "renderConfig": (
+                    dict(render_section)
+                    if isinstance(render_section, Mapping)
+                    else {}
+                ),
+            },
+        )
+        clean = self._open_asset(str(before["inputAssetId"]), "RGB")
         try:
             rendered = self.algorithms.render(
                 clean,
-                render_payloads,
-                self._config(step).get("render", {}),
+                [dict(value) for value in before["bubbles"]],
+                dict(before["renderConfig"]),
             )
         finally:
             clean.close()
         translated = self._publish_image(rendered)
         thumbnail = self._publish_thumbnail(rendered)
         rendered.close()
+        after = self._atomic_hook(
+            fence,
+            phase="after",
+            scope="render",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "translatedAssetId": translated.id,
+                "thumbnailAssetId": thumbnail.id,
+                "documentRevision": snapshot.document_revision,
+            },
+        )
+        translated = self._asset_record(str(after["translatedAssetId"]))
+        thumbnail = self._asset_record(str(after["thumbnailAssetId"]))
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
             )
+            for bubble_id, payload in persisted_payloads:
+                connection.execute(
+                    update(bubbles)
+                    .where(
+                        bubbles.c.id == bubble_id,
+                        bubbles.c.page_id == page_id,
+                        bubbles.c.updated_revision
+                        <= snapshot.document_revision,
+                    )
+                    .values(
+                        payload_json=_json(payload),
+                        updated_revision=snapshot.document_revision,
+                    )
+                )
             connection.execute(
                 insert(job_step_asset_outputs),
                 [
@@ -1705,10 +2079,6 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         """Publish a prior render checkpoint as the current page projection."""
-
-        from src.backend_v2.rendering.fonts import (
-            materialize_render_payloads,
-        )
 
         snapshot = self._snapshot(page_id)
         with self.engine.connect() as connection:
@@ -1748,12 +2118,6 @@ class TranslationPipelineService:
                     )
                 ).mappings()
             )
-            projected = materialize_render_payloads(
-                connection,
-                self.storage,
-                page_id,
-                initialize_auto_styles=True,
-            )
         records = {
             str(row["role"]): AssetRecord(
                 id=str(row["id"]),
@@ -1770,29 +2134,10 @@ class TranslationPipelineService:
         thumbnail = records.get("thumbnail_translated")
         if translated is None or thumbnail is None:
             raise JobConflict("save step has no complete render asset checkpoint")
-        persisted_payloads = [
-            (bubble_id, payload)
-            for bubble_id, payload, _render_payload in projected
-        ]
-
         def publish(connection: Connection) -> None:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
             )
-            for bubble_id, payload in persisted_payloads:
-                connection.execute(
-                    update(bubbles)
-                    .where(
-                        bubbles.c.id == bubble_id,
-                        bubbles.c.page_id == page_id,
-                        bubbles.c.updated_revision
-                        <= snapshot.document_revision,
-                    )
-                    .values(
-                        payload_json=_json(payload),
-                        updated_revision=snapshot.document_revision,
-                    )
-                )
             self._publish_pointer(
                 connection,
                 page_id=page_id,
@@ -1941,21 +2286,113 @@ class TranslationPipelineService:
         page_id: str,
         role: str,
     ) -> Image.Image:
-        bound = self.jobs.bind_item_inputs(
+        bound = self._bound_asset(
+            fence,
+            step,
+            page_id,
+            role,
+        )
+        return self._open_asset(str(bound["id"]), "RGB")
+
+    def _bound_asset(
+        self,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
+        page_id: str,
+        role: str,
+    ) -> dict[str, object]:
+        return self.jobs.bind_item_inputs(
             fence,
             item_id=str(step["itemId"]),
             page_id=page_id,
             roles=(role,),
         )[role]
-        path = self.storage.resolve_relative_path(str(bound["relative_path"]))
-        image = Image.open(path)
-        if image.mode != "RGB":
-            converted = image.convert("RGB")
+
+    def _open_asset(self, asset_id: str, mode: str) -> Image.Image:
+        with self.engine.connect() as connection:
+            relative_path = connection.execute(
+                select(assets.c.relative_path).where(
+                    assets.c.id == asset_id
+                )
+            ).scalar_one_or_none()
+        if relative_path is None:
+            raise JobConflict("plugin referenced an unknown asset")
+        image = Image.open(
+            self.storage.resolve_relative_path(str(relative_path))
+        )
+        if image.mode != mode:
+            converted = image.convert(mode)
             image.close()
             image = converted
         else:
             image.load()
         return image
+
+    def _asset_record(self, asset_id: str) -> AssetRecord:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    assets.c.id,
+                    assets.c.relative_path,
+                    assets.c.mime_type,
+                    assets.c.checksum,
+                    assets.c.byte_size,
+                    assets.c.width,
+                    assets.c.height,
+                ).where(assets.c.id == asset_id)
+            ).mappings().one_or_none()
+        if row is None:
+            raise JobConflict("plugin referenced an unknown asset")
+        return AssetRecord(
+            id=str(row["id"]),
+            relative_path=str(row["relative_path"]),
+            mime_type=str(row["mime_type"]),
+            checksum=str(row["checksum"]),
+            byte_size=int(row["byte_size"]),
+            width=(
+                int(row["width"])
+                if row["width"] is not None
+                else None
+            ),
+            height=(
+                int(row["height"])
+                if row["height"] is not None
+                else None
+            ),
+        )
+
+    def _completed_step_asset_id(
+        self,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
+        *,
+        step_kind: str,
+        role: str,
+    ) -> str | None:
+        with self.engine.connect() as connection:
+            value = connection.execute(
+                select(assets.c.id)
+                .join(
+                    job_step_asset_outputs,
+                    job_step_asset_outputs.c.asset_id == assets.c.id,
+                )
+                .join(
+                    job_steps,
+                    job_steps.c.id == job_step_asset_outputs.c.job_step_id,
+                )
+                .join(
+                    job_items,
+                    job_items.c.id == job_steps.c.job_item_id,
+                )
+                .where(
+                    job_items.c.id == str(step["itemId"]),
+                    job_items.c.job_id == fence.job_id,
+                    job_steps.c.kind == step_kind,
+                    job_steps.c.status == "completed",
+                    job_step_asset_outputs.c.role == role,
+                )
+            ).scalar_one_or_none()
+        return str(value) if value is not None else None
 
     def _open_completed_step_image(
         self,
@@ -2004,6 +2441,25 @@ class TranslationPipelineService:
             image.load()
         return image
 
+    def _atomic_hook(
+        self,
+        fence: AttemptFence,
+        *,
+        phase: str,
+        scope: str,
+        page_id: str,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if self.plugin_runtime is None:
+            return dict(data)
+        return self.plugin_runtime.run_atomic(
+            fence,
+            phase=phase,
+            step=scope,
+            page_id=page_id,
+            data=data,
+        )
+
     def _config(self, step: Mapping[str, Any]) -> dict[str, Any]:
         value = step.get("config", {})
         return dict(value) if isinstance(value, Mapping) else {}
@@ -2016,9 +2472,9 @@ class TranslationPipelineService:
     ) -> dict[str, Any]:
         config = self._config(step)
         raw = config.get("translationConstraints")
-        constraints = validate_translation_constraints(
-            raw if isinstance(raw, Mapping) else empty_translation_constraints()
-        )
+        if not isinstance(raw, Mapping):
+            raise JobConflict("translation constraints snapshot is missing")
+        constraints = validate_translation_constraints(raw)
         job_id = step.get("jobId")
         item_ordinal = step.get("itemOrdinal")
         if not isinstance(job_id, str) or not isinstance(item_ordinal, int):
@@ -2073,11 +2529,9 @@ class TranslationPipelineService:
         active_contexts: list[dict[str, Any]] = []
         for context in constraint_contexts:
             raw_constraints = context.get("constraints")
-            constraints = validate_translation_constraints(
-                raw_constraints
-                if isinstance(raw_constraints, Mapping)
-                else empty_translation_constraints()
-            )
+            if not isinstance(raw_constraints, Mapping):
+                raise JobConflict("page translation constraints are missing")
+            constraints = validate_translation_constraints(raw_constraints)
             glossary = constraints["glossary"]
             non_translate = constraints["nonTranslate"]
             if not bool(glossary["enabled"]) and not bool(non_translate["enabled"]):
@@ -2254,7 +2708,6 @@ class TranslationPipelineService:
             "coords": list(coords) if isinstance(coords, (list, tuple)) else [0, 0, 0, 0],
             "polygon": polygon if isinstance(polygon, list) else [],
             "fontSize": 25,
-            "fontFamily": "",
             "textDirection": direction,
             "autoTextDirection": direction,
             "textColor": "#000000",

@@ -92,6 +92,17 @@ function formatPromptPreview(value: unknown): string {
   return ''
 }
 
+function mapDiagnostics(value: unknown): ExportDiagnostic | null {
+  const diagnostics = record(value)
+  if (!Object.keys(diagnostics).length) return null
+  return {
+    valid: Boolean(diagnostics.valid),
+    errors: array(diagnostics.errors).map(String),
+    warnings: array(diagnostics.warnings).map(String),
+    checks: record(diagnostics.checks) as Record<string, boolean>,
+  }
+}
+
 function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
   documentCache.set(raw.id, raw)
   const origin = record(raw.origin)
@@ -113,6 +124,7 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
     status: {
       is_favorite: Boolean(status.is_favorite),
       frozen_sections: array(status.frozen_sections).map(String),
+      last_diagnostics: mapDiagnostics(status.last_diagnostics),
       last_validated_at: typeof status.last_validated_at === 'string'
         ? status.last_validated_at
         : null,
@@ -391,18 +403,24 @@ export async function generateCharacterStudioSection(
 export async function validateCharacterStudioDocument(
   _bookId: string,
   docId: string,
-): Promise<ExportDiagnostic & { success: boolean; message?: string; error?: string }> {
+): Promise<ExportDiagnostic & {
+  success: boolean
+  message?: string
+  error?: string
+  document?: CharacterStudioDocument
+}> {
   const current = rawDocument(docId)
   const response = await validateV2StudioDocument(docId, current.revision)
   const diagnostics = record(response.diagnostics)
   const refreshed = await getV2StudioDocument(docId)
-  mapDocument(refreshed)
+  const document = mapDocument(refreshed)
   return {
     success: true,
     valid: Boolean(diagnostics.valid),
     errors: array(diagnostics.errors).map(String),
     warnings: array(diagnostics.warnings).map(String),
     checks: record(diagnostics.checks) as Record<string, boolean>,
+    document,
   }
 }
 

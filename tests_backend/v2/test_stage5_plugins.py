@@ -15,8 +15,13 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
-from src.backend_v2.plugins.contract import PluginContractError
-from src.backend_v2.plugins.package import parse_archive
+from src.backend_v2.plugins.contract import (
+    PluginContractError,
+    parse_manifest,
+    validate_atomic_hook_data,
+    validate_hook_source_contract,
+)
+from src.backend_v2.plugins.package import build_archive, parse_archive
 from src.backend_v2.plugins.repository import (
     PluginConflict,
     PluginLocked,
@@ -47,6 +52,10 @@ from src.backend_v2.storage.schema import (
     jobs as jobs_table,
 )
 from src.backend_v2.storage.seeding import seed_system_records
+from src.core.plugin_agent.controller import PluginAgentController
+from src.shared.openai_execution import (
+    OpenAICompatibleBusinessRetryableError,
+)
 
 
 def _plugin_archive(
@@ -264,6 +273,42 @@ def test_refresh_detects_tampering_and_safe_archive_rejects_traversal(
         parse_archive(output.getvalue())
 
 
+def test_python_runtime_cache_is_not_part_of_immutable_package(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    installed = registry.import_archive(
+        data=_plugin_archive(plugin_id="cache_v3"),
+        base_revision=0,
+        idempotency_key="cache-plugin",
+    )
+    version_root = (
+        data_root
+        / "plugins"
+        / "cache_v3"
+        / "versions"
+        / str(installed["pluginVersionId"])
+    )
+    cache_file = (
+        version_root / "__pycache__" / "plugin.cpython-312.pyc"
+    )
+    cache_file.parent.mkdir()
+    cache_file.write_bytes(b"runtime-only")
+
+    assert registry.refresh()["failedVersions"] == 0
+    exported = build_archive(version_root)
+    with zipfile.ZipFile(BytesIO(exported)) as archive:
+        assert "__pycache__/plugin.cpython-312.pyc" not in archive.namelist()
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("plugin.json", "{}")
+        archive.writestr("__pycache__/plugin.cpython-312.pyc", b"cache")
+    with pytest.raises(PluginContractError, match="runtime cache"):
+        parse_archive(output.getvalue())
+
+
 def test_plugin_management_http_api_is_metadata_only(
     plugin_platform,
 ) -> None:
@@ -359,7 +404,10 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
                 "class Plugin:\n"
                 "    def before_translate(self, context, payload):\n"
                 "        result = dict(payload)\n"
-                "        result['seenConfig'] = context.config['prefix']\n"
+                "        result['originalTexts'] = [\n"
+                "            context.config['prefix'] + value\n"
+                "            for value in payload['originalTexts']\n"
+                "        ]\n"
                 "        return result\n"
             ),
         ),
@@ -406,15 +454,27 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
         engine=engine,
         repository=jobs,
     )
-    changed = runtime.before_step(
+    hook_page_id = str(uuid.uuid4())
+    changed = runtime.run_atomic(
         fence,
-        {
-            "jobId": created["jobIds"][0],
-            "stepKind": "translate",
-            "pageId": None,
+        phase="before",
+        step="translate",
+        page_id=hook_page_id,
+        data={
+            "pageId": hook_page_id,
+            "originalTexts": ["source"],
+            "translationConfig": {},
         },
     )
-    assert changed["seenConfig"] == "[v3]"
+    assert changed["originalTexts"] == ["[v3]source"]
+    loaded_version_root = (
+        data_root
+        / "plugins"
+        / "frozen_v3"
+        / "versions"
+        / str(installed["pluginVersionId"])
+    )
+    assert not (loaded_version_root / "__pycache__").exists()
     with engine.connect() as connection:
         version_ids = set(
             connection.execute(
@@ -527,13 +587,17 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
         engine=engine,
         repository=jobs,
     )
+    hook_page_id = str(uuid.uuid4())
     with pytest.raises(PluginHookFailure, match="strict failure"):
-        runtime.before_step(
+        runtime.run_atomic(
             fence,
-            {
-                "jobId": created["jobIds"][0],
-                "stepKind": "translate",
-                "pageId": None,
+            phase="before",
+            step="translate",
+            page_id=hook_page_id,
+            data={
+                "pageId": hook_page_id,
+                "originalTexts": ["source"],
+                "translationConfig": {},
             },
         )
 
@@ -697,6 +761,18 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
         checkpoint=result,
     )
     queue.finish_if_complete(fence)
+    reconciled = sessions.get(session_id)
+    assert reconciled["run_state"] == "completed"
+    assert reconciled["execution_started_at"]
+    assert reconciled["execution_finished_at"]
+    assert reconciled["touched_files"] == ["plugin.json", "plugin.py"]
+    assert set(reconciled["file_previews"]) == {
+        "plugin.json",
+        "plugin.py",
+    }
+    assert reconciled["last_validation"]["success"] is True
+    assert reconciled["messages"][-1]["role"] == "assistant"
+    assert reconciled["messages"][-1]["content"] == "生成完成。"
     plugin = PluginRegistry(
         data_root=data_root,
         engine=engine,
@@ -709,6 +785,230 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
         / job_id
         / "plugin-worktree"
     ).exists()
+
+
+def test_plugin_builder_skill_states_the_actual_v3_manifest_contract() -> None:
+    skill = (
+        Path(__file__).parents[2]
+        / "src"
+        / "backend_v2"
+        / "plugins"
+        / "plugin_builder_skill.md"
+    ).read_text(encoding="utf-8")
+
+    assert '"hooks": ["after_translate"]' in skill
+    for mode in ("standard", "hq", "proofread", "remove_text"):
+        assert f"`{mode}`" in skill
+    assert "not JSON Schema" in skill
+    assert '"source_text": {' in skill
+    assert '`data["translations"]`' in skill
+    assert "`originalTexts`, `translations`, `textboxTexts`" in skill
+    assert "translated_text" in skill
+
+
+def test_atomic_plugin_schema_rejects_silent_invented_fields() -> None:
+    with pytest.raises(
+        PluginContractError,
+        match="translated_text",
+    ):
+        validate_atomic_hook_data(
+            "translate",
+            "after",
+            {
+                "pageId": str(uuid.uuid4()),
+                "originalTexts": ["先生"],
+                "translations": ["老师"],
+                "textboxTexts": ["老师"],
+                "translated_text": "导师",
+            },
+        )
+
+
+def test_plugin_agent_source_validation_rejects_invented_hook_field() -> None:
+    manifest = parse_manifest(
+        {
+            "schema_version": 3,
+            "plugin_id": "source_contract",
+            "display_name": "Source contract",
+            "package_version": "1.0.0",
+            "entrypoint": "plugin.py:Plugin",
+            "hooks": ["after_translate"],
+            "supported_steps": ["translate"],
+            "supported_modes": ["standard"],
+            "failure_policy": "continue",
+            "default_enabled": False,
+            "config_schema": {},
+        }
+    )
+    with pytest.raises(
+        PluginContractError,
+        match="translated_text",
+    ):
+        validate_hook_source_contract(
+            manifest,
+            (
+                "class Plugin:\n"
+                "    def after_translate(self, context, data):\n"
+                "        result = dict(data)\n"
+                "        result['translated_text'] = 'wrong'\n"
+                "        return result\n"
+            ),
+            filename="plugin.py",
+        )
+
+
+def test_plugin_agent_source_validation_rejects_wrong_field_container() -> None:
+    manifest = parse_manifest(
+        {
+            "schema_version": 3,
+            "plugin_id": "source_types",
+            "display_name": "Source types",
+            "package_version": "1.0.0",
+            "entrypoint": "plugin.py:Plugin",
+            "hooks": ["after_translate"],
+            "supported_steps": ["translate"],
+            "supported_modes": ["standard"],
+            "failure_policy": "continue",
+            "default_enabled": False,
+            "config_schema": {},
+        }
+    )
+    with pytest.raises(
+        PluginContractError,
+        match="textboxTexts.*object.*array",
+    ):
+        validate_hook_source_contract(
+            manifest,
+            (
+                "class Plugin:\n"
+                "    def after_translate(self, context, data):\n"
+                "        textbox = data.get('textboxTexts', {})\n"
+                "        data['textboxTexts'] = {\n"
+                "            key: value for key, value in textbox.items()\n"
+                "        }\n"
+                "        return data\n"
+            ),
+            filename="plugin.py",
+        )
+
+
+def test_plugin_source_validation_rejects_incompatible_constructor() -> None:
+    manifest = parse_manifest(
+        {
+            "schema_version": 3,
+            "plugin_id": "constructor_contract",
+            "display_name": "Constructor contract",
+            "package_version": "1.0.0",
+            "entrypoint": "plugin.py:Plugin",
+            "hooks": ["after_translate"],
+            "supported_steps": ["translate"],
+            "supported_modes": ["standard"],
+            "failure_policy": "continue",
+            "default_enabled": False,
+            "config_schema": {},
+        }
+    )
+    with pytest.raises(
+        PluginContractError,
+        match="__init__ must be callable without arguments",
+    ):
+        validate_hook_source_contract(
+            manifest,
+            (
+                "class Plugin:\n"
+                "    def __init__(self, context):\n"
+                "        self.context = context\n"
+                "    def after_translate(self, context, data):\n"
+                "        return data\n"
+            ),
+            filename="plugin.py",
+        )
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        (
+            "class Plugin:\n"
+            "    async def after_translate(self, context, data):\n"
+            "        return data\n",
+            "must be synchronous",
+        ),
+        (
+            "class Plugin:\n"
+            "    @staticmethod\n"
+            "    def after_translate(self, context, data):\n"
+            "        return data\n",
+            "normal instance method",
+        ),
+        (
+            "class Plugin:\n"
+            "    def after_translate(self, context, data, required):\n"
+            "        return data\n",
+            "callable as",
+        ),
+    ],
+)
+def test_plugin_source_validation_rejects_incompatible_hook_call_shapes(
+    source: str,
+    message: str,
+) -> None:
+    manifest = parse_manifest(
+        {
+            "schema_version": 3,
+            "plugin_id": "hook_call_contract",
+            "display_name": "Hook call contract",
+            "package_version": "1.0.0",
+            "entrypoint": "plugin.py:Plugin",
+            "hooks": ["after_translate"],
+            "supported_steps": ["translate"],
+            "supported_modes": ["standard"],
+            "failure_policy": "continue",
+            "default_enabled": False,
+            "config_schema": {},
+        }
+    )
+    with pytest.raises(PluginContractError, match=message):
+        validate_hook_source_contract(
+            manifest,
+            source,
+            filename="plugin.py",
+        )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '"现在修改 plugin.py"',
+        '["not", "an", "object"]',
+    ],
+)
+def test_plugin_agent_non_object_response_is_business_retryable(
+    content: str,
+) -> None:
+    with pytest.raises(OpenAICompatibleBusinessRetryableError):
+        PluginAgentController._parse_agent_envelope(
+            content,
+            force_json_output=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"assistant_message":"只说明、不执行"}',
+        '{"assistant_message":"参数错误","action":{"tool":"write_file","args":[]}}',
+    ],
+)
+def test_plugin_agent_invalid_execution_action_is_business_retryable(
+    content: str,
+) -> None:
+    with pytest.raises(OpenAICompatibleBusinessRetryableError):
+        PluginAgentController._parse_agent_envelope(
+            content,
+            force_json_output=False,
+            require_action=True,
+        )
 
 
 def test_plugin_agent_http_rejects_browser_supplied_provider_secret(

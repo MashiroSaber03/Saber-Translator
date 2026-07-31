@@ -166,6 +166,43 @@ describe('TranslationSettings', () => {
     expect(store.settings.translation.translationMode).toBe('single')
   })
 
+  it('restores prompt mode, translation mode, and prompt when switching providers', async () => {
+    const store = useSettingsStore()
+    const cachedOptions = JSON.parse(
+      JSON.stringify(store.settings.translation.openaiOptions),
+    ) as typeof store.settings.translation.openaiOptions
+    cachedOptions.request.forceJsonOutput = true
+    store.settings.translation.singleJsonPrompt = 'cached single JSON prompt'
+    store.providerConfigs.translation.deepseek = {
+      apiKey: '',
+      modelName: 'deepseek-chat',
+      customBaseUrl: '',
+      openaiOptions: cachedOptions,
+      translationMode: 'single',
+    }
+
+    const wrapper = mount(TranslationSettings)
+    const providerSelect = wrapper.findAllComponents(UiSelect)
+      .find(select =>
+        (select.props('options') || [])
+          .some((option: { value: string | number }) => option.value === 'deepseek')
+      )
+    expect(providerSelect).toBeTruthy()
+
+    providerSelect!.vm.$emit('change', 'deepseek')
+    await flushPromises()
+
+    expect(store.settings.translation.provider).toBe('deepseek')
+    expect(store.settings.translation.translationMode).toBe('single')
+    expect(store.settings.translation.openaiOptions.request.forceJsonOutput).toBe(true)
+    expect(wrapper.get<HTMLTextAreaElement>('#settingsPromptContent').element.value)
+      .toBe('cached single JSON prompt')
+    const selectedValues = wrapper.findAllComponents(UiSelect)
+      .map(select => select.props('modelValue'))
+    expect(selectedValues).toContain('single')
+    expect(selectedValues).toContain('json')
+  })
+
   it('uses fixed select primitives for provider and prompt mode fields', () => {
     const wrapper = mount(TranslationSettings)
 

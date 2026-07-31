@@ -71,6 +71,7 @@ from src.backend_v2.storage.schema import (
     process_epochs,
     queue_state,
     render_requests,
+    worker_leases,
     analysis_runs,
     analysis_run_targets,
     web_import_drafts,
@@ -84,6 +85,7 @@ TERMINAL_JOB_STATUSES = (
     "failed",
 )
 HISTORY_JOB_STATUSES = (*TERMINAL_JOB_STATUSES, "interrupted")
+QUEUE_JOB_STATUSES = ("queued", *CURRENT_JOB_STATUSES)
 HISTORY_BATCH_LIMIT = 200
 WRITE_JOB_KINDS = frozenset(
     {
@@ -541,11 +543,9 @@ class JobQueueRepository:
             raise ValueError("limit must be between 1 and 200")
         conditions = []
         if scope == "queue":
-            conditions.append(jobs.c.status.in_(NONTERMINAL_JOB_STATUSES))
+            conditions.append(jobs.c.status.in_(QUEUE_JOB_STATUSES))
         else:
-            conditions.append(
-                jobs.c.status.in_((*TERMINAL_JOB_STATUSES, "interrupted"))
-            )
+            conditions.append(jobs.c.status.in_(HISTORY_JOB_STATUSES))
         if status:
             conditions.append(jobs.c.status == status)
         if kind:
@@ -558,27 +558,75 @@ class JobQueueRepository:
             else (jobs.c.finished_at.desc(), jobs.c.created_at.desc())
         )
         with self.engine.connect() as connection:
-            rows = connection.execute(
-                select(jobs, job_batches.c.display_name.label("batch_display_name"))
+            statement = (
+                select(
+                    jobs,
+                    job_batches.c.display_name.label("batch_display_name"),
+                    exists().where(
+                        chapter_write_locks.c.job_id == jobs.c.id
+                    ).label("holds_chapter_lock"),
+                )
                 .join(job_batches, job_batches.c.id == jobs.c.batch_id, isouter=True)
                 .where(*conditions)
-                .order_by(*order)
-                .limit(limit)
-            ).mappings()
+            )
+            if scope == "history":
+                limited_batch_ids = (
+                    select(job_batches.c.id)
+                    .join(jobs, jobs.c.batch_id == job_batches.c.id)
+                    .where(*conditions)
+                    .group_by(job_batches.c.id, job_batches.c.created_at)
+                    .order_by(
+                        job_batches.c.created_at.desc(),
+                        job_batches.c.id.desc(),
+                    )
+                    .limit(limit)
+                )
+                statement = statement.where(
+                    jobs.c.batch_id.in_(limited_batch_ids)
+                ).order_by(
+                    job_batches.c.created_at.desc(),
+                    job_batches.c.id.desc(),
+                    *order,
+                )
+            else:
+                statement = statement.order_by(*order).limit(limit)
+            rows = connection.execute(statement).mappings()
             revision = connection.execute(
                 select(queue_state.c.queue_revision).where(
                     queue_state.c.singleton_id == 1
                 )
             ).scalar_one()
+            now = utcnow()
+            worker_online = bool(
+                connection.execute(
+                    select(
+                        exists().where(
+                            worker_leases.c.worker_epoch_id
+                            == process_epochs.c.id,
+                            process_epochs.c.role == "worker",
+                            process_epochs.c.status == "active",
+                            process_epochs.c.lease_expires_at > now,
+                            worker_leases.c.lease_expires_at > now,
+                        )
+                    )
+                ).scalar()
+            )
             return {
                 "items": [self._job_dto(row) for row in rows],
                 "queueRevision": int(revision),
+                "workerOnline": worker_online,
             }
 
     def get_job(self, job_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:
             job = connection.execute(
-                select(jobs, job_batches.c.display_name.label("batch_display_name"))
+                select(
+                    jobs,
+                    job_batches.c.display_name.label("batch_display_name"),
+                    exists().where(
+                        chapter_write_locks.c.job_id == jobs.c.id
+                    ).label("holds_chapter_lock"),
+                )
                 .join(job_batches, job_batches.c.id == jobs.c.batch_id, isouter=True)
                 .where(jobs.c.id == job_id)
             ).mappings().one_or_none()
@@ -689,7 +737,7 @@ class JobQueueRepository:
                     select(job_events)
                     .where(job_events.c.job_id == job_id)
                     .order_by(job_events.c.id.desc())
-                    .limit(20)
+                    .limit(50)
                 ).mappings()
             )
         result = self._job_dto(job)
@@ -758,7 +806,12 @@ class JobQueueRepository:
             if batch is None:
                 raise JobNotFound("job batch not found")
             member_rows = connection.execute(
-                select(jobs)
+                select(
+                    jobs,
+                    exists().where(
+                        chapter_write_locks.c.job_id == jobs.c.id
+                    ).label("holds_chapter_lock"),
+                )
                 .where(jobs.c.batch_id == batch_id)
                 .order_by(jobs.c.queue_rank, jobs.c.created_at)
             ).mappings()
@@ -3572,6 +3625,13 @@ class JobQueueRepository:
 
     @staticmethod
     def _job_dto(row: Mapping[str, Any]) -> dict[str, object]:
+        blocked_reason = row.get("blocked_reason")
+        if (
+            blocked_reason is None
+            and row.get("status") == "queued"
+            and bool(row.get("holds_chapter_lock"))
+        ):
+            blocked_reason = "retained_chapter_lock"
         return {
             "jobId": row["id"],
             "batchId": row.get("batch_id"),
@@ -3584,7 +3644,7 @@ class JobQueueRepository:
             "bookId": row.get("book_id"),
             "chapterId": row.get("chapter_id"),
             "pageId": row.get("page_id"),
-            "blockedReason": row.get("blocked_reason"),
+            "blockedReason": blocked_reason,
             "blockedByJobId": row.get("blocked_by_job_id"),
             "progress": _load_json(row.get("latest_progress_json"), {}),
             "target": _load_json(row.get("target_display_json"), {}),

@@ -1042,6 +1042,43 @@ describe('CharacterStudioPreview workspace', () => {
     expect(document.body.textContent).toContain('今天也一起推进计划吧。')
   })
 
+  it('emits the backend greeting id selected in the picker', async () => {
+    const wrapper = mountPreview({
+      availableGreetings: [
+        {
+          greeting_id: 'first',
+          label: '主问候',
+          content: '新的主问候',
+          source: { type: 'first_message', index: 0 },
+        },
+        {
+          greeting_id: 'alternate-0',
+          label: '备用问候 1',
+          content: '新的备用问候',
+          source: { type: 'alternate_greeting', index: 0 },
+        },
+      ],
+    })
+
+    await wrapper.get('[data-testid="greeting-picker-trigger"]').trigger('click')
+    await flushPromises()
+    const radios = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="radio"]'),
+    )
+    expect(radios).toHaveLength(2)
+    radios[1]!.click()
+    await flushPromises()
+    expect(radios[1]!.getAttribute('aria-checked')).toBe('true')
+    const confirm = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(button => button.textContent?.includes('确认并重新开场'))
+    expect(confirm).toBeDefined()
+    confirm!.click()
+    await flushPromises()
+
+    expect(wrapper.emitted('new-session')?.at(-1)).toEqual(['alternate-0'])
+  })
+
   it('uses product action and choice primitives for preview modals', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreviewModals.vue'),

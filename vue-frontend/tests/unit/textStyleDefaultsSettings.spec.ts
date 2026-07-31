@@ -12,7 +12,7 @@ import { createDefaultSettings } from '@/stores/settings/defaults'
 const initialDefaults = {
   fontSize: 26,
   autoFontSize: false,
-  fontFamily: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
+  fontFamily: 'font-default',
   layoutDirection: 'auto',
   textColor: '#000000',
   fillColor: '#FFFFFF',
@@ -72,12 +72,20 @@ describe('TextStyleDefaultsSettings', () => {
     const settings = createDefaultSettings()
     settings.textStyle = { ...initialDefaults }
     getV2SettingsMock.mockResolvedValue({
-      settings: [{
-        domain: 'translation',
-        payload: settings,
-        revision: 1,
-        schemaVersion: 3,
-      }],
+      settings: [
+        {
+          domain: 'translation',
+          payload: settings,
+          revision: 1,
+          schemaVersion: 3,
+        },
+        {
+          domain: 'text_style_defaults',
+          payload: initialDefaults,
+          revision: 1,
+          schemaVersion: 1,
+        },
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
@@ -87,7 +95,7 @@ describe('TextStyleDefaultsSettings', () => {
       assetUrl: '/api/v2/assets/font-uploaded',
     })
     listV2FontsMock.mockResolvedValue([{
-      id: 'fonts/思源黑体SourceHanSansK-Bold.TTF',
+      id: 'font-default',
       displayName: '思源黑体',
       kind: 'builtin',
       builtinKey: 'source-han-sans',
@@ -211,6 +219,7 @@ describe('TextStyleDefaultsSettings', () => {
 
     expect(source).toContain('后端数据库中的全局默认文字设置')
     expect(source).not.toContain('config/text_style_defaults.json')
+    expect(source).not.toContain('BUILTIN_FONTS')
   })
 
   it('uses the shared color input primitive for default color fields', () => {

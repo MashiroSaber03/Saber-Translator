@@ -9,17 +9,28 @@ import type { V2Job } from '@/api/v2/jobs'
 
 const {
   rebuildEmbeddingsMock,
+  rebuildCompressedContextMock,
+  regenerateOverviewMock,
+  getQAStatusMock,
+  sendChatMock,
   showToastMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   rebuildEmbeddingsMock: vi.fn(),
+  rebuildCompressedContextMock: vi.fn(),
+  regenerateOverviewMock: vi.fn(),
+  getQAStatusMock: vi.fn(),
+  sendChatMock: vi.fn(),
   showToastMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
-  sendChat: vi.fn(),
+  sendChat: sendChatMock,
   rebuildEmbeddings: rebuildEmbeddingsMock,
+  rebuildCompressedContext: rebuildCompressedContextMock,
+  regenerateOverview: regenerateOverviewMock,
+  getQAStatus: getQAStatusMock,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -67,6 +78,14 @@ describe('QAPanel vector rebuild task projection', () => {
     insightStore.setLoading(false)
 
     rebuildEmbeddingsMock.mockReset()
+    rebuildCompressedContextMock.mockReset()
+    regenerateOverviewMock.mockReset()
+    getQAStatusMock.mockReset()
+    getQAStatusMock.mockResolvedValue({
+      available: true,
+      reason: null,
+    })
+    sendChatMock.mockReset()
     showToastMock.mockReset()
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
@@ -130,6 +149,40 @@ describe('QAPanel vector rebuild task projection', () => {
     expect(showToastMock).toHaveBeenCalledWith('向量索引重建完成', 'success', 6000)
     expect(wrapper.find('button[title="重建向量索引"]').text()).toContain('重建向量')
     expect(insightStore.isLoading).toBe(false)
+  })
+
+  it('consumes backend QA readiness and blocks exact questions until vectors are rebuilt', async () => {
+    getQAStatusMock.mockResolvedValue({
+      available: false,
+      reason: 'vector_missing',
+      repairAction: 'vector_rebuild',
+    })
+    rebuildEmbeddingsMock.mockResolvedValue({
+      success: true,
+      task_id: 'vector-job-1',
+    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    insightStore.currentBookId = 'book-1'
+    const taskCenterStore = useTaskCenterStore()
+    vi.spyOn(taskCenterStore, 'refresh').mockResolvedValue(undefined)
+
+    const wrapper = mount(QAPanel, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    expect(getQAStatusMock).toHaveBeenCalledWith('book-1', 'precise')
+    expect(wrapper.get('.qa-panel__status').text()).toContain('精确问答暂不可用')
+    expect(wrapper.get('.qa-panel__status').text()).toContain('重建向量')
+    expect(wrapper.get('textarea[placeholder="输入你的问题..."]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('.qa-panel__status button').trigger('click')
+    await flushPromises()
+
+    expect(rebuildEmbeddingsMock).toHaveBeenCalledWith('book-1')
+    expect(sendChatMock).not.toHaveBeenCalled()
   })
 
   it('resumes an already-running rebuild from the global task snapshot on mount', async () => {

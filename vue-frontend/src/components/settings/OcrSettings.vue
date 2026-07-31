@@ -307,6 +307,7 @@ import {
   DEFAULT_AI_VISION_OCR_PROMPT,
   DEFAULT_AI_VISION_OCR_JSON_PROMPT,
   getPaddleOcrVlPrompt,
+  inferPaddleOcrVlPromptLanguage,
   PADDLEOCR_VL_LANG_MAP
 } from '@/constants'
 import type { OcrEngine } from '@/types/settings'
@@ -528,6 +529,10 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.extraBody = settingsStore.settings.aiVisionOcr.openaiOptions.request.extraBody
   localAiVisionOcr.value.useStream = settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
+  paddleOcrVlSourceLang.value = inferPaddleOcrVlPromptLanguage(
+    settingsStore.settings.aiVisionOcr.prompt,
+    paddleOcrVlSourceLang.value,
+  )
 }
 const currentPromptMode = computed(() => {
   return settingsStore.settings.aiVisionOcr.promptMode || 'normal'
@@ -565,7 +570,9 @@ function handlePromptModeChange(mode: string) {
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = mode as 'normal' | 'json' | 'paddleocr_vl'
 }
-const paddleOcrVlSourceLang = ref('japanese')
+const paddleOcrVlSourceLang = ref(
+  inferPaddleOcrVlPromptLanguage(localAiVisionOcr.value.prompt),
+)
 function handlePaddleOcrVlLangChange(langCode: string) {
   paddleOcrVlSourceLang.value = langCode
   const langName = PADDLEOCR_VL_LANG_MAP[langCode] || '日语'
@@ -642,6 +649,12 @@ function handleAiVisionPromptSelect(content: string, name: string) {
   })
   localAiVisionOcr.value.prompt = content
   localAiVisionOcr.value.promptMode = inferredMode
+  if (inferredMode === 'paddleocr_vl') {
+    paddleOcrVlSourceLang.value = inferPaddleOcrVlPromptLanguage(
+      content,
+      paddleOcrVlSourceLang.value,
+    )
+  }
   toast.success(`已应用提示词: ${name}`)
 }
 </script>

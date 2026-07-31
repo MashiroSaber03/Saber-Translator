@@ -424,6 +424,18 @@ function handleProviderChange() {
   localSettings.value.extraBody = settingsStore.settings.translation.openaiOptions.request.extraBody
   localSettings.value.translationMode =
     settingsStore.settings.translation.translationMode || 'batch'
+  const forceJsonOutput =
+    settingsStore.settings.translation.openaiOptions.request.forceJsonOutput
+  localSettings.value.translatePromptMode = forceJsonOutput ? 'json' : 'normal'
+  const translation = settingsStore.settings.translation
+  localSettings.value.promptContent = localSettings.value.translationMode === 'single'
+    ? forceJsonOutput
+      ? translation.singleJsonPrompt
+      : translation.singleNormalPrompt
+    : forceJsonOutput
+      ? translation.batchJsonPrompt
+      : translation.batchNormalPrompt
+  settingsStore.setTranslatePrompt(localSettings.value.promptContent)
   invalidateModelFetchRequests()
 }
 

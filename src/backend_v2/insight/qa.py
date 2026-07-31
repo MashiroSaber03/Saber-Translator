@@ -464,9 +464,16 @@ class TransientHeartbeat:
         self,
         repository: TransientRequestRepository,
         fence: TransientFence,
+        *,
+        interval_seconds: float | None = None,
     ) -> None:
         self.repository = repository
         self.fence = fence
+        self.interval_seconds = (
+            max(1.0, repository.lease_seconds / 3)
+            if interval_seconds is None
+            else max(0.001, interval_seconds)
+        )
         self.fenced = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(
@@ -484,9 +491,17 @@ class TransientHeartbeat:
         self._thread.join(timeout=4)
 
     def _run(self) -> None:
-        interval = max(1.0, self.repository.lease_seconds / 3)
-        while not self._stop.wait(interval):
-            if not self.repository.renew(self.fence):
+        while not self._stop.wait(self.interval_seconds):
+            try:
+                renewed = self.repository.renew(self.fence)
+            except Exception:
+                LOGGER.exception(
+                    "Insight transient 心跳执行失败，立即放弃本次请求：request=%s",
+                    self.fence.request_id[:8],
+                )
+                self.fenced.set()
+                return
+            if not renewed:
                 self.fenced.set()
                 return
 
