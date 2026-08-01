@@ -105,26 +105,6 @@ export interface ExtractResult {
   error?: string
 }
 
-export interface GalleryDLSupportResult {
-  available: boolean
-  supported: boolean
-  error?: string
-}
-
-export interface DownloadedImage {
-  index: number
-  filename: string
-  dataUrl: string
-  size: number
-}
-
-export interface DownloadResult {
-  success: boolean
-  images: DownloadedImage[]
-  failedCount: number
-  error?: string
-}
-
 export interface AgentLog {
   timestamp: string
   type: 'info' | 'tool_call' | 'tool_result' | 'thinking' | 'error'
@@ -146,6 +126,5 @@ export interface WebImportState {
   extractResult: ExtractResult | null
   selectedPages: Set<number>
   downloadProgress: WebImportDownloadProgress
-  downloadedImages: DownloadedImage[]
   error: string | null
 }

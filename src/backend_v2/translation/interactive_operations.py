@@ -613,6 +613,7 @@ class InteractivePageOperationService:
                 "frozen credential version no longer exists"
             ) from exc
         result.update(secret)
+        result["credential_version_id"] = str(version_id)
         return result
 
     @staticmethod

@@ -56,7 +56,7 @@ describe('useFolderTree', () => {
 
     folderTree.goUp()
     expect(folderTree.currentFolderPath.value).toBe('book')
-    expect(folderTree.getFolderImageCount(folderTree.currentFolder.value!)).toBe(3)
+    expect(folderTree.getFolderImageCount(folderTree.folderTree.value!.subfolders[0]!)).toBe(3)
 
     folderTree.resetToRoot()
     expect(folderTree.currentFolderPath.value).toBe('')

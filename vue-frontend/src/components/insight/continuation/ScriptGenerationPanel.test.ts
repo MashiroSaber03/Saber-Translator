@@ -16,10 +16,12 @@ const componentSourcePath = resolve(process.cwd(), 'src/components/insight/conti
 
 vi.mock('@/api/continuation', () => ({
   getAvailableImages: vi.fn().mockResolvedValue({
-    success: true,
     original_images: [
       { page_number: 1, path: '/tmp/page-1.png', has_image: true, token: 'original:1' },
     ],
+    continuation_images: [],
+    character_forms: [],
+    total_original_pages: 1,
   }),
 }))
 
@@ -254,12 +256,16 @@ describe('ScriptGenerationPanel', () => {
 
   it('ignores stale reference-image responses after the book changes', async () => {
     const bookOneImages = createDeferred<{
-      success: boolean
       original_images: Array<{ page_number: number; path: string; has_image: boolean; token: string }>
+      continuation_images: []
+      character_forms: []
+      total_original_pages: number
     }>()
     const bookTwoImages = createDeferred<{
-      success: boolean
       original_images: Array<{ page_number: number; path: string; has_image: boolean; token: string }>
+      continuation_images: []
+      character_forms: []
+      total_original_pages: number
     }>()
     vi.mocked(getAvailableImages)
       .mockReturnValueOnce(bookOneImages.promise)
@@ -284,10 +290,12 @@ describe('ScriptGenerationPanel', () => {
     await wrapper.setProps({ bookId: 'book-2' })
 
     bookTwoImages.resolve({
-      success: true,
       original_images: [
         { page_number: 2, path: '/tmp/book-2.png', has_image: true, token: 'book-2-token' },
       ],
+      continuation_images: [],
+      character_forms: [],
+      total_original_pages: 1,
     })
     await nextTick()
     await Promise.resolve()
@@ -295,10 +303,12 @@ describe('ScriptGenerationPanel', () => {
     expect(wrapper.find('.selector-state').text()).toBe('book-2-token')
 
     bookOneImages.resolve({
-      success: true,
       original_images: [
         { page_number: 1, path: '/tmp/book-1.png', has_image: true, token: 'book-1-token' },
       ],
+      continuation_images: [],
+      character_forms: [],
+      total_original_pages: 1,
     })
     await nextTick()
     await Promise.resolve()

@@ -466,6 +466,7 @@ class CoreTranslationAlgorithms:
             "custom_ai_vision_base_url",
             "ai_vision_min_image_size",
             "ai_vision_openai_options",
+            "credential_version_id",
             "enable_hybrid_ocr",
             "secondary_ocr_engine",
             "hybrid_ocr_threshold",
@@ -541,6 +542,11 @@ class CoreTranslationAlgorithms:
             provider=str(config["provider"]),
             api_key=str(config.get("api_key", "")),
             model=str(config.get("model_name", "")),
+            credential_version_id=(
+                str(config["credential_version_id"])
+                if config.get("credential_version_id")
+                else None
+            ),
             messages=[{"role": "user", "content": rendered_prompt}],
             base_url=(
                 str(config["custom_base_url"])
@@ -594,6 +600,7 @@ class CoreTranslationAlgorithms:
                 "prompt_content": prompt,
                 "custom_base_url": config.get("custom_base_url"),
                 "openai_options": options,
+                "credential_version_id": config.get("credential_version_id"),
             }
             if translation_mode == "single":
                 result = [
@@ -764,6 +771,11 @@ class CoreTranslationAlgorithms:
                 provider=provider,
                 api_key=str(config.get("api_key", "")),
                 model=str(config.get("model_name", "")),
+                credential_version_id=(
+                    str(config["credential_version_id"])
+                    if config.get("credential_version_id")
+                    else None
+                ),
                 base_url=str(config.get("custom_base_url", "")) or None,
                 capability=HQ_TRANSLATION_CAPABILITY,
                 openai_options=options,
@@ -2576,6 +2588,7 @@ class TranslationPipelineService:
                     "frozen credential version no longer exists"
                 ) from exc
             result.update(secret)
+            result["credential_version_id"] = str(version_id)
         return result
 
     @staticmethod

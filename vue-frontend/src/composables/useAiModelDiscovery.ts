@@ -30,7 +30,7 @@ export interface AiModelDiscoveryOptions {
   validationTone?: AiModelDiscoveryMessageTone
   emptyTone?: AiModelDiscoveryMessageTone
   successMessage?: (count: number) => string
-  emptyMessage?: (response: FetchModelsResponse) => string
+  emptyMessage?: () => string
   errorMessage?: (error: unknown) => string
   emptyBaseUrl?: string
 }
@@ -114,7 +114,7 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
       )
       if (!isCurrentRequest(requestId, snapshot)) return null
 
-      if (response.success && response.models?.length) {
+      if (response.models.length) {
         models.value = response.models
         options.notify(
           options.successMessage?.(response.models.length) ?? `获取到 ${response.models.length} 个模型`,
@@ -125,7 +125,7 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
 
       clearModels()
       options.notify(
-        options.emptyMessage?.(response) ?? response.message ?? '未获取到可用模型',
+        options.emptyMessage?.() ?? '未获取到可用模型',
         emptyTone,
       )
       return []

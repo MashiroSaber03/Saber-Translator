@@ -473,7 +473,7 @@ describe('settings provider select contracts', () => {
     store.settings.hqTranslation.provider = 'siliconflow'
     store.settings.hqTranslation.apiKey = 'model-key'
 
-    const pendingModels = createDeferred<{ success: boolean; models: Array<{ id: string; name: string }> }>()
+    const pendingModels = createDeferred<{ models: Array<{ id: string; name: string }> }>()
     fetchModelsMock.mockReturnValueOnce(pendingModels.promise)
 
     const wrapper = mount(HqTranslationSettings, globalMountOptions(pinia))
@@ -485,7 +485,6 @@ describe('settings provider select contracts', () => {
     providerSelect!.vm.$emit('change', 'deepseek')
 
     pendingModels.resolve({
-      success: true,
       models: [{ id: 'stale-hq-model', name: 'Stale HQ Model' }],
     })
     await flushPromises()
@@ -499,7 +498,7 @@ describe('settings provider select contracts', () => {
     store.settings.aiVisionOcr.provider = 'siliconflow'
     store.settings.aiVisionOcr.apiKey = 'model-key'
 
-    const pendingModels = createDeferred<{ success: boolean; models: Array<{ id: string; name: string }> }>()
+    const pendingModels = createDeferred<{ models: Array<{ id: string; name: string }> }>()
     fetchModelsMock.mockReturnValueOnce(pendingModels.promise)
 
     const wrapper = mount(OcrSettings, globalMountOptions(pinia))
@@ -511,7 +510,6 @@ describe('settings provider select contracts', () => {
     providerSelect!.vm.$emit('change', 'gemini')
 
     pendingModels.resolve({
-      success: true,
       models: [{ id: 'stale-vision-model', name: 'Stale Vision Model' }],
     })
     await flushPromises()
@@ -543,7 +541,7 @@ describe('settings provider select contracts', () => {
       prompt: '校对提示词',
     })
 
-    const pendingModels = createDeferred<{ success: boolean; models: Array<{ id: string; name: string }> }>()
+    const pendingModels = createDeferred<{ models: Array<{ id: string; name: string }> }>()
     fetchModelsMock.mockReturnValueOnce(pendingModels.promise)
 
     const wrapper = mount(ProofreadingSettings, globalMountOptions(pinia))
@@ -556,7 +554,6 @@ describe('settings provider select contracts', () => {
     providerSelect!.vm.$emit('change', 'deepseek')
 
     pendingModels.resolve({
-      success: true,
       models: [{ id: 'stale-proofreading-model', name: 'Stale Proofreading Model' }],
     })
     await flushPromises()

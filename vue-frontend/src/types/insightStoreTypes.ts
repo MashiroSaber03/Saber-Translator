@@ -13,14 +13,6 @@ export type OverviewTemplateType =
   | 'highlights'
   | 'reading_notes'
 
-export interface PageData {
-  pageNum: number
-  analyzed: boolean
-  summary?: string
-  events?: string[]
-  characters?: string[]
-}
-
 export interface ChapterInfo {
   id: string
   title: string
@@ -29,12 +21,6 @@ export interface ChapterInfo {
   endPage: number
   analyzed: boolean
   summary?: string
-}
-
-export interface OverviewData {
-  type: OverviewTemplateType
-  content: string
-  generatedAt: string
 }
 
 export interface QAMessage {

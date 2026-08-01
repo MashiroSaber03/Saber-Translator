@@ -1,32 +1,19 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as insightApi from '@/api/insight'
 import { useInsightStore } from '@/stores/insightStore'
-import type { TimelineData } from './timelineTypes'
-import type { InsightTimelineResponse } from '@/types/insight'
+import type { TimelineData } from '@/types/insight'
 
-type TimelinePayload = Partial<TimelineData> & {
-}
-
-type TimelineApiResponse = InsightTimelineResponse & TimelinePayload
-
-function getTimelinePayload(response: TimelineApiResponse): TimelinePayload {
-  return response.timeline && typeof response.timeline === 'object'
-    ? response.timeline as TimelinePayload
-    : {}
-}
-
-function normalizeTimelineResponse(response: TimelineApiResponse): TimelineData {
-  const payload = getTimelinePayload(response)
+function normalizeTimeline(data: TimelineData): TimelineData {
   return {
-    mode: payload.mode || 'simple',
-    groups: payload.groups || [],
-    stats: payload.stats,
-    story_summary: payload.story_summary || '',
-    main_characters: payload.main_characters || [],
-    plot_arcs: payload.plot_arcs || [],
-    plot_threads: payload.plot_threads || [],
-    events: payload.events || [],
-    cached: payload.cached,
+    mode: data.mode || 'simple',
+    groups: data.groups || [],
+    stats: data.stats,
+    story_summary: data.story_summary || '',
+    main_characters: data.main_characters || [],
+    plot_arcs: data.plot_arcs || [],
+    plot_threads: data.plot_threads || [],
+    events: data.events || [],
+    cached: data.cached,
   }
 }
 
@@ -75,16 +62,14 @@ export function useTimelinePanel() {
     errorMessage.value = ''
 
     try {
-      const response = await insightApi.getTimeline(bookId) as TimelineApiResponse
+      const timeline = await insightApi.getTimeline(bookId)
       if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
 
-      if (response.success) {
-        timelineData.value = normalizeTimelineResponse(response)
+      if (timeline) {
+        timelineData.value = normalizeTimeline(timeline)
         pendingMessage.value = ''
-      } else {
-        if (!pendingMessage.value) {
-          errorMessage.value = response.error || '加载时间线失败'
-        }
+      } else if (!pendingMessage.value) {
+        timelineData.value = null
       }
     } catch (error) {
       if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
@@ -108,20 +93,11 @@ export function useTimelinePanel() {
     pendingMessage.value = ''
 
     try {
-      const response = await insightApi.regenerateTimeline(bookId) as TimelineApiResponse
+      await insightApi.regenerateTimeline(bookId)
       if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
 
-      if (response.success) {
-        if (response.task_id) {
-          timelineData.value = null
-          pendingMessage.value = response.message || '时间线生成已进入任务中心，完成后将自动加载。'
-        } else {
-          timelineData.value = normalizeTimelineResponse(response)
-          insightStore.triggerDataRefresh()
-        }
-      } else {
-        errorMessage.value = '重新生成失败'
-      }
+      timelineData.value = null
+      pendingMessage.value = '时间线生成已进入任务中心，完成后将自动加载。'
     } catch (error) {
       if (!isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) return
       errorMessage.value = error instanceof Error ? error.message : '重新生成失败'

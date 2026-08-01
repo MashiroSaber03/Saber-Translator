@@ -1,13 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  deleteMock,
-  getMock,
-  patchMock,
-  postMock,
-  putMock,
-  uploadMock,
-} = vi.hoisted(() => ({
+const { deleteMock, getMock, patchMock, postMock, putMock, uploadMock } = vi.hoisted(() => ({
   deleteMock: vi.fn(),
   getMock: vi.fn(),
   patchMock: vi.fn(),
@@ -43,46 +36,54 @@ const form = {
 
 const project = {
   bookId: 'book/id one',
-  characters: [{
-    aliases: ['Saber'],
-    characterId: 'character-1',
-    enabled: true,
-    name: '阿尔托莉雅',
-    payload: { description: '骑士王' },
-    projectId: 'project-1',
-    revision: 3,
-  }],
+  characters: [
+    {
+      aliases: ['Saber'],
+      characterId: 'character-1',
+      enabled: true,
+      name: '阿尔托莉雅',
+      payload: { description: '骑士王' },
+      projectId: 'project-1',
+      revision: 3,
+    },
+  ],
   config: {
     direction: 'forward',
     pageCount: 3,
     styleReferencePages: 2,
   },
-  pages: [{
-    continuationPageId: 'continuation-page-1',
-    imageVersions: [{
-      active: true,
-      assetId: 'generated-1',
-      assetUrl: '/api/v2/assets/generated-1',
-      thumbnailUrl: '/api/v2/assets/generated-thumb-1',
-      version: 1,
-    }],
-    ordinal: 1,
-    payload: {
-      continuityText: 'continuity',
-      storyText: 'story',
-      dialogueText: 'dialogue',
-      characters: ['阿尔托莉雅'],
-      finalPrompt: 'prompt',
-      status: 'ready',
+  pages: [
+    {
+      continuationPageId: 'continuation-page-1',
+      imageVersions: [
+        {
+          active: true,
+          assetId: 'generated-1',
+          assetUrl: '/api/v2/assets/generated-1',
+          thumbnailUrl: '/api/v2/assets/generated-thumb-1',
+          version: 1,
+        },
+      ],
+      ordinal: 1,
+      payload: {
+        continuityText: 'continuity',
+        storyText: 'story',
+        dialogueText: 'dialogue',
+        characters: ['阿尔托莉雅'],
+        finalPrompt: 'prompt',
+        status: 'ready',
+      },
+      revision: 4,
     },
-    revision: 4,
-  }],
+  ],
   projectId: 'project-1',
-  referenceAssets: [{
-    assetId: 'reference-1',
-    assetUrl: '/api/v2/assets/reference-1',
-    thumbnailUrl: '/api/v2/assets/reference-thumb-1',
-  }],
+  referenceAssets: [
+    {
+      assetId: 'reference-1',
+      assetUrl: '/api/v2/assets/reference-1',
+      thumbnailUrl: '/api/v2/assets/reference-thumb-1',
+    },
+  ],
   revision: 5,
   script: {
     content: 'script body',
@@ -108,24 +109,18 @@ function installGetResponses() {
     }
     if (url.endsWith('/pages') && config?.params?.cursor === 0) {
       return Promise.resolve({
-        items: [{
-          activeAnalysisId: null,
-          analysisState: 'ready',
-          chapterId: 'chapter-1',
-          displayPageNumber: 7,
-          pageId: 'page-7',
-          sourceAssetId: 'source-7',
-          thumbnailUrl: '/api/v2/assets/source-thumb-7',
-        }],
+        items: [
+          {
+            activeAnalysisId: null,
+            analysisState: 'ready',
+            chapterId: 'chapter-1',
+            displayPageNumber: 7,
+            pageId: 'page-7',
+            sourceAssetId: 'source-7',
+            thumbnailUrl: '/api/v2/assets/source-thumb-7',
+          },
+        ],
         nextCursor: null,
-      })
-    }
-    if (url === '/api/v2/jobs/export-job') {
-      return Promise.resolve({
-        id: 'export-job',
-        status: 'completed',
-        progress: {},
-        artifacts: [{ assetId: 'export-asset', role: 'export' }],
       })
     }
     throw new Error(`Unexpected GET ${url}`)
@@ -155,29 +150,31 @@ describe('continuation v2 api facade', () => {
     const prepared = await prepareContinuation('book/id one')
     const characters = await getCharacters('book/id one')
 
-    expect(getMock).toHaveBeenCalledWith(
-      '/api/v2/insight/books/book%2Fid%20one/continuation',
-    )
+    expect(getMock).toHaveBeenCalledWith('/api/v2/insight/books/book%2Fid%20one/continuation')
     expect(prepared.saved_data).toMatchObject({
       script: { script_text: 'script body', page_count: 3 },
-      pages: [{
-        page_number: 1,
-        image_url: '/api/v2/assets/generated-1',
-        status: 'generated',
-      }],
+      pages: [
+        {
+          page_number: 1,
+          image_url: '/api/v2/assets/generated-1',
+          status: 'generated',
+        },
+      ],
       config: {
         page_count: 3,
         style_reference_pages: 2,
         continuation_direction: 'forward',
       },
     })
-    expect(characters.characters?.[0]).toMatchObject({
+    expect(characters[0]).toMatchObject({
       name: '阿尔托莉雅',
       description: '骑士王',
-      forms: [{
-        form_id: 'form-1',
-        reference_image: '/api/v2/assets/reference-1',
-      }],
+      forms: [
+        {
+          form_id: 'form-1',
+          reference_image: '/api/v2/assets/reference-1',
+        },
+      ],
     })
   })
 
@@ -185,18 +182,19 @@ describe('continuation v2 api facade', () => {
     const { getAvailableImages } = await import('@/api/continuation')
 
     await expect(getAvailableImages('book/id one')).resolves.toMatchObject({
-      original_images: [{
-        token: 'source-7',
-        page_number: 7,
-        path: '/api/v2/assets/source-thumb-7',
-        has_image: true,
-      }],
+      original_images: [
+        {
+          token: 'source-7',
+          page_number: 7,
+          path: '/api/v2/assets/source-thumb-7',
+          has_image: true,
+        },
+      ],
       total_original_pages: 1,
     })
-    expect(getMock).toHaveBeenCalledWith(
-      '/api/v2/insight/books/book%2Fid%20one/pages',
-      { params: { cursor: 0, limit: 100 } },
-    )
+    expect(getMock).toHaveBeenCalledWith('/api/v2/insight/books/book%2Fid%20one/pages', {
+      params: { cursor: 0, limit: 100 },
+    })
     expect(getMock).not.toHaveBeenCalledWith('/api/v2/assets/source-7')
   })
 
@@ -207,10 +205,7 @@ describe('continuation v2 api facade', () => {
       name: '更新形态',
       revision: 3,
     })
-    const {
-      deleteCharacter,
-      updateCharacterForm,
-    } = await import('@/api/continuation')
+    const { deleteCharacter, updateCharacterForm } = await import('@/api/continuation')
 
     await updateCharacterForm('book/id one', '阿尔托莉雅', 'form-1', {
       form_name: '更新形态',
@@ -228,11 +223,11 @@ describe('continuation v2 api facade', () => {
           enabled: true,
         },
       },
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
     expect(deleteMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/characters/character-1?baseRevision=3',
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
   })
 
@@ -254,21 +249,17 @@ describe('continuation v2 api facade', () => {
       blob: vi.fn().mockResolvedValue(blob),
     })
     vi.stubGlobal('fetch', fetchMock)
-    const {
-      exportAsImages,
-      generateScriptWithRefs,
-    } = await import('@/api/continuation')
+    const { createContinuationExportJob, downloadContinuationExport, generateScriptWithRefs } =
+      await import('@/api/continuation')
 
-    const script = await generateScriptWithRefs(
-      'book/id one',
-      'north',
-      3,
-      ['reference-1'],
-      5,
+    const script = await generateScriptWithRefs('book/id one', 'north', 3, ['reference-1'], 5)
+    const exportJobId = await createContinuationExportJob('book/id one', 'zip')
+    await expect(downloadContinuationExport('export-asset', 'book/id one', 'zip')).resolves.toBe(
+      blob
     )
-    await expect(exportAsImages('book/id one')).resolves.toBe(blob)
 
-    expect(script.task_id).toBe('script-job')
+    expect(script).toBe('script-job')
+    expect(exportJobId).toBe('export-job')
     expect(patchMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/projects/project-1',
       {
@@ -276,27 +267,27 @@ describe('continuation v2 api facade', () => {
         config: {
           direction: 'north',
           pageCount: 3,
-          styleReferencePages: 2,
+          styleReferencePages: 5,
         },
       },
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/projects/project-1/references',
       { baseRevision: 6, assetIds: ['reference-1'] },
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
     expect(postMock).toHaveBeenNthCalledWith(
       1,
       '/api/v2/insight/books/book%2Fid%20one/continuation/jobs',
       { kind: 'script' },
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
     expect(postMock).toHaveBeenNthCalledWith(
       2,
       '/api/v2/insight/books/book%2Fid%20one/continuation/jobs',
       { kind: 'export', format: 'zip' },
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
     expect(fetchMock).toHaveBeenCalledWith('/api/v2/assets/export-asset')
   })

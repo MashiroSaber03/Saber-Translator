@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useInsightStore, type OverviewTemplateType } from '@/stores/insightStore'
+import { useInsightStore } from '@/stores/insightStore'
+import type { OverviewTemplateType } from '@/types/insight'
 import * as insightApi from '@/api/insight'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
@@ -113,15 +114,15 @@ async function loadCachedOverview(
   queuedMessage.value = ''
 
   try {
-    const response = await insightApi.getOverview(
+    const content = await insightApi.getOverview(
       bookId,
       template
     )
 
     if (!isCurrentOverviewRequest(requestId, bookId, template)) return
 
-    if (response.success && response.content) {
-      overviewContent.value = response.content
+    if (content) {
+      overviewContent.value = content
       if (!generatedTemplates.value.includes(template)) {
         generatedTemplates.value.push(template)
       }
@@ -149,7 +150,7 @@ async function generateOverview(regenerate: boolean): Promise<void> {
   queuedMessage.value = ''
 
   try {
-    const response = await insightApi.regenerateOverview(
+    const result = await insightApi.regenerateOverview(
       bookId,
       template,
       regenerate
@@ -157,24 +158,17 @@ async function generateOverview(regenerate: boolean): Promise<void> {
 
     if (!isCurrentOverviewRequest(requestId, bookId, template)) return
 
-    if (response.success) {
-      if (response.content) {
-        overviewContent.value = response.content
-        if (!generatedTemplates.value.includes(template)) {
-          generatedTemplates.value.push(template)
-        }
-        if (template === 'story_summary' && response.cached !== true) {
-          insightStore.triggerDataRefresh()
-        }
-      } else if (response.task_id) {
-        queuedMessage.value = response.message || '概览生成已进入任务中心，完成后将自动加载。'
+    if (result.kind === 'cached') {
+      overviewContent.value = result.content
+      if (!generatedTemplates.value.includes(template)) {
+        generatedTemplates.value.push(template)
       }
     } else {
-      overviewContent.value = `生成失败: ${response.error || '未知错误'}`
+      queuedMessage.value = '概览生成已进入任务中心，完成后将自动加载。'
     }
-  } catch {
+  } catch (error) {
     if (!isCurrentOverviewRequest(requestId, bookId, template)) return
-    overviewContent.value = '生成失败，请重试'
+    overviewContent.value = error instanceof Error ? `生成失败: ${error.message}` : '生成失败，请重试'
   } finally {
     if (isCurrentOverviewRequest(requestId, bookId, template)) {
       isLoading.value = false
@@ -187,19 +181,11 @@ async function loadGeneratedTemplates(bookId = insightStore.currentBookId): Prom
   if (!bookId) return []
 
   try {
-    const response = await insightApi.getGeneratedTemplates(bookId)
+    const templates = await insightApi.getGeneratedTemplates(bookId)
     if (!isCurrentBookRequest(requestId, generatedTemplatesRequestSequence, bookId)) return []
 
-    if (response.success) {
-      let templates: OverviewTemplateType[] = []
-      if (response.generated) {
-        templates = response.generated as OverviewTemplateType[]
-      } else if (response.templates && Array.isArray(response.templates)) {
-        templates = response.templates as OverviewTemplateType[]
-      }
-      generatedTemplates.value = templates
-      return templates
-    }
+    generatedTemplates.value = templates
+    return templates
   } catch {
     if (!isCurrentBookRequest(requestId, generatedTemplatesRequestSequence, bookId)) return []
     generatedTemplates.value = []
@@ -218,13 +204,8 @@ async function exportAnalysisData(): Promise<void> {
   isExporting.value = true
 
   try {
-    const response = await insightApi.exportAnalysis(insightStore.currentBookId)
-
-    if (response.success) {
-      showToast('完整导出已进入任务中心，完成后可下载', 'success')
-    } else {
-      showToast('导出失败: ' + (response.error || '未知错误'), 'error')
-    }
+    await insightApi.exportAnalysis(insightStore.currentBookId)
+    showToast('完整导出已进入任务中心，完成后可下载', 'success')
   } catch (error) {
     showToast(
       error instanceof Error ? error.message : '导出失败',
@@ -262,10 +243,10 @@ async function loadRecentAnalyzedPages(bookId = insightStore.currentBookId): Pro
   if (!bookId) return
 
   try {
-    const stats = await insightApi.getAnalysisStatus(bookId)
+    await insightApi.getAnalysisStatus(bookId)
     if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
 
-    if (stats.success && insightStore.analyzedPageCount > 0) {
+    if (insightStore.analyzedPageCount > 0) {
       const totalPages = insightStore.totalPageCount
       const analyzedCount = insightStore.analyzedPageCount
       const recentPages: Array<{ page_num: number; summary?: string }> = []

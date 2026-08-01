@@ -1699,49 +1699,7 @@ class ContentRepository:
 
     def get_page_document(self, page_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:
-            page = connection.execute(
-                select(
-                    pages.c.id,
-                    pages.c.chapter_id,
-                    pages.c.document_revision,
-                    pages.c.default_font_id,
-                    pages.c.page_style_defaults_json,
-                    pages.c.page_style_schema_version,
-                ).where(pages.c.id == page_id)
-            ).mappings().one_or_none()
-            if page is None:
-                raise ContentNotFound("page not found")
-            bubble_rows = list(
-                connection.execute(
-                    select(
-                        bubbles.c.id,
-                        bubbles.c.ordinal,
-                        bubbles.c.font_id,
-                        bubbles.c.payload_json,
-                        bubbles.c.updated_revision,
-                    )
-                    .where(bubbles.c.page_id == page_id)
-                    .order_by(bubbles.c.ordinal)
-                ).mappings()
-            )
-        return {
-            "pageId": page["id"],
-            "chapterId": page["chapter_id"],
-            "documentRevision": page["document_revision"],
-            "defaultFontId": page["default_font_id"],
-            "pageStyleDefaults": json.loads(page["page_style_defaults_json"]),
-            "pageStyleSchemaVersion": page["page_style_schema_version"],
-            "bubbles": [
-                {
-                    "bubbleId": row["id"],
-                    "ordinal": row["ordinal"],
-                    "fontId": row["font_id"],
-                    "payload": json.loads(row["payload_json"]),
-                    "updatedRevision": row["updated_revision"],
-                }
-                for row in bubble_rows
-            ],
-        }
+            return self._get_page_document(connection, page_id)
 
     def mutate_page_document(
         self,
@@ -1806,12 +1764,56 @@ class ContentRepository:
         propagated_targets = {
             propagated_bubble_fields[field] for field in propagation
         }
+        seen_client_mutation_ids: set[str] = set()
+        mutation_keys = {"op", "clientMutationId", "bubbleId", "fields"}
         for mutation in mutations:
             if not isinstance(mutation, dict):
                 raise ValueError("each bubble mutation must be an object")
+            unknown_keys = set(mutation) - mutation_keys
+            if unknown_keys:
+                raise ValueError(
+                    "unknown bubble mutation fields: "
+                    + ", ".join(sorted(unknown_keys))
+                )
+            operation = mutation.get("op")
+            if operation not in {"create", "patch", "delete", "reset"}:
+                raise ValueError("bubble mutation op is invalid")
+            client_mutation_id = mutation.get("clientMutationId")
+            if (
+                not isinstance(client_mutation_id, str)
+                or not client_mutation_id.strip()
+                or len(client_mutation_id) > 128
+            ):
+                raise ValueError("clientMutationId must be a non-empty string")
+            if client_mutation_id in seen_client_mutation_ids:
+                raise ValueError("clientMutationId must be unique within the batch")
+            seen_client_mutation_ids.add(client_mutation_id)
+            if operation == "create":
+                if "bubbleId" in mutation:
+                    raise ValueError("create mutations cannot provide bubbleId")
+            else:
+                bubble_id = mutation.get("bubbleId")
+                if not isinstance(bubble_id, str) or not bubble_id:
+                    raise ValueError("bubbleId is required for non-create mutations")
+                try:
+                    uuid.UUID(bubble_id)
+                except ValueError as exc:
+                    raise ValueError("bubbleId must be a UUID") from exc
             fields = mutation.get("fields", {})
             if not isinstance(fields, dict):
                 raise ValueError("mutation fields must be an object")
+            non_payload_fields = {
+                "backendBubbleId",
+                "bubbleId",
+                "clientMutationId",
+                "fontFamily",
+                "ordinal",
+            }.intersection(fields)
+            if non_payload_fields:
+                raise ValueError(
+                    "fields contains non-payload identities: "
+                    + ", ".join(sorted(non_payload_fields))
+                )
             conflicts = propagated_targets.intersection(fields)
             if conflicts:
                 raise ValueError(
@@ -1888,6 +1890,7 @@ class ContentRepository:
             order = [str(row["id"]) for row in existing_rows]
             deleted_ids: set[str] = set()
             created_ids: set[str] = set()
+            mutation_results: list[dict[str, str]] = []
             renderable_change = False
             validated_font_ids: set[str] = set()
 
@@ -1927,22 +1930,11 @@ class ContentRepository:
             ):
                 from src.core.rendering import calculate_auto_font_size
             for mutation in mutations:
-                if not isinstance(mutation, dict):
-                    raise ValueError("each bubble mutation must be an object")
-                operation = mutation.get("op")
-                bubble_id = mutation.get("bubbleId")
+                operation = str(mutation["op"])
+                client_mutation_id = str(mutation["clientMutationId"])
                 fields = mutation.get("fields", {})
-                if (
-                    operation not in {"create", "patch", "delete", "reset"}
-                    or not isinstance(bubble_id, str)
-                    or not bubble_id
-                ):
-                    raise ValueError("bubble mutation op/bubbleId is invalid")
                 if operation == "create":
-                    if bubble_id in documents or bubble_id in deleted_ids:
-                        raise ContentConflict("bubble id already exists in this document")
-                    if not isinstance(fields, dict):
-                        raise ValueError("create fields must be an object")
+                    bubble_id = str(uuid.uuid4())
                     validate_font_reference(fields.get("fontId"), field="fontId")
                     documents[bubble_id] = {
                         "bubbleId": bubble_id,
@@ -1950,23 +1942,36 @@ class ContentRepository:
                         "payload": {
                             key: value
                             for key, value in fields.items()
-                            if key not in {"fontId", "ordinal"}
+                            if key != "fontId"
                         },
                     }
                     order.append(bubble_id)
                     created_ids.add(bubble_id)
+                    mutation_results.append(
+                        {
+                            "op": operation,
+                            "clientMutationId": client_mutation_id,
+                            "bubbleId": bubble_id,
+                        }
+                    )
                     renderable_change = True
                     continue
+                bubble_id = str(mutation["bubbleId"])
                 if bubble_id not in documents:
                     raise ContentNotFound(f"bubble {bubble_id} not found")
                 if operation == "delete":
                     documents.pop(bubble_id)
                     order.remove(bubble_id)
                     deleted_ids.add(bubble_id)
+                    mutation_results.append(
+                        {
+                            "op": operation,
+                            "clientMutationId": client_mutation_id,
+                            "bubbleId": bubble_id,
+                        }
+                    )
                     renderable_change = True
                     continue
-                if not isinstance(fields, dict):
-                    raise ValueError("patch/reset fields must be an object")
                 current = documents[bubble_id]
                 before_font_id = current["fontId"]
                 before_payload = dict(current["payload"])  # type: ignore[arg-type]
@@ -1976,7 +1981,7 @@ class ContentRepository:
                 payload_fields = {
                     key: value
                     for key, value in fields.items()
-                    if key not in {"fontId", "ordinal"}
+                    if key != "fontId"
                 }
                 if operation == "reset":
                     current["payload"] = payload_fields
@@ -1990,6 +1995,13 @@ class ContentRepository:
                         before_payload,
                         dict(current["payload"]),  # type: ignore[arg-type]
                     )
+                )
+                mutation_results.append(
+                    {
+                        "op": operation,
+                        "clientMutationId": client_mutation_id,
+                        "bubbleId": bubble_id,
+                    }
                 )
 
             if propagation:
@@ -2208,7 +2220,10 @@ class ContentRepository:
                     page_id=page_id,
                     requested_revision=new_revision,
                 )
-            result = self._get_page_document(connection, page_id)
+            result = {
+                "document": self._get_page_document(connection, page_id),
+                "mutationResults": mutation_results,
+            }
             connection.execute(
                 insert(idempotency_records).values(
                     scope=scope,
@@ -2233,6 +2248,7 @@ class ContentRepository:
                 pages.c.id,
                 pages.c.chapter_id,
                 pages.c.document_revision,
+                pages.c.render_status,
                 pages.c.default_font_id,
                 pages.c.page_style_defaults_json,
                 pages.c.page_style_schema_version,
@@ -2257,6 +2273,7 @@ class ContentRepository:
             "pageId": page["id"],
             "chapterId": page["chapter_id"],
             "documentRevision": page["document_revision"],
+            "renderStatus": page["render_status"],
             "defaultFontId": page["default_font_id"],
             "pageStyleDefaults": json.loads(page["page_style_defaults_json"]),
             "pageStyleSchemaVersion": page["page_style_schema_version"],

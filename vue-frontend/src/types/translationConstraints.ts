@@ -32,9 +32,3 @@ export interface TranslationWarning {
   expectedTarget: string
   actualTranslation: string
 }
-
-export interface GlossaryExtractionStats {
-  added: number
-  duplicates: number
-  failedPages: number
-}

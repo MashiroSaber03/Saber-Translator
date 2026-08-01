@@ -6,8 +6,6 @@ import type {
 } from '@/types/webImport'
 import { deepClone } from '@/utils/deepClone'
 import {
-  createDefaultWebImportProviderConfigs,
-  createDefaultWebImportSettings,
   isWebImportAgentProvider,
 } from './settings/modules/webImport'
 
@@ -228,7 +226,7 @@ function parseCurrentProviderConfigs(value: unknown): WebImportProviderConfigs |
   return { agent }
 }
 
-export function buildWebImportSettingsPayload(
+function buildWebImportSettingsPayload(
   settings: WebImportSettings,
   providerConfigs: WebImportProviderConfigs
 ): WebImportSettingsPayload {
@@ -245,23 +243,4 @@ export function parseWebImportSettingsPayload(value: unknown): WebImportSettings
   const providerConfigs = parseCurrentProviderConfigs(value.providerConfigs)
   if (!settings || !providerConfigs) return null
   return buildWebImportSettingsPayload(settings, providerConfigs)
-}
-
-export function parseLocalWebImportSettingsPayload(value: unknown): WebImportSettingsPayload | null {
-  if (!isPlainRecord(value) || value.webImportSettingsSchemaVersion !== WEB_IMPORT_SETTINGS_SCHEMA_VERSION) {
-    return null
-  }
-  return parseWebImportSettingsPayload(value)
-}
-
-export function hasMeaningfulWebImportSettingsPayload(value: unknown): boolean {
-  const parsed = parseWebImportSettingsPayload(value)
-  if (!parsed) {
-    return false
-  }
-
-  return (
-    serializeWebImportSettingsValue(parsed.settings) !== serializeWebImportSettingsValue(createDefaultWebImportSettings()) ||
-    serializeWebImportSettingsValue(parsed.providerConfigs) !== serializeWebImportSettingsValue(createDefaultWebImportProviderConfigs())
-  )
 }

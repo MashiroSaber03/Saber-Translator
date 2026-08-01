@@ -6,6 +6,7 @@ import { useImageStore } from '@/stores/imageStore'
 import type { BubbleCoords } from '@/types/bubble'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { calculateDraggedCoords } from '@/utils/bubbleDrag'
+import { addTestImage } from '../helpers/imageFixtures'
 import {
   calculateResizedCoords as calculateResizeGeometry,
   type ResizeHandle,
@@ -59,10 +60,10 @@ describe('edit mode properties', () => {
           const firstBubbles = firstCoords.map(coords => makeBubble(coords))
           const secondBubbles = secondCoords.map(coords => makeBubble(coords))
 
-          imageStore.addImage('test1.png', '/api/v2/assets/source-1', {
+          addTestImage(imageStore, 'test1.png', '/api/v2/assets/source-1', {
             bubbleStates: firstBubbles,
           })
-          imageStore.addImage('test2.png', '/api/v2/assets/source-2', {
+          addTestImage(imageStore, 'test2.png', '/api/v2/assets/source-2', {
             bubbleStates: secondBubbles,
           })
 

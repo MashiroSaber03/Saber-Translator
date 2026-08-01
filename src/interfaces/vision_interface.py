@@ -49,7 +49,8 @@ def _parse_ai_vision_ocr_response(content: str, *, use_json_format: bool) -> str
 def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, model_name=None, prompt=None,
                                prompt_mode: str = 'normal',
                                custom_base_url=None,
-                               openai_options: OpenAICompatibleOptions | None = None):
+                               openai_options: OpenAICompatibleOptions | None = None,
+                               credential_version_id: str | None = None):
     if not image_pil:
         logger.error("未提供有效图像")
         return ""
@@ -108,6 +109,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                 provider=provider_lower,
                 api_key=api_key,
                 model=model_name,
+                credential_version_id=credential_version_id,
                 prompt=prompt,
                 image_base64=image_base64,
                 capability=VISION_OCR_CAPABILITY,

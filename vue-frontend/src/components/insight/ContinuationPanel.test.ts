@@ -39,7 +39,7 @@ const mocks = vi.hoisted(() => ({
   confirmProductAction: vi.fn(),
   clearContinuationData: vi.fn(),
   generateScriptWithRefs: vi.fn(),
-  waitForContinuationJob: vi.fn(),
+  waitForJob: vi.fn(),
   saveConfig: vi.fn(),
   saveScript: vi.fn(),
   savePages: vi.fn(),
@@ -64,10 +64,13 @@ vi.mock('@/composables/continuation/useImageGeneration', () => ({
 vi.mock('@/api/continuation', () => ({
   clearContinuationData: mocks.clearContinuationData,
   generateScriptWithRefs: mocks.generateScriptWithRefs,
-  waitForContinuationJob: mocks.waitForContinuationJob,
   saveConfig: mocks.saveConfig,
   saveScript: mocks.saveScript,
   savePages: mocks.savePages,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ waitForJob: mocks.waitForJob }),
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
@@ -114,17 +117,20 @@ function createStateStub(currentStep = 0) {
 const scriptPanelStub = {
   components: { UiButton },
   emits: ['generate', 'update-script', 'save-script', 'reset-script'],
-  template: '<UiButton class="trigger-script-generate" @click="$emit(\'generate\', { referenceTokens: null, referenceImageCount: 5 })">generate</UiButton>',
+  template:
+    '<UiButton class="trigger-script-generate" @click="$emit(\'generate\', { referenceTokens: null, referenceImageCount: 5 })">generate</UiButton>',
 }
 
 const pageDetailsPanelStub = {
   emits: ['story-change'],
-  template: '<button class="trigger-story-change" @click="$emit(\'story-change\', 1, \'story_text\', \'新剧情\')">story</button>',
+  template:
+    "<button class=\"trigger-story-change\" @click=\"$emit('story-change', 1, 'story_text', '新剧情')\">story</button>",
 }
 
 const imagePanelPromptStub = {
   emits: ['prompt-change'],
-  template: '<button class="trigger-prompt-change" @click="$emit(\'prompt-change\', 1, \'新提示词\')">prompt</button>',
+  template:
+    '<button class="trigger-prompt-change" @click="$emit(\'prompt-change\', 1, \'新提示词\')">prompt</button>',
 }
 
 function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
@@ -135,7 +141,7 @@ function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((nextResolve) => {
+  const promise = new Promise<T>(nextResolve => {
     resolve = nextResolve
   })
   return { promise, resolve }
@@ -145,7 +151,7 @@ describe('ContinuationPanel', () => {
   it('keeps its test doubles typed without any escape hatches', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/ContinuationPanel.test.ts'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).not.toContain('as ' + 'any')
@@ -165,20 +171,12 @@ describe('ContinuationPanel', () => {
       regeneratePageImage: vi.fn().mockResolvedValue(undefined),
     }
     mocks.confirmProductAction.mockReset().mockResolvedValue(true)
-    mocks.clearContinuationData.mockReset().mockResolvedValue({ success: true })
-    mocks.generateScriptWithRefs.mockReset().mockResolvedValue({
-      success: true,
-      script: {
-        chapter_title: '新章节',
-        page_count: 10,
-        script_text: '新的脚本',
-        generated_at: '2026-05-12T00:00:00',
-      },
-    })
-    mocks.waitForContinuationJob.mockReset().mockResolvedValue({ status: 'completed' })
-    mocks.saveConfig.mockReset().mockResolvedValue({ success: true })
-    mocks.saveScript.mockReset().mockResolvedValue({ success: true })
-    mocks.savePages.mockReset().mockResolvedValue({ success: true })
+    mocks.clearContinuationData.mockReset().mockResolvedValue(undefined)
+    mocks.generateScriptWithRefs.mockReset().mockResolvedValue('job-1')
+    mocks.waitForJob.mockReset().mockResolvedValue({ status: 'completed' })
+    mocks.saveConfig.mockReset().mockResolvedValue(undefined)
+    mocks.saveScript.mockReset().mockImplementation(async (_bookId, script) => script)
+    mocks.savePages.mockReset().mockResolvedValue(undefined)
   })
 
   it('re-initializes continuation data after clearing the workflow', async () => {
@@ -319,7 +317,9 @@ describe('ContinuationPanel', () => {
     })
 
     const nextButtons = wrapper.findAll('button').filter(button => button.text().includes('下一步'))
-    const previousButtons = wrapper.findAll('button').filter(button => button.text().includes('上一步'))
+    const previousButtons = wrapper
+      .findAll('button')
+      .filter(button => button.text().includes('上一步'))
 
     expect(nextButtons).toHaveLength(3)
     expect(previousButtons).toHaveLength(3)
@@ -353,7 +353,11 @@ describe('ContinuationPanel', () => {
       '画风参考页数',
       '续写方向（可选）',
     ])
-    expect(fields.map(field => field.props('variant'))).toEqual(['settings', 'settings', 'settings'])
+    expect(fields.map(field => field.props('variant'))).toEqual([
+      'settings',
+      'settings',
+      'settings',
+    ])
 
     const numberFields = wrapper.findAllComponents(UiNumberField)
     expect(numberFields).toHaveLength(2)
@@ -413,30 +417,36 @@ describe('ContinuationPanel', () => {
     const workspace = wrapper.find('.product-workspace-panel--wizard')
     expect(workspace.exists()).toBe(true)
     expect(workspace.attributes('aria-label')).toBe('续写工作区')
-    expect(wrapper.find('.product-workspace-panel__scroll > .continuation-panel').exists()).toBe(true)
+    expect(wrapper.find('.product-workspace-panel__scroll > .continuation-panel').exists()).toBe(
+      true
+    )
   })
 
   it('keeps the wizard controls responsive inside the product scroll owner', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/ContinuationPanel.vue'),
-      'utf8',
+      'utf8'
     )
     const wizardSource = readFileSync(
       resolve(process.cwd(), 'src/components/product/ProductWizardSteps.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toMatch(/\.continuation-panel__sync-bar\s*\{[\s\S]*flex-wrap:\s*wrap/)
     expect(source).toContain('class="continuation-panel__step-content"')
     expect(source).toContain('class="continuation-panel__step-panel"')
-    expect(source).not.toMatch(/\.(?:analysis-sync-bar|analysis-sync-meta|analysis-sync-title|analysis-sync-status|analysis-sync-button|step-content|step-panel)\b/)
+    expect(source).not.toMatch(
+      /\.(?:analysis-sync-bar|analysis-sync-meta|analysis-sync-title|analysis-sync-status|analysis-sync-button|step-content|step-panel)\b/
+    )
     expect(source).toContain('<ProductWizardSteps')
     expect(source).not.toContain('class="step-indicator"')
     expect(source).not.toContain('class="step"')
     expect(wizardSource).toMatch(/\.product-wizard-steps\s*\{[\s\S]*flex-wrap:\s*wrap/)
     expect(wizardSource).toMatch(/\.product-wizard-steps__step\s*\{[\s\S]*min-width:\s*0/)
     expect(wizardSource).toMatch(/\.product-wizard-steps__step\s*\{[\s\S]*flex:\s*1 1/)
-    expect(wizardSource).toMatch(/\.product-wizard-steps__label\s*\{[\s\S]*overflow-wrap:\s*anywhere/)
+    expect(wizardSource).toMatch(
+      /\.product-wizard-steps__label\s*\{[\s\S]*overflow-wrap:\s*anywhere/
+    )
     expect(source).toContain('@media (--breakpoint-sm-down)')
   })
 
@@ -465,8 +475,8 @@ describe('ContinuationPanel', () => {
 
   it('surfaces durable script job failures after enqueue', async () => {
     mocks.state = createStateStub(1)
-    mocks.generateScriptWithRefs.mockResolvedValue({ success: true, task_id: 'job-1' })
-    mocks.waitForContinuationJob.mockRejectedValue(new Error('后端脚本任务失败'))
+    mocks.generateScriptWithRefs.mockResolvedValue('job-1')
+    mocks.waitForJob.mockRejectedValue(new Error('后端脚本任务失败'))
 
     const wrapper = mount(ContinuationPanel, {
       global: {
@@ -486,7 +496,7 @@ describe('ContinuationPanel', () => {
     expect(mocks.generateScriptWithRefs).toHaveBeenCalledWith('book-1', '', 10, undefined, 5)
     expect(mocks.state.showMessage).toHaveBeenCalledWith(
       expect.stringContaining('后端脚本任务失败'),
-      'error',
+      'error'
     )
   })
 
@@ -591,7 +601,7 @@ describe('ContinuationPanel', () => {
       status: 'pending',
     }
     mocks.state.pages.value = [page]
-    const clearRequest = deferred<{ success: boolean }>()
+    const clearRequest = deferred<void>()
     mocks.clearContinuationData.mockReturnValueOnce(clearRequest.promise)
 
     try {
@@ -613,7 +623,7 @@ describe('ContinuationPanel', () => {
 
       expect(mocks.savePages).not.toHaveBeenCalled()
 
-      clearRequest.resolve({ success: true })
+      clearRequest.resolve()
       await nextTick()
     } finally {
       vi.useRealTimers()

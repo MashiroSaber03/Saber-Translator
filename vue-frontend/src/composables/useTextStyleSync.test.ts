@@ -14,13 +14,17 @@ const taskCenterMocks = vi.hoisted(() => ({
   refresh: vi.fn(),
 }))
 
+const contentMocks = vi.hoisted(() => ({
+  getPageSummary: vi.fn(),
+}))
+
 vi.mock('@/services/pageDocumentPersistence', () => ({
   flushPageDocument: persistenceMocks.flushPageDocument,
   queuePageDocumentMutation: persistenceMocks.queuePageDocumentMutation,
 }))
 
 vi.mock('@/api/v2/content', () => ({
-  getPageSummary: vi.fn(),
+  getPageSummary: contentMocks.getPageSummary,
 }))
 
 vi.mock('@/api/v2/translation', () => ({
@@ -46,6 +50,25 @@ describe('useTextStyleSync page defaults', () => {
     translationMocks.createChapterStyleApplyJob.mockResolvedValue({ jobIds: ['job-1'] })
     taskCenterMocks.refresh.mockReset()
     taskCenterMocks.refresh.mockResolvedValue(undefined)
+    contentMocks.getPageSummary.mockReset()
+    contentMocks.getPageSummary.mockResolvedValue({
+      id: '00000000-0000-0000-0000-000000000001',
+      chapterId: '00000000-0000-0000-0000-000000000002',
+      ordinal: 1,
+      logicalSourcePath: 'page.png',
+      sourceRevision: 1,
+      documentRevision: 3,
+      renderedRevision: 3,
+      renderStatus: 'ready',
+      detectionState: 'pending',
+      sourceUrl: '/source',
+      thumbnailSourceUrl: '/thumbnail/source',
+      cleanUrl: '/clean',
+      translatedUrl: '/translated?revision=3',
+      thumbnailTranslatedUrl: '/thumbnail/translated?revision=3',
+      width: 1200,
+      height: 1800,
+    })
   })
 
   it('persists inpaintMethod as a page default without propagating it to existing bubbles', async () => {
@@ -158,6 +181,9 @@ describe('useTextStyleSync page defaults', () => {
         propagateStyleFields: ['textColor', 'fillColor'],
       },
     )
+    await vi.waitFor(() => {
+      expect(imageStore.currentImage?.renderedRevision).toBe(3)
+    })
   })
 
   it('flushes the source page style and freezes its committed revision for apply-to-all', async () => {

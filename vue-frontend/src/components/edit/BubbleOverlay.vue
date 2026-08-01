@@ -140,11 +140,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', index: number): void
   (e: 'multiSelect', index: number): void
-  (e: 'dragStart', index: number, event: MouseEvent): void
   (e: 'dragEnd', index: number, newCoords: BubbleCoords): void
-  (e: 'resizeStart', index: number, handle: string, event: MouseEvent): void
   (e: 'resizeEnd', index: number, newCoords: BubbleCoords): void
-  (e: 'rotateStart', index: number, event: MouseEvent): void
   (e: 'rotateEnd', index: number, angle: number): void
   (e: 'drawBubble', coords: BubbleCoords): void
 }>()
@@ -229,7 +226,6 @@ function startDragging(index: number, event: MouseEvent): void {
     dragInitialX.value = bubble.coords[0]
     dragInitialY.value = bubble.coords[1]
   }
-  emit('dragStart', index, event)
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }
@@ -277,7 +273,6 @@ function handleResizeStart(handle: string, index: number, event: MouseEvent): vo
     resizeInitialCoords.value = [...bubble.coords] as BubbleCoords
     resizeCurrentCoords.value = [...bubble.coords] as BubbleCoords
   }
-  emit('resizeStart', index, handle, event)
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }
@@ -353,7 +348,6 @@ function handleRotateStart(index: number, event: MouseEvent): void {
   rotateStartAngle.value = Math.atan2(dy, dx) * 180 / Math.PI
   rotateInitialAngle.value = bubble.rotationAngle || 0
   rotateCurrentAngle.value = bubble.rotationAngle || 0
-  emit('rotateStart', index, event)
   document.body.classList.add('rotating-box')
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
@@ -371,7 +365,7 @@ function updateRotating(event: MouseEvent): void {
   }
   rotateCurrentAngle.value = newAngle
 }
-function finishRotating(_event: MouseEvent): void {
+function finishRotating(): void {
   document.body.classList.remove('rotating-box')
   const index = rotatingIndex.value
   const finalAngle = rotateCurrentAngle.value
@@ -444,7 +438,7 @@ function handleMouseUp(event: MouseEvent): void {
   } else if (isResizing.value) {
     finishResizing(event)
   } else if (isRotating.value) {
-    finishRotating(event)
+    finishRotating()
   } else if (isDrawing.value) {
     finishDrawing(event)
   }

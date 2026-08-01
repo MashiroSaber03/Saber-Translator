@@ -20,10 +20,6 @@ export function setBackendAccessRestricted(
   if (reason?.trim()) restrictedReason = reason.trim()
 }
 
-export function isBackendAccessRestricted(): boolean {
-  return restricted
-}
-
 export function assertBackendActionAllowed(): void {
   if (!restricted) return
   throw new BackendAccessRestrictedError(

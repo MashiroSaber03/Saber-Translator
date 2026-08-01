@@ -9,9 +9,17 @@ function fileNameFromPath(path: string): string {
 }
 
 function translationStatus(page: V2PageSummary): TranslationStatus {
-  if (page.renderStatus === 'failed') return 'failed'
-  if (page.translatedUrl && page.renderedRevision === page.documentRevision) return 'completed'
-  if (page.renderStatus === 'rendering' || page.detectionState === 'processing') return 'processing'
+  if (page.renderStatus === 'render_failed' || page.renderStatus === 'repair_failed') {
+    return 'failed'
+  }
+  if (
+    page.renderStatus === 'ready'
+    && page.translatedUrl
+    && page.renderedRevision === page.documentRevision
+  ) return 'completed'
+  if (page.renderStatus === 'rendering' || page.renderStatus === 'awaiting_repair') {
+    return 'processing'
+  }
   return 'pending'
 }
 

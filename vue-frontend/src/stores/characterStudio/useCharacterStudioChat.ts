@@ -162,7 +162,7 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     options.activeChatSession.value = optimisticSession
 
     try {
-      await streamCharacterStudioChatMessage(requestedBookId, requestedDocId, {
+      await streamCharacterStudioChatMessage({
         sessionId: requestedSessionId,
         content,
         attachments,
@@ -236,8 +236,6 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
 
     try {
       await regenerateCharacterStudioChatMessage(
-        requestedBookId,
-        requestedDocId,
         requestedSessionId,
         messageId,
         event => {

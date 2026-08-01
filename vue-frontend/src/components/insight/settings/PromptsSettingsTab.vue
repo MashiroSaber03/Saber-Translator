@@ -49,10 +49,7 @@ const defaultPrompts = ref<Record<PromptType, string>>({
 
 async function loadDefaultPrompts(): Promise<void> {
   try {
-    const response = await insightApi.getDefaultPrompts()
-    if (response.success && response.prompts) {
-      defaultPrompts.value = response.prompts
-    }
+    defaultPrompts.value = await insightApi.getDefaultPrompts()
   } catch {
     emit('showMessage', '默认提示词加载失败', 'error')
   }
@@ -61,10 +58,7 @@ async function loadDefaultPrompts(): Promise<void> {
 async function loadPromptsLibrary(): Promise<void> {
   isLoadingPrompts.value = true
   try {
-    const response = await insightApi.getPromptsLibrary()
-    if (response.success && response.library) {
-      savedPromptsLibrary.value = response.library
-    }
+    savedPromptsLibrary.value = await insightApi.getPromptsLibrary()
   } catch {
     savedPromptsLibrary.value = []
   } finally {
@@ -116,13 +110,9 @@ async function savePromptToLibrary(): Promise<void> {
   }
 
   try {
-    const response = await insightApi.savePromptToLibrary(newPrompt)
-    if (response.success) {
-      savedPromptsLibrary.value.push(newPrompt)
-      emit('showMessage', '提示词已保存到库', 'success')
-    } else {
-      emit('showMessage', '保存失败', 'error')
-    }
+    const saved = await insightApi.savePromptToLibrary(newPrompt)
+    savedPromptsLibrary.value.push(saved)
+    emit('showMessage', '提示词已保存到库', 'success')
   } catch {
     emit('showMessage', '保存失败', 'error')
   }
@@ -157,13 +147,9 @@ async function deletePromptFromLibrary(promptId: string): Promise<void> {
   if (!confirmed) return
 
   try {
-    const response = await insightApi.deletePromptFromLibrary(promptId)
-    if (response.success) {
-      savedPromptsLibrary.value = savedPromptsLibrary.value.filter(p => p.id !== promptId)
-      emit('showMessage', '提示词已删除', 'success')
-    } else {
-      emit('showMessage', '删除失败', 'error')
-    }
+    await insightApi.deletePromptFromLibrary(promptId)
+    savedPromptsLibrary.value = savedPromptsLibrary.value.filter(p => p.id !== promptId)
+    emit('showMessage', '提示词已删除', 'success')
   } catch {
     emit('showMessage', '删除失败', 'error')
   }

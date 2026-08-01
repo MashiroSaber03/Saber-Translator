@@ -12,13 +12,11 @@ const {
   routeState,
   initializeAppMock,
   initializeBookChapterContextMock,
-  initValidationMock,
   handleKeydownMock,
 } = vi.hoisted(() => ({
   routeState: { query: {} as Record<string, string | undefined> },
   initializeAppMock: vi.fn(),
   initializeBookChapterContextMock: vi.fn(),
-  initValidationMock: vi.fn(),
   handleKeydownMock: vi.fn(),
 }))
 
@@ -31,7 +29,6 @@ vi.mock('vue-router', () => ({
 vi.mock('@/composables/useValidation', () => ({
   useValidation: () => ({
     validateBeforeTranslation: vi.fn(() => true),
-    initValidation: initValidationMock,
   }),
 }))
 
@@ -157,7 +154,6 @@ describe('TranslateView', () => {
     routeState.query = {}
     initializeAppMock.mockReset()
     initializeBookChapterContextMock.mockReset()
-    initValidationMock.mockReset()
     handleKeydownMock.mockReset()
     initializeAppMock.mockResolvedValue(undefined)
     initializeBookChapterContextMock.mockResolvedValue(undefined)

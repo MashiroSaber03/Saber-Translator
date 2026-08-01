@@ -20,10 +20,9 @@
           :include-base-url="false"
           :api-key-label="apiKeyLabel"
           :api-key-placeholder="apiKeyPlaceholder"
-          :has-stored-credential="settingsStore.hasCredential(
-            'translation',
-            localSettings.modelProvider,
-          )"
+          :has-stored-credential="
+            settingsStore.hasCredential('translation', localSettings.modelProvider)
+          "
           api-key-show-label="显示翻译 API Key"
           api-key-hide-label="隐藏翻译 API Key"
           @update:api-key="localSettings.apiKey = $event"
@@ -60,7 +59,12 @@
           @fetch="fetchModels"
         />
       </UiField>
-      <UiField v-show="isLocalProvider" variant="settings" label="模型名称" control-id="settingsLocalModelName">
+      <UiField
+        v-show="isLocalProvider"
+        variant="settings"
+        label="模型名称"
+        control-id="settingsLocalModelName"
+      >
         <UiModelPicker
           input-id="settingsLocalModelName"
           v-model="localSettings.modelName"
@@ -155,11 +159,7 @@
         建议 Sakura 服务使用"逐气泡翻译"模式，可获得更稳定的翻译效果
       </ProductStatusBanner>
       <ProductActionRow v-show="isLocalProvider" aria-label="本地翻译连接测试" justify="start">
-        <UiButton
-          variant="secondary"
-          @click="testLocalConnection"
-          :disabled="isTesting"
-        >
+        <UiButton variant="secondary" @click="testLocalConnection" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
             <UiIcon name="link" />
@@ -168,11 +168,7 @@
         </UiButton>
       </ProductActionRow>
       <ProductActionRow v-show="!isLocalProvider" aria-label="云端翻译连接测试" justify="start">
-        <UiButton
-          variant="secondary"
-          @click="testCloudConnection"
-          :disabled="isTesting"
-        >
+        <UiButton variant="secondary" @click="testCloudConnection" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
             <UiIcon name="link" />
@@ -201,7 +197,12 @@
         </ProductActionRow>
         <SavedPromptsPicker prompt-type="translate" @select="handleTranslatePromptSelect" />
         <ProductActionRow aria-label="翻译提示词操作" justify="start">
-          <UiButton variant="secondary" type="button" size="sm" @click="resetTranslatePromptToDefault">
+          <UiButton
+            variant="secondary"
+            type="button"
+            size="sm"
+            @click="resetTranslatePromptToDefault"
+          >
             重置为默认
           </UiButton>
         </ProductActionRow>
@@ -273,7 +274,10 @@ import type { TranslationMode, TranslationProvider } from '@/types/settings'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
-import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
+import {
+  useAiModelDiscovery,
+  type AiModelDiscoveryMessageTone,
+} from '@/composables/useAiModelDiscovery'
 import {
   getTranslationApiKeyLabel,
   getTranslationApiKeyPlaceholder,
@@ -334,29 +338,25 @@ const remoteModelDiscovery = useAiModelDiscovery({
     baseUrl: localSettings.value.customBaseUrl,
     hasStoredCredential: settingsStore.hasCredential(
       'translation',
-      localSettings.value.modelProvider,
+      localSettings.value.modelProvider
     ),
   }),
-  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
-    provider,
-    apiKey,
-    baseUrl,
-    'translation',
-  ),
+  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'translation'),
   notify: notifyModelDiscovery,
-  supportsProvider: provider => (
-    providerSupportsCapability(provider, 'modelFetch') && !isLocalProviderId(provider)
-  ),
+  supportsProvider: provider =>
+    providerSupportsCapability(provider, 'modelFetch') && !isLocalProviderId(provider),
   requiresApiKey: provider => !isLocalProviderId(provider),
   emptyBaseUrl: '',
 })
-const isFetchingModels = computed(() => (
-  remoteModelDiscovery.isFetchingModels.value || isFetchingLocalModels.value
-))
+const isFetchingModels = computed(
+  () => remoteModelDiscovery.isFetchingModels.value || isFetchingLocalModels.value
+)
 const modelList = computed(() => remoteModelDiscovery.models.value.map(model => model.id))
 const modelListOptions = computed(() => {
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  remoteModelDiscovery.models.value.forEach(model => options.push({ label: model.id, value: model.id }))
+  remoteModelDiscovery.models.value.forEach(model =>
+    options.push({ label: model.id, value: model.id })
+  )
   return options
 })
 const localModelListOptions = computed(() => {
@@ -424,17 +424,17 @@ function handleProviderChange() {
   localSettings.value.extraBody = settingsStore.settings.translation.openaiOptions.request.extraBody
   localSettings.value.translationMode =
     settingsStore.settings.translation.translationMode || 'batch'
-  const forceJsonOutput =
-    settingsStore.settings.translation.openaiOptions.request.forceJsonOutput
+  const forceJsonOutput = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput
   localSettings.value.translatePromptMode = forceJsonOutput ? 'json' : 'normal'
   const translation = settingsStore.settings.translation
-  localSettings.value.promptContent = localSettings.value.translationMode === 'single'
-    ? forceJsonOutput
-      ? translation.singleJsonPrompt
-      : translation.singleNormalPrompt
-    : forceJsonOutput
-      ? translation.batchJsonPrompt
-      : translation.batchNormalPrompt
+  localSettings.value.promptContent =
+    localSettings.value.translationMode === 'single'
+      ? forceJsonOutput
+        ? translation.singleJsonPrompt
+        : translation.singleNormalPrompt
+      : forceJsonOutput
+        ? translation.batchJsonPrompt
+        : translation.batchNormalPrompt
   settingsStore.setTranslatePrompt(localSettings.value.promptContent)
   invalidateModelFetchRequests()
 }
@@ -607,26 +607,16 @@ async function fetchLocalModels() {
   const requestId = localModelFetchGuard.next()
   isFetchingLocalModels.value = true
   try {
-    if (provider === 'sakura') {
-      const result = await testSakuraConnection()
-      if (!localModelFetchGuard.isCurrent(requestId)) return
-      if (result.success && result.models) {
-        localModelList.value = result.models
-        toast.success(`获取到 ${result.models.length} 个Sakura模型`)
-      } else {
-        toast.error(result.error || 'Sakura连接失败')
-      }
-      return
-    }
-
-    if (provider === 'ollama') {
+    if (provider === 'sakura' || provider === 'ollama') {
       const result = await fetchV2Models(provider, '', '')
       if (!localModelFetchGuard.isCurrent(requestId)) return
-      if (result.success && result.models) {
+      if (result.models.length) {
         localModelList.value = result.models.map(model => model.id)
-        toast.success(`获取到 ${result.models.length} 个Ollama模型`)
+        toast.success(
+          `获取到 ${result.models.length} 个${provider === 'sakura' ? 'Sakura' : 'Ollama'}模型`
+        )
       } else {
-        toast.error(result.error || 'Ollama连接失败')
+        toast.error('未获取到可用的本地模型')
       }
     } else {
       toast.error('未选择本地服务商')
@@ -667,7 +657,7 @@ async function testLocalConnection() {
     if (result.success) {
       toast.success(`${provider === 'ollama' ? 'Ollama' : 'Sakura'} 连接成功`)
     } else {
-      toast.error(result.error || '连接失败')
+      toast.error(result.message || '连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'
@@ -682,9 +672,9 @@ async function testCloudConnection() {
   const modelName = localSettings.value.modelName?.trim()
   const baseUrl = localSettings.value.customBaseUrl?.trim()
   if (
-    providerRequiresApiKey(provider)
-    && !apiKey
-    && !settingsStore.hasCredential('translation', provider)
+    providerRequiresApiKey(provider) &&
+    !apiKey &&
+    !settingsStore.hasCredential('translation', provider)
   ) {
     toast.warning('请先填写 API Key')
     return
@@ -720,7 +710,7 @@ async function testCloudConnection() {
     if (result.success) {
       toast.success(result.message || `${getProviderDisplayName(provider)} 连接成功!`)
     } else {
-      toast.error(result.message || result.error || '连接失败')
+      toast.error(result.message || '连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'

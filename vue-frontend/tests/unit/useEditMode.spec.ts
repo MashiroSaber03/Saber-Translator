@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useEditMode } from '@/composables/useEditMode'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 describe('useEditMode', () => {
@@ -32,7 +33,7 @@ describe('useEditMode', () => {
     const bubbleStore = useBubbleStore()
     const editMode = useEditMode()
 
-    imageStore.addImage('page.png', 'data:image/png;base64,page', {
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,page', {
       bubbleStates: [
         createBubbleState({ coords: [0, 0, 120, 120] }),
       ],

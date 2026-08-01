@@ -13,10 +13,7 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import {
-  VLM_PROVIDER_OPTIONS,
-  VLM_DEFAULT_MODELS,
-} from './types'
+import { VLM_PROVIDER_OPTIONS, VLM_DEFAULT_MODELS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -45,9 +42,9 @@ const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
 const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize ?? 1280)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() => (
+const hasStoredCredential = computed(() =>
   insightApi.hasInsightCredential('insight_vlm', provider.value)
-))
+)
 const {
   isFetchingModels,
   modelOptions,
@@ -62,7 +59,8 @@ const {
   baseUrl,
   model,
   emitMessage: (message, type) => emit('showMessage', message, type),
-  formatFetchError: error => '获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误'),
+  formatFetchError: error =>
+    '获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误'),
 })
 
 function onProviderChange(): void {
@@ -89,16 +87,20 @@ async function testConnection(): Promise<void> {
       provider: provider.value,
       api_key: apiKey.value,
       model: model.value,
-      base_url: baseUrl.value || undefined
+      base_url: baseUrl.value || undefined,
     })
 
     if (response.success) {
       emit('showMessage', 'VLM 连接成功', 'success')
     } else {
-      emit('showMessage', '连接失败: ' + (response.error || '未知错误'), 'error')
+      emit('showMessage', '连接失败: ' + (response.message || '未知错误'), 'error')
     }
   } catch (error) {
-    emit('showMessage', '测试失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    emit(
+      'showMessage',
+      '测试失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error'
+    )
   } finally {
     isTesting.value = false
   }
@@ -114,16 +116,16 @@ function buildDraftConfig(): StoreVlmConfig {
       request: {
         forceJsonOutput: forceJsonOutput.value,
         temperature: temperature.value,
-        extraBody: extraBody.value
+        extraBody: extraBody.value,
       },
       execution: {
         useStream: useStream.value,
         rpmLimit: rpmLimit.value,
         transportRetries: transportRetries.value,
-        businessRetries: businessRetries.value
-      }
+        businessRetries: businessRetries.value,
+      },
     },
-    imageMaxSize: imageMaxSize.value
+    imageMaxSize: imageMaxSize.value,
   }
 }
 
@@ -143,7 +145,20 @@ function applyDraftConfig(config: StoreVlmConfig): void {
 }
 
 useInsightSettingsDraft<StoreVlmConfig>({
-  sources: [provider, apiKey, model, baseUrl, rpmLimit, transportRetries, businessRetries, temperature, forceJsonOutput, extraBody, useStream, imageMaxSize],
+  sources: [
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    rpmLimit,
+    transportRetries,
+    businessRetries,
+    temperature,
+    forceJsonOutput,
+    extraBody,
+    useStream,
+    imageMaxSize,
+  ],
   buildDraft: buildDraftConfig,
   applyDraft: applyDraftConfig,
   loadDraft: () => insightStore.config.vlm,
@@ -181,40 +196,85 @@ useInsightSettingsDraft<StoreVlmConfig>({
     />
 
     <UiFormGrid>
-      <UiField variant="settings" label="RPM 限制" hint="每分钟最大请求数" control-id="insight-vlm-rpm-limit">
+      <UiField
+        variant="settings"
+        label="RPM 限制"
+        hint="每分钟最大请求数"
+        control-id="insight-vlm-rpm-limit"
+      >
         <UiNumberField v-model="rpmLimit" input-id="insight-vlm-rpm-limit" :min="1" :max="100" />
       </UiField>
-      <UiField variant="settings" label="传输重试" hint="网络超时/429/5xx" control-id="insight-vlm-transport-retries">
-        <UiNumberField v-model="transportRetries" input-id="insight-vlm-transport-retries" :min="0" :max="10" />
+      <UiField
+        variant="settings"
+        label="传输重试"
+        hint="网络超时/429/5xx"
+        control-id="insight-vlm-transport-retries"
+      >
+        <UiNumberField
+          v-model="transportRetries"
+          input-id="insight-vlm-transport-retries"
+          :min="0"
+          :max="10"
+        />
       </UiField>
-      <UiField variant="settings" label="业务重试" hint="空结果/结构解析失败" control-id="insight-vlm-business-retries">
-        <UiNumberField v-model="businessRetries" input-id="insight-vlm-business-retries" :min="0" :max="10" />
+      <UiField
+        variant="settings"
+        label="业务重试"
+        hint="空结果/结构解析失败"
+        control-id="insight-vlm-business-retries"
+      >
+        <UiNumberField
+          v-model="businessRetries"
+          input-id="insight-vlm-business-retries"
+          :min="0"
+          :max="10"
+        />
       </UiField>
-      <UiField variant="settings" label="温度" hint="0-1，越低越确定" control-id="insight-vlm-temperature">
-        <UiNumberField v-model="temperature" input-id="insight-vlm-temperature" :min="0" :max="1" :step="0.1" />
+      <UiField
+        variant="settings"
+        label="温度"
+        hint="0-1，越低越确定"
+        control-id="insight-vlm-temperature"
+      >
+        <UiNumberField
+          v-model="temperature"
+          input-id="insight-vlm-temperature"
+          :min="0"
+          :max="1"
+          :step="0.1"
+        />
       </UiField>
     </UiFormGrid>
 
-    <UiField variant="settings" control="checkbox" hint="对 OpenAI 兼容 API 启用 response_format: json_object">
-      <UiCheckbox
-        v-model="forceJsonOutput"
-        label="强制 JSON 输出"
-      />
+    <UiField
+      variant="settings"
+      control="checkbox"
+      hint="对 OpenAI 兼容 API 启用 response_format: json_object"
+    >
+      <UiCheckbox v-model="forceJsonOutput" label="强制 JSON 输出" />
     </UiField>
 
     <UiField variant="settings" control="checkbox" hint="流式请求可避免长时间等待导致的超时问题">
-      <UiCheckbox
-        v-model="useStream"
-        label="使用流式请求"
-      />
+      <UiCheckbox v-model="useStream" label="使用流式请求" />
     </UiField>
 
     <UiField variant="settings">
       <OpenAIExtraBodyEditor v-model="extraBody" />
     </UiField>
 
-    <UiField variant="settings" label="图片压缩（最大边长）" hint="发送前将图片等比例缩放到指定最大边长（像素），0 表示不压缩" control-id="insight-vlm-image-max-size">
-      <UiNumberField v-model="imageMaxSize" input-id="insight-vlm-image-max-size" :min="0" :max="4096" :step="128" />
+    <UiField
+      variant="settings"
+      label="图片压缩（最大边长）"
+      hint="发送前将图片等比例缩放到指定最大边长（像素），0 表示不压缩"
+      control-id="insight-vlm-image-max-size"
+    >
+      <UiNumberField
+        v-model="imageMaxSize"
+        input-id="insight-vlm-image-max-size"
+        :min="0"
+        :max="4096"
+        :step="128"
+      />
     </UiField>
   </InsightSettingsPanel>
 </template>

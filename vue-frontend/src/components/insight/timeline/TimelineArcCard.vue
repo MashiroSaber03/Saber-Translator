@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import TimelineEventCardShell from './TimelineEventCardShell.vue'
-import type { TimelineArc } from './timelineTypes'
+import type { TimelineArc } from '@/types/insight'
 
 const props = defineProps<{
   arc: TimelineArc

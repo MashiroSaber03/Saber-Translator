@@ -77,7 +77,7 @@ describe('useTranslateViewActions', () => {
       options as unknown as Parameters<typeof useTranslateViewActions>[0],
     )
 
-    await actions.handleUploadComplete(3)
+    await actions.handleUploadComplete()
 
     expect(options.translateInit.initializeBookChapterContext).toHaveBeenCalled()
     expect(options.translateInit.switchImage).not.toHaveBeenCalled()

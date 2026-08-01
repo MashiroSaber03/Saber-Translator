@@ -6,6 +6,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { V2SettingsDocument, V2SettingsTransaction } from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
 import { createDefaultSettings } from '@/stores/settings/defaults'
+import { parseCurrentSettings } from '@/stores/settings/schema'
+import { deepClone } from '@/utils/deepClone'
 
 const settingsApiMocks = vi.hoisted(() => ({
   getV2Settings: vi.fn(),
@@ -93,6 +95,25 @@ describe('settings store current schema boundaries', () => {
       expect(source, file).toContain('restoreProviderCacheEntry')
       expect(source, file).not.toMatch(/providerConfigs\.value\.\w+\[[^\]]+\]\s*=/)
     }
+  })
+
+  it('rejects extra fields instead of treating them as an older settings shape', () => {
+    const topLevel = createDefaultSettings() as unknown as Record<string, unknown>
+    topLevel.removedField = true
+
+    const nested = deepClone(createDefaultSettings())
+    ;(nested.translation.openaiOptions.request as Record<string, unknown>).removedField = true
+
+    const proofreading = deepClone(createDefaultSettings())
+    proofreading.proofreading.rounds = [{
+      ...proofreading.hqTranslation,
+      name: '第1轮',
+    }]
+    ;(proofreading.proofreading.rounds[0] as unknown as Record<string, unknown>).sessionReset = true
+
+    expect(parseCurrentSettings(topLevel)).toBeNull()
+    expect(parseCurrentSettings(nested)).toBeNull()
+    expect(parseCurrentSettings(proofreading)).toBeNull()
   })
 
   it('keeps removed-field probes typed without broad any escapes', () => {

@@ -306,6 +306,7 @@ def _recognize_with_ai_vision_results(
     custom_ai_vision_base_url=None,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
+    credential_version_id: str | None = None,
     *,
     primary_engine=constants.AI_VISION_OCR_ENGINE_ID,
     fallback_used=False,
@@ -426,6 +427,7 @@ def _recognize_with_ai_vision_results(
                 prompt_mode=normalized_prompt_mode,
                 custom_base_url=custom_ai_vision_base_url,
                 openai_options=effective_options,
+                credential_version_id=credential_version_id,
             )
 
             results.append(
@@ -472,6 +474,7 @@ def _recognize_with_engine(
     custom_ai_vision_base_url=None,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
+    credential_version_id: str | None = None,
     textlines_per_bubble=None,
     *,
     primary_engine=None,
@@ -541,6 +544,7 @@ def _recognize_with_engine(
             custom_ai_vision_base_url=custom_ai_vision_base_url,
             ai_vision_min_image_size=ai_vision_min_image_size,
             ai_vision_openai_options=ai_vision_openai_options,
+            credential_version_id=credential_version_id,
             primary_engine=effective_primary_engine,
             fallback_used=fallback_used,
             strict_errors=strict_errors,
@@ -566,6 +570,7 @@ def recognize_ocr_results_in_bubbles(
     custom_ai_vision_base_url=None,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
+    credential_version_id: str | None = None,
     textlines_per_bubble=None,
     enable_hybrid_ocr: bool = False,
     secondary_ocr_engine: Optional[str] = None,
@@ -607,6 +612,7 @@ def recognize_ocr_results_in_bubbles(
         custom_ai_vision_base_url=custom_ai_vision_base_url,
         ai_vision_min_image_size=ai_vision_min_image_size,
         ai_vision_openai_options=ai_vision_openai_options,
+        credential_version_id=credential_version_id,
         textlines_per_bubble=textlines_per_bubble,
         primary_engine=ocr_engine,
         fallback_used=False,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import type { NoteType } from '@/stores/insightStore'
+import type { NoteType } from '@/types/insight'
 
 defineProps<{
   filter: NoteType | 'all'

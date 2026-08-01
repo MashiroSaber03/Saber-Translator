@@ -1,7 +1,7 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
-import { jobsApi, type V2JobDetail } from './jobs'
 
 const ROOT = '/api/v2/insight'
 
@@ -10,10 +10,11 @@ export type V2ContinuationCharacter = components['schemas']['ContinuationCharact
 export type V2ContinuationForm = components['schemas']['ContinuationForm']
 export type V2ContinuationFormAdoption = components['schemas']['ContinuationFormAdoption']
 export type V2ContinuationImageActivation = components['schemas']['ContinuationImageActivation']
-export type V2ContinuationImageVersion = components['schemas']['ContinuationImageVersion']
 export type V2ContinuationPage = components['schemas']['ContinuationPage']
 export type V2ContinuationProject = components['schemas']['ContinuationProject']
 export type V2ContinuationState = components['schemas']['ContinuationState']
+
+type V2ContinuationFormList = components['schemas']['ContinuationFormList']
 
 export function getV2Continuation(bookId: string): Promise<V2ContinuationState> {
   return apiClient.get(`${ROOT}/books/${encodeURIComponent(bookId)}/continuation`)
@@ -54,10 +55,7 @@ export async function listAllV2ContinuationForms(projectId: string): Promise<V2C
   const items: V2ContinuationForm[] = []
   let cursor = 0
   do {
-    const response = await apiClient.get<{
-      items: V2ContinuationForm[]
-      nextCursor: number | null
-    }>(`${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/forms`, {
+    const response = await apiClient.get<V2ContinuationFormList>(`${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/forms`, {
       params: { cursor, limit: 200 },
     })
     items.push(...response.items)
@@ -226,6 +224,7 @@ export function createV2ContinuationJob(
     ordinals?: number[]
   },
 ): Promise<V2ContinuationAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/books/${encodeURIComponent(bookId)}/continuation/jobs`,
     command,
@@ -238,8 +237,4 @@ export function clearV2Continuation(bookId: string): Promise<{ deleted: boolean 
     `${ROOT}/books/${encodeURIComponent(bookId)}/continuation`,
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
-}
-
-export function getV2ContinuationJob(jobId: string): Promise<V2JobDetail> {
-  return jobsApi.get(jobId)
 }

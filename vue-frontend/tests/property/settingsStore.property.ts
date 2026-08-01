@@ -76,18 +76,4 @@ describe('settings store properties', () => {
     ))
   })
 
-  it('resets an edited draft to factory defaults', () => {
-    fc.assert(fc.property(
-      fc.integer({ min: 10, max: 100 }),
-      fontSize => {
-        const store = createSettingsStore()
-        const defaultFontSize = store.settings.textStyle.fontSize
-
-        store.updateTextStyle({ fontSize })
-        store.resetToDefaults()
-
-        expect(store.settings.textStyle.fontSize).toBe(defaultFontSize)
-      },
-    ))
-  })
 })

@@ -1,7 +1,7 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 
-export type V2Book = components['schemas']['Book']
 export type V2BookDetail = components['schemas']['BookDetail']
 export type V2Chapter = components['schemas']['Chapter']
 export type V2ChapterNavigation = components['schemas']['ChapterNavigation']
@@ -10,6 +10,7 @@ export type V2ContainerImportAccepted = components['schemas']['JobBatchAccepted'
 export type V2ImportLease = components['schemas']['ImportLease']
 export type V2PageDocument = components['schemas']['PageDocument']
 export type V2PageDocumentBatchMutation = components['schemas']['PageDocumentBatchMutation']
+export type V2PageDocumentMutationResponse = components['schemas']['PageDocumentMutationResponse']
 export type V2PageImportResult = components['schemas']['PageImportResult']
 export type V2PageList = components['schemas']['PageList']
 export type V2PageSummary = components['schemas']['PageSummary']
@@ -180,6 +181,7 @@ export async function createContainerImportJob(
   chapterId: string,
   file: File,
 ): Promise<V2ContainerImportAccepted> {
+  assertBackendActionAllowed()
   const body = new FormData()
   body.append('file', file, file.name)
   return apiClient.upload<V2ContainerImportAccepted>(
@@ -265,10 +267,11 @@ export async function getPageDocument(
 export async function mutatePageDocument(
   pageId: string,
   command: V2PageDocumentBatchMutation,
-): Promise<V2PageDocument> {
-  return apiClient.patch<V2PageDocument>(
+  idempotencyKey: string,
+): Promise<V2PageDocumentMutationResponse> {
+  return apiClient.patch<V2PageDocumentMutationResponse>(
     `${API_ROOT}/pages/${encodeURIComponent(pageId)}/document`,
     command,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
   )
 }

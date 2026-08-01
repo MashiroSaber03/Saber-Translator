@@ -191,24 +191,19 @@ async function saveSettings(): Promise<void> {
         insightStore.restoreConfigState(initialConfigState)
       }
     }
-    const response = await insightApi.saveGlobalConfig(apiConfig as insightApi.AnalysisConfig)
-
-    if (response.success) {
-      backendConfigReady.value = await loadConfig()
-      if (!backendConfigReady.value) {
-        showMessage('设置已保存，但重新读取后端配置失败，请重试打开设置', 'error')
-        return
-      }
-      initialConfigState = insightStore.snapshotConfigState()
-      showMessage('设置已保存', 'success')
-      clearCloseTimer()
-      closeTimer = setTimeout(() => {
-        closeTimer = null
-        closeAfterCommit()
-      }, 500)
-    } else {
-      showMessage('保存失败: ' + (response.error || '未知错误'), 'error')
+    await insightApi.saveGlobalConfig(apiConfig as insightApi.AnalysisConfig)
+    backendConfigReady.value = await loadConfig()
+    if (!backendConfigReady.value) {
+      showMessage('设置已保存，但重新读取后端配置失败，请重试打开设置', 'error')
+      return
     }
+    initialConfigState = insightStore.snapshotConfigState()
+    showMessage('设置已保存', 'success')
+    clearCloseTimer()
+    closeTimer = setTimeout(() => {
+      closeTimer = null
+      closeAfterCommit()
+    }, 500)
   } catch (error) {
     showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {
@@ -218,17 +213,12 @@ async function saveSettings(): Promise<void> {
 
 async function loadConfig(): Promise<boolean> {
   try {
-    const response = await insightApi.getGlobalConfig()
-    if (response.success && response.config) {
-      insightStore.setConfigFromApi(response.config as Record<string, unknown>)
-      requestTabsSyncFromStore()
-      return true
-    }
-    showMessage(`加载后端配置失败${response.error ? `：${response.error}` : ''}`, 'error')
+    const config = await insightApi.getGlobalConfig()
+    insightStore.setConfigFromApi(config as unknown as Record<string, unknown>)
     requestTabsSyncFromStore()
-    return false
-  } catch {
-    showMessage('加载后端配置失败', 'error')
+    return true
+  } catch (error) {
+    showMessage(error instanceof Error ? error.message : '加载后端配置失败', 'error')
     requestTabsSyncFromStore()
     return false
   }

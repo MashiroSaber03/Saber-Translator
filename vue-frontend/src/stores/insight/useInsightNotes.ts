@@ -48,15 +48,9 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     error.value = null
 
     try {
-      const response = await insightApi.getNotes(requestedBookId)
+      const loadedNotes = await insightApi.getNotes(requestedBookId)
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
-      if (!response.success) {
-        error.value = response.error || '加载笔记失败'
-        return
-      }
-      if (response.notes) {
-        notes.value = response.notes.map(mapInsightApiNote)
-      }
+      notes.value = loadedNotes.map(mapInsightApiNote)
     } catch (e) {
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
       error.value = e instanceof Error ? e.message : '加载笔记失败'
@@ -93,7 +87,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     }
 
     try {
-      const response = await insightApi.createNote(currentBookId.value, {
+      const createdNote = await insightApi.createNote(currentBookId.value, {
         type: note.type,
         content: note.content,
         pageNum: note.pageNum,
@@ -105,17 +99,14 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         comment: note.comment
       })
 
-      if (response.success && response.note) {
-        const newNote = mapInsightApiNote(response.note)
-        const index = notes.value.findIndex(existing => existing.id === optimisticNote.id)
-        if (index !== -1) {
-          notes.value[index] = newNote
-        } else {
-          notes.value.unshift(newNote)
-        }
-        return newNote
+      const newNote = mapInsightApiNote(createdNote)
+      const index = notes.value.findIndex(existing => existing.id === optimisticNote.id)
+      if (index !== -1) {
+        notes.value[index] = newNote
+      } else {
+        notes.value.unshift(newNote)
       }
-      error.value = response.error || '添加笔记失败'
+      return newNote
     } catch (e) {
       error.value = e instanceof Error ? e.message : '添加笔记失败'
     }
@@ -127,7 +118,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     if (!currentBookId.value) return false
 
     try {
-      const response = await insightApi.updateNote(currentBookId.value, noteId, {
+      const updatedNote = await insightApi.updateNote(currentBookId.value, noteId, {
         content: updates.content,
         pageNum: updates.pageNum,
         title: updates.title,
@@ -138,13 +129,11 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
         comment: updates.comment
       })
 
-      if (response.success) {
-        const index = notes.value.findIndex(n => n.id === noteId)
-        if (index !== -1) {
-          notes.value[index] = { ...notes.value[index], ...updates, updatedAt: new Date().toISOString() }
-        }
-        return true
+      const index = notes.value.findIndex(note => note.id === noteId)
+      if (index !== -1) {
+        notes.value[index] = mapInsightApiNote(updatedNote)
       }
+      return true
     } catch (e) {
       error.value = e instanceof Error ? e.message : '更新笔记失败'
     }
@@ -155,12 +144,9 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     if (!currentBookId.value) return false
 
     try {
-      const response = await insightApi.deleteNote(currentBookId.value, noteId)
-
-      if (response.success) {
-        notes.value = notes.value.filter(n => n.id !== noteId)
-        return true
-      }
+      await insightApi.deleteNote(noteId)
+      notes.value = notes.value.filter(n => n.id !== noteId)
+      return true
     } catch (e) {
       error.value = e instanceof Error ? e.message : '删除笔记失败'
     }

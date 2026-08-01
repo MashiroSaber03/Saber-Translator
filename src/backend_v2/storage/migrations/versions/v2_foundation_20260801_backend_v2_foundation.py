@@ -660,7 +660,7 @@ def upgrade() -> None:
     sa.Column('revision', sa.Integer(), server_default='1', nullable=False),
     sa.CheckConstraint('request_count >= 0', name=op.f('ck_provider_rate_limits_request_count_nonnegative')),
     sa.CheckConstraint('rpm_limit >= 1', name=op.f('ck_provider_rate_limits_rpm_limit_positive')),
-    sa.ForeignKeyConstraint(['credential_version_id'], ['credential_versions.id'], name=op.f('fk_provider_rate_limits_credential_version_id_credential_versions'), ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['credential_version_id'], ['credential_versions.id'], name=op.f('fk_provider_rate_limits_credential_version_id_credential_versions'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('provider', 'credential_version_id', name=op.f('pk_provider_rate_limits'))
     )
     op.create_table('provider_settings',

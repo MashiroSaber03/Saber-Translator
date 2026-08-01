@@ -78,12 +78,4 @@ export interface ImageDataLoadInput
     ImageUiFields,
     ImageFolderFields {}
 
-export type ImageDataOverrides = Partial<ImageData>
-
 export type ImageDataUpdates = Partial<ImageData>
-
-export interface ImageUploadResult {
-  success: boolean
-  images: ImageData[]
-  errors?: string[]
-}

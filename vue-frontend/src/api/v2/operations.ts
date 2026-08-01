@@ -1,5 +1,8 @@
 import { apiClient } from '@/api/client'
+import { readApiErrorMessage } from '@/api/download'
+import { readSseStream } from '@/api/sse'
 import type { components } from '@/api/generated/v2'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 export type OperationStatus = components['schemas']['OperationStatus']
@@ -9,71 +12,64 @@ export type V2Operation = components['schemas']['Operation']
 
 export async function createPageOperation(
   pageId: string,
-  command: PageOperationCommand,
+  command: PageOperationCommand
 ): Promise<V2Operation> {
+  assertBackendActionAllowed()
   return apiClient.post<V2Operation>(
     `/api/v2/pages/${encodeURIComponent(pageId)}/operations`,
     command,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } }
   )
 }
 
 export async function getOperation(
   operationId: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<V2Operation> {
-  return apiClient.get<V2Operation>(
-    `/api/v2/operations/${encodeURIComponent(operationId)}`,
-    { signal },
-  )
+  return apiClient.get<V2Operation>(`/api/v2/operations/${encodeURIComponent(operationId)}`, {
+    signal,
+  })
 }
 
 export async function waitForOperation(
   operationId: string,
-  options: {
-    intervalMs?: number
-    signal?: AbortSignal
-    timeoutMs?: number
-  } = {},
+  options: { signal?: AbortSignal } = {}
 ): Promise<V2Operation> {
-  const intervalMs = options.intervalMs ?? 350
-  const timeoutMs = options.timeoutMs ?? 10 * 60 * 1000
-  const startedAt = Date.now()
-  while (true) {
-    options.signal?.throwIfAborted()
-    const operation = await getOperation(operationId, options.signal)
-    if (operation.status === 'completed') return operation
-    if (operation.status === 'failed' || operation.status === 'cancelled') {
-      const message = operation.error?.message
-        || `操作${operation.status === 'failed' ? '失败' : '已取消'}`
-      throw new Error(message)
+  const response = await fetch(
+    `/api/v2/operations/${encodeURIComponent(operationId)}/events?stream=1`,
+    {
+      headers: { Accept: 'text/event-stream' },
+      signal: options.signal,
     }
-    if (Date.now() - startedAt >= timeoutMs) {
-      throw new Error('等待后端操作完成超时；操作仍可在任务中心继续运行')
-    }
-    await new Promise<void>((resolve, reject) => {
-      const timer = window.setTimeout(resolve, intervalMs)
-      options.signal?.addEventListener('abort', () => {
-        window.clearTimeout(timer)
-        reject(new DOMException('Aborted', 'AbortError'))
-      }, { once: true })
-    })
+  )
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, '读取后端操作状态失败'))
   }
+  await readSseStream(response, {
+    missingBodyMessage: '无法读取后端操作事件流',
+    parseErrorMessage: '后端操作事件格式无效',
+    onMessage() {},
+  })
+  const operation = await getOperation(operationId, options.signal)
+  if (operation.status === 'completed') return operation
+  const message =
+    operation.error?.message || `操作${operation.status === 'cancelled' ? '已取消' : '失败'}`
+  throw new Error(message)
 }
 
 export async function runPageOperation(
   pageId: string,
   command: PageOperationCommand,
-  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+  options: { signal?: AbortSignal } = {}
 ): Promise<V2Operation> {
   const accepted = await createPageOperation(pageId, command)
   return waitForOperation(accepted.operationId, options)
 }
 
-export async function createBubbleRepair(
+async function createBubbleRepair(
   pageId: string,
   bubbleId: string,
-  baseRevision: number,
+  baseRevision: number
 ): Promise<V2Operation> {
   const body = new FormData()
   body.append('target', 'bubble')
@@ -82,7 +78,7 @@ export async function createBubbleRepair(
   return apiClient.upload<V2Operation>(
     `/api/v2/pages/${encodeURIComponent(pageId)}/repairs`,
     body,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } }
   )
 }
 
@@ -90,7 +86,7 @@ export async function runBubbleRepair(
   pageId: string,
   bubbleId: string,
   baseRevision: number,
-  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+  options: { signal?: AbortSignal } = {}
 ): Promise<V2Operation> {
   const accepted = await createBubbleRepair(pageId, bubbleId, baseRevision)
   return waitForOperation(accepted.operationId, options)
@@ -103,7 +99,7 @@ export async function createMaskRepair(
     baseRevision: number
     fillColor?: string
     method: 'lama_mpe' | 'litelama' | 'restore_source' | 'solid'
-  },
+  }
 ): Promise<V2Operation> {
   const body = new FormData()
   body.append('target', 'mask')
@@ -114,6 +110,6 @@ export async function createMaskRepair(
   return apiClient.upload<V2Operation>(
     `/api/v2/pages/${encodeURIComponent(pageId)}/repairs`,
     body,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } }
   )
 }

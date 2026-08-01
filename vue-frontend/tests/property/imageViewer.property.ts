@@ -5,7 +5,6 @@ import type { ImageViewerOptions, TransformState } from '@/composables/useImageV
 
 const scaleArb = fc.double({ min: 0.1, max: 5, noNaN: true })
 const translateArb = fc.double({ min: -1000, max: 1000, noNaN: true })
-const dimensionArb = fc.integer({ min: 100, max: 2000 })
 const zoomFactorArb = fc.double({ min: 0.5, max: 2, noNaN: true })
 
 const transformArb: fc.Arbitrary<TransformState> = fc.record({
@@ -14,10 +13,9 @@ const transformArb: fc.Arbitrary<TransformState> = fc.record({
   translateY: translateArb,
 })
 
-const viewerOptionsArb: fc.Arbitrary<Required<Pick<ImageViewerOptions, 'minScale' | 'maxScale' | 'zoomSpeed'>>> = fc.record({
+const viewerOptionsArb: fc.Arbitrary<Required<ImageViewerOptions>> = fc.record({
   minScale: fc.double({ min: 0.01, max: 0.5, noNaN: true }),
   maxScale: fc.double({ min: 2, max: 10, noNaN: true }),
-  zoomSpeed: fc.double({ min: 0.05, max: 0.3, noNaN: true }),
 })
 
 function createViewer(options: ImageViewerOptions, transform?: TransformState) {
@@ -34,7 +32,7 @@ describe('image viewer properties', () => {
       fc.property(transformArb, viewerOptionsArb, zoomFactorArb, (transform, options, factor) => {
         const viewer = createViewer(options, transform)
 
-        viewer.zoom(factor, 800, 600)
+        viewer.zoomAt(400, 300, factor)
 
         expect(viewer.scale.value).toBeGreaterThanOrEqual(options.minScale)
         expect(viewer.scale.value).toBeLessThanOrEqual(options.maxScale)
@@ -50,28 +48,12 @@ describe('image viewer properties', () => {
         const zoomedOut = createViewer(options)
 
         for (let i = 0; i < iterations; i++) {
-          zoomedIn.zoom(1.5, 800, 600)
-          zoomedOut.zoom(0.5, 800, 600)
+          zoomedIn.zoomAt(400, 300, 1.5)
+          zoomedOut.zoomAt(400, 300, 0.5)
         }
 
         expect(zoomedIn.scale.value).toBeLessThanOrEqual(options.maxScale)
         expect(zoomedOut.scale.value).toBeGreaterThanOrEqual(options.minScale)
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  it('applies pan deltas without changing scale', () => {
-    fc.assert(
-      fc.property(transformArb, translateArb, translateArb, (transform, deltaX, deltaY) => {
-        const viewer = createViewer({}, transform)
-        const initialScale = viewer.scale.value
-
-        viewer.pan(deltaX, deltaY)
-
-        expect(viewer.translateX.value).toBeCloseTo(transform.translateX + deltaX, 5)
-        expect(viewer.translateY.value).toBeCloseTo(transform.translateY + deltaY, 5)
-        expect(viewer.scale.value).toBe(initialScale)
       }),
       { numRuns: 100 }
     )
@@ -82,30 +64,13 @@ describe('image viewer properties', () => {
       fc.property(transformArb, (transform) => {
         const viewer = createViewer({}, transform)
 
-        viewer.reset()
+        viewer.resetZoom()
 
         expect(viewer.getTransform()).toEqual({
           scale: 1,
           translateX: 0,
           translateY: 0,
         })
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  it('fits positive image dimensions inside the viewport with a margin', () => {
-    fc.assert(
-      fc.property(dimensionArb, dimensionArb, dimensionArb, dimensionArb, (viewportWidth, viewportHeight, imageWidth, imageHeight) => {
-        const viewer = useImageViewer()
-
-        viewer.fitToScreen(imageWidth, imageHeight, viewportWidth, viewportHeight)
-
-        const scaledWidth = imageWidth * viewer.scale.value
-        const scaledHeight = imageHeight * viewer.scale.value
-        expect(viewer.scale.value).toBeGreaterThan(0)
-        expect(scaledWidth).toBeLessThanOrEqual(viewportWidth)
-        expect(scaledHeight).toBeLessThanOrEqual(viewportHeight)
       }),
       { numRuns: 100 }
     )
@@ -138,7 +103,7 @@ describe('image viewer properties', () => {
         const scale = (options.minScale + options.maxScale) / 2
         const viewer = createViewer(options, { scale, translateX: 100, translateY: 100 })
 
-        viewer.zoom(1, 800, 600)
+        viewer.zoomAt(400, 300, 1)
 
         expect(viewer.scale.value).toBeCloseTo(scale, 8)
         expect(viewer.translateX.value).toBeCloseTo(100, 8)
@@ -148,43 +113,13 @@ describe('image viewer properties', () => {
     )
   })
 
-  it('keeps pan reversible', () => {
-    fc.assert(
-      fc.property(transformArb, translateArb, translateArb, (transform, deltaX, deltaY) => {
-        const viewer = createViewer({}, transform)
-        const initial = viewer.getTransform()
-
-        viewer.pan(deltaX, deltaY)
-        viewer.pan(-deltaX, -deltaY)
-
-        expect(viewer.translateX.value).toBeCloseTo(initial.translateX, 5)
-        expect(viewer.translateY.value).toBeCloseTo(initial.translateY, 5)
-        expect(viewer.scale.value).toBe(initial.scale)
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  it('leaves transform unchanged for non-positive fit dimensions', () => {
-    const viewer = createViewer({}, { scale: 1.4, translateX: 20, translateY: 30 })
-
-    viewer.fitToScreen(0, 100, 800, 600)
-    viewer.fitToScreen(100, -100, 800, 600)
-
-    expect(viewer.getTransform()).toEqual({
-      scale: 1.4,
-      translateX: 20,
-      translateY: 30,
-    })
-  })
-
   it('clamps extreme zoom factors', () => {
-    const options = { minScale: 0.1, maxScale: 5, zoomSpeed: 0.1 }
+    const options = { minScale: 0.1, maxScale: 5 }
     const zoomedIn = useImageViewer(options)
     const zoomedOut = useImageViewer(options)
 
-    zoomedIn.zoom(1000, 800, 600)
-    zoomedOut.zoom(0.001, 800, 600)
+    zoomedIn.zoomAt(400, 300, 1000)
+    zoomedOut.zoomAt(400, 300, 0.001)
 
     expect(zoomedIn.scale.value).toBeLessThanOrEqual(options.maxScale)
     expect(zoomedOut.scale.value).toBeGreaterThanOrEqual(options.minScale)

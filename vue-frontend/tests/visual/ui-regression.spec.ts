@@ -771,15 +771,38 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
           payload: demoBubbleState,
         }]
       : []
-    await fulfillJson({
+    const document = {
       pageId,
       chapterId: 'demo-chapter',
       documentRevision: 1,
       defaultFontId: 'font-source-han',
       pageStyleDefaults: fixtureTextStyle,
       pageStyleSchemaVersion: 1,
+      renderStatus: 'not_rendered',
       bubbles: bubble,
-    })
+    }
+    if (route.request().method() === 'PATCH') {
+      const command = route.request().postDataJSON() as {
+        mutations: Array<{
+          bubbleId?: string
+          clientMutationId: string
+          op: 'create' | 'delete' | 'patch' | 'reset'
+        }>
+      }
+      await fulfillJson({
+        document: {
+          ...document,
+          documentRevision: 2,
+        },
+        mutationResults: command.mutations.map(mutation => ({
+          bubbleId: mutation.bubbleId ?? `created-${mutation.clientMutationId}`,
+          clientMutationId: mutation.clientMutationId,
+          op: mutation.op,
+        })),
+      })
+    } else {
+      await fulfillJson(document)
+    }
     return
   }
 

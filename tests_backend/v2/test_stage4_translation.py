@@ -905,6 +905,7 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
             "fillColor": "#EFCAFE",
         },
     )
+    source = source["document"]
     target_payload = TranslationPipelineService._new_bubble_payload(
         coords=[0, 0, 56, 48],
         polygon=[],
@@ -928,13 +929,13 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
             "autoBgColor": [1, 2, 3],
         }
     )
-    content.mutate_page_document(
+    target_created, _ = content.mutate_page_document(
         page_id=target_page_id,
         base_revision=1,
         mutations=[
             {
                 "op": "create",
-                "bubbleId": "00000000-0000-0000-0000-000000000401",
+                "clientMutationId": "style-target-create",
                 "fields": target_payload,
             }
         ],
@@ -947,14 +948,12 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
             "fillColor": "#AABBCC",
         },
     )
+    target_bubble_id = target_created["mutationResults"][0]["bubbleId"]
     target_payload["translatedText"] = "目标页自动样式"
     with platform["engine"].begin() as connection:
         connection.execute(
             update(bubbles)
-            .where(
-                bubbles.c.id
-                == "00000000-0000-0000-0000-000000000401"
-            )
+            .where(bubbles.c.id == target_bubble_id)
             .values(payload_json=json.dumps(target_payload))
         )
 
@@ -1003,7 +1002,6 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
     platform = translation_platform
     content = ContentRepository(platform["engine"])
     page_id = platform["page_id"]
-    bubble_id = "00000000-0000-0000-0000-000000000402"
     payload = TranslationPipelineService._new_bubble_payload(
         coords=[0, 0, 56, 48],
         polygon=[],
@@ -1028,13 +1026,13 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
             "autoBgColor": [3, 4, 5],
         }
     )
-    content.mutate_page_document(
+    created, _ = content.mutate_page_document(
         page_id=page_id,
         base_revision=1,
         mutations=[
             {
                 "op": "create",
-                "bubbleId": bubble_id,
+                "clientMutationId": "translation-color-source-create",
                 "fields": payload,
             }
         ],
@@ -1044,6 +1042,7 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
             "useAutoTextColor": True,
         },
     )
+    bubble_id = created["mutationResults"][0]["bubbleId"]
     payload["translatedText"] = "旧译文"
     with platform["engine"].begin() as connection:
         connection.execute(

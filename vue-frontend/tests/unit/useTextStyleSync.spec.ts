@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 import { useSettingsStore } from '@/stores/settings'
 
 const {
@@ -69,7 +70,7 @@ describe('useTextStyleSync backend ownership', () => {
       polygon: [],
       translatedText: '第一页译文',
     })
-    const image = imageStore.addImage('page-1.png', '/api/v2/assets/source-1', {
+    const image = addTestImage(imageStore, 'page-1.png', '/api/v2/assets/source-1', {
       bubbleStates: [bubble],
       chapterId: 'chapter-1',
       documentRevision: 4,

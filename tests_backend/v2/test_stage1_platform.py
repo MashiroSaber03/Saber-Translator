@@ -60,7 +60,6 @@ from src.backend_v2.storage.schema import (
 from src.backend_v2.storage.seeding import (
     QUICK_WORKSPACE_BOOK_ID,
     QUICK_WORKSPACE_CHAPTER_ID,
-    seed_system_records,
 )
 from src.backend_v2.storage.single_instance import (
     DataRootAlreadyLocked,
@@ -861,9 +860,53 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
     second = limiter.acquire(
         provider="fake",
         credential_version_id=version_id,
-        rpm_limit=1,
+        rpm_limit=5,
     )
     assert first.allowed and not second.allowed and second.retry_after_seconds > 0
+
+
+def test_settings_http_rejects_unknown_transaction_fields(platform) -> None:
+    data_root, engine = platform
+    app = Flask("settings-strict-contract-test")
+    app.register_blueprint(
+        create_settings_blueprint(data_root=data_root, engine=engine)
+    )
+    client = app.test_client()
+
+    top_level = client.put(
+        "/api/v2/settings/transactions",
+        headers={"Idempotency-Key": "settings-extra-top-level"},
+        json={
+            "settings": [],
+            "bookSettings": [],
+            "providerSettings": [],
+            "credentialEdits": [],
+            "legacySettings": [],
+        },
+    )
+    assert top_level.status_code == 422
+    assert "legacySettings" in top_level.get_data(as_text=True)
+
+    nested = client.put(
+        "/api/v2/settings/transactions",
+        headers={"Idempotency-Key": "settings-extra-nested"},
+        json={
+            "settings": [
+                {
+                    "domain": "proofreading",
+                    "payload": {"enabled": True},
+                    "baseRevision": 0,
+                    "schemaVersion": 1,
+                    "legacyPayload": {},
+                }
+            ],
+            "bookSettings": [],
+            "providerSettings": [],
+            "credentialEdits": [],
+        },
+    )
+    assert nested.status_code == 422
+    assert "legacyPayload" in nested.get_data(as_text=True)
 
 
 def test_insight_provider_accepts_its_snake_case_openai_wire_contract(
@@ -950,7 +993,6 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
             "domain": "translation",
         }
     ) == {
-        "success": True,
         "models": [{"id": "gpt-test", "name": "gpt-test"}],
     }
     assert captured == {"api_key": "stored-only-on-server"}
@@ -967,7 +1009,6 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
         ProviderDiagnostics,
         "model_catalog",
         lambda _self, body: {
-            "success": True,
             "models": [{"id": str(body["provider"]), "name": "model"}],
         },
     )

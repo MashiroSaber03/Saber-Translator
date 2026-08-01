@@ -283,6 +283,11 @@ class DefaultStudioAlgorithms:
             provider=provider,
             api_key=str(section.get("api_key", "")),
             model=model,
+            credential_version_id=(
+                str(section["credential_version_id"])
+                if section.get("credential_version_id")
+                else None
+            ),
             messages=[dict(message) for message in messages],
             base_url=(
                 str(section["base_url"])

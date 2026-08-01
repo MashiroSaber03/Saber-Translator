@@ -29,8 +29,6 @@ const qaMessageArbitrary: fc.Arbitrary<QAMessage> = fc.record({
   timestamp: isoDateArbitrary,
 })
 
-const streamChunkArbitrary = fc.string({ minLength: 1, maxLength: 100 })
-
 describe('insight QA properties', () => {
   it('appends messages in the order they are added', () => {
     fc.assert(
@@ -42,74 +40,6 @@ describe('insight QA properties', () => {
         expect(store.qaHistory).toEqual(messages)
         expect(store.qaHistory).toHaveLength(messages.length)
       }),
-    )
-  })
-
-  it('accumulates streamed assistant content through the last assistant message', () => {
-    fc.assert(
-      fc.property(fc.array(streamChunkArbitrary, { minLength: 1, maxLength: 20 }), chunks => {
-        const store = createStore()
-        store.addQAMessage({
-          id: 'assistant-1',
-          role: 'assistant',
-          content: '',
-          timestamp: new Date().toISOString(),
-        })
-
-        let accumulatedContent = ''
-        for (const chunk of chunks) {
-          accumulatedContent += chunk
-          store.updateLastAssistantMessage(accumulatedContent)
-        }
-
-        expect(store.qaHistory.at(-1)?.content).toBe(accumulatedContent)
-        expect(store.qaHistory.at(-1)?.content).toBe(chunks.join(''))
-      }),
-    )
-  })
-
-  it('updates only the final assistant message', () => {
-    fc.assert(
-      fc.property(
-        fc.array(qaMessageArbitrary, { minLength: 2, maxLength: 10 }),
-        messageContentArbitrary,
-        (messages, newContent) => {
-          const store = createStore()
-          const messagesWithAssistantLast = messages.map((message, index) =>
-            index === messages.length - 1 ? { ...message, role: 'assistant' as const } : message,
-          )
-
-          addMessages(store, messagesWithAssistantLast)
-          const previousMessages = store.qaHistory.slice(0, -1).map(message => ({ ...message }))
-
-          store.updateLastAssistantMessage(newContent)
-
-          expect(store.qaHistory.slice(0, -1)).toEqual(previousMessages)
-          expect(store.qaHistory.at(-1)?.content).toBe(newContent)
-        },
-      ),
-    )
-  })
-
-  it('ignores last-message updates when the final message is not from the assistant', () => {
-    fc.assert(
-      fc.property(
-        fc.array(qaMessageArbitrary, { minLength: 1, maxLength: 10 }),
-        messageContentArbitrary,
-        (messages, newContent) => {
-          const store = createStore()
-          const messagesWithUserLast = messages.map((message, index) =>
-            index === messages.length - 1 ? { ...message, role: 'user' as const } : message,
-          )
-
-          addMessages(store, messagesWithUserLast)
-          const previousMessages = store.qaHistory.map(message => ({ ...message }))
-
-          store.updateLastAssistantMessage(newContent)
-
-          expect(store.qaHistory).toEqual(previousMessages)
-        },
-      ),
     )
   })
 

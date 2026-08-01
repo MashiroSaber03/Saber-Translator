@@ -17,20 +17,17 @@ describe('bookTranslationConstraintsStore', () => {
     setActivePinia(createPinia())
     updateBookMock.mockReset()
     updateBookMock.mockResolvedValue({
-      success: true,
-      book: {
-        id: 'book-1',
-        translationConstraints: {
-          glossary: {
-            enabled: true,
-            autoExtractEnabled: false,
-            autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
-            entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
-          },
-          non_translate: {
-            enabled: true,
-            entries: [{ pattern: '<keep>', note: '', matchMode: 'text' }],
-          },
+      id: 'book-1',
+      translationConstraints: {
+        glossary: {
+          enabled: true,
+          autoExtractEnabled: false,
+          autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+          entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
+        },
+        non_translate: {
+          enabled: true,
+          entries: [{ pattern: '<keep>', note: '', matchMode: 'text' }],
         },
       },
     })
@@ -77,33 +74,40 @@ describe('bookTranslationConstraintsStore', () => {
 
     expect(store.bookId).toBeNull()
     expect(store.isAvailable).toBe(false)
-    expect(store.glossary).toEqual({ enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] })
+    expect(store.glossary).toEqual({
+      enabled: false,
+      autoExtractEnabled: false,
+      autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+      entries: [],
+    })
     expect(store.nonTranslate).toEqual({ enabled: false, entries: [] })
   })
 
   it('saves updated constraints through book update api', async () => {
     updateBookMock.mockResolvedValueOnce({
-      success: true,
-      book: {
-        id: 'book-1',
-        translationConstraints: {
-          glossary: {
-            enabled: true,
-            autoExtractEnabled: true,
-            autoExtractPrompt: '抽取术语',
-            entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
-          },
-          non_translate: {
-            enabled: true,
-            entries: [{ pattern: '<keep>', note: '', matchMode: 'text' }],
-          },
+      id: 'book-1',
+      translationConstraints: {
+        glossary: {
+          enabled: true,
+          autoExtractEnabled: true,
+          autoExtractPrompt: '抽取术语',
+          entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
+        },
+        non_translate: {
+          enabled: true,
+          entries: [{ pattern: '<keep>', note: '', matchMode: 'text' }],
         },
       },
     })
 
     const store = useBookTranslationConstraintsStore()
     store.loadBookConstraints('book-1', {
-      glossary: { enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] },
+      glossary: {
+        enabled: false,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
       non_translate: { enabled: false, entries: [] },
     })
 
@@ -136,21 +140,23 @@ describe('bookTranslationConstraintsStore', () => {
             entries: [{ pattern: '<keep>', note: '', matchMode: 'text' }],
           },
         },
-      }),
+      })
     )
     expect(store.glossary.autoExtractEnabled).toBe(true)
     expect(store.glossary.autoExtractPrompt).toBe('抽取术语')
   })
 
   it('does not mutate runtime constraints when save fails', async () => {
-    updateBookMock.mockResolvedValueOnce({
-      success: false,
-      error: 'save failed',
-    })
+    updateBookMock.mockRejectedValueOnce(new Error('save failed'))
 
     const store = useBookTranslationConstraintsStore()
     store.loadBookConstraints('book-1', {
-      glossary: { enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] },
+      glossary: {
+        enabled: false,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
       non_translate: { enabled: false, entries: [] },
     })
 
@@ -165,32 +171,39 @@ describe('bookTranslationConstraintsStore', () => {
     })
 
     expect(ok).toBe(false)
-    expect(store.glossary).toEqual({ enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] })
+    expect(store.glossary).toEqual({
+      enabled: false,
+      autoExtractEnabled: false,
+      autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+      entries: [],
+    })
   })
 
   it('applies auto glossary settings returned by the backend response', async () => {
     updateBookMock.mockResolvedValueOnce({
-      success: true,
-      book: {
-        id: 'book-1',
-        translationConstraints: {
-          glossary: {
-            enabled: true,
-            autoExtractEnabled: true,
-            autoExtractPrompt: '抽取术语',
-            entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
-          },
-          non_translate: {
-            enabled: false,
-            entries: [],
-          },
+      id: 'book-1',
+      translationConstraints: {
+        glossary: {
+          enabled: true,
+          autoExtractEnabled: true,
+          autoExtractPrompt: '抽取术语',
+          entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
+        },
+        non_translate: {
+          enabled: false,
+          entries: [],
         },
       },
     })
 
     const store = useBookTranslationConstraintsStore()
     store.loadBookConstraints('book-1', {
-      glossary: { enabled: false, autoExtractEnabled: false, autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT, entries: [] },
+      glossary: {
+        enabled: false,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
       non_translate: { enabled: false, entries: [] },
     })
 

@@ -3,7 +3,6 @@ import * as fc from 'fast-check'
 import {
   DISMISS_SETUP_REMINDER_KEY,
   dismissFirstTimeGuide,
-  resetFirstTimeGuideDismissal,
   shouldShowFirstTimeGuide,
 } from '@/components/translate/firstTimeGuideState'
 
@@ -66,18 +65,13 @@ describe('first-time guide storage contract', () => {
     expect(shouldShowFirstTimeGuide(storage)).toBe(true)
   })
 
-  it('persists and resets dismissal idempotently', () => {
+  it('persists dismissal idempotently', () => {
     dismissFirstTimeGuide(storage)
     dismissFirstTimeGuide(storage)
 
     expect(storage.getItem(DISMISS_SETUP_REMINDER_KEY)).toBe('true')
     expect(shouldShowFirstTimeGuide(storage)).toBe(false)
 
-    resetFirstTimeGuideDismissal(storage)
-    resetFirstTimeGuideDismissal(storage)
-
-    expect(storage.getItem(DISMISS_SETUP_REMINDER_KEY)).toBeNull()
-    expect(shouldShowFirstTimeGuide(storage)).toBe(true)
   })
 
   it('treats only the current dismissed marker as hidden', () => {
@@ -92,28 +86,10 @@ describe('first-time guide storage contract', () => {
     )
   })
 
-  it('keeps dismiss and reset round-trips stable', () => {
-    fc.assert(
-      fc.property(fc.integer({ min: 1, max: 20 }), (times) => {
-        storage.clear()
-
-        for (let index = 0; index < times; index += 1) {
-          dismissFirstTimeGuide(storage)
-          expect(shouldShowFirstTimeGuide(storage)).toBe(false)
-
-          resetFirstTimeGuideDismissal(storage)
-          expect(shouldShowFirstTimeGuide(storage)).toBe(true)
-        }
-      }),
-      { numRuns: 50 }
-    )
-  })
-
   it('falls back safely when browser storage is unavailable', () => {
     const restrictedStorage = createThrowingStorage()
 
     expect(shouldShowFirstTimeGuide(restrictedStorage)).toBe(true)
     expect(() => dismissFirstTimeGuide(restrictedStorage)).not.toThrow()
-    expect(() => resetFirstTimeGuideDismissal(restrictedStorage)).not.toThrow()
   })
 })

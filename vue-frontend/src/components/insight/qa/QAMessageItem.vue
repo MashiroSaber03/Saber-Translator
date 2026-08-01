@@ -5,7 +5,7 @@ import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductMessageBubble from '@/components/product/ProductMessageBubble.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
-import type { QAMessage } from '@/stores/insightStore'
+import type { QAMessage } from '@/types/insight'
 
 const props = defineProps<{
   message: QAMessage

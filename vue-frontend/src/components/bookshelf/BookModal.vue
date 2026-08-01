@@ -143,7 +143,6 @@ async function saveBook() {
     } else {
       const book = await bookshelfStore.createBook(
         title.value.trim(),
-        undefined,
         coverFile.value,
         tagNames.length > 0 ? tagNames : undefined
       )

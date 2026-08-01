@@ -32,17 +32,19 @@ export interface PluginAgentTimelineItem {
 export function buildTimelineItems(
   events: PluginAgentEvent[],
   displayContentMap: Record<string, string>,
-  displayTargetMap: Record<string, string>,
+  displayTargetMap: Record<string, string>
 ): PluginAgentTimelineItem[] {
   const items: PluginAgentTimelineItem[] = []
   const assistantItems = new Map<string, PluginAgentTimelineItem>()
   const toolItems = new Map<string, PluginAgentTimelineItem>()
 
   for (const event of events) {
+    const eventKey = event.eventKey ?? `session:${event.id}`
     if (event.type === 'assistant_delta') {
       const payload = event.payload as PluginAgentAssistantDeltaPayload
       let item = assistantItems.get(payload.stream_id)
-      const displayContent = displayContentMap[payload.stream_id] || payload.content || payload.delta
+      const displayContent =
+        displayContentMap[payload.stream_id] || payload.content || payload.delta
       if (!item) {
         item = {
           id: `assistant-${payload.stream_id}`,
@@ -70,7 +72,7 @@ export function buildTimelineItems(
       if (payload.phase === 'planning') {
         continue
       }
-      const streamId = payload.stream_id || `assistant-${event.id}`
+      const streamId = payload.stream_id || `assistant-${eventKey}`
       const displayContent = displayContentMap[streamId] || payload.message
       const targetContent = displayTargetMap[streamId] || payload.message
       let item = assistantItems.get(streamId)
@@ -158,7 +160,7 @@ export function buildTimelineItems(
     if (event.type === 'validation') {
       const payload = event.payload as PluginAgentValidationPayload
       items.push({
-        id: `validation-${event.id}`,
+        id: `validation-${eventKey}`,
         kind: 'validation',
         badge: '校验',
         title: payload.success ? '插件校验通过' : '插件校验失败',
@@ -175,7 +177,7 @@ export function buildTimelineItems(
     if (event.type === 'done') {
       const payload = event.payload as PluginAgentDonePayload
       items.push({
-        id: `done-${event.id}`,
+        id: `done-${eventKey}`,
         kind: 'done',
         badge: '完成',
         title: payload.summary || '插件开发任务已完成',
@@ -192,7 +194,7 @@ export function buildTimelineItems(
     if (event.type === 'error') {
       const payload = event.payload as PluginAgentErrorPayload
       items.push({
-        id: `error-${event.id}`,
+        id: `error-${eventKey}`,
         kind: 'error',
         badge: '错误',
         title: payload.summary || '插件开发任务失败',
@@ -209,7 +211,7 @@ export function buildTimelineItems(
     if (event.type === 'log') {
       const payload = event.payload as PluginAgentLogPayload
       items.push({
-        id: `log-${event.id}`,
+        id: `log-${eventKey}`,
         kind: 'log',
         badge: '日志',
         title: '运行日志',
@@ -229,7 +231,7 @@ export function buildTimelineItems(
         continue
       }
       items.push({
-        id: `state-${event.id}`,
+        id: `state-${eventKey}`,
         kind: 'state',
         badge: '状态',
         title: payload.label || payload.run_state,

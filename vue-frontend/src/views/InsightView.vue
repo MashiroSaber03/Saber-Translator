@@ -28,7 +28,6 @@ import ContinuationPanel from '@/components/insight/ContinuationPanel.vue'
 import CharacterStudioEntryPanel from '@/components/insight/CharacterStudioEntryPanel.vue'
 import * as insightApi from '@/api/insight'
 import { getBookDetail } from '@/api/bookshelf'
-import { normalizeBookData } from '@/utils/bookshelfModels'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
 import type { BookData, ChapterData, ChapterInfo } from '@/types'
 
@@ -102,18 +101,16 @@ function mapBookChaptersToInsightChapters(chapters: ChapterData[]): ChapterInfo[
 }
 
 function setLoadedBookDetail(book: BookData): void {
-  const normalizedBook = normalizeBookData(book)
-
   loadedBookDetail.value = {
-    id: normalizedBook.id,
-    title: normalizedBook.title,
-    cover: normalizedBook.cover,
-    totalPages: normalizedBook.totalPages ?? 0,
+    id: book.id,
+    title: book.title,
+    cover: book.cover,
+    totalPages: book.totalPages ?? 0,
   }
-  insightStore.setBookTotalPages(normalizedBook.totalPages ?? 0)
+  insightStore.setBookTotalPages(book.totalPages ?? 0)
 
-  if (normalizedBook.chapters?.length) {
-    insightStore.setChapters(mapBookChaptersToInsightChapters(normalizedBook.chapters))
+  if (book.chapters?.length) {
+    insightStore.setChapters(mapBookChaptersToInsightChapters(book.chapters))
   }
 }
 
@@ -129,31 +126,24 @@ async function loadBook(bookId: string): Promise<void> {
   insightStore.setLoading(true)
 
   try {
-    const bookData = await getBookDetail(bookId)
+    const book = await getBookDetail(bookId)
     if (!isCurrentBookLoad(loadId, bookId)) return
-
-    if (!bookData.success) {
-      throw new Error(bookData.error || '获取书籍信息失败')
-    }
-
-    if (bookData.book) {
-      setLoadedBookDetail(bookData.book)
-    }
+    setLoadedBookDetail(book)
 
     await loadAnalysisStatus(bookId)
     if (!isCurrentBookLoad(loadId, bookId)) return
 
     if (insightStore.chapters.length === 0) {
       try {
-        const chaptersResponse = await insightApi.getInsightChapters(bookId)
+        const chapters = await insightApi.getInsightChapters(bookId)
         if (!isCurrentBookLoad(loadId, bookId)) return
-        if (chaptersResponse.success && chaptersResponse.chapters && chaptersResponse.chapters.length > 0) {
-          insightStore.setChapters(chaptersResponse.chapters.map(ch => ({
-            id: ch.id,
-            title: ch.title,
-            startPage: ch.start_page,
-            endPage: ch.end_page,
-            analyzed: true
+        if (chapters.length > 0) {
+          insightStore.setChapters(chapters.map(chapter => ({
+            id: chapter.id,
+            title: chapter.title,
+            startPage: chapter.start_page,
+            endPage: chapter.end_page,
+            analyzed: chapter.analyzed,
           })))
         }
       } catch {
@@ -183,23 +173,17 @@ async function loadAnalysisStatus(bookId = insightStore.currentBookId): Promise<
   try {
     const response = await insightApi.getAnalysisStatus(bookId)
     if (!isInsightViewMounted || insightStore.currentBookId !== bookId) return
-    if (response.success) {
-      if (response.analyzed_pages_count !== undefined) {
-        insightStore.setAnalyzedPagesCount(response.analyzed_pages_count)
-      }
+    insightStore.setAnalyzedPagesCount(response.analyzedPagesCount)
 
-      const resolvedStatus = resolveAnalysisStatus(response)
-      insightStore.setAnalysisStatus(resolvedStatus)
+    const resolvedStatus = resolveAnalysisStatus(response)
+    insightStore.setAnalysisStatus(resolvedStatus)
 
-      if (response.current_task) {
-        insightStore.setCurrentTaskId(response.current_task.task_id)
-        if (response.current_task.progress) {
-          insightStore.updateProgress(
-            response.current_task.progress.analyzed_pages || 0,
-            response.current_task.progress.total_pages || 0,
-          )
-        }
-      }
+    if (response.currentTask) {
+      insightStore.setCurrentTaskId(response.currentTask.jobId)
+      insightStore.updateProgress(
+        response.currentTask.progress.analyzedPages,
+        response.currentTask.progress.totalPages,
+      )
     }
   } catch {
     // 保持最近一次后端快照；全局任务流仍可继续投影活动任务。

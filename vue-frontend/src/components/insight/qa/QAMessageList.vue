@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import type { QAMessage } from '@/stores/insightStore'
+import type { QAMessage } from '@/types/insight'
 import QAMessageItem from './QAMessageItem.vue'
 
 const props = withDefaults(defineProps<{

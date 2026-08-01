@@ -24,7 +24,6 @@ from src.shared.ai_providers import (
     resolve_provider_base_url_for_capability,
 )
 
-from .clients.base_client import RPMLimiter
 from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
@@ -51,7 +50,6 @@ class EmbeddingClient:
             EMBEDDING_CAPABILITY,
             config.base_url,
         ) or ""
-        self._rpm_limiter = RPMLimiter(config.rpm_limit, bucket_id=f"embedding:{self.provider}")
         timeout_value = float(config.timeout_seconds or 0)
         self._timeout = None if timeout_value <= 0 else timeout_value
         transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_EMBEDDING_MAX_RETRIES
@@ -75,9 +73,6 @@ class EmbeddingClient:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
-
-    async def _enforce_rpm_limit(self):
-        await self._rpm_limiter.wait()
 
     async def embed(self, text: str) -> List[float]:
         embeddings = await self.embed_batch([text])
@@ -103,7 +98,6 @@ class EmbeddingClient:
         total_attempts = self._business_retries + 1
 
         for attempt in range(total_attempts):
-            await self._enforce_rpm_limit()
             try:
                 embeddings = await self._transport.embed(
                     UnifiedEmbeddingRequest(
@@ -111,6 +105,8 @@ class EmbeddingClient:
                         api_key=self.config.api_key,
                         model=self.config.model,
                         inputs=texts,
+                        credential_version_id=self.config.credential_version_id,
+                        rpm_limit=self.config.rpm_limit,
                         base_url=self.config.base_url or None,
                         timeout=self._timeout,
                     )
@@ -224,6 +220,7 @@ class ChatClient:
                         provider=self.provider,
                         api_key=self.config.api_key,
                         model=self.config.model,
+                        credential_version_id=self.config.credential_version_id,
                         messages=self._build_messages(prompt, system),
                         base_url=self.config.base_url or None,
                         capability="chat",

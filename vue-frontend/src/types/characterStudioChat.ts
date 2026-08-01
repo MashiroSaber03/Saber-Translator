@@ -47,7 +47,6 @@ export interface CharacterStudioChatSession {
   summary_blocks: CharacterStudioChatSummaryBlock[]
   messages: CharacterStudioChatMessage[]
   variables: Record<string, unknown>
-  _runtime?: Record<string, unknown>
   last_prompt_preview: string
   revision?: number
   generation?: number

@@ -2,6 +2,7 @@ import {
   mutatePageDocument,
   type V2PageDocument,
   type V2PageDocumentBatchMutation,
+  type V2PageDocumentMutationResponse,
 } from '@/api/v2/content'
 import { pageDocumentToBubbles } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -44,15 +45,18 @@ function canonical(value: unknown): string {
 function bubbleFields(bubble: BubbleState): Record<string, unknown> {
   const fields = { ...deepClone(bubble) } as Record<string, unknown>
   delete fields.backendBubbleId
+  delete fields.clientMutationId
   const fontId = typeof fields.fontFamily === 'string' ? fields.fontFamily : null
   delete fields.fontFamily
   fields.fontId = fontId
   return fields
 }
 
-function ensureBubbleIds(bubbles: BubbleState[]): void {
+function ensureClientMutationIds(bubbles: BubbleState[]): void {
   for (const bubble of bubbles) {
-    if (!bubble.backendBubbleId) bubble.backendBubbleId = crypto.randomUUID()
+    if (!bubble.backendBubbleId && !bubble.clientMutationId) {
+      bubble.clientMutationId = crypto.randomUUID()
+    }
   }
 }
 
@@ -77,38 +81,94 @@ function evictSettledStates(protectedPageId: string): void {
 function mutationsFor(
   persisted: BubbleState[],
   desired: BubbleState[],
-): Array<{
-  bubbleId: string
-  fields?: Record<string, unknown>
-  op: 'create' | 'delete' | 'reset'
-}> {
+): V2PageDocumentBatchMutation['mutations'] {
   const previous = new Map(
     persisted
       .filter(bubble => bubble.backendBubbleId)
       .map(bubble => [bubble.backendBubbleId!, bubble]),
   )
-  const currentIds = new Set(desired.map(bubble => bubble.backendBubbleId!))
-  const mutations: Array<{
-    bubbleId: string
-    fields?: Record<string, unknown>
-    op: 'create' | 'delete' | 'reset'
-  }> = []
+  const currentIds = new Set(
+    desired
+      .map(bubble => bubble.backendBubbleId)
+      .filter((id): id is string => Boolean(id)),
+  )
+  const mutations: V2PageDocumentBatchMutation['mutations'] = []
 
   for (const bubble of persisted) {
     const id = bubble.backendBubbleId
-    if (id && !currentIds.has(id)) mutations.push({ bubbleId: id, op: 'delete' })
+    if (id && !currentIds.has(id)) {
+      mutations.push({
+        bubbleId: id,
+        clientMutationId: crypto.randomUUID(),
+        op: 'delete',
+      })
+    }
   }
   for (const bubble of desired) {
-    const id = bubble.backendBubbleId!
+    const id = bubble.backendBubbleId
     const fields = bubbleFields(bubble)
+    if (!id) {
+      mutations.push({
+        clientMutationId: bubble.clientMutationId!,
+        fields,
+        op: 'create',
+      })
+      continue
+    }
     const old = previous.get(id)
-    if (!old) {
-      mutations.push({ bubbleId: id, fields, op: 'create' })
-    } else if (canonical(bubbleFields(old)) !== canonical(fields)) {
-      mutations.push({ bubbleId: id, fields, op: 'reset' })
+    if (old && canonical(bubbleFields(old)) !== canonical(fields)) {
+      mutations.push({
+        bubbleId: id,
+        clientMutationId: crypto.randomUUID(),
+        fields,
+        op: 'reset',
+      })
     }
   }
   return mutations
+}
+
+function applyCreatedBubbleIds(
+  bubbles: BubbleState[],
+  results: V2PageDocumentMutationResponse['mutationResults'],
+): void {
+  const createdIds = new Map(
+    results
+      .filter(result => result.op === 'create')
+      .map(result => [result.clientMutationId, result.bubbleId]),
+  )
+  for (const bubble of bubbles) {
+    if (!bubble.clientMutationId) continue
+    const backendBubbleId = createdIds.get(bubble.clientMutationId)
+    if (!backendBubbleId) continue
+    bubble.backendBubbleId = backendBubbleId
+    delete bubble.clientMutationId
+  }
+}
+
+function isAmbiguousTransportError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as Error & { code?: unknown }).code
+  return typeof code === 'string' && [
+    'ECONNABORTED',
+    'ECONNRESET',
+    'EPIPE',
+    'ERR_NETWORK',
+    'ETIMEDOUT',
+  ].includes(code)
+}
+
+async function mutateWithTransportReplay(
+  pageId: string,
+  command: V2PageDocumentBatchMutation,
+): Promise<V2PageDocumentMutationResponse> {
+  const idempotencyKey = crypto.randomUUID()
+  try {
+    return await mutatePageDocument(pageId, command, idempotencyKey)
+  } catch (error) {
+    if (!isAmbiguousTransportError(error)) throw error
+    return mutatePageDocument(pageId, command, idempotencyKey)
+  }
 }
 
 export function registerPageDocument(document: V2PageDocument): BubbleState[] {
@@ -167,7 +227,7 @@ export function queuePageDocumentMutation(
   bubbles: BubbleState[],
   style: PageDocumentStyleMutation = {},
 ): Promise<void> {
-  ensureBubbleIds(bubbles)
+  ensureClientMutationIds(bubbles)
   let state = states.get(pageId)
   if (!state) {
     state = {
@@ -239,7 +299,7 @@ async function persistLoop(
       // commands. Flush the bubble delta first so the backend never has to
       // guess an overwrite order for the same bubble field.
       const sendStyleCommand = mutations.length === 0 && hasStyleCommand
-      const document = await mutatePageDocument(pageId, {
+      const command: V2PageDocumentBatchMutation = {
         baseRevision: state.documentRevision,
         mutations,
         ...(sendStyleCommand && sentDefaultFontChanged
@@ -255,7 +315,16 @@ async function persistLoop(
               propagateStyleFields: sentPropagation as V2PageDocumentBatchMutation['propagateStyleFields'],
             }
           : {}),
-      })
+      }
+      const response = await mutateWithTransportReplay(pageId, command)
+      const document = response.document
+      applyCreatedBubbleIds(sent, response.mutationResults)
+      applyCreatedBubbleIds(state.desired, response.mutationResults)
+      const bubbleStore = useBubbleStore()
+      const imageStore = useImageStore()
+      if (imageStore.currentImage?.id === pageId) {
+        applyCreatedBubbleIds(bubbleStore.bubbles, response.mutationResults)
+      }
       if (sendStyleCommand) {
         for (const [field, value] of Object.entries(sentStylePatch)) {
           if (canonical(state.desiredStylePatch[field]) === canonical(value)) {
@@ -278,7 +347,6 @@ async function persistLoop(
       state.documentRevision = document.documentRevision
       state.persisted = pageDocumentToBubbles(document)
 
-      const imageStore = useImageStore()
       const imageIndex = imageStore.images.findIndex(image => image.id === pageId)
       if (imageIndex >= 0) {
         imageStore.updateImageByIndex(imageIndex, {
@@ -292,7 +360,6 @@ async function persistLoop(
       if (sentVersion === state.desiredVersion) {
         state.desired = cloneBubbles(state.persisted)
         if (imageStore.currentImage?.id === pageId) {
-          const bubbleStore = useBubbleStore()
           bubbleStore.setBubbles(cloneBubbles(state.persisted), true)
           bubbleStore.saveAsInitial()
         }

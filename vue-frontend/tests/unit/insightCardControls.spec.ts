@@ -21,7 +21,7 @@ const {
   requestProductTextInputMock: vi.fn(),
 }))
 
-vi.mock('@/api/insight', async (importOriginal) => {
+vi.mock('@/api/insight', async importOriginal => {
   const actual = await importOriginal<typeof import('@/api/insight')>()
   return {
     ...actual,
@@ -38,8 +38,8 @@ vi.mock('@/api/insight', async (importOriginal) => {
 })
 
 vi.mock('@/api/continuation', () => ({
-  exportAsImages: vi.fn(),
-  exportAsPdf: vi.fn(),
+  createContinuationExportJob: vi.fn(),
+  downloadContinuationExport: vi.fn(),
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
@@ -133,28 +133,25 @@ describe('Insight card-like controls', () => {
     confirmProductActionMock.mockResolvedValue(true)
     requestProductTextInputMock.mockResolvedValue('收藏提示词')
     getDefaultPromptsMock.mockResolvedValue({
-      success: true,
-      prompts: {
-        batch_analysis: '默认提示词',
-        chapter_summary: '',
-        qa_response: '',
-        segment_summary: '',
+      batch_analysis: '默认提示词',
+      chapter_summary: '',
+      qa_response: '',
+      segment_summary: '',
+    })
+    getPromptsLibraryMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        name: '战斗分析',
+        type: 'batch_analysis',
+        content: '分析战斗场面',
+        created_at: '2026-05-21T10:00:00Z',
       },
-    })
-    getPromptsLibraryMock.mockResolvedValue({
-      success: true,
-      library: [
-        {
-          id: 'prompt-1',
-          name: '战斗分析',
-          type: 'batch_analysis',
-          content: '分析战斗场面',
-          created_at: '2026-05-21T10:00:00Z',
-        },
-      ],
-    })
-    savePromptToLibraryMock.mockResolvedValue({ success: true })
-    deletePromptFromLibraryMock.mockResolvedValue({ success: true })
+    ])
+    savePromptToLibraryMock.mockImplementation(async prompt => ({
+      ...prompt,
+      id: 'saved-prompt',
+    }))
+    deletePromptFromLibraryMock.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -177,8 +174,12 @@ describe('Insight card-like controls', () => {
     for (const file of businessOwnerFiles) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
 
-      expect(source, file).not.toMatch(/var\(--color-border-muted,\s*var\(--color-border-(?:default|subtle)\)\)/)
-      expect(source, file).not.toContain('var(--color-text-supporting, var(--color-text-secondary))')
+      expect(source, file).not.toMatch(
+        /var\(--color-border-muted,\s*var\(--color-border-(?:default|subtle)\)\)/
+      )
+      expect(source, file).not.toContain(
+        'var(--color-text-supporting, var(--color-text-secondary))'
+      )
     }
   })
 
@@ -265,11 +266,13 @@ describe('Insight card-like controls', () => {
       cancelText: '取消',
     })
     expect(promptSpy).not.toHaveBeenCalled()
-    expect(savePromptToLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
-      name: '收藏提示词',
-      content: '新的提示词内容',
-      type: 'batch_analysis',
-    }))
+    expect(savePromptToLibraryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: '收藏提示词',
+        content: '新的提示词内容',
+        type: 'batch_analysis',
+      })
+    )
   })
 
   it('uses the fixed select primitive for prompt type selection', async () => {
@@ -282,9 +285,11 @@ describe('Insight card-like controls', () => {
 
     const promptTypeSelect = wrapper.getComponent(UiSelect)
     expect(promptTypeSelect.props('modelValue')).toBe('batch_analysis')
-    expect(promptTypeSelect.props('options')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'qa_response', label: expect.stringContaining('问答') }),
-    ]))
+    expect(promptTypeSelect.props('options')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'qa_response', label: expect.stringContaining('问答') }),
+      ])
+    )
   })
 
   it('uses shared product primitives for prompt settings layout and saved prompts', async () => {
@@ -311,13 +316,13 @@ describe('Insight card-like controls', () => {
   it('uses product status feedback for saved prompt loading and empty states', async () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('ProductStatusBanner')
     expect(source).not.toContain('placeholder-text')
     expect(source).not.toContain('loading-text')
 
-    const pendingLibrary = deferred<{ success: true; library: [] }>()
+    const pendingLibrary = deferred<[]>()
     getPromptsLibraryMock.mockReturnValueOnce(pendingLibrary.promise)
 
     const wrapper = mount(PromptsSettingsTab, {
@@ -336,7 +341,7 @@ describe('Insight card-like controls', () => {
       tone: 'neutral',
     })
 
-    pendingLibrary.resolve({ success: true, library: [] })
+    pendingLibrary.resolve([])
     await flushPromises()
 
     banner = wrapper.getComponent(ProductStatusBanner)
@@ -355,7 +360,9 @@ describe('Insight card-like controls', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('textarea.prompts-settings-tab__editor').getComponent(UiTextarea).props()).toMatchObject({
+    expect(
+      wrapper.get('textarea.prompts-settings-tab__editor').getComponent(UiTextarea).props()
+    ).toMatchObject({
       variant: 'panel',
       size: 'lg',
       rows: '12',
@@ -363,7 +370,7 @@ describe('Insight card-like controls', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('variant="panel"')
     expect(source).not.toMatch(/--ui-textarea-/)
@@ -372,7 +379,7 @@ describe('Insight card-like controls', () => {
   it('keeps prompt settings hooks under the prompts-settings-tab owner', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8',
+      'utf8'
     )
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
     const oldHooks = [
@@ -399,14 +406,20 @@ describe('Insight card-like controls', () => {
   })
 
   it('does not assert shared textarea primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/insightCardControls.spec.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/insightCardControls.spec.ts'),
+      'utf8'
+    )
     const textareaClassPrefix = 'ui-' + 'textarea--'
 
     expect(source).not.toContain(textareaClassPrefix)
   })
 
   it('keeps continuation panel fixtures typed to the current state contract', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/insightCardControls.spec.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/insightCardControls.spec.ts'),
+      'utf8'
+    )
 
     expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
@@ -458,9 +471,7 @@ describe('Insight card-like controls', () => {
     const createObjectURLSpy = vi
       .spyOn(URL, 'createObjectURL')
       .mockReturnValue('blob:attachment-preview')
-    const revokeObjectURLSpy = vi
-      .spyOn(URL, 'revokeObjectURL')
-      .mockImplementation(() => {})
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const wrapper = mount(ChatComposer, {
       props: {
         chatStreaming: false,
@@ -570,7 +581,10 @@ describe('Insight card-like controls', () => {
     const actionRow = wrapper.getComponent(ProductActionRow)
     expect(actionRow.props('ariaLabel')).toBe('导出操作')
 
-    await wrapper.findAll('button').find(button => button.text().includes('清空并重新开始'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find(button => button.text().includes('清空并重新开始'))!
+      .trigger('click')
     await flushPromises()
 
     expect(confirmProductActionMock).toHaveBeenCalledWith({

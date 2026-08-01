@@ -11,6 +11,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { createDefaultSettings } from '@/stores/settings/defaults'
+import { addTestImage } from '../helpers/imageFixtures'
 
 const mocks = vi.hoisted(() => ({
   createChapterTranslationJob: vi.fn(),
@@ -77,19 +78,19 @@ describe('useTranslationPipeline', () => {
 
   it('submits selected pages to one durable backend job without changing navigation', async () => {
     const imageStore = useImageStore()
-    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       id: 'page-1',
     })
-    imageStore.addImage('002.png', '/api/v2/assets/source-2', {
+    addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
       chapterId: 'chapter-1',
       id: 'page-2',
     })
     imageStore.setCurrentImageIndex(0)
 
-    const result = await useTranslation().translatePages([1], 'standard')
+    const result = await useTranslation().translateSelectedImages({ pages: [2] })
 
-    expect(result.success).toBe(true)
+    expect(result).toBe(true)
     expect(mocks.createChapterTranslationJob).toHaveBeenCalledWith(
       'chapter-1',
       ['page-2'],
@@ -104,36 +105,33 @@ describe('useTranslationPipeline', () => {
 
   it('does not create a job when chapter settings preflight fails', async () => {
     const imageStore = useImageStore()
-    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       id: 'page-1',
     })
     const beforeCreateJob = vi.fn().mockResolvedValue(false)
 
-    const result = await useTranslation({ beforeCreateJob }).translatePages(
-      [0],
-      'standard',
-    )
+    const result = await useTranslation({ beforeCreateJob }).translateCurrentImage()
 
-    expect(result.success).toBe(false)
+    expect(result).toBe(false)
     expect(beforeCreateJob).toHaveBeenCalledOnce()
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
   })
 
   it('rejects pages that are not owned by one backend chapter', async () => {
     const imageStore = useImageStore()
-    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       id: 'page-1',
     })
-    imageStore.addImage('002.png', '/api/v2/assets/source-2', {
+    addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
       chapterId: 'chapter-2',
       id: 'page-2',
     })
 
-    const result = await useTranslation().translatePages([0, 1], 'standard')
+    const result = await useTranslation().translateAllImages()
 
-    expect(result.success).toBe(false)
+    expect(result).toBe(false)
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
   })
 
@@ -142,7 +140,7 @@ describe('useTranslationPipeline', () => {
     const bubbleStore = useBubbleStore()
     const settingsStore = useSettingsStore()
     const taskCenterStore = useTaskCenterStore()
-    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       documentRevision: 1,
       id: 'page-1',
@@ -190,7 +188,7 @@ describe('useTranslationPipeline', () => {
       }],
     })
 
-    await useTranslation().translatePages([0], 'standard')
+    await useTranslation().translateCurrentImage()
     taskCenterStore.latestEvent = {
       eventId: 999,
       jobId: 'job-1',
@@ -220,15 +218,54 @@ describe('useTranslationPipeline', () => {
     })
   })
 
+  it('does not reload the open chapter for an unrelated terminal job', async () => {
+    const imageStore = useImageStore()
+    const taskCenterStore = useTaskCenterStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+    useTranslation()
+    taskCenterStore.history = [{
+      jobId: 'job-export',
+      batchId: 'batch-export',
+      batchDisplayName: '导出',
+      kind: 'export',
+      retryOfJobId: null,
+      retryMode: null,
+      status: 'completed',
+      queueRank: null,
+      bookId: 'book-1',
+      chapterId: 'chapter-1',
+      pageId: null,
+      blockedReason: null,
+      progress: {},
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: new Date().toISOString(),
+    }]
+    taskCenterStore.latestEvent = {
+      eventId: 1000,
+      jobId: 'job-export',
+      type: 'job_finished',
+      payload: {},
+      createdAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    expect(mocks.listChapterPages).not.toHaveBeenCalled()
+    expect(mocks.getPageDocument).not.toHaveBeenCalled()
+  })
+
   it('reconciles a tracked job from durable queue and history snapshots', async () => {
     const imageStore = useImageStore()
     const taskCenterStore = useTaskCenterStore()
-    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       id: 'page-1',
     })
     const translation = useTranslation()
-    await translation.translatePages([0], 'standard')
+    await translation.translateCurrentImage()
 
     taskCenterStore.queue = [{
       jobId: 'job-1',
@@ -293,7 +330,7 @@ describe('useTranslationPipeline', () => {
 
   it('retries durable failed items from the latest matching backend job', async () => {
     const imageStore = useImageStore()
-    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       id: 'page-1',
     })

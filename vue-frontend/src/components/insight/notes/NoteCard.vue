@@ -7,7 +7,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { UiIconName } from '@/components/ui/iconRegistry'
-import type { NoteData, NoteType } from '@/stores/insightStore'
+import type { NoteData, NoteType } from '@/types/insight'
 
 const props = defineProps<{
   note: NoteData

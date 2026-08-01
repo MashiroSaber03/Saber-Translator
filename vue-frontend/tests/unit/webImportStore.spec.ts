@@ -65,7 +65,6 @@ describe('webImportStore backend settings workflow', () => {
   it('keeps agent credentials isolated per provider while editing drafts', () => {
     const store = useWebImportStore()
 
-    store.beginSettingsEdit()
     store.setAgentApiKey('openai-key')
     store.setAgentModelName('gpt-custom')
     store.setAgentProvider('deepseek')
@@ -111,7 +110,6 @@ describe('webImportStore backend settings workflow', () => {
   it('saves settings, provider values, and secret edits in one backend transaction', async () => {
     const store = useWebImportStore()
     await store.loadFromBackend()
-    store.beginSettingsEdit()
     store.setAgentProvider('deepseek')
     store.setAgentModelName('deepseek-chat')
     store.setAgentApiKey('deepseek-key')
@@ -144,12 +142,4 @@ describe('webImportStore backend settings workflow', () => {
     expect(store.settings.agent.apiKey).toBe('')
   })
 
-  it('clamps download progress percentage to the progressbar range', () => {
-    const store = useWebImportStore()
-
-    store.updateDownloadProgress(8, 4)
-    expect(store.downloadProgressPercent).toBe(100)
-    store.updateDownloadProgress(-1, 4)
-    expect(store.downloadProgressPercent).toBe(0)
-  })
 })

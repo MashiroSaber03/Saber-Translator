@@ -99,6 +99,8 @@ class ImageGenClient(BaseAPIClient):
             api_key=config.api_key,
             base_url=config.base_url,
             resolved_base_url=resolved_base_url,
+            rpm_limit=config.rpm_limit,
+            credential_version_id=config.credential_version_id,
             timeout=self._timeout,
         )
         logger.info("ImageGenClient 初始化: provider=%s, base_url=%s", config.provider, self._base_url)
@@ -167,6 +169,7 @@ class ImageGenClient(BaseAPIClient):
 
         for attempt in range(self._transport_retries + 1):
             try:
+                await self._enforce_rpm_limit()
                 if prepared_refs:
                     response = await self.client.post(
                         request_url,

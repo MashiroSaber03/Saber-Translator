@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
-import {
-  useBubbleStore,
-  createBubbleState,
-  cloneBubbleStates,
-  isValidBubbleState,
-} from '@/stores/bubbleStore'
+import { useBubbleStore } from '@/stores/bubbleStore'
 import type { BubbleState, BubbleCoords, TextDirection, InpaintMethod } from '@/types/bubble'
+import { cloneBubbleStates, createBubbleState } from '@/utils/bubbleFactory'
 
 const bubbleCoordsArbitrary = fc.tuple(
   fc.integer({ min: 0, max: 1000 }),
@@ -69,46 +65,6 @@ describe('bubble store properties', () => {
     setActivePinia(createPinia())
   })
 
-  it('round-trips serialized bubble state', () => {
-    fc.assert(
-      fc.property(bubbleStatesArbitrary, (states) => {
-        const store = useBubbleStore()
-        store.setBubbles(states)
-
-        const serialized = store.serialize()
-        store.clearBubbles()
-        expect(store.bubbles).toHaveLength(0)
-
-        expect(store.deserialize(serialized)).toBe(true)
-        expect(store.bubbles).toHaveLength(states.length)
-
-        for (let index = 0; index < states.length; index += 1) {
-          const original = states[index]
-          const restored = store.bubbles[index]
-          if (!original || !restored) {
-            continue
-          }
-
-          expect(restored.originalText).toBe(original.originalText)
-          expect(restored.translatedText).toBe(original.translatedText)
-          expect(restored.textboxText).toBe(original.textboxText)
-          expect(restored.coords).toEqual(original.coords)
-          expect(restored.fontSize).toBe(original.fontSize)
-          expect(restored.fontFamily).toBe(original.fontFamily)
-          expect(restored.textDirection).toBe(original.textDirection)
-          expect(restored.textColor).toBe(original.textColor)
-          expect(restored.fillColor).toBe(original.fillColor)
-          expect(restored.rotationAngle).toBe(original.rotationAngle)
-          expect(restored.strokeEnabled).toBe(original.strokeEnabled)
-          expect(restored.strokeColor).toBe(original.strokeColor)
-          expect(restored.strokeWidth).toBe(original.strokeWidth)
-          expect(restored.inpaintMethod).toBe(original.inpaintMethod)
-        }
-      }),
-      { numRuns: 100 }
-    )
-  })
-
   it('keeps multi-selection as a duplicate-free set of valid indices', () => {
     fc.assert(
       fc.property(
@@ -118,7 +74,7 @@ describe('bubble store properties', () => {
         ),
         ([coordsList, selectOperations]) => {
           const store = useBubbleStore()
-          store.setBubbles(coordsList.map(coords => createBubbleState(coords)))
+          store.setBubbles(coordsList.map(coords => createBubbleState({ coords })))
 
           const expectedSelected = new Set<number>()
           for (const index of selectOperations) {
@@ -175,31 +131,6 @@ describe('bubble store properties', () => {
     )
   })
 
-  it('accepts generated bubble states as valid state objects', () => {
-    fc.assert(
-      fc.property(bubbleStateArbitrary, (state) => {
-        expect(isValidBubbleState(state)).toBe(true)
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  it('rejects non-bubble values', () => {
-    expect(isValidBubbleState(null)).toBe(false)
-    expect(isValidBubbleState(undefined)).toBe(false)
-    expect(isValidBubbleState('string')).toBe(false)
-    expect(isValidBubbleState(123)).toBe(false)
-    expect(isValidBubbleState([])).toBe(false)
-    expect(isValidBubbleState({})).toBe(false)
-    expect(isValidBubbleState({ coords: [0, 0, 100, 100] })).toBe(false)
-    expect(isValidBubbleState({ originalText: 'test' })).toBe(false)
-    expect(isValidBubbleState({
-      coords: [0, 0, 100],
-      originalText: 'test',
-      translatedText: 'test',
-    })).toBe(false)
-  })
-
   it('keeps selection indices valid after deleting a bubble', () => {
     fc.assert(
       fc.property(
@@ -209,19 +140,16 @@ describe('bubble store properties', () => {
         ),
         ([coordsList, deleteIndex]) => {
           const store = useBubbleStore()
-          store.setBubbles(coordsList.map(coords => createBubbleState(coords)))
+          store.setBubbles(coordsList.map(coords => createBubbleState({ coords })))
 
           const originalLength = store.bubbles.length
-          const selectIndex = Math.min(deleteIndex + 1, originalLength - 1)
-          store.selectBubble(selectIndex)
-
           const actualDeleteIndex = Math.min(deleteIndex, originalLength - 1)
-          store.deleteBubble(actualDeleteIndex)
+          store.selectBubble(actualDeleteIndex)
+          store.deleteSelected()
 
           expect(store.bubbles).toHaveLength(originalLength - 1)
-          if (store.selectedIndex >= 0) {
-            expect(store.selectedIndex).toBeLessThan(store.bubbles.length)
-          }
+          expect(store.selectedIndex).toBe(-1)
+          expect(store.selectedIndices).toEqual([])
         }
       ),
       { numRuns: 100 }

@@ -90,6 +90,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { useImageStore } from '@/stores/imageStore'
+import { setTestImages } from '../helpers/imageFixtures'
 
 describe('SettingsSidebar page selection workflow', () => {
   enableAutoUnmount(afterEach)
@@ -98,16 +99,10 @@ describe('SettingsSidebar page selection workflow', () => {
     setActivePinia(createPinia())
     const imageStore = useImageStore()
     imageStore.clearImages()
-    imageStore.addImage('001.png', 'data:image/png;base64,aaa')
-    imageStore.addImage('002.png', 'data:image/png;base64,bbb')
-    imageStore.addImage('003.png', 'data:image/png;base64,ccc')
-    imageStore.addImage('004.png', 'data:image/png;base64,ddd')
-    imageStore.addImage('005.png', 'data:image/png;base64,eee')
-    imageStore.addImage('006.png', 'data:image/png;base64,fff')
-    imageStore.addImage('007.png', 'data:image/png;base64,ggg')
-    imageStore.addImage('008.png', 'data:image/png;base64,hhh')
-    imageStore.addImage('009.png', 'data:image/png;base64,iii')
-    imageStore.addImage('010.png', 'data:image/png;base64,jjj')
+    setTestImages(imageStore, Array.from({ length: 10 }, (_, index) => ({
+      fileName: `${String(index + 1).padStart(3, '0')}.png`,
+      sourceAssetUrl: `data:image/png;base64,page-${index + 1}`,
+    })))
     imageStore.updateCurrentImage({ bubbleStates: [] })
   })
 

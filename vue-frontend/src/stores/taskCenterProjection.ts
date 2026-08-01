@@ -49,7 +49,7 @@ function targetPageCount(job: V2Job): number {
   return Number.isInteger(value) && value > 0 ? value : 0
 }
 
-export function describeJobBatch(job: V2Job): string {
+function describeJobBatch(job: V2Job): string {
   const book = targetText(job, 'book')
   const chapter = targetText(job, 'chapter')
   if (book && chapter) return `书籍：${book} · 章节：${chapter}`

@@ -151,11 +151,9 @@ async function loadAvailableImages(bookId = props.bookId) {
   const requestId = ++imageRequestSeq
 
   try {
-    const response = await getAvailableImages(bookId, 'script')
+    const response = await getAvailableImages(bookId)
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
-    if (response.success && response.original_images) {
-      availableOriginalImages.value = response.original_images
-    }
+    availableOriginalImages.value = response.original_images
   } catch {
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []

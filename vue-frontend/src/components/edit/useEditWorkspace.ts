@@ -48,11 +48,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     handleBubbleSelect,
     handleBubbleMultiSelect,
     handleClearMultiSelect,
-    handleBubbleDragStart,
     handleBubbleDragEnd,
-    handleBubbleResizeStart,
     handleBubbleResizeEnd,
-    handleBubbleRotateStart,
     handleBubbleRotateEnd,
     toggleDrawingMode,
     handleDrawBubble,
@@ -602,7 +599,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     ]
   }
 
-  function handleDrawingEnd(_event: MouseEvent): void {
+  function handleDrawingEnd(): void {
     document.removeEventListener('mousemove', handleDrawingMove)
     document.removeEventListener('mouseup', handleDrawingEnd)
 
@@ -889,11 +886,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     handleBubbleSelect,
     handleBubbleMultiSelect,
     handleClearMultiSelect,
-    handleBubbleDragStart,
     handleBubbleDragEnd,
-    handleBubbleResizeStart,
     handleBubbleResizeEnd,
-    handleBubbleRotateStart,
     handleBubbleRotateEnd,
     toggleDrawingMode,
     handleDrawBubble,

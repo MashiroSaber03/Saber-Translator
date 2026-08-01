@@ -9,7 +9,6 @@ export interface BookData {
   id: string
   title: string
   cover?: string
-  description?: string
   tags?: string[]
   translationConstraints?: BookTranslationConstraints
   chapters?: ChapterData[]

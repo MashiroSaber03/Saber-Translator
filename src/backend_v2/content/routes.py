@@ -12,6 +12,7 @@ from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.content.image_import import (
     ImageImportService,
@@ -111,7 +112,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/books")
     def create_book() -> tuple[Response, int]:
         _require_idempotency_key()
-        body = _book_body()
+        body = _book_body(update=False)
         tag_ids = body.get("tagIds", [])
         if not isinstance(tag_ids, list) or not all(
             isinstance(value, str) for value in tag_ids
@@ -133,7 +134,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.put("/books/<book_id>")
     def update_book(book_id: str) -> Response:
         _require_idempotency_key()
-        body = _book_body()
+        body = _book_body(update=True)
         tag_ids = body.get("tagIds")
         if tag_ids is not None and (
             not isinstance(tag_ids, list)
@@ -161,7 +162,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/books/batch-delete")
     def batch_delete_books() -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"bookIds"})
         book_ids = body.get("bookIds")
         if not isinstance(book_ids, list) or not all(
             isinstance(value, str) for value in book_ids
@@ -173,7 +174,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/books/batch-tags")
     def batch_tags() -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"bookIds", "tagIds", "action"})
         book_ids = body.get("bookIds")
         tag_ids = body.get("tagIds")
         if (
@@ -197,7 +198,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/books/<book_id>/chapters")
     def create_chapter(book_id: str) -> tuple[Response, int]:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"title"})
         created = repository.create_chapter(
             book_id=book_id,
             title=str(body.get("title", "")),
@@ -207,7 +208,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.put("/chapters/<chapter_id>")
     def update_chapter(chapter_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"title"})
         return jsonify(
             repository.update_chapter(
                 chapter_id=chapter_id,
@@ -224,7 +225,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.put("/books/<book_id>/chapters/order")
     def reorder_chapters(book_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"orderedIds", "baseRevision"})
         ordered_ids = body.get("orderedIds")
         if not isinstance(ordered_ids, list) or not all(
             isinstance(item, str) for item in ordered_ids
@@ -264,7 +265,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.put("/chapters/<chapter_id>/pages/order")
     def reorder_pages(chapter_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"orderedIds", "baseRevision"})
         ordered_ids = body.get("orderedIds")
         if not isinstance(ordered_ids, list) or not all(
             isinstance(value, str) for value in ordered_ids
@@ -286,6 +287,10 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/pages/<page_id>/replace-source")
     def replace_page_source(page_id: str) -> Response:
         idempotency_key = _require_idempotency_key()
+        _validate_multipart_fields(
+            allowed_form_keys={"baseSourceRevision"},
+            allowed_file_keys={"file"},
+        )
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
@@ -310,7 +315,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.patch("/chapters/<chapter_id>/settings-memory")
     def update_chapter_settings_memory(chapter_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"payload", "baseRevision"})
         payload = body.get("payload")
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -325,7 +330,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.patch("/chapters/<chapter_id>/last-visited-page")
     def update_last_visited_page(chapter_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"pageId"})
         return jsonify(
             repository.update_last_visited_page(
                 chapter_id=chapter_id,
@@ -340,7 +345,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.put("/books/<book_id>/translation-constraints")
     def update_translation_constraints(book_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"payload", "baseRevision"})
         payload = body.get("payload")
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -355,7 +360,15 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.patch("/pages/<page_id>/document")
     def mutate_page_document(page_id: str) -> Response:
         idempotency_key = _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={
+                "baseRevision",
+                "mutations",
+                "defaultFontId",
+                "pageStyleDefaultsPatch",
+                "propagateStyleFields",
+            }
+        )
         mutations = body.get("mutations")
         if not isinstance(mutations, list):
             raise ValueError("mutations must be an array")
@@ -411,6 +424,10 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/chapters/<chapter_id>/pages")
     def import_page(chapter_id: str):
         idempotency_key = _require_idempotency_key()
+        _validate_multipart_fields(
+            allowed_form_keys={"logicalPath"},
+            allowed_file_keys={"file"},
+        )
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
@@ -478,7 +495,9 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/quick-workspace/promote")
     def promote_quick_workspace() -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"mode", "chapterTitle", "title", "bookId"}
+        )
         mode = str(body.get("mode", ""))
         if mode not in {"new_book", "existing_book"}:
             raise ValueError("mode must be new_book or existing_book")
@@ -505,7 +524,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/tags")
     def create_tag() -> tuple[Response, int]:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"name", "color"})
         return (
             jsonify(
                 repository.create_tag(
@@ -519,7 +538,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.put("/tags/<tag_id>")
     def update_tag(tag_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"name", "color"})
         return jsonify(
             repository.update_tag(
                 tag_id=tag_id,
@@ -537,19 +556,28 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     return blueprint
 
 
-def _book_body() -> dict[str, object]:
+def _book_body(*, update: bool) -> dict[str, object]:
+    allowed_keys = {"title", "tagIds"}
+    if update:
+        allowed_keys.add("clearCover")
     if request.is_json:
-        return _json_body()
+        return _json_body(allowed_keys=allowed_keys)
+    _validate_multipart_fields(
+        allowed_form_keys=allowed_keys,
+        allowed_file_keys={"cover"},
+    )
     raw_tags = request.form.get("tagIds", "[]")
     try:
         tag_ids = json.loads(raw_tags)
     except json.JSONDecodeError as exc:
         raise ValueError("tagIds must be a JSON string array") from exc
-    return {
+    body: dict[str, object] = {
         "title": request.form.get("title", ""),
         "tagIds": tag_ids,
-        "clearCover": request.form.get("clearCover", "false"),
     }
+    if update:
+        body["clearCover"] = request.form.get("clearCover", "false")
+    return body
 
 
 def _as_bool(value: object) -> bool:

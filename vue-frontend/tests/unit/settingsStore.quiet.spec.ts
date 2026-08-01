@@ -33,7 +33,6 @@ describe('settingsStore routine logging', () => {
     store.setRemoveTextWithOcr(true)
     store.setEnableVerboseLogs(true)
     store.setLamaDisableResize(true)
-    store.resetToDefaults()
 
     expect(consoleLog).not.toHaveBeenCalled()
   })

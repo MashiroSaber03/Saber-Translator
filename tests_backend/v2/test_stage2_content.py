@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import json
 from pathlib import Path
+import uuid
 
 from PIL import Image
 import pytest
@@ -124,6 +125,81 @@ def test_server_info_uses_the_configured_v2_api_port(content_platform) -> None:
     assert payload["host"] == "0.0.0.0"
     assert payload["port"] == 5123
     assert payload["lanUrl"].endswith(":5123")
+
+
+def test_book_creation_rejects_retired_request_fields(content_platform) -> None:
+    data_root, engine, *_rest = content_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-strict-book-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    try:
+        client = app.test_client()
+        response = client.post(
+            "/api/v2/books",
+            headers={"Idempotency-Key": "book-with-retired-field"},
+            json={"title": "Book", "description": "retired"},
+        )
+        multipart_response = client.post(
+            "/api/v2/books",
+            headers={"Idempotency-Key": "book-with-retired-form-field"},
+            data={"title": "Book", "description": "retired"},
+            content_type="multipart/form-data",
+        )
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 422
+    assert "description" in response.get_data(as_text=True)
+    assert multipart_response.status_code == 422
+    assert "form.description" in multipart_response.get_data(as_text=True)
+
+
+def test_page_operation_rejects_client_payload(content_platform) -> None:
+    data_root, engine, repository, _storage, importer, _book, chapter = (
+        content_platform
+    )
+    imported, _replayed = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((24, 24)),
+        logical_path="strict-operation.png",
+        key="strict-operation-page",
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-strict-operation-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    try:
+        response = app.test_client().post(
+            f"/api/v2/pages/{imported['page']['id']}/operations",
+            headers={"Idempotency-Key": "operation-with-client-payload"},
+            json={
+                "kind": "page_ocr",
+                "baseRevision": 1,
+                "payload": {},
+            },
+        )
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 422
+    assert "payload" in response.get_data(as_text=True)
 
 
 def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
@@ -766,34 +842,65 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
         key="document",
     )
     page_id = str(imported["page"]["id"])
-    bubble_id = "00000000-0000-0000-0000-000000000111"
     created, _ = repository.mutate_page_document(
         page_id=page_id,
         base_revision=1,
         mutations=[
             {
                 "op": "create",
-                "bubbleId": bubble_id,
+                "clientMutationId": "document-create-bubble",
                 "fields": {"text": "hello", "fontSize": 24},
             }
         ],
         idempotency_key="document-create",
     )
-    assert created["documentRevision"] == 2
-    assert created["bubbles"][0]["bubbleId"] == bubble_id
+    created_document = created["document"]
+    bubble_id = created["mutationResults"][0]["bubbleId"]
+    assert str(uuid.UUID(bubble_id)) == bubble_id
+    assert created_document["documentRevision"] == 2
+    assert created_document["renderStatus"] == "not_rendered"
+    assert created_document["bubbles"][0]["bubbleId"] == bubble_id
+    with pytest.raises(ValueError, match="cannot provide bubbleId"):
+        repository.mutate_page_document(
+            page_id=page_id,
+            base_revision=2,
+            mutations=[
+                {
+                    "op": "create",
+                    "clientMutationId": "client-cannot-assign-fact-id",
+                    "bubbleId": "00000000-0000-0000-0000-000000000111",
+                    "fields": {},
+                }
+            ],
+            idempotency_key="document-client-fact-id",
+        )
+    with pytest.raises(ValueError, match="non-payload"):
+        repository.mutate_page_document(
+            page_id=page_id,
+            base_revision=2,
+            mutations=[
+                {
+                    "op": "create",
+                    "clientMutationId": "document-payload-font-path",
+                    "fields": {"fontFamily": "fonts/client-path.ttf"},
+                }
+            ],
+            idempotency_key="document-payload-font-path",
+        )
     patched, _ = repository.mutate_page_document(
         page_id=page_id,
         base_revision=2,
         mutations=[
             {
                 "op": "patch",
+                "clientMutationId": "document-patch-bubble",
                 "bubbleId": bubble_id,
                 "fields": {"text": "translated"},
             }
         ],
         idempotency_key="document-patch",
     )
-    assert patched["bubbles"][0]["payload"]["text"] == "translated"
+    assert patched["document"]["bubbles"][0]["payload"]["text"] == "translated"
     with pytest.raises(ContentConflict):
         repository.mutate_page_document(
             page_id=page_id,
@@ -801,6 +908,7 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
             mutations=[
                 {
                     "op": "delete",
+                    "clientMutationId": "document-delete-bubble",
                     "bubbleId": bubble_id,
                 }
             ],
@@ -835,8 +943,6 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
         )
     )
     client = app.test_client()
-    bubble_id = "00000000-0000-0000-0000-000000000112"
-
     mutation_response = client.patch(
         f"/api/v2/pages/{page_id}/document",
         headers={"Idempotency-Key": "editor-route-mutation"},
@@ -845,7 +951,7 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
             "mutations": [
                 {
                     "op": "create",
-                    "bubbleId": bubble_id,
+                    "clientMutationId": "editor-route-create",
                     "fields": {
                         "translatedText": "编辑写入",
                         "coords": [5, 6, 50, 60],
@@ -858,9 +964,13 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
 
     assert mutation_response.status_code == 200
     mutated = mutation_response.get_json()
-    assert mutated["documentRevision"] == 2
-    assert mutated["bubbles"][0]["bubbleId"] == bubble_id
-    assert mutated["bubbles"][0]["payload"]["translatedText"] == "编辑写入"
+    bubble_id = mutated["mutationResults"][0]["bubbleId"]
+    assert mutated["document"]["documentRevision"] == 2
+    assert mutated["document"]["bubbles"][0]["bubbleId"] == bubble_id
+    assert (
+        mutated["document"]["bubbles"][0]["payload"]["translatedText"]
+        == "编辑写入"
+    )
 
     font_response = client.patch(
         f"/api/v2/pages/{page_id}/document",
@@ -873,7 +983,7 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
     )
 
     assert font_response.status_code == 200
-    updated = font_response.get_json()
+    updated = font_response.get_json()["document"]
     assert updated["documentRevision"] == 3
     assert updated["defaultFontId"] == DEFAULT_FONT_ID
 
@@ -885,6 +995,7 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
             "mutations": [
                 {
                     "op": "patch",
+                    "clientMutationId": "editor-route-invalid-font",
                     "bubbleId": bubble_id,
                     "fields": {
                         "fontId": "",
@@ -914,14 +1025,13 @@ def test_page_document_command_is_idempotent_and_propagates_style(
         key="idempotent-document",
     )
     page_id = str(imported["page"]["id"])
-    bubble_id = "00000000-0000-0000-0000-000000000211"
     command = {
         "page_id": page_id,
         "base_revision": 1,
         "mutations": [
             {
                 "op": "create",
-                "bubbleId": bubble_id,
+                "clientMutationId": "document-command-create",
                 "fields": {"translatedText": "hello"},
             }
         ],
@@ -934,9 +1044,13 @@ def test_page_document_command_is_idempotent_and_propagates_style(
     }
     first, replayed = repository.mutate_page_document(**command)
     assert replayed is False
-    assert first["documentRevision"] == 2
-    assert first["pageStyleDefaults"]["fontSize"] == 30
-    assert first["bubbles"][0]["payload"]["fontSize"] == 30
+    first_document = first["document"]
+    assert first_document["documentRevision"] == 2
+    assert first_document["pageStyleDefaults"]["fontSize"] == 30
+    assert first_document["bubbles"][0]["payload"]["fontSize"] == 30
+    assert first["mutationResults"][0]["clientMutationId"] == (
+        "document-command-create"
+    )
 
     replay, replayed = repository.mutate_page_document(**command)
     assert replayed is True
@@ -973,7 +1087,7 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
         mutations=[
             {
                 "op": "create",
-                "bubbleId": "00000000-0000-0000-0000-000000000212",
+                "clientMutationId": "auto-style-create-bubble",
                 "fields": {
                     "translatedText": "自动样式",
                     "coords": [0, 0, 120, 80],
@@ -996,6 +1110,7 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
             "fillColor",
         ],
     )
+    document = document["document"]
     persisted_payload = document["bubbles"][0]["payload"]
     assert persisted_payload["textDirection"] == "horizontal"
     assert persisted_payload["textColor"] == "#010203"
@@ -1041,6 +1156,7 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
         },
         propagate_style_fields=["textColor", "fillColor"],
     )
+    manual = manual["document"]
     manual_payload = manual["bubbles"][0]["payload"]
     assert manual["pageStyleDefaults"]["useAutoTextColor"] is False
     assert manual_payload["textColor"] == "#123456"

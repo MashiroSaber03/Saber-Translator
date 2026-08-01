@@ -2,17 +2,43 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 from flask import jsonify, request
 
 
-def json_body() -> dict[str, Any]:
+def json_body(
+    *,
+    allowed_keys: Collection[str],
+    optional: bool = False,
+) -> dict[str, Any]:
     body = request.get_json(silent=True)
+    if body is None and optional and not request.get_data(cache=True):
+        return {}
     if not isinstance(body, dict):
         raise ValueError("request body must be a JSON object")
+    unknown = set(body) - set(allowed_keys)
+    if unknown:
+        raise ValueError(
+            "unknown request fields: " + ", ".join(sorted(unknown))
+        )
     return body
+
+
+def validate_multipart_fields(
+    *,
+    allowed_form_keys: Collection[str] = (),
+    allowed_file_keys: Collection[str] = (),
+) -> None:
+    unknown_form = set(request.form) - set(allowed_form_keys)
+    unknown_files = set(request.files) - set(allowed_file_keys)
+    unknown = [
+        *(f"form.{key}" for key in sorted(unknown_form)),
+        *(f"file.{key}" for key in sorted(unknown_files)),
+    ]
+    if unknown:
+        raise ValueError("unknown multipart fields: " + ", ".join(unknown))
 
 
 def required_string(body: Mapping[str, object], key: str) -> str:

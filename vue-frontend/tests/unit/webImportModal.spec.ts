@@ -71,14 +71,23 @@ vi.mock('@/components/common/BaseModal.vue', () => ({
     props: ['modelValue', 'frameVariant', 'dividerVariant'],
     emits: ['close'],
     setup(props, { emit, slots }) {
-      return () => h('div', {
-        'data-frame': props.frameVariant,
-        'data-divider': props.dividerVariant,
-      }, [
-        h('button', { type: 'button', class: 'modal-close', onClick: () => emit('close') }, '关闭'),
-        h('div', { class: 'modal-default-slot' }, slots.default ? slots.default() : []),
-        h('div', { class: 'modal-footer-slot' }, slots.footer ? slots.footer() : []),
-      ])
+      return () =>
+        h(
+          'div',
+          {
+            'data-frame': props.frameVariant,
+            'data-divider': props.dividerVariant,
+          },
+          [
+            h(
+              'button',
+              { type: 'button', class: 'modal-close', onClick: () => emit('close') },
+              '关闭'
+            ),
+            h('div', { class: 'modal-default-slot' }, slots.default ? slots.default() : []),
+            h('div', { class: 'modal-footer-slot' }, slots.footer ? slots.footer() : []),
+          ]
+        )
     },
   }),
 }))
@@ -90,16 +99,20 @@ import { useWebImportStore } from '@/stores/webImportStore'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolver) => {
+  const promise = new Promise<T>(resolver => {
     resolve = resolver
   })
   return { promise, resolve }
 }
 
 function mountedComboboxOptionValues(wrapper: ReturnType<typeof mount>) {
-  return wrapper.findAllComponents(UiCombobox).flatMap(combobox =>
-    (combobox.props('options') || []).map((option: { value: string | number }) => String(option.value))
-  )
+  return wrapper
+    .findAllComponents(UiCombobox)
+    .flatMap(combobox =>
+      (combobox.props('options') || []).map((option: { value: string | number }) =>
+        String(option.value)
+      )
+    )
 }
 
 async function openWebImportSettings(wrapper: ReturnType<typeof mount>): Promise<void> {
@@ -167,7 +180,6 @@ describe('WebImportModal', () => {
       jobIds: ['job-2'],
     })
     fetchModelsMock.mockResolvedValue({
-      success: true,
       models: [
         { id: 'gpt-4o-mini', name: 'gpt-4o-mini' },
         { id: 'gpt-4.1-mini', name: 'gpt-4.1-mini' },
@@ -178,7 +190,6 @@ describe('WebImportModal', () => {
 
     vi.spyOn(window, 'alert').mockImplementation(() => undefined)
     vi.spyOn(window, 'confirm').mockImplementation(() => true)
-
   })
 
   afterEach(() => {
@@ -215,7 +226,7 @@ describe('WebImportModal', () => {
     expect(updateWebImportSelectionMock).not.toHaveBeenCalled()
     expect(commitWebImportDraftMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('commitAccepted')).toBeUndefined()
-    expect(webImportStore.status).toBe('completed')
+    expect(webImportStore.status).toBe('downloading')
   })
 
   it('fetches available models for the selected agent provider', async () => {
@@ -227,8 +238,7 @@ describe('WebImportModal', () => {
     const wrapper = mount(WebImportModal)
     await openWebImportSettings(wrapper)
 
-    const fetchButton = wrapper.findAll('button')
-      .find(button => button.text().includes('获取模型'))
+    const fetchButton = wrapper.findAll('button').find(button => button.text().includes('获取模型'))
     expect(fetchButton).toBeTruthy()
 
     await fetchButton!.trigger('click')
@@ -237,9 +247,11 @@ describe('WebImportModal', () => {
     expect(fetchModelsMock).toHaveBeenCalledWith('openai', 'test-key', '', 'web_import_agent')
 
     const modelCombobox = wrapper.getComponent(UiCombobox)
-    expect(modelCombobox.props('options')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'gpt-4o-mini', value: 'gpt-4o-mini' }),
-    ]))
+    expect(modelCombobox.props('options')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'gpt-4o-mini', value: 'gpt-4o-mini' }),
+      ])
+    )
   })
 
   it('ignores stale model responses after the agent provider changes', async () => {
@@ -248,15 +260,14 @@ describe('WebImportModal', () => {
     webImportStore.draftSettings.agent.apiKey = 'test-key'
     webImportStore.draftSettings.agent.provider = 'openai'
 
-    const pendingModels = createDeferred<{ success: boolean; models: Array<{ id: string; name: string }> }>()
+    const pendingModels = createDeferred<{ models: Array<{ id: string; name: string }> }>()
     fetchModelsMock.mockReset()
     fetchModelsMock.mockReturnValueOnce(pendingModels.promise)
 
     const wrapper = mount(WebImportModal)
     await openWebImportSettings(wrapper)
 
-    const fetchButton = wrapper.findAll('button')
-      .find(button => button.text().includes('获取模型'))
+    const fetchButton = wrapper.findAll('button').find(button => button.text().includes('获取模型'))
     expect(fetchButton).toBeTruthy()
 
     await fetchButton!.trigger('click')
@@ -266,7 +277,6 @@ describe('WebImportModal', () => {
     await flushPromises()
 
     pendingModels.resolve({
-      success: true,
       models: [{ id: 'stale-web-import-model', name: 'Stale WebImport Model' }],
     })
     await flushPromises()
@@ -368,22 +378,22 @@ describe('WebImportModal', () => {
       failedCount: 0,
       requestedEngine: 'ai-agent',
       actualEngine: null,
-      jobs: [
-        { id: 'job-1', kind: 'web_extract', status: 'cancelled' },
-      ],
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'cancelled' }],
     })
     jobEventsMock.mockResolvedValueOnce({
-      items: [{
-        eventId: 12,
-        jobId: 'job-1',
-        type: 'web_import_agent_log',
-        payload: {
-          timestamp: '12:00:00',
-          type: 'thinking',
-          message: 'Agent 正在分析页面',
+      items: [
+        {
+          eventId: 12,
+          jobId: 'job-1',
+          type: 'web_import_agent_log',
+          payload: {
+            timestamp: '12:00:00',
+            type: 'thinking',
+            message: 'Agent 正在分析页面',
+          },
+          createdAt: '2030-01-01T00:00:00Z',
         },
-        createdAt: '2030-01-01T00:00:00Z',
-      }],
+      ],
     })
 
     const wrapper = mount(WebImportModal)
@@ -412,7 +422,10 @@ describe('WebImportModal', () => {
     expect(modal.attributes('data-frame')).toBe('floating')
     expect(modal.attributes('data-divider')).toBe('soft')
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/WebImportModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/WebImportModal.vue'),
+      'utf8'
+    )
     expect(source).toContain('class="web-import-modal__body"')
     expect(source).not.toContain('web-import-modal-body')
     expect(source).not.toContain('WebImportModal.global.styles.css')

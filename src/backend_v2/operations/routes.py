@@ -19,6 +19,7 @@ from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.operations.repository import (
     OperationConflict,
@@ -59,14 +60,9 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/pages/<page_id>/operations")
     def create_page_operation(page_id: str):
-        body = _json_body()
-        payload = body.get("payload", {})
-        if not isinstance(payload, dict):
-            raise ValueError("payload must be an object")
-        if payload:
-            raise ValueError(
-                "page operation settings are resolved by the backend"
-            )
+        body = _json_body(
+            allowed_keys={"kind", "baseRevision", "bubbleId"}
+        )
         kind = str(body.get("kind", ""))
         response, replayed = repository.create_page_operation(
             page_id=page_id,
@@ -173,6 +169,9 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
             "idempotency_key": _require_idempotency_key(),
         }
         if target == "bubble":
+            _validate_multipart_fields(
+                allowed_form_keys={"target", "base_revision", "bubble_id"},
+            )
             bubble_id = request.form.get("bubble_id", "")
             if not bubble_id:
                 raise ValueError("bubble_id is required")
@@ -181,6 +180,15 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 **common,
             )
         elif target == "mask":
+            _validate_multipart_fields(
+                allowed_form_keys={
+                    "target",
+                    "base_revision",
+                    "method",
+                    "fill_color",
+                },
+                allowed_file_keys={"mask"},
+            )
             upload = request.files.get("mask")
             if upload is None:
                 raise ValueError("mask file is required")

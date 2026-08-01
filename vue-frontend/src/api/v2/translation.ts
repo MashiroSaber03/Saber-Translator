@@ -1,5 +1,6 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 export type TranslationJobConfig = components['schemas']['TranslationJobConfig']
@@ -14,6 +15,7 @@ export async function createChapterTranslationJob(
   pageIds: string[],
   config: TranslationJobConfig,
 ): Promise<V2TranslationBatchAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/translation-jobs`,
     { config, pageIds },
@@ -25,6 +27,7 @@ export function createTranslationBatch(
   chapterIds: string[],
   config: TranslationJobConfig = { mode: 'standard' },
 ): Promise<V2MultiChapterTranslationBatchAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post<V2MultiChapterTranslationBatchAccepted>(
     '/api/v2/job-batches/translation',
     { chapterIds, config },
@@ -36,6 +39,7 @@ export async function createChapterDetectJob(
   chapterId: string,
   pageIds?: string[],
 ): Promise<V2TranslationBatchAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/detect-jobs`,
     pageIds ? { pageIds } : {},
@@ -51,6 +55,7 @@ export async function createChapterStyleApplyJob(
     sourcePageId: string
   },
 ): Promise<V2TranslationBatchAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/style-apply-jobs`,
     command,
@@ -63,6 +68,7 @@ export function createChapterExportJob(
   format: 'cbz' | 'pdf' | 'zip',
   pageIds?: string[],
 ): Promise<V2TranslationBatchAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/export-jobs`,
     { format, ...(pageIds ? { pageIds } : {}) },
@@ -90,6 +96,7 @@ export function commitChapterTextImport(
   chapterId: string,
   confirmedPages: V2TextImportPreviewPage[],
 ): Promise<V2TranslationBatchAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/text-import/commit`,
     { confirmedPages },

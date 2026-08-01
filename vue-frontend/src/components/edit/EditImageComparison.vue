@@ -57,11 +57,8 @@ const emit = defineEmits<{
   startPanelResize: [event: MouseEvent]
   bubbleSelect: [index: number]
   bubbleMultiSelect: [index: number]
-  bubbleDragStart: [index: number, event: MouseEvent]
   bubbleDragEnd: [index: number, newCoords: BubbleCoords]
-  bubbleResizeStart: [index: number, handle: string, event: MouseEvent]
   bubbleResizeEnd: [index: number, newCoords: BubbleCoords]
-  bubbleRotateStart: [index: number, event: MouseEvent]
   bubbleRotateEnd: [index: number, angle: number]
   drawBubble: [rect: [number, number, number, number]]
   bubbleUpdate: [updates: Partial<BubbleState>]
@@ -161,11 +158,8 @@ defineExpose({
               :image-height="currentImageHeight"
               @select="emit('bubbleSelect', $event)"
               @multi-select="emit('bubbleMultiSelect', $event)"
-              @drag-start="(index, event) => emit('bubbleDragStart', index, event)"
               @drag-end="(index, newCoords) => emit('bubbleDragEnd', index, newCoords)"
-              @resize-start="(index, handle, event) => emit('bubbleResizeStart', index, handle, event)"
               @resize-end="(index, newCoords) => emit('bubbleResizeEnd', index, newCoords)"
-              @rotate-start="(index, event) => emit('bubbleRotateStart', index, event)"
               @rotate-end="(index, angle) => emit('bubbleRotateEnd', index, angle)"
               @draw-bubble="emit('drawBubble', $event)"
             />
@@ -241,11 +235,8 @@ defineExpose({
               :image-height="currentImageHeight"
               @select="emit('bubbleSelect', $event)"
               @multi-select="emit('bubbleMultiSelect', $event)"
-              @drag-start="(index, event) => emit('bubbleDragStart', index, event)"
               @drag-end="(index, newCoords) => emit('bubbleDragEnd', index, newCoords)"
-              @resize-start="(index, handle, event) => emit('bubbleResizeStart', index, handle, event)"
               @resize-end="(index, newCoords) => emit('bubbleResizeEnd', index, newCoords)"
-              @rotate-start="(index, event) => emit('bubbleRotateStart', index, event)"
               @rotate-end="(index, angle) => emit('bubbleRotateEnd', index, angle)"
               @draw-bubble="emit('drawBubble', $event)"
             />

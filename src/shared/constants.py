@@ -282,8 +282,3 @@ DEFAULT_TRANSLATION_MAX_RETRIES = 3  # 普通翻译默认重试次数
 # --- 超长图片处理 (Large Image Rearrange) ---
 LARGE_IMAGE_ENABLED = True  # 是否启用超长图片自动切割
 LARGE_IMAGE_TARGET_SIZE = 1536  # 切片目标尺寸（与检测器一致）
-
-# --- LAMA 修复相关 ---
-# 是否禁用 LAMA 修复时的自动缩放（默认 False，即允许缩放）
-# 设为 True 时将使用原图尺寸进行修复，需要更强的 GPU 和更多显存
-LAMA_DISABLE_RESIZE = False

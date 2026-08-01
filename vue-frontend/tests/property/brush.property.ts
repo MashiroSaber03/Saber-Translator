@@ -60,12 +60,12 @@ describe('brush composable property contracts', () => {
     expect(source).not.toMatch(/={6,}/)
   })
 
-  it('keeps direct size assignment inside the product brush bounds', () => {
+  it('keeps large size adjustments inside the product brush bounds', () => {
     fc.assert(
       fc.property(anyBrushSizeArb, (size) => {
         const brush = createBrushHarness()
 
-        brush.setBrushSize(size)
+        brush.adjustBrushSize(size - BRUSH_DEFAULT_SIZE)
 
         expect(brush.brushSize.value).toBeGreaterThanOrEqual(BRUSH_MIN_SIZE)
         expect(brush.brushSize.value).toBeLessThanOrEqual(BRUSH_MAX_SIZE)
@@ -78,7 +78,7 @@ describe('brush composable property contracts', () => {
     fc.assert(
       fc.property(validBrushSizeArb, adjustDeltaArb, (initialSize, delta) => {
         const brush = createBrushHarness()
-        brush.setBrushSize(initialSize)
+        brush.adjustBrushSize(initialSize - BRUSH_DEFAULT_SIZE)
 
         brush.adjustBrushSize(delta)
 
@@ -96,7 +96,7 @@ describe('brush composable property contracts', () => {
         fc.array(adjustDeltaArb, { minLength: 1, maxLength: 10 }),
         (initialSize, deltas) => {
           const brush = createBrushHarness()
-          brush.setBrushSize(initialSize)
+          brush.adjustBrushSize(initialSize - BRUSH_DEFAULT_SIZE)
 
           for (const delta of deltas) {
             brush.adjustBrushSize(delta)
@@ -122,15 +122,13 @@ describe('brush composable property contracts', () => {
       fc.property(fc.constantFrom('repair', 'restore'), (mode) => {
         const brush = createBrushHarness()
 
-        brush.enterBrushMode(mode)
+        brush.toggleBrushMode(mode)
         expect(brush.brushMode.value).toBe(mode)
         expect(brush.isBrushKeyDown.value).toBe(true)
-        expect(brush.isActive.value).toBe(true)
 
         brush.toggleBrushMode(mode)
         expect(brush.brushMode.value).toBeNull()
         expect(brush.isBrushKeyDown.value).toBe(false)
-        expect(brush.isActive.value).toBe(false)
       }),
       { numRuns: 20 },
     )
@@ -139,17 +137,15 @@ describe('brush composable property contracts', () => {
   it('switches between brush modes without leaving stale active state', () => {
     const brush = createBrushHarness()
 
-    brush.enterBrushMode('repair')
+    brush.toggleBrushMode('repair')
     brush.toggleBrushMode('restore')
 
     expect(brush.brushMode.value).toBe('restore')
     expect(brush.isBrushKeyDown.value).toBe(true)
-    expect(brush.isActive.value).toBe(true)
 
     brush.exitBrushMode()
 
     expect(brush.brushMode.value).toBeNull()
     expect(brush.isBrushKeyDown.value).toBe(false)
-    expect(brush.isActive.value).toBe(false)
   })
 })

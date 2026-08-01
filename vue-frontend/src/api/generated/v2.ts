@@ -2456,13 +2456,25 @@ export interface components {
             baseRevision: number;
             schemaVersion: number;
         };
-        BookSettingMutation: components["schemas"]["SettingMutation"] & {
+        BookSettingMutation: {
             bookId: components["schemas"]["Uuid"];
+            domain: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            baseRevision: number;
+            schemaVersion: number;
         };
-        ProviderSettingMutation: components["schemas"]["SettingMutation"] & {
+        ProviderSettingMutation: {
+            domain: string;
             provider: string;
+            payload: {
+                [key: string]: unknown;
+            };
+            baseRevision: number;
             credentialVersionId?: components["schemas"]["Uuid"];
             credentialEditRef?: string;
+            schemaVersion: number;
         };
         CredentialEdit: {
             domain: string;
@@ -2522,8 +2534,6 @@ export interface components {
             prompt?: string;
         };
         ModelCatalogResponse: {
-            /** @constant */
-            success: true;
             models: {
                 id: string;
                 name: string;
@@ -2871,17 +2881,30 @@ export interface components {
             kind: "bubble_ocr" | "bubble_color" | "page_detect" | "bubble_translate";
             baseRevision: number;
             bubbleId?: components["schemas"]["Uuid"];
-            payload?: {
+        };
+        BubbleMutation: components["schemas"]["BubbleCreateMutation"] | components["schemas"]["ExistingBubbleMutation"];
+        BubbleCreateMutation: {
+            /** @constant */
+            op: "create";
+            clientMutationId: string;
+            fields?: {
                 [key: string]: unknown;
             };
         };
-        BubbleMutation: {
+        ExistingBubbleMutation: {
             /** @enum {string} */
-            op: "create" | "patch" | "delete" | "reset";
+            op: "patch" | "delete" | "reset";
+            clientMutationId: string;
             bubbleId: components["schemas"]["Uuid"];
             fields?: {
                 [key: string]: unknown;
             };
+        };
+        BubbleMutationResult: {
+            /** @enum {string} */
+            op: "create" | "patch" | "delete" | "reset";
+            clientMutationId: string;
+            bubbleId: components["schemas"]["Uuid"];
         };
         PageDocumentBatchMutation: {
             baseRevision: number;
@@ -2921,13 +2944,17 @@ export interface components {
             pageId: components["schemas"]["Uuid"];
             chapterId: components["schemas"]["Uuid"];
             documentRevision: number;
+            /** @enum {string} */
+            renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             defaultFontId: components["schemas"]["Uuid"] | null;
             pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign">;
             pageStyleSchemaVersion: number;
             bubbles: components["schemas"]["BubbleDocument"][];
         };
-        /** @enum {string} */
-        RepairMethod: "solid" | "lama_mpe" | "litelama" | "restore_source";
+        PageDocumentMutationResponse: {
+            document: components["schemas"]["PageDocument"];
+            mutationResults: components["schemas"]["BubbleMutationResult"][];
+        };
         BubbleRepairCommand: {
             /** @constant */
             target: "bubble";
@@ -2952,12 +2979,6 @@ export interface components {
             base_revision: number;
             /** @constant */
             method: "restore_source";
-        };
-        FileUpload: {
-            /** Format: binary */
-            file: string;
-        } & {
-            [key: string]: unknown;
         };
         StudioAsset: {
             assetId: components["schemas"]["Uuid"];
@@ -3004,6 +3025,22 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        StudioDocumentCreateCommand: {
+            title?: string;
+            /** @enum {string} */
+            kind?: "manual" | "analysis" | "imported";
+            candidate?: {
+                [key: string]: unknown;
+            };
+            document?: {
+                [key: string]: unknown;
+            };
+        };
+        StudioDocumentImportCommand: {
+            payload: {
+                [key: string]: unknown;
+            };
+        };
         StudioDocumentMutation: {
             baseRevision: number;
             title?: string;
@@ -3015,6 +3052,12 @@ export interface components {
             baseRevision: number;
             /** @enum {string} */
             section: "identity" | "greetings" | "lorebook" | "regex" | "state-tasks" | "translate" | "full" | "review";
+        };
+        StudioAgentCommand: {
+            content?: string;
+            messages?: {
+                [key: string]: unknown;
+            }[];
         };
         StudioIndex: {
             bookId: components["schemas"]["Uuid"];
@@ -3453,16 +3496,18 @@ export interface components {
             logicalSourcePath: string;
             sourceRevision: number;
             documentRevision: number;
-            renderedRevision?: number | null;
-            renderStatus?: string;
-            detectionState?: string;
+            renderedRevision: number | null;
+            /** @enum {string} */
+            renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
+            /** @enum {string} */
+            detectionState: "unprocessed" | "processed";
             sourceUrl: string;
             thumbnailSourceUrl: string;
-            cleanUrl?: string | null;
-            translatedUrl?: string | null;
-            thumbnailTranslatedUrl?: string | null;
-            width?: number | null;
-            height?: number | null;
+            cleanUrl: string | null;
+            translatedUrl: string | null;
+            thumbnailTranslatedUrl: string | null;
+            width: number | null;
+            height: number | null;
         };
         PageList: {
             items: components["schemas"]["PageSummary"][];
@@ -4408,9 +4453,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    payload: {
-                        [key: string]: unknown;
-                    };
+                    payload: components["schemas"]["WorkflowPreferences"];
                     baseRevision: number;
                 };
             };
@@ -5405,9 +5448,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["StudioDocumentCreateCommand"];
             };
         };
         responses: {
@@ -5436,10 +5477,8 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["FileUpload"];
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "multipart/form-data": components["schemas"]["FileUploadCommand"];
+                "application/json": components["schemas"]["StudioDocumentImportCommand"];
             };
         };
         responses: {
@@ -5466,7 +5505,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["FileUpload"];
+                "multipart/form-data": components["schemas"]["FileUploadCommand"];
             };
         };
         responses: {
@@ -5552,7 +5591,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        deleted: true;
+                        documentId: components["schemas"]["Uuid"];
+                    };
+                };
             };
             423: components["responses"]["Locked"];
         };
@@ -5614,15 +5659,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        documentRevision: number;
+                        diagnostics: {
+                            valid: boolean;
+                            errors: string[];
+                            warnings: string[];
+                            checks: {
+                                document: boolean;
+                                v3_export: boolean;
+                                v2_export: boolean;
+                            };
+                        };
+                    };
+                };
             };
             409: components["responses"]["Conflict"];
         };
     };
     exportStudioDocument: {
         parameters: {
-            query: {
-                format: "v2" | "v3" | "png" | "worldbook";
+            query?: {
+                format?: "v2" | "v3" | "png" | "worldbook";
             };
             header?: never;
             path: {
@@ -5637,7 +5696,10 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": string;
+                    "image/png": string;
+                };
             };
         };
     };
@@ -5660,7 +5722,7 @@ export interface operations {
                 "application/json": {
                     [key: string]: unknown;
                 };
-                "multipart/form-data": components["schemas"]["FileUpload"];
+                "multipart/form-data": components["schemas"]["FileUploadCommand"];
             };
         };
         responses: {
@@ -5686,9 +5748,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["StudioAgentCommand"];
             };
         };
         responses: {
@@ -5773,7 +5833,7 @@ export interface operations {
                 "application/json": {
                     [key: string]: unknown;
                 };
-                "multipart/form-data": components["schemas"]["FileUpload"];
+                "multipart/form-data": components["schemas"]["FileUploadCommand"];
             };
         };
         responses: {
@@ -5831,7 +5891,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        deleted: true;
+                        sessionId: components["schemas"]["Uuid"];
+                    };
+                };
             };
             409: components["responses"]["Conflict"];
             423: components["responses"]["Locked"];
@@ -5923,7 +5989,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        operationId: components["schemas"]["Uuid"];
+                        /** @constant */
+                        status: "cancelled";
+                        sessionRevision: number;
+                        sessionGeneration: number;
+                    };
+                };
             };
             409: components["responses"]["Conflict"];
         };
@@ -6432,7 +6506,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        chapterOrderRevision: number;
+                    };
+                };
             };
             409: components["responses"]["Conflict"];
         };
@@ -7087,7 +7165,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        released: true;
+                    };
+                };
             };
             423: components["responses"]["Locked"];
         };
@@ -7139,7 +7222,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageDocument"];
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
                 };
             };
             404: components["responses"]["NotFound"];

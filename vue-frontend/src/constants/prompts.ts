@@ -1,5 +1,3 @@
-export const DEFAULT_PROMPT_NAME = '默认提示词'
-
 export const DEFAULT_AI_VISION_OCR_PROMPT = `你是一个ocr助手，你需要将我发送给你的图片中的文字提取出来并返回给我，要求：
 1、完整识别：我发送给你的图片中的文字都是需要识别的内容
 2、非贪婪输出：不要返回任何其他解释和说明。`
@@ -81,8 +79,6 @@ export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = `你是一个OCR助手。请将
 }`
 
 export const getPaddleOcrVlPrompt = (langName: string = '日语') => `对图中的${langName}进行OCR:`
-
-export const DEFAULT_AI_VISION_PADDLEOCR_VL_PROMPT = getPaddleOcrVlPrompt('日语')
 
 export const PADDLEOCR_VL_LANG_MAP: Record<string, string> = {
   japanese: '日语',

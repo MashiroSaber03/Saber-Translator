@@ -11,16 +11,14 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 
-const { getPageDataMock, reanalyzePageMock, getPageImageUrlMock } = vi.hoisted(() => ({
+const { getPageDataMock, reanalyzePageMock } = vi.hoisted(() => ({
   getPageDataMock: vi.fn(),
   reanalyzePageMock: vi.fn(),
-  getPageImageUrlMock: vi.fn(() => '/page.png'),
 }))
 
 vi.mock('@/api/insight', () => ({
   getPageData: getPageDataMock,
   reanalyzePage: reanalyzePageMock,
-  getPageImageUrl: getPageImageUrlMock,
 }))
 
 import PageDetail from '@/components/insight/PageDetail.vue'
@@ -47,23 +45,19 @@ describe('PageDetail', () => {
 
     getPageDataMock.mockReset()
     getPageDataMock.mockResolvedValue({
-      success: true,
       analysis: {
         page_num: 3,
         page_summary: '旧摘要',
         panels: [],
       },
-      source_url: '/page.png',
+      sourceUrl: '/page.png',
     })
 
     reanalyzePageMock.mockReset()
     reanalyzePageMock.mockResolvedValue({
-      success: true,
-      task_id: 'task-123',
+      jobId: 'task-123',
     })
 
-    getPageImageUrlMock.mockReset()
-    getPageImageUrlMock.mockReturnValue('/page.png')
   })
 
   it('maps preview and status owner colors through semantic tokens', () => {
@@ -322,10 +316,7 @@ describe('PageDetail', () => {
     expect(source).not.toContain('.error-message')
 
     getPageDataMock.mockReset()
-    getPageDataMock.mockResolvedValueOnce({
-      success: false,
-      error: '加载页面失败',
-    })
+    getPageDataMock.mockRejectedValueOnce(new Error('加载页面失败'))
 
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -359,13 +350,13 @@ describe('PageDetail', () => {
 
     getPageDataMock.mockReset()
     getPageDataMock.mockResolvedValueOnce({
-      success: true,
       analysis: {
         analyzed: false,
         page_num: 3,
         page_summary: '',
         panels: [],
       },
+      sourceUrl: '',
     })
 
     const unanalyzedPinia = createPinia()
@@ -391,13 +382,13 @@ describe('PageDetail', () => {
 
     getPageDataMock.mockReset()
     getPageDataMock.mockResolvedValueOnce({
-      success: true,
       analysis: {
         analyzed: true,
         page_num: 3,
         page_summary: '已有摘要',
         panels: [],
       },
+      sourceUrl: '',
     })
 
     const analyzedPinia = createPinia()
@@ -431,8 +422,8 @@ describe('PageDetail', () => {
     expect(source).not.toContain('page-detail-loading-spinner')
 
     const pendingPage = deferred<{
-      success: true
       analysis: { page_num: number; page_summary: string; panels: never[] }
+      sourceUrl: string
     }>()
     getPageDataMock.mockReset()
     getPageDataMock.mockReturnValueOnce(pendingPage.promise)
@@ -545,12 +536,12 @@ describe('PageDetail', () => {
     store.setBookTotalPages(20)
 
     const page3 = deferred<{
-      success: true
       analysis: { page_num: number; page_summary: string; panels: never[] }
+      sourceUrl: string
     }>()
     const page4 = deferred<{
-      success: true
       analysis: { page_num: number; page_summary: string; panels: never[] }
+      sourceUrl: string
     }>()
     getPageDataMock.mockReset()
     getPageDataMock
@@ -570,24 +561,24 @@ describe('PageDetail', () => {
     expect(getPageDataMock).toHaveBeenCalledWith('book-1', 4)
 
     page4.resolve({
-      success: true,
       analysis: {
         page_num: 4,
         page_summary: '第 4 页摘要',
         panels: [],
       },
+      sourceUrl: '',
     })
     await flushPromises()
 
     expect(wrapper.text()).toContain('第 4 页摘要')
 
     page3.resolve({
-      success: true,
       analysis: {
         page_num: 3,
         page_summary: '第 3 页迟到摘要',
         panels: [],
       },
+      sourceUrl: '',
     })
     await flushPromises()
 

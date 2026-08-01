@@ -18,13 +18,13 @@ const {
   regeneratePageImageMock,
   savePagesMock,
   setContinuationReferenceTokensMock,
-  waitForContinuationJobMock,
+  waitForJobMock,
 } = vi.hoisted(() => ({
   generateAllPageImagesMock: vi.fn(),
   regeneratePageImageMock: vi.fn(),
   savePagesMock: vi.fn(),
   setContinuationReferenceTokensMock: vi.fn(),
-  waitForContinuationJobMock: vi.fn(),
+  waitForJobMock: vi.fn(),
 }))
 
 vi.mock('@/api/continuation', () => ({
@@ -32,7 +32,10 @@ vi.mock('@/api/continuation', () => ({
   regeneratePageImage: regeneratePageImageMock,
   savePages: savePagesMock,
   setContinuationReferenceTokens: setContinuationReferenceTokensMock,
-  waitForContinuationJob: waitForContinuationJobMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ waitForJob: waitForJobMock }),
 }))
 
 function page(pageNumber: number, finalPrompt = `prompt-${pageNumber}`): PageContent {
@@ -81,9 +84,9 @@ describe('useImageGeneration backend job ownership', () => {
   beforeEach(() => {
     generateAllPageImagesMock.mockReset().mockResolvedValue('job-1')
     regeneratePageImageMock.mockReset()
-    savePagesMock.mockReset().mockResolvedValue({ success: true })
+    savePagesMock.mockReset().mockResolvedValue(undefined)
     setContinuationReferenceTokensMock.mockReset().mockResolvedValue(undefined)
-    waitForContinuationJobMock.mockReset().mockResolvedValue({ status: 'completed' })
+    waitForJobMock.mockReset().mockResolvedValue({ status: 'completed' })
   })
 
   it('submits one durable batch job instead of generating pages in the browser loop', async () => {
@@ -94,21 +97,19 @@ describe('useImageGeneration backend job ownership', () => {
     await composable.batchGenerateImages(pages.value, ['asset-9', 'asset-10'])
 
     expect(savePagesMock).toHaveBeenCalledOnce()
-    expect(setContinuationReferenceTokensMock).toHaveBeenCalledWith(
-      'book-1',
-      ['asset-9', 'asset-10'],
-    )
+    expect(setContinuationReferenceTokensMock).toHaveBeenCalledWith('book-1', [
+      'asset-9',
+      'asset-10',
+    ])
     expect(generateAllPageImagesMock).toHaveBeenCalledOnce()
     expect(generateAllPageImagesMock).toHaveBeenCalledWith('book-1', [1, 2])
-    expect(waitForContinuationJobMock).toHaveBeenCalledWith(
-      'job-1',
-      800,
-      expect.any(Function),
-    )
+    expect(waitForJobMock).toHaveBeenCalledWith('job-1', {
+      onProgress: expect.any(Function),
+    })
     expect(state.initializeData).toHaveBeenCalledOnce()
     expect(state.showMessage).toHaveBeenCalledWith(
       expect.stringContaining('关闭浏览器也会继续运行'),
-      'info',
+      'info'
     )
   })
 
@@ -123,14 +124,14 @@ describe('useImageGeneration backend job ownership', () => {
 
   it('does not refresh stale UI state after the selected book changes', async () => {
     const pending = deferred<{ status: string }>()
-    waitForContinuationJobMock.mockReturnValueOnce(pending.promise)
+    waitForJobMock.mockReturnValueOnce(pending.promise)
     const pages = ref([page(1)])
     const state = createState(pages)
     const bookId = ref('book-1')
     const composable = useImageGeneration(bookId, state)
 
     const generation = composable.batchGenerateImages(pages.value)
-    await vi.waitFor(() => expect(waitForContinuationJobMock).toHaveBeenCalled())
+    await vi.waitFor(() => expect(waitForJobMock).toHaveBeenCalled())
     bookId.value = 'book-2'
     pending.resolve({ status: 'completed' })
     await generation
@@ -138,7 +139,7 @@ describe('useImageGeneration backend job ownership', () => {
     expect(state.initializeData).not.toHaveBeenCalled()
     expect(state.showMessage).not.toHaveBeenCalledWith(
       expect.stringContaining('图片生成完成'),
-      'success',
+      'success'
     )
     expect(composable.isGenerating.value).toBe(false)
   })

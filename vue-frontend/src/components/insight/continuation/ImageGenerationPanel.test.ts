@@ -21,10 +21,10 @@ const componentSourcePath = resolve(process.cwd(), 'src/components/insight/conti
 
 vi.mock('@/api/continuation', () => ({
   getAvailableImages: vi.fn().mockResolvedValue({
-    success: true,
     original_images: [],
     continuation_images: [],
     character_forms: [],
+    total_original_pages: 0,
   }),
 }))
 
@@ -74,10 +74,10 @@ describe('ImageGenerationPanel', () => {
   beforeEach(() => {
     vi.mocked(getAvailableImages).mockReset()
     vi.mocked(getAvailableImages).mockResolvedValue({
-      success: true,
       original_images: [],
       continuation_images: [],
       character_forms: [],
+      total_original_pages: 0,
     })
     stateStub.styleRefPages.value = 3
     stateStub.getGeneratedImageUrl.mockClear()
@@ -402,12 +402,12 @@ describe('ImageGenerationPanel', () => {
     await getButtonByText(wrapper, '选择初始参考图').trigger('click')
 
     bookTwoImages.resolve({
-      success: true,
       original_images: [
         { page_number: 2, path: '/tmp/book-2.png', has_image: true, token: 'book-2-token' },
       ],
       continuation_images: [],
       character_forms: [],
+      total_original_pages: 1,
     })
     await Promise.resolve()
     await wrapper.vm.$nextTick()
@@ -415,12 +415,12 @@ describe('ImageGenerationPanel', () => {
     expect(wrapper.find('.reference-selector-stub').text()).toBe('book-2-token')
 
     bookOneImages.resolve({
-      success: true,
       original_images: [
         { page_number: 1, path: '/tmp/book-1.png', has_image: true, token: 'book-1-token' },
       ],
       continuation_images: [],
       character_forms: [],
+      total_original_pages: 1,
     })
     await Promise.resolve()
     await wrapper.vm.$nextTick()

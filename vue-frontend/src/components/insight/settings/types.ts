@@ -2,7 +2,6 @@ import {
   AI_PROVIDER_MANIFEST,
   getProviderDefaultModel,
   getProviderOptionsForCapability,
-  providerSupportsCapability,
 } from '@/config/aiProviders'
 
 export interface CustomLayer {
@@ -11,31 +10,9 @@ export interface CustomLayer {
   align: boolean
 }
 
-export interface ModelInfo {
-  id: string
-  name: string
-}
-
 export const API_PROVIDER_OPTIONS = AI_PROVIDER_MANIFEST
   .filter(entry => entry.capabilities.some(cap => ['vlm', 'chat', 'embedding', 'rerank', 'imageGen'].includes(cap)))
   .map(entry => ({ value: entry.id, label: entry.label }))
-
-export const PROVIDER_CAPABILITIES: Record<string, {
-  vlm: boolean
-  embedding: boolean
-  rerank: boolean
-  imageGen: boolean
-}> = Object.fromEntries(
-  API_PROVIDER_OPTIONS.map(option => [
-    option.value,
-    {
-      vlm: providerSupportsCapability(option.value, 'vlm'),
-      embedding: providerSupportsCapability(option.value, 'embedding'),
-      rerank: providerSupportsCapability(option.value, 'rerank'),
-      imageGen: providerSupportsCapability(option.value, 'imageGen'),
-    },
-  ])
-)
 
 export function getProvidersForCapability(capability: 'vlm' | 'chat' | 'embedding' | 'rerank' | 'imageGen') {
   return getProviderOptionsForCapability(capability)

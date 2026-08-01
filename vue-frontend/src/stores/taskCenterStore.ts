@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch, type WatchStopHandle } from 'vue'
 import { defineStore } from 'pinia'
 import {
   jobsApi,
@@ -28,8 +28,29 @@ const EVENT_TYPES = [
   'step_completed',
   'page_completed',
   'page_failed',
+  'page_skipped',
   'drain_acknowledged',
+  'plugin_stage_completed',
+  'plugin_log',
+  'plugin_hook_failed',
+  'plugin_hook_completed',
+  'plugin_agent_state',
+  'plugin_agent_assistant_delta',
+  'plugin_agent_assistant',
+  'plugin_agent_tool_call',
+  'plugin_agent_tool_result',
+  'plugin_agent_validation',
+  'plugin_agent_done',
+  'plugin_agent_error',
+  'web_import_agent_log',
 ]
+
+type TaskCenterEventListener = (event: V2JobEvent) => void
+
+export interface WaitForJobOptions {
+  onProgress?: (progress: V2Job['progress']) => void
+  signal?: AbortSignal
+}
 
 export interface TaskCenterFocus {
   jobId?: string
@@ -58,34 +79,38 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const bookFilter = ref('')
   let eventSource: EventSource | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  const eventListeners = new Set<TaskCenterEventListener>()
 
-  const activeCount = computed(() => (
-    queue.value.filter(
-      job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status),
-    ).length
-  ))
+  const activeCount = computed(
+    () =>
+      queue.value.filter(job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status))
+        .length
+  )
   const queuedCount = computed(() => queue.value.filter(job => job.status === 'queued').length)
-  const interruptedCount = computed(() => (
-    history.value.filter(job => job.status === 'interrupted').length
-  ))
-  const currentJobs = computed(() => queue.value.filter(
-    job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status),
-  ))
+  const interruptedCount = computed(
+    () => history.value.filter(job => job.status === 'interrupted').length
+  )
+  const currentJobs = computed(() =>
+    queue.value.filter(job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status))
+  )
   const waitingJobs = computed(() => queue.value.filter(job => job.status === 'queued'))
-  const queueBatches = computed(() => groupJobsByBatch(queue.value))
   const waitingBatches = computed(() => groupJobsByBatch(waitingJobs.value))
-  const historyBatches = computed(() => groupJobsByBatch(history.value))
+  const filteredHistory = computed(() =>
+    history.value.filter(
+      job =>
+        (!statusFilter.value || job.status === statusFilter.value) &&
+        (!kindFilter.value || job.kind === kindFilter.value) &&
+        (!bookFilter.value || job.bookId === bookFilter.value)
+    )
+  )
+  const historyBatches = computed(() => groupJobsByBatch(filteredHistory.value))
 
   async function refresh(): Promise<void> {
     loading.value = true
     try {
       const [queueResult, historyResult] = await Promise.all([
         jobsApi.list('queue'),
-        jobsApi.list('history', {
-          ...(statusFilter.value ? { status: statusFilter.value } : {}),
-          ...(kindFilter.value ? { type: kindFilter.value } : {}),
-          ...(bookFilter.value ? { bookId: bookFilter.value } : {}),
-        }),
+        jobsApi.list('history'),
       ])
       queue.value = queueResult.items
       history.value = historyResult.items
@@ -109,6 +134,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       const parsed = JSON.parse(event.data) as V2JobEvent
       latestEvent.value = parsed
       lastEventId.value = Math.max(lastEventId.value, parsed.eventId)
+      for (const listener of eventListeners) listener(parsed)
       scheduleRefresh()
     } catch {
       scheduleRefresh()
@@ -143,6 +169,71 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     connected.value = false
   }
 
+  function subscribeEvents(listener: TaskCenterEventListener): () => void {
+    eventListeners.add(listener)
+    return () => eventListeners.delete(listener)
+  }
+
+  async function waitForJob(jobId: string, options: WaitForJobOptions = {}): Promise<V2JobDetail> {
+    options.signal?.throwIfAborted()
+    await refresh()
+    options.signal?.throwIfAborted()
+
+    return new Promise<V2JobDetail>((resolve, reject) => {
+      let settled = false
+      let terminalDetailLoading = false
+      let stop: WatchStopHandle | null = null
+
+      const finish = (action: () => void): void => {
+        if (settled) return
+        settled = true
+        stop?.()
+        options.signal?.removeEventListener('abort', abort)
+        action()
+      }
+      const abort = (): void => finish(() => reject(new DOMException('Aborted', 'AbortError')))
+
+      stop = watch(
+        () => [...queue.value, ...history.value].find(job => job.jobId === jobId),
+        job => {
+          if (!job) return
+          options.onProgress?.(job.progress)
+          if (
+            !['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted'].includes(
+              job.status
+            )
+          )
+            return
+          if (terminalDetailLoading) return
+          terminalDetailLoading = true
+
+          void jobsApi.get(jobId).then(
+            detail => {
+              if (detail.status === 'completed' || detail.status === 'completed_with_errors') {
+                finish(() => resolve(detail))
+                return
+              }
+              const rawError = detail.error
+              const message =
+                typeof rawError === 'string'
+                  ? rawError
+                  : rawError && typeof rawError === 'object' && typeof rawError.message === 'string'
+                    ? rawError.message
+                    : detail.status === 'interrupted'
+                      ? '任务已中断，请在任务中心继续或取消'
+                      : `任务${detail.status === 'cancelled' ? '已取消' : '失败'}`
+              finish(() => reject(new Error(message)))
+            },
+            error => finish(() => reject(error))
+          )
+        },
+        { immediate: true, deep: true }
+      )
+      options.signal?.addEventListener('abort', abort, { once: true })
+      if (settled) stop()
+    })
+  }
+
   async function runCommand<T>(command: () => Promise<T>): Promise<T> {
     const result = await command()
     await refresh()
@@ -165,10 +256,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     if (!detail || !firstEvent || olderEventsExhausted.value) return
     olderEventsLoading.value = true
     try {
-      const page = await jobsApi.events(
-        detail.jobId,
-        { before: firstEvent.eventId, limit: 50 },
-      )
+      const page = await jobsApi.events(detail.jobId, { before: firstEvent.eventId, limit: 50 })
       if (!page.items.length) {
         olderEventsExhausted.value = true
         return
@@ -188,14 +276,14 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
 
   async function retry(
     jobId: string,
-    strategy: 'current' | 'original' = 'current',
+    strategy: 'current' | 'original' = 'current'
   ): Promise<JobRetryAccepted> {
     return runCommand(() => jobsApi.retry(jobId, strategy))
   }
 
   async function retryFailed(
     jobId: string,
-    strategy: 'current' | 'original' = 'current',
+    strategy: 'current' | 'original' = 'current'
   ): Promise<JobRetryAccepted> {
     return runCommand(() => jobsApi.retryFailed(jobId, strategy))
   }
@@ -203,21 +291,20 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   async function retryLatestFailed(
     chapterId: string,
     kinds: V2Job['kind'][],
-    strategy: 'current' | 'original' = 'current',
+    strategy: 'current' | 'original' = 'current'
   ): Promise<JobRetryAccepted | null> {
     await refresh()
-    const source = history.value.find(job => (
-      job.chapterId === chapterId
-      && job.status === 'completed_with_errors'
-      && kinds.includes(job.kind)
-    ))
+    const source = history.value.find(
+      job =>
+        job.chapterId === chapterId &&
+        job.status === 'completed_with_errors' &&
+        kinds.includes(job.kind)
+    )
     return source ? retryFailed(source.jobId, strategy) : null
   }
 
   async function moveQueued(jobId: string, delta: -1 | 1): Promise<void> {
-    const sortable = queue.value.filter(job => (
-      job.status === 'queued' && !job.blockedReason
-    ))
+    const sortable = queue.value.filter(job => job.status === 'queued' && !job.blockedReason)
     const index = sortable.findIndex(job => job.jobId === jobId)
     const target = index + delta
     if (index < 0 || target < 0 || target >= sortable.length) return
@@ -227,9 +314,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   async function prioritizeQueued(jobId: string): Promise<void> {
-    const sortable = queue.value.filter(job => (
-      job.status === 'queued' && !job.blockedReason
-    ))
+    const sortable = queue.value.filter(job => job.status === 'queued' && !job.blockedReason)
     const index = sortable.findIndex(job => job.jobId === jobId)
     if (index <= 0) return
     const ordered = sortable.map(job => job.jobId)
@@ -259,18 +344,21 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     queuedCount,
     interruptedCount,
     currentJobs,
-    queueBatches,
     waitingBatches,
     historyBatches,
     initialize,
     disconnect,
+    subscribeEvents,
+    waitForJob,
     refresh,
     open: (target?: TaskCenterFocus) => {
       focusTarget.value = target || null
       drawerOpen.value = true
       void refresh()
     },
-    close: () => { drawerOpen.value = false },
+    close: () => {
+      drawerOpen.value = false
+    },
     pause: (jobId: string) => runCommand(() => jobsApi.pause(jobId)),
     resume: (jobId: string) => runCommand(() => jobsApi.resume(jobId)),
     continueJob: (jobId: string) => runCommand(() => jobsApi.continue(jobId)),
@@ -283,9 +371,8 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     moveQueued,
     prioritizeQueued,
     cancelBatch: (batchId: string) => runCommand(() => jobsApi.cancelBatch(batchId)),
-    prioritizeBatch: (batchId: string) => (
-      runCommand(() => jobsApi.prioritizeBatch(batchId, queueRevision.value))
-    ),
+    prioritizeBatch: (batchId: string) =>
+      runCommand(() => jobsApi.prioritizeBatch(batchId, queueRevision.value)),
     continueBatch: (batchId: string) => runCommand(() => jobsApi.continueBatch(batchId)),
     cancelQueued: () => runCommand(() => jobsApi.cancelQueued()),
     clearHistory: () => runCommand(() => jobsApi.clearHistory()),

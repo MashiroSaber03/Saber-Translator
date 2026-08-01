@@ -94,11 +94,8 @@
       @start-panel-resize="startPanelResize"
       @bubble-select="handleBubbleSelect"
       @bubble-multi-select="handleBubbleMultiSelect"
-      @bubble-drag-start="handleBubbleDragStart"
       @bubble-drag-end="handleBubbleDragEnd"
-      @bubble-resize-start="handleBubbleResizeStart"
       @bubble-resize-end="handleBubbleResizeEnd"
-      @bubble-rotate-start="handleBubbleRotateStart"
       @bubble-rotate-end="handleBubbleRotateEnd"
       @draw-bubble="handleDrawBubble"
       @bubble-update="handleBubbleUpdateWithSync"
@@ -153,11 +150,8 @@ const {
   currentDrawingRect,
   handleBubbleSelect,
   handleBubbleMultiSelect,
-  handleBubbleDragStart,
   handleBubbleDragEnd,
-  handleBubbleResizeStart,
   handleBubbleResizeEnd,
-  handleBubbleRotateStart,
   handleBubbleRotateEnd,
   toggleDrawingMode,
   handleDrawBubble,

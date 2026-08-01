@@ -49,7 +49,6 @@ describe('bubble factory source contract', () => {
       '点击检测一致性',
       '状态初始化一致性',
       '测试 createBubbleState',
-      '测试 isPointInPolygon',
       '生成有效',
       '验证',
       '// ============================================================',

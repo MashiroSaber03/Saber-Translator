@@ -26,7 +26,7 @@ import TimelinePanel from '@/components/insight/TimelinePanel.vue'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((nextResolve) => {
+  const promise = new Promise<T>(nextResolve => {
     resolve = nextResolve
   })
   return { promise, resolve }
@@ -47,45 +47,51 @@ describe('TimelinePanel', () => {
     regenerateTimelineMock.mockReset()
   })
 
-  it('uses the current timeline payload in load and regenerate flows', async () => {
+  it('loads the current timeline and refreshes queued regeneration after backend completion', async () => {
     const initialTimeline = {
-      success: true,
-      timeline: {
-        mode: 'enhanced',
-        plot_arcs: [
-          {
-            id: 'arc-1',
-            name: '开端',
-            description: '开端描述',
-            page_range: { start: 1, end: 3 },
-          },
-        ],
-        main_characters: [],
-        plot_threads: [],
-        story_summary: '初始概要',
-        stats: { total_events: 1, total_pages: 3, total_arcs: 1, total_characters: 0, total_threads: 0 },
+      mode: 'enhanced',
+      plot_arcs: [
+        {
+          id: 'arc-1',
+          name: '开端',
+          description: '开端描述',
+          page_range: { start: 1, end: 3 },
+        },
+      ],
+      main_characters: [],
+      plot_threads: [],
+      story_summary: '初始概要',
+      stats: {
+        total_events: 1,
+        total_pages: 3,
+        total_arcs: 1,
+        total_characters: 0,
+        total_threads: 0,
       },
     }
     const regeneratedTimeline = {
-      success: true,
-      timeline: {
-        mode: 'enhanced',
-        plot_arcs: [
-          {
-            id: 'arc-2',
-            name: '高潮',
-            description: '高潮描述',
-            page_range: { start: 4, end: 6 },
-          },
-        ],
-        main_characters: [],
-        plot_threads: [],
-        story_summary: '重生概要',
-        stats: { total_events: 2, total_pages: 6, total_arcs: 1, total_characters: 0, total_threads: 0 },
+      mode: 'enhanced',
+      plot_arcs: [
+        {
+          id: 'arc-2',
+          name: '高潮',
+          description: '高潮描述',
+          page_range: { start: 4, end: 6 },
+        },
+      ],
+      main_characters: [],
+      plot_threads: [],
+      story_summary: '重生概要',
+      stats: {
+        total_events: 2,
+        total_pages: 6,
+        total_arcs: 1,
+        total_characters: 0,
+        total_threads: 0,
       },
     }
     getTimelineMock.mockResolvedValueOnce(initialTimeline).mockResolvedValue(regeneratedTimeline)
-    regenerateTimelineMock.mockResolvedValue(regeneratedTimeline)
+    regenerateTimelineMock.mockResolvedValue('timeline-job-1')
 
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -104,6 +110,13 @@ describe('TimelinePanel', () => {
     expect(wrapper.text()).toContain('初始概要')
 
     await wrapper.find('.timeline-header__regenerate-action').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('时间线生成已进入任务中心，完成后将自动加载。')
+    expect(wrapper.text()).not.toContain('高潮')
+    expect(store.dataRefreshKey).toBe(refreshKeyBefore)
+
+    store.triggerDataRefresh()
     await flushPromises()
 
     expect(wrapper.text()).toContain('高潮')
@@ -136,23 +149,17 @@ describe('TimelinePanel', () => {
     expect(getTimelineMock).toHaveBeenCalledWith('book-2')
 
     secondTimeline.resolve({
-      success: true,
-      timeline: {
-        mode: 'enhanced',
-        plot_arcs: [{ id: 'book-2-arc', name: '当前书时间线', page_range: { start: 2, end: 4 } }],
-        stats: { total_events: 1, total_pages: 4 },
-      },
+      mode: 'enhanced',
+      plot_arcs: [{ id: 'book-2-arc', name: '当前书时间线', page_range: { start: 2, end: 4 } }],
+      stats: { total_events: 1, total_pages: 4 },
     })
     await flushPromises()
     expect(wrapper.text()).toContain('当前书时间线')
 
     firstTimeline.resolve({
-      success: true,
-      timeline: {
-        mode: 'enhanced',
-        plot_arcs: [{ id: 'book-1-arc', name: '旧书时间线', page_range: { start: 1, end: 3 } }],
-        stats: { total_events: 1, total_pages: 3 },
-      },
+      mode: 'enhanced',
+      plot_arcs: [{ id: 'book-1-arc', name: '旧书时间线', page_range: { start: 1, end: 3 } }],
+      stats: { total_events: 1, total_pages: 3 },
     })
     await flushPromises()
 
@@ -186,12 +193,9 @@ describe('TimelinePanel', () => {
 
     wrapper.unmount()
     pendingTimeline.resolve({
-      success: true,
-      timeline: {
-        mode: 'enhanced',
-        plot_arcs: [{ id: 'late-arc', name: '卸载后的时间线', page_range: { start: 1, end: 2 } }],
-        stats: { total_events: 1, total_pages: 2 },
-      },
+      mode: 'enhanced',
+      plot_arcs: [{ id: 'late-arc', name: '卸载后的时间线', page_range: { start: 1, end: 2 } }],
+      stats: { total_events: 1, total_pages: 2 },
     })
     await flushPromises()
 
@@ -219,7 +223,10 @@ describe('TimelinePanel', () => {
     expect(spinner.props('decorative')).toBe(false)
     expect(wrapper.text()).toContain('加载时间线...')
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'),
+      'utf8'
+    )
     expect(source).toContain('timeline-panel__loading-indicator')
     expect(source).not.toContain('timeline-loading-spinner')
   })
@@ -247,14 +254,11 @@ describe('TimelinePanel', () => {
 
   it('renders the no-data state through the product empty-state pattern', async () => {
     getTimelineMock.mockResolvedValueOnce({
-      success: true,
-      timeline: {
-        mode: 'enhanced',
-        plot_arcs: [],
-        main_characters: [],
-        plot_threads: [],
-        stats: { total_events: 0, total_pages: 0 },
-      },
+      mode: 'enhanced',
+      plot_arcs: [],
+      main_characters: [],
+      plot_threads: [],
+      stats: { total_events: 0, total_pages: 0 },
     })
 
     const pinia = createPinia()
@@ -272,42 +276,43 @@ describe('TimelinePanel', () => {
     const emptyState = wrapper.getComponent(ProductEmptyState)
     expect(emptyState.props('iconName')).toBe('bar-chart')
     expect(emptyState.props('title')).toBe('时间线尚未生成')
-    expect(emptyState.props('description')).toBe('完成漫画分析后会自动生成时间线，或点击下方按钮手动生成')
+    expect(emptyState.props('description')).toBe(
+      '完成漫画分析后会自动生成时间线，或点击下方按钮手动生成'
+    )
     expect(wrapper.find('.timeline-empty-state').exists()).toBe(false)
     expect(wrapper.find('.empty-icon').exists()).toBe(false)
 
-    const generateButton = wrapper.findAll('button').find(button => button.text().includes('生成时间线'))
+    const generateButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('生成时间线'))
     expect(generateButton).toBeTruthy()
     await generateButton!.trigger('click')
     expect(regenerateTimelineMock).toHaveBeenCalledWith('book-1')
   })
 
   it('shows durable queued feedback until a generated timeline can be loaded', async () => {
-    getTimelineMock.mockResolvedValueOnce({
-      success: false,
-      error: '时间线尚未生成',
-    })
-    regenerateTimelineMock.mockResolvedValueOnce({
-      success: true,
-      task_id: 'timeline-job-1',
-      message: '时间线重建已进入任务中心',
-    })
+    getTimelineMock.mockResolvedValueOnce(null)
+    regenerateTimelineMock.mockResolvedValueOnce('timeline-job-1')
 
     const wrapper = mount(TimelinePanel)
     await flushPromises()
 
-    const generateButton = wrapper.findAll('button')
+    const generateButton = wrapper
+      .findAll('button')
       .find(button => button.text().includes('生成时间线'))
     await generateButton!.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('时间线生成中')
-    expect(wrapper.text()).toContain('时间线重建已进入任务中心')
+    expect(wrapper.text()).toContain('时间线生成已进入任务中心，完成后将自动加载。')
     expect(wrapper.text()).not.toContain('时间线尚未生成')
   })
 
   it('maps timeline owner shadows through semantic tokens', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'),
+      'utf8'
+    )
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
 
     expect(styleBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
@@ -316,13 +321,19 @@ describe('TimelinePanel', () => {
   })
 
   it('does not redefine the shared button primitive skin in the timeline panel owner', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'),
+      'utf8'
+    )
 
     expect(source).not.toContain('--ui-button-')
   })
 
   it('uses timeline-panel owner hooks for parent layout styling', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/TimelinePanel.vue'),
+      'utf8'
+    )
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
     const oldHooks = [
       'timeline-tab',

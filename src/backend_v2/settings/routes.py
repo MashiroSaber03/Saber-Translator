@@ -16,6 +16,7 @@ from src.backend_v2.api.request_helpers import (
     require_idempotency_key as _require_idempotency_key,
     required_integer as _required_integer,
     required_string as _required_string,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.settings.diagnostics import (
@@ -34,6 +35,18 @@ from src.backend_v2.storage.platform_repositories import (
 )
 
 LOGGER = logging.getLogger("saber.api.settings")
+
+_DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "provider",
+        "domain",
+        "baseUrl",
+        "model",
+        "prompt",
+        "secret",
+        "credentialId",
+    }
+)
 
 
 def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
@@ -96,11 +109,55 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.put("/settings/transactions")
     def save_settings_transaction() -> Response:
         idempotency_key = _require_idempotency_key()
-        body = _json_body()
-        setting_rows = _object_array(body, "settings")
-        book_setting_rows = _object_array(body, "bookSettings")
-        provider_rows = _object_array(body, "providerSettings")
-        credential_rows = _object_array(body, "credentialEdits")
+        body = _json_body(
+            allowed_keys={
+                "settings",
+                "bookSettings",
+                "providerSettings",
+                "credentialEdits",
+            }
+        )
+        setting_rows = _object_array(
+            body,
+            "settings",
+            allowed_keys={"domain", "payload", "baseRevision", "schemaVersion"},
+        )
+        book_setting_rows = _object_array(
+            body,
+            "bookSettings",
+            allowed_keys={
+                "bookId",
+                "domain",
+                "payload",
+                "baseRevision",
+                "schemaVersion",
+            },
+        )
+        provider_rows = _object_array(
+            body,
+            "providerSettings",
+            allowed_keys={
+                "domain",
+                "provider",
+                "payload",
+                "baseRevision",
+                "credentialVersionId",
+                "credentialEditRef",
+                "schemaVersion",
+            },
+        )
+        credential_rows = _object_array(
+            body,
+            "credentialEdits",
+            allowed_keys={
+                "domain",
+                "provider",
+                "secret",
+                "baseRevision",
+                "credentialId",
+                "clientRef",
+            },
+        )
         result, replayed = settings.save_transaction_idempotent(
             idempotency_key=idempotency_key,
             request_body=body,
@@ -188,7 +245,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.patch("/settings/workflow-preferences")
     def update_workflow_preferences() -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"payload", "baseRevision"})
         result = settings.save_transaction(
             settings=(
                 SettingMutation(
@@ -203,13 +260,22 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/model-catalog")
     def model_catalog() -> Response:
-        return jsonify(diagnostics.model_catalog(_json_body()))
+        return jsonify(
+            diagnostics.model_catalog(
+                _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
+            )
+        )
 
     @blueprint.post("/connection-tests/<kind>")
     def connection_test(kind: str) -> Response:
         if kind not in CONNECTION_TEST_KINDS:
             raise ValueError("unsupported connection test kind")
-        return jsonify(diagnostics.connection_test(kind, _json_body()))
+        return jsonify(
+            diagnostics.connection_test(
+                kind,
+                _json_body(allowed_keys=_DIAGNOSTIC_FIELDS),
+            )
+        )
 
     @blueprint.get("/prompts")
     def list_prompts() -> Response:
@@ -220,7 +286,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.post("/prompts")
     def create_prompt() -> tuple[Response, int]:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"type", "name", "content"})
         return (
             jsonify(
                 prompt_repository.create(
@@ -235,7 +301,9 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.put("/prompts/<prompt_id>")
     def update_prompt(prompt_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"name", "content", "baseRevision"}
+        )
         return jsonify(
             prompt_repository.update(
                 prompt_id=prompt_id,
@@ -254,7 +322,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.post("/prompts/<prompt_id>/reset")
     def reset_prompt(prompt_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision"})
         return jsonify(
             prompt_repository.reset(
                 prompt_id,
@@ -269,6 +337,10 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     @blueprint.post("/fonts")
     def upload_font() -> tuple[Response, int]:
         _require_idempotency_key()
+        _validate_multipart_fields(
+            allowed_form_keys={"displayName"},
+            allowed_file_keys={"file"},
+        )
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
@@ -329,12 +401,21 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 def _object_array(
     body: dict[str, object],
     key: str,
+    *,
+    allowed_keys: set[str],
 ) -> list[dict[str, object]]:
     value = body.get(key, [])
     if not isinstance(value, list) or not all(
         isinstance(row, dict) for row in value
     ):
         raise ValueError(f"{key} must be an object array")
+    for index, row in enumerate(value):
+        unknown = set(row) - allowed_keys
+        if unknown:
+            raise ValueError(
+                f"{key}[{index}] contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
     return value
 
 

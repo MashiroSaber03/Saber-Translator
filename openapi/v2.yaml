@@ -93,6 +93,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 required: [items]
                 properties:
                   items:
@@ -109,6 +110,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 required: [items]
                 properties:
                   items:
@@ -166,7 +168,7 @@ paths:
               additionalProperties: false
               required: [payload, baseRevision]
               properties:
-                payload: {type: object, additionalProperties: true}
+                payload: {$ref: "#/components/schemas/WorkflowPreferences"}
                 baseRevision: {type: integer, minimum: 0}
       responses:
         "200":
@@ -363,6 +365,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 required: [id, assetUrl]
                 properties:
                   id: {$ref: "#/components/schemas/Uuid"}
@@ -398,6 +401,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 required: [recovered]
                 properties:
                   recovered: {type: integer, minimum: 0}
@@ -414,6 +418,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 required: [removed]
                 properties:
                   removed: {type: integer, minimum: 0}
@@ -860,7 +865,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {type: object, additionalProperties: true}
+            schema: {$ref: "#/components/schemas/StudioDocumentCreateCommand"}
       responses:
         "201":
           description: Created canonical Studio document.
@@ -879,9 +884,9 @@ paths:
         required: true
         content:
           multipart/form-data:
-            schema: {$ref: "#/components/schemas/FileUpload"}
+            schema: {$ref: "#/components/schemas/FileUploadCommand"}
           application/json:
-            schema: {type: object, additionalProperties: true}
+            schema: {$ref: "#/components/schemas/StudioDocumentImportCommand"}
       responses:
         "201":
           description: Imported canonical Studio document.
@@ -898,7 +903,7 @@ paths:
         required: true
         content:
           multipart/form-data:
-            schema: {$ref: "#/components/schemas/FileUpload"}
+            schema: {$ref: "#/components/schemas/FileUploadCommand"}
       responses:
         "201":
           description: Validated immutable image asset.
@@ -942,7 +947,17 @@ paths:
         - $ref: "#/components/parameters/DocumentId"
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
-        "200": {description: Document deleted.}
+        "200":
+          description: Document deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [deleted, documentId]
+                properties:
+                  deleted: {type: boolean, const: true}
+                  documentId: {$ref: "#/components/schemas/Uuid"}
         "423": {$ref: "#/components/responses/Locked"}
   /studio/documents/{document_id}/generate:
     post:
@@ -978,11 +993,41 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [baseRevision]
               properties:
                 baseRevision: {type: integer, minimum: 1}
       responses:
-        "200": {description: Diagnostics persisted with CAS.}
+        "200":
+          description: Diagnostics persisted with CAS.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [documentRevision, diagnostics]
+                properties:
+                  documentRevision: {type: integer, minimum: 1}
+                  diagnostics:
+                    type: object
+                    additionalProperties: false
+                    required: [valid, errors, warnings, checks]
+                    properties:
+                      valid: {type: boolean}
+                      errors:
+                        type: array
+                        items: {type: string}
+                      warnings:
+                        type: array
+                        items: {type: string}
+                      checks:
+                        type: object
+                        additionalProperties: false
+                        required: [document, v3_export, v2_export]
+                        properties:
+                          document: {type: boolean}
+                          v3_export: {type: boolean}
+                          v2_export: {type: boolean}
         "409": {$ref: "#/components/responses/Conflict"}
   /studio/documents/{document_id}/export:
     get:
@@ -992,11 +1037,15 @@ paths:
         - $ref: "#/components/parameters/DocumentId"
         - name: format
           in: query
-          required: true
-          schema: {type: string, enum: [v2, v3, png, worldbook]}
+          schema: {type: string, enum: [v2, v3, png, worldbook], default: v3}
       responses:
         "200":
           description: Portable character-card file.
+          content:
+            application/json:
+              schema: {type: string, format: binary}
+            image/png:
+              schema: {type: string, format: binary}
   /studio/documents/{document_id}/worldbook/import:
     post:
       tags: [studio]
@@ -1015,7 +1064,7 @@ paths:
           application/json:
             schema: {type: object, additionalProperties: true}
           multipart/form-data:
-            schema: {$ref: "#/components/schemas/FileUpload"}
+            schema: {$ref: "#/components/schemas/FileUploadCommand"}
       responses:
         "200":
           description: Worldbook replaced with document revision CAS.
@@ -1034,7 +1083,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {type: object, additionalProperties: true}
+            schema: {$ref: "#/components/schemas/StudioAgentCommand"}
       responses:
         "200":
           description: Temporary assistant chunks.
@@ -1090,7 +1139,7 @@ paths:
           application/json:
             schema: {type: object, additionalProperties: true}
           multipart/form-data:
-            schema: {$ref: "#/components/schemas/FileUpload"}
+            schema: {$ref: "#/components/schemas/FileUploadCommand"}
       responses:
         "201":
           description: Imported active session with restored asset attachments.
@@ -1121,7 +1170,17 @@ paths:
           required: true
           schema: {type: integer, minimum: 1}
       responses:
-        "200": {description: Archived session permanently deleted.}
+        "200":
+          description: Archived session permanently deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [deleted, sessionId]
+                properties:
+                  deleted: {type: boolean, const: true}
+                  sessionId: {$ref: "#/components/schemas/Uuid"}
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
   /studio/chat/sessions/{session_id}/activate:
@@ -1181,11 +1240,24 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [operationId]
               properties:
                 operationId: {$ref: "#/components/schemas/Uuid"}
       responses:
-        "200": {description: Active operation cancelled and generation advanced.}
+        "200":
+          description: Active operation cancelled and generation advanced.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [operationId, status, sessionRevision, sessionGeneration]
+                properties:
+                  operationId: {$ref: "#/components/schemas/Uuid"}
+                  status: {type: string, const: cancelled}
+                  sessionRevision: {type: integer, minimum: 1}
+                  sessionGeneration: {type: integer, minimum: 1}
         "409": {$ref: "#/components/responses/Conflict"}
   /studio/chat/sessions/{session_id}/summarize:
     post:
@@ -1200,6 +1272,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [baseSessionRevision]
               properties:
                 baseSessionRevision: {type: integer, minimum: 1}
@@ -1265,6 +1338,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [baseSessionRevision]
               properties:
                 baseSessionRevision: {type: integer, minimum: 1}
@@ -1288,6 +1362,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [baseSessionRevision]
               properties:
                 baseSessionRevision: {type: integer, minimum: 1}
@@ -1518,6 +1593,14 @@ paths:
       responses:
         "200":
           description: New chapter order revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [chapterOrderRevision]
+                properties:
+                  chapterOrderRevision: {type: integer, minimum: 1}
         "409":
           $ref: "#/components/responses/Conflict"
   /chapters/{chapter_id}:
@@ -1945,6 +2028,14 @@ paths:
       responses:
         "200":
           description: Lease released.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [released]
+                properties:
+                  released: {type: boolean, const: true}
         "423":
           $ref: "#/components/responses/Locked"
   /pages/{page_id}/document:
@@ -1978,7 +2069,7 @@ paths:
           description: Updated page document.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/PageDocument"}
+              schema: {$ref: "#/components/schemas/PageDocumentMutationResponse"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
@@ -3638,21 +3729,27 @@ components:
         baseRevision: {type: integer, minimum: 0}
         schemaVersion: {type: integer, minimum: 1}
     BookSettingMutation:
-      allOf:
-        - $ref: "#/components/schemas/SettingMutation"
-        - type: object
-          required: [bookId]
-          properties:
-            bookId: {$ref: "#/components/schemas/Uuid"}
+      type: object
+      additionalProperties: false
+      required: [bookId, domain, payload, baseRevision, schemaVersion]
+      properties:
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        domain: {type: string}
+        payload: {type: object, additionalProperties: true}
+        baseRevision: {type: integer, minimum: 0}
+        schemaVersion: {type: integer, minimum: 1}
     ProviderSettingMutation:
-      allOf:
-        - $ref: "#/components/schemas/SettingMutation"
-        - type: object
-          required: [provider]
-          properties:
-            provider: {type: string}
-            credentialVersionId: {$ref: "#/components/schemas/Uuid"}
-            credentialEditRef: {type: string}
+      type: object
+      additionalProperties: false
+      required: [domain, provider, payload, baseRevision, schemaVersion]
+      properties:
+        domain: {type: string}
+        provider: {type: string}
+        payload: {type: object, additionalProperties: true}
+        baseRevision: {type: integer, minimum: 0}
+        credentialVersionId: {$ref: "#/components/schemas/Uuid"}
+        credentialEditRef: {type: string}
+        schemaVersion: {type: integer, minimum: 1}
     CredentialEdit:
       type: object
       additionalProperties: false
@@ -3749,9 +3846,8 @@ components:
     ModelCatalogResponse:
       type: object
       additionalProperties: false
-      required: [success, models]
+      required: [models]
       properties:
-        success: {type: boolean, const: true}
         models:
           type: array
           items:
@@ -4471,22 +4567,56 @@ components:
           enum: [bubble_ocr, bubble_color, page_detect, bubble_translate]
         baseRevision: {type: integer, minimum: 1}
         bubbleId: {$ref: "#/components/schemas/Uuid"}
-        payload:
-          type: object
-          additionalProperties: true
     BubbleMutation:
+      oneOf:
+        - $ref: "#/components/schemas/BubbleCreateMutation"
+        - $ref: "#/components/schemas/ExistingBubbleMutation"
+    BubbleCreateMutation:
       type: object
       additionalProperties: false
-      required: [op, bubbleId]
+      required: [op, clientMutationId]
       properties:
         op:
           type: string
-          enum: [create, patch, delete, reset]
+          const: create
+        clientMutationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fields:
+          type: object
+          additionalProperties: true
+    ExistingBubbleMutation:
+      type: object
+      additionalProperties: false
+      required: [op, clientMutationId, bubbleId]
+      properties:
+        op:
+          type: string
+          enum: [patch, delete, reset]
+        clientMutationId:
+          type: string
+          minLength: 1
+          maxLength: 128
         bubbleId:
           $ref: "#/components/schemas/Uuid"
         fields:
           type: object
           additionalProperties: true
+    BubbleMutationResult:
+      type: object
+      additionalProperties: false
+      required: [op, clientMutationId, bubbleId]
+      properties:
+        op:
+          type: string
+          enum: [create, patch, delete, reset]
+        clientMutationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        bubbleId:
+          $ref: "#/components/schemas/Uuid"
     PageDocumentBatchMutation:
       type: object
       additionalProperties: false
@@ -4565,6 +4695,7 @@ components:
         - pageId
         - chapterId
         - documentRevision
+        - renderStatus
         - defaultFontId
         - pageStyleDefaults
         - pageStyleSchemaVersion
@@ -4577,6 +4708,16 @@ components:
         documentRevision:
           type: integer
           minimum: 1
+        renderStatus:
+          type: string
+          enum:
+            - not_rendered
+            - ready
+            - stale
+            - rendering
+            - render_failed
+            - awaiting_repair
+            - repair_failed
         defaultFontId:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
@@ -4606,9 +4747,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BubbleDocument"
-    RepairMethod:
-      type: string
-      enum: [solid, lama_mpe, litelama, restore_source]
+    PageDocumentMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [document, mutationResults]
+      properties:
+        document:
+          $ref: "#/components/schemas/PageDocument"
+        mutationResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/BubbleMutationResult"
     BubbleRepairCommand:
       type: object
       additionalProperties: false
@@ -4661,12 +4810,6 @@ components:
         method:
           type: string
           const: restore_source
-    FileUpload:
-      type: object
-      additionalProperties: true
-      required: [file]
-      properties:
-        file: {type: string, format: binary}
     StudioAsset:
       type: object
       additionalProperties: false
@@ -4724,6 +4867,20 @@ components:
         exportArtifacts: {type: object, additionalProperties: true}
         createdAt: {type: [string, "null"], format: date-time}
         updatedAt: {type: [string, "null"], format: date-time}
+    StudioDocumentCreateCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        title: {type: string, maxLength: 500}
+        kind: {type: string, enum: [manual, analysis, imported]}
+        candidate: {type: object, additionalProperties: true}
+        document: {type: object, additionalProperties: true}
+    StudioDocumentImportCommand:
+      type: object
+      additionalProperties: false
+      required: [payload]
+      properties:
+        payload: {type: object, additionalProperties: true}
     StudioDocumentMutation:
       type: object
       additionalProperties: false
@@ -4742,6 +4899,14 @@ components:
           type: string
           enum:
             [identity, greetings, lorebook, regex, state-tasks, translate, full, review]
+    StudioAgentCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        content: {type: string, minLength: 1, maxLength: 100000}
+        messages:
+          type: array
+          items: {type: object, additionalProperties: true}
     StudioIndex:
       type: object
       additionalProperties: false
@@ -5539,8 +5704,16 @@ components:
         - logicalSourcePath
         - sourceRevision
         - documentRevision
+        - renderedRevision
+        - renderStatus
+        - detectionState
         - sourceUrl
         - thumbnailSourceUrl
+        - cleanUrl
+        - translatedUrl
+        - thumbnailTranslatedUrl
+        - width
+        - height
       properties:
         id: {$ref: "#/components/schemas/Uuid"}
         chapterId: {$ref: "#/components/schemas/Uuid"}
@@ -5549,8 +5722,19 @@ components:
         sourceRevision: {type: integer, minimum: 1}
         documentRevision: {type: integer, minimum: 1}
         renderedRevision: {type: [integer, "null"], minimum: 1}
-        renderStatus: {type: string}
-        detectionState: {type: string}
+        renderStatus:
+          type: string
+          enum:
+            - not_rendered
+            - ready
+            - stale
+            - rendering
+            - render_failed
+            - awaiting_repair
+            - repair_failed
+        detectionState:
+          type: string
+          enum: [unprocessed, processed]
         sourceUrl: {type: string}
         thumbnailSourceUrl: {type: string}
         cleanUrl: {type: [string, "null"]}

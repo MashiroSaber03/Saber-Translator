@@ -1,4 +1,4 @@
-import { getCurrentInstance, onMounted, onUnmounted, ref, watch } from 'vue'
+import { getCurrentInstance, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -26,20 +26,6 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
 
-export interface InitState {
-  isInitializing: boolean
-  isInitialized: boolean
-  initError: string | null
-  fontList: V2Font[]
-  promptNames: string[]
-  textboxPromptNames: string[]
-  currentBookId: string | null
-  currentChapterId: string | null
-  currentBookTitle: string | null
-  currentChapterTitle: string | null
-  isBookshelfMode: boolean
-}
-
 export function useTranslateInit() {
   const route = useRoute()
   const settingsStore = useSettingsStore()
@@ -50,10 +36,7 @@ export function useTranslateInit() {
 
   const isInitializing = ref(false)
   const isInitialized = ref(false)
-  const initError = ref<string | null>(null)
   const fontList = ref<V2Font[]>([])
-  const promptNames = ref<string[]>([])
-  const textboxPromptNames = ref<string[]>([])
   const currentBookId = ref<string | null>(null)
   const currentChapterId = ref<string | null>(null)
   const currentBookTitle = ref<string | null>(null)
@@ -158,23 +141,20 @@ export function useTranslateInit() {
     return true
   }
 
-  async function initializeApp(force: boolean = false): Promise<void> {
+  async function initializeApp(): Promise<void> {
     // SPA 场景下重新进入翻译页时，需要重新加载书籍/章节上下文。
-    if (!force && (isInitializing.value || isInitialized.value)) {
+    if (isInitializing.value || isInitialized.value) {
       await initializeBookChapterContext()
       return
     }
 
     isInitializing.value = true
-    initError.value = null
 
     try {
       settingsStore.initSettings()
       await initializeBookChapterContext()
 
       isInitialized.value = true
-    } catch (error) {
-      initError.value = error instanceof Error ? error.message : '初始化失败'
     } finally {
       isInitializing.value = false
     }
@@ -226,8 +206,6 @@ export function useTranslateInit() {
       const textboxPrompts = bootstrap.prompts.filter(
         prompt => prompt.type === 'textbox',
       )
-      promptNames.value = translationPrompts.map(prompt => prompt.name)
-      textboxPromptNames.value = textboxPrompts.map(prompt => prompt.name)
       const translateFactory = translationPrompts.find(prompt => prompt.isFactoryDefault)
       if (!settingsStore.settings.translatePrompt && translateFactory) {
         settingsStore.setTranslatePrompt(translateFactory.content)
@@ -451,19 +429,8 @@ export function useTranslateInit() {
     }
   }
 
-  function setupAutoInit(): void {
-    onMounted(async () => {
-      await initializeApp()
-    })
-  }
-
   return {
-    isInitializing,
-    isInitialized,
-    initError,
     fontList,
-    promptNames,
-    textboxPromptNames,
     currentBookId,
     currentChapterId,
     currentBookTitle,
@@ -478,8 +445,5 @@ export function useTranslateInit() {
     switchImage,
     goToPrevious,
     goToNext,
-    editMode,
-
-    setupAutoInit
   }
 }

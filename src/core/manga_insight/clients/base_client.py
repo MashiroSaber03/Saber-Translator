@@ -18,9 +18,6 @@ from src.shared.openai_rate_limits import SharedRPMLimiter
 
 logger = logging.getLogger("MangaInsight.BaseClient")
 
-RPMLimiter = SharedRPMLimiter
-
-
 class BaseAPIClient:
     """
     API 客户端基类
@@ -35,6 +32,7 @@ class BaseAPIClient:
         base_url: Optional[str] = None,
         resolved_base_url: Optional[str] = None,
         rpm_limit: int = 0,
+        credential_version_id: str | None = None,
         timeout: float = 120.0,
     ):
         """
@@ -55,7 +53,11 @@ class BaseAPIClient:
             if resolved_base_url is not None
             else resolve_provider_base_url(provider, base_url) or ""
         )
-        self._rpm_limiter = RPMLimiter(rpm_limit)
+        self._rpm_limiter = SharedRPMLimiter(
+            rpm_limit,
+            provider=self.provider,
+            credential_version_id=credential_version_id,
+        )
         self._timeout = timeout
 
         # 创建 HTTP 客户端

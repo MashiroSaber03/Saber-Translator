@@ -151,6 +151,42 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 
+function makePlugin(overrides: Record<string, unknown> = {}) {
+  return {
+    pluginId: 'plugin_one',
+    displayName: 'Plugin One',
+    author: 'Tests',
+    description: 'desc',
+    state: 'disabled',
+    defaultEnabled: false,
+    runtimeEnabled: false,
+    config: {},
+    configRevision: 1,
+    errorMessage: null,
+    pluginVersionId: 'plugin-version-one',
+    packageVersion: '1.0.0',
+    currentRevision: 1,
+    manifest: {
+      schema_version: 3,
+      plugin_id: 'plugin_one',
+      display_name: 'Plugin One',
+      package_version: '1.0.0',
+      entrypoint: 'plugin:run',
+      hooks: [],
+      supported_steps: ['ocr'],
+      supported_modes: ['standard'],
+      priority: 0,
+      failure_policy: 'continue',
+      author: 'Tests',
+      description: 'desc',
+      default_enabled: false,
+      config_schema: {},
+    },
+    configSchema: {},
+    ...overrides,
+  }
+}
+
 describe('PluginManager', () => {
   enableAutoUnmount(afterEach)
 
@@ -173,37 +209,15 @@ describe('PluginManager', () => {
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
 
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: false,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
+    getPluginsMock.mockResolvedValue([makePlugin()])
     getPluginDefaultStatesMock.mockResolvedValue({
-      success: true,
-      default_states: {
-        plugin_one: false,
-      },
+      plugin_one: false,
     })
     exportPluginMock.mockResolvedValue({
       blob: new Blob(['zip-bytes'], { type: 'application/zip' }),
       filename: 'plugin_one.zip',
     })
-    importPluginMock.mockResolvedValue({
-      success: true,
-      plugin: {
-        id: 'plugin_imported',
-        display_name: 'Imported Plugin',
-      },
-    })
+    importPluginMock.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -212,20 +226,16 @@ describe('PluginManager', () => {
 
   it('refreshes plugins from the refresh button and warns on partial success', async () => {
     refreshPluginsMock.mockResolvedValue({
-      success: true,
-      partial_success: true,
-      plugins: [{
-        id: 'plugin_two',
-        display_name: 'Plugin Two',
+      partialSuccess: true,
+      plugins: [makePlugin({
+        pluginId: 'plugin_two',
+        displayName: 'Plugin Two',
         description: 'updated',
-        version: '2.0.0',
-        enabled: true,
-        default_enabled: true,
-        has_config: false,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-      default_states: {
+        packageVersion: '2.0.0',
+        runtimeEnabled: true,
+        defaultEnabled: true,
+      })],
+      defaultStates: {
         plugin_two: true,
       },
       summary: {
@@ -298,14 +308,8 @@ describe('PluginManager', () => {
     expect(loadingWrapper.text()).toContain('正在读取已安装插件列表...')
 
     getPluginsMock.mockReset()
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [],
-    })
-    getPluginDefaultStatesMock.mockResolvedValue({
-      success: true,
-      default_states: {},
-    })
+    getPluginsMock.mockResolvedValue([])
+    getPluginDefaultStatesMock.mockResolvedValue({})
 
     const emptyWrapper = mount(PluginManager)
     await flushPromises()
@@ -418,28 +422,9 @@ describe('PluginManager', () => {
   })
 
   it('closes plugin configuration through the product modal close action', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
-    getPluginConfigSchemaMock.mockResolvedValue({
-      success: true,
-      schema: {},
-    })
-    getPluginConfigMock.mockResolvedValue({
-      success: true,
-      config: {},
-    })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
+    getPluginConfigSchemaMock.mockResolvedValue({})
+    getPluginConfigMock.mockResolvedValue({})
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -463,28 +448,9 @@ describe('PluginManager', () => {
   })
 
   it('uses the product modal shell for plugin configuration', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
-    getPluginConfigSchemaMock.mockResolvedValue({
-      success: true,
-      schema: {},
-    })
-    getPluginConfigMock.mockResolvedValue({
-      success: true,
-      config: {},
-    })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
+    getPluginConfigSchemaMock.mockResolvedValue({})
+    getPluginConfigMock.mockResolvedValue({})
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -508,43 +474,24 @@ describe('PluginManager', () => {
   })
 
   it('uses product field primitives for plugin configuration fields', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
     getPluginConfigSchemaMock.mockResolvedValue({
-      success: true,
-      schema: {
-        retries: {
-          type: 'number',
-          label: 'Retries',
-          description: 'Retry count',
-          min: 0,
-          max: 5,
-        },
-        endpoint: {
-          type: 'text',
-          label: 'Endpoint',
-          description: 'Service URL',
-        },
+      retries: {
+        type: 'number',
+        label: 'Retries',
+        description: 'Retry count',
+        min: 0,
+        max: 5,
+      },
+      endpoint: {
+        type: 'text',
+        label: 'Endpoint',
+        description: 'Service URL',
       },
     })
     getPluginConfigMock.mockResolvedValue({
-      success: true,
-      config: {
-        retries: 2,
-        endpoint: 'https://example.test',
-      },
+      retries: 2,
+      endpoint: 'https://example.test',
     })
 
     const wrapper = mount(PluginManager)
@@ -573,38 +520,19 @@ describe('PluginManager', () => {
   })
 
   it('uses the shared nullable number primitive for plugin number configuration fields', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
     getPluginConfigSchemaMock.mockResolvedValue({
-      success: true,
-      schema: {
-        retries: {
-          type: 'number',
-          label: 'Retries',
-          min: 0,
-          max: 10,
-        },
+      retries: {
+        type: 'number',
+        label: 'Retries',
+        min: 0,
+        max: 10,
       },
     })
     getPluginConfigMock.mockResolvedValue({
-      success: true,
-      config: {
-        retries: 2,
-      },
+      retries: 2,
     })
-    savePluginConfigMock.mockResolvedValue({ success: true })
+    savePluginConfigMock.mockResolvedValue(undefined)
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -646,13 +574,7 @@ describe('PluginManager', () => {
           currentRevision: 1,
         },
       })
-      .mockResolvedValueOnce({
-        success: true,
-        plugin: {
-          id: 'plugin_one',
-          display_name: 'Plugin One',
-        },
-      })
+      .mockResolvedValueOnce(undefined)
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = mount(PluginManager)
@@ -686,13 +608,7 @@ describe('PluginManager', () => {
   })
 
   it('imports plugin packages through the typed file-input boundary', async () => {
-    importPluginMock.mockResolvedValue({
-      success: true,
-      plugin: {
-        id: 'plugin_two',
-        display_name: 'Plugin Two',
-      },
-    })
+    importPluginMock.mockResolvedValue(undefined)
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -712,7 +628,7 @@ describe('PluginManager', () => {
   })
 
   it('uses product confirmation before deleting a plugin', async () => {
-    deletePluginMock.mockResolvedValue({ success: true })
+    deletePluginMock.mockResolvedValue(undefined)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -736,20 +652,7 @@ describe('PluginManager', () => {
   })
 
   it('uses icon-button primitives instead of root button skins for plugin row icon actions', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -781,38 +684,19 @@ describe('PluginManager', () => {
   })
 
   it('uses shared switches for plugin enabled default and boolean config controls', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
-    enablePluginMock.mockResolvedValue({ success: true })
-    setPluginDefaultStateMock.mockResolvedValue({ success: true })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
+    enablePluginMock.mockResolvedValue(undefined)
+    setPluginDefaultStateMock.mockResolvedValue(undefined)
     getPluginConfigSchemaMock.mockResolvedValue({
-      success: true,
-      schema: {
-        feature_enabled: {
-          type: 'boolean',
-          label: 'Feature enabled',
-        },
+      feature_enabled: {
+        type: 'boolean',
+        label: 'Feature enabled',
       },
     })
     getPluginConfigMock.mockResolvedValue({
-      success: true,
-      config: {
-        feature_enabled: false,
-      },
+      feature_enabled: false,
     })
-    savePluginConfigMock.mockResolvedValue({ success: true })
+    savePluginConfigMock.mockResolvedValue(undefined)
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -848,40 +732,21 @@ describe('PluginManager', () => {
   })
 
   it('uses the fixed select primitive for plugin config select fields', async () => {
-    getPluginsMock.mockResolvedValue({
-      success: true,
-      plugins: [{
-        id: 'plugin_one',
-        display_name: 'Plugin One',
-        description: 'desc',
-        version: '1.0.0',
-        enabled: false,
-        default_enabled: false,
-        has_config: true,
-        supported_steps: ['ocr'],
-        supported_modes: ['standard'],
-      }],
-    })
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
     getPluginConfigSchemaMock.mockResolvedValue({
-      success: true,
-      schema: {
-        mode: {
-          type: 'select',
-          label: 'Mode',
-          options: [
-            { label: 'Fast', value: 'fast' },
-            { label: 'Safe', value: 'safe' },
-          ],
-        },
+      mode: {
+        type: 'select',
+        label: 'Mode',
+        options: [
+          { label: 'Fast', value: 'fast' },
+          { label: 'Safe', value: 'safe' },
+        ],
       },
     })
     getPluginConfigMock.mockResolvedValue({
-      success: true,
-      config: {
-        mode: 'fast',
-      },
+      mode: 'fast',
     })
-    savePluginConfigMock.mockResolvedValue({ success: true })
+    savePluginConfigMock.mockResolvedValue(undefined)
 
     const wrapper = mount(PluginManager)
     await flushPromises()

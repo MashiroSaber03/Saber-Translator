@@ -4,12 +4,17 @@ import { resolve } from 'node:path'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { confirmProductActionMock } = vi.hoisted(() => ({
+const { confirmProductActionMock, waitForJobMock } = vi.hoisted(() => ({
   confirmProductActionMock: vi.fn(),
+  waitForJobMock: vi.fn(),
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
   confirmProductAction: confirmProductActionMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ waitForJob: waitForJobMock }),
 }))
 
 const characterDetailPanelStub = defineComponent({
@@ -20,24 +25,37 @@ const characterDetailPanelStub = defineComponent({
     },
   },
   setup(props, { emit }) {
-    return () => h('div', { class: 'character-detail-stub' }, [
-      h('span', { class: 'detail-name' }, props.character?.name || 'empty'),
-      h('button', {
-        type: 'button',
-        class: 'delete-form',
-        onClick: () => emit('delete-form', { form_id: 'form-1', form_name: '常服' }),
-      }, '删除形态'),
-      h('button', {
-        type: 'button',
-        class: 'delete-form-image',
-        onClick: () => emit('delete-form-image', 'form-1'),
-      }, '删除形态参考图'),
-      h('button', {
-        type: 'button',
-        class: 'delete-character',
-        onClick: () => emit('delete-character'),
-      }, '删除角色'),
-    ])
+    return () =>
+      h('div', { class: 'character-detail-stub' }, [
+        h('span', { class: 'detail-name' }, props.character?.name || 'empty'),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'delete-form',
+            onClick: () => emit('delete-form', { form_id: 'form-1', form_name: '常服' }),
+          },
+          '删除形态'
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'delete-form-image',
+            onClick: () => emit('delete-form-image', 'form-1'),
+          },
+          '删除形态参考图'
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'delete-character',
+            onClick: () => emit('delete-character'),
+          },
+          '删除角色'
+        ),
+      ])
   },
 })
 
@@ -47,7 +65,10 @@ import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
-const componentSourcePath = resolve(process.cwd(), 'src/components/insight/continuation/CharacterManagementPanel.vue')
+const componentSourcePath = resolve(
+  process.cwd(),
+  'src/components/insight/continuation/CharacterManagementPanel.vue'
+)
 
 function createState() {
   return {
@@ -56,7 +77,14 @@ function createState() {
         name: '主角',
         aliases: [],
         description: 'desc',
-        forms: [{ form_id: 'form-1', form_name: '常服', description: '', reference_image: '/tmp/form.png' }],
+        forms: [
+          {
+            form_id: 'form-1',
+            form_name: '常服',
+            description: '',
+            reference_image: '/tmp/form.png',
+          },
+        ],
         reference_image: '',
         enabled: true,
       },
@@ -71,6 +99,7 @@ describe('CharacterManagementPanel', () => {
   beforeEach(() => {
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
+    waitForJobMock.mockReset().mockResolvedValue({ status: 'completed' })
   })
 
   afterEach(() => {
@@ -172,7 +201,9 @@ describe('CharacterManagementPanel', () => {
       iconName: 'users',
     })
     expect(header.text()).toContain('新增角色')
-    expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
+    expect(source).toContain(
+      "import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'"
+    )
     expect(source).not.toContain('class="section-header"')
     expect(source).not.toContain('class="section-title"')
     expect(source).not.toContain('.section-header {')
@@ -199,9 +230,11 @@ describe('CharacterManagementPanel', () => {
   it('lets the character list and detail pane stack based on the continuation workspace width', () => {
     const source = readFileSync(componentSourcePath, 'utf8')
 
-    expect(source).toMatch(/\.character-management-panel \{[\s\S]*?container-type: inline-size;[\s\S]*?container-name: continuation-character-management;/)
     expect(source).toMatch(
-      /@container continuation-character-management \(max-width: 640px\) \{[\s\S]*?\.character-management-panel__layout \{[\s\S]*?grid-template-columns: 1fr;[\s\S]*?\.character-management-panel__grid \{[\s\S]*?repeat\(auto-fill, minmax\(120px, 1fr\)\)[\s\S]*?max-height: none;/,
+      /\.character-management-panel \{[\s\S]*?container-type: inline-size;[\s\S]*?container-name: continuation-character-management;/
+    )
+    expect(source).toMatch(
+      /@container continuation-character-management \(max-width: 640px\) \{[\s\S]*?\.character-management-panel__layout \{[\s\S]*?grid-template-columns: 1fr;[\s\S]*?\.character-management-panel__grid \{[\s\S]*?repeat\(auto-fill, minmax\(120px, 1fr\)\)[\s\S]*?max-height: none;/
     )
   })
 

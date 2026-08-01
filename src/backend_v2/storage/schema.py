@@ -1956,7 +1956,7 @@ provider_rate_limits = Table(
     Column(
         "credential_version_id",
         String(UUID_LENGTH),
-        ForeignKey("credential_versions.id", ondelete="RESTRICT"),
+        ForeignKey("credential_versions.id", ondelete="CASCADE"),
         primary_key=True,
     ),
     Column("window_started_at", DateTime(timezone=True), nullable=False),

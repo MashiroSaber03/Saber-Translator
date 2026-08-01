@@ -2,7 +2,6 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   AgentLog,
-  DownloadedImage,
   ExtractResult,
   WebImportProviderConfigs,
   WebImportSettings,
@@ -28,11 +27,6 @@ import {
 
 const STORAGE_KEY_DISCLAIMER_ACCEPTED = 'webImportDisclaimerAccepted'
 export { WEB_IMPORT_SETTINGS_SCHEMA_VERSION } from './webImportSettingsPayload'
-
-function clampPercent(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.min(100, Math.max(0, Math.round(value)))
-}
 
 function parseCustomHeaders(value: string): Record<string, string> | undefined {
   const trimmed = value.trim()
@@ -81,7 +75,6 @@ export const useWebImportStore = defineStore('webImport', () => {
   const draftSettings = ref<WebImportSettings>(deepClone(settings.value))
   const draftProviderConfigs = ref<WebImportProviderConfigs>(deepClone(providerConfigs.value))
   const isSavingSettings = ref(false)
-  const isInitializingSettings = ref(false)
   const hasLoadedBackendSettings = ref(false)
   const credentialSummaries = ref<V2CredentialSummary[]>([])
   let settingsRevision = 0
@@ -94,7 +87,6 @@ export const useWebImportStore = defineStore('webImport', () => {
   const extractResult = ref<ExtractResult | null>(null)
   const selectedPages = ref<Set<number>>(new Set())
   const downloadProgress = ref({ current: 0, total: 0 })
-  const downloadedImages = ref<DownloadedImage[]>([])
   const error = ref<string | null>(null)
   const modalVisible = ref(false)
   const disclaimerAccepted = ref(false)
@@ -104,10 +96,6 @@ export const useWebImportStore = defineStore('webImport', () => {
   const isDownloading = computed(() => status.value === 'downloading')
   const isProcessing = computed(() => isExtracting.value || isDownloading.value)
   const selectedCount = computed(() => selectedPages.value.size)
-  const downloadProgressPercent = computed(() => {
-    if (downloadProgress.value.total === 0) return 0
-    return clampPercent((downloadProgress.value.current / downloadProgress.value.total) * 100)
-  })
   const hasUnsavedSettings = computed(() => {
     return (
       serializeWebImportSettingsValue(settings.value) !== serializeWebImportSettingsValue(draftSettings.value) ||
@@ -282,14 +270,7 @@ export const useWebImportStore = defineStore('webImport', () => {
       hasLoadedBackendSettings.value = false
     }
 
-    initPromise = (async () => {
-      isInitializingSettings.value = true
-      try {
-        await loadFromBackend()
-      } finally {
-        isInitializingSettings.value = false
-      }
-    })()
+    initPromise = loadFromBackend().then(() => undefined)
 
     try {
       await initPromise
@@ -397,7 +378,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     extractResult.value = null
     selectedPages.value = new Set()
     downloadProgress.value = { current: 0, total: 0 }
-    downloadedImages.value = []
     error.value = null
   }
 
@@ -407,10 +387,6 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   function addLog(log: AgentLog): void {
     logs.value.push(log)
-  }
-
-  function clearLogs(): void {
-    logs.value = []
   }
 
   function setExtractResult(result: ExtractResult): void {
@@ -465,31 +441,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     downloadProgress.value = { current, total }
   }
 
-  function setDownloadedImages(images: DownloadedImage[]): void {
-    downloadedImages.value = images
-  }
-
-  function addPageIncremental(page: { pageNumber: number; imageUrl: string; localPath?: string }): void {
-    if (!extractResult.value) {
-      extractResult.value = {
-        success: true,
-        comicTitle: '',
-        chapterTitle: '',
-        pages: [],
-        totalPages: 0,
-        sourceUrl: url.value,
-        referer: '',
-        engine: 'gallery-dl'
-      }
-    }
-
-    extractResult.value.pages.push(page)
-    extractResult.value.totalPages = extractResult.value.pages.length
-
-    selectedPages.value.add(page.pageNumber)
-    selectedPages.value = new Set(selectedPages.value)
-  }
-
   const settingsMethods = useWebImportSettings(draftSettings, draftProviderConfigs)
 
   loadDisclaimerState()
@@ -499,26 +450,20 @@ export const useWebImportStore = defineStore('webImport', () => {
     settings,
     providerConfigs,
     draftSettings,
-    draftProviderConfigs,
     status,
     url,
     logs,
     extractResult,
     selectedPages,
     downloadProgress,
-    downloadedImages,
     error,
     modalVisible,
-    disclaimerAccepted,
     disclaimerVisible,
-    isExtracting,
     isDownloading,
     isProcessing,
     selectedCount,
-    downloadProgressPercent,
     hasUnsavedSettings,
     isSavingSettings,
-    isInitializingSettings,
     hasCredential,
     loadFromBackend,
     saveToBackend,
@@ -528,18 +473,14 @@ export const useWebImportStore = defineStore('webImport', () => {
     resetState,
     setUrl,
     addLog,
-    clearLogs,
     setExtractResult,
     togglePageSelection,
     toggleSelectAll,
     setStatus,
     setError,
     updateDownloadProgress,
-    setDownloadedImages,
-    addPageIncremental,
     acceptDisclaimer,
     rejectDisclaimer,
-    beginSettingsEdit,
     discardSettingsChanges,
     saveSettings,
     ...settingsMethods

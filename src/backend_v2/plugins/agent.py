@@ -149,6 +149,11 @@ class PluginAgentProviderResolver:
                 ) from exc
         return {
             "provider": str(frozen.get("provider", "")),
+            "credential_version_id": (
+                str(credential_version_id)
+                if credential_version_id
+                else None
+            ),
             "api_key": str(secret.get("api_key", "")),
             "model_name": str(frozen.get("model_name", "")),
             "custom_base_url": str(

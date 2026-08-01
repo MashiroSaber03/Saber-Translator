@@ -10,20 +10,14 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
 from src.shared.ai_providers import get_provider_manifest, normalize_provider_id
 from src.shared.openai_options import (
     OpenAICompatibleOptions,
     clone_openai_compatible_options,
 )
-from src.shared.openai_rate_limits import (
-    SharedRPMLimiter,
-    apply_sync_rpm_limit,
-    build_openai_rpm_bucket_key,
-    build_openai_rpm_service_name,
-    enforce_sync_rpm_limit_window,
-)
+from src.shared.openai_rate_limits import build_openai_rpm_service_name
 
 if TYPE_CHECKING:
     from src.shared.ai_transport import (
@@ -77,7 +71,6 @@ class ResolvedOpenAICompatibleInvocation:
     response_format: Optional[dict[str, Any]]
     use_stream: bool
     timeout: float
-    bucket_key: str
     service_name: str
 
 
@@ -168,7 +161,6 @@ def resolve_openai_compatible_invocation(
         response_format={"type": "json_object"} if effective_options.request.force_json_output else None,
         use_stream=effective_options.execution.use_stream,
         timeout=runtime.timeout_or(120.0),
-        bucket_key=build_openai_rpm_bucket_key(capability, canonical_provider),
         service_name=build_openai_rpm_service_name(capability, canonical_provider),
     )
 
@@ -282,20 +274,12 @@ class OpenAICompatibleSyncExecutor:
             logger_instance=effective_logger,
         )
 
-        def before_request() -> None:
-            apply_sync_rpm_limit(
-                invocation.bucket_key,
-                invocation.effective_options.execution.rpm_limit,
-                invocation.service_name,
-                enforce_sync_rpm_limit_window,
-            )
-
         last_raw_content: Optional[str] = None
         last_error: Optional[BaseException] = None
         total_attempts = invocation.effective_options.execution.business_retries + 1
         for attempt in range(total_attempts):
             try:
-                raw_content = self._complete(request, invocation, before_request)
+                raw_content = self._complete(request, invocation)
                 last_raw_content = raw_content
                 parsed: T | str = parser(raw_content) if parser else raw_content
                 return OpenAICompatibleExecutionResult(
@@ -328,7 +312,6 @@ class OpenAICompatibleSyncExecutor:
         self,
         request: "UnifiedChatRequest | UnifiedVisionRequest",
         invocation: ResolvedOpenAICompatibleInvocation,
-        before_request: Callable[[], None],
     ) -> str:
         prepared_request = replace(
             request,
@@ -340,12 +323,10 @@ class OpenAICompatibleSyncExecutor:
             return self.transport.complete_vision(
                 prepared_request,
                 resolved_invocation=invocation,
-                before_request=before_request,
             )
         return self.transport.complete(
             prepared_request,
             resolved_invocation=invocation,
-            before_request=before_request,
         )
 
     @staticmethod
@@ -391,20 +372,12 @@ class OpenAICompatibleAsyncExecutor:
             runtime_options or request.runtime_options,
             logger_instance=effective_logger,
         )
-        limiter = SharedRPMLimiter(
-            invocation.effective_options.execution.rpm_limit,
-            bucket_id=invocation.bucket_key,
-        )
-
-        async def before_request() -> None:
-            await limiter.wait()
-
         last_raw_content: Optional[str] = None
         last_error: Optional[BaseException] = None
         total_attempts = invocation.effective_options.execution.business_retries + 1
         for attempt in range(total_attempts):
             try:
-                raw_content = await self._complete(request, invocation, before_request)
+                raw_content = await self._complete(request, invocation)
                 last_raw_content = raw_content
                 parsed: T | str = parser(raw_content) if parser else raw_content
                 return OpenAICompatibleExecutionResult(
@@ -449,7 +422,6 @@ class OpenAICompatibleAsyncExecutor:
         self,
         request: "UnifiedChatRequest | UnifiedVisionRequest",
         invocation: ResolvedOpenAICompatibleInvocation,
-        before_request: Callable[[], Awaitable[None]],
     ) -> str:
         prepared_request = replace(
             request,
@@ -461,10 +433,8 @@ class OpenAICompatibleAsyncExecutor:
             return await self.transport.complete_vision(
                 prepared_request,
                 resolved_invocation=invocation,
-                before_request=before_request,
             )
         return await self.transport.complete(
             prepared_request,
             resolved_invocation=invocation,
-            before_request=before_request,
         )

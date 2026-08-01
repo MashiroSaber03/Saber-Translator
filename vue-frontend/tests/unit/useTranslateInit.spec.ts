@@ -130,8 +130,7 @@ describe('useTranslateInit', () => {
       pageId: 'page-1',
       pageStyleDefaults,
       pageStyleSchemaVersion: 1,
-      renderedRevision: null,
-      sourceRevision: 1,
+      renderStatus: 'not_rendered',
     })
     mocks.updateLastVisitedPage.mockImplementation(
       async (chapterId: string, pageId: string) => ({
@@ -179,7 +178,6 @@ describe('useTranslateInit', () => {
     })
 
     const imageStore = useImageStore()
-    expect(state.isInitialized.value).toBe(false)
     expect(imageStore.currentImage?.bubbleStates).toBeNull()
 
     resolveDocument({
@@ -195,12 +193,10 @@ describe('useTranslateInit', () => {
         useAutoTextColor: true,
       },
       pageStyleSchemaVersion: 1,
-      renderedRevision: null,
-      sourceRevision: 1,
+      renderStatus: 'not_rendered',
     })
     await initialization
 
-    expect(state.isInitialized.value).toBe(true)
     expect(imageStore.currentImage).toMatchObject({
       bubbleStates: [],
       documentRevision: 4,

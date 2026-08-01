@@ -12,11 +12,8 @@ import type { BubbleCoords, BubbleState } from '@/types/bubble'
 const BubbleOverlayStub = defineComponent({
   name: 'BubbleOverlay',
   emits: [
-    'dragStart',
     'dragEnd',
-    'resizeStart',
     'resizeEnd',
-    'rotateStart',
     'rotateEnd',
   ],
   setup() {
@@ -157,22 +154,15 @@ describe('EditImageComparison event forwarding', () => {
   it('forwards BubbleOverlay multi-argument edit events without dropping coordinates', () => {
     const wrapper = mountComparison()
     const overlay = wrapper.getComponent(BubbleOverlayStub)
-    const startEvent = new MouseEvent('mousedown')
     const resizedCoords: BubbleCoords = [15, 25, 120, 240]
     const draggedCoords: BubbleCoords = [30, 40, 130, 260]
 
-    overlay.vm.$emit('dragStart', 0, startEvent)
     overlay.vm.$emit('dragEnd', 0, draggedCoords)
-    overlay.vm.$emit('resizeStart', 0, 'se', startEvent)
     overlay.vm.$emit('resizeEnd', 0, resizedCoords)
-    overlay.vm.$emit('rotateStart', 0, startEvent)
     overlay.vm.$emit('rotateEnd', 0, 15)
 
-    expect(wrapper.emitted('bubbleDragStart')?.[0]).toEqual([0, startEvent])
     expect(wrapper.emitted('bubbleDragEnd')?.[0]).toEqual([0, draggedCoords])
-    expect(wrapper.emitted('bubbleResizeStart')?.[0]).toEqual([0, 'se', startEvent])
     expect(wrapper.emitted('bubbleResizeEnd')?.[0]).toEqual([0, resizedCoords])
-    expect(wrapper.emitted('bubbleRotateStart')?.[0]).toEqual([0, startEvent])
     expect(wrapper.emitted('bubbleRotateEnd')?.[0]).toEqual([0, 15])
   })
 

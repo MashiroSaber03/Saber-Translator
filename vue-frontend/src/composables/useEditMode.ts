@@ -2,9 +2,6 @@ import { ref } from 'vue'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 
-export type ViewMode = 'dual' | 'original' | 'translated'
-export type LayoutMode = 'horizontal' | 'vertical'
-
 export function useEditMode() {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()

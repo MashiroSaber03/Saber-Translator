@@ -121,10 +121,6 @@ export function useWebImportSettings(
     webImportSettings.value.agent.forceJsonOutput = forceJsonOutput
   }
 
-  function setAgentTimeout(timeout: number): void {
-    webImportSettings.value.agent.timeout = timeout
-  }
-
   function setExtractionPrompt(prompt: string): void {
     webImportSettings.value.extraction.prompt = prompt
   }
@@ -240,7 +236,6 @@ export function useWebImportSettings(
     setAgentModelName,
     setAgentUseStream,
     setAgentForceJsonOutput,
-    setAgentTimeout,
     saveAgentProviderConfig,
     restoreAgentProviderConfig,
     setExtractionPrompt,

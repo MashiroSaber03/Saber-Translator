@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { marked } from 'marked'
 import * as insightApi from '@/api/insight'
-import { useInsightStore, type QAMessage } from '@/stores/insightStore'
+import { useInsightStore } from '@/stores/insightStore'
+import type { QAMessage } from '@/types/insight'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { showToast } from '@/utils/toast'
@@ -136,31 +137,22 @@ async function sendQuestion(): Promise<void> {
 
     insightStore.removeLoadingMessages()
 
-    if (response.success) {
-      const modeLabel = response.mode === 'global' ? '全局模式' : '精确模式'
-      insightStore.addQAMessage({
-        id: (Date.now() + 2).toString(),
-        role: 'assistant',
-        content: response.answer || '',
-        timestamp: new Date().toISOString(),
-        mode: modeLabel,
-        citations: response.citations || [],
-      })
-    } else {
-      insightStore.addQAMessage({
-        id: (Date.now() + 2).toString(),
-        role: 'assistant',
-        content: `抱歉，处理问题时出错: ${response.error || '未知错误'}`,
-        timestamp: new Date().toISOString(),
-      })
-    }
-  } catch {
+    const modeLabel = response.mode === 'global' ? '全局模式' : '精确模式'
+    insightStore.addQAMessage({
+      id: (Date.now() + 2).toString(),
+      role: 'assistant',
+      content: response.answer,
+      timestamp: new Date().toISOString(),
+      mode: modeLabel,
+      citations: response.citations,
+    })
+  } catch (error) {
     if (!isCurrentChatRequest(requestId, bookId)) return
     insightStore.removeLoadingMessages()
     insightStore.addQAMessage({
       id: (Date.now() + 2).toString(),
       role: 'assistant',
-      content: '抱歉，网络请求失败，请稍后重试。',
+      content: `抱歉，处理问题时出错: ${error instanceof Error ? error.message : '未知错误'}`,
       timestamp: new Date().toISOString(),
     })
   } finally {
@@ -205,15 +197,7 @@ async function rebuildEmbeddings(): Promise<void> {
   rebuildProgressLabel.value = '准备启动...'
 
   try {
-    const response = await insightApi.rebuildEmbeddings(bookId)
-
-    if (!response.success || !response.task_id) {
-      showToast('重建失败: ' + (response.error || '未知错误'), 'error')
-      resetRebuildState()
-      return
-    }
-
-    rebuildTaskId.value = response.task_id
+    rebuildTaskId.value = await insightApi.rebuildEmbeddings(bookId)
     rebuildBookId.value = bookId
     rebuildProgressLabel.value = '任务已启动'
     await taskCenterStore.refresh()
@@ -284,15 +268,13 @@ async function repairQAStatus(): Promise<void> {
 
   isRepairingQaDependency.value = true
   try {
-    const response = repairAction === 'overview_rebuild'
-      ? await insightApi.regenerateOverview(bookId, 'story_summary', true)
-      : await insightApi.rebuildCompressedContext(bookId)
-    if (!response.success) {
-      showToast(response.error || '修复任务创建失败', 'error')
-      return
+    if (repairAction === 'overview_rebuild') {
+      await insightApi.regenerateOverview(bookId, 'story_summary', true)
+    } else {
+      await insightApi.rebuildCompressedContext(bookId)
     }
     await taskCenterStore.refresh()
-    showToast(response.message || '修复任务已进入任务中心', 'success')
+    showToast('修复任务已进入任务中心', 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '修复任务创建失败', 'error')
   } finally {

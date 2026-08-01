@@ -18,44 +18,50 @@ vi.mock('@/api/client', () => {
 })
 
 const settingsDocument = {
-  settings: [{
-    domain: 'insight',
-    payload: {
-      analysis: {
-        batch: {
-          pagesPerBatch: 5,
-          contextBatchCount: 3,
-          architecturePreset: 'standard',
-          customLayers: [],
+  settings: [
+    {
+      domain: 'insight',
+      payload: {
+        analysis: {
+          batch: {
+            pagesPerBatch: 5,
+            contextBatchCount: 3,
+            architecturePreset: 'standard',
+            customLayers: [],
+          },
         },
+        vlm: { provider: 'gemini' },
+        chat: { provider: 'gemini', useSameAsVlm: false },
+        embedding: { provider: 'openai' },
+        reranker: { provider: 'jina' },
+        imageGen: { provider: 'gpt2api' },
       },
-      vlm: { provider: 'gemini' },
-      chat: { provider: 'gemini', useSameAsVlm: false },
-      embedding: { provider: 'openai' },
-      reranker: { provider: 'jina' },
-      imageGen: { provider: 'gpt2api' },
+      revision: 3,
+      schemaVersion: 1,
     },
-    revision: 3,
-    schemaVersion: 1,
-  }],
+  ],
   bookSettings: [],
-  providerSettings: [{
-    domain: 'insight_vlm',
-    provider: 'gemini',
-    payload: { modelName: 'old-model' },
-    revision: 4,
-    schemaVersion: 1,
-    credentialVersionId: 'credential-version-1',
-  }],
-  credentials: [{
-    credentialId: 'credential-1',
-    credentialVersionId: 'credential-version-1',
-    currentVersion: 1,
-    domain: 'insight_vlm',
-    hasKey: true,
-    provider: 'gemini',
-    revision: 5,
-  }],
+  providerSettings: [
+    {
+      domain: 'insight_vlm',
+      provider: 'gemini',
+      payload: { modelName: 'old-model' },
+      revision: 4,
+      schemaVersion: 1,
+      credentialVersionId: 'credential-version-1',
+    },
+  ],
+  credentials: [
+    {
+      credentialId: 'credential-1',
+      credentialVersionId: 'credential-version-1',
+      currentVersion: 1,
+      domain: 'insight_vlm',
+      hasKey: true,
+      provider: 'gemini',
+      revision: 5,
+    },
+  ],
 }
 
 describe('insight v2 settings ownership', () => {
@@ -79,10 +85,9 @@ describe('insight v2 settings ownership', () => {
   it('loads Insight configuration from unified v2 settings and prompts', async () => {
     const { getGlobalConfig } = await import('@/api/insight')
 
-    const response = await getGlobalConfig()
+    const config = await getGlobalConfig()
 
-    expect(response.success).toBe(true)
-    expect(response.config?.vlm).toMatchObject({
+    expect(config.vlm).toMatchObject({
       provider: 'gemini',
       model: 'old-model',
       api_key: '',
@@ -107,12 +112,14 @@ describe('insight v2 settings ownership', () => {
       if (url === '/api/v2/settings') {
         return Promise.resolve({
           ...settingsDocument,
-          settings: [{
-            domain: 'insight',
-            payload: {},
-            revision: 3,
-            schemaVersion: 1,
-          }],
+          settings: [
+            {
+              domain: 'insight',
+              payload: {},
+              revision: 3,
+              schemaVersion: 1,
+            },
+          ],
         })
       }
       if (url === '/api/v2/prompts') return Promise.resolve({ items: [] })
@@ -138,10 +145,12 @@ describe('insight v2 settings ownership', () => {
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/settings/transactions',
       expect.objectContaining({
-        settings: [expect.objectContaining({
-          domain: 'insight',
-          baseRevision: 3,
-        })],
+        settings: [
+          expect.objectContaining({
+            domain: 'insight',
+            baseRevision: 3,
+          }),
+        ],
         providerSettings: expect.arrayContaining([
           expect.objectContaining({
             domain: 'insight_vlm',
@@ -150,15 +159,17 @@ describe('insight v2 settings ownership', () => {
             credentialEditRef: 'insight:insight_vlm:gemini',
           }),
         ]),
-        credentialEdits: [expect.objectContaining({
-          domain: 'insight_vlm',
-          provider: 'gemini',
-          credentialId: 'credential-1',
-          baseRevision: 5,
-          secret: { api_key: 'replacement-secret' },
-        })],
+        credentialEdits: [
+          expect.objectContaining({
+            domain: 'insight_vlm',
+            provider: 'gemini',
+            credentialId: 'credential-1',
+            baseRevision: 5,
+            secret: { api_key: 'replacement-secret' },
+          }),
+        ],
       }),
-      { headers: { 'Idempotency-Key': expect.any(String) } },
+      { headers: { 'Idempotency-Key': expect.any(String) } }
     )
   })
 
@@ -210,7 +221,7 @@ describe('insight v2 settings ownership', () => {
       }>
     }
     const byDomain = Object.fromEntries(
-      request.providerSettings.map(row => [row.domain, row.payload]),
+      request.providerSettings.map(row => [row.domain, row.payload])
     )
 
     expect(byDomain.insight_vlm).toHaveProperty('openaiOptions')

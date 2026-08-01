@@ -1,25 +1,22 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { marked } from 'marked'
-import {
-  fetchModels as fetchV2Models,
-  testAiTranslateConnection,
-} from '@/api/v2/diagnostics'
+import { fetchModels as fetchV2Models, testAiTranslateConnection } from '@/api/v2/diagnostics'
 import {
   cancelPluginAgentExecution,
   createPluginAgentSession,
   deletePluginAgentSession,
   getPluginAgentSession,
   getPluginAgentSettings,
+  listPluginAgentJobEvents,
   lockPluginAgentTarget,
+  pluginAgentEventFromJobEvent,
   sendPluginAgentMessage,
   startPluginAgentExecution,
-  subscribePluginAgentEvents,
   type PluginAgentAssistantDeltaPayload,
   type PluginAgentAssistantPayload,
   type PluginAgentDonePayload,
   type PluginAgentErrorPayload,
   type PluginAgentEvent,
-  type PluginAgentAgentConfig,
   type PluginAgentOverviewSection,
   type PluginAgentSession,
   type PluginAgentStatePayload,
@@ -27,11 +24,16 @@ import {
   type PluginAgentValidationPayload,
 } from '@/api/pluginAgent'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import type { V2JobEvent } from '@/api/v2/jobs'
 import type { PluginAgentProvider } from '@/types/settings'
 import { providerRequiresApiKey } from '@/config/aiProviders'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { useToast } from '@/utils/toast'
-import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
+import {
+  useAiModelDiscovery,
+  type AiModelDiscoveryMessageTone,
+} from '@/composables/useAiModelDiscovery'
 import { buildTimelineItems, type PluginAgentTimelineItem } from './pluginAgentTimeline'
 import { usePluginAgentDisplayAnimation } from './usePluginAgentDisplayAnimation'
 
@@ -46,6 +48,7 @@ export type PluginAgentModalEmit = {
 
 export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAgentModalEmit) {
   const settingsStore = useSettingsStore()
+  const taskCenterStore = useTaskCenterStore()
   const toast = useToast()
 
   type HistoryScrollTarget = HTMLElement | { scrollToBottom: () => void }
@@ -68,9 +71,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     failed: '执行失败',
     cancelled: '已取消',
   }
-  const shouldAnimateAssistantStream = typeof navigator !== 'undefined'
-    ? !navigator.userAgent.toLowerCase().includes('jsdom')
-    : true
+  const shouldAnimateAssistantStream =
+    typeof navigator !== 'undefined' ? !navigator.userAgent.toLowerCase().includes('jsdom') : true
 
   const isOpen = ref(props.modelValue)
   const mode = ref<'create' | 'modify'>('create')
@@ -89,7 +91,13 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const isSavingAgentSettings = ref(false)
   const isAwaitingPlanningReply = ref(false)
   const optimisticMessages = ref<PluginAgentConversationMessage[]>([])
-  let streamAbortController: AbortController | null = null
+  let activeStreamJobId = ''
+  let bufferedJobEvents: V2JobEvent[] = []
+  let jobEventCursor = 0
+  let sawPluginTerminalEvent = false
+  let stopTaskEvents: (() => void) | null = null
+  let streamGeneration = 0
+  let streamIsCatchingUp = false
 
   const localAgentSettings = ref({
     provider: settingsStore.settings.pluginAgent.provider,
@@ -103,10 +111,9 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     useStream: settingsStore.settings.pluginAgent.openaiOptions.execution.useStream,
     extraBody: settingsStore.settings.pluginAgent.openaiOptions.request.extraBody,
   })
-  const hasStoredAgentCredential = computed(() => settingsStore.hasCredential(
-    'plugin_agent',
-    localAgentSettings.value.provider,
-  ))
+  const hasStoredAgentCredential = computed(() =>
+    settingsStore.hasCredential('plugin_agent', localAgentSettings.value.provider)
+  )
   function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
     toast[tone](message)
   }
@@ -117,37 +124,32 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       baseUrl: localAgentSettings.value.customBaseUrl,
       hasStoredCredential: hasStoredAgentCredential.value,
     }),
-    fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
-      provider,
-      apiKey,
-      baseUrl,
-      'plugin_agent',
-    ),
+    fetcher: (provider, apiKey, baseUrl) =>
+      fetchV2Models(provider, apiKey, baseUrl, 'plugin_agent'),
     notify: notifyModelDiscovery,
     requiresApiKey: provider => providerRequiresApiKey(provider),
     emptyBaseUrl: '',
-    errorMessage: error => error instanceof Error ? error.message : '获取模型失败',
+    errorMessage: error => (error instanceof Error ? error.message : '获取模型失败'),
   })
   const { isFetchingModels } = modelDiscovery
-  const fetchedModels = computed(() => modelDiscovery.models.value.map(model => ({
-    id: model.id,
-    name: model.name || model.id,
-  })))
+  const fetchedModels = computed(() =>
+    modelDiscovery.models.value.map(model => ({
+      id: model.id,
+      name: model.name || model.id,
+    }))
+  )
   const displayAnimation = usePluginAgentDisplayAnimation({
     animate: shouldAnimateAssistantStream,
     onTick: syncHistoryScrollToBottom,
   })
-  const {
-    assistantMessageDisplayContent,
-    assistantDisplayContent,
-    assistantDisplayTargets,
-  } = displayAnimation
+  const { assistantMessageDisplayContent, assistantDisplayContent, assistantDisplayTargets } =
+    displayAnimation
   const clearAssistantDisplayAnimation = displayAnimation.clear
   const setAssistantDisplayTarget = displayAnimation.setStreamTarget
   function setAssistantMessageDisplayTarget(
     messageId: string,
     targetContent: string,
-    options: { animate: boolean },
+    options: { animate: boolean }
   ): void {
     displayAnimation.setMessageTarget(messageId, targetContent, options.animate)
   }
@@ -170,20 +172,27 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     }
     return options
   })
-  const timelineItems = computed<PluginAgentTimelineItem[]>(() => (
-    buildTimelineItems(eventFeed.value, assistantDisplayContent.value, assistantDisplayTargets.value)
-  ))
+  const timelineItems = computed<PluginAgentTimelineItem[]>(() =>
+    buildTimelineItems(
+      eventFeed.value,
+      assistantDisplayContent.value,
+      assistantDisplayTargets.value
+    )
+  )
   const canBeginConversation = computed(() => {
     if (mode.value === 'modify') {
       return Boolean(selectedPluginId.value && messageInput.value.trim())
     }
     return Boolean(messageInput.value.trim())
   })
-  const canLockTarget = computed(() => mode.value === 'create' && Boolean(session.value?.pending_target))
-  const canStartExecution = computed(() => (
-    Boolean(session.value?.locked_target && session.value?.run_state === 'ready')
-    && messages.value.some(message => message.role === 'user')
-  ))
+  const canLockTarget = computed(
+    () => mode.value === 'create' && Boolean(session.value?.pending_target)
+  )
+  const canStartExecution = computed(
+    () =>
+      Boolean(session.value?.locked_target && session.value?.run_state === 'ready') &&
+      messages.value.some(message => message.role === 'user')
+  )
   const isRunning = computed(() => session.value?.run_state === 'running')
   const isConversationPending = computed(() => isRunning.value || isAwaitingPlanningReply.value)
   const currentRunStateLabel = computed(() => {
@@ -207,28 +216,33 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       clearAssistantDisplayAnimation()
       return
     }
-    if ((!nextSession.messages || nextSession.messages.length === 0) && previousSession?.messages?.length) {
-      session.value = {
-        ...nextSession,
-        messages: [...previousSession.messages],
-      }
-    }
-    selectedPluginId.value = nextSession.selected_plugin_id || nextSession.locked_target?.plugin_id || selectedPluginId.value
+    selectedPluginId.value =
+      nextSession.selected_plugin_id ||
+      nextSession.locked_target?.plugin_id ||
+      selectedPluginId.value
+    const sessionEvents = nextSession.events.map(event => ({
+      ...event,
+      eventKey: `session:${event.id}`,
+    }))
     if (previousSession?.session_id === nextSession.session_id && eventFeed.value.length > 0) {
       const merged = [...eventFeed.value]
-      for (const event of nextSession.events || []) {
-        if (!merged.some(existing => existing.id === event.id)) {
+      for (const event of sessionEvents) {
+        if (
+          !merged.some(
+            existing => (existing.eventKey ?? `session:${existing.id}`) === event.eventKey
+          )
+        ) {
           merged.push(event)
         }
       }
-      eventFeed.value = merged.sort((left, right) => left.id - right.id)
+      eventFeed.value = merged
     } else {
-      eventFeed.value = [...(nextSession.events || [])]
+      eventFeed.value = sessionEvents
     }
 
-    const previousMessageIds = new Set((previousSession?.messages || []).map(message => message.id))
+    const previousMessageIds = new Set((previousSession?.messages ?? []).map(message => message.id))
     const shouldAnimatePlanningMessages = previousSession?.session_id === nextSession.session_id
-    for (const message of nextSession.messages || []) {
+    for (const message of nextSession.messages) {
       if (message.role !== 'assistant') {
         continue
       }
@@ -238,12 +252,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
         setAssistantMessageDisplayTarget(message.id, message.content, { animate: false })
       }
     }
-  }
-
-  function getLastEventId(): number {
-    const events = eventFeed.value
-    if (events.length === 0) return 0
-    return events[events.length - 1]?.id || 0
   }
 
   function scrollHistoryToBottom(): void {
@@ -289,14 +297,12 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
 
   async function syncSessionFromServer(sessionId: string): Promise<void> {
     const result = await getPluginAgentSession(sessionId)
-    if (result.success) {
-      applySession(result.session)
-    }
+    applySession(result)
   }
 
   watch(
     () => props.modelValue,
-    async (value) => {
+    async value => {
       isOpen.value = value
       if (value) {
         await initializeModal()
@@ -304,49 +310,72 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
         stopStreaming()
       }
     },
-    { immediate: true },
+    { immediate: true }
   )
 
-  watch(isOpen, (value) => {
+  watch(isOpen, value => {
     if (!value) {
       emit('update:modelValue', false)
     }
   })
 
-  watch(() => localAgentSettings.value.apiKey, (value) => {
-    settingsStore.updatePluginAgent({ apiKey: value })
-  })
-  watch(() => localAgentSettings.value.modelName, (value) => {
-    settingsStore.updatePluginAgent({ modelName: value })
-  })
-  watch(() => localAgentSettings.value.customBaseUrl, (value) => {
-    settingsStore.updatePluginAgent({ customBaseUrl: value })
-  })
-  watch(() => localAgentSettings.value.rpmLimit, (value) => {
-    settingsStore.updatePluginAgent({ rpmLimit: value })
-  })
-  watch(() => localAgentSettings.value.transportRetries, (value) => {
-    settingsStore.updatePluginAgent({ transportRetries: value })
-  })
-  watch(() => localAgentSettings.value.businessRetries, (value) => {
-    settingsStore.updatePluginAgent({ businessRetries: value })
-  })
-  watch(() => localAgentSettings.value.forceJsonOutput, (value) => {
-    settingsStore.updatePluginAgent({ forceJsonOutput: value })
-  })
-  watch(() => localAgentSettings.value.useStream, (value) => {
-    settingsStore.updatePluginAgent({ useStream: value })
-  })
-  watch(() => localAgentSettings.value.extraBody, (value) => {
-    settingsStore.updatePluginAgent({ extraBody: value })
-  })
+  watch(
+    () => localAgentSettings.value.apiKey,
+    value => {
+      settingsStore.updatePluginAgent({ apiKey: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.modelName,
+    value => {
+      settingsStore.updatePluginAgent({ modelName: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.customBaseUrl,
+    value => {
+      settingsStore.updatePluginAgent({ customBaseUrl: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.rpmLimit,
+    value => {
+      settingsStore.updatePluginAgent({ rpmLimit: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.transportRetries,
+    value => {
+      settingsStore.updatePluginAgent({ transportRetries: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.businessRetries,
+    value => {
+      settingsStore.updatePluginAgent({ businessRetries: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.forceJsonOutput,
+    value => {
+      settingsStore.updatePluginAgent({ forceJsonOutput: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.useStream,
+    value => {
+      settingsStore.updatePluginAgent({ useStream: value })
+    }
+  )
+  watch(
+    () => localAgentSettings.value.extraBody,
+    value => {
+      settingsStore.updatePluginAgent({ extraBody: value })
+    }
+  )
 
   watch(selectedPluginId, async (value, previousValue) => {
-    if (
-      mode.value === 'modify'
-      && session.value?.session_id
-      && value !== previousValue
-    ) {
+    if (mode.value === 'modify' && session.value?.session_id && value !== previousValue) {
       try {
         await deletePluginAgentSession(session.value.session_id)
       } catch {
@@ -364,27 +393,23 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     modelDiscovery.invalidate()
   })
 
-  function buildAgentConfig(): PluginAgentAgentConfig {
-    return {
-      provider: localAgentSettings.value.provider,
-      apiKey: localAgentSettings.value.apiKey,
-      modelName: localAgentSettings.value.modelName,
-      customBaseUrl: localAgentSettings.value.customBaseUrl,
-      openaiOptions: settingsStore.settings.pluginAgent.openaiOptions,
-    }
-  }
-
   function syncLocalAgentSettingsFromStore(): void {
     localAgentSettings.value.provider = settingsStore.settings.pluginAgent.provider
     localAgentSettings.value.apiKey = settingsStore.settings.pluginAgent.apiKey
     localAgentSettings.value.modelName = settingsStore.settings.pluginAgent.modelName
     localAgentSettings.value.customBaseUrl = settingsStore.settings.pluginAgent.customBaseUrl
-    localAgentSettings.value.rpmLimit = settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit
-    localAgentSettings.value.transportRetries = settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries
-    localAgentSettings.value.businessRetries = settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries
-    localAgentSettings.value.forceJsonOutput = settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput
-    localAgentSettings.value.useStream = settingsStore.settings.pluginAgent.openaiOptions.execution.useStream
-    localAgentSettings.value.extraBody = settingsStore.settings.pluginAgent.openaiOptions.request.extraBody
+    localAgentSettings.value.rpmLimit =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit
+    localAgentSettings.value.transportRetries =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries
+    localAgentSettings.value.businessRetries =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries
+    localAgentSettings.value.forceJsonOutput =
+      settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput
+    localAgentSettings.value.useStream =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.useStream
+    localAgentSettings.value.extraBody =
+      settingsStore.settings.pluginAgent.openaiOptions.request.extraBody
   }
 
   async function initializeModal(): Promise<void> {
@@ -392,24 +417,25 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       syncLocalAgentSettingsFromStore()
       modelDiscovery.invalidate()
       const result = await getPluginAgentSettings()
-      if (!result.success) {
-        toast.error(result.error || '加载插件 Agent 设置失败')
-        return
-      }
-
-      overview.value = result.overview || []
-      overviewSections.value = result.overview_sections || []
-      promptExamples.value = result.prompt_examples || []
-      providerOptions.value = result.providers || []
-      pluginOptions.value = [{ value: '', label: '-- 选择插件 --' }, ...(result.plugins || []).map(plugin => ({
-        value: plugin.id,
-        label: plugin.display_name,
-      }))]
+      overview.value = result.overview
+      overviewSections.value = result.overview_sections
+      promptExamples.value = result.prompt_examples
+      providerOptions.value = result.providers
+      pluginOptions.value = [
+        { value: '', label: '-- 选择插件 --' },
+        ...result.plugins.map(plugin => ({
+          value: plugin.pluginId,
+          label: plugin.displayName,
+        })),
+      ]
       if (result.session) {
         applySession(result.session)
       }
       if (session.value) {
-        selectedPluginId.value = session.value.selected_plugin_id || session.value.locked_target?.plugin_id || selectedPluginId.value
+        selectedPluginId.value =
+          session.value.selected_plugin_id ||
+          session.value.locked_target?.plugin_id ||
+          selectedPluginId.value
         if (session.value.run_state === 'running') {
           void startStreaming()
         }
@@ -445,12 +471,18 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     localAgentSettings.value.apiKey = settingsStore.settings.pluginAgent.apiKey
     localAgentSettings.value.modelName = settingsStore.settings.pluginAgent.modelName
     localAgentSettings.value.customBaseUrl = settingsStore.settings.pluginAgent.customBaseUrl
-    localAgentSettings.value.rpmLimit = settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit
-    localAgentSettings.value.transportRetries = settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries
-    localAgentSettings.value.businessRetries = settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries
-    localAgentSettings.value.forceJsonOutput = settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput
-    localAgentSettings.value.useStream = settingsStore.settings.pluginAgent.openaiOptions.execution.useStream
-    localAgentSettings.value.extraBody = settingsStore.settings.pluginAgent.openaiOptions.request.extraBody
+    localAgentSettings.value.rpmLimit =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit
+    localAgentSettings.value.transportRetries =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries
+    localAgentSettings.value.businessRetries =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries
+    localAgentSettings.value.forceJsonOutput =
+      settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput
+    localAgentSettings.value.useStream =
+      settingsStore.settings.pluginAgent.openaiOptions.execution.useStream
+    localAgentSettings.value.extraBody =
+      settingsStore.settings.pluginAgent.openaiOptions.request.extraBody
   }
 
   function handleSelectedPluginChange(value: string | number): void {
@@ -485,13 +517,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
           mode: mode.value,
           ...(mode.value === 'modify' ? { plugin_id: selectedPluginId.value } : {}),
         })
-        if (!createResult.success) {
-          clearPlanningOptimisticState()
-          toast.error(createResult.error || '创建会话失败')
-          return
-        }
-        applySession(createResult.session)
-        activeSessionId = createResult.session.session_id
+        applySession(createResult)
+        activeSessionId = createResult.session_id
         hadExistingSession = false
       }
 
@@ -506,17 +533,10 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
 
       const result = await sendPluginAgentMessage(activeSession.session_id, {
         content: userContent,
-        agentConfig: buildAgentConfig(),
       })
 
-      if (!result.success) {
-        clearPlanningOptimisticState()
-        toast.error(result.error || '发送消息失败')
-        return
-      }
-
       clearPlanningOptimisticState()
-      applySession(result.session)
+      applySession(result)
       await syncHistoryScrollToBottom()
     } catch (error) {
       if (activeSessionId) {
@@ -539,12 +559,11 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     try {
       if (!session.value?.pending_target) return
 
-      const result = await lockPluginAgentTarget(session.value.session_id, session.value.pending_target)
-      if (!result.success) {
-        toast.error(result.error || '锁定目标失败')
-        return
-      }
-      applySession(result.session)
+      const result = await lockPluginAgentTarget(
+        session.value.session_id,
+        session.value.pending_target
+      )
+      applySession(result)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '锁定目标失败')
     }
@@ -554,13 +573,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     try {
       if (!session.value || !canStartExecution.value) return
 
-      const result = await startPluginAgentExecution(session.value.session_id, buildAgentConfig())
-      if (!result.success) {
-        toast.error(result.error || '启动执行失败')
-        return
-      }
-
-      applySession(result.session)
+      const result = await startPluginAgentExecution(session.value.session_id)
+      applySession(result)
       await syncHistoryScrollToBottom()
       await startStreaming()
     } catch (error) {
@@ -569,6 +583,9 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   function appendEvent(event: PluginAgentEvent): void {
+    const key = event.eventKey ?? `session:${event.id}`
+    if (eventFeed.value.some(existing => (existing.eventKey ?? `session:${existing.id}`) === key))
+      return
     eventFeed.value = [...eventFeed.value, event]
     applyEventToSession(event)
   }
@@ -638,38 +655,85 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     }
   }
 
+  async function applyJobEvent(event: V2JobEvent, generation: number): Promise<void> {
+    if (
+      generation !== streamGeneration ||
+      event.jobId !== activeStreamJobId ||
+      event.eventId <= jobEventCursor
+    )
+      return
+    jobEventCursor = event.eventId
+    const mapped = pluginAgentEventFromJobEvent(event)
+    if (!mapped) return
+    if (mapped.type === 'error' && sawPluginTerminalEvent) return
+    if (mapped.type === 'done' || mapped.type === 'error') {
+      sawPluginTerminalEvent = true
+    }
+    appendEvent(mapped)
+    await syncHistoryScrollToBottom()
+    if (mapped.type === 'done' || mapped.type === 'error') {
+      stopStreaming()
+    }
+    if (mapped.type === 'done') {
+      emit('pluginsChanged')
+      await initializeModal()
+    }
+  }
+
   async function startStreaming(): Promise<void> {
-    if (!session.value) return
+    const activeSession = session.value
+    if (activeSession?.run_state !== 'running' || !activeSession.job_id) return
     stopStreaming()
 
-    streamAbortController = new AbortController()
-    while (session.value?.run_state === 'running' && !streamAbortController.signal.aborted) {
-      const activeSession = session.value
-      if (!activeSession) break
-      await subscribePluginAgentEvents(activeSession.session_id, {
-        afterId: getLastEventId(),
-        signal: streamAbortController.signal,
-        onEvent: async (event) => {
-          appendEvent(event)
-          await syncHistoryScrollToBottom()
-          if (event.type === 'done') {
-            emit('pluginsChanged')
-            await initializeModal()
-          }
-        },
-        onError: (error) => {
-          if (!streamAbortController?.signal.aborted) {
-            toast.error(error)
-          }
-        },
-      })
+    const generation = streamGeneration
+    activeStreamJobId = activeSession.job_id
+    bufferedJobEvents = []
+    jobEventCursor = 0
+    sawPluginTerminalEvent = false
+    streamIsCatchingUp = true
+    stopTaskEvents = taskCenterStore.subscribeEvents(event => {
+      if (event.jobId !== activeStreamJobId) return
+      if (streamIsCatchingUp) {
+        bufferedJobEvents.push(event)
+        return
+      }
+      void applyJobEvent(event, generation)
+    })
+
+    try {
+      const backlog = await listPluginAgentJobEvents(activeStreamJobId)
+      if (generation !== streamGeneration) return
+      jobEventCursor = backlog.cursor
+      let backlogCompleted = false
+      for (const event of backlog.events) {
+        if (event.type === 'error' && sawPluginTerminalEvent) continue
+        if (event.type === 'done' || event.type === 'error') sawPluginTerminalEvent = true
+        if (event.type === 'done') backlogCompleted = true
+        appendEvent(event)
+      }
+      streamIsCatchingUp = false
+      const buffered = bufferedJobEvents.sort((left, right) => left.eventId - right.eventId)
+      bufferedJobEvents = []
+      for (const event of buffered) await applyJobEvent(event, generation)
+      await syncHistoryScrollToBottom()
+      if (backlogCompleted && generation === streamGeneration) {
+        stopStreaming()
+        emit('pluginsChanged')
+        await initializeModal()
+      } else if (sawPluginTerminalEvent && generation === streamGeneration) {
+        stopStreaming()
+      }
+    } catch (error) {
+      if (generation === streamGeneration) {
+        toast.error(error instanceof Error ? error.message : '任务事件加载失败')
+      }
     }
   }
 
   async function cancelExecution(): Promise<void> {
     try {
-      if (!session.value?.session_id) return
-      await cancelPluginAgentExecution(session.value.session_id)
+      if (!session.value?.job_id) return
+      await cancelPluginAgentExecution(session.value.job_id)
       toast.info('已请求取消执行')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '取消执行失败')
@@ -690,8 +754,12 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   function stopStreaming(): void {
-    streamAbortController?.abort()
-    streamAbortController = null
+    streamGeneration += 1
+    stopTaskEvents?.()
+    stopTaskEvents = null
+    activeStreamJobId = ''
+    bufferedJobEvents = []
+    streamIsCatchingUp = false
   }
 
   const fetchModels = modelDiscovery.fetchModels
@@ -709,7 +777,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       if (result.success) {
         toast.success(result.message || '连接成功')
       } else {
-        toast.error(result.message || result.error || '连接失败')
+        toast.error(result.message || '连接失败')
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '连接测试失败')

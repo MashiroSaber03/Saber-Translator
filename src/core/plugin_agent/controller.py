@@ -224,6 +224,11 @@ class PluginAgentController:
                 provider=provider,
                 api_key=api_key,
                 model=model_name,
+                credential_version_id=(
+                    str(agent_config["credential_version_id"])
+                    if agent_config.get("credential_version_id")
+                    else None
+                ),
                 base_url=custom_base_url,
                 capability=PLUGIN_AGENT_CAPABILITY,
                 openai_options=openai_options,

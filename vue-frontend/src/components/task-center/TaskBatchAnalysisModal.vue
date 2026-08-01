@@ -72,11 +72,8 @@ async function selectBook(value: UiSelectValue) {
   if (!bookId.value) return
   loadingChapters.value = true
   try {
-    const response = await getBookDetail(bookId.value)
-    if (!response.success || !response.book) {
-      throw new Error(response.error || '读取书籍章节失败')
-    }
-    chapters.value = response.book.chapters || []
+    const book = await getBookDetail(bookId.value)
+    chapters.value = book.chapters || []
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '读取书籍章节失败'
   } finally {

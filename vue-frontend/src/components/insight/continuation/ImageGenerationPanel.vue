@@ -374,16 +374,11 @@ async function openBatchReferenceSelector() {
   const requestId = ++imageRequestSeq
 
   try {
-    const response = await getAvailableImages(
-      bookId,
-      'image'
-    )
+    const response = await getAvailableImages(bookId)
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
-    if (response.success) {
-      availableOriginalImages.value = response.original_images || []
-      availableContinuationImages.value = response.continuation_images || []
-      availableCharacterForms.value = response.character_forms || []
-    }
+    availableOriginalImages.value = response.original_images
+    availableContinuationImages.value = response.continuation_images
+    availableCharacterForms.value = response.character_forms
   } catch {
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []

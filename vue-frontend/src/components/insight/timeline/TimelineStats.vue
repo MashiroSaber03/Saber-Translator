@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
-import type { TimelineStats } from './timelineTypes'
+import type { TimelineStats } from '@/types/insight'
 
 const props = defineProps<{
   stats?: TimelineStats

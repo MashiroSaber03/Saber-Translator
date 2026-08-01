@@ -9,10 +9,7 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import {
-  RERANKER_PROVIDER_OPTIONS,
-  RERANKER_DEFAULT_MODELS,
-} from './types'
+import { RERANKER_PROVIDER_OPTIONS, RERANKER_DEFAULT_MODELS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -37,9 +34,9 @@ const businessRetries = ref(insightStore.config.reranker.businessRetries ?? 10)
 const timeoutSeconds = ref(insightStore.config.reranker.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() => (
+const hasStoredCredential = computed(() =>
   insightApi.hasInsightCredential('insight_reranker', provider.value)
-))
+)
 const {
   isFetchingModels,
   modelOptions,
@@ -83,7 +80,11 @@ async function testConnection(): Promise<void> {
       business_retries: businessRetries.value,
       timeout_seconds: timeoutSeconds.value,
     })
-    emit('showMessage', response.success ? 'Reranker 连接成功' : '连接失败: ' + (response.error || '未知错误'), response.success ? 'success' : 'error')
+    emit(
+      'showMessage',
+      response.success ? 'Reranker 连接成功' : '连接失败: ' + (response.message || '未知错误'),
+      response.success ? 'success' : 'error'
+    )
   } catch {
     emit('showMessage', '测试失败', 'error')
   } finally {
@@ -116,7 +117,16 @@ function applyDraftConfig(config: StoreRerankerConfig): void {
 }
 
 useInsightSettingsDraft<StoreRerankerConfig>({
-  sources: [provider, apiKey, model, baseUrl, topK, transportRetries, businessRetries, timeoutSeconds],
+  sources: [
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    topK,
+    transportRetries,
+    businessRetries,
+    timeoutSeconds,
+  ],
   buildDraft: buildDraftConfig,
   applyDraft: applyDraftConfig,
   loadDraft: () => insightStore.config.reranker,
@@ -126,7 +136,9 @@ useInsightSettingsDraft<StoreRerankerConfig>({
 </script>
 
 <template>
-  <InsightSettingsPanel description="Reranker（重排序模型）用于对搜索结果进行重新排序，提高问答准确性。">
+  <InsightSettingsPanel
+    description="Reranker（重排序模型）用于对搜索结果进行重新排序，提高问答准确性。"
+  >
     <InsightModelProviderSection
       v-model:provider="provider"
       v-model:api-key="apiKey"
@@ -152,20 +164,56 @@ useInsightSettingsDraft<StoreRerankerConfig>({
       @test="testConnection"
     />
 
-    <UiField variant="settings" label="Top K" hint="重排序后返回的结果数量" control-id="reranker-top-k">
+    <UiField
+      variant="settings"
+      label="Top K"
+      hint="重排序后返回的结果数量"
+      control-id="reranker-top-k"
+    >
       <UiNumberField v-model="topK" input-id="reranker-top-k" :min="1" :max="20" />
     </UiField>
 
-    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10" control-id="reranker-transport-retries">
-      <UiNumberField v-model="transportRetries" input-id="reranker-transport-retries" :min="0" :max="100" />
+    <UiField
+      variant="settings"
+      label="传输重试次数"
+      hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10"
+      control-id="reranker-transport-retries"
+    >
+      <UiNumberField
+        v-model="transportRetries"
+        input-id="reranker-transport-retries"
+        :min="0"
+        :max="100"
+      />
     </UiField>
 
-    <UiField variant="settings" label="业务重试次数" hint="当重排序结果为空或结构无效时的额外重试次数，默认 10" control-id="reranker-business-retries">
-      <UiNumberField v-model="businessRetries" input-id="reranker-business-retries" :min="0" :max="100" />
+    <UiField
+      variant="settings"
+      label="业务重试次数"
+      hint="当重排序结果为空或结构无效时的额外重试次数，默认 10"
+      control-id="reranker-business-retries"
+    >
+      <UiNumberField
+        v-model="businessRetries"
+        input-id="reranker-business-retries"
+        :min="0"
+        :max="100"
+      />
     </UiField>
 
-    <UiField variant="settings" label="单次请求超时（秒）" hint="0 表示不限制；大于 0 时作为单次重排序 HTTP 请求超时" control-id="reranker-timeout-seconds">
-      <UiNumberField v-model="timeoutSeconds" input-id="reranker-timeout-seconds" :min="0" :max="3600" :step="1" />
+    <UiField
+      variant="settings"
+      label="单次请求超时（秒）"
+      hint="0 表示不限制；大于 0 时作为单次重排序 HTTP 请求超时"
+      control-id="reranker-timeout-seconds"
+    >
+      <UiNumberField
+        v-model="timeoutSeconds"
+        input-id="reranker-timeout-seconds"
+        :min="0"
+        :max="3600"
+        :step="1"
+      />
     </UiField>
   </InsightSettingsPanel>
 </template>

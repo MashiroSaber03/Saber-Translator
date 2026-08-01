@@ -28,11 +28,6 @@ const progressArbitrary: fc.Arbitrary<ProgressPair> = fc
   })
   .filter(progress => progress.total === 0 || progress.current <= progress.total)
 
-const bookIdArbitrary = fc.stringOf(
-  fc.constantFrom(...'abcdef0123456789'.split('')),
-  { minLength: 8, maxLength: 8 },
-)
-
 describe('insight progress properties', () => {
   it('computes progress percent from current and total', () => {
     fc.assert(
@@ -76,7 +71,6 @@ describe('insight progress properties', () => {
         expect(store.analysisStatus).toBe(lastStatus)
         expect(store.progress.status).toBe(lastStatus)
         expect(store.isAnalyzing).toBe(lastStatus === 'running')
-        expect(store.isAnalysisCompleted).toBe(lastStatus === 'completed')
       }),
     )
   })
@@ -119,26 +113,4 @@ describe('insight progress properties', () => {
     )
   })
 
-  it('resets analysis progress without changing the selected book', () => {
-    fc.assert(
-      fc.property(
-        analysisStatusArbitrary,
-        progressArbitrary,
-        bookIdArbitrary,
-        (status, progress, bookId) => {
-          const store = createStore()
-          store.setCurrentBook(bookId)
-          store.setAnalysisStatus(status)
-          store.updateProgress(progress.current, progress.total)
-
-          store.resetAnalysis()
-
-          expect(store.currentBookId).toBe(bookId)
-          expect(store.analysisStatus).toBe('idle')
-          expect(store.progress).toEqual({ current: 0, total: 0, status: 'idle' })
-          expect(store.progressPercent).toBe(0)
-        },
-      ),
-    )
-  })
 })

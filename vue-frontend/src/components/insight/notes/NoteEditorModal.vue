@@ -12,7 +12,7 @@ import UiInput from '@/components/ui/UiInput.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import type { NoteData, NoteType } from '@/stores/insightStore'
+import type { NoteData, NoteType } from '@/types/insight'
 
 const props = defineProps<{
   editingNote: NoteData | null

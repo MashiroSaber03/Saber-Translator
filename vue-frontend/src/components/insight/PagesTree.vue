@@ -126,19 +126,12 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
   if (!confirmed) return
 
   try {
-    const response = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
-    if (response.success) {
-      const taskId = response.task_id
-      if (taskId) {
-        insightStore.setCurrentTaskId(taskId)
-      }
-      insightStore.setAnalysisStatus('running')
-      showToast('章节分析已启动', 'success')
-    } else {
-      showToast('启动失败: ' + (response.error || '未知错误'), 'error')
-    }
-  } catch {
-    showToast('重新分析失败', 'error')
+    const submission = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
+    insightStore.setCurrentTaskId(submission.jobId)
+    insightStore.setAnalysisStatus('running')
+    showToast('章节分析已启动', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '重新分析失败', 'error')
   }
 }
 
@@ -150,17 +143,14 @@ async function loadAnalyzedPages(bookId = insightStore.currentBookId): Promise<v
   }
 
   try {
-    const response = await insightApi.getAnalyzedPages(bookId)
+    const analyzedPages = await insightApi.getAnalyzedPages(bookId)
     if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
 
-    if (response.success && response.pages) {
-      const nextMap = new Map<number, boolean>()
-      const analyzedPages = response.pages
-      analyzedPages.forEach(p => {
-        nextMap.set(p, true)
-      })
-      pageAnalyzedMap.value = nextMap
-    }
+    const nextMap = new Map<number, boolean>()
+    analyzedPages.forEach(pageNumber => {
+      nextMap.set(pageNumber, true)
+    })
+    pageAnalyzedMap.value = nextMap
   } catch {
     if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
     showToast('加载页面分析状态失败', 'error')

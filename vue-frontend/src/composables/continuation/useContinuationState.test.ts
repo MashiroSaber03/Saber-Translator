@@ -29,7 +29,6 @@ function deferred<T>() {
 describe('useContinuationState', () => {
   it('keeps continuation blocked when preparation reports missing prerequisites', async () => {
     prepareContinuationMock.mockResolvedValue({
-      success: true,
       ready: false,
       message: '续写功能需要故事概要',
       saved_data: {
@@ -39,7 +38,7 @@ describe('useContinuationState', () => {
         has_data: false,
       },
     })
-    getCharactersMock.mockResolvedValue({ success: true, characters: [] })
+    getCharactersMock.mockResolvedValue([])
     const state = useContinuationState(ref('book-1'))
     await state.initializeData()
 
@@ -49,8 +48,8 @@ describe('useContinuationState', () => {
 
   it('shows a persistent error when character loading fails during initialization', async () => {
     prepareContinuationMock.mockResolvedValue({
-      success: true,
       ready: true,
+      message: '续写数据已就绪',
       saved_data: {
         script: null,
         pages: [],
@@ -58,10 +57,7 @@ describe('useContinuationState', () => {
         has_data: false,
       },
     })
-    getCharactersMock.mockResolvedValue({
-      success: false,
-      error: '角色接口不可用',
-    })
+    getCharactersMock.mockRejectedValue(new Error('角色接口不可用'))
 
     const state = useContinuationState(ref('book-1'))
     await state.initializeData()
@@ -73,8 +69,8 @@ describe('useContinuationState', () => {
 
   it('resets stale continuation state before applying a fresh empty payload', async () => {
     prepareContinuationMock.mockResolvedValue({
-      success: true,
       ready: true,
+      message: '续写数据已就绪',
       saved_data: {
         script: null,
         pages: [],
@@ -82,9 +78,7 @@ describe('useContinuationState', () => {
         has_data: false,
       },
     })
-    getCharactersMock.mockResolvedValue({
-      success: true,
-      characters: [
+    getCharactersMock.mockResolvedValue([
         {
           name: '主角',
           aliases: [],
@@ -93,8 +87,7 @@ describe('useContinuationState', () => {
           reference_image: '',
           enabled: true,
         },
-      ],
-    })
+      ])
     const state = useContinuationState(ref('book-1'))
     state.pageCount.value = 22
     state.styleRefPages.value = 7
@@ -133,21 +126,19 @@ describe('useContinuationState', () => {
   it('ignores stale initialization responses after the selected book changes', async () => {
     const bookId = ref('book-1')
     const firstPrepare = deferred<{
-      success: boolean
       ready: boolean
+      message: string
       saved_data: { script: null; pages: []; config: null; has_data: boolean }
     }>()
     const secondPrepare = deferred<{
-      success: boolean
       ready: boolean
+      message: string
       saved_data: { script: null; pages: []; config: null; has_data: boolean }
     }>()
     prepareContinuationMock.mockImplementation((id: string) => (
       id === 'book-1' ? firstPrepare.promise : secondPrepare.promise
     ))
-    getCharactersMock.mockImplementation((id: string) => Promise.resolve({
-      success: true,
-      characters: [
+    getCharactersMock.mockImplementation((id: string) => Promise.resolve([
         {
           name: id === 'book-1' ? '旧书角色' : '新书角色',
           aliases: [],
@@ -156,8 +147,7 @@ describe('useContinuationState', () => {
           reference_image: '',
           enabled: true,
         },
-      ],
-    }))
+      ]))
 
     const state = useContinuationState(bookId)
     const firstLoad = state.initializeData()
@@ -165,8 +155,8 @@ describe('useContinuationState', () => {
     const secondLoad = state.initializeData()
 
     secondPrepare.resolve({
-      success: true,
       ready: true,
+      message: '续写数据已就绪',
       saved_data: {
         script: null,
         pages: [],
@@ -179,8 +169,8 @@ describe('useContinuationState', () => {
     expect(state.characters.value.map(character => character.name)).toEqual(['新书角色'])
 
     firstPrepare.resolve({
-      success: true,
       ready: true,
+      message: '续写数据已就绪',
       saved_data: {
         script: null,
         pages: [],
@@ -195,8 +185,8 @@ describe('useContinuationState', () => {
 
   it('syncs analysis data without clearing existing continuation payloads', async () => {
     prepareContinuationMock.mockResolvedValue({
-      success: true,
       ready: true,
+      message: '续写数据已就绪',
       saved_data: {
         script: {
           chapter_title: '旧脚本',
@@ -225,9 +215,7 @@ describe('useContinuationState', () => {
         has_data: true,
       },
     })
-    getCharactersMock.mockResolvedValue({
-      success: true,
-      characters: [
+    getCharactersMock.mockResolvedValue([
         {
           name: '主角',
           aliases: [],
@@ -236,17 +224,16 @@ describe('useContinuationState', () => {
           reference_image: '',
           enabled: true,
         },
-      ],
-    })
+      ])
     syncContinuationAnalysisMock.mockResolvedValue({
-      success: true,
       ready: true,
       message: '分析数据同步完成',
-      story_summary_ready: true,
-      timeline_ready: true,
-      characters_added: 1,
-      total_characters: 2,
-      synced_at: '2026-05-21T20:00:00',
+      saved_data: {
+        script: null,
+        pages: [],
+        config: null,
+        has_data: true,
+      },
     })
 
     const state = useContinuationState(ref('book-1'))
@@ -260,7 +247,7 @@ describe('useContinuationState', () => {
     expect(state.styleRefPages.value).toBe(4)
     expect(state.continuationDirection.value).toBe('保留当前续写')
     expect(state.isDataReady.value).toBe(true)
-    expect(state.lastAnalysisSyncAt.value).toBe('2026-05-21T20:00:00')
+    expect(state.lastAnalysisSyncAt.value).toBe('')
   })
 
   it('shows info messages without letting a previous timer clear a newer message', () => {

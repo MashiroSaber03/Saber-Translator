@@ -5,19 +5,21 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useImageStore } from '@/stores/imageStore'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { ImageDataLoadInput } from '@/types/image'
+import { addTestImage } from '../helpers/imageFixtures'
 
 describe('imageStore', () => {
     beforeEach(() => {
         setActivePinia(createPinia())
     })
 
-    it('uses the shared natural sort contract without tutorial narration', () => {
+    it('contains only the backend page load contract without tutorial narration', () => {
         const source = readFileSync(resolve(process.cwd(), 'src/stores/imageStore.ts'), 'utf8')
 
-        expect(source).toContain("import { naturalSortCompare } from '@/utils'")
         expect(source).not.toContain('imageBubbleMirrors')
         expect(source).not.toContain('function applyBubbleStateMirrors')
-        expect(source).not.toContain('localeCompare(' + 'pathB')
+        expect(source).not.toContain('function addImage(')
+        expect(source).not.toContain('function addImages(')
+        expect(source).not.toContain('function sortImagesByFileName(')
         for (const staleNarration of [
             '/' + '**',
             '@' + 'param',
@@ -59,11 +61,11 @@ describe('imageStore', () => {
     })
 
     describe('图片管理', () => {
-        it('应该能添加图片', () => {
+        it('应该能载入后端图片', () => {
             const store = useImageStore()
             const sourceAssetUrl = '/api/v2/assets/source-1'
 
-            const image = store.addImage('test.png', sourceAssetUrl)
+            const image = addTestImage(store, 'test.png', sourceAssetUrl)
 
             expect(image.fileName).toBe('test.png')
             expect(image.sourceAssetUrl).toBe(sourceAssetUrl)
@@ -73,7 +75,7 @@ describe('imageStore', () => {
 
         it('应该能更新图片尺寸', () => {
             const store = useImageStore()
-            store.addImage('test.png', '/api/v2/assets/source-1')
+            addTestImage(store, 'test.png', '/api/v2/assets/source-1')
 
             store.updateCurrentImageDimensions(1920, 1080)
 
@@ -83,8 +85,8 @@ describe('imageStore', () => {
 
         it('应该在切换图片时更新 currentImage', () => {
             const store = useImageStore()
-            store.addImage('test1.png', '/api/v2/assets/source-1')
-            store.addImage('test2.png', '/api/v2/assets/source-2')
+            addTestImage(store, 'test1.png', '/api/v2/assets/source-1')
+            addTestImage(store, 'test2.png', '/api/v2/assets/source-2')
 
             expect(store.currentImage?.fileName).toBe('test1.png')
 
@@ -105,8 +107,8 @@ describe('imageStore', () => {
 
         it('删除当前图片后应该正确调整索引', () => {
             const store = useImageStore()
-            store.addImage('test1.png', '/api/v2/assets/source-1')
-            store.addImage('test2.png', '/api/v2/assets/source-2')
+            addTestImage(store, 'test1.png', '/api/v2/assets/source-1')
+            addTestImage(store, 'test2.png', '/api/v2/assets/source-2')
 
             store.deleteCurrentImage()
 
@@ -150,7 +152,7 @@ describe('imageStore', () => {
 
         it('从 failed 切回 processing 时应清除旧的错误信息', () => {
             const store = useImageStore()
-            store.addImage('test.png', '/api/v2/assets/source-1')
+            addTestImage(store, 'test.png', '/api/v2/assets/source-1')
 
             store.setTranslationStatus(0, 'failed', 'boom')
             expect(store.currentImage?.errorMessage).toBe('boom')
@@ -168,7 +170,7 @@ describe('imageStore', () => {
             nonFailedStatuses.forEach(status => {
                 setActivePinia(createPinia())
                 const store = useImageStore()
-                store.addImage('test.png', '/api/v2/assets/source-1')
+                addTestImage(store, 'test.png', '/api/v2/assets/source-1')
 
                 store.setTranslationStatus(0, 'failed', 'boom')
                 store.setTranslationStatus(0, status, 'stale error')
@@ -184,15 +186,13 @@ describe('imageStore', () => {
             const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
             try {
-                store.addImage('test1.png', '/api/v2/assets/source-1')
-                store.addImages([{ fileName: 'test2.png', sourceAssetUrl: '/api/v2/assets/source-2' }])
-                store.sortImagesByFileName()
+                addTestImage(store, 'test1.png', '/api/v2/assets/source-1')
+                addTestImage(store, 'test2.png', '/api/v2/assets/source-2')
                 store.setCurrentImageIndex(1)
                 store.updateCurrentImage({ translatedAssetUrl: '/api/v2/assets/translated' })
                 store.updateImageByIndex(0, { translationStatus: 'processing' })
                 store.updateCurrentImageDimensions(800, 600)
                 store.setBatchTranslationInProgress(true)
-                store.resetAllTranslationStatus()
                 store.deleteCurrentImage()
                 store.clearImages()
 
@@ -206,7 +206,7 @@ describe('imageStore', () => {
     describe('尺寸管理', () => {
         it('新图片的尺寸默认为 0', () => {
             const store = useImageStore()
-            store.addImage('test.png', '/api/v2/assets/source-1')
+            addTestImage(store, 'test.png', '/api/v2/assets/source-1')
 
             expect(store.currentImage?.width).toBe(0)
             expect(store.currentImage?.height).toBe(0)
@@ -214,7 +214,7 @@ describe('imageStore', () => {
 
         it('更新尺寸后应该正确存储', () => {
             const store = useImageStore()
-            store.addImage('test.png', '/api/v2/assets/source-1')
+            addTestImage(store, 'test.png', '/api/v2/assets/source-1')
 
             store.updateCurrentImageDimensions(800, 600)
 

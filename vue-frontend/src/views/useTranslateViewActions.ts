@@ -50,7 +50,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     }
   }
 
-  async function handleUploadComplete(_count: number) {
+  async function handleUploadComplete() {
     await translateInit.initializeBookChapterContext()
   }
 

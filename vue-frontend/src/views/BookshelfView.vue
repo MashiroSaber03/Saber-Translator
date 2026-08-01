@@ -44,7 +44,7 @@ const batchTagAction = ref<'add' | 'remove'>('add')
 const selectedBatchTagNames = ref(new Set<string>())
 const batchBusy = ref(false)
 
-const filteredBooks = computed(() => bookshelfStore.filteredBooks)
+const filteredBooks = computed(() => bookshelfStore.books)
 const allTags = computed(() => bookshelfStore.tags)
 const isEmpty = computed(() => (
   filteredBooks.value.length === 0
@@ -112,15 +112,8 @@ function openEditBookModal(bookId: string) {
 
 async function openBookDetail(bookId: string) {
   try {
-    const response = await getBookDetail(bookId)
-
-    if (!response.success) {
-      throw new Error(response.error || '加载失败')
-    }
-
-    if (response.book) {
-      bookshelfStore.updateBook(bookId, response.book)
-    }
+    const book = await getBookDetail(bookId)
+    bookshelfStore.updateBook(bookId, book)
 
     bookshelfStore.setCurrentBook(bookId)
     showDetailModal.value = true
@@ -153,7 +146,7 @@ async function translateSelectedBooks() {
   batchBusy.value = true
   try {
     const details = await Promise.all(bookIds.map(bookId => getBookDetail(bookId)))
-    const chapterIds = details.flatMap(result => result.book?.chapters?.map(chapter => chapter.id) || [])
+    const chapterIds = details.flatMap(book => book.chapters?.map(chapter => chapter.id) || [])
     if (!chapterIds.length) {
       showToast('选中的书籍没有可翻译章节', 'warning')
       return

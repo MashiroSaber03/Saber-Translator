@@ -38,6 +38,7 @@ from src.backend_v2.storage.schema import (
     prompts,
 )
 from src.backend_v2.storage.database import immediate_transaction
+from src.shared.openai_rate_limits import RateLimitDecision
 
 
 class RevisionConflict(RuntimeError):
@@ -723,6 +724,7 @@ class SettingsRepository:
                     f"{section_name}.credentialVersionId must be a non-empty string"
                 )
             requested[section_name] = version_id
+            section["credential_version_id"] = version_id
         if not requested:
             return result
 
@@ -1023,13 +1025,6 @@ class FontRepository:
         return str(row.asset_id)
 
 
-@dataclass(frozen=True, slots=True)
-class RateLimitDecision:
-    allowed: bool
-    remaining: int
-    retry_after_seconds: float
-
-
 class ProviderRateLimiter:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -1080,21 +1075,25 @@ class ProviderRateLimiter:
                 if window_started_at <= window_cutoff:
                     count = 1
                     started_at = current_time
-                    allowed = True
-                elif int(row["request_count"]) < rpm_limit:
+                    effective_limit = rpm_limit
+                else:
+                    effective_limit = min(int(row["rpm_limit"]), rpm_limit)
+                    if int(row["request_count"]) >= effective_limit:
+                        retry_after = max(
+                            0.0,
+                            (
+                                window_started_at
+                                + timedelta(minutes=1)
+                                - current_time
+                            ).total_seconds(),
+                        )
+                        return RateLimitDecision(
+                            allowed=False,
+                            remaining=0,
+                            retry_after_seconds=retry_after,
+                        )
                     count = int(row["request_count"]) + 1
                     started_at = window_started_at
-                    allowed = True
-                else:
-                    retry_after = max(
-                        0.0,
-                        (window_started_at + timedelta(minutes=1) - current_time).total_seconds(),
-                    )
-                    return RateLimitDecision(
-                        allowed=False,
-                        remaining=0,
-                        retry_after_seconds=retry_after,
-                    )
 
                 changed = connection.execute(
                     update(provider_rate_limits)
@@ -1107,14 +1106,14 @@ class ProviderRateLimiter:
                     .values(
                         window_started_at=started_at,
                         request_count=count,
-                        rpm_limit=rpm_limit,
+                        rpm_limit=effective_limit,
                         revision=revision + 1,
                     )
                 )
                 if changed.rowcount == 1:
                     return RateLimitDecision(
-                        allowed=allowed,
-                        remaining=max(0, rpm_limit - count),
+                        allowed=True,
+                        remaining=max(0, effective_limit - count),
                         retry_after_seconds=0,
                     )
         raise RuntimeError("provider limiter CAS remained contended")

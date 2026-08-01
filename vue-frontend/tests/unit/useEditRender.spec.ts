@@ -103,10 +103,9 @@ describe('useEditRender backend-first orchestration', () => {
     })
     const onRenderError = vi.fn()
     const { useEditRender } = await import('@/composables/useEditRender')
-    const { reRenderFullImage, renderError } = useEditRender({ onRenderError })
+    const { reRenderFullImage } = useEditRender({ onRenderError })
 
     await expect(reRenderFullImage()).resolves.toBe(false)
-    expect(renderError.value).toBe('后端渲染失败')
     expect(onRenderError).toHaveBeenCalledWith('后端渲染失败')
   })
 

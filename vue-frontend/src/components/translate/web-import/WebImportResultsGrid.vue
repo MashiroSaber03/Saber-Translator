@@ -19,7 +19,6 @@ const props = defineProps<{
   selectedCount: number
   selectedPages: Set<number>
   status: WebImportState['status']
-  previewUrlFor: (url: string) => string
 }>()
 
 const emit = defineEmits<{
@@ -30,7 +29,7 @@ const emit = defineEmits<{
 const imageItems = computed(() => {
   return props.extractResult?.pages.map(page => ({
     id: page.pageNumber,
-    src: props.previewUrlFor(page.imageUrl),
+    src: page.imageUrl,
     alt: `第${page.pageNumber}页`,
     label: `第 ${page.pageNumber} 页`,
     selected: props.selectedPages.has(page.pageNumber),

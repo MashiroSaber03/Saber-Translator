@@ -52,7 +52,7 @@ def create_web_import_blueprint(
 
     @blueprint.post("/support-checks")
     def support_check() -> Response:
-        body = _json_body()
+        body = _json_body(allowed_keys={"sourceUrl"})
         source_url = str(body.get("sourceUrl", "")).strip()
         _validated_url(source_url)
         try:
@@ -78,7 +78,9 @@ def create_web_import_blueprint(
 
     @blueprint.post("/drafts")
     def create_draft():
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"chapterId", "sourceUrl", "engine"}
+        )
         result = service.create_draft(
             chapter_id=_required_string(body, "chapterId"),
             source_url=_required_string(body, "sourceUrl"),
@@ -113,7 +115,9 @@ def create_web_import_blueprint(
     @blueprint.put("/drafts/<draft_id>/selection")
     def update_selection(draft_id: str) -> Response:
         idempotency_key = _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"selectedPageIds", "baseRevision"}
+        )
         selected = body.get("selectedPageIds")
         if not isinstance(selected, list) or not all(
             isinstance(value, str) for value in selected
@@ -134,7 +138,7 @@ def create_web_import_blueprint(
 
     @blueprint.post("/drafts/<draft_id>/commit")
     def commit(draft_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision"})
         result = service.commit(
             draft_id=draft_id,
             base_revision=_integer_value(

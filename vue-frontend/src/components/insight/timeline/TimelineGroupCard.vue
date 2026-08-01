@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import TimelineEventCardShell from './TimelineEventCardShell.vue'
-import type { TimelineGroup } from './timelineTypes'
+import type { TimelineGroup } from '@/types/insight'
 
 defineProps<{
   expanded: boolean

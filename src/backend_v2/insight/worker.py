@@ -55,6 +55,7 @@ class ProviderInsightAlgorithms:
             "api_key": vlm_section.get("api_key", ""),
             "model": vlm_section.get("model_name", ""),
             "base_url": vlm_section.get("custom_base_url"),
+            "credential_version_id": vlm_section.get("credential_version_id"),
             "openai_options": options,
             "image_max_size": int(vlm_section.get("image_max_size", 1280)),
         }

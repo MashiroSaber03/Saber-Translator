@@ -41,7 +41,7 @@ class SharedProviderRegistryImageGenTests(unittest.TestCase):
     def test_shared_registry_exposes_gpt2api_and_newapi_as_image_gen_providers(self) -> None:
         from src.shared.ai_providers import (
             IMAGE_GEN_CAPABILITY,
-            get_provider_default_model,
+            get_provider_manifest,
             provider_supports_capability,
             resolve_provider_base_url_for_capability,
         )
@@ -50,8 +50,14 @@ class SharedProviderRegistryImageGenTests(unittest.TestCase):
         self.assertTrue(provider_supports_capability("newapi", IMAGE_GEN_CAPABILITY))
         self.assertFalse(provider_supports_capability("openai", IMAGE_GEN_CAPABILITY))
         self.assertFalse(provider_supports_capability("qwen", IMAGE_GEN_CAPABILITY))
-        self.assertEqual(get_provider_default_model("gpt2api", "image_gen"), "gpt-image-2")
-        self.assertEqual(get_provider_default_model("newapi", "image_gen"), "")
+        self.assertEqual(
+            get_provider_manifest("gpt2api").default_models.get("image_gen", ""),
+            "gpt-image-2",
+        )
+        self.assertEqual(
+            get_provider_manifest("newapi").default_models.get("image_gen", ""),
+            "",
+        )
         self.assertIsNone(resolve_provider_base_url_for_capability("gpt2api", IMAGE_GEN_CAPABILITY))
         self.assertIsNone(resolve_provider_base_url_for_capability("newapi", IMAGE_GEN_CAPABILITY))
 

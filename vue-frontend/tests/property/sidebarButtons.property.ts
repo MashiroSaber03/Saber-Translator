@@ -13,6 +13,7 @@ import {
 import { useImageStore } from '@/stores/imageStore'
 import type { WorkflowMode, WorkflowRunRequest } from '@/types/workflow'
 import type { TranslationStatus } from '@/types/image'
+import { setTestImages } from '../helpers/imageFixtures'
 
 const {
   getFontListMock,
@@ -70,7 +71,7 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
   savePreferencesMock.mockResolvedValue({ success: true })
 
   const imageStore = useImageStore()
-  imageStore.addImages(scenario.images.map((image, index) => {
+  setTestImages(imageStore, scenario.images.map((image, index) => {
     const status: TranslationStatus = image.failed ? 'failed' : 'pending'
     return {
       fileName: `page-${index + 1}.png`,

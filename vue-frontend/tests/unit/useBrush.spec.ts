@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useBrush } from '@/composables/useBrush'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 
 const mocks = vi.hoisted(() => ({
   createMaskRepair: vi.fn(),
@@ -93,7 +94,7 @@ function mountBrush(onBrushComplete = vi.fn()) {
 }
 
 function drawStroke(brush: ReturnType<typeof useBrush>) {
-  brush.enterBrushMode('repair')
+  brush.toggleBrushMode('repair')
   brush.startBrushPainting(
     new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }),
     createBrushSurface(),
@@ -117,11 +118,10 @@ describe('useBrush', () => {
       pageId: 'page-1',
       pageStyleDefaults: {},
       pageStyleSchemaVersion: 1,
-      renderedRevision: 4,
-      sourceRevision: 1,
+      renderStatus: 'ready',
     })
     mocks.registerPageDocument.mockReturnValue([])
-    useImageStore().addImage('page.png', '/api/v2/assets/source-1', {
+    addTestImage(useImageStore(), 'page.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       documentRevision: 3,
       height: 120,

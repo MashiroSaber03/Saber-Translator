@@ -39,7 +39,7 @@ import {
 import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
 import QuickWorkspacePromoteModal from '@/components/translate/QuickWorkspacePromoteModal.vue'
-import { resetQuickWorkspace, type QuickWorkspacePromotion } from '@/api/v2/content'
+import { resetQuickWorkspace } from '@/api/v2/content'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
@@ -52,7 +52,6 @@ const taskCenterStore = useTaskCenterStore()
 
 const {
   validateBeforeTranslation,
-  initValidation,
   isSettingsButtonHighlighted,
 } = useValidation()
 
@@ -100,8 +99,6 @@ onMounted(async () => {
   bubbleStore.clearBubbles()
 
   await translateInit.initializeApp()
-
-  initValidation()
 })
 
 onUnmounted(() => {
@@ -302,7 +299,7 @@ async function createNewQuickWorkspace() {
   }
 }
 
-async function handleQuickWorkspacePromoted(_result: QuickWorkspacePromotion) {
+async function handleQuickWorkspacePromoted() {
   imageStore.clearImages()
   bubbleStore.clearBubbles()
   await loadChapterSession()

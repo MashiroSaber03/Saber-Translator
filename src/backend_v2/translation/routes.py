@@ -11,6 +11,7 @@ from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.translation.commands import TranslationJobCommandService
@@ -32,7 +33,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/translation-jobs")
     def create_chapter_translation(chapter_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"config", "pageIds"})
         config = body.get("config", {})
         page_ids = body.get("pageIds")
         if not isinstance(config, dict):
@@ -52,7 +53,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/job-batches/translation")
     def create_translation_batch():
-        body = _json_body()
+        body = _json_body(allowed_keys={"chapterIds", "config"})
         chapter_ids = body.get("chapterIds")
         config = body.get("config", {})
         if not isinstance(chapter_ids, list) or not all(
@@ -70,13 +71,8 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/detect-jobs")
     def create_detect_job(chapter_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"pageIds"})
         page_ids = body.get("pageIds")
-        unknown = set(body) - {"pageIds"}
-        if unknown:
-            raise ValueError(
-                "detect settings are resolved by the backend"
-            )
         if page_ids is not None and (
             not isinstance(page_ids, list)
             or not all(isinstance(value, str) for value in page_ids)
@@ -95,7 +91,13 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/style-apply-jobs")
     def create_style_apply_job(chapter_id: str):
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={
+                "sourcePageId",
+                "sourceDocumentRevision",
+                "selectedFields",
+            }
+        )
         selected = body.get("selectedFields")
         if not isinstance(selected, list) or not all(
             isinstance(value, str) for value in selected
@@ -134,6 +136,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/text-import/preview")
     def preview_text_import(chapter_id: str) -> Response:
+        _validate_multipart_fields(allowed_file_keys={"file"})
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
@@ -155,7 +158,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/text-import/commit")
     def commit_text_import(chapter_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"confirmedPages"})
         confirmed = body.get("confirmedPages")
         if not isinstance(confirmed, list) or not all(
             isinstance(value, dict) for value in confirmed

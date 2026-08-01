@@ -18,10 +18,7 @@
           :show-base-url="false"
           :include-base-url="false"
           api-key-placeholder="请输入API Key"
-          :has-stored-credential="settingsStore.hasCredential(
-            'hq',
-            hqSettings.provider,
-          )"
+          :has-stored-credential="settingsStore.hasCredential('hq', hqSettings.provider)"
           api-key-show-label="显示高质量翻译 API Key"
           api-key-hide-label="隐藏高质量翻译 API Key"
           @update:api-key="localHqSettings.apiKey = $event"
@@ -74,7 +71,13 @@
           control-id="settingsHqBatchSize"
           hint="每批处理的图片数量 (推荐3-5张)"
         >
-          <UiNumberField input-id="settingsHqBatchSize" v-model="localHqSettings.batchSize" :min="1" :max="10" :step="1" />
+          <UiNumberField
+            input-id="settingsHqBatchSize"
+            v-model="localHqSettings.batchSize"
+            :min="1"
+            :max="10"
+            :step="1"
+          />
         </UiField>
       </UiFormGrid>
       <UiFormGrid>
@@ -84,7 +87,12 @@
           control-id="settingsHqRpmLimit"
           hint="每分钟请求数，0表示无限制"
         >
-          <UiNumberField input-id="settingsHqRpmLimit" v-model="localHqSettings.rpmLimit" :min="0" :step="1" />
+          <UiNumberField
+            input-id="settingsHqRpmLimit"
+            v-model="localHqSettings.rpmLimit"
+            :min="0"
+            :step="1"
+          />
         </UiField>
         <UiField
           variant="settings"
@@ -92,7 +100,13 @@
           control-id="settingsHqMaxRetries"
           hint="业务重试：空结果/结构解析失败"
         >
-          <UiNumberField input-id="settingsHqMaxRetries" v-model="localHqSettings.businessRetries" :min="0" :max="10" :step="1" />
+          <UiNumberField
+            input-id="settingsHqMaxRetries"
+            v-model="localHqSettings.businessRetries"
+            :min="0"
+            :max="10"
+            :step="1"
+          />
         </UiField>
         <UiField
           variant="settings"
@@ -100,7 +114,13 @@
           control-id="settingsHqTransportRetries"
           hint="网络超时/429/5xx"
         >
-          <UiNumberField input-id="settingsHqTransportRetries" v-model="localHqSettings.transportRetries" :min="0" :max="10" :step="1" />
+          <UiNumberField
+            input-id="settingsHqTransportRetries"
+            v-model="localHqSettings.transportRetries"
+            :min="0"
+            :max="10"
+            :step="1"
+          />
         </UiField>
       </UiFormGrid>
     </ProductFormSection>
@@ -123,11 +143,14 @@
     <ProductFormSection>
       <template #title>高质量翻译提示词</template>
       <UiField variant="settings" label="高质量翻译提示词" control-id="settingsHqPrompt">
-        <UiTextarea id="settingsHqPrompt" v-model="localHqSettings.prompt" variant="panel" rows="6" placeholder="高质量翻译提示词" />
-        <SavedPromptsPicker
-          prompt-type="hq_translate"
-          @select="handleHqPromptSelect"
+        <UiTextarea
+          id="settingsHqPrompt"
+          v-model="localHqSettings.prompt"
+          variant="panel"
+          rows="6"
+          placeholder="高质量翻译提示词"
         />
+        <SavedPromptsPicker prompt-type="hq_translate" @select="handleHqPromptSelect" />
         <ProductActionRow aria-label="高质量翻译提示词操作" justify="start">
           <UiButton variant="secondary" @click="resetHqPrompt" size="sm">重置为默认</UiButton>
         </ProductActionRow>
@@ -155,19 +178,19 @@ import {
   getProviderDisplayName,
   getProviderOptionsForCapability,
   providerRequiresApiKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
 } from '@/config/aiProviders'
-import {
-  fetchModels as fetchV2Models,
-  testAiTranslateConnection,
-} from '@/api/v2/diagnostics'
+import { fetchModels as fetchV2Models, testAiTranslateConnection } from '@/api/v2/diagnostics'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_HQ_TRANSLATE_PROMPT } from '@/constants'
 import type { HqTranslationProvider } from '@/types/settings'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
-import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
+import {
+  useAiModelDiscovery,
+  type AiModelDiscoveryMessageTone,
+} from '@/composables/useAiModelDiscovery'
 
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
@@ -187,42 +210,75 @@ const localHqSettings = ref({
   forceJsonOutput: settingsStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput,
   extraBody: settingsStore.settings.hqTranslation.openaiOptions.request.extraBody,
   useStream: settingsStore.settings.hqTranslation.openaiOptions.execution.useStream,
-  prompt: settingsStore.settings.hqTranslation.prompt
+  prompt: settingsStore.settings.hqTranslation.prompt,
 })
 
-watch(() => localHqSettings.value.apiKey, (val) => {
-  settingsStore.updateHqTranslation({ apiKey: val })
-})
-watch(() => localHqSettings.value.modelName, (val) => {
-  settingsStore.updateHqTranslation({ modelName: val })
-})
-watch(() => localHqSettings.value.customBaseUrl, (val) => {
-  settingsStore.updateHqTranslation({ customBaseUrl: val })
-})
-watch(() => localHqSettings.value.batchSize, (val) => {
-  settingsStore.updateHqTranslation({ batchSize: val })
-})
-watch(() => localHqSettings.value.rpmLimit, (val) => {
-  settingsStore.updateHqTranslation({ rpmLimit: val })
-})
-watch(() => localHqSettings.value.transportRetries, (val) => {
-  settingsStore.updateHqTranslation({ transportRetries: val })
-})
-watch(() => localHqSettings.value.businessRetries, (val) => {
-  settingsStore.updateHqTranslation({ businessRetries: val })
-})
-watch(() => localHqSettings.value.forceJsonOutput, (val) => {
-  settingsStore.updateHqTranslation({ forceJsonOutput: val })
-})
-watch(() => localHqSettings.value.extraBody, (val) => {
-  settingsStore.updateHqTranslation({ extraBody: val })
-})
-watch(() => localHqSettings.value.useStream, (val) => {
-  settingsStore.updateHqTranslation({ useStream: val })
-})
-watch(() => localHqSettings.value.prompt, (val) => {
-  settingsStore.updateHqTranslation({ prompt: val })
-})
+watch(
+  () => localHqSettings.value.apiKey,
+  val => {
+    settingsStore.updateHqTranslation({ apiKey: val })
+  }
+)
+watch(
+  () => localHqSettings.value.modelName,
+  val => {
+    settingsStore.updateHqTranslation({ modelName: val })
+  }
+)
+watch(
+  () => localHqSettings.value.customBaseUrl,
+  val => {
+    settingsStore.updateHqTranslation({ customBaseUrl: val })
+  }
+)
+watch(
+  () => localHqSettings.value.batchSize,
+  val => {
+    settingsStore.updateHqTranslation({ batchSize: val })
+  }
+)
+watch(
+  () => localHqSettings.value.rpmLimit,
+  val => {
+    settingsStore.updateHqTranslation({ rpmLimit: val })
+  }
+)
+watch(
+  () => localHqSettings.value.transportRetries,
+  val => {
+    settingsStore.updateHqTranslation({ transportRetries: val })
+  }
+)
+watch(
+  () => localHqSettings.value.businessRetries,
+  val => {
+    settingsStore.updateHqTranslation({ businessRetries: val })
+  }
+)
+watch(
+  () => localHqSettings.value.forceJsonOutput,
+  val => {
+    settingsStore.updateHqTranslation({ forceJsonOutput: val })
+  }
+)
+watch(
+  () => localHqSettings.value.extraBody,
+  val => {
+    settingsStore.updateHqTranslation({ extraBody: val })
+  }
+)
+watch(
+  () => localHqSettings.value.useStream,
+  val => {
+    settingsStore.updateHqTranslation({ useStream: val })
+  }
+)
+watch(
+  () => localHqSettings.value.prompt,
+  val => {
+    settingsStore.updateHqTranslation({ prompt: val })
+  }
+)
 
 function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
   toast[tone](message)
@@ -235,12 +291,7 @@ const modelDiscovery = useAiModelDiscovery({
     baseUrl: localHqSettings.value.customBaseUrl,
     hasStoredCredential: settingsStore.hasCredential('hq', hqSettings.value.provider),
   }),
-  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
-    provider,
-    apiKey,
-    baseUrl,
-    'hq',
-  ),
+  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'hq'),
   notify: notifyModelDiscovery,
   emptyBaseUrl: '',
 })
@@ -284,11 +335,7 @@ async function testConnection() {
   const modelName = localHqSettings.value.modelName?.trim()
   const baseUrl = localHqSettings.value.customBaseUrl?.trim()
 
-  if (
-    providerRequiresApiKey(provider)
-    && !apiKey
-    && !settingsStore.hasCredential('hq', provider)
-  ) {
+  if (providerRequiresApiKey(provider) && !apiKey && !settingsStore.hasCredential('hq', provider)) {
     toast.warning('请先填写 API Key')
     return
   }
@@ -318,7 +365,7 @@ async function testConnection() {
     if (result.success) {
       toast.success(result.message || `${getProviderDisplayName(provider)} 连接成功!`)
     } else {
-      toast.error(result.message || result.error || '连接失败')
+      toast.error(result.message || '连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'

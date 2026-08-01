@@ -2,11 +2,7 @@
   <div class="proofreading-settings">
     <ProductFormSection>
       <template #title>AI校对设置</template>
-      <UiField
-        variant="settings"
-        control="checkbox"
-        hint="翻译完成后自动进行AI校对"
-      >
+      <UiField variant="settings" control="checkbox" hint="翻译完成后自动进行AI校对">
         <UiCheckbox v-model="isProofreadingEnabled" label="启用AI校对" />
       </UiField>
       <UiField variant="settings" label="全局重试次数" control-id="settingsProofreadingMaxRetries">
@@ -34,7 +30,11 @@
         </UiButton>
       </template>
 
-      <div v-for="(round, index) in proofreadingRounds" :key="index" class="proofreading-settings__round">
+      <div
+        v-for="(round, index) in proofreadingRounds"
+        :key="index"
+        class="proofreading-settings__round"
+      >
         <div class="proofreading-settings__round-header">
           <span class="proofreading-settings__round-title">轮次 {{ index + 1 }}: {{ round.name || '未命名' }}</span>
           <UiButton
@@ -49,11 +49,7 @@
         </div>
 
         <div class="proofreading-settings__round-content">
-          <UiField
-            variant="settings"
-            label="轮次名称"
-            :control-id="roundFieldId(index, 'Name')"
-          >
+          <UiField variant="settings" label="轮次名称" :control-id="roundFieldId(index, 'Name')">
             <UiInput
               type="text"
               :id="roundFieldId(index, 'Name')"
@@ -78,10 +74,9 @@
               :show-base-url="false"
               :include-base-url="false"
               api-key-placeholder="请输入API Key"
-              :has-stored-credential="settingsStore.hasCredential(
-                `proofreading_${index}`,
-                round.provider,
-              )"
+              :has-stored-credential="
+                settingsStore.hasCredential(`proofreading_${index}`, round.provider)
+              "
               :api-key-show-label="`显示${round.name} API Key`"
               :api-key-hide-label="`隐藏${round.name} API Key`"
               @update:api-key="round.apiKey = $event"
@@ -190,18 +185,13 @@
             </UiField>
           </UiFormGrid>
           <UiFormGrid>
-            <UiField
-              variant="settings"
-              control="checkbox"
-              hint="使用 response_format: json_object"
-            >
-              <UiCheckbox v-model="round.openaiOptions.request.forceJsonOutput" label="强制JSON输出" />
+            <UiField variant="settings" control="checkbox" hint="使用 response_format: json_object">
+              <UiCheckbox
+                v-model="round.openaiOptions.request.forceJsonOutput"
+                label="强制JSON输出"
+              />
             </UiField>
-            <UiField
-              variant="settings"
-              control="checkbox"
-              hint="使用流式API调用，避免超时"
-            >
+            <UiField variant="settings" control="checkbox" hint="使用流式API调用，避免超时">
               <UiCheckbox v-model="round.openaiOptions.execution.useStream" label="流式调用" />
             </UiField>
           </UiFormGrid>
@@ -255,19 +245,19 @@ import { ref, computed } from 'vue'
 import {
   getProviderOptionsForCapability,
   providerRequiresApiKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
-import {
-  fetchModels as fetchV2Models,
-  testAiTranslateConnection,
-} from '@/api/v2/diagnostics'
+import { fetchModels as fetchV2Models, testAiTranslateConnection } from '@/api/v2/diagnostics'
 import { useToast } from '@/utils/toast'
 import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
-import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
+import {
+  useAiModelDiscovery,
+  type AiModelDiscoveryMessageTone,
+} from '@/composables/useAiModelDiscovery'
 
 const providerOptions = getProviderOptionsForCapability('hqTranslation')
 
@@ -280,11 +270,11 @@ const roundModelDiscoveries = new Map<number, ReturnType<typeof useAiModelDiscov
 const proofreadingRounds = computed(() => settingsStore.settings.proofreading.rounds)
 const proofreadingMaxRetries = computed({
   get: () => settingsStore.settings.proofreading.maxRetries,
-  set: (val: number) => settingsStore.setProofreadingMaxRetries(val)
+  set: (val: number) => settingsStore.setProofreadingMaxRetries(val),
 })
 const isProofreadingEnabled = computed({
   get: () => settingsStore.settings.proofreading.enabled,
-  set: (val: boolean) => settingsStore.setProofreadingEnabled(val)
+  set: (val: boolean) => settingsStore.setProofreadingEnabled(val),
 })
 
 function roundFieldId(index: number, field: string) {
@@ -319,12 +309,8 @@ function getRoundModelDiscovery(index: number): ReturnType<typeof useAiModelDisc
           : false,
       }
     },
-    fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
-      provider,
-      apiKey,
-      baseUrl,
-      `proofreading_${index}`,
-    ),
+    fetcher: (provider, apiKey, baseUrl) =>
+      fetchV2Models(provider, apiKey, baseUrl, `proofreading_${index}`),
     notify: notifyRoundModelDiscovery,
     successMessage: count => `轮次 ${index + 1}: 获取到 ${count} 个模型`,
     emptyBaseUrl: '',
@@ -371,9 +357,9 @@ async function testRoundConnection(index: number) {
   const baseUrl = round.customBaseUrl?.trim()
 
   if (
-    providerRequiresApiKey(provider)
-    && !apiKey
-    && !settingsStore.hasCredential(`proofreading_${index}`, provider)
+    providerRequiresApiKey(provider) &&
+    !apiKey &&
+    !settingsStore.hasCredential(`proofreading_${index}`, provider)
   ) {
     toast.warning('请先填写 API Key')
     return
@@ -399,7 +385,7 @@ async function testRoundConnection(index: number) {
     if (result.success) {
       toast.success(result.message || '连接成功!')
     } else {
-      toast.error(result.message || result.error || '连接失败')
+      toast.error(result.message || '连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'
@@ -418,14 +404,14 @@ function addRound() {
     customBaseUrl: '',
     openaiOptions: {
       request: {
-        forceJsonOutput: false
+        forceJsonOutput: false,
       },
       execution: {
         useStream: true,
         rpmLimit: 7,
         transportRetries: 1,
-        businessRetries: settingsStore.settings.proofreading.maxRetries
-      }
+        businessRetries: settingsStore.settings.proofreading.maxRetries,
+      },
     },
     batchSize: 3,
     prompt: DEFAULT_PROOFREADING_PROMPT,

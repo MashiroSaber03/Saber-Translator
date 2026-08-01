@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage, createTestImage, setTestImages } from '../helpers/imageFixtures'
 
 type ImageInput = {
   fileName: string
@@ -37,7 +38,7 @@ describe('image store properties', () => {
     fc.assert(
       fc.property(fc.array(imageInputArbitrary, { minLength: 1, maxLength: 10 }), imageList => {
         const store = createStore()
-        const addedImages = store.addImages(imageList)
+        const addedImages = setTestImages(store, imageList)
 
         expect(addedImages).toHaveLength(imageList.length)
         expect(store.imageCount).toBe(imageList.length)
@@ -48,22 +49,24 @@ describe('image store properties', () => {
     )
   })
 
-  it('creates images with generated ids and the current default translation state', () => {
+  it('loads backend page ids and the current default translation state', () => {
     fc.assert(
       fc.property(imageInputArbitrary, imageInput => {
         const store = createStore()
-        const image = store.addImage(imageInput.fileName, imageInput.sourceAssetUrl)
+        store.setImages([
+          createTestImage(imageInput.fileName, imageInput.sourceAssetUrl, { id: 'backend-page' }),
+        ])
+        const image = store.images[0]
 
-        expect(image.id).toEqual(expect.any(String))
-        expect(image.id.length).toBeGreaterThan(0)
-        expect(image.fileName).toBe(imageInput.fileName)
-        expect(image.sourceAssetUrl).toBe(imageInput.sourceAssetUrl)
-        expect(image.translatedAssetUrl).toBeNull()
-        expect(image.cleanAssetUrl).toBeNull()
-        expect(image.bubbleStates).toBeNull()
-        expect(image.translationStatus).toBe('pending')
-        expect(image.translationFailed).toBe(false)
-        expect(image.hasUnsavedChanges).toBe(false)
+        expect(image?.id).toBe('backend-page')
+        expect(image?.fileName).toBe(imageInput.fileName)
+        expect(image?.sourceAssetUrl).toBe(imageInput.sourceAssetUrl)
+        expect(image?.translatedAssetUrl).toBeNull()
+        expect(image?.cleanAssetUrl).toBeNull()
+        expect(image?.bubbleStates).toBeNull()
+        expect(image?.translationStatus).toBe('pending')
+        expect(image?.translationFailed).toBe(false)
+        expect(image?.hasUnsavedChanges).toBe(false)
       }),
     )
   })
@@ -72,7 +75,12 @@ describe('image store properties', () => {
     fc.assert(
       fc.property(fc.array(imageInputArbitrary, { minLength: 2, maxLength: 20 }), imageList => {
         const store = createStore()
-        const addedImages = store.addImages(imageList)
+        store.setImages(imageList.map((image, index) => createTestImage(
+          image.fileName,
+          image.sourceAssetUrl,
+          { id: `backend-page-${index}` },
+        )))
+        const addedImages = store.images
         const ids = addedImages.map(image => image.id)
 
         expect(new Set(ids).size).toBe(ids.length)
@@ -87,11 +95,12 @@ describe('image store properties', () => {
         fc.nat(),
         (imageList, deleteIndexSeed) => {
           const store = createStore()
-          store.addImages(imageList)
+          setTestImages(store, imageList)
           const countAfterAdd = store.imageCount
           const deleteIndex = deleteIndexSeed % countAfterAdd
 
-          expect(store.deleteImage(deleteIndex)).toBe(true)
+          store.setCurrentImageIndex(deleteIndex)
+          expect(store.deleteCurrentImage()).toBe(true)
           expect(store.imageCount).toBe(countAfterAdd - 1)
           expect(store.currentImageIndex).toBeGreaterThanOrEqual(store.imageCount > 0 ? 0 : -1)
           expect(store.currentImageIndex).toBeLessThan(store.imageCount)
@@ -104,7 +113,7 @@ describe('image store properties', () => {
     fc.assert(
       fc.property(fc.array(imageInputArbitrary, { minLength: 1, maxLength: 10 }), imageList => {
         const store = createStore()
-        store.addImages(imageList)
+        setTestImages(store, imageList)
         store.setBatchTranslationInProgress(true)
 
         store.clearImages()
@@ -125,7 +134,7 @@ describe('image store properties', () => {
         fc.nat(),
         (imageList, targetIndexSeed) => {
           const store = createStore()
-          store.addImages(imageList)
+          setTestImages(store, imageList)
           const targetIndex = targetIndexSeed % store.imageCount
 
           store.setCurrentImageIndex(targetIndex)
@@ -146,7 +155,7 @@ describe('image store properties', () => {
     fc.assert(
       fc.property(fc.array(imageInputArbitrary, { minLength: 3, maxLength: 10 }), imageList => {
         const store = createStore()
-        store.addImages(imageList)
+        setTestImages(store, imageList)
 
         expect(store.canGoPrevious).toBe(false)
         expect(store.canGoNext).toBe(true)
@@ -169,7 +178,7 @@ describe('image store properties', () => {
         fc.hexaString({ minLength: 6, maxLength: 6 }),
         (imageInput, fontSize, colorHex) => {
           const store = createStore()
-          store.addImage(imageInput.fileName, imageInput.sourceAssetUrl)
+          addTestImage(store, imageInput.fileName, imageInput.sourceAssetUrl)
           const selectedId = store.currentImage?.id
           const textColor = `#${colorHex}`
 
@@ -191,12 +200,12 @@ describe('image store properties', () => {
         fc.string({ minLength: 1, maxLength: 80 }),
         (imageList, failedIndexSeed, errorMessage) => {
           const store = createStore()
-          store.addImages(imageList)
+          setTestImages(store, imageList)
           const failedIndex = failedIndexSeed % store.imageCount
 
           store.setTranslationStatus(failedIndex, 'failed', errorMessage)
           expect(store.failedImageCount).toBe(1)
-          expect(store.getFailedImageIndices()).toEqual([failedIndex])
+          expect(store.images.findIndex(image => image.translationFailed)).toBe(failedIndex)
 
           store.setTranslationStatus(failedIndex, 'processing')
           expect(store.failedImageCount).toBe(0)

@@ -123,7 +123,6 @@ const candidateDocument: CharacterStudioDocument = {
 }
 
 const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
-  success: true,
   book_id: 'book-demo',
   documents: [
     {
@@ -149,16 +148,12 @@ const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
     },
   ],
   count: 1,
+  has_timeline: true,
 })
 
-const getCharacterStudioDocumentMock = vi.fn().mockResolvedValue({
-  success: true,
-  document: demoDocument,
-})
+const getCharacterStudioDocumentMock = vi.fn().mockResolvedValue(demoDocument)
 
-const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_bookId: string, _docId: string, payload: Record<string, unknown>) => ({
-  success: true,
-  document: {
+const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_docId: string, payload: Record<string, unknown>) => ({
     ...demoDocument,
     ...payload,
     meta: {
@@ -166,13 +161,9 @@ const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_bookI
       ...((payload.meta as Record<string, unknown> | undefined) || {}),
       updated_at: new Date().toISOString(),
     },
-  },
 }))
 
-const createCharacterStudioDocumentMock = vi.fn().mockResolvedValue({
-  success: true,
-  document: candidateDocument,
-})
+const createCharacterStudioDocumentMock = vi.fn().mockResolvedValue(candidateDocument)
 const generateCharacterStudioSectionMock = vi.fn()
 const getCharacterStudioChatStateMock = vi.fn()
 const createCharacterStudioChatSessionMock = vi.fn()
@@ -296,7 +287,6 @@ describe('characterStudioStore', () => {
     getCharacterStudioChatPromptPreviewMock.mockReset()
     importWorldbookIntoCharacterStudioDocumentMock.mockReset()
     getCharacterStudioIndexMock.mockResolvedValue({
-      success: true,
       book_id: 'book-demo',
       documents: [
         {
@@ -322,13 +312,10 @@ describe('characterStudioStore', () => {
         },
       ],
       count: 1,
+      has_timeline: true,
     })
-    getCharacterStudioDocumentMock.mockResolvedValue({
-      success: true,
-      document: demoDocument,
-    })
+    getCharacterStudioDocumentMock.mockResolvedValue(demoDocument)
     getCharacterStudioChatStateMock.mockResolvedValue({
-      success: true,
       doc_id: 'doc_alpha',
       active_session: demoChatSession,
       archived_sessions: [],
@@ -488,10 +475,7 @@ describe('characterStudioStore', () => {
       checks: { document: true },
     }
     diagnosedDocument.status.last_validated_at = '2026-07-01T00:00:00Z'
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: diagnosedDocument,
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(diagnosedDocument)
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -519,7 +503,6 @@ describe('characterStudioStore', () => {
         resolveFirst = resolve
       }))
       .mockResolvedValueOnce({
-        success: true,
         book_id: 'book-beta',
         documents: [{
           id: 'doc_beta',
@@ -534,6 +517,7 @@ describe('characterStudioStore', () => {
         }],
         candidates: [],
         count: 1,
+        has_timeline: true,
       })
 
     const firstLoad = store.loadWorkspace('book-alpha')
@@ -541,7 +525,6 @@ describe('characterStudioStore', () => {
     await secondLoad
 
     resolveFirst({
-      success: true,
       book_id: 'book-alpha',
       documents: [{
         id: 'doc_alpha',
@@ -556,6 +539,7 @@ describe('characterStudioStore', () => {
       }],
       candidates: [],
       count: 1,
+      has_timeline: true,
     })
     await firstLoad
 
@@ -578,20 +562,14 @@ describe('characterStudioStore', () => {
       .mockImplementationOnce(() => new Promise((resolve) => {
         resolveFirst = resolve
       }))
-      .mockResolvedValueOnce({
-        success: true,
-        document: betaDocument,
-      })
+      .mockResolvedValueOnce(betaDocument)
 
     await store.loadWorkspace('book-demo')
     const firstOpen = store.openDocument('doc_alpha')
     const secondOpen = store.openDocument('doc_beta')
     await secondOpen
 
-    resolveFirst({
-      success: true,
-      document: deepClone(demoDocument),
-    })
+    resolveFirst(deepClone(demoDocument))
     await firstOpen
 
     expect(store.currentDocument?.id).toBe('doc_beta')
@@ -680,7 +658,6 @@ describe('characterStudioStore', () => {
     await store.openDocument('doc_alpha')
 
     getCharacterStudioIndexMock.mockResolvedValueOnce({
-      success: true,
       book_id: 'book-other',
       documents: [],
       candidates: [],
@@ -707,7 +684,6 @@ describe('characterStudioStore', () => {
     await store.openDocument('doc_alpha')
 
     createCharacterStudioChatSessionMock.mockResolvedValueOnce({
-      success: true,
       doc_id: 'doc_alpha',
       active_session: {
         ...demoChatSession,
@@ -743,7 +719,6 @@ describe('characterStudioStore', () => {
     const store = useCharacterStudioStore()
 
     getCharacterStudioIndexMock.mockResolvedValue({
-      success: true,
       book_id: 'book-demo',
       documents: [
         {
@@ -760,11 +735,9 @@ describe('characterStudioStore', () => {
       ],
       candidates: [],
       count: 1,
+      has_timeline: true,
     })
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: candidateDocument,
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(candidateDocument)
 
     await store.loadWorkspace('book-demo')
     await store.createDocumentFromCandidate('候选角色')
@@ -813,7 +786,6 @@ describe('characterStudioStore', () => {
     const store = useCharacterStudioStore()
 
     getCharacterStudioChatStateMock.mockResolvedValueOnce({
-      success: true,
       doc_id: 'doc_alpha',
       active_session: deepClone(conversationChatSession),
       archived_sessions: [],
@@ -821,8 +793,6 @@ describe('characterStudioStore', () => {
     })
 
     editCharacterStudioChatMessageMock.mockResolvedValueOnce({
-      success: true,
-      session: {
         ...deepClone(conversationChatSession),
         messages: [
           deepClone(conversationChatSession.messages[0]!),
@@ -837,7 +807,6 @@ describe('characterStudioStore', () => {
             content: '新的回答',
           },
         ],
-      },
     })
 
     await store.loadWorkspace('book-demo')
@@ -872,8 +841,6 @@ describe('characterStudioStore', () => {
     }
     abortCharacterStudioChatOperationMock.mockResolvedValueOnce(abortedSession)
     streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      _bookId: string,
-      _docId: string,
       options: {
         onAccepted?: (operationId: string) => void
         signal: AbortSignal
@@ -905,7 +872,6 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
     getCharacterStudioChatStateMock.mockResolvedValueOnce({
-      success: true,
       doc_id: 'doc_alpha',
       active_session: deepClone(demoChatSession),
       archived_sessions: [{
@@ -919,7 +885,6 @@ describe('characterStudioStore', () => {
       available_greetings: [],
     })
     deleteCharacterStudioChatSessionMock.mockResolvedValueOnce({
-      success: true,
       doc_id: 'doc_alpha',
       active_session: deepClone(demoChatSession),
       archived_sessions: [],
@@ -931,7 +896,6 @@ describe('characterStudioStore', () => {
     await store.deleteArchivedChatSession('chat_archived', 7)
 
     expect(deleteCharacterStudioChatSessionMock).toHaveBeenCalledWith(
-      'book-demo',
       'doc_alpha',
       'chat_archived',
       7,
@@ -945,7 +909,6 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioChatStateMock
       .mockResolvedValueOnce({
-        success: true,
         doc_id: 'doc_alpha',
         active_session: {
           ...demoChatSession,
@@ -955,7 +918,6 @@ describe('characterStudioStore', () => {
         available_greetings: [],
       })
       .mockResolvedValueOnce({
-        success: true,
         doc_id: 'doc_alpha',
         active_session: {
           ...demoChatSession,
@@ -984,15 +946,12 @@ describe('characterStudioStore', () => {
       })
 
     generateCharacterStudioSectionMock.mockResolvedValueOnce({
-      success: true,
-      document: {
         ...deepClone(demoDocument),
         coreMessages: {
           ...deepClone(demoDocument.coreMessages),
           first_message: '新的默认开场白',
           alternate_greetings: ['备用问候'],
         },
-      },
     })
 
     await store.loadWorkspace('book-demo')
@@ -1015,7 +974,6 @@ describe('characterStudioStore', () => {
 
     getCharacterStudioChatStateMock
       .mockResolvedValueOnce({
-        success: true,
         doc_id: 'doc_alpha',
         active_session: deepClone(demoChatSession),
         archived_sessions: [],
@@ -1029,7 +987,6 @@ describe('characterStudioStore', () => {
         ],
       })
       .mockResolvedValueOnce({
-        success: true,
         doc_id: 'doc_alpha',
         active_session: {
           ...deepClone(demoChatSession),
@@ -1052,14 +1009,11 @@ describe('characterStudioStore', () => {
       })
 
     saveCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: {
         ...deepClone(demoDocument),
         coreMessages: {
           ...deepClone(demoDocument.coreMessages),
           first_message: '保存后同步的新开场',
         },
-      },
     })
 
     await store.loadWorkspace('book-demo')
@@ -1094,7 +1048,6 @@ describe('characterStudioStore', () => {
     let resolveStream: (() => void) | null = null
 
     getCharacterStudioChatStateMock.mockResolvedValueOnce({
-      success: true,
       doc_id: 'doc_alpha',
       active_session: loadedSession,
       archived_sessions: [],
@@ -1142,8 +1095,6 @@ describe('characterStudioStore', () => {
     const store = useCharacterStudioStore()
 
     streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      _bookId: string,
-      _docId: string,
       options: { signal: AbortSignal },
     ) => new Promise<void>((_resolve, reject) => {
       options.signal.addEventListener('abort', () => reject(new Error('aborted')))
@@ -1159,11 +1110,11 @@ describe('characterStudioStore', () => {
     expect(createObjectURLSpy).toHaveBeenCalledWith(file)
 
     getCharacterStudioIndexMock.mockResolvedValueOnce({
-      success: true,
       book_id: 'book-other',
       documents: [],
       candidates: [],
       count: 0,
+      has_timeline: false,
     })
 
     await store.loadWorkspace('book-other')
@@ -1189,15 +1140,11 @@ describe('characterStudioStore', () => {
 
     streamCharacterStudioChatMessageMock
       .mockImplementationOnce(async (
-        _bookId: string,
-        _docId: string,
         options: { signal: AbortSignal },
       ) => new Promise<void>((_resolve, reject) => {
         options.signal.addEventListener('abort', () => reject(new Error('aborted')))
       }))
       .mockImplementationOnce(async (
-        _bookId: string,
-        _docId: string,
         options: { signal: AbortSignal },
       ) => new Promise<void>((_resolve, reject) => {
         options.signal.addEventListener('abort', () => reject(new Error('aborted')))
@@ -1219,11 +1166,11 @@ describe('characterStudioStore', () => {
     } finally {
       if (secondSend) {
         getCharacterStudioIndexMock.mockResolvedValueOnce({
-          success: true,
           book_id: 'book-other',
           documents: [],
           candidates: [],
           count: 0,
+          has_timeline: false,
         })
         await store.loadWorkspace('book-other')
         await secondSend
@@ -1240,8 +1187,6 @@ describe('characterStudioStore', () => {
     let resolveStream: (() => void) | null = null
 
     streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      _bookId: string,
-      _docId: string,
       options: {
         onEvent: (event: CharacterStudioChatStreamEvent) => void
         signal: AbortSignal
@@ -1259,11 +1204,11 @@ describe('characterStudioStore', () => {
     await Promise.resolve()
 
     getCharacterStudioIndexMock.mockResolvedValueOnce({
-      success: true,
       book_id: 'book-other',
       documents: [],
       candidates: [],
       count: 0,
+      has_timeline: false,
     })
 
     await store.loadWorkspace('book-other')
@@ -1351,10 +1296,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1380,10 +1322,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1418,10 +1357,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1465,10 +1401,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1496,10 +1429,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1523,10 +1453,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1550,10 +1477,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1580,10 +1504,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1613,10 +1534,7 @@ describe('characterStudioStore', () => {
     const frozenDocument = deepClone(structuredDocument)
     frozenDocument.status.frozen_sections = ['lorebook']
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: frozenDocument,
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(frozenDocument)
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1646,10 +1564,7 @@ describe('characterStudioStore', () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: deepClone(structuredDocument),
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1687,10 +1602,7 @@ describe('characterStudioStore', () => {
     const frozenDocument = deepClone(structuredDocument)
     frozenDocument.status.frozen_sections = ['lorebook']
 
-    getCharacterStudioDocumentMock.mockResolvedValueOnce({
-      success: true,
-      document: frozenDocument,
-    })
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(frozenDocument)
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')

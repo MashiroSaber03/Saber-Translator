@@ -157,7 +157,14 @@ def run_worker(args: object) -> int:
                 WorkerModelLifecycle,
             )
             from src.backend_v2.worker.maintenance import WorkerMaintenance
+            from src.backend_v2.storage.platform_repositories import (
+                ProviderRateLimiter,
+            )
+            from src.shared.openai_rate_limits import (
+                configure_provider_rate_limit_store,
+            )
 
+            configure_provider_rate_limit_store(ProviderRateLimiter(engine))
             job_repository = JobQueueRepository(engine)
             plugin_job_runtime = PluginJobRuntime(
                 data_root=data_root,

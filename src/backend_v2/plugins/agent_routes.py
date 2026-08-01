@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 from flask import Blueprint, Response, jsonify
 from sqlalchemy import Engine
 
@@ -50,8 +48,7 @@ def create_plugin_agent_blueprint(
 
     @blueprint.post("/sessions")
     def create_session() -> tuple[Response, int]:
-        body = _json_body()
-        _reject_unknown(body, {"mode", "pluginId"})
+        body = _json_body(allowed_keys={"mode", "pluginId"})
         return (
             jsonify(
                 {
@@ -78,8 +75,7 @@ def create_plugin_agent_blueprint(
 
     @blueprint.post("/sessions/<session_id>/messages")
     def send_message(session_id: str) -> Response:
-        body = _json_body()
-        _reject_unknown(body, {"content"})
+        body = _json_body(allowed_keys={"content"})
         return jsonify(
             {
                 "session": sessions.send_message(
@@ -91,8 +87,7 @@ def create_plugin_agent_blueprint(
 
     @blueprint.post("/sessions/<session_id>/lock-target")
     def lock_target(session_id: str) -> Response:
-        body = _json_body()
-        _reject_unknown(body, {"proposal"})
+        body = _json_body(allowed_keys={"proposal"})
         proposal = body.get("proposal")
         if not isinstance(proposal, dict):
             raise ValueError("proposal must be an object")
@@ -107,8 +102,7 @@ def create_plugin_agent_blueprint(
 
     @blueprint.post("/sessions/<session_id>/start")
     def start(session_id: str) -> tuple[Response, int]:
-        body = _json_body()
-        _reject_unknown(body, set())
+        _json_body(allowed_keys=set())
         return (
             jsonify(
                 sessions.start(
@@ -120,14 +114,3 @@ def create_plugin_agent_blueprint(
         )
 
     return blueprint
-
-
-def _reject_unknown(
-    body: dict[str, Any],
-    allowed: set[str],
-) -> None:
-    unknown = set(body) - allowed
-    if unknown:
-        raise ValueError(
-            "unknown request fields: " + ", ".join(sorted(unknown))
-        )

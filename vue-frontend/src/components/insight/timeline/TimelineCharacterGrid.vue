@@ -3,7 +3,7 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
-import type { TimelineCharacter } from './timelineTypes'
+import type { TimelineCharacter } from '@/types/insight'
 
 defineProps<{
   characters: TimelineCharacter[]

@@ -2,7 +2,7 @@
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
-import type { PlotThread } from './timelineTypes'
+import type { PlotThread } from '@/types/insight'
 
 defineProps<{
   threads: PlotThread[]

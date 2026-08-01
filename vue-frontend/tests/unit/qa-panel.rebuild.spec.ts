@@ -96,10 +96,7 @@ describe('QAPanel vector rebuild task projection', () => {
   })
 
   it('starts once, then projects progress and completion from the global task center', async () => {
-    rebuildEmbeddingsMock.mockResolvedValue({
-      success: true,
-      task_id: 'vector-job-1',
-    })
+    rebuildEmbeddingsMock.mockResolvedValue('vector-job-1')
     const pinia = createPinia()
     setActivePinia(pinia)
     const insightStore = useInsightStore()
@@ -130,20 +127,22 @@ describe('QAPanel vector rebuild task projection', () => {
     expect(insightStore.isLoading).toBe(true)
 
     taskCenterStore.queue = []
-    taskCenterStore.history = [vectorJob({
-      status: 'completed',
-      queueRank: null,
-      progress: {
-        executionMode: 'sequential',
-        jobStatus: 'completed',
-        totalItems: 10,
-        completedItems: 10,
-        failedItems: 0,
-        skippedItems: 0,
-        cancelledItems: 0,
-        pools: [],
-      },
-    })]
+    taskCenterStore.history = [
+      vectorJob({
+        status: 'completed',
+        queueRank: null,
+        progress: {
+          executionMode: 'sequential',
+          jobStatus: 'completed',
+          totalItems: 10,
+          completedItems: 10,
+          failedItems: 0,
+          skippedItems: 0,
+          cancelledItems: 0,
+          pools: [],
+        },
+      }),
+    ]
     await flushPromises()
 
     expect(showToastMock).toHaveBeenCalledWith('向量索引重建完成', 'success', 6000)
@@ -157,10 +156,7 @@ describe('QAPanel vector rebuild task projection', () => {
       reason: 'vector_missing',
       repairAction: 'vector_rebuild',
     })
-    rebuildEmbeddingsMock.mockResolvedValue({
-      success: true,
-      task_id: 'vector-job-1',
-    })
+    rebuildEmbeddingsMock.mockResolvedValue('vector-job-1')
     const pinia = createPinia()
     setActivePinia(pinia)
     const insightStore = useInsightStore()
@@ -176,7 +172,9 @@ describe('QAPanel vector rebuild task projection', () => {
     expect(getQAStatusMock).toHaveBeenCalledWith('book-1', 'precise')
     expect(wrapper.get('.qa-panel__status').text()).toContain('精确问答暂不可用')
     expect(wrapper.get('.qa-panel__status').text()).toContain('重建向量')
-    expect(wrapper.get('textarea[placeholder="输入你的问题..."]').attributes('disabled')).toBeDefined()
+    expect(
+      wrapper.get('textarea[placeholder="输入你的问题..."]').attributes('disabled')
+    ).toBeDefined()
 
     await wrapper.get('.qa-panel__status button').trigger('click')
     await flushPromises()
@@ -242,7 +240,10 @@ describe('QAPanel vector rebuild task projection', () => {
   })
 
   it('contains no page-local timer or legacy task-status polling', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/QAPanel.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/QAPanel.vue'),
+      'utf8'
+    )
 
     expect(source).not.toContain('setInterval(')
     expect(source).not.toContain('setTimeout(')

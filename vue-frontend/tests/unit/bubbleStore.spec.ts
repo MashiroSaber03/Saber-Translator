@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { createBubbleState } from '@/utils/bubbleFactory'
+import { addTestImage } from '../helpers/imageFixtures'
 
 describe('bubbleStore', () => {
   beforeEach(() => {
@@ -30,27 +31,6 @@ describe('bubbleStore', () => {
     })
 
     expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
-  })
-
-  it('syncs the current image document when resetting to the initial bubbles', () => {
-    const imageStore = useImageStore()
-    const bubbleStore = useBubbleStore()
-
-    imageStore.addImage('page.png', '/api/v2/assets/source-1')
-    bubbleStore.setBubbles([
-      createBubbleState({
-        coords: [0, 0, 200, 100],
-        translatedText: 'initial translation',
-      }),
-    ])
-    bubbleStore.updateBubble(0, { translatedText: 'edited translation' })
-
-    expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('edited translation')
-
-    bubbleStore.resetToInitial()
-
-    expect(bubbleStore.bubbles[0]?.translatedText).toBe('initial translation')
-    expect(imageStore.currentImage?.bubbleStates?.[0]?.translatedText).toBe('initial translation')
   })
 
   it('keeps the selected bubble when backend state replaces the same stable bubbles', () => {
@@ -90,7 +70,7 @@ describe('bubbleStore', () => {
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
 
-    imageStore.addImage('page.png', '/api/v2/assets/source-1')
+    addTestImage(imageStore, 'page.png', '/api/v2/assets/source-1')
     bubbleStore.setBubbles([
       createBubbleState({ coords: [0, 0, 200, 100] }),
       createBubbleState({ coords: [20, 20, 120, 220] }),
@@ -100,13 +80,10 @@ describe('bubbleStore', () => {
     bubbleStore.toggleMultiSelect(1)
     bubbleStore.updateBubble(0, { coords: [0, 0, 100, 220] })
     bubbleStore.updateSelectedBubble({ translatedText: 'updated selected' })
-    bubbleStore.updateAllSelected({ fillColor: '#ffffff' })
     bubbleStore.updateAllBubbles({ textColor: '#111111' })
-    bubbleStore.deleteBubble(2)
     bubbleStore.deleteSelected()
     bubbleStore.clearBubbles()
     bubbleStore.clearBubblesLocal()
-    bubbleStore.resetToInitial()
     bubbleStore.saveAsInitial()
 
     expect(consoleLog).not.toHaveBeenCalled()

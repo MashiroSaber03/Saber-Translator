@@ -1,12 +1,14 @@
-import type { ApiResponse, FetchModelsResponse } from '@/types'
+import type { FetchModelsResponse } from '@/types'
 import type {
-  InsightOverviewResponse,
-  InsightStatusResponse,
-  InsightTimelineResponse,
+  InsightAnalysisSnapshot,
+  InsightTaskStatus,
+  OverviewTemplateType,
+  TimelineData,
 } from '@/types/insight'
 import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'
 import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
+import { ApiClientError } from '@/api/client'
 import { jobsApi } from '@/api/v2/jobs'
 import {
   createInsightAnalysisJob,
@@ -48,9 +50,8 @@ import {
   type V2ProviderSettingEntry,
   type V2ProviderSettingMutation,
   type V2SettingsDocument,
+  type V2ConnectionTestResult,
 } from '@/api/v2/settings'
-
-export type { InsightOverviewResponse, InsightTimelineResponse }
 
 export interface PageAnalysisData {
   analyzed?: boolean
@@ -66,37 +67,17 @@ export interface PageAnalysisData {
   warnings?: Array<{ code: string; message: string }>
 }
 
-export interface PageDataResponse {
-  success: boolean
-  analysis?: PageAnalysisData
-  source_url?: string
-  error?: string
+export interface PageData {
+  analysis: PageAnalysisData
+  sourceUrl: string
 }
 
-export interface InsightPagesResponse {
-  success: boolean
-  pages?: number[]
-  error?: string
-}
-
-export interface InsightChapterListResponse {
-  success: boolean
-  chapters?: Array<{
-    analyzed?: boolean
-    end_page: number
-    id: string
-    start_page: number
-    title: string
-  }>
-  error?: string
-}
-
-export interface GeneratedTemplatesResponse {
-  success: boolean
-  templates?: Record<string, unknown> | string[]
-  generated?: string[]
-  generated_details?: Array<{ template_key: string; template_name?: string }>
-  error?: string
+export interface InsightChapter {
+  analyzed: boolean
+  end_page: number
+  id: string
+  start_page: number
+  title: string
 }
 
 export interface NoteData {
@@ -113,18 +94,6 @@ export interface NoteData {
   title?: string
   type: 'text' | 'qa'
   updatedAt: string
-}
-
-export interface NoteListResponse {
-  success: boolean
-  notes?: NoteData[]
-  error?: string
-}
-
-export interface NoteDetailResponse {
-  success: boolean
-  note?: NoteData
-  error?: string
 }
 
 export interface VlmConfig {
@@ -199,12 +168,6 @@ export interface AnalysisConfig {
   vlm?: VlmConfig
 }
 
-export interface ConnectionTestResponse {
-  success: boolean
-  error?: string
-  message?: string
-}
-
 export interface StartAnalysisOptions {
   mode?: 'full' | 'incremental' | 'chapters' | 'pages'
   chapters?: string[]
@@ -212,48 +175,20 @@ export interface StartAnalysisOptions {
   force?: boolean
 }
 
-export interface StartAnalysisResponse {
-  success: boolean
-  task_id?: string
-  run_id?: string
-  error?: string
-  message?: string
+export interface AnalysisJobSubmission {
+  jobId: string
+  runId?: string
 }
 
-export type ReanalyzeResponse = StartAnalysisResponse
+export type OverviewGenerationResult =
+  | { kind: 'cached'; content: string }
+  | { kind: 'queued'; jobId: string }
 
-export interface ExportAnalysisResponse {
-  success: boolean
-  task_id?: string
-  markdown?: string
-  message?: string
-  error?: string
-}
-
-export interface OverviewContentResponse {
-  success: boolean
-  content?: string
-  cached?: boolean
-  task_id?: string
-  error?: string
-  message?: string
-}
-
-export interface ChatResponse {
-  success: boolean
-  answer?: string
-  mode?: string
-  citations?: Array<{ page: number }>
-  suggested_questions?: string[]
-  error?: string
-}
-
-export interface RebuildEmbeddingsResponse {
-  success: boolean
-  task_id?: string
-  status?: string
-  message?: string
-  error?: string
+export interface ChatResult {
+  answer: string
+  mode: string
+  citations: Array<{ page: number }>
+  suggestedQuestions: string[]
 }
 
 export interface QAStatusResponse {
@@ -264,17 +199,7 @@ export interface QAStatusResponse {
   }
   generation?: number
   reason: string | null
-  repairAction?:
-    | 'analyze'
-    | 'vector_rebuild'
-    | 'overview_rebuild'
-    | 'compressed_context_rebuild'
-}
-
-export interface GlobalConfigResponse {
-  success: boolean
-  config?: AnalysisConfig
-  error?: string
+  repairAction?: 'analyze' | 'vector_rebuild' | 'overview_rebuild' | 'compressed_context_rebuild'
 }
 
 export type PromptType = 'batch_analysis' | 'segment_summary' | 'chapter_summary' | 'qa_response'
@@ -311,18 +236,6 @@ export interface SavedPromptItem {
   created_at: string
 }
 
-export interface PromptsLibraryResponse {
-  success: boolean
-  library?: SavedPromptItem[]
-  error?: string
-}
-
-export interface DefaultPromptsResponse {
-  success: boolean
-  prompts?: Record<PromptType, string>
-  error?: string
-}
-
 const INSIGHT_DOMAINS = [
   'insight',
   'insight_vlm',
@@ -353,19 +266,14 @@ const OVERVIEW_TEMPLATES = [
   'world_setting',
   'highlights',
   'reading_notes',
-]
+] as const satisfies readonly OverviewTemplateType[]
 
 let settingsDocument: V2SettingsDocument | null = null
 let promptCache: V2Prompt[] = []
 let credentialSummaries: V2CredentialSummary[] = []
 const pageCache = new Map<string, V2InsightPageSummary[]>()
-const pageSourceUrls = new Map<string, string>()
 const noteCache = new Map<string, NoteData>()
 const noteCitationPageIds = new Map<string, Map<number, string>>()
-
-function pageCacheKey(bookId: string, pageNum: number): string {
-  return `${bookId}\u0000${pageNum}`
-}
 
 async function pagesForBook(bookId: string, force = false): Promise<V2InsightPageSummary[]> {
   if (!force && pageCache.has(bookId)) return pageCache.get(bookId)!
@@ -374,31 +282,42 @@ async function pagesForBook(bookId: string, force = false): Promise<V2InsightPag
   return pages
 }
 
-async function pageForNumber(bookId: string, pageNum: number): Promise<V2InsightPageSummary | undefined> {
+async function pageForNumber(
+  bookId: string,
+  pageNum: number
+): Promise<V2InsightPageSummary | undefined> {
   return (await pagesForBook(bookId)).find(page => page.displayPageNumber === pageNum)
 }
 
-function mapJobStatus(status: string): string {
+function mapJobStatus(status: string): InsightTaskStatus {
   if (status === 'queued') return 'pending'
   if (status === 'pausing' || status === 'cancelling') return 'running'
   if (status === 'completed_with_errors') return 'completed'
   if (status === 'interrupted') return 'failed'
-  return status
+  if (
+    status === 'pending' ||
+    status === 'running' ||
+    status === 'paused' ||
+    status === 'completed' ||
+    status === 'cancelled' ||
+    status === 'failed'
+  ) {
+    return status
+  }
+  return 'failed'
 }
 
 export async function startAnalysis(
   bookId: string,
-  options: StartAnalysisOptions = {},
-): Promise<StartAnalysisResponse> {
+  options: StartAnalysisOptions = {}
+): Promise<AnalysisJobSubmission> {
   const mode = options.mode ?? 'full'
   const scope = mode === 'chapters' ? 'chapter' : mode === 'pages' ? 'page' : mode
   let pageIds: string[] | undefined
   if (scope === 'page') {
     const pages = await pagesForBook(bookId)
     const requested = new Set(options.pages ?? [])
-    pageIds = pages
-      .filter(page => requested.has(page.displayPageNumber))
-      .map(page => page.pageId)
+    pageIds = pages.filter(page => requested.has(page.displayPageNumber)).map(page => page.pageId)
   }
   const accepted = await createInsightAnalysisJob({
     bookId,
@@ -408,136 +327,103 @@ export async function startAnalysis(
     force: options.force,
   })
   return {
-    success: true,
-    task_id: accepted.jobIds[0],
-    run_id: accepted.runId,
-    message: '分析任务已进入任务中心',
+    jobId: accepted.jobIds[0],
+    ...(accepted.runId ? { runId: accepted.runId } : {}),
   }
 }
 
-export async function pauseAnalysis(_bookId: string, taskId?: string): Promise<ApiResponse> {
-  if (!taskId) return { success: false, error: '未找到运行中的任务' }
+export async function pauseAnalysis(taskId: string): Promise<void> {
   await jobsApi.pause(taskId)
-  return { success: true }
 }
 
-export async function resumeAnalysis(_bookId: string, taskId?: string): Promise<ApiResponse> {
-  if (!taskId) return { success: false, error: '未找到已暂停的任务' }
+export async function resumeAnalysis(taskId: string): Promise<void> {
   await jobsApi.resume(taskId)
-  return { success: true }
 }
 
-export async function cancelAnalysis(_bookId: string, taskId?: string): Promise<ApiResponse> {
-  if (!taskId) return { success: false, error: '未找到任务' }
+export async function cancelAnalysis(taskId: string): Promise<void> {
   await jobsApi.cancel(taskId)
-  return { success: true }
 }
 
-export async function getAnalysisStatus(bookId: string): Promise<InsightStatusResponse> {
+export async function getAnalysisStatus(bookId: string): Promise<InsightAnalysisSnapshot> {
   const bootstrap = await getInsightBootstrap()
   const book = bootstrap.books.find(item => item.bookId === bookId)
-  const job = bootstrap.activeJobs.find(item => (
-    item.bookId === bookId
-    && item.kind === 'insight_analysis'
-  ))
+  const job = bootstrap.activeJobs.find(
+    item => item.bookId === bookId && item.kind === 'insight_analysis'
+  )
   const progress = job?.progress ?? {}
-  const currentStep = progress.currentStep && typeof progress.currentStep === 'object'
-    ? progress.currentStep as Record<string, unknown>
-    : undefined
   return {
-    success: true,
-    book_id: bookId,
-    analyzed: (book?.analyzedPageCount ?? 0) > 0,
-    fully_analyzed: Boolean(book && book.pageCount > 0 && book.analyzedPageCount >= book.pageCount),
-    analyzed_pages_count: book?.analyzedPageCount ?? 0,
-    total_pages: book?.pageCount ?? 0,
-    status: (job ? mapJobStatus(job.status) : book?.activeRun ? 'completed' : 'pending') as InsightStatusResponse['status'],
-    current_task: job ? {
-      task_id: job.jobId,
-      book_id: bookId,
-      task_type: 'full_book',
-      status: mapJobStatus(job.status) as never,
-      progress: {
-        current_phase: String(currentStep?.kind ?? ''),
-        current_page: Number(currentStep?.itemOrdinal ?? progress.completedItems ?? 0),
-        analyzed_pages: Number(progress.completedItems ?? 0),
-        total_pages: Number(progress.totalItems ?? book?.pageCount ?? 0),
-      },
-      created_at: '',
-    } : undefined,
+    fullyAnalyzed: Boolean(book && book.pageCount > 0 && book.analyzedPageCount >= book.pageCount),
+    analyzedPagesCount: book?.analyzedPageCount ?? 0,
+    currentTask: job
+      ? {
+          jobId: job.jobId,
+          status: mapJobStatus(job.status),
+          progress: {
+            analyzedPages: Number(progress.completedItems ?? 0),
+            totalPages: Number(progress.totalItems ?? book?.pageCount ?? 0),
+          },
+        }
+      : undefined,
   }
 }
 
-export function reanalyzePage(bookId: string, pageNum: number): Promise<ReanalyzeResponse> {
+export function reanalyzePage(bookId: string, pageNum: number): Promise<AnalysisJobSubmission> {
   return startAnalysis(bookId, { mode: 'pages', pages: [pageNum], force: true })
 }
 
-export function reanalyzeChapter(bookId: string, chapterId: string): Promise<ReanalyzeResponse> {
+export function reanalyzeChapter(
+  bookId: string,
+  chapterId: string
+): Promise<AnalysisJobSubmission> {
   return startAnalysis(bookId, { mode: 'chapters', chapters: [chapterId], force: true })
 }
 
-export async function getPageData(bookId: string, pageNum: number): Promise<PageDataResponse> {
+export async function getPageData(bookId: string, pageNum: number): Promise<PageData> {
   const page = await pageForNumber(bookId, pageNum)
-  if (!page) return { success: false, error: '页面不存在' }
+  if (!page) throw new Error('页面不存在')
   const detail = await getInsightPage(page.pageId)
-  pageSourceUrls.set(pageCacheKey(bookId, pageNum), detail.sourceUrl)
   if (!detail.analysis) {
     return {
-      success: true,
       analysis: { page_num: pageNum, analyzed: false },
-      source_url: detail.sourceUrl,
+      sourceUrl: detail.sourceUrl,
     }
   }
   return {
-    success: true,
     analysis: {
       ...(detail.analysis as PageAnalysisData),
       page_num: pageNum,
       analyzed: detail.analysisState === 'ready' || detail.analysisState === 'stale',
       analyzed_at: detail.generatedAt ?? undefined,
     },
-    source_url: detail.sourceUrl,
+    sourceUrl: detail.sourceUrl,
   }
 }
 
-export async function getAnalyzedPages(bookId: string): Promise<InsightPagesResponse> {
+export async function getAnalyzedPages(bookId: string): Promise<number[]> {
   const pages = await pagesForBook(bookId, true)
-  return {
-    success: true,
-    pages: pages
-      .filter(page => page.analysisState !== 'not_analyzed')
-      .map(page => page.displayPageNumber),
-  }
-}
-
-export function getPageImageUrl(bookId: string, pageNum: number): string {
-  return pageSourceUrls.get(pageCacheKey(bookId, pageNum)) ?? ''
+  return pages
+    .filter(page => page.analysisState !== 'not_analyzed')
+    .map(page => page.displayPageNumber)
 }
 
 export function getThumbnailUrl(bookId: string, pageNum: number): string {
   return pageCache.get(bookId)?.find(page => page.displayPageNumber === pageNum)?.thumbnailUrl ?? ''
 }
 
-export async function getInsightChapters(bookId: string): Promise<InsightChapterListResponse> {
-  const [chapters] = await Promise.all([
-    listInsightChapters(bookId),
-    pagesForBook(bookId, true),
-  ])
+export async function getInsightChapters(bookId: string): Promise<InsightChapter[]> {
+  const [chapters] = await Promise.all([listInsightChapters(bookId), pagesForBook(bookId, true)])
   let offset = 0
-  return {
-    success: true,
-    chapters: chapters.items.map(chapter => {
-      const startPage = offset + 1
-      offset += chapter.pageCount
-      return {
-        id: chapter.chapterId,
-        title: chapter.title,
-        start_page: startPage,
-        end_page: offset,
-        analyzed: chapter.analysisCounts.ready + chapter.analysisCounts.stale === chapter.pageCount,
-      }
-    }),
-  }
+  return chapters.items.map(chapter => {
+    const startPage = offset + 1
+    offset += chapter.pageCount
+    return {
+      id: chapter.chapterId,
+      title: chapter.title,
+      start_page: startPage,
+      end_page: offset,
+      analyzed: chapter.analysisCounts.ready + chapter.analysisCounts.stale === chapter.pageCount,
+    }
+  })
 }
 
 function artifactContent(payload: Record<string, unknown>): string {
@@ -545,70 +431,56 @@ function artifactContent(payload: Record<string, unknown>): string {
   return JSON.stringify(payload, null, 2)
 }
 
-export async function getOverviewBasic(bookId: string): Promise<InsightOverviewResponse> {
-  const response = await getOverview(bookId, 'story_summary')
-  return { success: response.success, content: response.content, error: response.error }
+function isNotFound(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 404
 }
 
 export async function getOverview(
   bookId: string,
-  templateType = 'story_summary',
-): Promise<OverviewContentResponse> {
+  templateType = 'story_summary'
+): Promise<string | null> {
   try {
     const artifact = await getInsightOverview(bookId, templateType)
-    return {
-      success: true,
-      content: artifactContent(artifact.payload),
-      cached: true,
-    }
-  } catch {
-    return { success: false, error: '概览尚未生成' }
+    return artifactContent(artifact.payload)
+  } catch (error) {
+    if (isNotFound(error)) return null
+    throw error
   }
 }
 
 export async function regenerateOverview(
   bookId: string,
   templateType: string,
-  force = false,
-): Promise<OverviewContentResponse> {
+  force = false
+): Promise<OverviewGenerationResult> {
   if (!force) {
     const cached = await getOverview(bookId, templateType)
-    if (cached.success) return cached
+    if (cached !== null) return { kind: 'cached', content: cached }
   }
   const accepted = await rebuildInsightOverview(bookId, templateType)
-  return {
-    success: true,
-    task_id: accepted.jobIds[0],
-    message: '概览重建已进入任务中心',
-  }
+  return { kind: 'queued', jobId: accepted.jobIds[0] }
 }
 
-export async function getGeneratedTemplates(bookId: string): Promise<GeneratedTemplatesResponse> {
+export async function getGeneratedTemplates(bookId: string): Promise<OverviewTemplateType[]> {
   const results = await Promise.all(
     OVERVIEW_TEMPLATES.map(async template => {
       const response = await getOverview(bookId, template)
-      return response.success ? template : null
-    }),
+      return response !== null ? template : null
+    })
   )
-  return { success: true, generated: results.filter((value): value is string => Boolean(value)) }
+  return results.filter((value): value is OverviewTemplateType => value !== null)
 }
 
-export async function getTimeline(bookId: string): Promise<InsightTimelineResponse> {
+export async function getTimeline(bookId: string): Promise<TimelineData | null> {
   try {
     const timeline = await getInsightTimeline(bookId)
     const pages = await pagesForBook(bookId)
-    const pageNumbersById = new Map(
-      pages.map(page => [page.pageId, page.displayPageNumber]),
-    )
+    const pageNumbersById = new Map(pages.map(page => [page.pageId, page.displayPageNumber]))
     const rawEvents = Array.isArray(timeline.events)
-      ? timeline.events.filter(
-        (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
-      )
+      ? timeline.events.filter(value => Boolean(value) && typeof value === 'object')
       : []
     const groups = rawEvents.map((event, index) => {
-      const pageNumbers = (
-        Array.isArray(event.page_ids) ? event.page_ids : []
-      ).flatMap(value => {
+      const pageNumbers = (Array.isArray(event.page_ids) ? event.page_ids : []).flatMap(value => {
         const pageNumber = pageNumbersById.get(String(value))
         return pageNumber ? [pageNumber] : []
       })
@@ -625,25 +497,21 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
       }
     })
     const rawCharacters = Array.isArray(timeline.characters)
-      ? timeline.characters.filter(
-        (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
-      )
+      ? timeline.characters.filter(value => Boolean(value) && typeof value === 'object')
       : []
     const characters = rawCharacters.map((character, index) => {
       const keyMoments = Array.isArray(character.key_moments)
         ? character.key_moments.filter(
-          (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
-        )
+            (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object'
+          )
         : []
-      const firstAppearance = Math.max(
-        1,
-        Number(character.first_page ?? 1),
-      )
+      const firstAppearance = Math.max(1, Number(character.first_page ?? 1))
       return {
         name: String(character.name ?? `角色 ${index + 1}`),
-        description: typeof character.description === 'string'
-          ? character.description
-          : String(keyMoments[0]?.summary ?? `首次出现于第 ${firstAppearance} 页`),
+        description:
+          typeof character.description === 'string'
+            ? character.description
+            : String(keyMoments[0]?.summary ?? `首次出现于第 ${firstAppearance} 页`),
         first_appearance: firstAppearance,
         key_moments: keyMoments.map(moment => ({
           summary: String(moment.summary ?? ''),
@@ -652,47 +520,31 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
       }
     })
     const content = (
-      timeline.content && typeof timeline.content === 'object'
-        ? timeline.content
-        : {}
+      timeline.content && typeof timeline.content === 'object' ? timeline.content : {}
     ) as Record<string, unknown>
-    const lastPage = groups.reduce(
-      (maximum, group) => Math.max(maximum, group.page_range.end),
-      0,
-    )
+    const lastPage = groups.reduce((maximum, group) => Math.max(maximum, group.page_range.end), 0)
     return {
-      success: true,
-      timeline: {
-        ...content,
-        mode: timeline.mode,
-        events: rawEvents,
-        groups,
-        story_summary: typeof content.story_summary === 'string' ? content.story_summary : '',
-        main_characters: characters,
-        stats: {
-          total_events: groups.length,
-          total_pages: pages.length || lastPage,
-          total_characters: characters.length,
-        },
-      } as never,
-    }
-  } catch {
-    return { success: false, error: '时间线尚未生成' }
+      ...content,
+      mode: timeline.mode,
+      events: rawEvents,
+      groups,
+      story_summary: typeof content.story_summary === 'string' ? content.story_summary : '',
+      main_characters: characters,
+      stats: {
+        total_events: groups.length,
+        total_pages: pages.length || lastPage,
+        total_characters: characters.length,
+      },
+    } as TimelineData
+  } catch (error) {
+    if (isNotFound(error)) return null
+    throw error
   }
 }
 
-export async function regenerateTimeline(bookId: string): Promise<InsightTimelineResponse> {
+export async function regenerateTimeline(bookId: string): Promise<string> {
   const accepted = await rebuildInsightTimeline(bookId)
-  return {
-    success: true,
-    timeline: undefined,
-    task_id: accepted.jobIds[0],
-    message: '时间线重建已进入任务中心',
-  }
-}
-
-export function getChatStreamUrl(bookId: string): string {
-  return insightQaUrl(bookId)
+  return accepted.jobIds[0]
 }
 
 export async function sendChat(
@@ -705,8 +557,8 @@ export async function sendChat(
     top_k?: number
     threshold?: number
     use_global_context?: boolean
-  } = {},
-): Promise<ChatResponse> {
+  } = {}
+): Promise<ChatResult> {
   assertBackendActionAllowed()
   const response = await fetch(insightQaUrl(bookId), {
     method: 'POST',
@@ -722,10 +574,7 @@ export async function sendChat(
     }),
   })
   if (!response.ok) {
-    return {
-      success: false,
-      error: await readApiErrorMessage(response, `HTTP ${response.status}`),
-    }
+    throw new Error(await readApiErrorMessage(response, `HTTP ${response.status}`))
   }
   let answer = ''
   let mode = options.use_global_context ? 'global' : 'precise'
@@ -756,48 +605,32 @@ export async function sendChat(
       }
     },
   })
-  return streamError
-    ? { success: false, error: streamError }
-    : { success: true, answer, mode, citations, suggested_questions: suggestedQuestions }
+  if (streamError) throw new Error(streamError)
+  return { answer, mode, citations, suggestedQuestions }
 }
 
-export async function rebuildEmbeddings(bookId: string): Promise<RebuildEmbeddingsResponse> {
+export async function rebuildEmbeddings(bookId: string): Promise<string> {
   const accepted = await rebuildInsightVectors(bookId)
-  return {
-    success: true,
-    task_id: accepted.jobIds[0],
-    status: accepted.status,
-    message: '向量重建已进入任务中心',
-  }
+  return accepted.jobIds[0]
 }
 
 export function getQAStatus(
   bookId: string,
-  mode: 'precise' | 'global' = 'precise',
+  mode: 'precise' | 'global' = 'precise'
 ): Promise<QAStatusResponse> {
   return getInsightQaStatus(bookId, mode === 'global' ? 'global' : 'exact')
 }
 
-export async function rebuildCompressedContext(
-  bookId: string,
-): Promise<RebuildEmbeddingsResponse> {
+export async function rebuildCompressedContext(bookId: string): Promise<string> {
   const accepted = await rebuildInsightCompressedContext(bookId)
-  return {
-    success: true,
-    task_id: accepted.jobIds[0],
-    status: accepted.status,
-    message: '压缩上下文重建已进入任务中心',
-  }
+  return accepted.jobIds[0]
 }
 
 function noteMetadata(note: NoteData): Record<string, unknown> {
-  const text = [
-    note.comment,
-    note.question,
-    note.answer,
-    note.content,
-    note.title,
-  ].find(value => typeof value === 'string' && value.trim())?.trim() || '笔记'
+  const text =
+    [note.comment, note.question, note.answer, note.content, note.title]
+      .find(value => typeof value === 'string' && value.trim())
+      ?.trim() || '笔记'
   return {
     text,
     question: note.question ?? '',
@@ -807,7 +640,9 @@ function noteMetadata(note: NoteData): Record<string, unknown> {
 }
 
 function mapNote(note: V2InsightNote): NoteData {
-  const metadata = note.comments?.find(value => typeof value === 'object') as Record<string, unknown> | undefined
+  const metadata = note.comments?.find(value => typeof value === 'object') as
+    | Record<string, unknown>
+    | undefined
   const mapped: NoteData = {
     id: note.noteId,
     type: note.kind,
@@ -833,15 +668,15 @@ function mapNote(note: V2InsightNote): NoteData {
       note.citations.flatMap(citation => {
         const pageId = citation.pageId ?? citation.pageIdSnapshot
         return pageId ? [[citation.pageNumberSnapshot, pageId] as const] : []
-      }),
-    ),
+      })
+    )
   )
   return mapped
 }
 
-export async function getNotes(bookId: string, type?: 'text' | 'qa'): Promise<NoteListResponse> {
+export async function getNotes(bookId: string, type?: 'text' | 'qa'): Promise<NoteData[]> {
   const notes = await listAllInsightNotes(bookId, type)
-  return { success: true, notes: notes.map(mapNote) }
+  return notes.map(mapNote)
 }
 
 export async function createNote(
@@ -856,8 +691,8 @@ export async function createNote(
     answer?: string
     citations?: Array<{ page: number; content: string }>
     comment?: string
-  },
-): Promise<NoteDetailResponse> {
+  }
+): Promise<NoteData> {
   const pages = await pagesForBook(bookId)
   const citations = (note.citations ?? (note.pageNum ? [{ page: note.pageNum, content: '' }] : []))
     .map(citation => {
@@ -872,23 +707,25 @@ export async function createNote(
     kind: note.type,
     tags: note.tags ?? [],
     citations,
-    comments: [noteMetadata({
-      ...note,
-      id: '',
-      createdAt: '',
-      updatedAt: '',
-    })],
+    comments: [
+      noteMetadata({
+        ...note,
+        id: '',
+        createdAt: '',
+        updatedAt: '',
+      }),
+    ],
   })
-  return { success: true, note: mapNote(created) }
+  return mapNote(created)
 }
 
 export async function updateNote(
   bookId: string,
   noteId: string,
-  updates: Partial<NoteData>,
-): Promise<NoteDetailResponse> {
+  updates: Partial<NoteData>
+): Promise<NoteData> {
   const current = noteCache.get(noteId)
-  if (!current?.revision) return { success: false, error: '笔记版本缺失，请重新加载' }
+  if (!current?.revision) throw new Error('笔记版本缺失，请重新加载')
   const merged = { ...current, ...updates }
   const knownPageIds = noteCitationPageIds.get(noteId) ?? new Map<number, string>()
   const requestedCitations = merged.citations ?? []
@@ -911,19 +748,21 @@ export async function updateNote(
     citations,
     comments: [noteMetadata(merged)],
   })
-  return { success: true, note: mapNote(updated) }
+  return mapNote(updated)
 }
 
-export async function deleteNote(_bookId: string, noteId: string): Promise<ApiResponse> {
+export async function deleteNote(noteId: string): Promise<void> {
   const current = noteCache.get(noteId)
-  if (!current?.revision) return { success: false, error: '笔记版本缺失，请重新加载' }
+  if (!current?.revision) throw new Error('笔记版本缺失，请重新加载')
   await deleteInsightNote(noteId, current.revision)
   noteCache.delete(noteId)
   noteCitationPageIds.delete(noteId)
-  return { success: true }
 }
 
-function providerWire(row: V2ProviderSettingEntry | undefined, provider: string): Record<string, unknown> {
+function providerWire(
+  row: V2ProviderSettingEntry | undefined,
+  provider: string
+): Record<string, unknown> {
   const payload = row?.payload ?? {}
   return {
     provider,
@@ -947,9 +786,9 @@ function providerSettingsWire(document: V2SettingsDocument): AnalysisConfig['pro
       Object.fromEntries(
         document.providerSettings
           .filter(row => row.domain === domain)
-          .map(row => [row.provider, providerWire(row, row.provider)]),
+          .map(row => [row.provider, providerWire(row, row.provider)])
       ),
-    ]),
+    ])
   )
 }
 
@@ -960,8 +799,8 @@ function requireInsightAppPayload(value: unknown): Record<string, unknown> {
   const payload = value as Record<string, unknown>
   const required = ['analysis', 'vlm', 'chat', 'embedding', 'reranker', 'imageGen']
   if (
-    Object.keys(payload).length !== required.length
-    || required.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
+    Object.keys(payload).length !== required.length ||
+    required.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
   ) {
     throw new Error('后端 Insight 设置字段不完整')
   }
@@ -978,15 +817,12 @@ function requireInsightAppPayload(value: unknown): Record<string, unknown> {
 
 export function hasInsightCredential(domain: string, provider: string): boolean {
   return credentialSummaries.some(
-    row => row.domain === domain && row.provider === provider && row.hasKey,
+    row => row.domain === domain && row.provider === provider && row.hasKey
   )
 }
 
-export async function getGlobalConfig(): Promise<GlobalConfigResponse> {
-  const [document, prompts] = await Promise.all([
-    getV2Settings(INSIGHT_DOMAINS),
-    listV2Prompts(),
-  ])
+export async function getGlobalConfig(): Promise<AnalysisConfig> {
+  const [document, prompts] = await Promise.all([getV2Settings(INSIGHT_DOMAINS), listV2Prompts()])
   settingsDocument = document
   credentialSummaries = document.credentials
   promptCache = prompts
@@ -995,46 +831,47 @@ export async function getGlobalConfig(): Promise<GlobalConfigResponse> {
   const app = requireInsightAppPayload(appEntry.payload)
   const section = (
     key: keyof typeof SECTION_DOMAINS,
-    appKey: string = key,
+    appKey: string = key
   ): Record<string, unknown> => {
     const selected = (app[appKey] as Record<string, unknown> | undefined) ?? {}
     const provider = String(selected.provider ?? '')
     const row = document.providerSettings.find(
-      value => value.domain === SECTION_DOMAINS[key] && value.provider === provider,
+      value => value.domain === SECTION_DOMAINS[key] && value.provider === provider
     )
     return { ...providerWire(row, provider), ...selected, api_key: '' }
   }
   const factoryPrompts = Object.fromEntries(
-    prompts.filter(prompt => prompt.isFactoryDefault).map(prompt => [prompt.type, prompt.content]),
+    prompts.filter(prompt => prompt.isFactoryDefault).map(prompt => [prompt.type, prompt.content])
   )
-  const batch = ((app.analysis as Record<string, unknown> | undefined)?.batch ?? {}) as Record<string, unknown>
+  const batch = ((app.analysis as Record<string, unknown> | undefined)?.batch ?? {}) as Record<
+    string,
+    unknown
+  >
   return {
-    success: true,
-    config: {
-      vlm: section('vlm') as unknown as VlmConfig,
-      chat_llm: {
-        ...section('chat_llm', 'chat'),
-        use_same_as_vlm: Boolean((app.chat as Record<string, unknown> | undefined)?.useSameAsVlm),
-      } as unknown as LlmConfig,
-      embedding: section('embedding') as unknown as EmbeddingConfig,
-      reranker: section('reranker') as unknown as RerankerConfig,
-      image_gen: section('image_gen', 'imageGen') as unknown as ImageGenConfig,
-      analysis: {
-        batch: {
-          pages_per_batch: Number(batch.pagesPerBatch ?? 5),
-          context_batch_count: Number(batch.contextBatchCount ?? 3),
-          architecture_preset: String(batch.architecturePreset ?? 'standard'),
-          custom_layers: ((batch.customLayers ?? []) as Array<Record<string, unknown>>)
-            .map(layer => ({
-              name: String(layer.name ?? ''),
-              units_per_group: Number(layer.unitsPerGroup ?? 0),
-              align_to_chapter: Boolean(layer.alignToChapter),
-            })),
-        },
+    vlm: section('vlm') as unknown as VlmConfig,
+    chat_llm: {
+      ...section('chat_llm', 'chat'),
+      use_same_as_vlm: Boolean((app.chat as Record<string, unknown> | undefined)?.useSameAsVlm),
+    } as unknown as LlmConfig,
+    embedding: section('embedding') as unknown as EmbeddingConfig,
+    reranker: section('reranker') as unknown as RerankerConfig,
+    image_gen: section('image_gen', 'imageGen') as unknown as ImageGenConfig,
+    analysis: {
+      batch: {
+        pages_per_batch: Number(batch.pagesPerBatch ?? 5),
+        context_batch_count: Number(batch.contextBatchCount ?? 3),
+        architecture_preset: String(batch.architecturePreset ?? 'standard'),
+        custom_layers: ((batch.customLayers ?? []) as Array<Record<string, unknown>>).map(
+          layer => ({
+            name: String(layer.name ?? ''),
+            units_per_group: Number(layer.unitsPerGroup ?? 0),
+            align_to_chapter: Boolean(layer.alignToChapter),
+          })
+        ),
       },
-      prompts: factoryPrompts,
-      provider_settings: providerSettingsWire(document),
     },
+    prompts: factoryPrompts,
+    provider_settings: providerSettingsWire(document),
   }
 }
 
@@ -1054,8 +891,8 @@ function providerPayload(section: Record<string, unknown>): Record<string, unkno
   }
 }
 
-export async function saveGlobalConfig(config: AnalysisConfig): Promise<ApiResponse> {
-  const document = settingsDocument ?? await getV2Settings(INSIGHT_DOMAINS)
+export async function saveGlobalConfig(config: AnalysisConfig): Promise<void> {
+  const document = settingsDocument ?? (await getV2Settings(INSIGHT_DOMAINS))
   settingsDocument = document
   credentialSummaries = document.credentials
   const currentApp = document.settings.find(row => row.domain === 'insight')
@@ -1092,10 +929,10 @@ export async function saveGlobalConfig(config: AnalysisConfig): Promise<ApiRespo
     }
     if (!provider) continue
     const existingRow = document.providerSettings.find(
-      row => row.domain === domain && row.provider === provider,
+      row => row.domain === domain && row.provider === provider
     )
     const existingCredential = document.credentials.find(
-      row => row.domain === domain && row.provider === provider,
+      row => row.domain === domain && row.provider === provider
     )
     const mutation: V2ProviderSettingMutation = {
       domain,
@@ -1130,52 +967,53 @@ export async function saveGlobalConfig(config: AnalysisConfig): Promise<ApiRespo
       const factory = currentPrompts.find(prompt => prompt.type === type && prompt.isFactoryDefault)
       if (factory && factory.content !== content) {
         const updated = await updateV2Prompt({ ...factory, content })
-        promptCache = promptCache.map(prompt => prompt.id === updated.id ? updated : prompt)
+        promptCache = promptCache.map(prompt => (prompt.id === updated.id ? updated : prompt))
       }
     }
   }
   await saveV2SettingsTransaction({
-    settings: [{
-      domain: 'insight',
-      payload: appPayload,
-      baseRevision: currentApp.revision,
-      schemaVersion: 1,
-    }],
+    settings: [
+      {
+        domain: 'insight',
+        payload: appPayload,
+        baseRevision: currentApp.revision,
+        schemaVersion: 1,
+      },
+    ],
     providerSettings,
     credentialEdits,
   })
   await getGlobalConfig()
-  return { success: true }
 }
 
 function diagnosticRequest(
   kind: string,
   domain: string,
-  config: { provider: string; api_key: string; model: string; base_url?: string },
+  config: { provider: string; api_key: string; model: string; base_url?: string }
 ) {
   return runV2ConnectionTest(kind, {
     provider: config.provider,
     model: config.model,
     baseUrl: config.base_url,
-    ...(config.api_key
-      ? { secret: { api_key: config.api_key } }
-      : { domain }),
+    ...(config.api_key ? { secret: { api_key: config.api_key } } : { domain }),
   })
 }
 
-export function testVlmConnection(config: VlmConfig): Promise<ConnectionTestResponse> {
+export function testVlmConnection(config: VlmConfig): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('vlm', 'insight_vlm', config)
 }
 
-export function testEmbeddingConnection(config: EmbeddingConfig): Promise<ConnectionTestResponse> {
+export function testEmbeddingConnection(config: EmbeddingConfig): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('embedding', 'insight_embedding', config)
 }
 
-export function testRerankerConnection(config: RerankerConfig): Promise<ConnectionTestResponse> {
+export function testRerankerConnection(config: RerankerConfig): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('reranker', 'insight_reranker', config)
 }
 
-export function testLlmConnection(config: LlmConfig & { provider: string; api_key: string; model: string }): Promise<ConnectionTestResponse> {
+export function testLlmConnection(
+  config: LlmConfig & { provider: string; api_key: string; model: string }
+): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('llm', 'insight_chat', config)
 }
 
@@ -1183,7 +1021,7 @@ export function fetchModels(
   provider: string,
   apiKey: string,
   baseUrl?: string,
-  domain = 'insight_chat',
+  domain = 'insight_chat'
 ): Promise<FetchModelsResponse> {
   return fetchV2ModelCatalog({
     provider,
@@ -1192,17 +1030,12 @@ export function fetchModels(
   })
 }
 
-export async function getDefaultPrompts(): Promise<DefaultPromptsResponse> {
+export async function getDefaultPrompts(): Promise<Record<PromptType, string>> {
   const prompts = await listV2Prompts()
   promptCache = prompts
-  return {
-    success: true,
-    prompts: Object.fromEntries(
-      prompts
-        .filter(prompt => prompt.isFactoryDefault)
-        .map(prompt => [prompt.type, prompt.content]),
-    ) as Record<PromptType, string>,
-  }
+  return Object.fromEntries(
+    prompts.filter(prompt => prompt.isFactoryDefault).map(prompt => [prompt.type, prompt.content])
+  ) as Record<PromptType, string>
 }
 
 function savedPrompt(prompt: V2Prompt): SavedPromptItem {
@@ -1215,36 +1048,32 @@ function savedPrompt(prompt: V2Prompt): SavedPromptItem {
   }
 }
 
-export async function getPromptsLibrary(): Promise<PromptsLibraryResponse> {
+export async function getPromptsLibrary(): Promise<SavedPromptItem[]> {
   const prompts = await listV2Prompts()
   promptCache = prompts
-  return {
-    success: true,
-    library: prompts.filter(prompt => !prompt.isFactoryDefault).map(savedPrompt),
-  }
+  return prompts.filter(prompt => !prompt.isFactoryDefault).map(savedPrompt)
 }
 
-export async function savePromptToLibrary(prompt: SavedPromptItem): Promise<ApiResponse> {
+export async function savePromptToLibrary(prompt: SavedPromptItem): Promise<SavedPromptItem> {
   const existing = promptCache.find(value => value.id === prompt.id)
   const saved = existing
     ? await updateV2Prompt({ ...existing, name: prompt.name, content: prompt.content })
     : await createV2Prompt(prompt.type, prompt.name, prompt.content)
   promptCache = [...promptCache.filter(value => value.id !== saved.id), saved]
-  return { success: true }
+  return savedPrompt(saved)
 }
 
-export async function deletePromptFromLibrary(promptId: string): Promise<ApiResponse> {
+export async function deletePromptFromLibrary(promptId: string): Promise<void> {
   await deleteV2Prompt(promptId)
   promptCache = promptCache.filter(prompt => prompt.id !== promptId)
-  return { success: true }
 }
 
-export async function importPromptsLibrary(library: SavedPromptItem[]): Promise<ApiResponse> {
+export async function importPromptsLibrary(library: SavedPromptItem[]): Promise<void> {
   const current = await listV2Prompts()
   promptCache = current
   for (const prompt of library) {
-    const existing = current.find(value =>
-      !value.isFactoryDefault && value.type === prompt.type && value.name === prompt.name,
+    const existing = current.find(
+      value => !value.isFactoryDefault && value.type === prompt.type && value.name === prompt.name
     )
     if (existing) {
       await updateV2Prompt({ ...existing, content: prompt.content })
@@ -1253,33 +1082,14 @@ export async function importPromptsLibrary(library: SavedPromptItem[]): Promise<
     }
   }
   promptCache = await listV2Prompts()
-  return { success: true }
 }
 
-export async function exportAnalysis(bookId: string): Promise<ExportAnalysisResponse> {
+export async function exportAnalysis(bookId: string): Promise<string> {
   const accepted = await createInsightExport(bookId)
-  return {
-    success: true,
-    task_id: accepted.jobIds[0],
-    message: '完整分析导出已进入任务中心',
-  }
+  return accepted.jobIds[0]
 }
 
-export async function exportPageAnalysis(
-  bookId: string,
-  pageNum: number,
-): Promise<PageDataResponse> {
-  const page = await pageForNumber(bookId, pageNum)
-  if (!page) return { success: false, error: '页面不存在' }
-  const response = await fetch(insightPageExportUrl(page.pageId, 'json'))
-  if (!response.ok) return { success: false, error: `HTTP ${response.status}` }
-  return { success: true, analysis: await response.json() }
-}
-
-export async function downloadPageAnalysis(
-  bookId: string,
-  pageNum: number,
-): Promise<Blob> {
+export async function downloadPageAnalysis(bookId: string, pageNum: number): Promise<Blob> {
   const page = await pageForNumber(bookId, pageNum)
   if (!page) throw new Error('页面不存在')
   const response = await fetch(insightPageExportUrl(page.pageId, 'markdown'))
@@ -1287,10 +1097,7 @@ export async function downloadPageAnalysis(
   return response.blob()
 }
 
-export async function downloadCurrentOverview(
-  bookId: string,
-  template: string,
-): Promise<Blob> {
+export async function downloadCurrentOverview(bookId: string, template: string): Promise<Blob> {
   const response = await fetch(insightCurrentExportUrl(bookId, template, 'markdown'))
   if (!response.ok) throw new Error(`导出失败: HTTP ${response.status}`)
   return response.blob()

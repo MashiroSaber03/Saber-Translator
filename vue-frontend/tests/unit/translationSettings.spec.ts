@@ -11,19 +11,16 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 const {
   fetchModelsMock,
   testAiTranslateConnectionMock,
-  testOllamaConnectionMock,
   testSakuraConnectionMock,
 } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
   testAiTranslateConnectionMock: vi.fn(),
-  testOllamaConnectionMock: vi.fn(),
   testSakuraConnectionMock: vi.fn(),
 }))
 
 vi.mock('@/api/v2/diagnostics', () => ({
   fetchModels: fetchModelsMock,
   testAiTranslateConnection: testAiTranslateConnectionMock,
-  testOllamaConnection: testOllamaConnectionMock,
   testSakuraConnection: testSakuraConnectionMock,
   testBaiduTranslateConnection: vi.fn(),
   testYoudaoTranslateConnection: vi.fn(),
@@ -88,11 +85,9 @@ describe('TranslationSettings', () => {
 
     fetchModelsMock.mockReset()
     testAiTranslateConnectionMock.mockReset()
-    testOllamaConnectionMock.mockReset()
     testSakuraConnectionMock.mockReset()
 
     fetchModelsMock.mockResolvedValue({
-      success: true,
       models: [{ id: 'llama3.2', name: 'llama3.2' }],
     })
     testAiTranslateConnectionMock.mockResolvedValue({
@@ -114,7 +109,6 @@ describe('TranslationSettings', () => {
     await flushPromises()
 
     expect(fetchModelsMock).toHaveBeenCalledWith('ollama', '', '')
-    expect(testOllamaConnectionMock).not.toHaveBeenCalled()
     const optionTexts = wrapper.findAll('.ui-combobox-stub option').map(option => option.text())
     expect(optionTexts).toContain('llama3.2')
     expect(optionTexts).not.toContain('[object Object]')
@@ -138,7 +132,6 @@ describe('TranslationSettings', () => {
       modelName: 'llama3.2',
       baseUrl: '',
     })
-    expect(testOllamaConnectionMock).not.toHaveBeenCalled()
   })
 
   it('switches translation mode without routine console output', async () => {
@@ -244,7 +237,7 @@ describe('TranslationSettings', () => {
     const store = useSettingsStore()
     store.settings.translation.provider = 'siliconflow'
     store.settings.translation.apiKey = 'model-key'
-    const pendingModels = deferred<{ success: boolean; models: Array<{ id: string; name: string }> }>()
+    const pendingModels = deferred<{ models: Array<{ id: string; name: string }> }>()
     fetchModelsMock.mockReturnValueOnce(pendingModels.promise)
 
     const wrapper = mount(TranslationSettings)
@@ -261,7 +254,6 @@ describe('TranslationSettings', () => {
     await flushPromises()
 
     pendingModels.resolve({
-      success: true,
       models: [{ id: 'stale-model', name: 'stale-model' }],
     })
     await flushPromises()

@@ -29,19 +29,7 @@ from src.shared.openai_options import (
     OpenAICompatibleOptions,
     create_openai_compatible_options,
 )
-from src.shared.openai_rate_limits import (
-    apply_sync_rpm_limit,
-    build_openai_rpm_bucket_key,
-    build_openai_rpm_service_name,
-    enforce_sync_rpm_limit_window,
-)
-from src.interfaces.baidu_translate_interface import BaiduTranslateInterface
-from src.interfaces.youdao_translate_interface import YoudaoTranslateInterface
-
-# 全局API实例缓存
-baidu_translate = BaiduTranslateInterface()
-youdao_translate = YoudaoTranslateInterface()
-
+from src.shared.openai_rate_limits import SharedRPMLimiter
 logger = logging.getLogger("CoreTranslation")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 _chat_transport = OpenAICompatibleChatTransport()
@@ -52,34 +40,12 @@ class TranslationParseException(Exception):
     """批量翻译响应解析失败异常，触发重试"""
     pass
 
-def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: list, request_count_ref: list):
-    enforce_sync_rpm_limit_window(
-        rpm_limit,
-        service_name,
-        last_reset_time_ref,
-        request_count_ref,
-    )
-
-
-
 def _build_text_chat_messages(prompt_content: str, text: str) -> list:
     messages = []
     if prompt_content:
         messages.append({"role": "system", "content": prompt_content})
     messages.append({"role": "user", "content": text})
     return messages
-
-
-def _apply_translation_rpm_limit(provider: str, rpm_limit: int) -> None:
-    if rpm_limit <= 0:
-        return
-
-    apply_sync_rpm_limit(
-        build_openai_rpm_bucket_key(TRANSLATION_CAPABILITY, provider),
-        rpm_limit,
-        build_openai_rpm_service_name(TRANSLATION_CAPABILITY, provider),
-        _enforce_rpm_limit,
-    )
 
 
 def _build_translation_openai_options(
@@ -167,6 +133,7 @@ def translate_single_text(
     prompt_content=None,
     custom_base_url=None,
     openai_options: OpenAICompatibleOptions | None = None,
+    credential_version_id: str | None = None,
 ):
     """
     使用指定的大模型翻译单段文本。
@@ -230,6 +197,7 @@ def translate_single_text(
                 provider=canonical_provider,
                 api_key=api_key,
                 model=model_name,
+                credential_version_id=credential_version_id,
                 base_url=custom_base_url,
                 capability=TRANSLATION_CAPABILITY,
                 openai_options=effective_options,
@@ -253,7 +221,11 @@ def translate_single_text(
         total_attempts = business_retries + 1
         for attempt in range(total_attempts):
             try:
-                _apply_translation_rpm_limit(model_provider, rpm_limit_translation)
+                SharedRPMLimiter(
+                    rpm_limit_translation,
+                    provider=model_provider,
+                    credential_version_id=credential_version_id,
+                ).wait_sync()
 
                 if canonical_provider == 'caiyun':
                     if not api_key:
@@ -547,7 +519,8 @@ def _parse_batch_json_response(response_text: str) -> list:
 def _translate_batch_with_llm(texts: list, model_provider: str,
                                api_key: str, model_name: str, custom_prompt: str = None,
                                custom_base_url: str = None,
-                               openai_options: OpenAICompatibleOptions | None = None) -> list:
+                               openai_options: OpenAICompatibleOptions | None = None,
+                               credential_version_id: str | None = None) -> list:
     """
     使用 LLM 进行批量翻译
     
@@ -620,6 +593,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
             provider=canonical_provider,
             api_key=api_key,
             model=model_name,
+            credential_version_id=credential_version_id,
             messages=messages,
             base_url=custom_base_url,
             capability=TRANSLATION_CAPABILITY,
@@ -653,6 +627,7 @@ def translate_text_list(
     prompt_content=None,
     custom_base_url=None,
     openai_options: OpenAICompatibleOptions | None = None,
+    credential_version_id: str | None = None,
 ):
     """
     翻译文本列表 - 使用批量翻译策略
@@ -744,6 +719,7 @@ def translate_text_list(
                 custom_prompt=prompt_content,
                 custom_base_url=custom_base_url,
                 openai_options=effective_options,
+                credential_version_id=credential_version_id,
             )
             all_translations.extend(batch_translations)
             
@@ -769,6 +745,7 @@ def translate_text_list(
                 prompt_content=prompt_content,
                 custom_base_url=custom_base_url,
                 openai_options=effective_options,
+                credential_version_id=credential_version_id,
             )
             final_translations[non_empty_indices[i]] = translated
     

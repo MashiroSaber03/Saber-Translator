@@ -48,27 +48,14 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     bubbleStore.clearMultiSelect()
   }
 
-  function handleBubbleDragStart(index: number, _event: MouseEvent): void {
-    void index
-  }
-
   function handleBubbleDragEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
     triggerDelayedPreview()
   }
 
-  function handleBubbleResizeStart(index: number, handle: string, _event: MouseEvent): void {
-    void index
-    void handle
-  }
-
   function handleBubbleResizeEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
     triggerDelayedPreview()
-  }
-
-  function handleBubbleRotateStart(index: number, _event: MouseEvent): void {
-    void index
   }
 
   function handleBubbleRotateEnd(index: number, angle: number): void {
@@ -263,11 +250,8 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     handleBubbleSelect,
     handleBubbleMultiSelect,
     handleClearMultiSelect,
-    handleBubbleDragStart,
     handleBubbleDragEnd,
-    handleBubbleResizeStart,
     handleBubbleResizeEnd,
-    handleBubbleRotateStart,
     handleBubbleRotateEnd,
     toggleDrawingMode,
     handleDrawBubble,
@@ -275,7 +259,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     handleBubbleUpdate,
     deleteSelectedBubbles,
     repairSelectedBubble,
-    triggerDelayedPreview,
     handleOcrRecognize
   }
 }

@@ -52,27 +52,24 @@ beforeEach(() => {
     },
   ]
   getBookDetailMock.mockResolvedValue({
-    success: true,
-    book: {
-      id: 'book-1',
-      title: '测试漫画',
-      chapters: [
-        {
-          id: 'chapter-1',
-          title: '第一话',
-          order: 0,
-          imageCount: 3,
-          page_count: 3,
-        },
-        {
-          id: 'chapter-empty',
-          title: '空章节',
-          order: 1,
-          imageCount: 0,
-          page_count: 0,
-        },
-      ],
-    },
+    id: 'book-1',
+    title: '测试漫画',
+    chapters: [
+      {
+        id: 'chapter-1',
+        title: '第一话',
+        order: 0,
+        imageCount: 3,
+        page_count: 3,
+      },
+      {
+        id: 'chapter-empty',
+        title: '空章节',
+        order: 1,
+        imageCount: 0,
+        page_count: 0,
+      },
+    ],
   })
   createAnalysisMock.mockResolvedValue({
     batchId: 'batch-1',

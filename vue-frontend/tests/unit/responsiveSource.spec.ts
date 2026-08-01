@@ -3,9 +3,6 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const responsivePropertyFiles = [
-  'tests/property/responsive-breakpoints.property.ts',
-  'tests/property/responsive-device.property.ts',
-  'tests/property/responsive-layout.property.ts',
   'tests/property/responsive-sidebar.property.ts',
 ]
 
@@ -19,17 +16,6 @@ describe('responsive property source contracts', () => {
       expect(source, file).not.toContain('验证')
       expect(source, file).not.toContain('return true')
     }
-
-    const deviceSource = readFileSync(resolve(process.cwd(), 'tests/property/responsive-device.property.ts'), 'utf8')
-    expect(deviceSource).toContain('getDeviceType')
-    expect(deviceSource).toContain('isMobileViewport')
-    expect(deviceSource).not.toContain('function isMobile')
-    expect(deviceSource).not.toContain('function isTablet')
-    expect(deviceSource).not.toContain('function isDesktop')
-
-    const layoutSource = readFileSync(resolve(process.cwd(), 'tests/property/responsive-layout.property.ts'), 'utf8')
-    expect(layoutSource).toContain('getLayoutMode')
-    expect(layoutSource).not.toContain('function getLayoutMode')
 
     const sidebarSource = readFileSync(resolve(process.cwd(), 'tests/property/responsive-sidebar.property.ts'), 'utf8')
     expect(sidebarSource).toContain("from '@/components/ui/SidebarLayout.vue'")

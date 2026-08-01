@@ -63,20 +63,14 @@ describe('PagesTree', () => {
     store.setAnalysisStatus('idle')
     store.setCurrentTaskId(null)
     store.setBookTotalPages(2)
-    store.setChapters([
-      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
-    ])
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
 
     reanalyzeChapterMock.mockReset()
     reanalyzeChapterMock.mockResolvedValue({
-      success: true,
-      task_id: 'task-chapter-1',
+      jobId: 'task-chapter-1',
     })
     getThumbnailUrlMock.mockClear()
-    getAnalyzedPagesMock.mockReset().mockResolvedValue({
-      success: true,
-      pages: [],
-    })
+    getAnalyzedPagesMock.mockReset().mockResolvedValue([])
     showToastMock.mockReset()
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
@@ -98,9 +92,7 @@ describe('PagesTree', () => {
     store.setAnalysisStatus('idle')
     store.setCurrentTaskId(null)
     store.setBookTotalPages(2)
-    store.setChapters([
-      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
-    ])
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
 
     const wrapper = mount(PagesTree, {
       global: {
@@ -136,9 +128,7 @@ describe('PagesTree', () => {
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setBookTotalPages(2)
-    store.setChapters([
-      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
-    ])
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
 
     mount(PagesTree, {
       global: {
@@ -164,9 +154,7 @@ describe('PagesTree', () => {
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setBookTotalPages(2)
-    store.setChapters([
-      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
-    ])
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
 
     const wrapper = mount(PagesTree, {
       global: {
@@ -218,9 +206,7 @@ describe('PagesTree', () => {
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setBookTotalPages(2)
-    store.setChapters([
-      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
-    ])
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
 
     const wrapper = mount(PagesTree, {
       global: {
@@ -266,13 +252,8 @@ describe('PagesTree', () => {
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setBookTotalPages(2)
-    store.setChapters([
-      { id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false },
-    ])
-    getAnalyzedPagesMock.mockResolvedValueOnce({
-      success: true,
-      pages: [1, 2],
-    })
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
+    getAnalyzedPagesMock.mockResolvedValueOnce([1, 2])
 
     const wrapper = mount(PagesTree, {
       global: {
@@ -285,7 +266,9 @@ describe('PagesTree', () => {
     expect(chipLists.some(chipList => chipList.props('ariaLabel') === '内容导航统计')).toBe(true)
     expect(chipLists.some(chipList => chipList.props('ariaLabel') === '第1章章节状态')).toBe(true)
 
-    const chapterStatus = chipLists.find(chipList => chipList.props('ariaLabel') === '第1章章节状态')
+    const chapterStatus = chipLists.find(
+      chipList => chipList.props('ariaLabel') === '第1章章节状态'
+    )
     expect(chapterStatus?.props('items')).toEqual([
       {
         id: 'ch-1-pages',
@@ -317,7 +300,10 @@ describe('PagesTree', () => {
       },
     })
     await flushPromises()
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/PagesTree.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
+      'utf8'
+    )
     const header = wrapper.getComponent(ProductSectionHeader)
 
     expect(header.props()).toMatchObject({
@@ -325,7 +311,9 @@ describe('PagesTree', () => {
       size: 'sm',
     })
     expect(header.findComponent(ProductChipList).props('ariaLabel')).toBe('内容导航统计')
-    expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
+    expect(source).toContain(
+      "import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'"
+    )
     expect(source).not.toContain('class="section-header"')
     expect(source).not.toContain('class="section-title"')
     expect(source).not.toContain('.section-header')
@@ -347,7 +335,10 @@ describe('PagesTree', () => {
       },
     })
     await flushPromises()
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/PagesTree.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
+      'utf8'
+    )
     const emptyState = wrapper.getComponent(ProductStatusBanner)
 
     expect(emptyState.props()).toMatchObject({
@@ -357,12 +348,17 @@ describe('PagesTree', () => {
       title: '暂无页面',
     })
     expect(wrapper.text()).toContain('导入或选择书籍后将在这里显示页面缩略图。')
-    expect(source).toContain("import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'")
+    expect(source).toContain(
+      "import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'"
+    )
     expect(source).not.toContain('empty-hint')
   })
 
   it('keeps chapter metadata on product chip contracts instead of local status classes', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/PagesTree.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('ProductChipList')
     expect(source).not.toContain('page-count-badge')
@@ -371,7 +367,10 @@ describe('PagesTree', () => {
   })
 
   it('uses pages-tree-panel owner hooks for content navigation styling', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/PagesTree.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
+      'utf8'
+    )
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
     const oldHooks = [
       'sidebar-section',
@@ -410,9 +409,10 @@ describe('PagesTree', () => {
     store.setBookTotalPages(2)
     store.setChapters([])
 
-    const book1Markers = deferred<{ success: true; pages: number[] }>()
-    const book2Markers = deferred<{ success: true; pages: number[] }>()
-    getAnalyzedPagesMock.mockReset()
+    const book1Markers = deferred<number[]>()
+    const book2Markers = deferred<number[]>()
+    getAnalyzedPagesMock
+      .mockReset()
       .mockReturnValueOnce(book1Markers.promise)
       .mockReturnValueOnce(book2Markers.promise)
 
@@ -428,14 +428,14 @@ describe('PagesTree', () => {
     await nextTick()
     expect(getAnalyzedPagesMock).toHaveBeenCalledWith('book-2')
 
-    book2Markers.resolve({ success: true, pages: [2] })
+    book2Markers.resolve([2])
     await flushPromises()
 
     const pageItemsAfterBook2 = wrapper.getComponent(VirtualThumbnailGrid).props('items')
     expect(pageItemsAfterBook2[0]).toMatchObject({ id: 1, marked: false })
     expect(pageItemsAfterBook2[1]).toMatchObject({ id: 2, marked: true })
 
-    book1Markers.resolve({ success: true, pages: [1] })
+    book1Markers.resolve([1])
     await flushPromises()
 
     const pageItemsAfterStaleBook1 = wrapper.getComponent(VirtualThumbnailGrid).props('items')

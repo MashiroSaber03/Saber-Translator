@@ -24,7 +24,6 @@ const {
   focusSourceUrlRequestId,
   galleryDLAvailable,
   galleryDLSupported,
-  getPreviewUrl,
   handleClose,
   handleDiscardSettings,
   handleExtract,
@@ -140,7 +139,6 @@ const {
         :error="error"
         :extract-result="extractResult"
         :is-all-selected="isAllSelected"
-        :preview-url-for="getPreviewUrl"
         :selected-count="selectedCount"
         :selected-pages="selectedPages"
         :status="status"

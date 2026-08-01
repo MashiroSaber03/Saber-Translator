@@ -23,6 +23,7 @@ from src.backend_v2.api.request_helpers import (
     json_body as _json_body,
     require_idempotency_key as _idempotency_key,
     required_string as _required_string,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.insight.derived import InsightDerivedRepository
@@ -131,7 +132,9 @@ def create_studio_blueprint(
     @blueprint.post("/books/<book_id>/documents")
     def create_document(book_id: str):
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"candidate", "title", "document", "kind"}
+        )
         candidate = body.get("candidate")
         title = str(
             body.get("title")
@@ -188,7 +191,9 @@ def create_studio_blueprint(
     @blueprint.put("/documents/<document_id>")
     def update_document(document_id: str) -> Response:
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"baseRevision", "title", "document"}
+        )
         document = body.get("document")
         if not isinstance(document, dict):
             raise ValueError("document must be an object")
@@ -209,6 +214,7 @@ def create_studio_blueprint(
     @blueprint.post("/assets")
     def upload_asset():
         idempotency_key = _idempotency_key()
+        _validate_multipart_fields(allowed_file_keys={"file"})
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
@@ -233,7 +239,7 @@ def create_studio_blueprint(
 
     @blueprint.post("/documents/<document_id>/generate")
     def generate(document_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision", "section"})
         document = repository.get_document(document_id)
         compressed = derived.get_artifact(
             book_id=str(document["bookId"]),
@@ -263,7 +269,7 @@ def create_studio_blueprint(
     @blueprint.post("/documents/<document_id>/validate")
     def validate(document_id: str) -> Response:
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision"})
         return jsonify(
             repository.validate_document(
                 document_id=document_id,
@@ -296,7 +302,15 @@ def create_studio_blueprint(
     @blueprint.post("/documents/<document_id>/chat/sessions")
     def create_session(document_id: str):
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={
+                "title",
+                "baseIndexRevision",
+                "greetingId",
+                "greeting",
+                "greetingSource",
+            }
+        )
         document = repository.get_document(document_id)
         selected = next(
             (
@@ -356,7 +370,7 @@ def create_studio_blueprint(
     @blueprint.post("/chat/sessions/<session_id>/activate")
     def activate_session(session_id: str) -> Response:
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseIndexRevision"})
         return jsonify(
             repository.activate_session(
                 session_id,
@@ -385,7 +399,9 @@ def create_studio_blueprint(
 
     @blueprint.post("/chat/sessions/<session_id>/messages")
     def send_message(session_id: str):
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"baseSessionRevision", "content", "assetIds"}
+        )
         asset_ids = body.get("assetIds", [])
         if not isinstance(asset_ids, list) or not all(
             isinstance(value, str) for value in asset_ids
@@ -406,7 +422,7 @@ def create_studio_blueprint(
 
     @blueprint.post("/chat/sessions/<session_id>/summarize")
     def summarize(session_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseSessionRevision"})
         response = repository.create_summary_operation(
             session_id=session_id,
             base_revision=int(body.get("baseSessionRevision", 0)),
@@ -421,7 +437,7 @@ def create_studio_blueprint(
     @blueprint.post("/chat/sessions/<session_id>/abort")
     def abort(session_id: str) -> Response:
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"operationId"})
         return jsonify(
             repository.abort(
                 session_id=session_id,
@@ -432,7 +448,9 @@ def create_studio_blueprint(
 
     @blueprint.put("/chat/messages/<message_id>")
     def edit_message(message_id: str):
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"baseSessionRevision", "content"}
+        )
         return (
             jsonify(
                 repository.edit_or_regenerate_message(
@@ -453,7 +471,7 @@ def create_studio_blueprint(
 
     @blueprint.post("/chat/messages/<message_id>/regenerate")
     def regenerate_message(message_id: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseSessionRevision"})
         return (
             jsonify(
                 repository.edit_or_regenerate_message(
@@ -475,7 +493,7 @@ def create_studio_blueprint(
     @blueprint.delete("/chat/messages/<message_id>")
     def delete_message(message_id: str) -> Response:
         idempotency_key = _idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseSessionRevision"})
         return jsonify(
             repository.delete_message_chain(
                 message_id=message_id,
@@ -521,7 +539,8 @@ def create_studio_blueprint(
     @blueprint.post("/books/<book_id>/imports")
     def import_document(book_id: str):
         idempotency_key = _idempotency_key()
-        if request.files:
+        if request.mimetype == "multipart/form-data":
+            _validate_multipart_fields(allowed_file_keys={"file"})
             upload = request.files.get("file")
             if upload is None:
                 raise ValueError("multipart field 'file' is required")
@@ -536,7 +555,7 @@ def create_studio_blueprint(
                 ),
                 201,
             )
-        body = _json_body()
+        body = _json_body(allowed_keys={"payload"})
         payload = body.get("payload")
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -649,7 +668,7 @@ def create_studio_blueprint(
 
     @blueprint.post("/documents/<document_id>/agent")
     def agent(document_id: str) -> Response:
-        body = _json_body()
+        body = _json_body(allowed_keys={"messages", "content"})
         document = repository.get_document(document_id)
         messages = body.get("messages")
         if messages is None:
@@ -716,7 +735,8 @@ def create_studio_blueprint(
 
 
 def _file_or_json_object() -> dict[str, Any]:
-    if request.files:
+    if request.mimetype == "multipart/form-data":
+        _validate_multipart_fields(allowed_file_keys={"file"})
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")

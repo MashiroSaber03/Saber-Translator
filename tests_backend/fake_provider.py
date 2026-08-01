@@ -9,12 +9,12 @@ from typing import Any, Callable
 
 from PIL import Image, ImageDraw
 
+from src.shared import ai_providers as provider_registry
 from src.shared.ai_providers import (
     HQ_TRANSLATION_CAPABILITY,
     TRANSLATION_CAPABILITY,
     VISION_OCR_CAPABILITY,
     ProviderManifest,
-    temporary_provider_manifest,
 )
 
 
@@ -38,10 +38,15 @@ DETERMINISTIC_FAKE_PROVIDER_MANIFEST = ProviderManifest(
 
 @contextmanager
 def registered_deterministic_fake_provider() -> Iterator[ProviderManifest]:
-    with temporary_provider_manifest(
-        DETERMINISTIC_FAKE_PROVIDER_MANIFEST
-    ) as manifest:
-        yield manifest
+    providers = provider_registry._PROVIDERS
+    provider_id = DETERMINISTIC_FAKE_PROVIDER_ID
+    if provider_id in providers:
+        raise RuntimeError(f"test provider is already registered: {provider_id}")
+    providers[provider_id] = DETERMINISTIC_FAKE_PROVIDER_MANIFEST
+    try:
+        yield DETERMINISTIC_FAKE_PROVIDER_MANIFEST
+    finally:
+        providers.pop(provider_id, None)
 
 
 class DeterministicFakeProvider:

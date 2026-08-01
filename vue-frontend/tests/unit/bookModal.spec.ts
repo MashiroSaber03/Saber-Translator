@@ -11,6 +11,7 @@ import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import UiField from '@/components/ui/UiField.vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
 
 const BaseModalStub = defineComponent({
   template: '<section class="base-modal-stub"><slot /><footer><slot name="footer" /></footer></section>',
@@ -40,7 +41,7 @@ describe('BookModal', () => {
 
   it('uses the shared product chip list for selected tag removal', async () => {
     const store = useBookshelfStore()
-    store.setBooks([{
+    setTestBooks(store, [{
       id: 'book-1',
       title: 'Demo Book',
       cover: '',
@@ -142,7 +143,7 @@ describe('BookModal', () => {
 
   it('renders tag suggestions through product record-card buttons', async () => {
     const store = useBookshelfStore()
-    store.setTags([{ name: 'Drama', color: '#4466aa', book_count: 1 }])
+    setTestTags(store, [{ name: 'Drama', color: '#4466aa', book_count: 1 }])
 
     const wrapper = mount(BookModal, {
       global: {

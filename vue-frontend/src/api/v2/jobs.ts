@@ -1,10 +1,9 @@
-import apiClient from '@/api/client'
+import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
 
 export type V2Job = components['schemas']['Job']
 export type V2JobDetail = components['schemas']['JobDetail']
 export type V2JobEvent = components['schemas']['JobEvent']
-export type V2JobBatch = components['schemas']['JobBatch']
 export type V2JobStatus = components['schemas']['JobStatus']
 export type JobListResponse = components['schemas']['JobList']
 export type JobRetryAccepted = components['schemas']['JobRetryAccepted']
@@ -28,10 +27,6 @@ export const jobsApi = {
 
   get(jobId: string): Promise<V2JobDetail> {
     return apiClient.get(`/api/v2/jobs/${encodeURIComponent(jobId)}`)
-  },
-
-  getBatch(batchId: string): Promise<V2JobBatch> {
-    return apiClient.get(`/api/v2/job-batches/${encodeURIComponent(batchId)}`)
   },
 
   events(

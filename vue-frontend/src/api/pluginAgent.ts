@@ -1,50 +1,21 @@
 import { apiClient } from './client'
-import type { PluginData } from '@/types'
-import type { OpenAICompatibleOptions } from '@/types/settings'
 import { getProviderOptionsForCapability } from '@/config/aiProviders'
-import { getPlugins } from './plugin'
-import { jobsApi } from './v2/jobs'
+import { getPlugins, type PluginData } from './plugin'
+import { jobsApi, type V2JobEvent } from './v2/jobs'
 import { newIdempotencyKey } from './v2/content'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
+import type { components } from '@/api/generated/v2'
 
-export type PluginAgentMode = 'create' | 'modify'
-export type PluginAgentRunState =
-  | 'drafting'
-  | 'awaiting_target_lock'
-  | 'ready'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
+export type PluginAgentMode = components['schemas']['PluginAgentSession']['mode']
+export type PluginAgentRunState = components['schemas']['PluginAgentSession']['run_state']
+export type PluginAgentTargetProposal = components['schemas']['PluginAgentTarget']
+export type PluginAgentLockedTarget = components['schemas']['PluginAgentLockedTarget']
+export type PluginAgentSession = components['schemas']['PluginAgentSession']
 
-export interface PluginAgentTargetProposal {
-  plugin_id: string
-  display_name: string
-  supported_steps: string[]
-  supported_modes: string[]
-}
-
-export interface PluginAgentLockedTarget extends PluginAgentTargetProposal {
-  mode: PluginAgentMode
-  plugin_dir: string
-}
-
-export interface PluginAgentMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: string
-}
-
-export type PluginAgentEventType =
-  | 'assistant'
-  | 'assistant_delta'
-  | 'done'
-  | 'error'
-  | 'log'
-  | 'state'
-  | 'tool_call'
-  | 'tool_result'
-  | 'validation'
+type PluginAgentSessionEnvelope = components['schemas']['PluginAgentSessionEnvelope']
+type PluginAgentSessionCreateCommand = components['schemas']['PluginAgentSessionCreateCommand']
+type PluginAgentStartResult = components['schemas']['PluginAgentStartResult']
+type V2DeletedResponse = components['schemas']['DeletedResponse']
 
 export interface PluginAgentAssistantDeltaPayload {
   stream_id: string
@@ -122,31 +93,12 @@ export type PluginAgentEventPayload =
   | PluginAgentValidationPayload
   | Record<string, unknown>
 
-export interface PluginAgentEvent<T = PluginAgentEventPayload> {
-  id: number
-  type: PluginAgentEventType | string
+export type PluginAgentEvent<T = PluginAgentEventPayload> = Omit<
+  components['schemas']['PluginAgentEvent'],
+  'payload'
+> & {
+  eventKey?: string
   payload: T
-  timestamp: string
-}
-
-export interface PluginAgentSession {
-  session_id: string
-  mode: PluginAgentMode
-  run_state: PluginAgentRunState
-  selected_plugin_id?: string | null
-  pending_target?: PluginAgentTargetProposal | null
-  locked_target?: PluginAgentLockedTarget | null
-  messages: PluginAgentMessage[]
-  events: PluginAgentEvent[]
-  touched_files: string[]
-  file_previews: Record<string, string>
-  last_validation?: Record<string, unknown> | null
-  last_error?: string | null
-  created_at: string
-  updated_at: string
-  execution_started_at?: string | null
-  execution_finished_at?: string | null
-  job_id?: string | null
 }
 
 export interface PluginAgentOverviewSection {
@@ -154,51 +106,32 @@ export interface PluginAgentOverviewSection {
   items: string[]
 }
 
-export interface PluginAgentSettingsResponse {
-  success: boolean
+export interface PluginAgentSettings {
   overview: string[]
-  overview_sections?: PluginAgentOverviewSection[]
+  overview_sections: PluginAgentOverviewSection[]
   prompt_examples: string[]
   providers: Array<{ value: string; label: string }>
   plugins: PluginData[]
-  session?: PluginAgentSession | null
-  error?: string
+  session: PluginAgentSession | null
 }
 
-export interface PluginAgentSessionResponse {
-  success: boolean
-  session: PluginAgentSession
-  error?: string
-}
-
-export interface PluginAgentAgentConfig {
-  provider: string
-  apiKey: string
-  modelName: string
-  customBaseUrl?: string
-  openaiOptions: OpenAICompatibleOptions
-}
-
-const sessionJobs = new Map<string, string>()
-const jobEventCursors = new Map<string, number>()
 let activeSessionId = ''
 
 function pluginAgentSessionEndpoint(sessionId: string, suffix = ''): string {
   return `/api/v2/plugin-agent/sessions/${encodeURIComponent(sessionId)}${suffix}`
 }
 
-export async function getPluginAgentSettings(): Promise<PluginAgentSettingsResponse> {
+export async function getPluginAgentSettings(): Promise<PluginAgentSettings> {
   const pluginResult = await getPlugins()
   let session: PluginAgentSession | null = null
   if (activeSessionId) {
     try {
-      session = (await getPluginAgentSession(activeSessionId)).session
+      session = await getPluginAgentSession(activeSessionId)
     } catch {
       activeSessionId = ''
     }
   }
   return {
-    success: true,
     overview: [
       '规划对话是短 API；开始执行后任务进入全局后端队列。',
       '浏览器关闭不会终止插件生成，执行日志由任务中心持久保存。',
@@ -211,7 +144,7 @@ export async function getPluginAgentSettings(): Promise<PluginAgentSettingsRespo
       '修改现有插件，增加 after_ocr 文本清洗，保留原有行为。',
     ],
     providers: getProviderOptionsForCapability('pluginAgent'),
-    plugins: pluginResult.plugins,
+    plugins: pluginResult,
     session,
   }
 }
@@ -219,160 +152,126 @@ export async function getPluginAgentSettings(): Promise<PluginAgentSettingsRespo
 export async function createPluginAgentSession(payload: {
   mode: PluginAgentMode
   plugin_id?: string
-}): Promise<PluginAgentSessionResponse> {
-  const result = await apiClient.post<{ session: PluginAgentSession }>(
+}): Promise<PluginAgentSession> {
+  const command: PluginAgentSessionCreateCommand = {
+    mode: payload.mode,
+    ...(payload.plugin_id ? { pluginId: payload.plugin_id } : {}),
+  }
+  const result = await apiClient.post<PluginAgentSessionEnvelope>(
     '/api/v2/plugin-agent/sessions',
-    {
-      mode: payload.mode,
-      ...(payload.plugin_id ? { pluginId: payload.plugin_id } : {}),
-    },
+    command
   )
   activeSessionId = result.session.session_id
-  return { success: true, session: result.session }
+  return result.session
 }
 
-export async function getPluginAgentSession(sessionId: string): Promise<PluginAgentSessionResponse> {
-  const result = await apiClient.get<{ session: PluginAgentSession }>(
-    pluginAgentSessionEndpoint(sessionId),
+export async function getPluginAgentSession(sessionId: string): Promise<PluginAgentSession> {
+  const result = await apiClient.get<PluginAgentSessionEnvelope>(
+    pluginAgentSessionEndpoint(sessionId)
   )
-  if (result.session.job_id) {
-    sessionJobs.set(sessionId, result.session.job_id)
-  }
-  return { success: true, session: result.session }
+  return result.session
 }
 
-export async function deletePluginAgentSession(sessionId: string): Promise<{ success: boolean; deleted: boolean }> {
-  const result = await apiClient.delete<{ deleted: boolean }>(
-    pluginAgentSessionEndpoint(sessionId),
-  )
+export async function deletePluginAgentSession(sessionId: string): Promise<void> {
+  await apiClient.delete<V2DeletedResponse>(pluginAgentSessionEndpoint(sessionId))
   if (activeSessionId === sessionId) activeSessionId = ''
-  sessionJobs.delete(sessionId)
-  jobEventCursors.delete(sessionId)
-  return { success: true, deleted: result.deleted }
 }
 
 export async function sendPluginAgentMessage(
   sessionId: string,
   payload: {
     content: string
-    agentConfig: PluginAgentAgentConfig
-  },
-): Promise<PluginAgentSessionResponse> {
-  const result = await apiClient.post<{ session: PluginAgentSession }>(
+  }
+): Promise<PluginAgentSession> {
+  assertBackendActionAllowed()
+  const result = await apiClient.post<PluginAgentSessionEnvelope>(
     pluginAgentSessionEndpoint(sessionId, '/messages'),
-    { content: payload.content },
+    { content: payload.content }
   )
-  return { success: true, session: result.session }
+  return result.session
 }
 
 export async function lockPluginAgentTarget(
   sessionId: string,
-  proposal: PluginAgentTargetProposal,
-): Promise<PluginAgentSessionResponse> {
-  const result = await apiClient.post<{ session: PluginAgentSession }>(
+  proposal: PluginAgentTargetProposal
+): Promise<PluginAgentSession> {
+  const result = await apiClient.post<PluginAgentSessionEnvelope>(
     pluginAgentSessionEndpoint(sessionId, '/lock-target'),
-    { proposal },
+    { proposal }
   )
-  return { success: true, session: result.session }
+  return result.session
 }
 
-export async function startPluginAgentExecution(
-  sessionId: string,
-  _agentConfig: PluginAgentAgentConfig,
-): Promise<PluginAgentSessionResponse> {
-  const result = await apiClient.post<{
-    session: PluginAgentSession
-    jobId: string
-  }>(
+export async function startPluginAgentExecution(sessionId: string): Promise<PluginAgentSession> {
+  assertBackendActionAllowed()
+  const result = await apiClient.post<PluginAgentStartResult>(
     pluginAgentSessionEndpoint(sessionId, '/start'),
     {},
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } }
   )
   result.session.job_id = result.jobId
-  sessionJobs.set(sessionId, result.jobId)
-  return { success: true, session: result.session }
+  return result.session
 }
 
-export async function cancelPluginAgentExecution(
-  sessionId: string,
-): Promise<{ success: boolean; cancelled: boolean }> {
-  const jobId = sessionJobs.get(sessionId)
-  if (!jobId) return { success: false, cancelled: false }
+export async function cancelPluginAgentExecution(jobId: string): Promise<void> {
   await jobsApi.cancel(jobId)
-  return { success: true, cancelled: true }
 }
 
-export async function subscribePluginAgentEvents(
-  sessionId: string,
-  options: {
-    afterId?: number
-    signal?: AbortSignal
-    onEvent: (event: PluginAgentEvent) => void
-    onError: (error: string) => void
-  },
-): Promise<void> {
-  const jobId = sessionJobs.get(sessionId)
-  if (!jobId) {
-    options.onError('插件 Agent 任务 ID 不存在')
-    return
-  }
-  try {
-    const cursor = jobEventCursors.get(sessionId) || 0
-    const response = await apiClient.get<{
-      items: Array<{
-        eventId: number
-        type: string
-        payload: Record<string, unknown>
-        createdAt: string
-      }>
-    }>(
-      `/api/v2/jobs/${encodeURIComponent(jobId)}/events?after=${cursor}&limit=200`,
-      { signal: options.signal },
-    )
-    let sawPluginTerminal = false
-    for (const event of response.items) {
-      jobEventCursors.set(
-        sessionId,
-        Math.max(
-          jobEventCursors.get(sessionId) || 0,
-          event.eventId,
-        ),
-      )
-      if (event.type.startsWith('plugin_agent_')) {
-        const type = event.type.slice('plugin_agent_'.length)
-        sawPluginTerminal ||= type === 'done' || type === 'error'
-        options.onEvent({
-          id: event.eventId,
-          type,
-          payload: event.payload,
-          timestamp: event.createdAt,
-        })
-        continue
-      }
-      if (event.type !== 'job_finished' || sawPluginTerminal) continue
-      const status = String(event.payload.status || '')
-      const runState = status === 'cancelled' ? 'cancelled' : 'failed'
-      if (!['cancelled', 'completed_with_errors', 'failed', 'interrupted'].includes(status)) {
-        continue
-      }
-      options.onEvent({
-        id: event.eventId,
-        type: 'error',
-        payload: {
-          run_state: runState,
-          message: status === 'cancelled'
-            ? '插件 Agent 任务已取消'
-            : '插件 Agent 执行未成功，请在任务中心查看错误详情',
-        },
-        timestamp: event.createdAt,
-      })
-    }
-    if (response.items.length === 0) {
-      await new Promise(resolve => window.setTimeout(resolve, 750))
-    }
-  } catch (error) {
-    if (!options.signal?.aborted) {
-      options.onError(error instanceof Error ? error.message : '任务事件加载失败')
+export function pluginAgentEventFromJobEvent(event: V2JobEvent): PluginAgentEvent | null {
+  if (event.type.startsWith('plugin_agent_')) {
+    return {
+      id: event.eventId,
+      eventKey: `job:${event.eventId}`,
+      type: event.type.slice('plugin_agent_'.length),
+      payload: event.payload,
+      timestamp: event.createdAt ?? '',
     }
   }
+  if (!['job_failed', 'job_cancelled', 'job_finished'].includes(event.type)) return null
+  const status =
+    event.type === 'job_failed'
+      ? 'failed'
+      : event.type === 'job_cancelled'
+        ? 'cancelled'
+        : String(event.payload.status || '')
+  if (!['cancelled', 'completed_with_errors', 'failed', 'interrupted'].includes(status)) {
+    return null
+  }
+  return {
+    id: event.eventId,
+    eventKey: `job:${event.eventId}`,
+    type: 'error',
+    payload: {
+      run_state: status === 'cancelled' ? 'cancelled' : 'failed',
+      message:
+        status === 'cancelled'
+          ? '插件 Agent 任务已取消'
+          : '插件 Agent 执行未成功，请在任务中心查看错误详情',
+    },
+    timestamp: event.createdAt ?? '',
+  }
+}
+
+export async function listPluginAgentJobEvents(
+  jobId: string,
+  afterId = 0
+): Promise<{ cursor: number; events: PluginAgentEvent[] }> {
+  const response = await jobsApi.events(jobId, {
+    after: Math.max(0, Math.floor(afterId)),
+    limit: 200,
+  })
+  const events: PluginAgentEvent[] = []
+  let sawPluginTerminal = false
+  let cursor = afterId
+  for (const event of response.items) {
+    cursor = Math.max(cursor, event.eventId)
+    const mapped = pluginAgentEventFromJobEvent(event)
+    if (!mapped) continue
+    if (mapped.type === 'done' || mapped.type === 'error') {
+      if (sawPluginTerminal && mapped.type === 'error') continue
+      sawPluginTerminal = true
+    }
+    events.push(mapped)
+  }
+  return { cursor, events }
 }

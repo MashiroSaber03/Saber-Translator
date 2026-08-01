@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NoteData } from '@/stores/insightStore'
+import type { NoteData } from '@/types/insight'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import NoteCard from './NoteCard.vue'

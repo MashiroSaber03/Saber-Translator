@@ -10,7 +10,6 @@ import {
   deleteV2ContinuationForm,
   deleteV2ContinuationReference,
   getV2Continuation,
-  getV2ContinuationJob,
   listAllV2ContinuationForms,
   setV2ContinuationReferences,
   syncV2Continuation,
@@ -82,43 +81,13 @@ interface SavedContinuationData {
   has_data: boolean
 }
 
-interface PrepareResponse {
-  success: boolean
-  ready?: boolean
-  message?: string
-  error?: string
-  saved_data?: SavedContinuationData
+interface ContinuationPreparation {
+  ready: boolean
+  message: string
+  saved_data: SavedContinuationData
 }
 
-export type SyncContinuationResponse = PrepareResponse
-
-interface CharactersResponse {
-  success: boolean
-  characters?: CharacterProfile[]
-  error?: string
-}
-
-export interface UploadImageResponse {
-  success: boolean
-  image_path?: string
-  task_id?: string
-  error?: string
-}
-
-interface ScriptResponse {
-  success: boolean
-  script?: ChapterScript
-  task_id?: string
-  error?: string
-}
-
-interface ImageGenerateResponse {
-  success: boolean
-  image_path?: string
-  pages?: PageContent[]
-  task_id?: string
-  error?: string
-}
+export type SyncContinuationResponse = ContinuationPreparation
 
 export interface MangaImageInfo {
   token: string
@@ -140,13 +109,11 @@ export interface CharacterFormInfo {
   label?: string
 }
 
-export interface AvailableImagesResponse {
-  success: boolean
-  original_images?: MangaImageInfo[]
-  continuation_images?: MangaImageInfo[]
-  character_forms?: CharacterFormInfo[]
-  total_original_pages?: number
-  error?: string
+export interface AvailableImages {
+  original_images: MangaImageInfo[]
+  continuation_images: MangaImageInfo[]
+  character_forms: CharacterFormInfo[]
+  total_original_pages: number
 }
 
 const stateCache = new Map<string, V2ContinuationState>()
@@ -176,9 +143,9 @@ function mapPage(page: V2ContinuationPage): PageContent {
     story_text: payloadString(payload, 'storyText'),
     dialogue_text: payloadString(payload, 'dialogueText'),
     characters: Array.isArray(payload.characters) ? payload.characters.map(String) : [],
-    character_forms: (
-      Array.isArray(payload.characterForms) ? payload.characterForms : []
-    ) as CharacterFormSelection[],
+    character_forms: (Array.isArray(payload.characterForms)
+      ? payload.characterForms
+      : []) as CharacterFormSelection[],
     final_prompt: payloadString(payload, 'finalPrompt'),
     image_url: currentImage?.assetUrl ?? '',
     previous_url: oldImage?.assetUrl ?? '',
@@ -218,11 +185,13 @@ function savedData(project: V2ContinuationProject | null): SavedContinuationData
   return {
     script: project ? mapScript(project) : null,
     pages: project?.pages.map(mapPage) ?? [],
-    config: project ? {
-      page_count: Number(project.config.pageCount ?? 15),
-      style_reference_pages: Number(project.config.styleReferencePages ?? 3),
-      continuation_direction: String(project.config.direction ?? ''),
-    } : null,
+    config: project
+      ? {
+          page_count: Number(project.config.pageCount ?? 15),
+          style_reference_pages: Number(project.config.styleReferencePages ?? 3),
+          continuation_direction: String(project.config.direction ?? ''),
+        }
+      : null,
     has_data: Boolean(project),
   }
 }
@@ -233,14 +202,14 @@ async function refreshState(bookId: string): Promise<V2ContinuationState> {
   if (state.project) {
     formsCache.set(
       state.project.projectId,
-      await listAllV2ContinuationForms(state.project.projectId),
+      await listAllV2ContinuationForms(state.project.projectId)
     )
   }
   return state
 }
 
 async function ensureProject(bookId: string): Promise<V2ContinuationProject> {
-  let state = stateCache.get(bookId) ?? await refreshState(bookId)
+  let state = stateCache.get(bookId) ?? (await refreshState(bookId))
   if (!state.project) {
     if (!state.ready) {
       throw new Error(`续写前置数据未就绪：${state.missing.join('、')}`)
@@ -279,7 +248,7 @@ function characterFor(project: V2ContinuationProject, name: string): V2Continuat
 async function formFor(
   project: V2ContinuationProject,
   characterName: string,
-  formId: string,
+  formId: string
 ): Promise<V2ContinuationForm> {
   const character = characterFor(project, characterName)
   let forms = formsCache.get(project.projectId)
@@ -287,9 +256,8 @@ async function formFor(
     forms = await listAllV2ContinuationForms(project.projectId)
     formsCache.set(project.projectId, forms)
   }
-  const form = forms.find(item =>
-    item.characterId === character.characterId
-    && item.formId === formId
+  const form = forms.find(
+    item => item.characterId === character.characterId && item.formId === formId
   )
   if (!form) throw new Error(`角色形态不存在：${formId}`)
   return form
@@ -302,21 +270,21 @@ function mapForm(form: V2ContinuationForm): CharacterForm {
     form_id: form.formId,
     form_name: form.name,
     description: String(form.payload.description ?? ''),
-    reference_image: adopted?.assetUrl
-      ?? latestGenerated?.assetUrl
-      ?? form.referenceAssetUrl
-      ?? '',
+    reference_image: adopted?.assetUrl ?? latestGenerated?.assetUrl ?? form.referenceAssetUrl ?? '',
     enabled: form.payload.enabled !== false,
   }
 }
 
 function mapCharacter(
   character: V2ContinuationCharacter,
-  forms: V2ContinuationForm[],
+  forms: V2ContinuationForm[]
 ): CharacterProfile {
   const characterForms = forms.filter(form => form.characterId === character.characterId)
   const reference = characterForms
-    .map(form => form.imageVersions.find(version => version.adopted)?.assetUrl ?? form.referenceAssetUrl)
+    .map(
+      form =>
+        form.imageVersions.find(version => version.adopted)?.assetUrl ?? form.referenceAssetUrl
+    )
     .find(Boolean)
   return {
     name: character.name,
@@ -328,7 +296,7 @@ function mapCharacter(
   }
 }
 
-export async function prepareContinuation(bookId: string): Promise<PrepareResponse> {
+export async function prepareContinuation(bookId: string): Promise<ContinuationPreparation> {
   let state = await refreshState(bookId)
   if (state.ready && !state.project) {
     const project = await syncV2Continuation(bookId)
@@ -337,7 +305,6 @@ export async function prepareContinuation(bookId: string): Promise<PrepareRespon
     formsCache.set(project.projectId, [])
   }
   return {
-    success: true,
     ready: state.ready,
     message: state.ready ? '续写数据已就绪' : `缺少：${state.missing.join('、')}`,
     saved_data: savedData(state.project),
@@ -349,26 +316,22 @@ export async function syncContinuationAnalysis(bookId: string): Promise<SyncCont
   cacheProject(bookId, project)
   formsCache.set(project.projectId, await listAllV2ContinuationForms(project.projectId))
   return {
-    success: true,
     ready: true,
     message: '分析数据同步完成',
     saved_data: savedData(project),
   }
 }
 
-export async function getCharacters(bookId: string): Promise<CharactersResponse> {
+export async function getCharacters(bookId: string): Promise<CharacterProfile[]> {
   const project = await refreshProject(bookId)
   const forms = formsCache.get(project.projectId) ?? []
-  return {
-    success: true,
-    characters: project.characters.map(character => mapCharacter(character, forms)),
-  }
+  return project.characters.map(character => mapCharacter(character, forms))
 }
 
 export async function addCharacter(
   bookId: string,
-  data: { name: string; aliases?: string[]; description?: string },
-): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
+  data: { name: string; aliases?: string[]; description?: string }
+): Promise<CharacterProfile> {
   const project = await ensureProject(bookId)
   await createV2ContinuationCharacter(project.projectId, {
     name: data.name,
@@ -379,28 +342,22 @@ export async function addCharacter(
   const refreshed = await refreshProject(bookId)
   const forms = formsCache.get(refreshed.projectId) ?? []
   const character = refreshed.characters.find(item => item.name === data.name)
-  return {
-    success: true,
-    character: character ? mapCharacter(character, forms) : undefined,
-  }
+  if (!character) throw new Error('角色创建后未能重新加载')
+  return mapCharacter(character, forms)
 }
 
-export async function deleteCharacter(
-  bookId: string,
-  characterName: string,
-): Promise<{ success: boolean; message?: string; error?: string }> {
+export async function deleteCharacter(bookId: string, characterName: string): Promise<void> {
   const project = await ensureProject(bookId)
   const character = characterFor(project, characterName)
   await deleteV2ContinuationCharacter(character.characterId, character.revision)
   await refreshState(bookId)
-  return { success: true, message: '角色已删除' }
 }
 
 export async function updateCharacterInfo(
   bookId: string,
   characterName: string,
-  data: { name?: string; aliases?: string[]; enabled?: boolean },
-): Promise<{ success: boolean; character?: CharacterProfile; error?: string }> {
+  data: { name?: string; aliases?: string[]; enabled?: boolean }
+): Promise<CharacterProfile> {
   const project = await ensureProject(bookId)
   const character = characterFor(project, characterName)
   const updated = await updateV2ContinuationCharacter(character.characterId, {
@@ -411,17 +368,14 @@ export async function updateCharacterInfo(
     payload: character.payload,
   })
   await refreshState(bookId)
-  return {
-    success: true,
-    character: mapCharacter(updated, formsCache.get(project.projectId) ?? []),
-  }
+  return mapCharacter(updated, formsCache.get(project.projectId) ?? [])
 }
 
 export async function addCharacterForm(
   bookId: string,
   characterName: string,
-  data: { form_name: string; description?: string },
-): Promise<{ success: boolean; form?: CharacterForm; error?: string }> {
+  data: { form_name: string; description?: string }
+): Promise<CharacterForm> {
   const project = await ensureProject(bookId)
   const character = characterFor(project, characterName)
   const form = await createV2ContinuationForm(character.characterId, {
@@ -432,15 +386,15 @@ export async function addCharacterForm(
     },
   })
   await refreshState(bookId)
-  return { success: true, form: mapForm(form) }
+  return mapForm(form)
 }
 
 export async function updateCharacterForm(
   bookId: string,
   characterName: string,
   formId: string,
-  data: { form_name?: string; description?: string },
-): Promise<{ success: boolean; error?: string }> {
+  data: { form_name?: string; description?: string }
+): Promise<void> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
   await updateV2ContinuationForm(form.formId, {
@@ -452,36 +406,25 @@ export async function updateCharacterForm(
     },
   })
   await refreshState(bookId)
-  return { success: true }
 }
 
 export async function deleteCharacterForm(
   bookId: string,
   characterName: string,
-  formId: string,
-): Promise<{ success: boolean; message?: string; error?: string }> {
+  formId: string
+): Promise<void> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
   await deleteV2ContinuationForm(form.formId, form.revision)
   await refreshState(bookId)
-  return { success: true, message: '形态已删除' }
-}
-
-export async function toggleCharacterEnabled(
-  bookId: string,
-  characterName: string,
-  enabled: boolean,
-): Promise<{ success: boolean; enabled?: boolean; error?: string }> {
-  const result = await updateCharacterInfo(bookId, characterName, { enabled })
-  return { success: result.success, enabled, error: result.error }
 }
 
 export async function toggleFormEnabled(
   bookId: string,
   characterName: string,
   formId: string,
-  enabled: boolean,
-): Promise<{ success: boolean; enabled?: boolean; error?: string }> {
+  enabled: boolean
+): Promise<void> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
   await updateV2ContinuationForm(form.formId, {
@@ -490,42 +433,38 @@ export async function toggleFormEnabled(
     payload: { ...form.payload, enabled },
   })
   await refreshState(bookId)
-  return { success: true, enabled }
 }
 
 export async function uploadFormImage(
   bookId: string,
   characterName: string,
   formId: string,
-  formData: FormData,
-): Promise<UploadImageResponse> {
+  file: File
+): Promise<string | null> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
-  const file = formData.get('file')
-  if (!(file instanceof File)) return { success: false, error: '请选择参考图片' }
   const updated = await uploadV2ContinuationReference(form.formId, form.revision, file)
   await refreshState(bookId)
-  return { success: true, image_path: updated.referenceAssetUrl ?? undefined }
+  return updated.referenceAssetUrl ?? null
 }
 
 export async function deleteFormImage(
   bookId: string,
   characterName: string,
-  formId: string,
-): Promise<{ success: boolean; error?: string }> {
+  formId: string
+): Promise<void> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
   await deleteV2ContinuationReference(form.formId, form.revision)
   await refreshState(bookId)
-  return { success: true }
 }
 
 export async function generateFormOrtho(
   bookId: string,
   characterName: string,
   formId: string,
-  sourceImages: File[],
-): Promise<UploadImageResponse> {
+  sourceImages: File[]
+): Promise<string> {
   const project = await ensureProject(bookId)
   let form = await formFor(project, characterName, formId)
   if (sourceImages[0]) {
@@ -535,60 +474,48 @@ export async function generateFormOrtho(
     kind: 'character_sheet',
     formId: form.formId,
   })
-  return { success: true, task_id: accepted.jobIds[0] }
+  return accepted.jobIds[0]
 }
 
 export async function setFormReference(
   bookId: string,
   characterName: string,
   formId: string,
-  imagePath: string,
-): Promise<{ success: boolean; error?: string }> {
+  imagePath: string
+): Promise<void> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
-  const version = form.imageVersions.find(item =>
-    item.assetUrl === imagePath || item.assetId === imagePath
+  const version = form.imageVersions.find(
+    item => item.assetUrl === imagePath || item.assetId === imagePath
   )
-  if (!version) return { success: false, error: '未找到生成结果版本' }
+  if (!version) throw new Error('未找到生成结果版本')
   await adoptV2ContinuationFormImage(form.formId, version.version, form.revision)
   await refreshState(bookId)
-  return { success: true }
 }
 
-export async function saveScript(
-  bookId: string,
-  script: ChapterScript,
-): Promise<ScriptResponse> {
+export async function saveScript(bookId: string, script: ChapterScript): Promise<ChapterScript> {
   const project = await ensureProject(bookId)
   await updateV2ContinuationScript(
     project.projectId,
     project.script?.revision ?? 0,
-    script.script_text,
+    script.script_text
   )
   const refreshed = await refreshProject(bookId)
-  return { success: true, script: mapScript(refreshed) ?? script }
+  return mapScript(refreshed) ?? script
 }
 
-export async function savePages(
-  bookId: string,
-  pages: PageContent[],
-): Promise<{ success: boolean; error?: string }> {
+export async function savePages(bookId: string, pages: PageContent[]): Promise<void> {
   const project = await ensureProject(bookId)
   const byOrdinal = new Map(project.pages.map(page => [page.ordinal, page]))
   await Promise.all(
     pages.flatMap(page => {
       const stored = byOrdinal.get(page.page_number)
       return stored
-        ? [updateV2ContinuationPage(
-            stored.continuationPageId,
-            stored.revision,
-            pagePayload(page),
-          )]
+        ? [updateV2ContinuationPage(stored.continuationPageId, stored.revision, pagePayload(page))]
         : []
-    }),
+    })
   )
   await refreshState(bookId)
-  return { success: true }
 }
 
 export async function saveConfig(
@@ -597,8 +524,8 @@ export async function saveConfig(
     page_count: number
     style_reference_pages: number
     continuation_direction: string
-  },
-): Promise<{ success: boolean; error?: string }> {
+  }
+): Promise<void> {
   const project = await ensureProject(bookId)
   const updated = await updateV2ContinuationProject(project.projectId, project.revision, {
     pageCount: config.page_count,
@@ -606,104 +533,67 @@ export async function saveConfig(
     direction: config.continuation_direction,
   })
   cacheProject(bookId, updated)
-  return { success: true }
 }
 
-export async function clearContinuationData(
-  bookId: string,
-): Promise<{ success: boolean; message?: string; error?: string }> {
+export async function clearContinuationData(bookId: string): Promise<void> {
   await clearV2Continuation(bookId)
   stateCache.delete(bookId)
-  return { success: true, message: '续写数据已清空' }
 }
 
-export async function generateSinglePageDetails(
+async function savePageBeforeImage(
   bookId: string,
-  _script: ChapterScript,
   pageNumber: number,
-): Promise<{ success: boolean; page?: PageContent; task_id?: string; error?: string }> {
-  const accepted = await createV2ContinuationJob(bookId, {
-    kind: 'pages',
-    ordinals: [pageNumber],
-  })
-  return { success: true, task_id: accepted.jobIds[0] }
-}
-
-export async function getStyleReferences(
-  bookId: string,
-  count = 3,
-): Promise<{ success: boolean; tokens?: string[]; error?: string }> {
-  const project = await ensureProject(bookId)
-  return {
-    success: true,
-    tokens: project.referenceAssets.slice(-count).map(asset => asset.assetId),
-  }
-}
-
-async function savePageBeforeImage(bookId: string, pageNumber: number, page: PageContent): Promise<void> {
+  page: PageContent
+): Promise<void> {
   const project = await ensureProject(bookId)
   const stored = project.pages.find(item => item.ordinal === pageNumber)
   if (!stored) throw new Error('请先生成页面剧情')
-  await updateV2ContinuationPage(
-    stored.continuationPageId,
-    stored.revision,
-    pagePayload(page),
-  )
+  await updateV2ContinuationPage(stored.continuationPageId, stored.revision, pagePayload(page))
   await refreshState(bookId)
 }
 
-export async function generatePageImage(
+export async function regeneratePageImage(
   bookId: string,
   pageNumber: number,
-  page: PageContent,
-  _styleReferenceTokens: string[],
-  _sessionId?: string,
-  _styleRefCount = 3,
-): Promise<ImageGenerateResponse> {
+  page: PageContent
+): Promise<string> {
   await savePageBeforeImage(bookId, pageNumber, page)
   const accepted = await createV2ContinuationJob(bookId, {
     kind: 'images',
     ordinals: [pageNumber],
   })
-  return { success: true, task_id: accepted.jobIds[0] }
+  return accepted.jobIds[0]
 }
 
-export const regeneratePageImage = generatePageImage
-
-async function exportContinuation(bookId: string, format: 'pdf' | 'zip'): Promise<Blob> {
+export async function createContinuationExportJob(
+  bookId: string,
+  format: 'pdf' | 'zip'
+): Promise<string> {
   const accepted = await createV2ContinuationJob(bookId, { kind: 'export', format })
-  const job = await waitForContinuationJob(accepted.jobIds[0])
-  const artifact = job.artifacts?.[0]
-  if (!artifact?.assetId) throw new Error('导出任务未生成文件')
+  return accepted.jobIds[0]
+}
+
+export async function downloadContinuationExport(
+  assetId: string,
+  bookId: string,
+  format: 'pdf' | 'zip'
+): Promise<Blob> {
   const { blob } = await downloadBlob({
-    url: `/api/v2/assets/${artifact.assetId}`,
-    fallbackFilename: format === 'pdf'
-      ? `${bookId}.continuation.pdf`
-      : `${bookId}.continuation-images.zip`,
+    url: `/api/v2/assets/${assetId}`,
+    fallbackFilename:
+      format === 'pdf' ? `${bookId}.continuation.pdf` : `${bookId}.continuation-images.zip`,
     fallbackErrorMessage: '导出失败',
   })
   return blob
 }
 
-export function exportAsImages(bookId: string): Promise<Blob> {
-  return exportContinuation(bookId, 'zip')
-}
-
-export function exportAsPdf(bookId: string): Promise<Blob> {
-  return exportContinuation(bookId, 'pdf')
-}
-
-export async function getAvailableImages(
-  bookId: string,
-  _mode: 'script' | 'image' = 'script',
-): Promise<AvailableImagesResponse> {
+export async function getAvailableImages(bookId: string): Promise<AvailableImages> {
   const [project, sourcePages] = await Promise.all([
     ensureProject(bookId),
     listAllInsightPages(bookId),
   ])
   const forms = formsCache.get(project.projectId) ?? []
   return {
-    success: true,
     original_images: sourcePages.map(page => ({
       token: page.sourceAssetId,
       page_number: page.displayPageNumber,
@@ -714,27 +604,35 @@ export async function getAvailableImages(
     })),
     continuation_images: project.pages.flatMap(page => {
       const image = activeImage(page)
-      return image ? [{
-        token: image.assetId,
-        page_number: page.ordinal,
-        path: image.thumbnailUrl,
-        has_image: true,
-        label: `续写第 ${page.ordinal} 页`,
-      }] : []
+      return image
+        ? [
+            {
+              token: image.assetId,
+              page_number: page.ordinal,
+              path: image.thumbnailUrl,
+              has_image: true,
+              label: `续写第 ${page.ordinal} 页`,
+            },
+          ]
+        : []
     }),
     character_forms: forms.flatMap(form => {
       const image = form.imageVersions.find(version => version.adopted)
       const path = image?.thumbnailUrl ?? form.referenceThumbnailUrl
-      return path ? [{
-        token: image?.assetId ?? form.referenceAssetId ?? '',
-        character_name: project.characters.find(
-          character => character.characterId === form.characterId,
-        )?.name ?? '',
-        form_id: form.formId,
-        form_name: form.name,
-        path,
-        has_image: true,
-      }] : []
+      return path
+        ? [
+            {
+              token: image?.assetId ?? form.referenceAssetId ?? '',
+              character_name:
+                project.characters.find(character => character.characterId === form.characterId)
+                  ?.name ?? '',
+              form_id: form.formId,
+              form_name: form.name,
+              path,
+              has_image: true,
+            },
+          ]
+        : []
     }),
     total_original_pages: sourcePages.length,
   }
@@ -745,24 +643,25 @@ export async function generateScriptWithRefs(
   direction: string,
   pageCount: number,
   referenceTokens?: string[],
-  _referenceImageCount = 5,
-): Promise<ScriptResponse> {
+  referenceImageCount = 5
+): Promise<string> {
   let project = await ensureProject(bookId)
   project = await updateV2ContinuationProject(project.projectId, project.revision, {
     ...project.config,
     direction,
     pageCount,
+    styleReferencePages: referenceImageCount,
   })
   if (referenceTokens) {
     project = await setV2ContinuationReferences(
       project.projectId,
       project.revision,
-      referenceTokens,
+      referenceTokens
     )
   }
   cacheProject(bookId, project)
   const accepted = await createV2ContinuationJob(bookId, { kind: 'script' })
-  return { success: true, task_id: accepted.jobIds[0] }
+  return accepted.jobIds[0]
 }
 
 export async function generateAllPageDetails(bookId: string): Promise<string> {
@@ -770,10 +669,7 @@ export async function generateAllPageDetails(bookId: string): Promise<string> {
   return accepted.jobIds[0]
 }
 
-export async function generateAllPageImages(
-  bookId: string,
-  ordinals?: number[],
-): Promise<string> {
+export async function generateAllPageImages(bookId: string, ordinals?: number[]): Promise<string> {
   const accepted = await createV2ContinuationJob(bookId, {
     kind: 'images',
     ...(ordinals ? { ordinals } : {}),
@@ -783,45 +679,22 @@ export async function generateAllPageImages(
 
 export async function setContinuationReferenceTokens(
   bookId: string,
-  assetIds: string[],
+  assetIds: string[]
 ): Promise<void> {
   const project = await ensureProject(bookId)
-  const updated = await setV2ContinuationReferences(
-    project.projectId,
-    project.revision,
-    assetIds,
-  )
+  const updated = await setV2ContinuationReferences(project.projectId, project.revision, assetIds)
   cacheProject(bookId, updated)
 }
 
 export async function activatePageImageVersion(
   bookId: string,
   pageNumber: number,
-  imagePath: string,
-): Promise<{ success: boolean }> {
+  imagePath: string
+): Promise<void> {
   const project = await ensureProject(bookId)
   const page = project.pages.find(item => item.ordinal === pageNumber)
   const version = page?.imageVersions.find(item => item.assetUrl === imagePath)
-  if (!page || !version) return { success: false }
+  if (!page || !version) throw new Error('未找到要启用的图片版本')
   await activateV2ContinuationImage(page.continuationPageId, version.version)
   await refreshState(bookId)
-  return { success: true }
-}
-
-export async function waitForContinuationJob(
-  jobId: string,
-  pollIntervalMs = 800,
-  onProgress?: (progress: Record<string, unknown>) => void,
-): Promise<Awaited<ReturnType<typeof getV2ContinuationJob>>> {
-  while (true) {
-    const job = await getV2ContinuationJob(jobId)
-    onProgress?.(job.progress as Record<string, unknown>)
-    if (job.status === 'completed' || job.status === 'completed_with_errors') return job
-    if (['failed', 'cancelled', 'interrupted'].includes(job.status)) {
-      const progress = job.progress as Record<string, unknown>
-      const error = progress.error as Record<string, unknown> | undefined
-      throw new Error(String(error?.message ?? '续写任务失败'))
-    }
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
-  }
 }

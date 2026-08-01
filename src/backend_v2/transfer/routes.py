@@ -9,7 +9,9 @@ from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
+    json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.transfer.commands import TransferCommandService
@@ -29,6 +31,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/container-import-jobs")
     def create_container_import(chapter_id: str):
+        _validate_multipart_fields(allowed_file_keys={"file"})
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
@@ -42,9 +45,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/export-jobs")
     def create_export(chapter_id: str):
-        body = request.get_json(silent=True)
-        if not isinstance(body, dict):
-            raise ValueError("request body must be a JSON object")
+        body = _json_body(allowed_keys={"format", "pageIds"})
         page_ids = body.get("pageIds")
         if page_ids is not None and (
             not isinstance(page_ids, list)

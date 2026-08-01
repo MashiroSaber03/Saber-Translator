@@ -1,8 +1,9 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebImportStore } from '@/stores/webImportStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { jobsApi, type V2JobEvent } from '@/api/v2/jobs'
 import type { AgentLog, WebImportEngine } from '@/types/webImport'
-import { jobsApi } from '@/api/v2/jobs'
 import {
   checkWebImportSupport,
   commitWebImportDraft,
@@ -16,7 +17,11 @@ import {
 } from '@/api/v2/webImport'
 import { getTranslationBootstrap } from '@/api/v2/content'
 import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
-import { normalizeProviderId, providerRequiresApiKey, providerSupportsCapability } from '@/config/aiProviders'
+import {
+  normalizeProviderId,
+  providerRequiresApiKey,
+  providerSupportsCapability,
+} from '@/config/aiProviders'
 import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
@@ -30,6 +35,7 @@ export interface WebImportModalCallbacks {
 
 export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const webImportStore = useWebImportStore()
+  const taskCenterStore = useTaskCenterStore()
   const route = useRoute()
 
   const focusSourceUrlRequestId = ref(0)
@@ -47,9 +53,12 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const activeDraftId = ref<string | null>(null)
   const activeDraftRevision = ref(0)
   const draftPageIdsByNumber = new Map<number, string>()
-  let draftPollGeneration = 0
+  const activeDraftJobIds = new Set<string>()
+  let draftSyncGeneration = 0
+  let draftSyncTimer: ReturnType<typeof setTimeout> | null = null
   let agentLogCursor = 0
   let agentLogJobId: string | null = null
+  let stopTaskEvents: (() => void) | null = null
   const settingsActions: WebImportSettingsActions = {
     setAgentApiKey: webImportStore.setAgentApiKey,
     setAgentBaseUrl: webImportStore.setAgentBaseUrl,
@@ -90,14 +99,12 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const error = computed(() => webImportStore.error)
   const isProcessing = computed(() => webImportStore.isProcessing)
   const draftSettings = computed(() => webImportStore.draftSettings)
-  const hasAgentCredential = computed(() => webImportStore.hasCredential(
-    'web_import_agent',
-    draftSettings.value.agent.provider,
-  ))
-  const hasFirecrawlCredential = computed(() => webImportStore.hasCredential(
-    'web_import_firecrawl',
-    'firecrawl',
-  ))
+  const hasAgentCredential = computed(() =>
+    webImportStore.hasCredential('web_import_agent', draftSettings.value.agent.provider)
+  )
+  const hasFirecrawlCredential = computed(() =>
+    webImportStore.hasCredential('web_import_firecrawl', 'firecrawl')
+  )
   const modelDiscovery = useAiModelDiscovery({
     source: () => ({
       provider: draftSettings.value.agent.provider,
@@ -105,12 +112,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       baseUrl: draftSettings.value.agent.customBaseUrl,
       hasStoredCredential: hasAgentCredential.value,
     }),
-    fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
-      provider,
-      apiKey,
-      baseUrl,
-      'web_import_agent',
-    ),
+    fetcher: (provider, apiKey, baseUrl) =>
+      fetchV2Models(provider, apiKey, baseUrl, 'web_import_agent'),
     notify: showToast,
     emptyBaseUrl: '',
   })
@@ -120,16 +123,23 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const isSavingSettings = computed(() => webImportStore.isSavingSettings)
   const showAgentLogs = computed(() => draftSettings.value.ui.showAgentLogs)
   const agentProviderOptions = computed(() => [...WEB_IMPORT_AGENT_PROVIDERS])
-  const supportsFetchModels = computed(() => providerSupportsCapability(draftSettings.value.agent.provider, 'modelFetch'))
-  const modelListOptions = computed(() => modelList.value.map(model => ({ label: model, value: model })))
+  const supportsFetchModels = computed(() =>
+    providerSupportsCapability(draftSettings.value.agent.provider, 'modelFetch')
+  )
+  const modelListOptions = computed(() =>
+    modelList.value.map(model => ({ label: model, value: model }))
+  )
 
   const currentEngine = computed(() => extractResult.value?.engine || null)
 
   const engineDisplayName = computed(() => {
     switch (currentEngine.value) {
-      case 'gallery-dl': return 'Gallery-DL'
-      case 'ai-agent': return 'AI Agent'
-      default: return ''
+      case 'gallery-dl':
+        return 'Gallery-DL'
+      case 'ai-agent':
+        return 'AI Agent'
+      default:
+        return ''
     }
   })
 
@@ -137,10 +147,6 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     if (!extractResult.value?.pages) return false
     return selectedCount.value === extractResult.value.pages.length
   })
-
-  function getPreviewUrl(originalUrl: string): string {
-    return originalUrl
-  }
 
   let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
   let focusInputTimeout: ReturnType<typeof setTimeout> | null = null
@@ -187,10 +193,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   async function handleClose() {
-    const acceptedExtractContinuesInBackend = (
-      status.value === 'extracting'
-      && activeDraftId.value !== null
-    )
+    const acceptedExtractContinuesInBackend =
+      status.value === 'extracting' && activeDraftId.value !== null
     if (isProcessing.value && !acceptedExtractContinuesInBackend) {
       const confirmed = await confirmProductAction({
         title: '关闭网页导入',
@@ -200,7 +204,11 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       })
       if (!confirmed) return
     }
-    draftPollGeneration += 1
+    draftSyncGeneration += 1
+    if (draftSyncTimer) {
+      clearTimeout(draftSyncTimer)
+      draftSyncTimer = null
+    }
     webImportStore.discardSettingsChanges()
     webImportStore.closeModal()
     webImportStore.resetState()
@@ -208,6 +216,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     activeDraftId.value = null
     activeDraftRevision.value = 0
     draftPageIdsByNumber.clear()
+    activeDraftJobIds.clear()
     agentLogCursor = 0
     agentLogJobId = null
   }
@@ -293,6 +302,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         engine: selectedEngine.value,
       })
       activeDraftId.value = accepted.draftId
+      draftSyncGeneration += 1
+      activeDraftJobIds.clear()
       agentLogCursor = 0
       agentLogJobId = null
       webImportStore.addLog({
@@ -300,7 +311,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         type: 'info',
         message: '网页提取任务已进入后端任务中心，可安全关闭页面。',
       })
-      await pollDraft(accepted.draftId)
+      await syncDraft(accepted.draftId, draftSyncGeneration)
     } catch (e) {
       webImportStore.setError(e instanceof Error ? e.message : '提取失败')
     }
@@ -335,13 +346,10 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       const selection = await updateWebImportSelection(
         activeDraftId.value,
         activeDraftRevision.value,
-        selectedIds,
+        selectedIds
       )
       activeDraftRevision.value = selection.revision
-      const accepted = await commitWebImportDraft(
-        activeDraftId.value,
-        activeDraftRevision.value,
-      )
+      const accepted = await commitWebImportDraft(activeDraftId.value, activeDraftRevision.value)
       if (!accepted.jobIds.length) {
         throw new Error('后端没有返回网页导入任务')
       }
@@ -354,17 +362,10 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
   }
 
-  function delay(milliseconds: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, milliseconds))
-  }
-
-  async function pollAgentLogs(
-    draft: Awaited<ReturnType<typeof getWebImportDraft>>,
+  async function loadAgentLogs(
+    draft: Awaited<ReturnType<typeof getWebImportDraft>>
   ): Promise<void> {
-    if (
-      draft.requestedEngine !== 'ai-agent'
-      && draft.actualEngine !== 'ai-agent'
-    ) return
+    if (draft.requestedEngine !== 'ai-agent' && draft.actualEngine !== 'ai-agent') return
     const extractJob = draft.jobs.find(job => job.kind === 'web_extract')
     if (!extractJob) return
     if (agentLogJobId !== extractJob.id) {
@@ -381,9 +382,9 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         if (event.type !== 'web_import_agent_log') continue
         const payload = event.payload as unknown as Partial<AgentLog>
         if (
-          typeof payload.timestamp === 'string'
-          && typeof payload.type === 'string'
-          && typeof payload.message === 'string'
+          typeof payload.timestamp === 'string' &&
+          typeof payload.type === 'string' &&
+          typeof payload.message === 'string'
         ) {
           webImportStore.addLog(payload as AgentLog)
         }
@@ -393,68 +394,103 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
   }
 
-  async function pollDraft(draftId: string): Promise<void> {
-    const generation = ++draftPollGeneration
-    while (generation === draftPollGeneration) {
-      const draft = await getWebImportDraft(draftId)
-      if (generation !== draftPollGeneration) return
-      await pollAgentLogs(draft)
-      if (generation !== draftPollGeneration) return
-      activeDraftRevision.value = draft.revision
-      webImportStore.updateDownloadProgress(
-        draft.candidateCount - draft.failedCount,
-        Math.max(draft.candidateCount, 1),
-      )
-      if (draft.status === 'failed') {
-        webImportStore.setError('后端网页提取任务失败，请在任务中心查看详情')
-        return
-      }
-      if (draft.status === 'cancelled') {
-        webImportStore.setError('后端网页提取任务已取消，可以重新开始提取')
-        return
-      }
-      if (draft.status === 'committing' || draft.status === 'completed') {
-        webImportStore.setStatus('completed')
-        return
-      }
-      if (draft.status === 'ready') {
-        const pages = await listAllWebImportDraftPages(draftId)
-        if (generation !== draftPollGeneration) return
-        draftPageIdsByNumber.clear()
-        const successful = pages.filter(page => !page.error)
-        successful.forEach((page, index) => {
-          draftPageIdsByNumber.set(index + 1, page.id)
-        })
-        webImportStore.setExtractResult({
-          success: true,
-          comicTitle: '',
-          chapterTitle: '',
-          pages: successful.map((page, index) => ({
-            pageNumber: index + 1,
-            imageUrl: page.thumbnailUrl || page.sourceMediaUrl || '',
-          })),
-          totalPages: successful.length,
-          sourceUrl: draft.sourceUrl,
-          engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
-        })
-        webImportStore.setStatus('extracted')
-        if (draft.autoImport && successful.length > 0) {
-          const extractJob = draft.jobs.find(job => job.kind === 'web_extract')
-          if (
-            extractJob
-            && ['completed', 'completed_with_errors', 'failed', 'cancelled']
-              .includes(extractJob.status)
-          ) {
-            webImportStore.setError('后端自动入库未能启动，请在任务中心查看详情')
-            return
-          }
-          await delay(250)
-          continue
-        }
-        return
-      }
-      await delay(750)
+  function isCurrentDraft(draftId: string, generation: number): boolean {
+    return generation === draftSyncGeneration && activeDraftId.value === draftId
+  }
+
+  async function syncDraft(draftId: string, generation: number): Promise<void> {
+    const draft = await getWebImportDraft(draftId)
+    if (!isCurrentDraft(draftId, generation)) return
+    activeDraftJobIds.clear()
+    for (const job of draft.jobs) activeDraftJobIds.add(job.id)
+    await loadAgentLogs(draft)
+    if (!isCurrentDraft(draftId, generation)) return
+    activeDraftRevision.value = draft.revision
+    webImportStore.updateDownloadProgress(
+      draft.candidateCount - draft.failedCount,
+      Math.max(draft.candidateCount, 1)
+    )
+    if (draft.status === 'failed') {
+      webImportStore.setError('后端网页提取任务失败，请在任务中心查看详情')
+      return
     }
+    if (draft.status === 'cancelled') {
+      webImportStore.setError('后端网页提取任务已取消，可以重新开始提取')
+      return
+    }
+    if (draft.status === 'committing') {
+      webImportStore.setStatus('downloading')
+      return
+    }
+    if (draft.status === 'completed') {
+      webImportStore.setStatus('completed')
+      return
+    }
+    if (draft.status !== 'ready') return
+
+    const pages = await listAllWebImportDraftPages(draftId)
+    if (!isCurrentDraft(draftId, generation)) return
+    draftPageIdsByNumber.clear()
+    const successful = pages.filter(page => !page.error)
+    successful.forEach((page, index) => {
+      draftPageIdsByNumber.set(index + 1, page.id)
+    })
+    webImportStore.setExtractResult({
+      success: true,
+      comicTitle: '',
+      chapterTitle: '',
+      pages: successful.map((page, index) => ({
+        pageNumber: index + 1,
+        imageUrl: page.thumbnailUrl || page.sourceMediaUrl || '',
+      })),
+      totalPages: successful.length,
+      sourceUrl: draft.sourceUrl,
+      engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
+    })
+    if (!draft.autoImport) {
+      webImportStore.setStatus('extracted')
+      return
+    }
+    const extractJob = draft.jobs.find(job => job.kind === 'web_extract')
+    if (
+      extractJob &&
+      ['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(extractJob.status)
+    ) {
+      webImportStore.setError('后端自动入库未能启动，请在任务中心查看详情')
+    }
+  }
+
+  function addAgentLog(event: V2JobEvent): void {
+    if (event.type !== 'web_import_agent_log' || event.eventId <= agentLogCursor) return
+    const payload = event.payload as Partial<AgentLog>
+    if (
+      typeof payload.timestamp !== 'string' ||
+      typeof payload.type !== 'string' ||
+      typeof payload.message !== 'string'
+    )
+      return
+    agentLogCursor = event.eventId
+    webImportStore.addLog(payload as AgentLog)
+  }
+
+  function scheduleDraftSync(): void {
+    const draftId = activeDraftId.value
+    if (!draftId || draftSyncTimer) return
+    const generation = draftSyncGeneration
+    draftSyncTimer = setTimeout(() => {
+      draftSyncTimer = null
+      void syncDraft(draftId, generation).catch(error => {
+        if (isCurrentDraft(draftId, generation)) {
+          webImportStore.setError(error instanceof Error ? error.message : '读取网页导入状态失败')
+        }
+      })
+    }, 100)
+  }
+
+  function handleTaskEvent(event: V2JobEvent): void {
+    if (!activeDraftJobIds.has(event.jobId)) return
+    addAgentLog(event)
+    scheduleDraftSync()
   }
 
   async function restoreActiveDraft(): Promise<void> {
@@ -466,14 +502,16 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       const draft = bootstrap.activeWebImportDraft
       if (!draft) return
       activeDraftId.value = draft.id
+      draftSyncGeneration += 1
+      activeDraftJobIds.clear()
       webImportStore.setStatus('extracting')
-      await pollDraft(draft.id)
+      await syncDraft(draft.id, draftSyncGeneration)
     } catch {
       // Opening the modal is still useful for starting a new draft.
     }
   }
 
-  watch(isVisible, (visible) => {
+  watch(isVisible, visible => {
     if (focusInputTimeout) {
       clearTimeout(focusInputTimeout)
       focusInputTimeout = null
@@ -487,7 +525,9 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
   })
 
-  watch(urlInput, (newUrl) => {
+  stopTaskEvents = taskCenterStore.subscribeEvents(handleTaskEvent)
+
+  watch(urlInput, newUrl => {
     checkUrlSupport(newUrl)
   })
 
@@ -498,7 +538,9 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
   )
 
-  const showCustomUrl = computed(() => normalizeProviderId(draftSettings.value.agent.provider) === 'custom')
+  const showCustomUrl = computed(
+    () => normalizeProviderId(draftSettings.value.agent.provider) === 'custom'
+  )
 
   async function handleTestFirecrawl() {
     if (!draftSettings.value.firecrawl.apiKey && !hasFirecrawlCredential.value) {
@@ -523,9 +565,9 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
 
   async function handleTestAgent() {
     if (
-      providerRequiresApiKey(draftSettings.value.agent.provider)
-      && !draftSettings.value.agent.apiKey
-      && !hasAgentCredential.value
+      providerRequiresApiKey(draftSettings.value.agent.provider) &&
+      !draftSettings.value.agent.apiKey &&
+      !hasAgentCredential.value
     ) {
       showToast('请输入 AI Agent API Key', 'warning')
       return
@@ -566,7 +608,13 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   onUnmounted(() => {
-    draftPollGeneration += 1
+    draftSyncGeneration += 1
+    stopTaskEvents?.()
+    stopTaskEvents = null
+    if (draftSyncTimer) {
+      clearTimeout(draftSyncTimer)
+      draftSyncTimer = null
+    }
     if (checkSupportTimeout) {
       clearTimeout(checkSupportTimeout)
       checkSupportTimeout = null
@@ -615,7 +663,6 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     modelListOptions,
     engineDisplayName,
     isAllSelected,
-    getPreviewUrl,
     handleClose,
     handleSaveSettings,
     handleDiscardSettings,

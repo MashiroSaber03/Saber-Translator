@@ -1,5 +1,6 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 const ROOT = '/api/v2/studio'
@@ -70,6 +71,7 @@ export function generateV2StudioDocument(
   baseRevision: number,
   section: string,
 ): Promise<V2StudioOperationAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/documents/${encodeURIComponent(documentId)}/generate`,
     { baseRevision, section },
@@ -145,6 +147,7 @@ export function sendV2StudioMessage(
     content: string
   },
 ): Promise<V2StudioOperationAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
     command,
@@ -173,6 +176,7 @@ export function editV2StudioMessage(
   baseSessionRevision: number,
   content: string,
 ): Promise<V2StudioOperationAccepted> {
+  assertBackendActionAllowed()
   return apiClient.put(
     `${ROOT}/chat/messages/${encodeURIComponent(messageId)}`,
     { baseSessionRevision, content },
@@ -184,6 +188,7 @@ export function regenerateV2StudioMessage(
   messageId: string,
   baseSessionRevision: number,
 ): Promise<V2StudioOperationAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/chat/messages/${encodeURIComponent(messageId)}/regenerate`,
     { baseSessionRevision },
@@ -208,6 +213,7 @@ export function summarizeV2StudioSession(
   sessionId: string,
   baseSessionRevision: number,
 ): Promise<V2StudioOperationAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}/summarize`,
     { baseSessionRevision },

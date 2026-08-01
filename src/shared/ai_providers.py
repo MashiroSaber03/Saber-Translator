@@ -13,10 +13,9 @@
 from __future__ import annotations
 
 import json
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, FrozenSet, Iterator, Mapping, Optional, Tuple
+from typing import Dict, FrozenSet, Mapping, Optional, Tuple
 
 
 TRANSLATION_CAPABILITY = "translation"
@@ -135,23 +134,6 @@ _PROVIDERS: Dict[str, ProviderManifest] = {
 }
 
 
-@contextmanager
-def temporary_provider_manifest(
-    manifest: ProviderManifest,
-) -> Iterator[ProviderManifest]:
-    """Register a provider for one test scope without exposing it in production UI."""
-
-    provider_id = normalize_provider_id(manifest.id)
-    if not provider_id or provider_id != manifest.id:
-        raise ValueError("temporary provider id must already be normalized")
-    if provider_id in _PROVIDERS:
-        raise ValueError(f"AI provider is already registered: {provider_id}")
-    _PROVIDERS[provider_id] = manifest
-    try:
-        yield manifest
-    finally:
-        _PROVIDERS.pop(provider_id, None)
-
 def normalize_provider_id(provider: Optional[str]) -> str:
     if not provider:
         return ""
@@ -199,13 +181,6 @@ def resolve_provider_base_url_for_capability(
 def resolve_provider_endpoint_for_capability(provider: Optional[str], capability: str) -> Optional[str]:
     manifest = get_provider_manifest(provider)
     return manifest.capability_endpoints.get(capability)
-
-
-def get_provider_default_model(provider: Optional[str], model_type: str) -> str:
-    manifest = get_provider_manifest(provider)
-    return manifest.default_models.get(_normalize_model_type_name(model_type), "")
-
-
 
 
 def is_openai_compatible_provider(provider: Optional[str]) -> bool:

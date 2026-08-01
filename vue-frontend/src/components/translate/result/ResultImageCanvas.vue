@@ -34,7 +34,7 @@ const debugRects = computed(() => (props.debugBubbles ?? []).flatMap((bubble, in
   const [x1, y1, x2, y2] = bubble.coords
   if (![x1, y1, x2, y2].every(Number.isFinite) || x2 <= x1 || y2 <= y1) return []
   return [{
-    key: bubble.backendBubbleId ?? `${index}-${x1}-${y1}-${x2}-${y2}`,
+    key: bubble.backendBubbleId ?? bubble.clientMutationId ?? `${index}-${x1}-${y1}-${x2}-${y2}`,
     x: x1,
     y: y1,
     width: x2 - x1,

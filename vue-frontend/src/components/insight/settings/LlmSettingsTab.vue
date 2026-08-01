@@ -13,10 +13,7 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import {
-  LLM_PROVIDER_OPTIONS,
-  LLM_DEFAULT_MODELS,
-} from './types'
+import { LLM_PROVIDER_OPTIONS, LLM_DEFAULT_MODELS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -43,9 +40,9 @@ const transportRetries = ref(insightStore.config.llm.openaiOptions.execution.tra
 const businessRetries = ref(insightStore.config.llm.openaiOptions.execution.businessRetries)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() => (
+const hasStoredCredential = computed(() =>
   insightApi.hasInsightCredential('insight_chat', provider.value)
-))
+)
 const {
   isFetchingModels,
   modelOptions,
@@ -86,13 +83,13 @@ async function testConnection(): Promise<void> {
       provider: provider.value,
       api_key: apiKey.value,
       model: model.value,
-      base_url: baseUrl.value || undefined
+      base_url: baseUrl.value || undefined,
     })
 
     if (response.success) {
       emit('showMessage', 'LLM 连接成功', 'success')
     } else {
-      emit('showMessage', '连接失败: ' + (response.error || '未知错误'), 'error')
+      emit('showMessage', '连接失败: ' + (response.message || '未知错误'), 'error')
     }
   } catch (error) {
     emit('showMessage', '测试失败', 'error')
@@ -112,15 +109,15 @@ function buildDraftConfig(): StoreLlmConfig {
       request: {
         forceJsonOutput: forceJsonOutput.value,
         temperature: insightStore.config.llm.openaiOptions.request.temperature,
-        extraBody: extraBody.value
+        extraBody: extraBody.value,
       },
       execution: {
         useStream: useStream.value,
         rpmLimit: rpmLimit.value,
         transportRetries: transportRetries.value,
-        businessRetries: businessRetries.value
-      }
-    }
+        businessRetries: businessRetries.value,
+      },
+    },
   }
 }
 
@@ -138,7 +135,18 @@ function applyDraftConfig(config: StoreLlmConfig): void {
 }
 
 useInsightSettingsDraft<StoreLlmConfig>({
-  sources: [provider, apiKey, model, baseUrl, forceJsonOutput, extraBody, useStream, rpmLimit, transportRetries, businessRetries],
+  sources: [
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    forceJsonOutput,
+    extraBody,
+    useStream,
+    rpmLimit,
+    transportRetries,
+    businessRetries,
+  ],
   buildDraft: buildDraftConfig,
   applyDraft: applyDraftConfig,
   loadDraft: () => insightStore.config.llm,
@@ -180,25 +188,33 @@ useInsightSettingsDraft<StoreLlmConfig>({
         <UiNumberField v-model="rpmLimit" input-id="insight-llm-rpm-limit" :min="0" :max="100" />
       </UiField>
       <UiField variant="settings" label="传输重试" control-id="insight-llm-transport-retries">
-        <UiNumberField v-model="transportRetries" input-id="insight-llm-transport-retries" :min="0" :max="10" />
+        <UiNumberField
+          v-model="transportRetries"
+          input-id="insight-llm-transport-retries"
+          :min="0"
+          :max="10"
+        />
       </UiField>
       <UiField variant="settings" label="业务重试" control-id="insight-llm-business-retries">
-        <UiNumberField v-model="businessRetries" input-id="insight-llm-business-retries" :min="0" :max="10" />
+        <UiNumberField
+          v-model="businessRetries"
+          input-id="insight-llm-business-retries"
+          :min="0"
+          :max="10"
+        />
       </UiField>
     </UiFormGrid>
 
-    <UiField variant="settings" control="checkbox" hint="对 OpenAI 兼容 API 启用 response_format: json_object">
-      <UiCheckbox
-        v-model="forceJsonOutput"
-        label="强制 JSON 输出"
-      />
+    <UiField
+      variant="settings"
+      control="checkbox"
+      hint="对 OpenAI 兼容 API 启用 response_format: json_object"
+    >
+      <UiCheckbox v-model="forceJsonOutput" label="强制 JSON 输出" />
     </UiField>
 
     <UiField variant="settings" control="checkbox">
-      <UiCheckbox
-        v-model="useStream"
-        label="使用流式请求"
-      />
+      <UiCheckbox v-model="useStream" label="使用流式请求" />
     </UiField>
 
     <UiField variant="settings">

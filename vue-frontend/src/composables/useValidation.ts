@@ -1,6 +1,6 @@
-import { computed, getCurrentInstance, onUnmounted, ref } from 'vue'
+import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import {
-  getProviderDisplayName as getProviderDisplayNameFromManifest,
+  getProviderDisplayName,
   isLocalProviderId,
   normalizeProviderId,
   providerRequiresApiKey,
@@ -8,32 +8,18 @@ import {
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
-import type { TranslationProvider, HqTranslationProvider, ProofreadingRound } from '@/types/settings'
+import type { ProofreadingRound } from '@/types/settings'
 import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'
-import {
-  dismissFirstTimeGuide,
-  resetFirstTimeGuideDismissal,
-  shouldShowFirstTimeGuide,
-} from '@/components/translate/firstTimeGuideState'
 
-const OCR_ENGINE_DISPLAY_NAMES: Record<string, string> = {
-  manga_ocr: 'MangaOCR',
-  paddle_ocr: 'PaddleOCR',
-  paddleocr_vl: 'PaddleOCR-VL',
-  baidu_ocr: '百度OCR',
-  ai_vision: 'AI视觉OCR',
-  '48px_ocr': '48px OCR'
-}
-
-export interface ValidationResult {
+interface ValidationResult {
   valid: boolean
   message: string
   missingItems?: string[]
 }
 
-export type ValidationType = 'normal' | 'hq' | 'proofread' | 'ocr'
+type ValidationType = 'normal' | 'hq' | 'proofread' | 'ocr'
 
-export interface ValidationOptions {
+interface ValidationOptions {
   proofreadingRounds?: ProofreadingRound[]
 }
 
@@ -41,38 +27,8 @@ export function useValidation() {
   const settingsStore = useSettingsStore()
   const toast = useToast()
 
-  const showSetupReminder = ref(false)
   const isSettingsButtonHighlighted = ref(false)
-  let setupReminderTimer: ReturnType<typeof setTimeout> | null = null
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
-
-  const isSetupReminderDismissed = computed(() => {
-    return !shouldShowFirstTimeGuide()
-  })
-
-  function getProviderDisplayName(provider: string): string {
-    return getProviderDisplayNameFromManifest(provider)
-  }
-
-  function requiresApiKey(provider: TranslationProvider): boolean {
-    return providerRequiresApiKey(provider)
-  }
-
-  function isLocalProvider(provider: TranslationProvider): boolean {
-    return isLocalProviderId(provider)
-  }
-
-  function requiresBaseUrl(provider: TranslationProvider): boolean {
-    return providerRequiresBaseUrl(provider)
-  }
-
-  function hqRequiresBaseUrl(provider: HqTranslationProvider): boolean {
-    return providerRequiresBaseUrl(provider)
-  }
-
-  function getOcrEngineDisplayName(engine: string): string {
-    return OCR_ENGINE_DISPLAY_NAMES[engine] || engine
-  }
 
   function hasStoredCredential(domain: string, provider: string): boolean {
     const normalized = normalizeProviderId(provider)
@@ -181,19 +137,19 @@ export function useValidation() {
       }
     }
 
-    if (requiresApiKey(provider)) {
+    if (providerRequiresApiKey(provider)) {
       if (!hasUsableApiKey(apiKey, 'translation', provider)) {
         missingItems.push(`${getProviderDisplayName(provider)} 的 API Key`)
       }
     }
 
     if (!modelName || modelName.trim() === '') {
-      if (isLocalProvider(provider) || requiresApiKey(provider)) {
+      if (isLocalProviderId(provider) || providerRequiresApiKey(provider)) {
         missingItems.push(`${getProviderDisplayName(provider)} 的模型名称`)
       }
     }
 
-    if (requiresBaseUrl(provider)) {
+    if (providerRequiresBaseUrl(provider)) {
       if (!customBaseUrl || customBaseUrl.trim() === '') {
         missingItems.push('自定义 OpenAI 服务的 Base URL')
       }
@@ -234,7 +190,7 @@ export function useValidation() {
       missingItems.push('高质量翻译的模型名称')
     }
 
-    if (hqRequiresBaseUrl(provider)) {
+    if (providerRequiresBaseUrl(provider)) {
       if (!customBaseUrl || customBaseUrl.trim() === '') {
         missingItems.push('高质量翻译的 Base URL')
       }
@@ -328,31 +284,6 @@ export function useValidation() {
     return true
   }
 
-  function validateFullTranslationConfig(): boolean {
-    const ocrResult = validateOcrConfig()
-    if (!ocrResult.valid) {
-      toast.error(ocrResult.message)
-      highlightSettingsButton()
-      return false
-    }
-
-    const translationResult = validateTranslationConfig()
-    if (!translationResult.valid) {
-      toast.error(translationResult.message)
-      highlightSettingsButton()
-      return false
-    }
-
-    return true
-  }
-
-  function clearSetupReminderTimer(): void {
-    if (setupReminderTimer) {
-      clearTimeout(setupReminderTimer)
-      setupReminderTimer = null
-    }
-  }
-
   function clearHighlightTimer(): void {
     if (highlightTimer) {
       clearTimeout(highlightTimer)
@@ -370,62 +301,14 @@ export function useValidation() {
     }, 3000)
   }
 
-  function checkAndShowSetupReminder(): void {
-    if (isSetupReminderDismissed.value) {
-      return
-    }
-    showSetupReminder.value = true
-  }
-
-  function closeSetupReminder(shouldDismiss: boolean = false): void {
-    if (shouldDismiss) {
-      dismissFirstTimeGuide()
-    }
-    showSetupReminder.value = false
-  }
-
-  function resetSetupReminderDismiss(): void {
-    resetFirstTimeGuideDismissal()
-  }
-
-  function initValidation(): void {
-    clearSetupReminderTimer()
-    setupReminderTimer = setTimeout(() => {
-      setupReminderTimer = null
-      checkAndShowSetupReminder()
-    }, 500)
-  }
-
   if (getCurrentInstance()) {
     onUnmounted(() => {
-      clearSetupReminderTimer()
       clearHighlightTimer()
     })
   }
 
   return {
-    showSetupReminder,
     isSettingsButtonHighlighted,
-
-    isSetupReminderDismissed,
-
-    validateOcrConfig,
-    validateTranslationConfig,
-    validateHqTranslationConfig,
-    validateProofreadingConfig,
     validateBeforeTranslation,
-    validateFullTranslationConfig,
-
-    highlightSettingsButton,
-    checkAndShowSetupReminder,
-    closeSetupReminder,
-    resetSetupReminderDismiss,
-    initValidation,
-
-    getProviderDisplayName,
-    getOcrEngineDisplayName,
-    requiresApiKey,
-    isLocalProvider,
-    requiresBaseUrl
   }
 }

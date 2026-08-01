@@ -182,7 +182,7 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/retry")
     def retry_job(job_id: str) -> Response:
-        body = _optional_json_body()
+        body = _json_body(allowed_keys={"strategy"}, optional=True)
         return jsonify(
             retry_service.retry(
                 job_id=job_id,
@@ -194,7 +194,7 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/retry-failed")
     def retry_failed_job(job_id: str) -> Response:
-        body = _optional_json_body()
+        body = _json_body(allowed_keys={"strategy"}, optional=True)
         return jsonify(
             retry_service.retry(
                 job_id=job_id,
@@ -207,7 +207,7 @@ def create_jobs_blueprint(
     @blueprint.post("/jobs/reorder")
     def reorder_jobs() -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"orderedJobIds", "baseRevision"})
         ordered = body.get("orderedJobIds")
         if not isinstance(ordered, list) or not all(
             isinstance(value, str) for value in ordered
@@ -241,7 +241,7 @@ def create_jobs_blueprint(
     @blueprint.post("/job-batches/<batch_id>/prioritize")
     def prioritize_batch(batch_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision"})
         return jsonify(
             {
                 "queueRevision": repository.prioritize_batch(
@@ -265,12 +265,3 @@ def _sse(event: dict[str, object]) -> str:
         f"event: {event['type']}\n"
         f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
     )
-
-
-def _optional_json_body() -> dict[str, object]:
-    body = request.get_json(silent=True)
-    if body is None:
-        return {}
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body

@@ -14,28 +14,3 @@ export interface NoteData {
   citations?: Array<{ page: number; content: string }>
   comment?: string
 }
-
-export interface QAHistory {
-  id: string
-  question: string
-  answer: string
-  sources?: Array<{
-    page_num: number
-    content: string
-    score?: number
-  }>
-  created_at: string
-}
-
-export interface OverviewTemplateMeta {
-  name: string
-  icon: string
-  description: string
-}
-
-export interface GeneratedTemplate {
-  template_key: string
-  template_name?: string
-  content?: string
-  generated_at?: string
-}

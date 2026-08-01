@@ -4,7 +4,11 @@
 
     <div class="continuation-export-panel__options">
       <div class="continuation-export-panel__summary">
-        <p class="continuation-export-panel__summary-text">共生成 <strong class="continuation-export-panel__summary-count">{{ generatedCount }}</strong> 页图片，可导出为以下格式：</p>
+        <p class="continuation-export-panel__summary-text">
+          共生成
+          <strong class="continuation-export-panel__summary-count">{{ generatedCount }}</strong>
+          页图片，可导出为以下格式：
+        </p>
       </div>
 
       <ProductChoiceCardGrid
@@ -41,12 +45,15 @@
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
-import ProductChoiceCardGrid, { type ProductChoiceCardItem } from '@/components/product/ProductChoiceCardGrid.vue'
+import ProductChoiceCardGrid, {
+  type ProductChoiceCardItem,
+} from '@/components/product/ProductChoiceCardGrid.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import { ref } from 'vue'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import * as continuationApi from '@/api/continuation'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { triggerBlobDownload } from '@/utils/browserDownload'
 
 const props = defineProps<{
@@ -60,6 +67,7 @@ const emit = defineEmits<{
 }>()
 
 const state = props.state
+const taskCenterStore = useTaskCenterStore()
 type ExportFormat = 'images' | 'pdf'
 
 const exportFormatItems: ProductChoiceCardItem[] = [
@@ -84,16 +92,14 @@ async function handleExport() {
   isExporting.value = true
 
   try {
-    let blob: Blob
-    let filename: string
-
-    if (selectedFormat.value === 'images') {
-      blob = await continuationApi.exportAsImages(props.bookId)
-      filename = `continuation_${Date.now()}.zip`
-    } else {
-      blob = await continuationApi.exportAsPdf(props.bookId)
-      filename = `continuation_${Date.now()}.pdf`
-    }
+    const format = selectedFormat.value === 'images' ? 'zip' : 'pdf'
+    const jobId = await continuationApi.createContinuationExportJob(props.bookId, format)
+    state.showMessage('续写导出任务已进入任务中心，关闭浏览器也会继续运行', 'info')
+    const job = await taskCenterStore.waitForJob(jobId)
+    const assetId = job.artifacts[0]?.assetId
+    if (!assetId) throw new Error('导出任务未生成文件')
+    const blob = await continuationApi.downloadContinuationExport(assetId, props.bookId, format)
+    const filename = `continuation_${Date.now()}.${format}`
 
     triggerBlobDownload(blob, filename)
 
@@ -151,5 +157,4 @@ async function clearAndRestart() {
 .continuation-export-panel__download-action {
   margin-bottom: 16px;
 }
-
 </style>

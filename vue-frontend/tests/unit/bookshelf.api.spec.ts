@@ -92,7 +92,7 @@ describe('bookshelf v2 api contracts', () => {
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/books/book%2Fid%20one/translation-constraints',
     )
-    expect(result.book?.translationConstraints).toEqual({
+    expect(result.translationConstraints).toEqual({
       glossary: constraints.payload.glossary,
       non_translate: constraints.payload.nonTranslate,
     })
@@ -129,11 +129,14 @@ describe('bookshelf v2 api contracts', () => {
     putMock.mockResolvedValue({
       id: 'chapter/id one',
       title: 'Updated Chapter',
+      ordinal: 1,
+      pageCount: 0,
+      pageOrderRevision: 1,
     })
     const { deleteChapter, updateChapter } = await import('@/api/bookshelf')
 
-    await updateChapter(book.id, 'chapter/id one', 'Updated Chapter')
-    await deleteChapter(book.id, 'chapter/id one')
+    await updateChapter('chapter/id one', 'Updated Chapter')
+    await deleteChapter('chapter/id one')
 
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/chapters/chapter%2Fid%20one',

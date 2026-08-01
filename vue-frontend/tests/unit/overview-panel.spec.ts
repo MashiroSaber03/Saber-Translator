@@ -49,25 +49,19 @@ describe('OverviewPanel', () => {
     store.currentBookId = 'book-1'
     store.dataRefreshKey = 0
 
-    getGeneratedTemplatesMock.mockReset().mockResolvedValue({
-      success: true,
-      generated: ['story_summary'],
-    })
+    getGeneratedTemplatesMock.mockReset().mockResolvedValue(['story_summary'])
     getAnalysisStatusMock.mockReset().mockResolvedValue({
-      success: true,
-      analyzed_pages_count: 5,
+      fullyAnalyzed: false,
+      analyzedPagesCount: 5,
     })
-    getOverviewMock.mockReset().mockResolvedValue({
-      success: true,
-      content: '缓存中的故事概要',
-    })
+    getOverviewMock.mockReset().mockResolvedValue('缓存中的故事概要')
     regenerateOverviewMock.mockReset().mockResolvedValue({
-      success: true,
-      content: '重新生成的故事概要',
+      kind: 'queued',
+      jobId: 'overview-job-1',
     })
   })
 
-  it('broadcasts a refresh when story_summary is regenerated', async () => {
+  it('queues story_summary regeneration without fabricating a completion refresh', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
@@ -90,14 +84,13 @@ describe('OverviewPanel', () => {
     await flushPromises()
 
     expect(regenerateOverviewMock).toHaveBeenCalledWith('book-1', 'story_summary', true)
-    expect(store.dataRefreshKey).not.toBe(refreshKeyBefore)
+    expect(store.dataRefreshKey).toBe(refreshKeyBefore)
   })
 
   it('shows durable queued feedback while a new overview is generated', async () => {
     regenerateOverviewMock.mockResolvedValueOnce({
-      success: true,
-      task_id: 'overview-job-1',
-      message: '概览重建已进入任务中心',
+      kind: 'queued',
+      jobId: 'overview-job-1',
     })
 
     const wrapper = mount(OverviewPanel)
@@ -107,7 +100,7 @@ describe('OverviewPanel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('概览生成中')
-    expect(wrapper.text()).toContain('概览重建已进入任务中心')
+    expect(wrapper.text()).toContain('概览生成已进入任务中心，完成后将自动加载。')
     expect(wrapper.text()).not.toContain('尚未生成概览')
   })
 
@@ -135,18 +128,14 @@ describe('OverviewPanel', () => {
   })
 
   it('sanitizes cached overview markdown before rendering', async () => {
-    getGeneratedTemplatesMock.mockResolvedValue({
-      success: true,
-      generated: ['no_spoiler'],
-    })
-    getOverviewMock.mockResolvedValue({
-      success: true,
-      content: [
+    getGeneratedTemplatesMock.mockResolvedValue(['no_spoiler'])
+    getOverviewMock.mockResolvedValue(
+      [
         '<script>alert("xss")</script>',
         '<a href="javascript:alert(1)">bad link</a>',
         '<a href="https://safe.example">safe link</a>',
       ].join(''),
-    })
+    )
 
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -270,10 +259,7 @@ describe('OverviewPanel', () => {
     store.currentBookId = 'book-1'
     store.setAnalyzedPagesCount(0)
 
-    getGeneratedTemplatesMock.mockResolvedValueOnce({
-      success: true,
-      generated: [],
-    })
+    getGeneratedTemplatesMock.mockResolvedValueOnce([])
 
     const emptyWrapper = mount(OverviewPanel, {
       global: {
@@ -292,11 +278,8 @@ describe('OverviewPanel', () => {
     setActivePinia(loadingPinia)
     const loadingStore = useInsightStore()
     loadingStore.currentBookId = 'book-1'
-    const pendingOverview = deferred<{ success: true; content: string }>()
-    getGeneratedTemplatesMock.mockResolvedValueOnce({
-      success: true,
-      generated: ['no_spoiler'],
-    })
+    const pendingOverview = deferred<string>()
+    getGeneratedTemplatesMock.mockResolvedValueOnce(['no_spoiler'])
     getOverviewMock.mockReturnValueOnce(pendingOverview.promise)
 
     const loadingWrapper = mount(OverviewPanel, {
@@ -322,12 +305,9 @@ describe('OverviewPanel', () => {
     store.currentBookId = 'book-1'
     store.setAnalyzedPagesCount(0)
 
-    const book1Overview = deferred<{ success: true; content: string }>()
-    const book2Overview = deferred<{ success: true; content: string }>()
-    getGeneratedTemplatesMock.mockReset().mockResolvedValue({
-      success: true,
-      generated: ['no_spoiler'],
-    })
+    const book1Overview = deferred<string>()
+    const book2Overview = deferred<string>()
+    getGeneratedTemplatesMock.mockReset().mockResolvedValue(['no_spoiler'])
     getOverviewMock.mockReset()
       .mockReturnValueOnce(book1Overview.promise)
       .mockReturnValueOnce(book2Overview.promise)
@@ -345,17 +325,11 @@ describe('OverviewPanel', () => {
     await flushPromises()
     expect(getOverviewMock).toHaveBeenCalledWith('book-2', 'no_spoiler')
 
-    book2Overview.resolve({
-      success: true,
-      content: 'book-2 overview',
-    })
+    book2Overview.resolve('book-2 overview')
     await flushPromises()
     expect(wrapper.text()).toContain('book-2 overview')
 
-    book1Overview.resolve({
-      success: true,
-      content: 'book-1 stale overview',
-    })
+    book1Overview.resolve('book-1 stale overview')
     await flushPromises()
 
     expect(wrapper.text()).toContain('book-2 overview')

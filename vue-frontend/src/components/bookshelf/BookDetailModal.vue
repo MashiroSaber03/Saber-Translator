@@ -260,10 +260,8 @@ async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
 async function refreshBookDetail() {
   if (!currentBook.value) return
   try {
-    const response = await getBookDetail(currentBook.value.id)
-    if (response.success && response.book) {
-      bookshelfStore.updateBook(currentBook.value.id, response.book)
-    }
+    const book = await getBookDetail(currentBook.value.id)
+    bookshelfStore.updateBook(currentBook.value.id, book)
   } catch {
     // Sort rollback is best-effort; the visible order remains unchanged if refresh fails.
   }
@@ -402,13 +400,8 @@ async function quickAddTagToBook(tagName: string) {
 
   try {
     if (!allTags.value.some(t => t.name === tagName)) {
-      const createResponse = await createTag(tagName)
-      if (createResponse.success) {
-        await bookshelfStore.loadTags()
-      } else {
-        showToast('创建标签失败', 'error')
-        return
-      }
+      await createTag(tagName)
+      await bookshelfStore.loadTags()
     }
 
     const currentTags = currentBook.value.tags || []

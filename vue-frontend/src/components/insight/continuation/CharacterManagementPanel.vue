@@ -1,10 +1,6 @@
 <template>
   <div class="character-management-panel">
-    <ProductSectionHeader
-      title="角色档案"
-      description="点击角色查看和管理形态"
-      icon-name="users"
-    >
+    <ProductSectionHeader title="角色档案" description="点击角色查看和管理形态" icon-name="users">
       <template #actions>
         <UiButton variant="primary" @click="openAddCharacterDialog" size="sm">
           <UiIcon name="plus" size="14" />
@@ -33,7 +29,7 @@
           class="character-management-panel__tile"
           :class="{
             'character-management-panel__tile--selected': selectedCharacter === char.name,
-            'character-management-panel__tile--disabled': char.enabled === false
+            'character-management-panel__tile--disabled': char.enabled === false,
           }"
           :accent="selectedCharacter === char.name"
           :aria-label="`选择角色 ${char.name}`"
@@ -60,7 +56,7 @@
       <CharacterDetailPanel
         :character="getSelectedCharacterData()"
         :avatar-url="selectedCharacter ? getCharacterImageUrl(selectedCharacter) : ''"
-        :get-form-image-url="(formId) => getFormImageUrl(selectedCharacter!, formId)"
+        :get-form-image-url="formId => getFormImageUrl(selectedCharacter!, formId)"
         @toggle-character="handleToggleCharacter"
         @edit-character="openEditCharacterDialog"
         @delete-character="handleDeleteCharacter"
@@ -135,7 +131,7 @@ import AddFormDialog from './AddFormDialog.vue'
 import EditFormDialog from './EditFormDialog.vue'
 import OrthographicDialog from './OrthographicDialog.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
-import * as continuationApi from '@/api/continuation'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const props = defineProps<{
   bookId: string
@@ -146,6 +142,7 @@ const props = defineProps<{
 
 const charMgmt = props.characterManagement
 const state = props.state
+const taskCenterStore = useTaskCenterStore()
 
 const selectedCharacter = ref<string | null>(null)
 
@@ -258,7 +255,12 @@ async function handleAddForm(formName: string, description: string) {
 
 async function handleSaveFormInfo(formName: string, description: string) {
   if (!selectedCharacter.value || !editingForm.value) return
-  await charMgmt.updateForm(selectedCharacter.value, editingForm.value.form_id, formName, description)
+  await charMgmt.updateForm(
+    selectedCharacter.value,
+    editingForm.value.form_id,
+    formName,
+    description
+  )
   showEditFormDialog.value = false
 }
 
@@ -315,30 +317,23 @@ async function handleGenerateOrtho(sourceImages: File[]) {
   orthoResultImagePath.value = null
 
   try {
-    const result = await charMgmt.generateOrtho(
+    const jobId = await charMgmt.generateOrtho(
       selectedCharacter.value,
       orthoFormId.value,
       sourceImages
     )
 
-    if (result.success && result.task_id) {
-      state.showMessage('三视图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
-      await continuationApi.waitForContinuationJob(result.task_id)
-      await state.initializeData()
-      const form = state.characters.value
-        .find(character => character.name === selectedCharacter.value)
-        ?.forms.find(item => item.form_id === orthoFormId.value)
-      orthoResultImagePath.value = form?.reference_image || null
-      if (!orthoResultImagePath.value) {
-        throw new Error('任务完成但未找到生成结果')
-      }
-      state.showMessage('三视图生成成功', 'success')
-    } else if (result.success && result.image_path) {
-      orthoResultImagePath.value = result.image_path
-      state.showMessage('三视图生成成功', 'success')
-    } else {
-      state.showMessage('生成失败: ' + result.error, 'error')
+    state.showMessage('三视图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
+    await taskCenterStore.waitForJob(jobId)
+    await state.initializeData()
+    const form = state.characters.value
+      .find(character => character.name === selectedCharacter.value)
+      ?.forms.find(item => item.form_id === orthoFormId.value)
+    orthoResultImagePath.value = form?.reference_image || null
+    if (!orthoResultImagePath.value) {
+      throw new Error('任务完成但未找到生成结果')
     }
+    state.showMessage('三视图生成成功', 'success')
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {

@@ -44,7 +44,7 @@ const emit = defineEmits<{
   (event: 'open-prompt-preview'): void
   (event: 'regenerate-message', messageId: string): void
   (event: 'send-chat', value: { content: string; attachments: File[] }): void
-  (event: 'summarize-session', cutoffMessageId?: string): void
+  (event: 'summarize-session'): void
   (event: 'switch-session', sessionId: string): void
 }>()
 
@@ -85,7 +85,7 @@ const assistantName = computed(() => props.document?.identity.name || '角色')
 
 function attachmentUrl(attachment: CharacterStudioChatAttachment) {
   if (!props.bookId || !props.document) return attachment.asset_path
-  return getCharacterStudioChatAttachmentUrl(props.bookId, props.document.id, attachment.asset_path)
+  return getCharacterStudioChatAttachmentUrl(attachment.asset_path)
 }
 
 function switchSession(sessionId: string) {

@@ -17,6 +17,7 @@ from src.backend_v2.api.request_helpers import (
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
     required_string as _required_string,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.insight.commands import InsightAnalysisCommandService
@@ -131,7 +132,15 @@ def create_insight_blueprint(
     @blueprint.post("/analysis-jobs")
     def create_analysis_job():
         result = commands.create_analysis_job(
-            command=_json_body(),
+            command=_json_body(
+                allowed_keys={
+                    "bookId",
+                    "scope",
+                    "chapterIds",
+                    "pageIds",
+                    "force",
+                }
+            ),
             idempotency_key=_require_idempotency_key(),
         )
         return jsonify(result), 202
@@ -152,7 +161,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/artifacts/overviews/<template>")
     def rebuild_overview(template: str):
-        body = _json_body()
+        body = _json_body(allowed_keys={"bookId"})
         return (
             jsonify(
                 derived_commands.create_job(
@@ -185,7 +194,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/timeline")
     def rebuild_timeline():
-        body = _json_body()
+        body = _json_body(allowed_keys={"bookId"})
         return (
             jsonify(
                 derived_commands.create_job(
@@ -200,7 +209,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/books/<book_id>/compressed-context/rebuild")
     def rebuild_compressed_context(book_id: str):
-        _json_body()
+        _json_body(allowed_keys=set())
         return (
             jsonify(
                 derived_commands.create_job(
@@ -215,7 +224,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/books/<book_id>/vector-rebuild")
     def rebuild_vectors(book_id: str):
-        _json_body()
+        _json_body(allowed_keys=set())
         return (
             jsonify(
                 derived_commands.create_job(
@@ -244,7 +253,17 @@ def create_insight_blueprint(
     def ask_question(book_id: str) -> Response:
         handle = qa_commands.create(
             book_id=book_id,
-            command=_json_body(),
+            command=_json_body(
+                allowed_keys={
+                    "question",
+                    "mode",
+                    "topK",
+                    "threshold",
+                    "useParentChild",
+                    "useReasoning",
+                    "useReranker",
+                }
+            ),
         )
         cancelled = threading.Event()
 
@@ -456,7 +475,7 @@ def create_insight_blueprint(
 
     @blueprint.post("/books/<book_id>/exports")
     def export_all(book_id: str):
-        _json_body()
+        _json_body(allowed_keys=set())
         return (
             jsonify(
                 export_commands.create_export_job(
@@ -489,7 +508,17 @@ def create_insight_blueprint(
     @blueprint.post("/notes")
     def create_note():
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={
+                "bookId",
+                "title",
+                "content",
+                "citations",
+                "kind",
+                "tags",
+                "comments",
+            }
+        )
         return (
             jsonify(
                 repository.create_note(
@@ -508,7 +537,17 @@ def create_insight_blueprint(
     @blueprint.patch("/notes/<note_id>")
     def update_note(note_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={
+                "baseRevision",
+                "title",
+                "content",
+                "citations",
+                "kind",
+                "tags",
+                "comments",
+            }
+        )
         return jsonify(
             repository.update_note(
                 note_id=note_id,
@@ -541,13 +580,13 @@ def create_insight_blueprint(
     @blueprint.post("/books/<book_id>/continuation/sync-analysis")
     def sync_continuation_analysis(book_id: str) -> Response:
         _require_idempotency_key()
-        _json_body()
+        _json_body(allowed_keys=set())
         return jsonify(continuation.sync_latest(book_id=book_id))
 
     @blueprint.patch("/continuation/projects/<project_id>")
     def update_continuation_project(project_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision", "config"})
         config = body.get("config")
         if not isinstance(config, dict):
             raise ValueError("config must be an object")
@@ -562,7 +601,7 @@ def create_insight_blueprint(
     @blueprint.put("/continuation/projects/<project_id>/references")
     def set_continuation_references(project_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision", "assetIds"})
         asset_ids = _string_list(body, "assetIds")
         return jsonify(
             continuation.set_project_references(
@@ -575,7 +614,9 @@ def create_insight_blueprint(
     @blueprint.post("/continuation/projects/<project_id>/characters")
     def create_continuation_character(project_id: str):
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"name", "aliases", "enabled", "payload"}
+        )
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -595,7 +636,15 @@ def create_insight_blueprint(
     @blueprint.patch("/continuation/characters/<character_id>")
     def update_continuation_character(character_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={
+                "baseRevision",
+                "name",
+                "aliases",
+                "enabled",
+                "payload",
+            }
+        )
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -622,7 +671,7 @@ def create_insight_blueprint(
     @blueprint.post("/continuation/characters/<character_id>/forms")
     def create_continuation_form(character_id: str):
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"name", "payload"})
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -650,7 +699,9 @@ def create_insight_blueprint(
     @blueprint.patch("/continuation/forms/<form_id>")
     def update_continuation_form(form_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"baseRevision", "name", "payload"}
+        )
         payload = body.get("payload", {})
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -675,6 +726,10 @@ def create_insight_blueprint(
     @blueprint.post("/continuation/forms/<form_id>/reference")
     def upload_continuation_reference(form_id: str) -> Response:
         _require_idempotency_key()
+        _validate_multipart_fields(
+            allowed_form_keys={"baseRevision"},
+            allowed_file_keys={"file"},
+        )
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("file is required")
@@ -711,7 +766,7 @@ def create_insight_blueprint(
         version: int,
     ) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision"})
         return jsonify(
             continuation.adopt_form_image(
                 form_id=form_id,
@@ -722,7 +777,9 @@ def create_insight_blueprint(
 
     @blueprint.post("/books/<book_id>/continuation/jobs")
     def create_continuation_job(book_id: str):
-        body = _json_body()
+        body = _json_body(
+            allowed_keys={"kind", "ordinals", "format", "formId"}
+        )
         kind = _required_string(body, "kind")
         idempotency_key = _require_idempotency_key()
         ordinals = body.get("ordinals")
@@ -767,7 +824,7 @@ def create_insight_blueprint(
     @blueprint.patch("/continuation/projects/<project_id>/script")
     def update_continuation_script(project_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision", "content"})
         return jsonify(
             continuation.update_script(
                 project_id=project_id,
@@ -779,7 +836,7 @@ def create_insight_blueprint(
     @blueprint.patch("/continuation/pages/<page_id>")
     def update_continuation_page(page_id: str) -> Response:
         _require_idempotency_key()
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision", "payload"})
         payload = body.get("payload")
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -797,7 +854,7 @@ def create_insight_blueprint(
         version: int,
     ) -> Response:
         _require_idempotency_key()
-        _json_body()
+        _json_body(allowed_keys=set())
         return jsonify(
             continuation.switch_image_version(
                 continuation_page_id=page_id,

@@ -8,13 +8,17 @@ import type {
 import { deepClone } from '@/utils/deepClone'
 
 import { createDefaultSettings } from './defaults'
-import type { ProviderConfigsCache } from './types'
 
 type PlainRecord = Record<string, unknown>
 type AiVisionPromptMode = TranslationSettings['aiVisionOcr']['promptMode']
 
 function isPlainRecord(value: unknown): value is PlainRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasExactKeys(value: PlainRecord, keys: readonly string[]): boolean {
+  const actual = Object.keys(value)
+  return actual.length === keys.length && keys.every(key => Object.hasOwn(value, key))
 }
 
 function parseNumber(value: unknown): number | null {
@@ -42,6 +46,20 @@ function parseCurrentOpenAiOptions(
   defaults: OpenAICompatibleOptions,
 ): OpenAICompatibleOptions | null {
   if (!isPlainRecord(value) || !isPlainRecord(value.request) || !isPlainRecord(value.execution)) {
+    return null
+  }
+  if (!hasExactKeys(value, ['request', 'execution'])) return null
+  const requestKeys = Object.keys(value.request)
+  if (
+    !Object.hasOwn(value.request, 'forceJsonOutput')
+    || requestKeys.some(key => !['forceJsonOutput', 'temperature', 'extraBody'].includes(key))
+    || !hasExactKeys(value.execution, [
+      'useStream',
+      'rpmLimit',
+      'transportRetries',
+      'businessRetries',
+    ])
+  ) {
     return null
   }
 
@@ -93,6 +111,7 @@ function sanitizeByTemplate(value: unknown, template: unknown, path = ''): unkno
   }
   if (isPlainRecord(template)) {
     if (!isPlainRecord(value)) return null
+    if (!hasExactKeys(value, Object.keys(template))) return null
     const result: PlainRecord = {}
     for (const key of Object.keys(template)) {
       if (!Object.prototype.hasOwnProperty.call(value, key)) return null
@@ -119,6 +138,16 @@ function sanitizeProofreadingRounds(value: unknown): TranslationSettings['proofr
   const rounds: TranslationSettings['proofreading']['rounds'] = []
   for (const round of value) {
     if (!isPlainRecord(round) || !isCurrentProviderId(round.provider)) return null
+    if (!hasExactKeys(round, [
+      'name',
+      'provider',
+      'apiKey',
+      'modelName',
+      'customBaseUrl',
+      'openaiOptions',
+      'batchSize',
+      'prompt',
+    ])) return null
     const name = parseString(round.name)
     const apiKey = parseString(round.apiKey)
     const modelName = parseString(round.modelName)
@@ -168,61 +197,4 @@ export function parseCurrentSettings(value: unknown): TranslationSettings | null
   if (!rounds) return null
   sanitized.proofreading.rounds = rounds
   return sanitized
-}
-
-function sanitizeProviderConfig(
-  value: unknown,
-  openaiDefaults: OpenAICompatibleOptions,
-): PlainRecord | null {
-  if (!isPlainRecord(value)) return null
-  const result: PlainRecord = {}
-  for (const key of ['apiKey', 'modelName', 'customBaseUrl', 'prompt', 'translationMode', 'promptMode']) {
-    if (value[key] === undefined) continue
-    const parsed = parseString(value[key])
-    if (parsed === null) return null
-    if (key === 'translationMode' && !isTranslationMode(parsed)) return null
-    if (key === 'promptMode' && !isAiVisionPromptMode(parsed)) return null
-    result[key] = parsed
-  }
-  for (const key of ['batchSize', 'minImageSize']) {
-    if (value[key] === undefined) continue
-    const parsed = parseNumber(value[key])
-    if (parsed === null) return null
-    result[key] = parsed
-  }
-  if (value.openaiOptions !== undefined) {
-    const openaiOptions = parseCurrentOpenAiOptions(value.openaiOptions, openaiDefaults)
-    if (!openaiOptions) return null
-    result.openaiOptions = openaiOptions
-  }
-  return result
-}
-
-export function parseCurrentProviderConfigs(value: unknown): ProviderConfigsCache | null {
-  if (!isPlainRecord(value)) return null
-  const defaults = createDefaultSettings()
-  const requiredGroups = ['translation', 'hqTranslation', 'pluginAgent', 'aiVisionOcr'] as const
-  for (const group of requiredGroups) {
-    if (!isPlainRecord(value[group])) return null
-  }
-
-  const parseGroup = (
-    group: (typeof requiredGroups)[number],
-    openaiDefaults: OpenAICompatibleOptions,
-  ) => {
-    const records: Record<string, PlainRecord> = {}
-    for (const [provider, config] of Object.entries(value[group] as PlainRecord)) {
-      if (!isCurrentProviderId(provider)) continue
-      const parsed = sanitizeProviderConfig(config, openaiDefaults)
-      if (parsed) records[provider] = parsed
-    }
-    return records
-  }
-
-  return {
-    translation: parseGroup('translation', defaults.translation.openaiOptions),
-    hqTranslation: parseGroup('hqTranslation', defaults.hqTranslation.openaiOptions),
-    pluginAgent: parseGroup('pluginAgent', defaults.pluginAgent.openaiOptions),
-    aiVisionOcr: parseGroup('aiVisionOcr', defaults.aiVisionOcr.openaiOptions),
-  } as ProviderConfigsCache
 }

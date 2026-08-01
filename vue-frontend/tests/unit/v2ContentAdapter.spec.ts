@@ -1,12 +1,33 @@
 import { describe, expect, it } from 'vitest'
 
-import type { V2PageDocument } from '@/api/v2/content'
-import { pageDocumentToBubbles } from '@/adapters/v2ContentAdapter'
+import type { V2PageDocument, V2PageSummary } from '@/api/v2/content'
+import { pageDocumentToBubbles, pageSummaryToImage } from '@/adapters/v2ContentAdapter'
+
+function pageSummary(overrides: Partial<V2PageSummary> = {}): V2PageSummary {
+  return {
+    id: 'page-1',
+    chapterId: 'chapter-1',
+    ordinal: 1,
+    logicalSourcePath: 'page.png',
+    sourceRevision: 1,
+    documentRevision: 1,
+    renderedRevision: null,
+    renderStatus: 'not_rendered',
+    detectionState: 'unprocessed',
+    sourceUrl: '/source',
+    thumbnailSourceUrl: '/thumbnail/source',
+    cleanUrl: null,
+    translatedUrl: null,
+    thumbnailTranslatedUrl: null,
+    width: null,
+    height: null,
+    ...overrides,
+  }
+}
 
 function documentWithFont(options: {
   defaultFontId: string | null
   fontId: string | null
-  payloadFontFamily?: string
 }): V2PageDocument {
   return {
     bubbles: [{
@@ -15,7 +36,6 @@ function documentWithFont(options: {
       ordinal: 1,
       payload: {
         coords: [0, 0, 100, 80],
-        fontFamily: options.payloadFontFamily,
         translatedText: '译文',
       },
       updatedRevision: 1,
@@ -26,35 +46,62 @@ function documentWithFont(options: {
     pageId: 'page-1',
     pageStyleDefaults: {},
     pageStyleSchemaVersion: 1,
+    renderStatus: 'not_rendered',
   }
 }
 
 describe('v2 content adapter', () => {
-  it('uses the relational page font when a legacy payload contains an empty fontFamily', () => {
+  it.each(['render_failed', 'repair_failed'] as const)(
+    'maps the current %s render state to a failed image',
+    (renderStatus) => {
+      expect(pageSummaryToImage(pageSummary({ renderStatus })).translationStatus).toBe('failed')
+    },
+  )
+
+  it.each(['rendering', 'awaiting_repair'] as const)(
+    'maps the active %s render state to a processing image',
+    (renderStatus) => {
+      expect(pageSummaryToImage(pageSummary({ renderStatus })).translationStatus).toBe('processing')
+    },
+  )
+
+  it('requires the current ready state and matching revision for a completed image', () => {
+    expect(pageSummaryToImage(pageSummary({
+      documentRevision: 3,
+      renderedRevision: 3,
+      renderStatus: 'ready',
+      translatedUrl: '/translated',
+    })).translationStatus).toBe('completed')
+    expect(pageSummaryToImage(pageSummary({
+      documentRevision: 3,
+      renderedRevision: 3,
+      renderStatus: 'stale',
+      translatedUrl: '/translated',
+    })).translationStatus).toBe('pending')
+  })
+
+  it('uses the relational page font when the bubble has no override', () => {
     const [bubble] = pageDocumentToBubbles(documentWithFont({
       defaultFontId: 'font-page-default',
       fontId: null,
-      payloadFontFamily: '',
     }))
 
     expect(bubble?.fontFamily).toBe('font-page-default')
   })
 
-  it('prefers a bubble font override over page and legacy payload fonts', () => {
+  it('prefers a relational bubble font override over the page default', () => {
     const [bubble] = pageDocumentToBubbles(documentWithFont({
       defaultFontId: 'font-page-default',
       fontId: 'font-bubble-override',
-      payloadFontFamily: 'legacy-font',
     }))
 
     expect(bubble?.fontFamily).toBe('font-bubble-override')
   })
 
-  it('does not accept a legacy payload font as a second source of truth', () => {
+  it('rejects a document that has no relational font identity', () => {
     expect(() => pageDocumentToBubbles(documentWithFont({
       defaultFontId: null,
       fontId: null,
-      payloadFontFamily: 'fonts/legacy.ttf',
     }))).toThrow('缺少后端字体 ID')
   })
 })

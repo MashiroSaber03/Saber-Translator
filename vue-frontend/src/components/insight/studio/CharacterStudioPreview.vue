@@ -34,7 +34,7 @@
       @open-prompt-preview="openPromptPreviewModal"
       @regenerate-message="$emit('regenerate-message', $event)"
       @send-chat="$emit('send-chat', $event)"
-      @summarize-session="$emit('summarize-session', $event)"
+      @summarize-session="$emit('summarize-session')"
       @switch-session="$emit('switch-session', $event)"
     />
 
@@ -137,7 +137,7 @@ const emit = defineEmits<{
   (event: 'regenerate-message', messageId: string): void
   (event: 'send-agent', value: string): void
   (event: 'send-chat', value: { content: string; attachments: File[] }): void
-  (event: 'summarize-session', cutoffMessageId?: string): void
+  (event: 'summarize-session'): void
   (event: 'switch-session', sessionId: string): void
   (event: 'undo-patch'): void
   (event: 'update:activeTab', value: 'chat' | 'assistant' | 'runtime'): void
@@ -229,7 +229,7 @@ function selectTab(tabId: string) {
 
 function attachmentUrl(attachment: CharacterStudioChatAttachment) {
   if (!props.bookId || !props.document) return attachment.asset_path
-  return getCharacterStudioChatAttachmentUrl(props.bookId, props.document.id, attachment.asset_path)
+  return getCharacterStudioChatAttachmentUrl(attachment.asset_path)
 }
 
 function openImagePreview(attachment: CharacterStudioChatAttachment) {

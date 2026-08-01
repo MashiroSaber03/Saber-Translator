@@ -89,7 +89,7 @@ class ProviderDiagnostics:
                 base_url=base_url,
             )
         )
-        return {"success": True, "models": models}
+        return {"models": models}
 
     def connection_test(
         self,

@@ -18,14 +18,14 @@ describe('useCharacterManagement', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/composables/continuation/useCharacterManagement.ts'), 'utf8')
     const helperSource = readFileSync(resolve(process.cwd(), 'src/composables/continuation/continuationActionRunner.ts'), 'utf8')
 
-    expect(source).toContain("import { runContinuationMutation, toContinuationActionError } from './continuationActionRunner'")
+    expect(source).toContain("import { runContinuationMutation } from './continuationActionRunner'")
     expect(source).not.toContain("error instanceof Error ? error.message : '网络错误'")
     expect(source).not.toMatch(/state\.showMessage\('[^']+失败: ' \+ result\.error, 'error'\)/)
     expect(helperSource).toContain('function formatContinuationActionError')
   })
 
   it('uploads form images using the v2 file field', async () => {
-    uploadFormImageMock.mockResolvedValue({ success: true, image_path: '/tmp/form.png' })
+    uploadFormImageMock.mockResolvedValue('/api/v2/assets/form-image')
 
     const state = {
       characters: ref([]),
@@ -40,10 +40,6 @@ describe('useCharacterManagement', () => {
     await management.uploadFormImage('Saber', 'form_1', file)
 
     expect(uploadFormImageMock).toHaveBeenCalledTimes(1)
-    const [, , , formData] = uploadFormImageMock.mock.calls[0]
-    expect(formData).toBeInstanceOf(FormData)
-    expect(formData.has('file')).toBe(true)
-    expect(formData.get('file')).toBe(file)
-    expect(formData.has('image')).toBe(false)
+    expect(uploadFormImageMock).toHaveBeenCalledWith('book-1', 'Saber', 'form_1', file)
   })
 })

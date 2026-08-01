@@ -1630,13 +1630,15 @@ GET    /api/v2/operations/{operation_id}
 
 `default_font_id`、`page_style_defaults_patch` 和 `propagate_style_fields` 均可省略；省略表示不修改。`propagate_style_fields` 是后端领域命令，不是让浏览器枚举 N 个 bubble mutation：闭集固定为 `fontSize|fontFamily|layoutDirection|textColor|fillColor|strokeEnabled|strokeColor|strokeWidth|lineSpacing|textAlign`，后端根据本次页默认补丁、当前 bubbles 及其已保存自动备份，按 §16.3.11 一次性派生所有泡级修改。这里“允许传播”不等于“必然触发文字渲染”：`fillColor` 可以传播到每泡作为下一次 repair 参数，但单独修改它不改变现有 clean/translated。若显式 bubble mutation 与传播命令在同一请求中修改同一 bubble 的同一字段，返回 422；前端应先 flush 编辑器 mutation，再提交侧栏命令，禁止依赖未声明的覆盖顺序。只修改 `inpaintMethod` 时 `propagate_style_fields` 为空。
 
+`create` mutation 只能携带客户端操作关联 ID，不得携带或预生成 `bubble_id`；稳定 `bubble_id` 必须由后端在提交事务中生成。成功响应固定为聚合 `document` 与按请求顺序返回的 `mutation_results`，每项包含 `op`、原样返回的客户端操作关联 ID 和最终稳定 `bubble_id`。同一 `Idempotency-Key` 重放必须返回完全相同的 document 与映射，客户端据此把尚未保存的 UI 气泡关联到后端事实 ID。
+
 后端先针对同一 `base_revision` 读取并校验文档、在 API 进程中完成自动字号等轻量纯 CPU 派生，再在一个 `BEGIN IMMEDIATE` 事务中复查 revision/章节锁、验证全部 bubble 归属和 mutation 合法性，按 §5.3 ordinal 算法完成重排，仅把 `document_revision` 增加一次。文字 render_request 的字段闭集固定为：`translatedText`、`coords`、`position`、`rotationAngle`、`font_id/fontSize`、`textDirection`、`textColor`、`strokeEnabled/strokeColor/strokeWidth`、`lineSpacing/textAlign`，以及会改变有效译文绘制集合/覆盖顺序的 bubble create/delete/reorder。`originalText/textboxText/ocrResult/textlines/polygon/autoTextDirection/autoFgColor/autoBgColor/colorConfidence/fillColor/inpaintMethod` 本身不是文字层字段；其中 polygon、fillColor、inpaintMethod 只在显式 repair/detect 等操作中作为输入。只有本次提交改变了上述文字层字段，并且提交前已有 current translated 资产或提交后的文档含非空 `translatedText` 时，才 upsert 一次该新 revision 的 `render_request`；纯页默认修改、无可绘制译文页和只改修复参数/元数据不创建无意义渲染。
 
 非渲染字段提交不能把现有译图误标为 stale：若当前没有 pending/running render_request 且 translated 已处于 ready，同一事务把 `pages.rendered_revision` 作为“该资产已验证兼容到的文档 revision”推进到新 revision，资产 producer/input lineage 保持原值；若同页已有 pending/running render_request，则只把 requested_revision 推进到新 revision，让既有 fencing 链最终发布与最新 document_revision 一致的结果。任一 mutation/传播字段无效则整批不提交；响应返回新 revision、每个 `client_mutation_id` 对应的稳定 bubble_id、聚合 document DTO 和 `render_status`。
 
 该批量 document mutation 必须携带 `Idempotency-Key` 并执行 §5.3：网络超时重放同一请求时返回已提交结果，不得因为第一次响应丢失而把同一侧栏修改应用两次。
 
-`POST .../operations` 请求固定为 `{kind, base_revision, bubble_id?, payload?}`，公开 kind 闭集为 `bubble_ocr|bubble_translate|page_detect|bubble_color`：泡级 kind 必须带属于该页的 `bubble_id`，`page_detect` 不得带 bubble_id。背景修复只能走专用 `POST .../repairs`，不得把 mask 或 method 塞入宽泛 operation payload。executor 只能由后端按 kind/method 决定，客户端不得提交 executor、credential_version_id、asset path 或 attempt/lease 字段。
+`POST .../operations` 请求固定为 `{kind, base_revision, bubble_id?}`，公开 kind 闭集为 `bubble_ocr|bubble_translate|page_detect|bubble_color`：泡级 kind 必须带属于该页的 `bubble_id`，`page_detect` 不得带 bubble_id。operation 所需设置全部由后端按页面与当前设置解析，不保留无实际用途的通用 `payload` 扩展口。背景修复只能走专用 `POST .../repairs`，不得把 mask 或 method 塞入宽泛 operation 请求。executor 只能由后端按 kind/method 决定，客户端不得提交 executor、credential_version_id、asset path 或 attempt/lease 字段。
 
 `POST .../repairs` 使用 OpenAPI `oneOf` 固定两种 multipart 命令：
 

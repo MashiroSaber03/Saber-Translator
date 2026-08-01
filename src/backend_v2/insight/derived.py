@@ -247,6 +247,7 @@ class ProviderDerivedAlgorithms:
             "api_key": section.get("api_key", ""),
             "model": section.get("model_name", ""),
             "base_url": section.get("custom_base_url"),
+            "credential_version_id": section.get("credential_version_id"),
             "rpm_limit": int(section.get("rpm_limit", 0)),
             "transport_retries": int(section.get("transport_retries", 10)),
             "business_retries": int(section.get("business_retries", 10)),
@@ -280,6 +281,7 @@ class ProviderDerivedAlgorithms:
             "api_key": section.get("api_key", ""),
             "model": section.get("model_name", ""),
             "base_url": section.get("custom_base_url"),
+            "credential_version_id": section.get("credential_version_id"),
             "openai_options": _object(section.get("openai_options")),
         }
         system = str(

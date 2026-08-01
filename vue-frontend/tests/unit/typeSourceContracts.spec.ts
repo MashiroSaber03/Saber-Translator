@@ -2,11 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const insightResponseTypeNames = [
-  'InsightStatusResponse',
-  'InsightOverviewResponse',
-  'InsightTimelineResponse',
-]
+const insightResponseTypeNames = ['InsightAnalysisSnapshot']
 
 function source(file: string): string {
   return readFileSync(resolve(process.cwd(), file), 'utf8')
@@ -20,11 +16,15 @@ describe('type source contracts', () => {
       'src/components/insight/timeline/useTimelinePanel.ts',
     ]) {
       const content = source(file)
-      const barrelImportBlocks = content.match(/import\s+type\s+\{[\s\S]*?\}\s+from\s+['"]@\/types['"]/g) ?? []
+      const barrelImportBlocks =
+        content.match(/import\s+type\s+\{[\s\S]*?\}\s+from\s+['"]@\/types['"]/g) ?? []
 
       for (const importBlock of barrelImportBlocks) {
         for (const typeName of insightResponseTypeNames) {
-          expect(importBlock, `${file} should import ${typeName} from @/types/insight`).not.toContain(typeName)
+          expect(
+            importBlock,
+            `${file} should import ${typeName} from @/types/insight`
+          ).not.toContain(typeName)
         }
       }
     }
@@ -41,29 +41,21 @@ describe('type source contracts', () => {
   it('keeps shared API types split by owner behind the public API barrel', () => {
     const apiTypes = source('src/types/api.ts')
 
-    for (const typeName of [
-      'ApiResponse',
-      'ApiError',
-      'BookData',
-      'PluginData',
-      'FetchModelsResponse',
-    ]) {
-      expect(apiTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export interface ${typeName}`)
+    for (const typeName of ['ApiError', 'BookData', 'FetchModelsResponse']) {
+      expect(apiTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export interface ${typeName}`
+      )
     }
 
-    for (const exportPath of [
-      './apiCore',
-      './bookshelf',
-      './plugin',
-      './diagnostics',
-    ]) {
+    for (const exportPath of ['./apiCore', './bookshelf', './diagnostics']) {
       expect(apiTypes).toContain(`from '${exportPath}'`)
     }
 
-    expect(source('src/types/apiCore.ts')).toContain('export interface ApiResponse')
+    expect(source('src/types/apiCore.ts')).toContain('export interface ApiError')
     expect(source('src/types/bookshelf.ts')).toContain('export interface BookData')
-    expect(source('src/types/plugin.ts')).toContain('export interface PluginData')
-    expect(source('src/types/diagnostics.ts')).toContain('export interface FetchModelsResponse')
+    expect(source('src/types/diagnostics.ts')).toContain(
+      "components['schemas']['ModelCatalogResponse']"
+    )
   })
 
   it('keeps settings schema types split by owner behind the public settings barrel', () => {
@@ -76,8 +68,12 @@ describe('type source contracts', () => {
       'TextStyleSettings',
       'TranslationSettings',
     ]) {
-      expect(settingsTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export interface ${typeName}`)
-      expect(settingsTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export type ${typeName}`)
+      expect(settingsTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export interface ${typeName}`
+      )
+      expect(settingsTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export type ${typeName}`
+      )
     }
 
     for (const staleNarration of [
@@ -102,10 +98,14 @@ describe('type source contracts', () => {
     }
 
     expect(source('src/types/settingsProviders.ts')).toContain('export type OcrEngine')
-    expect(source('src/types/openaiSettings.ts')).toContain('export interface OpenAICompatibleOptions')
+    expect(source('src/types/openaiSettings.ts')).toContain(
+      'export interface OpenAICompatibleOptions'
+    )
     expect(source('src/types/ocrSettings.ts')).toContain('export interface BaiduOcrSettings')
     expect(source('src/types/textStyleSettings.ts')).toContain('export interface TextStyleSettings')
-    expect(source('src/types/translationSettings.ts')).toContain('export interface TranslationSettings')
+    expect(source('src/types/translationSettings.ts')).toContain(
+      'export interface TranslationSettings'
+    )
   })
 
   it('keeps workflow UI metadata out of the shared workflow type module', () => {
@@ -177,8 +177,12 @@ describe('type source contracts', () => {
       'CharacterStudioAgentPatchV2',
       'CharacterStudioIndexResponse',
     ]) {
-      expect(studioTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export interface ${typeName}`)
-      expect(studioTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export type ${typeName}`)
+      expect(studioTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export interface ${typeName}`
+      )
+      expect(studioTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export type ${typeName}`
+      )
     }
 
     for (const exportPath of [
@@ -191,11 +195,21 @@ describe('type source contracts', () => {
       expect(studioTypes).toContain(`from '${exportPath}'`)
     }
 
-    expect(source('src/types/characterStudioApi.ts')).toContain('export interface CharacterStudioIndexResponse')
-    expect(source('src/types/characterStudioChat.ts')).toContain('export interface CharacterStudioChatSession')
-    expect(source('src/types/characterStudioDocument.ts')).toContain('export interface CharacterStudioDocument')
-    expect(source('src/types/characterStudioEditor.ts')).toContain('export interface CharacterStudioEditorPendingState')
-    expect(source('src/types/characterStudioPatch.ts')).toContain('export interface CharacterStudioAgentPatchV2')
+    expect(source('src/types/characterStudioApi.ts')).toContain(
+      'export interface CharacterStudioIndex'
+    )
+    expect(source('src/types/characterStudioChat.ts')).toContain(
+      'export interface CharacterStudioChatSession'
+    )
+    expect(source('src/types/characterStudioDocument.ts')).toContain(
+      'export interface CharacterStudioDocument'
+    )
+    expect(source('src/types/characterStudioEditor.ts')).toContain(
+      'export interface CharacterStudioEditorPendingState'
+    )
+    expect(source('src/types/characterStudioPatch.ts')).toContain(
+      'export interface CharacterStudioAgentPatchV2'
+    )
   })
 
   it('keeps Insight store OpenAI option types sourced from settings types', () => {
@@ -204,7 +218,9 @@ describe('type source contracts', () => {
       : source('src/types/insight.ts')
 
     expect(insightTypes).toContain("import type { OpenAICompatibleOptions } from './settings'")
-    expect(insightTypes).toContain('export type StoreOpenAICompatibleOptions = OpenAICompatibleOptions')
+    expect(insightTypes).toContain(
+      'export type StoreOpenAICompatibleOptions = OpenAICompatibleOptions'
+    )
     expect(insightTypes).not.toContain('export interface StoreOpenAICompatibleRequestOptions')
     expect(insightTypes).not.toContain('export interface StoreOpenAICompatibleExecutionOptions')
     expect(insightTypes).not.toContain('export interface StoreOpenAICompatibleOptions')
@@ -233,20 +249,21 @@ describe('type source contracts', () => {
     for (const typeName of [
       'AnalysisStatus',
       'StoreInsightConfig',
-      'VlmConfig',
       'PageAnalysis',
       'TimelineData',
       'NoteData',
-      'InsightStatusResponse',
+      'InsightAnalysisSnapshot',
     ]) {
-      expect(insightTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export interface ${typeName}`)
-      expect(insightTypes, `${typeName} should be re-exported from an owner file`).not.toContain(`export type ${typeName}`)
+      expect(insightTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export interface ${typeName}`
+      )
+      expect(insightTypes, `${typeName} should be re-exported from an owner file`).not.toContain(
+        `export type ${typeName}`
+      )
     }
 
     for (const exportPath of [
       './insightStoreTypes',
-      './insightConfigTypes',
-      './insightAnalysisTypes',
       './insightTimelineTypes',
       './insightNotesQaTypes',
       './insightResponseTypes',
@@ -254,12 +271,14 @@ describe('type source contracts', () => {
       expect(insightTypes).toContain(`from '${exportPath}'`)
     }
 
-    expect(source('src/types/insightStoreTypes.ts')).toContain('export interface StoreInsightConfig')
-    expect(source('src/types/insightConfigTypes.ts')).toContain('export interface InsightConfig')
-    expect(source('src/types/insightAnalysisTypes.ts')).toContain('export interface AnalysisTask')
+    expect(source('src/types/insightStoreTypes.ts')).toContain(
+      'export interface StoreInsightConfig'
+    )
     expect(source('src/types/insightTimelineTypes.ts')).toContain('export interface TimelineData')
     expect(source('src/types/insightNotesQaTypes.ts')).toContain('export interface NoteData')
-    expect(source('src/types/insightResponseTypes.ts')).toContain('export interface InsightStatusResponse')
+    expect(source('src/types/insightResponseTypes.ts')).toContain(
+      'export interface InsightAnalysisSnapshot'
+    )
   })
 
   it('does not keep generic Insight casing compatibility converters', () => {
@@ -314,7 +333,9 @@ describe('type source contracts', () => {
     const bubbleTypes = source('src/types/bubble.ts')
 
     expect(bubbleTypes).toContain('Stable backend identity')
-    expect(bubbleTypes).not.toContain('// ============================================================')
+    expect(bubbleTypes).not.toContain(
+      '// ============================================================'
+    )
     expect(bubbleTypes).not.toContain('气泡状态类型定义')
     expect(bubbleTypes).not.toContain('与后端 BubbleState 数据类对应')
     expect(bubbleTypes).not.toContain('包含气泡的所有渲染参数')
@@ -323,7 +344,6 @@ describe('type source contracts', () => {
     expect(bubbleTypes).not.toContain('工具函数')
     expect(bubbleTypes).not.toContain('@param')
     expect(bubbleTypes).not.toContain('@returns')
-    expect(bubbleTypes).toContain('异常输入会按检测方向和气泡宽高比回退')
   })
 
   it('keeps translate image state grouped by owner fields', () => {
@@ -371,28 +391,6 @@ describe('type source contracts', () => {
     }
   })
 
-  it('keeps cross-cutting barrel files free of mechanical narration', () => {
-    const files = [
-      'src/utils/index.ts',
-    ]
-
-    for (const file of files) {
-      const content = source(file)
-
-      for (const staleNarration of [
-        '索引文件',
-        '统一导出',
-        '类型转换器',
-        '主类型文件',
-        '工具函数',
-        '工厂函数',
-        '计算',
-      ]) {
-        expect(content, file).not.toContain(staleNarration)
-      }
-    }
-  })
-
   it('keeps the folder node type as a compact current contract', () => {
     const folderTypes = source('src/types/folder.ts')
 
@@ -411,11 +409,7 @@ describe('type source contracts', () => {
   it('keeps the OCR result type as a compact current contract', () => {
     const ocrTypes = source('src/types/ocr.ts')
 
-    for (const staleNarration of [
-      '/**',
-      'OCR 结果类型定义',
-      '类型定义',
-    ]) {
+    for (const staleNarration of ['/**', 'OCR 结果类型定义', '类型定义']) {
       expect(ocrTypes).not.toContain(staleNarration)
     }
 
@@ -425,11 +419,7 @@ describe('type source contracts', () => {
   it('keeps translation constraint types as compact current contracts', () => {
     const constraintTypes = source('src/types/translationConstraints.ts')
 
-    for (const staleNarration of [
-      '/**',
-      '术语表 / 禁翻表相关类型',
-      '相关类型',
-    ]) {
+    for (const staleNarration of ['/**', '术语表 / 禁翻表相关类型', '相关类型']) {
       expect(constraintTypes).not.toContain(staleNarration)
     }
 

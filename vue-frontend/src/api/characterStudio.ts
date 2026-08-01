@@ -1,6 +1,6 @@
 import { downloadBlob, readApiErrorMessage } from './download'
 import { readSseStream } from './sse'
-import { waitForOperation } from '@/api/v2/operations'
+import { getOperation, waitForOperation } from '@/api/v2/operations'
 import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import {
   activateV2StudioSession,
@@ -42,9 +42,8 @@ import type {
   CharacterStudioChatSession,
   CharacterStudioChatSessionSummary,
   CharacterStudioDocument,
-  CharacterStudioChatStateResponse,
-  CharacterStudioDocumentResponse,
-  CharacterStudioIndexResponse,
+  CharacterStudioChatState,
+  CharacterStudioIndex,
   ExportDiagnostic,
 } from '@/types/characterStudio'
 
@@ -55,7 +54,7 @@ const sessionCache = new Map<string, V2StudioSession>()
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : {}
 }
 
@@ -72,14 +71,11 @@ function formatPromptPreview(value: unknown): string {
 
   for (const item of array(preview.messages)) {
     const message = record(item)
-    const role = typeof message.role === 'string' && message.role.trim()
-      ? message.role.trim()
-      : 'message'
+    const role =
+      typeof message.role === 'string' && message.role.trim() ? message.role.trim() : 'message'
     const content = typeof message.content === 'string' ? message.content : ''
     const assetIds = array(message.assetIds).map(String).filter(Boolean)
-    const assets = assetIds.length
-      ? `\n[assets] ${assetIds.join(', ')}`
-      : ''
+    const assets = assetIds.length ? `\n[assets] ${assetIds.join(', ')}` : ''
     sections.push(`[${role}]\n${content}${assets}`)
   }
 
@@ -112,20 +108,16 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
     id: raw.id,
     bookId: raw.bookId,
     origin: {
-      type: (origin.type === 'analysis' || origin.type === 'imported')
-        ? origin.type
-        : 'manual',
-      source_character: typeof origin.source_character === 'string'
-        ? origin.source_character
-        : null,
+      type: origin.type === 'analysis' || origin.type === 'imported' ? origin.type : 'manual',
+      source_character:
+        typeof origin.source_character === 'string' ? origin.source_character : null,
     },
     status: {
       is_favorite: Boolean(status.is_favorite),
       frozen_sections: array(status.frozen_sections).map(String),
       last_diagnostics: mapDiagnostics(status.last_diagnostics),
-      last_validated_at: typeof status.last_validated_at === 'string'
-        ? status.last_validated_at
-        : null,
+      last_validated_at:
+        typeof status.last_validated_at === 'string' ? status.last_validated_at : null,
     },
     meta: {
       title: String(meta.title ?? raw.title),
@@ -145,15 +137,15 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
       message_example: String(record(raw.coreMessages).message_example ?? ''),
       alternate_greetings: array(record(raw.coreMessages).alternate_greetings).map(String),
       system_prompt: String(record(raw.coreMessages).system_prompt ?? ''),
-      post_history_instructions: String(
-        record(raw.coreMessages).post_history_instructions ?? '',
-      ),
+      post_history_instructions: String(record(raw.coreMessages).post_history_instructions ?? ''),
       creator_notes: String(record(raw.coreMessages).creator_notes ?? ''),
       character_version: String(record(raw.coreMessages).character_version ?? ''),
     },
     lorebook: {
       name: String(record(raw.lorebook).name ?? ''),
-      entries: array(record(raw.lorebook).entries) as CharacterStudioDocument['lorebook']['entries'],
+      entries: array(
+        record(raw.lorebook).entries
+      ) as CharacterStudioDocument['lorebook']['entries'],
     },
     regexScripts: array(raw.regexScripts) as CharacterStudioDocument['regexScripts'],
     stateTasks: array(raw.stateTasks) as CharacterStudioDocument['stateTasks'],
@@ -214,7 +206,6 @@ function mapSession(raw: V2StudioSession): CharacterStudioChatSession {
     })),
     messages: raw.messages.map(mapMessage),
     variables: raw.variables,
-    _runtime: record(raw.runtimeState),
     last_prompt_preview: '',
     revision: raw.revision,
     generation: raw.generation,
@@ -234,15 +225,12 @@ function mapSessionSummary(value: Record<string, unknown>): CharacterStudioChatS
   }
 }
 
-function mapChatState(raw: V2StudioChatState): CharacterStudioChatStateResponse {
+function mapChatState(raw: V2StudioChatState): CharacterStudioChatState {
   chatStateCache.set(raw.documentId, raw)
   return {
-    success: true,
     doc_id: raw.documentId,
     active_session: raw.activeSession ? mapSession(raw.activeSession) : undefined,
-    archived_sessions: raw.sessions
-      .filter(item => Boolean(item.archived))
-      .map(mapSessionSummary),
+    archived_sessions: raw.sessions.filter(item => Boolean(item.archived)).map(mapSessionSummary),
     available_greetings: array(raw.availableGreetings).map(item => {
       const greeting = record(item)
       return {
@@ -255,7 +243,7 @@ function mapChatState(raw: V2StudioChatState): CharacterStudioChatStateResponse 
   }
 }
 
-async function refreshedChatState(documentId: string): Promise<CharacterStudioChatStateResponse> {
+async function refreshedChatState(documentId: string): Promise<CharacterStudioChatState> {
   return mapChatState(await getV2StudioChatState(documentId))
 }
 
@@ -265,14 +253,13 @@ function cachedSession(sessionId: string): V2StudioSession {
   throw new Error('聊天会话版本缺失，请重新加载')
 }
 
-export async function getCharacterStudioIndex(bookId: string): Promise<CharacterStudioIndexResponse> {
+export async function getCharacterStudioIndex(bookId: string): Promise<CharacterStudioIndex> {
   const [index, candidates] = await Promise.all([
     getV2StudioIndex(bookId),
     getV2StudioCandidates(bookId),
   ])
   candidateCache.set(bookId, candidates.items)
   return {
-    success: true,
     book_id: bookId,
     documents: index.documents.map(item => ({
       id: item.documentId,
@@ -298,48 +285,26 @@ export async function getCharacterStudioIndex(bookId: string): Promise<Character
   }
 }
 
-export async function getCharacterStudioCandidates(bookId: string): Promise<CharacterStudioIndexResponse> {
-  const result = await getV2StudioCandidates(bookId)
-  candidateCache.set(bookId, result.items)
-  return {
-    success: true,
-    book_id: bookId,
-    candidates: result.items.map(item => ({
-      name: item.name,
-      aliases: item.aliases,
-      first_appearance: item.firstAppearancePage ?? 0,
-      dialogue_count: item.keyMomentCount,
-      has_dialogues: item.keyMomentCount > 0,
-      sample_pages: item.relatedPageNumbers,
-    })),
-    has_timeline: result.available,
-  }
-}
-
 export async function createCharacterStudioDocument(
   bookId: string,
-  payload?: { candidate_name?: string; title?: string },
-): Promise<CharacterStudioDocumentResponse> {
+  payload?: { candidate_name?: string; title?: string }
+): Promise<CharacterStudioDocument> {
   const candidate = candidateCache.get(bookId)?.find(item => item.name === payload?.candidate_name)
   const document = await createV2StudioDocument(bookId, {
     title: payload?.title ?? candidate?.name ?? '新角色',
     ...(candidate ? { candidate } : {}),
   })
-  return { success: true, document: mapDocument(document) }
+  return mapDocument(document)
 }
 
-export async function getCharacterStudioDocument(
-  _bookId: string,
-  docId: string,
-): Promise<CharacterStudioDocumentResponse> {
-  return { success: true, document: mapDocument(await getV2StudioDocument(docId)) }
+export async function getCharacterStudioDocument(docId: string): Promise<CharacterStudioDocument> {
+  return mapDocument(await getV2StudioDocument(docId))
 }
 
 export async function saveCharacterStudioDocument(
-  _bookId: string,
   docId: string,
-  payload: CharacterStudioDocument,
-): Promise<CharacterStudioDocumentResponse> {
+  payload: CharacterStudioDocument
+): Promise<CharacterStudioDocument> {
   if (!payload.revision || payload.revision < 1) {
     throw new Error('角色文档版本缺失，请重新加载')
   }
@@ -348,49 +313,36 @@ export async function saveCharacterStudioDocument(
     title: payload.meta.title,
     document: payload as unknown as Record<string, unknown>,
   })
-  return { success: true, document: mapDocument(document) }
+  return mapDocument(document)
 }
 
-export async function deleteCharacterStudioDocument(
-  _bookId: string,
-  docId: string,
-): Promise<{ success: boolean; error?: string; message?: string }> {
+export async function deleteCharacterStudioDocument(docId: string): Promise<void> {
   await deleteV2StudioDocument(docId)
   documentCache.delete(docId)
   chatStateCache.delete(docId)
-  return { success: true, message: '角色文档已删除' }
 }
 
 export async function generateCharacterStudioSection(
-  _bookId: string,
   docId: string,
-  section: string,
-): Promise<CharacterStudioDocumentResponse> {
+  section: string
+): Promise<CharacterStudioDocument> {
   const current = cachedDocument(docId)
   const accepted = await generateV2StudioDocument(docId, current.revision, section)
   await waitForOperation(accepted.operationId)
-  return {
-    success: true,
-    document: mapDocument(await getV2StudioDocument(docId)),
-  }
+  return mapDocument(await getV2StudioDocument(docId))
 }
 
-export async function validateCharacterStudioDocument(
-  _bookId: string,
-  docId: string,
-): Promise<ExportDiagnostic & {
-  success: boolean
-  message?: string
-  error?: string
-  document?: CharacterStudioDocument
-}> {
+export async function validateCharacterStudioDocument(docId: string): Promise<
+  ExportDiagnostic & {
+    document: CharacterStudioDocument
+  }
+> {
   const current = cachedDocument(docId)
   const response = await validateV2StudioDocument(docId, current.revision)
   const diagnostics = record(response.diagnostics)
   const refreshed = await getV2StudioDocument(docId)
   const document = mapDocument(refreshed)
   return {
-    success: true,
     valid: Boolean(diagnostics.valid),
     errors: array(diagnostics.errors).map(String),
     warnings: array(diagnostics.warnings).map(String),
@@ -399,11 +351,7 @@ export async function validateCharacterStudioDocument(
   }
 }
 
-export async function runCharacterStudioAgent(
-  _bookId: string,
-  docId: string,
-  message: string,
-): Promise<{ success: boolean; content?: string; context?: string; error?: string; message?: string }> {
+export async function runCharacterStudioAgent(docId: string, message: string): Promise<string> {
   assertBackendActionAllowed()
   const response = await fetch(v2StudioAgentUrl(docId), {
     method: 'POST',
@@ -424,24 +372,21 @@ export async function runCharacterStudioAgent(
       if (event.event === 'error') streamError = String(event.data.message ?? 'Agent 调用失败')
     },
   })
-  return streamError
-    ? { success: false, error: streamError }
-    : { success: true, content, context: '' }
+  if (streamError) throw new Error(streamError)
+  return content
 }
 
 export async function getCharacterStudioChatState(
-  _bookId: string,
-  docId: string,
-): Promise<CharacterStudioChatStateResponse> {
+  docId: string
+): Promise<CharacterStudioChatState> {
   return refreshedChatState(docId)
 }
 
 export async function createCharacterStudioChatSession(
-  _bookId: string,
   docId: string,
-  greetingId?: string,
-): Promise<CharacterStudioChatStateResponse> {
-  const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
+  greetingId?: string
+): Promise<CharacterStudioChatState> {
+  const state = chatStateCache.get(docId) ?? (await getV2StudioChatState(docId))
   await createV2StudioSession(docId, {
     baseIndexRevision: state.indexRevision,
     ...(greetingId ? { greetingId } : {}),
@@ -450,24 +395,23 @@ export async function createCharacterStudioChatSession(
 }
 
 export async function switchCharacterStudioChatSession(
-  _bookId: string,
   docId: string,
-  sessionId: string,
-): Promise<CharacterStudioChatStateResponse> {
-  const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
+  sessionId: string
+): Promise<CharacterStudioChatState> {
+  const state = chatStateCache.get(docId) ?? (await getV2StudioChatState(docId))
   await activateV2StudioSession(sessionId, state.indexRevision)
   return refreshedChatState(docId)
 }
 
 export async function deleteCharacterStudioChatSession(
-  _bookId: string,
   docId: string,
   sessionId: string,
-  revision?: number,
-): Promise<CharacterStudioChatStateResponse> {
-  const current = revision
-    ?? sessionCache.get(sessionId)?.revision
-    ?? (await getV2StudioSession(sessionId)).revision
+  revision?: number
+): Promise<CharacterStudioChatState> {
+  const current =
+    revision ??
+    sessionCache.get(sessionId)?.revision ??
+    (await getV2StudioSession(sessionId)).revision
   await deleteV2StudioSession(sessionId, current)
   sessionCache.delete(sessionId)
   return refreshedChatState(docId)
@@ -475,55 +419,43 @@ export async function deleteCharacterStudioChatSession(
 
 export async function abortCharacterStudioChatOperation(
   sessionId: string,
-  operationId: string,
+  operationId: string
 ): Promise<CharacterStudioChatSession> {
   await abortV2StudioSession(sessionId, operationId)
   return mapSession(await getV2StudioSession(sessionId))
 }
 
 export async function editCharacterStudioChatMessage(
-  _bookId: string,
-  _docId: string,
   sessionId: string,
   messageId: string,
-  content: string,
-): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
+  content: string
+): Promise<CharacterStudioChatSession> {
   const session = cachedSession(sessionId)
   const accepted = await editV2StudioMessage(messageId, session.revision, content)
   await waitForOperation(accepted.operationId)
-  return { success: true, session: mapSession(await getV2StudioSession(sessionId)) }
+  return mapSession(await getV2StudioSession(sessionId))
 }
 
 export async function deleteCharacterStudioChatMessage(
-  _bookId: string,
-  _docId: string,
   sessionId: string,
-  messageId: string,
-): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
+  messageId: string
+): Promise<CharacterStudioChatSession> {
   const session = cachedSession(sessionId)
   await deleteV2StudioMessage(messageId, session.revision)
-  return {
-    success: true,
-    session: mapSession(await getV2StudioSession(sessionId)),
-  }
+  return mapSession(await getV2StudioSession(sessionId))
 }
 
 export async function summarizeCharacterStudioChatSession(
-  _bookId: string,
-  _docId: string,
-  sessionId: string,
-  _cutoffMessageId?: string,
-): Promise<{ success: boolean; session?: unknown; error?: string; message?: string }> {
+  sessionId: string
+): Promise<CharacterStudioChatSession> {
   const session = cachedSession(sessionId)
   const accepted = await summarizeV2StudioSession(sessionId, session.revision)
   await waitForOperation(accepted.operationId)
-  return { success: true, session: mapSession(await getV2StudioSession(sessionId)) }
+  return mapSession(await getV2StudioSession(sessionId))
 }
 
 export async function exportCharacterStudioChatSession(
-  _bookId: string,
-  _docId: string,
-  sessionId: string,
+  sessionId: string
 ): Promise<{ blob: Blob; filename: string }> {
   return downloadBlob({
     url: v2StudioSessionExportUrl(sessionId),
@@ -533,31 +465,27 @@ export async function exportCharacterStudioChatSession(
 }
 
 export async function importCharacterStudioChatSession(
-  _bookId: string,
   docId: string,
-  file: File,
-): Promise<CharacterStudioChatStateResponse> {
-  const state = chatStateCache.get(docId) ?? await getV2StudioChatState(docId)
+  file: File
+): Promise<CharacterStudioChatState> {
+  const state = chatStateCache.get(docId) ?? (await getV2StudioChatState(docId))
   await importV2StudioSession(docId, state.indexRevision, file)
   return refreshedChatState(docId)
 }
 
-export async function getCharacterStudioChatPromptPreview(
-  _bookId: string,
-  _docId: string,
-  sessionId: string,
-): Promise<CharacterStudioChatStateResponse> {
+export async function getCharacterStudioChatPromptPreview(sessionId: string): Promise<string> {
   const result = await getV2StudioPromptPreview(sessionId)
-  return {
-    success: true,
-    prompt_preview: formatPromptPreview(result.promptPreview),
-  }
+  return formatPromptPreview(result.promptPreview)
 }
 
 export type CharacterStudioChatStreamEvent =
   | { type: 'assistant_delta'; delta: string; content: string }
   | { type: 'assistant_done'; message_id: string; content: string }
-  | { type: 'runtime'; runtime_log: Array<Record<string, unknown>>; variables: Record<string, unknown> }
+  | {
+      type: 'runtime'
+      runtime_log: Array<Record<string, unknown>>
+      variables: Record<string, unknown>
+    }
   | { type: 'state'; session: unknown }
   | { type: 'error'; message: string }
   | { type: 'heartbeat'; ok: boolean }
@@ -566,7 +494,7 @@ async function followStudioOperation(
   operationId: string,
   sessionId: string,
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(v2StudioOperationEventsUrl(operationId), {
     headers: { Accept: 'text/event-stream' },
@@ -587,7 +515,13 @@ async function followStudioOperation(
       onEvent({ type: 'assistant_delta', delta, content })
     },
   })
-  await waitForOperation(operationId, { signal })
+  const operation = await getOperation(operationId, signal)
+  if (operation.status !== 'completed') {
+    throw new Error(
+      operation.error?.message ||
+        (operation.status === 'cancelled' ? '聊天生成已取消' : '聊天生成失败')
+    )
+  }
   const session = mapSession(await getV2StudioSession(sessionId))
   const assistant = [...session.messages].reverse().find(message => message.role === 'assistant')
   onEvent({
@@ -598,18 +532,14 @@ async function followStudioOperation(
   onEvent({ type: 'state', session })
 }
 
-export async function streamCharacterStudioChatMessage(
-  _bookId: string,
-  _docId: string,
-  payload: {
-    sessionId: string
-    content: string
-    attachments?: File[]
-    onEvent: (event: CharacterStudioChatStreamEvent) => void
-    onAccepted?: (operationId: string) => void
-    signal?: AbortSignal
-  },
-): Promise<void> {
+export async function streamCharacterStudioChatMessage(payload: {
+  sessionId: string
+  content: string
+  attachments?: File[]
+  onEvent: (event: CharacterStudioChatStreamEvent) => void
+  onAccepted?: (operationId: string) => void
+  signal?: AbortSignal
+}): Promise<void> {
   const session = cachedSession(payload.sessionId)
   const assets = await Promise.all((payload.attachments ?? []).map(uploadV2StudioAsset))
   const accepted = await sendV2StudioMessage(payload.sessionId, {
@@ -622,18 +552,16 @@ export async function streamCharacterStudioChatMessage(
     accepted.operationId,
     payload.sessionId,
     payload.onEvent,
-    payload.signal,
+    payload.signal
   )
 }
 
 export async function regenerateCharacterStudioChatMessage(
-  _bookId: string,
-  _docId: string,
   sessionId: string,
   messageId: string,
   onEvent: (event: CharacterStudioChatStreamEvent) => void,
   signal?: AbortSignal,
-  onAccepted?: (operationId: string) => void,
+  onAccepted?: (operationId: string) => void
 ): Promise<void> {
   const session = cachedSession(sessionId)
   const accepted = await regenerateV2StudioMessage(messageId, session.revision)
@@ -643,32 +571,22 @@ export async function regenerateCharacterStudioChatMessage(
 
 export async function importCharacterStudioFile(
   bookId: string,
-  file: File,
-): Promise<CharacterStudioDocumentResponse> {
-  return {
-    success: true,
-    document: mapDocument(await importV2StudioDocument(bookId, file)),
-  }
+  file: File
+): Promise<CharacterStudioDocument> {
+  return mapDocument(await importV2StudioDocument(bookId, file))
 }
 
 export async function importWorldbookIntoCharacterStudioDocument(
-  _bookId: string,
   docId: string,
-  file: File,
-): Promise<CharacterStudioDocumentResponse> {
+  file: File
+): Promise<CharacterStudioDocument> {
   const current = cachedDocument(docId)
-  return {
-    success: true,
-    document: mapDocument(
-      await importV2StudioWorldbook(docId, current.revision, file),
-    ),
-  }
+  return mapDocument(await importV2StudioWorldbook(docId, current.revision, file))
 }
 
 export function downloadCharacterStudioExport(
-  _bookId: string,
   docId: string,
-  format: string,
+  format: string
 ): Promise<{ blob: Blob; filename: string }> {
   return downloadBlob({
     url: v2StudioDocumentExportUrl(docId, format),
@@ -678,8 +596,7 @@ export function downloadCharacterStudioExport(
 }
 
 export function downloadCharacterStudioWorldbook(
-  _bookId: string,
-  docId: string,
+  docId: string
 ): Promise<{ blob: Blob; filename: string }> {
   return downloadBlob({
     url: v2StudioDocumentExportUrl(docId, 'worldbook'),
@@ -688,14 +605,10 @@ export function downloadCharacterStudioWorldbook(
   })
 }
 
-export function getCharacterStudioAvatarUrl(_bookId: string, docId: string): string {
+export function getCharacterStudioAvatarUrl(docId: string): string {
   return documentCache.get(docId)?.avatarUrl ?? ''
 }
 
-export function getCharacterStudioChatAttachmentUrl(
-  _bookId: string,
-  _docId: string,
-  assetPath: string,
-): string {
+export function getCharacterStudioChatAttachmentUrl(assetPath: string): string {
   return assetPath
 }

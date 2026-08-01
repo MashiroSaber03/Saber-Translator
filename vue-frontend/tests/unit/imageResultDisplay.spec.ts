@@ -13,6 +13,7 @@ import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
@@ -54,7 +55,7 @@ describe('ImageResultDisplay', () => {
 
   it('renders download progress through the shared progress primitive', () => {
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
 
     const wrapper = mount(ImageResultDisplay)
 
@@ -67,7 +68,7 @@ describe('ImageResultDisplay', () => {
   it('shows a clean asset as the final remove-text result and can toggle back to source', async () => {
     exportImportMock.state.isDownloading = false
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, 'page.png', '/api/v2/assets/source-1', {
       cleanAssetUrl: '/api/v2/assets/clean-1',
     })
 
@@ -92,7 +93,7 @@ describe('ImageResultDisplay', () => {
     exportImportMock.state.isDownloading = false
     const imageStore = useImageStore()
     const settingsStore = useSettingsStore()
-    imageStore.addImage('page.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, 'page.png', '/api/v2/assets/source-1', {
       width: 1000,
       height: 1500,
       bubbleStates: [{
@@ -125,7 +126,7 @@ describe('ImageResultDisplay', () => {
   it('uses the product select primitive for fixed download formats', async () => {
     exportImportMock.state.isDownloading = false
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
 
     const wrapper = mount(ImageResultDisplay)
 
@@ -145,7 +146,7 @@ describe('ImageResultDisplay', () => {
   it('groups image and export actions through shared product action rows', () => {
     exportImportMock.state.isDownloading = false
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
 
     const wrapper = mount(ImageResultDisplay)
 
@@ -170,7 +171,7 @@ describe('ImageResultDisplay', () => {
     expect(source).not.toContain('input.value =')
 
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
     const wrapper = mount(ImageResultDisplay)
     const file = new File(['{}'], 'translation.json', { type: 'application/json' })
 
@@ -198,7 +199,7 @@ describe('ImageResultDisplay', () => {
     expect(toolbarSource).toContain('@update:model-value="$emit(\'updateImageSize\', $event)"')
 
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
 
     const wrapper = mount(ImageResultDisplay)
     const rangeInput = wrapper.getComponent(UiInput)
@@ -219,7 +220,7 @@ describe('ImageResultDisplay', () => {
     expect(source).not.toContain('.image-size-control label')
 
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', 'data:image/png;base64,aW1hZ2U=')
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
 
     const wrapper = mount(ImageResultDisplay)
     const imageSizeField = wrapper
@@ -274,7 +275,7 @@ describe('ImageResultDisplay', () => {
     expect(panelSource).not.toContain('icon-name="scan-text"')
 
     const imageStore = useImageStore()
-    imageStore.addImage('page.png', '/api/v2/assets/source-1', {
+    addTestImage(imageStore, 'page.png', '/api/v2/assets/source-1', {
       bubbleStates: [{
         ...createBubbleState(),
         originalText: '第一句原文。第二句原文。',

@@ -1,18 +1,4 @@
-export interface ModelInfoItem {
-  id: string
-  name: string
-}
+import type { components } from '@/api/generated/v2'
 
-export interface FetchModelsResponse {
-  success: boolean
-  models?: ModelInfoItem[]
-  message?: string
-  error?: string
-}
-
-export interface DiagnosticConnectionTestResponse {
-  success: boolean
-  message?: string
-  models?: string[]
-  error?: string
-}
+export type FetchModelsResponse = components['schemas']['ModelCatalogResponse']
+export type ModelInfoItem = FetchModelsResponse['models'][number]

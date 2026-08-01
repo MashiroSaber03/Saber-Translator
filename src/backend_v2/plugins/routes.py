@@ -12,6 +12,7 @@ from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
     require_idempotency_key as _idempotency_key,
+    validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.plugins.package import MAX_ARCHIVE_BYTES
 from src.backend_v2.plugins.repository import (
@@ -65,7 +66,7 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/runtime-enabled")
     def runtime_enabled(plugin_id: str) -> Response:
-        body = _json_body()
+        body = _json_body(allowed_keys={"enabled"})
         return jsonify(
             registry.set_runtime_enabled(
                 plugin_id=plugin_id,
@@ -75,7 +76,7 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/default-enabled")
     def default_enabled(plugin_id: str) -> Response:
-        body = _json_body()
+        body = _json_body(allowed_keys={"enabled"})
         return jsonify(
             registry.set_default_enabled(
                 plugin_id=plugin_id,
@@ -89,7 +90,7 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/config")
     def update_config(plugin_id: str) -> Response:
-        body = _json_body()
+        body = _json_body(allowed_keys={"baseRevision", "config"})
         config = body.get("config")
         if not isinstance(config, dict):
             raise ValueError("config must be an object")
@@ -106,6 +107,10 @@ def create_plugins_blueprint(
 
     @blueprint.post("/import")
     def import_plugin():
+        _validate_multipart_fields(
+            allowed_form_keys={"baseRevision"},
+            allowed_file_keys={"file"},
+        )
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("file is required")

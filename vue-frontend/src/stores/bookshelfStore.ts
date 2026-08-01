@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as bookshelfApi from '@/api/bookshelf'
 import type { BookData, ChapterData, TagData } from '@/types/api'
-import { normalizeBookData, normalizeChapterData } from '@/utils/bookshelfModels'
 
 export type BookSortBy = 'title' | 'createdAt' | 'updatedAt'
 export type SortOrder = 'asc' | 'desc'
@@ -20,20 +19,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const selectedTagNames = ref<string[]>([])
   const sortBy = ref<BookSortBy>('updatedAt')
   const sortOrder = ref<SortOrder>('desc')
-  const expandedBookId = ref<string | null>(null)
   const currentBookId = ref<string | null>(null)
   const batchMode = ref(false)
   const selectedBookIds = ref<Set<string>>(new Set())
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
-  const filteredBooks = computed(() => books.value)
-  const bookCount = computed(() => books.value.length)
-  const filteredBookCount = computed(() => filteredBooks.value.length)
-  const expandedBook = computed(() => {
-    if (!expandedBookId.value) return null
-    return books.value.find(book => book.id === expandedBookId.value) || null
-  })
   const currentBook = computed(() => {
     if (!currentBookId.value) return null
     return books.value.find(book => book.id === currentBookId.value) || null
@@ -44,21 +35,20 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   )
 
   function setBooks(bookList: BookData[]): void {
-    books.value = bookList.map(normalizeBookData)
+    books.value = bookList
   }
 
   function addBook(book: BookData): void {
-    books.value.unshift(normalizeBookData(book))
+    books.value.unshift(book)
   }
 
   function upsertBook(book: BookData): void {
-    const normalizedBook = normalizeBookData(book)
-    const index = books.value.findIndex(item => item.id === normalizedBook.id)
+    const index = books.value.findIndex(item => item.id === book.id)
     if (index >= 0) {
-      books.value[index] = normalizedBook
+      books.value[index] = book
       return
     }
-    books.value.unshift(normalizedBook)
+    books.value.unshift(book)
   }
 
   function updateBook(bookId: string, updates: Partial<BookData>): void {
@@ -66,7 +56,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     if (index >= 0) {
       const book = books.value[index]
       if (book) {
-        books.value[index] = normalizeBookData({ ...book, ...updates })
+        books.value[index] = { ...book, ...updates }
       }
     }
   }
@@ -75,9 +65,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     const index = books.value.findIndex(book => book.id === bookId)
     if (index >= 0) {
       books.value.splice(index, 1)
-      if (expandedBookId.value === bookId) {
-        expandedBookId.value = null
-      }
       if (currentBookId.value === bookId) {
         currentBookId.value = null
       }
@@ -91,9 +78,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     const ids = new Set(bookIds)
     books.value = books.value.filter(book => !ids.has(book.id))
     selectedBookIds.value = new Set([...selectedBookIds.value].filter(bookId => !ids.has(bookId)))
-    if (expandedBookId.value && ids.has(expandedBookId.value)) {
-      expandedBookId.value = null
-    }
     if (currentBookId.value && ids.has(currentBookId.value)) {
       currentBookId.value = null
     }
@@ -107,7 +91,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     const book = books.value.find(item => item.id === bookId)
     if (book) {
       book.chapters ??= []
-      book.chapters.push(normalizeChapterData(chapter))
+      book.chapters.push(chapter)
       book.chapterCount = book.chapters.length
     }
   }
@@ -118,7 +102,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     if (book?.chapters && index >= 0) {
       const chapter = book.chapters[index]
       if (chapter) {
-        book.chapters[index] = normalizeChapterData({ ...chapter, ...updates })
+        book.chapters[index] = { ...chapter, ...updates }
       }
     }
   }
@@ -218,14 +202,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     }
   }
 
-  function setSearchKeyword(keyword: string): void {
-    searchKeyword.value = keyword
-  }
-
-  function clearSearchKeyword(): void {
-    searchKeyword.value = ''
-  }
-
   function toggleTagFilter(tagName: string): void {
     const index = selectedTagNames.value.indexOf(tagName)
     if (index >= 0) {
@@ -234,14 +210,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       selectedTagNames.value.push(tagName)
     }
     void loadBooks()
-  }
-
-  function setTagFilter(tagNames: string[]): void {
-    selectedTagNames.value = tagNames
-  }
-
-  function clearTagFilter(): void {
-    selectedTagNames.value = []
   }
 
   function setSort(by: BookSortBy, order: SortOrder = 'desc'): void {
@@ -278,18 +246,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     selectedBookIds.value = new Set(books.value.map(book => book.id))
   }
 
-  function expandBook(bookId: string): void {
-    expandedBookId.value = bookId
-  }
-
-  function collapseBook(): void {
-    expandedBookId.value = null
-  }
-
-  function toggleBookExpand(bookId: string): void {
-    expandedBookId.value = expandedBookId.value === bookId ? null : bookId
-  }
-
   function setLoading(loading: boolean): void {
     isLoading.value = loading
   }
@@ -322,12 +278,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       params.sortBy = sortBy.value
       params.sortOrder = sortOrder.value
 
-      const response = await bookshelfApi.getBooks(params)
-      if (response.success && response.books) {
-        setBooks(response.books)
-      } else {
-        setError(response.error || '加载书籍失败')
-      }
+      setBooks(await bookshelfApi.getBooks(params))
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载书籍失败')
     } finally {
@@ -337,12 +288,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function loadBookDetail(bookId: string): Promise<BookData | null> {
     try {
-      const response = await bookshelfApi.getBookDetail(bookId)
-      if (response.success && response.book) {
-        upsertBook(response.book)
-        return response.book
-      }
-      return null
+      const book = await bookshelfApi.getBookDetail(bookId)
+      upsertBook(book)
+      return book
     } catch {
       return null
     }
@@ -350,10 +298,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function loadTags(): Promise<void> {
     try {
-      const response = await bookshelfApi.getTags()
-      if (response.success && response.tags) {
-        setTags(response.tags)
-      }
+      setTags(await bookshelfApi.getTags())
     } catch {
       return
     }
@@ -361,17 +306,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function createBook(
     title: string,
-    description?: string,
     cover?: File,
     tags?: string[],
   ): Promise<BookData | null> {
     try {
-      const response = await bookshelfApi.createBook(title, description, cover, tags)
-      if (response.success && response.book) {
-        addBook(response.book)
-        return response.book
-      }
-      return null
+      const book = await bookshelfApi.createBook(title, cover, tags)
+      addBook(book)
+      return book
     } catch {
       return null
     }
@@ -379,24 +320,18 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function updateBookApi(bookId: string, data: BookUpdatePayload): Promise<boolean> {
     try {
-      const response = await bookshelfApi.updateBook(bookId, data)
-      if (response.success && response.book) {
-        updateBook(bookId, response.book)
-        return true
-      }
-      return false
+      const book = await bookshelfApi.updateBook(bookId, data)
+      updateBook(bookId, book)
+      return true
     } catch {
       return false
     }
   }
 
   async function deleteBookApi(bookId: string): Promise<boolean> {
-    const response = await bookshelfApi.deleteBook(bookId)
-    if (response.success) {
-      deleteBook(bookId)
-      return true
-    }
-    return false
+    await bookshelfApi.deleteBook(bookId)
+    deleteBook(bookId)
+    return true
   }
 
   async function batchDeleteBooksApi(
@@ -421,12 +356,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function createTag(name: string, color?: string): Promise<TagData | null> {
     try {
-      const response = await bookshelfApi.createTag(name, color)
-      if (response.success && response.tag) {
-        addTag(response.tag)
-        return response.tag
-      }
-      return null
+      const tag = await bookshelfApi.createTag(name, color)
+      addTag(tag)
+      return tag
     } catch {
       return null
     }
@@ -434,12 +366,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function deleteTagApi(tagName: string): Promise<boolean> {
     try {
-      const response = await bookshelfApi.deleteTag(tagName)
-      if (response.success) {
-        deleteTag(tagName)
-        return true
-      }
-      return false
+      await bookshelfApi.deleteTag(tagName)
+      deleteTag(tagName)
+      return true
     } catch {
       return false
     }
@@ -451,25 +380,19 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     color: string,
   ): Promise<boolean> {
     try {
-      const response = await bookshelfApi.updateTag(currentName, name, color)
-      if (response.success) {
-        await loadTags()
-        await loadBooks()
-        return true
-      }
-      return false
+      await bookshelfApi.updateTag(currentName, name, color)
+      await loadTags()
+      await loadBooks()
+      return true
     } catch {
       return false
     }
   }
 
   async function createChapterApi(bookId: string, title: string): Promise<ChapterData | null> {
-    const response = await bookshelfApi.createChapter(bookId, title)
-    if (response.success && response.chapter) {
-      addChapter(bookId, response.chapter)
-      return response.chapter
-    }
-    return null
+    const chapter = await bookshelfApi.createChapter(bookId, title)
+    addChapter(bookId, chapter)
+    return chapter
   }
 
   async function updateChapterApi(
@@ -477,31 +400,22 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     chapterId: string,
     title: string,
   ): Promise<boolean> {
-    const response = await bookshelfApi.updateChapter(bookId, chapterId, title)
-    if (response.success) {
-      updateChapter(bookId, chapterId, { title })
-      return true
-    }
-    return false
+    await bookshelfApi.updateChapter(chapterId, title)
+    updateChapter(bookId, chapterId, { title })
+    return true
   }
 
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<boolean> {
-    const response = await bookshelfApi.deleteChapter(bookId, chapterId)
-    if (response.success) {
-      deleteChapter(bookId, chapterId)
-      return true
-    }
-    return false
+    await bookshelfApi.deleteChapter(chapterId)
+    deleteChapter(bookId, chapterId)
+    return true
   }
 
   async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<boolean> {
     try {
-      const response = await bookshelfApi.reorderChapters(bookId, chapterIds)
-      if (response.success) {
-        reorderChapters(bookId, chapterIds)
-        return true
-      }
-      return false
+      await bookshelfApi.reorderChapters(bookId, chapterIds)
+      reorderChapters(bookId, chapterIds)
+      return true
     } catch {
       return false
     }
@@ -516,7 +430,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     selectedBookIds.value = new Set()
     sortBy.value = 'updatedAt'
     sortOrder.value = 'desc'
-    expandedBookId.value = null
     currentBookId.value = null
     isLoading.value = false
     error.value = null
@@ -525,65 +438,31 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   return {
     books,
     tags,
-    searchKeyword,
     selectedTagNames,
     sortBy,
     sortOrder,
-    expandedBookId,
     currentBookId,
     batchMode,
     selectedBookIds,
     isLoading,
     error,
 
-    filteredBooks,
-    bookCount,
-    filteredBookCount,
-    expandedBook,
     currentBook,
     searchQuery,
     isAllSelected,
 
-    setBooks,
-    addBook,
     updateBook,
-    deleteBook,
-    deleteBooks,
     getBookById,
 
-    addChapter,
-    updateChapter,
-    deleteChapter,
-    reorderChapters,
-
-    setTags,
-    addTag,
-    deleteTag,
-    addTagToBook,
-    removeTagFromBook,
-    batchAddTags,
-    batchRemoveTags,
-
-    setSearchKeyword,
-    clearSearchKeyword,
     setSearchQuery,
     toggleTagFilter,
-    setTagFilter,
-    clearTagFilter,
     setSort,
     enterBatchMode,
     exitBatchMode,
     toggleBookSelection,
     toggleSelectAll,
 
-    expandBook,
-    collapseBook,
-    toggleBookExpand,
-
     setCurrentBook,
-
-    setLoading,
-    setError,
 
     loadBooks,
     loadBookDetail,

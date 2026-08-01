@@ -151,19 +151,18 @@ describe('useWebImportModal', () => {
   })
 
   it('ignores model fetch responses after the modal owner unmounts', async () => {
-    const modelFetch = deferred<{ success: boolean; models: Array<{ id: string }> }>()
+    const modelFetch = deferred<{ models: Array<{ id: string }> }>()
     fetchModelsMock.mockReturnValueOnce(modelFetch.promise)
     const exposed = mountComposableHost()
     const webImportStore = useWebImportStore()
 
-    webImportStore.beginSettingsEdit()
     webImportStore.setAgentApiKey('sk-test')
 
     const fetchPromise = exposed.api.handleFetchModels()
     expect(exposed.api.isFetchingModels.value).toBe(true)
 
     exposed.wrapper.unmount()
-    modelFetch.resolve({ success: true, models: [{ id: 'gpt-4o-mini' }] })
+    modelFetch.resolve({ models: [{ id: 'gpt-4o-mini' }] })
     await fetchPromise
     await flushPromises()
 
@@ -191,9 +190,12 @@ describe('useWebImportModal', () => {
       sourceUrl: 'https://example.com/chapter',
       status: 'ready',
       revision: 2,
+      autoImport: false,
       candidateCount: 4,
       failedCount: 0,
+      requestedEngine: 'auto',
       actualEngine: 'gallery-dl',
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
     })
     listAllWebImportDraftPagesMock.mockResolvedValue([
       { id: 'page-1', error: null, thumbnailUrl: '/thumb/1', sourceMediaUrl: '/media/1' },
@@ -222,7 +224,10 @@ describe('useWebImportModal', () => {
       batchId: 'batch-2',
       jobIds: ['job-2'],
     })
-    expect(showToastMock).toHaveBeenCalledWith('入库任务已进入后端任务中心，可安全关闭页面', 'success')
+    expect(showToastMock).toHaveBeenCalledWith(
+      '入库任务已进入后端任务中心，可安全关闭页面',
+      'success'
+    )
   })
 
   it('keeps store and internal workflow helpers private to the modal owner', () => {
@@ -235,9 +240,7 @@ describe('useWebImportModal', () => {
   })
 })
 
-function mountComposableHost(
-  callbacks: Parameters<typeof useWebImportModal>[0] = {},
-) {
+function mountComposableHost(callbacks: Parameters<typeof useWebImportModal>[0] = {}) {
   let api: ReturnType<typeof useWebImportModal> | null = null
   const Host = defineComponent({
     setup() {

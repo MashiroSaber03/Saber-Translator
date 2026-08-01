@@ -116,6 +116,22 @@ def _provider_section(
             wire_format=domain in {"insight_vlm", "insight_chat"},
         ),
     }
+    for source_key, target_key in {
+        "translationMode": "translation_mode",
+        "promptMode": "prompt_mode",
+        "batchSize": "batch_size",
+        "minImageSize": "min_image_size",
+        "imageMaxSize": "image_max_size",
+        "rpmLimit": "rpm_limit",
+        "topK": "top_k",
+        "transportRetries": "transport_retries",
+        "businessRetries": "business_retries",
+        "timeoutSeconds": "timeout_seconds",
+        "version": "version",
+        "sourceLanguage": "source_language",
+    }.items():
+        if source_key in payload:
+            section[target_key] = payload[source_key]
     prompt = payload.get("prompt")
     if prompt is not None:
         section["prompt_content"] = prompt

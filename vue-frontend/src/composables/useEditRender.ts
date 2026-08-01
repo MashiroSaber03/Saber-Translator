@@ -1,4 +1,4 @@
-import { getCurrentInstance, onUnmounted, ref } from 'vue'
+import { getCurrentInstance, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { getPageSummary } from '@/api/v2/content'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
@@ -22,8 +22,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   const { bubbles } = storeToRefs(bubbleStore)
   const { currentImage } = storeToRefs(imageStore)
 
-  const isRendering = ref(false)
-  const renderError = ref('')
   let currentRenderToken: symbol | null = null
   let isOwnerDisposed = false
 
@@ -31,7 +29,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     onUnmounted(() => {
       isOwnerDisposed = true
       currentRenderToken = null
-      isRendering.value = false
     })
   }
 
@@ -94,8 +91,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     }
     const token = Symbol('backend-render')
     currentRenderToken = token
-    isRendering.value = true
-    renderError.value = ''
     if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
@@ -113,26 +108,16 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     } catch (error) {
       if (currentRenderToken !== token || isOwnerDisposed) return false
       const message = error instanceof Error ? error.message : '后端渲染请求失败'
-      renderError.value = message
       if (!silentMode) callbacks?.onRenderError?.(message)
       return false
     } finally {
       if (currentRenderToken === token) {
-        isRendering.value = false
         if (!silentMode) callbacks?.onRenderEnd?.()
       }
     }
   }
 
-  function cancelRender(): void {
-    currentRenderToken = null
-    isRendering.value = false
-  }
-
   return {
-    isRendering,
-    renderError,
     reRenderFullImage,
-    cancelRender,
   }
 }

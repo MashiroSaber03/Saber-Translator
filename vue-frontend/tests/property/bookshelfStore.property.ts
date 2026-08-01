@@ -4,6 +4,7 @@ import * as fc from 'fast-check'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import * as bookshelfApi from '@/api/bookshelf'
 import type { BookData, TagData } from '@/types/api'
+import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
 
 const bookIdArbitrary = fc.uuid()
 const bookTitleArbitrary = fc.string({ minLength: 1, maxLength: 100 })
@@ -40,10 +41,7 @@ const uniqueBooksArbitrary = (
 describe('bookshelf store properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue({
-      success: false,
-      error: 'Property test keeps backend refresh outside this invariant',
-    })
+    vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -59,7 +57,7 @@ describe('bookshelf store properties', () => {
         ),
         ([books, toggleIndices]) => {
           const store = useBookshelfStore()
-          store.setBooks(books)
+          setTestBooks(store, books)
           store.enterBatchMode()
           expect(store.batchMode).toBe(true)
 
@@ -100,7 +98,7 @@ describe('bookshelf store properties', () => {
     fc.assert(
       fc.property(uniqueBooksArbitrary(selectableBookArbitrary, { minLength: 1, maxLength: 10 }), (books) => {
         const store = useBookshelfStore()
-        store.setBooks(books)
+        setTestBooks(store, books)
         store.enterBatchMode()
 
         store.toggleSelectAll()
@@ -124,8 +122,8 @@ describe('bookshelf store properties', () => {
         ),
         ([tags, toggleIndices]) => {
           const store = useBookshelfStore()
-          store.setTags(tags)
-          store.clearTagFilter()
+          setTestTags(store, tags)
+          store.selectedTagNames = []
 
           const expectedSelected = new Set<string>()
           for (const index of toggleIndices) {
@@ -157,33 +155,4 @@ describe('bookshelf store properties', () => {
     )
   })
 
-  it('removes a deleted book from batch selection', () => {
-    fc.assert(
-      fc.property(
-        fc.tuple(
-          uniqueBooksArbitrary(selectableBookArbitrary, { minLength: 2, maxLength: 10 }),
-          fc.integer({ min: 0, max: 9 })
-        ),
-        ([books, deleteIndex]) => {
-          const store = useBookshelfStore()
-          store.setBooks(books)
-          store.enterBatchMode()
-
-          const bookToDelete = books[Math.min(deleteIndex, books.length - 1)]
-          if (!bookToDelete) {
-            return
-          }
-
-          store.toggleBookSelection(bookToDelete.id)
-          expect(store.selectedBookIds.has(bookToDelete.id)).toBe(true)
-
-          store.deleteBook(bookToDelete.id)
-
-          expect(store.books.find(book => book.id === bookToDelete.id)).toBeUndefined()
-          expect(store.selectedBookIds.has(bookToDelete.id)).toBe(false)
-        }
-      ),
-      { numRuns: 100 }
-    )
-  })
 })

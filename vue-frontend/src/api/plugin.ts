@@ -1,12 +1,13 @@
 import { apiClient } from './client'
 import { downloadBlob } from './download'
 import { newIdempotencyKey } from './v2/content'
-import type { ApiResponse, PluginData } from '@/types'
 import type { components } from './generated/v2'
 
-type PluginV2 = components['schemas']['Plugin']
+export type PluginData = components['schemas']['Plugin']
+type PluginV2 = PluginData
 type PluginListV2 = components['schemas']['PluginList']
 type PluginConfigV2 = components['schemas']['PluginConfig']
+type PluginRefreshResultV2 = components['schemas']['PluginRefreshResult']
 
 type PluginImportResultV2 = components['schemas']['PluginImportResult']
 
@@ -15,40 +16,14 @@ interface PluginImportConflict {
   pluginId: string
 }
 
-export interface PluginListResponse {
-  success: boolean
+export interface PluginRefreshResult {
   plugins: PluginData[]
-}
-
-export interface PluginConfigSchemaResponse {
-  success: boolean
-  schema: Record<string, unknown>
-}
-
-export interface PluginConfigResponse {
-  success: boolean
-  config: Record<string, unknown>
-  configRevision: number
-}
-
-export interface PluginDefaultStatesResponse {
-  success: boolean
-  default_states: Record<string, boolean>
-}
-
-export interface PluginRefreshResponse extends PluginListResponse {
-  partial_success: boolean
-  default_states: Record<string, boolean>
+  partialSuccess: boolean
+  defaultStates: Record<string, boolean>
   summary: {
     checked: number
     failed: number
   }
-  failures?: Array<{ error: string }>
-}
-
-export interface PluginImportResponse {
-  success: boolean
-  plugin?: PluginData
 }
 
 const pluginRevisions = new Map<string, number>()
@@ -60,30 +35,11 @@ function pluginEndpoint(pluginId: string, suffix = ''): string {
   return `/api/v2/plugins/${encodeURIComponent(pluginId)}${suffix}`
 }
 
-function toPluginData(plugin: PluginV2): PluginData {
+function rememberPlugin(plugin: PluginV2): PluginData {
   pluginRevisions.set(plugin.pluginId, plugin.currentRevision)
   configRevisions.set(plugin.pluginId, plugin.configRevision)
   defaultStates.set(plugin.pluginId, plugin.defaultEnabled)
-  return {
-    id: plugin.pluginId,
-    display_name: plugin.displayName,
-    description: plugin.description,
-    version: plugin.packageVersion,
-    author: plugin.author,
-    enabled: plugin.runtimeEnabled,
-    default_enabled: plugin.defaultEnabled,
-    has_config: Object.keys(plugin.configSchema).length > 0,
-    supported_steps: plugin.manifest.supported_steps,
-    supported_modes: plugin.manifest.supported_modes,
-    priority: plugin.manifest.priority,
-    failure_policy: plugin.manifest.failure_policy,
-    configSchema: normalizeConfigSchema(plugin.configSchema),
-    config: plugin.config,
-    current_revision: plugin.currentRevision,
-    config_revision: plugin.configRevision,
-    state: plugin.state,
-    error_message: plugin.errorMessage,
-  }
+  return plugin
 }
 
 function normalizeConfigSchema(
@@ -111,24 +67,18 @@ function normalizeConfigSchema(
   )
 }
 
-export async function getPlugins(): Promise<PluginListResponse> {
+export async function getPlugins(): Promise<PluginData[]> {
   const result = await apiClient.get<PluginListV2>('/api/v2/plugins')
-  return {
-    success: true,
-    plugins: result.items.map(toPluginData),
-  }
+  return result.items.map(rememberPlugin)
 }
 
-export async function refreshPlugins(): Promise<PluginRefreshResponse> {
-  const integrity = await apiClient.post<{
-    checkedVersions: number
-    failedVersions: number
-  }>('/api/v2/plugins/refresh', {})
-  const current = await getPlugins()
+export async function refreshPlugins(): Promise<PluginRefreshResult> {
+  const integrity = await apiClient.post<PluginRefreshResultV2>('/api/v2/plugins/refresh', {})
+  const plugins = await getPlugins()
   return {
-    ...current,
-    partial_success: integrity.failedVersions > 0,
-    default_states: Object.fromEntries(defaultStates),
+    plugins,
+    partialSuccess: integrity.failedVersions > 0,
+    defaultStates: Object.fromEntries(defaultStates),
     summary: {
       checked: integrity.checkedVersions,
       failed: integrity.failedVersions,
@@ -139,24 +89,23 @@ export async function refreshPlugins(): Promise<PluginRefreshResponse> {
 async function setRuntimeEnabled(
   pluginId: string,
   enabled: boolean,
-): Promise<ApiResponse> {
+): Promise<void> {
   const updated = await apiClient.put<PluginV2>(
     pluginEndpoint(pluginId, '/runtime-enabled'),
     { enabled },
   )
-  toPluginData(updated)
-  return { success: true }
+  rememberPlugin(updated)
 }
 
-export function enablePlugin(pluginId: string): Promise<ApiResponse> {
+export function enablePlugin(pluginId: string): Promise<void> {
   return setRuntimeEnabled(pluginId, true)
 }
 
-export function disablePlugin(pluginId: string): Promise<ApiResponse> {
+export function disablePlugin(pluginId: string): Promise<void> {
   return setRuntimeEnabled(pluginId, false)
 }
 
-export async function deletePlugin(pluginId: string): Promise<ApiResponse> {
+export async function deletePlugin(pluginId: string): Promise<void> {
   const revision = pluginRevisions.get(pluginId)
   if (!revision) throw new Error('插件版本已变化，请刷新后重试')
   await apiClient.delete(pluginEndpoint(pluginId), {
@@ -168,7 +117,6 @@ export async function deletePlugin(pluginId: string): Promise<ApiResponse> {
   pluginRevisions.delete(pluginId)
   configRevisions.delete(pluginId)
   defaultStates.delete(pluginId)
-  return { success: true }
 }
 
 export async function exportPlugin(pluginId: string): Promise<{ blob: Blob; filename: string }> {
@@ -194,7 +142,7 @@ function pluginImportConflict(error: unknown): PluginImportConflict | null {
   return { pluginId, currentRevision }
 }
 
-export async function importPlugin(file: File, replace = false): Promise<PluginImportResponse> {
+export async function importPlugin(file: File, replace = false): Promise<void> {
   const conflict = importConflicts.get(file)
   if (replace && !conflict) {
     throw new Error('插件替换上下文已失效，请重新选择插件包')
@@ -216,11 +164,6 @@ export async function importPlugin(file: File, replace = false): Promise<PluginI
   }
   importConflicts.delete(file)
   pluginRevisions.set(imported.pluginId, imported.currentRevision)
-  const current = await getPlugins()
-  return {
-    success: true,
-    plugin: current.plugins.find(plugin => plugin.id === imported.pluginId),
-  }
 }
 
 async function getConfig(pluginId: string): Promise<PluginConfigV2> {
@@ -233,29 +176,22 @@ async function getConfig(pluginId: string): Promise<PluginConfigV2> {
 
 export async function getPluginConfigSchema(
   pluginId: string,
-): Promise<PluginConfigSchemaResponse> {
+): Promise<Record<string, unknown>> {
   const result = await getConfig(pluginId)
-  return {
-    success: true,
-    schema: normalizeConfigSchema(result.schema),
-  }
+  return normalizeConfigSchema(result.schema)
 }
 
 export async function getPluginConfig(
   pluginId: string,
-): Promise<PluginConfigResponse> {
+): Promise<Record<string, unknown>> {
   const result = await getConfig(pluginId)
-  return {
-    success: true,
-    config: result.value,
-    configRevision: result.configRevision,
-  }
+  return result.value
 }
 
 export async function savePluginConfig(
   pluginId: string,
   config: Record<string, unknown>,
-): Promise<ApiResponse> {
+): Promise<void> {
   const baseRevision = configRevisions.get(pluginId)
   if (!baseRevision) throw new Error('插件配置已变化，请重新打开配置')
   const result = await apiClient.put<PluginConfigV2>(
@@ -264,26 +200,21 @@ export async function savePluginConfig(
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
   configRevisions.set(pluginId, result.configRevision)
-  return { success: true }
 }
 
-export async function getPluginDefaultStates(): Promise<PluginDefaultStatesResponse> {
+export async function getPluginDefaultStates(): Promise<Record<string, boolean>> {
   if (defaultStates.size === 0) await getPlugins()
-  return {
-    success: true,
-    default_states: Object.fromEntries(defaultStates),
-  }
+  return Object.fromEntries(defaultStates)
 }
 
 export async function setPluginDefaultState(
   pluginId: string,
   enabled: boolean,
-): Promise<ApiResponse> {
+): Promise<void> {
   const updated = await apiClient.put<PluginV2>(
     pluginEndpoint(pluginId, '/default-enabled'),
     { enabled },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
-  toPluginData(updated)
-  return { success: true }
+  rememberPlugin(updated)
 }

@@ -1,13 +1,5 @@
-import {
-  computed,
-  getCurrentInstance,
-  onUnmounted,
-  ref,
-  watch,
-  type WatchStopHandle,
-} from 'vue'
+import { getCurrentInstance, onUnmounted, ref } from 'vue'
 
-import { jobsApi, type V2JobDetail } from '@/api/v2/jobs'
 import {
   commitChapterTextImport,
   createChapterExportJob,
@@ -24,20 +16,6 @@ export const DOWNLOAD_FORMATS = ['zip', 'pdf', 'cbz'] as const
 export type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number]
 export type DownloadImageType = 'translated' | 'clean' | 'original'
 
-export interface DownloadImageEntry {
-  index: number
-  type: DownloadImageType
-}
-
-interface JobArtifact {
-  assetId: string
-  expiresAt: string | null
-  kind: string
-  url: string
-}
-
-type JobWithArtifacts = V2JobDetail & { artifacts?: JobArtifact[] }
-
 export function resolveDownloadFileName(
   originalFileName: string,
   imageIndex: number,
@@ -45,15 +23,6 @@ export function resolveDownloadFileName(
 ): string {
   const fileName = originalFileName || `image_${imageIndex}.png`
   return `${type}_${fileName.replace(/\.[^/.]+$/, '')}.png`
-}
-
-export function collectDownloadImageEntries(images: ImageData[]): DownloadImageEntry[] {
-  return images.flatMap<DownloadImageEntry>((image, index) => {
-    if (image.translatedAssetUrl) return [{ index, type: 'translated' }]
-    if (image.cleanAssetUrl) return [{ index, type: 'clean' }]
-    if (image.sourceAssetUrl) return [{ index, type: 'original' }]
-    return []
-  })
 }
 
 function downloadUrl(url: string, filename: string): string {
@@ -81,34 +50,17 @@ export function useExportImport() {
   const isDownloading = ref(false)
   const downloadProgress = ref(0)
   const downloadProgressText = ref('')
-  const isImporting = ref(false)
-  const importProgress = ref(0)
-  const importProgressText = ref('')
-  let importResetTimer: ReturnType<typeof setTimeout> | null = null
   let downloadResetTimer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
-  const exportWaitCancels = new Set<() => void>()
+  let activeExportWait: AbortController | null = null
 
-  const canExportText = computed(() => imageStore.hasImages)
-  const canImportText = computed(() => imageStore.hasImages)
-  const canDownload = computed(() => imageStore.hasImages)
-
-  function resetLater(kind: 'download' | 'import') {
-    const current = kind === 'download' ? downloadResetTimer : importResetTimer
-    if (current) clearTimeout(current)
-    const timer = setTimeout(() => {
-      if (kind === 'download') {
-        downloadResetTimer = null
-        downloadProgress.value = 0
-        downloadProgressText.value = ''
-      } else {
-        importResetTimer = null
-        importProgress.value = 0
-        importProgressText.value = ''
-      }
+  function resetDownloadProgressLater() {
+    if (downloadResetTimer) clearTimeout(downloadResetTimer)
+    downloadResetTimer = setTimeout(() => {
+      downloadResetTimer = null
+      downloadProgress.value = 0
+      downloadProgressText.value = ''
     }, 2000)
-    if (kind === 'download') downloadResetTimer = timer
-    else importResetTimer = timer
   }
 
   function exportText(): void {
@@ -130,13 +82,8 @@ export function useExportImport() {
       toast.warning('当前图片不属于同一个后端章节')
       return
     }
-    isImporting.value = true
-    importProgress.value = 5
-    importProgressText.value = '后端正在校验文本文件'
     try {
       const preview = await previewChapterTextImport(chapterId, file)
-      importProgress.value = 50
-      importProgressText.value = '正在核对页面与气泡版本'
       const confirmed = preview.pages.filter(page => (
         page.status === 'match'
         && page.changes.length > 0
@@ -154,8 +101,6 @@ export function useExportImport() {
       }
       const accepted = await commitChapterTextImport(chapterId, confirmed)
       await taskCenterStore.refresh()
-      importProgress.value = 100
-      importProgressText.value = '文本导入任务已进入后端队列'
       const conflictSuffix = preview.conflictedPages > 0
         ? `；跳过 ${preview.conflictedPages} 页冲突`
         : ''
@@ -165,9 +110,6 @@ export function useExportImport() {
       if (!accepted.jobIds[0]) throw new Error('后端没有返回文本导入任务')
     } catch (error) {
       toast.error(`导入失败：${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      isImporting.value = false
-      resetLater('import')
     }
   }
 
@@ -196,76 +138,28 @@ export function useExportImport() {
     toast.success(`下载已开始：${filename}`)
   }
 
-  async function waitForExport(jobId: string): Promise<JobWithArtifacts> {
-    await new Promise<void>((resolve, reject) => {
-      let settled = false
-      let stop: WatchStopHandle | null = null
-      let cancelWait = () => {}
-      const timeout = setTimeout(() => {
-        finish(() => reject(new Error('导出仍在后端运行，请稍后从任务中心下载')))
-      }, 30 * 60 * 1000)
-
-      function finish(action: () => void): void {
-        if (settled) return
-        settled = true
-        clearTimeout(timeout)
-        exportWaitCancels.delete(cancelWait)
-        if (stop) {
-          stop()
-        }
-        action()
-      }
-
-      stop = watch(
-        () => {
-          const jobs = [...taskCenterStore.queue, ...taskCenterStore.history]
-          const job = jobs.find(item => item.jobId === jobId)
-          return job
-            ? {
-                status: job.status,
-                progress: job.progress,
-              }
-            : null
-        },
-        job => {
-          if (disposed) {
-            finish(() => reject(new Error('页面已关闭，导出任务继续在后端运行')))
-            return
-          }
-          if (!job) return
-
-          const total = progressValue(job.progress, 'totalItems')
+  async function waitForExport(jobId: string) {
+    activeExportWait?.abort()
+    const controller = new AbortController()
+    activeExportWait = controller
+    try {
+      return await taskCenterStore.waitForJob(jobId, {
+        signal: controller.signal,
+        onProgress(progress) {
+          const total = progressValue(progress, 'totalItems')
           const complete = (
-            progressValue(job.progress, 'completedItems')
-            + progressValue(job.progress, 'failedItems')
+            progressValue(progress, 'completedItems')
+            + progressValue(progress, 'failedItems')
           )
           downloadProgress.value = total > 0
             ? Math.min(95, Math.round(complete / total * 90) + 5)
             : 5
           downloadProgressText.value = `后端正在生成导出文件：${complete}/${total || 1}`
-
-          if (['completed', 'completed_with_errors'].includes(job.status)) {
-            finish(resolve)
-          } else if (job.status === 'interrupted') {
-            finish(() => reject(new Error('导出任务已中断，可在任务中心从检查点继续')))
-          } else if (['cancelled', 'failed'].includes(job.status)) {
-            const label = job.status === 'cancelled' ? '已取消' : '失败'
-            finish(() => reject(new Error(`导出任务${label}`)))
-          }
         },
-        { immediate: true, deep: true },
-      )
-      cancelWait = () => {
-        finish(() => reject(new Error('页面已关闭，导出任务继续在后端运行')))
-      }
-      if (settled) {
-        stop()
-      } else {
-        exportWaitCancels.add(cancelWait)
-      }
-    })
-
-    return jobsApi.get(jobId) as Promise<JobWithArtifacts>
+      })
+    } finally {
+      if (activeExportWait === controller) activeExportWait = null
+    }
   }
 
   async function downloadAllImages(format: DownloadFormat = 'zip'): Promise<void> {
@@ -287,12 +181,11 @@ export function useExportImport() {
         format,
         imageStore.images.map(image => image.id),
       )
-      await taskCenterStore.refresh()
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回导出任务')
       toast.info('导出任务已进入后端队列，可安全关闭页面', 0)
       const job = await waitForExport(jobId)
-      const artifact = job.artifacts?.[0]
+      const artifact = job.artifacts[0]
       if (!artifact) throw new Error('导出任务未生成可下载文件')
       downloadProgress.value = 100
       downloadProgressText.value = '导出完成，下载已开始'
@@ -310,33 +203,26 @@ export function useExportImport() {
       }
     } finally {
       isDownloading.value = false
-      resetLater('download')
+      resetDownloadProgressLater()
     }
   }
 
   if (getCurrentInstance()) {
     onUnmounted(() => {
       disposed = true
-      exportWaitCancels.forEach(cancel => cancel())
-      exportWaitCancels.clear()
-      if (importResetTimer) clearTimeout(importResetTimer)
+      activeExportWait?.abort()
+      activeExportWait = null
       if (downloadResetTimer) clearTimeout(downloadResetTimer)
     })
   }
 
   return {
-    canDownload,
-    canExportText,
-    canImportText,
     downloadAllImages,
     downloadCurrentImage,
     downloadProgress,
     downloadProgressText,
     exportText,
-    importProgress,
-    importProgressText,
     importText,
     isDownloading,
-    isImporting,
   }
 }

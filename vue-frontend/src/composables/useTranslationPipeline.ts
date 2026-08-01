@@ -7,7 +7,7 @@ import {
   type V2TranslationBootstrap,
 } from '@/api/v2/content'
 import type { components } from '@/api/generated/v2'
-import type { V2JobStatus } from '@/api/v2/jobs'
+import type { V2Job, V2JobStatus } from '@/api/v2/jobs'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -21,9 +21,9 @@ import {
 import { useToast } from '@/utils/toast'
 import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
 import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
-export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
+type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
-export interface PageSelection {
+interface PageSelection {
   pages: number[]
 }
 
@@ -42,7 +42,7 @@ export interface TranslationProgress {
   pools: TranslationPoolProgress[]
 }
 
-export type TranslationCurrentStep = components['schemas']['JobProgressCurrentStep']
+type TranslationCurrentStep = components['schemas']['JobProgressCurrentStep']
 
 export interface TranslationPoolProgress {
   kind: string
@@ -56,7 +56,7 @@ export interface TranslationPoolProgress {
   current: components['schemas']['JobProgressPoolCurrent'][]
 }
 
-export interface TranslateResult {
+interface TranslateResult {
   success: boolean
   completed: number
   failed: number
@@ -78,7 +78,7 @@ const activeJobId = ref<string | null>(null)
 const activePageIds = ref<string[]>([])
 let lastHandledEventId = 0
 
-export function range(start: number, end: number): number[] {
+function range(start: number, end: number): number[] {
   return Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index)
 }
 
@@ -94,6 +94,16 @@ const ACTIVE_JOB_STATUSES = new Set<V2JobStatus>([
   'paused',
   'cancelling',
   'interrupted',
+])
+
+const CHAPTER_CONTENT_JOB_KINDS = new Set<V2Job['kind']>([
+  'translation',
+  'remove_text',
+  'detect',
+  'style_apply',
+  'text_import',
+  'container_import',
+  'web_import_commit',
 ])
 
 function jobStatusLabel(status: V2JobStatus | undefined): string {
@@ -306,12 +316,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
   const taskCenterStore = useTaskCenterStore()
   const toast = useToast()
 
-  const isTranslating = computed(() => progress.value.isInProgress)
-  const isTranslatingSingle = computed(
-    () => progress.value.isInProgress && activePageIds.value.length === 1,
-  )
-  const isHqTranslating = computed(() => progress.value.isInProgress)
-  const isProofreading = computed(() => progress.value.isInProgress)
   const progressPercent = computed(() => progress.value.percentage || 0)
 
   watch(
@@ -332,14 +336,25 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       }
       if (!['job_finished', 'job_failed', 'job_cancelled'].includes(event.type)) return
 
-      // Any terminal task may have changed the open chapter. This also covers a task
-      // that survived a browser restart and therefore has no local activeJobId.
-      void refreshCurrentChapter(imageStore, bubbleStore, settingsStore).catch((error) => {
-        toast.error(
-          `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
-        )
-      })
-      if (event.jobId !== activeJobId.value) return
+      const trackedJobFinished = event.jobId === activeJobId.value
+      const eventJob = [...taskCenterStore.queue, ...taskCenterStore.history]
+        .find(job => job.jobId === event.jobId)
+      const currentChapterId = imageStore.currentImage?.chapterId
+        ?? imageStore.images[0]?.chapterId
+      const openChapterChanged = Boolean(
+        eventJob
+        && currentChapterId
+        && eventJob.chapterId === currentChapterId
+        && CHAPTER_CONTENT_JOB_KINDS.has(eventJob.kind),
+      )
+      if (trackedJobFinished || openChapterChanged) {
+        void refreshCurrentChapter(imageStore, bubbleStore, settingsStore).catch((error) => {
+          toast.error(
+            `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
+          )
+        })
+      }
+      if (!trackedJobFinished) return
 
       const succeeded = event.type === 'job_finished'
       progress.value = {
@@ -460,10 +475,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     return (await translatePages([imageStore.currentImageIndex], 'standard')).success
   }
 
-  async function translateImageByIndex(index: number): Promise<boolean> {
-    return (await translatePages([index], 'standard')).success
-  }
-
   async function translateAllImages(): Promise<boolean> {
     return (
       await translatePages(range(0, imageStore.images.length), 'standard')
@@ -474,10 +485,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     return (
       await translatePages(pageSelectionToPageIndexes(selection.pages), 'standard')
     ).success
-  }
-
-  function cancelBatchTranslation(): void {
-    if (activeJobId.value) void taskCenterStore.cancel(activeJobId.value)
   }
 
   async function removeTextOnly(): Promise<boolean> {
@@ -571,18 +578,10 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
 
   return {
     progress,
-    isTranslatingSingle,
-    isHqTranslating,
-    isProofreading,
-    isTranslating,
     progressPercent,
-    translatePages,
-    range,
     translateCurrentImage,
-    translateImageByIndex,
     translateAllImages,
     translateSelectedImages,
-    cancelBatchTranslation,
     removeTextOnly,
     removeAllTexts,
     removeTextSelection,

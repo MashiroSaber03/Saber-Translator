@@ -50,7 +50,7 @@ describe('AnalysisProgress', () => {
       status: 409,
       message: '书籍 book-1 已有运行中的任务',
     })
-    cancelAnalysisMock.mockResolvedValue({ success: true })
+    cancelAnalysisMock.mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValue(true)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
@@ -212,7 +212,7 @@ describe('AnalysisProgress', () => {
       tone: 'danger',
     })
     expect(confirmSpy).not.toHaveBeenCalled()
-    expect(cancelAnalysisMock).toHaveBeenCalledWith('book-1', 'task-1')
+    expect(cancelAnalysisMock).toHaveBeenCalledWith('task-1')
     expect(store.analysisStatus).toBe('idle')
     expect(wrapper.find('.progress-bar-slim').exists()).toBe(false)
   })

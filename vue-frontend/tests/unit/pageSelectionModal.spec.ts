@@ -30,16 +30,17 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { useImageStore } from '@/stores/imageStore'
+import { setTestImages } from '../helpers/imageFixtures'
 
 describe('PageSelectionModal', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     const imageStore = useImageStore()
     imageStore.clearImages()
-    imageStore.addImage('001.png', 'data:image/png;base64,aaa')
-    imageStore.addImage('002.png', 'data:image/png;base64,bbb')
-    imageStore.addImage('003.png', 'data:image/png;base64,ccc')
-    imageStore.addImage('004.png', 'data:image/png;base64,ddd')
+    setTestImages(imageStore, Array.from({ length: 4 }, (_, index) => ({
+      fileName: `${String(index + 1).padStart(3, '0')}.png`,
+      sourceAssetUrl: `data:image/png;base64,page-${index + 1}`,
+    })))
     imageStore.updateImageByIndex(1, {
       translationStatus: 'completed',
       translatedAssetUrl: '/api/v2/assets/done',

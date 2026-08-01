@@ -23,7 +23,6 @@ import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import ProductSelectableImageGrid from '@/components/product/ProductSelectableImageGrid.vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
-import ProductHorizontalScrollStrip from '@/components/product/ProductHorizontalScrollStrip.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
@@ -397,23 +396,6 @@ describe('product feedback components', () => {
 
     wrapper.vm.scrollToBottom()
     expect((scroller.element as HTMLElement).scrollTop).toBe(320)
-  })
-
-  it('owns reusable horizontal scroll-strip semantics', () => {
-    const wrapper = mount(ProductHorizontalScrollStrip, {
-      props: {
-        ariaLabel: '横向素材列表',
-      },
-      slots: {
-        default: '<button>第一页</button><button>第二页</button>',
-      },
-    })
-
-    const strip = wrapper.get('[role="region"]')
-    expect(strip.attributes('aria-label')).toBe('横向素材列表')
-    expect(strip.classes()).toContain('product-horizontal-scroll-strip')
-    expect(strip.text()).toContain('第一页')
-    expect(strip.text()).toContain('第二页')
   })
 
   it('renders interactive and static product chips with list semantics', async () => {

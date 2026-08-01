@@ -23,7 +23,6 @@ import {
 
 import type { ProviderConfigsCache } from './types'
 import { createDefaultSettings } from './defaults'
-import { normalizeSettings } from './normalizeSettings'
 import { parseCurrentSettings } from './schema'
 import { useThemePreference } from './useThemePreference'
 import {
@@ -301,11 +300,6 @@ export const useSettingsStore = defineStore('settings', () => {
     )
   }
 
-  function resetToDefaults(): void {
-    settings.value = createDefaultSettings()
-    textStyleDefaults.value = normalizeTextStyleSettings(settings.value.textStyle)
-  }
-
   function applyBackendDocument(document: V2SettingsDocument): void {
     // Reloading the global document must not roll an active chapter back to the
     // snapshot captured when the translation page first opened. Settings edited
@@ -364,8 +358,6 @@ export const useSettingsStore = defineStore('settings', () => {
         workflowPreferencesEntry?.payload.lastWorkflowMode ?? 'translate-current',
       ),
     }
-    normalizeSettings(settings.value)
-
     providerConfigs.value = emptyProviderConfigs()
     providerRevisions = new Map()
     for (const row of document.providerSettings) {
@@ -830,7 +822,6 @@ export const useSettingsStore = defineStore('settings', () => {
     toggleTheme,
     loadThemeFromStorage,
     initSettings,
-    resetToDefaults,
     hydrateFromBackendDocument,
     hydrateResourceCatalogs,
     hydrateChapterWorkState,

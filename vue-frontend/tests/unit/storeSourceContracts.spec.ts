@@ -11,8 +11,6 @@ const storeFiles = [
 const bookshelfPropertyFiles = [
   'tests/property/bookshelfStore.property.ts',
   'tests/property/bookCrud.property.ts',
-  'tests/property/chapterReorder.property.ts',
-  'tests/property/tagBatch.property.ts',
 ]
 
 describe('store source contracts', () => {
@@ -312,25 +310,12 @@ describe('store source contracts', () => {
     }
   })
 
-  it('keeps the insight store helper barrel free of mechanical narration', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/stores/insight/index.ts'), 'utf8')
-
-    expect(source).not.toContain('Insight Composables 索引文件')
-    expect(source).not.toContain('/' + '**')
-    expect(source).toContain('useInsightNotes')
-    expect(source).toContain('useInsightQA')
-    expect(source).toContain('useInsightConfigManager')
-  })
-
   it('keeps the insight QA composable API limited to QA state ownership', () => {
     const qaSource = readFileSync(resolve(process.cwd(), 'src/stores/insight/useInsightQA.ts'), 'utf8')
-    const barrelSource = readFileSync(resolve(process.cwd(), 'src/stores/insight/index.ts'), 'utf8')
     const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/insightStore.ts'), 'utf8')
 
     expect(qaSource).toContain('export function useInsightQA()')
     expect(storeSource).toContain('const qaComposable = useInsightQA()')
-    expect(barrelSource).toContain('QAMessage')
-    expect(barrelSource).toContain("'" + './useInsightQA' + "'")
 
     for (const staleContract of [
       'UseInsightQAOptions',
@@ -341,7 +326,6 @@ describe('store source contracts', () => {
       '/' + '** 问答消息 */',
     ]) {
       expect(qaSource).not.toContain(staleContract)
-      expect(barrelSource).not.toContain(staleContract)
     }
 
     expect(storeSource).not.toContain('useInsightQA({')

@@ -104,38 +104,36 @@ describe('apiClient error normalization', () => {
     })
   })
 
-  it('allows reads but blocks every mutation while settings are restricted', async () => {
+  it('keeps unrelated mutations open while task APIs enforce the settings gate', async () => {
     const { apiClient } = await import('@/api/client')
+    const { createChapterTranslationJob } = await import('@/api/v2/translation')
     const {
       BackendAccessRestrictedError,
       setBackendAccessRestricted,
     } = await import('@/services/backendAccessGate')
     getRequestMock.mockResolvedValue({ data: { ok: true } })
+    postRequestMock.mockResolvedValue({ data: { ok: true } })
+    putRequestMock.mockResolvedValue({ data: { ok: true } })
+    patchRequestMock.mockResolvedValue({ data: { ok: true } })
+    deleteRequestMock.mockResolvedValue({ data: { ok: true } })
     setBackendAccessRestricted(true, '设置加载失败')
 
     try {
       await expect(apiClient.get('/api/v2/books')).resolves.toEqual({ ok: true })
-      await expect(apiClient.post('/api/v2/jobs', {})).rejects.toBeInstanceOf(
-        BackendAccessRestrictedError,
-      )
-      await expect(apiClient.put('/api/v2/settings', {})).rejects.toBeInstanceOf(
-        BackendAccessRestrictedError,
-      )
-      await expect(apiClient.patch('/api/v2/pages/one', {})).rejects.toBeInstanceOf(
-        BackendAccessRestrictedError,
-      )
-      await expect(apiClient.delete('/api/v2/books/one')).rejects.toBeInstanceOf(
-        BackendAccessRestrictedError,
-      )
+      await expect(apiClient.post('/api/v2/books', {})).resolves.toEqual({ ok: true })
+      await expect(apiClient.put('/api/v2/books/one', {})).resolves.toEqual({ ok: true })
+      await expect(apiClient.patch('/api/v2/pages/one/document', {})).resolves.toEqual({ ok: true })
+      await expect(apiClient.delete('/api/v2/books/one')).resolves.toEqual({ ok: true })
+      await expect(apiClient.upload('/api/v2/pages', new FormData())).resolves.toEqual({ ok: true })
       await expect(
-        apiClient.upload('/api/v2/fonts', new FormData()),
+        createChapterTranslationJob('chapter', [], { mode: 'standard' }),
       ).rejects.toBeInstanceOf(BackendAccessRestrictedError)
 
       expect(getRequestMock).toHaveBeenCalledTimes(1)
-      expect(postRequestMock).not.toHaveBeenCalled()
-      expect(putRequestMock).not.toHaveBeenCalled()
-      expect(patchRequestMock).not.toHaveBeenCalled()
-      expect(deleteRequestMock).not.toHaveBeenCalled()
+      expect(postRequestMock).toHaveBeenCalledTimes(2)
+      expect(putRequestMock).toHaveBeenCalledTimes(1)
+      expect(patchRequestMock).toHaveBeenCalledTimes(1)
+      expect(deleteRequestMock).toHaveBeenCalledTimes(1)
     } finally {
       setBackendAccessRestricted(false)
     }

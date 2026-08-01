@@ -170,7 +170,6 @@
   </ProductWorkspacePanel>
 </template>
 <script setup lang="ts">
-
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -181,9 +180,12 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import ProductWorkspacePanel from '@/components/product/ProductWorkspacePanel.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
-import ProductWizardSteps, { type ProductWizardStep } from '@/components/product/ProductWizardSteps.vue'
+import ProductWizardSteps, {
+  type ProductWizardStep,
+} from '@/components/product/ProductWizardSteps.vue'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { useContinuationState } from '@/composables/continuation/useContinuationState'
 import { useCharacterManagement } from '@/composables/continuation/useCharacterManagement'
 import { useImageGeneration } from '@/composables/continuation/useImageGeneration'
@@ -198,6 +200,7 @@ import { hasUsableStoryContent } from '@/composables/continuation/promptValidati
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import type { PageStoryField, PageStoryValue } from './continuation/pageStoryTypes'
 const insightStore = useInsightStore()
+const taskCenterStore = useTaskCenterStore()
 const bookId = computed(() => insightStore.currentBookId || '')
 const stateComposable = useContinuationState(bookId)
 const charMgmtComposable = useCharacterManagement(bookId, stateComposable)
@@ -244,8 +247,9 @@ const canProceedToPages = computed(() => {
   return state.chapterScript.value !== null
 })
 const canProceedToImages = computed(() => {
-  return state.pages.value.length > 0 && state.pages.value.every(
-    p => p.status !== 'failed' && hasUsableStoryContent(p)
+  return (
+    state.pages.value.length > 0 &&
+    state.pages.value.every(p => p.status !== 'failed' && hasUsableStoryContent(p))
   )
 })
 const generatedPagesCount = computed(() => {
@@ -271,25 +275,19 @@ const analysisSyncStatus = computed(() => {
   }
   return '分析数据已就绪'
 })
-async function persistContinuationConfig(): Promise<{ success: boolean; error?: string }> {
+async function persistContinuationConfig(): Promise<string | null> {
   if (!insightStore.currentBookId) {
-    return { success: false, error: '当前未选择漫画' }
+    return '当前未选择漫画'
   }
   try {
-    const result = await continuationApi.saveConfig(insightStore.currentBookId, {
+    await continuationApi.saveConfig(insightStore.currentBookId, {
       page_count: state.pageCount.value,
       style_reference_pages: state.styleRefPages.value,
-      continuation_direction: state.continuationDirection.value
+      continuation_direction: state.continuationDirection.value,
     })
-    if (!result.success) {
-      return { success: false, error: result.error || '未知错误' }
-    }
-    return { success: true }
+    return null
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '网络错误'
-    }
+    return error instanceof Error ? error.message : '网络错误'
   }
 }
 function canNavigateToStep(step: number): boolean {
@@ -318,33 +316,27 @@ function resolveReachableStep(requestedStep: number): number {
   if (requestedStep === 2) return 2
   return 3
 }
-async function handleGenerateScript(payload: { referenceTokens: string[] | null; referenceImageCount: number }) {
+async function handleGenerateScript(payload: {
+  referenceTokens: string[] | null
+  referenceImageCount: number
+}) {
   if (!insightStore.currentBookId) return
   isGeneratingScript.value = true
   state.errorMessage.value = ''
   try {
-    const result = await continuationApi.generateScriptWithRefs(
+    const jobId = await continuationApi.generateScriptWithRefs(
       insightStore.currentBookId,
       state.continuationDirection.value,
       state.pageCount.value,
       payload.referenceTokens || undefined,
       payload.referenceImageCount
     )
-    if (result.success && result.task_id) {
-      state.showMessage('脚本生成任务已进入任务中心，关闭浏览器也会继续运行', 'info')
-      await continuationApi.waitForContinuationJob(result.task_id)
-      await state.initializeData()
-      lastSavedScriptText.value = state.chapterScript.value?.script_text ?? ''
-      scriptDirty.value = false
-      state.showMessage('脚本生成成功，旧页面剧情已标记为需要重新生成', 'success')
-    } else if (result.success && result.script) {
-      state.chapterScript.value = result.script
-      lastSavedScriptText.value = result.script.script_text
-      scriptDirty.value = false
-      state.showMessage('脚本生成成功', 'success')
-    } else {
-      state.showMessage('生成失败: ' + result.error, 'error')
-    }
+    state.showMessage('脚本生成任务已进入任务中心，关闭浏览器也会继续运行', 'info')
+    await taskCenterStore.waitForJob(jobId)
+    await state.initializeData()
+    lastSavedScriptText.value = state.chapterScript.value?.script_text ?? ''
+    scriptDirty.value = false
+    state.showMessage('脚本生成成功，旧页面剧情已标记为需要重新生成', 'success')
   } catch (error) {
     state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
   } finally {
@@ -356,28 +348,28 @@ async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
   isSavingScript.value = true
   const shouldInvalidatePages = scriptDirty.value && state.pages.value.length > 0
   try {
-    const result = await continuationApi.saveScript(
+    const savedScript = await continuationApi.saveScript(
       insightStore.currentBookId,
       state.chapterScript.value
     )
-    if (result.success) {
-      lastSavedScriptText.value = state.chapterScript.value.script_text
-      scriptDirty.value = false
-      if (shouldInvalidatePages) {
-        state.pages.value = []
-        await persistPages([])
-        state.showMessage('脚本已更新，已有页面剧情已清空，请重新生成。', 'info')
-        return true
-      }
-      if (showSuccessMessage) {
-        state.showMessage('脚本已保存', 'success')
-      }
+    state.chapterScript.value = savedScript
+    lastSavedScriptText.value = savedScript.script_text
+    scriptDirty.value = false
+    if (shouldInvalidatePages) {
+      state.pages.value = []
+      await persistPages([])
+      state.showMessage('脚本已更新，已有页面剧情已清空，请重新生成。', 'info')
       return true
     }
-    state.showMessage('脚本保存失败: ' + result.error, 'error')
-    return false
+    if (showSuccessMessage) {
+      state.showMessage('脚本已保存', 'success')
+    }
+    return true
   } catch (error) {
-    state.showMessage('脚本保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    state.showMessage(
+      '脚本保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error'
+    )
     return false
   } finally {
     isSavingScript.value = false
@@ -399,7 +391,11 @@ function applyPageStoryEdit(page: PageContent, field: PageStoryField, value: Pag
   }
   page[field] = typeof value === 'string' ? value : ''
 }
-function handleStoryContentChange(pageNumber: number, field: PageStoryField, value: PageStoryValue) {
+function handleStoryContentChange(
+  pageNumber: number,
+  field: PageStoryField,
+  value: PageStoryValue
+) {
   const page = state.pages.value.find(item => item.page_number === pageNumber)
   if (!page) return
   applyPageStoryEdit(page, field, value)
@@ -412,7 +408,10 @@ function handleStoryContentChange(pageNumber: number, field: PageStoryField, val
     try {
       await persistPages()
     } catch (error) {
-      state.showMessage('页面剧情保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+      state.showMessage(
+        '页面剧情保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
+        'error'
+      )
     }
   }, 600)
 }
@@ -434,7 +433,7 @@ async function handleGeneratePageDetails() {
   try {
     const jobId = await continuationApi.generateAllPageDetails(insightStore.currentBookId)
     state.showMessage('页面剧情任务已整体进入任务中心，关闭浏览器也会继续运行', 'info')
-    await continuationApi.waitForContinuationJob(jobId)
+    await taskCenterStore.waitForJob(jobId)
     await state.initializeData()
     state.showMessage(`页面剧情生成完成 (${state.pages.value.length} 页)`, 'success')
   } catch (error) {
@@ -464,14 +463,12 @@ async function handleUsePrevious(pageNumber: number) {
   const page = state.pages.value.find(p => p.page_number === pageNumber)
   if (!page || !page.previous_url) return
   if (insightStore.currentBookId) {
-    const result = await continuationApi.activatePageImageVersion(
+    await continuationApi.activatePageImageVersion(
       insightStore.currentBookId,
       pageNumber,
-      page.previous_url,
+      page.previous_url
     )
-    if (result.success) {
-      await state.initializeData()
-    }
+    await state.initializeData()
   }
 }
 async function handlePromptChange(pageNumber: number, prompt: string) {
@@ -487,7 +484,10 @@ async function handlePromptChange(pageNumber: number, prompt: string) {
     try {
       await persistPages()
     } catch (error) {
-      state.showMessage('提示词保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+      state.showMessage(
+        '提示词保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
+        'error'
+      )
     }
   }, 600)
 }
@@ -523,9 +523,9 @@ async function requestClearAndRestart() {
 }
 async function goToStep(step: number) {
   if (state.currentStep.value === 0 && step !== 0) {
-    const configResult = await persistContinuationConfig()
-    if (!configResult.success) {
-      state.showMessage(`续写配置保存失败：${configResult.error}`, 'info')
+    const configError = await persistContinuationConfig()
+    if (configError) {
+      state.showMessage(`续写配置保存失败：${configError}`, 'info')
     }
   }
   if (state.currentStep.value === 1 && step !== 1 && scriptDirty.value) {
@@ -536,28 +536,39 @@ async function goToStep(step: number) {
   }
   state.currentStep.value = resolveReachableStep(step)
 }
-watch(() => insightStore.currentBookId, (newBookId) => {
-  clearPendingAutosaves()
-  resetLocalWorkflowState()
-  if (newBookId) {
-    state.initializeData()
-  } else {
-    state.resetState()
+watch(
+  () => insightStore.currentBookId,
+  newBookId => {
+    clearPendingAutosaves()
+    resetLocalWorkflowState()
+    if (newBookId) {
+      state.initializeData()
+    } else {
+      state.resetState()
+    }
+  },
+  { immediate: true }
+)
+watch(
+  () => insightStore.dataRefreshKey,
+  async (newKey, previousKey) => {
+    if (!insightStore.currentBookId || newKey <= 0 || newKey === previousKey) return
+    await state.syncAnalysisData('auto')
   }
-}, { immediate: true })
-watch(() => insightStore.dataRefreshKey, async (newKey, previousKey) => {
-  if (!insightStore.currentBookId || newKey <= 0 || newKey === previousKey) return
-  await state.syncAnalysisData('auto')
-})
-watch(() => state.chapterScript.value, (script) => {
-  if (script) {
-    lastSavedScriptText.value = script.script_text
-    scriptDirty.value = false
-  } else {
-    lastSavedScriptText.value = ''
-    scriptDirty.value = false
-  }
-}, { immediate: true })
+)
+watch(
+  () => state.chapterScript.value,
+  script => {
+    if (script) {
+      lastSavedScriptText.value = script.script_text
+      scriptDirty.value = false
+    } else {
+      lastSavedScriptText.value = ''
+      scriptDirty.value = false
+    }
+  },
+  { immediate: true }
+)
 onBeforeUnmount(() => {
   clearPendingAutosaves()
 })

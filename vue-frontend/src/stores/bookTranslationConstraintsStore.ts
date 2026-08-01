@@ -35,13 +35,10 @@ export const useBookTranslationConstraintsStore = defineStore('bookTranslationCo
     const payload = normalizeBookTranslationConstraints(nextConstraints ?? constraints.value)
     isSaving.value = true
     try {
-      const response = await updateBook(currentBookId.value, {
+      const book = await updateBook(currentBookId.value, {
         translationConstraints: payload,
       })
-      if (!response.success || !response.book) {
-        return false
-      }
-      constraints.value = normalizeBookTranslationConstraints(response.book.translationConstraints)
+      constraints.value = normalizeBookTranslationConstraints(book.translationConstraints)
       return true
     } catch {
       return false

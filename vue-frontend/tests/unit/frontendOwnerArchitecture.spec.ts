@@ -7,11 +7,11 @@ function source(path: string): string {
 }
 
 describe('frontend state owner architecture', () => {
-  it('keeps settings schema, normalization, and theme lifecycles outside the Pinia facade', () => {
+  it('keeps settings schema and theme lifecycles outside the Pinia facade', () => {
     const settingsStore = source('src/stores/settings/index.ts')
 
     expect(settingsStore).toContain("from './schema'")
-    expect(settingsStore).toContain("from './normalizeSettings'")
+    expect(settingsStore).not.toContain("from './normalizeSettings'")
     expect(settingsStore).toContain("from './useThemePreference'")
     expect(settingsStore).not.toContain('function parseCurrentSettings')
     expect(settingsStore).not.toContain('function ensureNumericTypes')

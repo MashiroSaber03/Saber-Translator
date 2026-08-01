@@ -28,7 +28,9 @@ const {
   sendPluginAgentMessageMock,
   lockPluginAgentTargetMock,
   startPluginAgentExecutionMock,
-  subscribePluginAgentEventsMock,
+  listPluginAgentJobEventsMock,
+  pluginAgentEventFromJobEventMock,
+  subscribeTaskEventsMock,
   fetchModelsMock,
   testAiTranslateConnectionMock,
 } = vi.hoisted(() => ({
@@ -39,7 +41,9 @@ const {
   sendPluginAgentMessageMock: vi.fn(),
   lockPluginAgentTargetMock: vi.fn(),
   startPluginAgentExecutionMock: vi.fn(),
-  subscribePluginAgentEventsMock: vi.fn(),
+  listPluginAgentJobEventsMock: vi.fn(),
+  pluginAgentEventFromJobEventMock: vi.fn(),
+  subscribeTaskEventsMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   testAiTranslateConnectionMock: vi.fn(),
 }))
@@ -52,7 +56,12 @@ vi.mock('@/api/pluginAgent', () => ({
   sendPluginAgentMessage: sendPluginAgentMessageMock,
   lockPluginAgentTarget: lockPluginAgentTargetMock,
   startPluginAgentExecution: startPluginAgentExecutionMock,
-  subscribePluginAgentEvents: subscribePluginAgentEventsMock,
+  listPluginAgentJobEvents: listPluginAgentJobEventsMock,
+  pluginAgentEventFromJobEvent: pluginAgentEventFromJobEventMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ subscribeEvents: subscribeTaskEventsMock }),
 }))
 
 vi.mock('@/components/common/BaseModal.vue', () => ({
@@ -65,10 +74,11 @@ vi.mock('@/components/common/BaseModal.vue', () => ({
     },
     emits: ['update:modelValue', 'close', 'open'],
     setup(_props, { slots }) {
-      return () => h('div', [
-        h('div', { class: 'modal-body-stub' }, slots.default ? slots.default() : []),
-        h('div', { class: 'modal-footer-stub' }, slots.footer ? slots.footer() : []),
-      ])
+      return () =>
+        h('div', [
+          h('div', { class: 'modal-body-stub' }, slots.default ? slots.default() : []),
+          h('div', { class: 'modal-footer-stub' }, slots.footer ? slots.footer() : []),
+        ])
     },
   }),
 }))
@@ -87,17 +97,18 @@ vi.mock('@/components/ui/UiCombobox.vue', () => ({
     },
     emits: ['change'],
     setup(props, { emit }) {
-      return () => h(
-        'select',
-        {
-          class: 'ui-combobox-stub',
-          value: props.modelValue,
-          onChange: (event: Event) => emit('change', (event.target as HTMLSelectElement).value),
-        },
-        (props.options || []).map((option: { label: string; value: string }) =>
-          h('option', { value: option.value }, option.label),
-        ),
-      )
+      return () =>
+        h(
+          'select',
+          {
+            class: 'ui-combobox-stub',
+            value: props.modelValue,
+            onChange: (event: Event) => emit('change', (event.target as HTMLSelectElement).value),
+          },
+          (props.options || []).map((option: { label: string; value: string }) =>
+            h('option', { value: option.value }, option.label)
+          )
+        )
     },
   }),
 }))
@@ -126,7 +137,7 @@ function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolver) => {
+  const promise = new Promise<T>(resolver => {
     resolve = resolver
   })
   return { promise, resolve }
@@ -144,12 +155,13 @@ describe('PluginAgentModal', () => {
     sendPluginAgentMessageMock.mockReset()
     lockPluginAgentTargetMock.mockReset()
     startPluginAgentExecutionMock.mockReset()
-    subscribePluginAgentEventsMock.mockReset()
+    listPluginAgentJobEventsMock.mockReset()
+    pluginAgentEventFromJobEventMock.mockReset()
+    subscribeTaskEventsMock.mockReset().mockReturnValue(vi.fn())
     fetchModelsMock.mockReset()
     testAiTranslateConnectionMock.mockReset()
 
     getPluginAgentSettingsMock.mockResolvedValue({
-      success: true,
       overview: ['插件只能操作单个目录'],
       overview_sections: [
         {
@@ -168,211 +180,225 @@ describe('PluginAgentModal', () => {
       ],
       plugins: [
         {
-          id: 'existing_plugin',
-          display_name: 'Existing Plugin',
-          description: 'demo',
-          version: '1.0.0',
-          enabled: false,
-          default_enabled: false,
-          has_config: false,
-          supported_steps: ['ocr'],
-          supported_modes: ['standard'],
+          pluginId: 'existing_plugin',
+          displayName: 'Existing Plugin',
         },
       ],
+      session: null,
     })
 
     createPluginAgentSessionMock.mockResolvedValue({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'drafting',
-        messages: [],
-        events: [],
-        touched_files: [],
-        file_previews: {},
-      },
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'drafting',
+      messages: [],
+      events: [],
+      touched_files: [],
+      file_previews: {},
     })
     getPluginAgentSessionMock.mockResolvedValue({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'drafting',
-        messages: [
-          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
-        ],
-        events: [],
-        touched_files: [],
-        file_previews: {},
-      },
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'drafting',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '做一个 OCR 插件',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+      ],
+      events: [],
+      touched_files: [],
+      file_previews: {},
     })
 
     sendPluginAgentMessageMock.mockResolvedValue({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'awaiting_target_lock',
-        pending_target: {
-          plugin_id: 'auto_plugin',
-          display_name: 'Auto Plugin',
-          supported_steps: ['ocr'],
-          supported_modes: ['standard'],
-        },
-        messages: [
-          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
-          { id: 'assistant-1', role: 'assistant', content: '建议创建新插件。', timestamp: '2026-01-01T00:00:01Z' },
-        ],
-        events: [
-          {
-            id: 1,
-            type: 'state',
-            payload: {
-              run_state: 'awaiting_target_lock',
-              label: '等待锁定',
-              message: 'Agent 已提出插件方案，等待你锁定目标插件。',
-            },
-            timestamp: '2026-01-01T00:00:01Z',
-          },
-        ],
-        touched_files: [],
-        file_previews: {},
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'awaiting_target_lock',
+      pending_target: {
+        plugin_id: 'auto_plugin',
+        display_name: 'Auto Plugin',
+        supported_steps: ['ocr'],
+        supported_modes: ['standard'],
       },
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '做一个 OCR 插件',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '建议创建新插件。',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      ],
+      events: [
+        {
+          id: 1,
+          type: 'state',
+          payload: {
+            run_state: 'awaiting_target_lock',
+            label: '等待锁定',
+            message: 'Agent 已提出插件方案，等待你锁定目标插件。',
+          },
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      ],
+      touched_files: [],
+      file_previews: {},
     })
 
     lockPluginAgentTargetMock.mockResolvedValue({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'ready',
-        pending_target: null,
-        locked_target: {
-          plugin_id: 'auto_plugin',
-          display_name: 'Auto Plugin',
-          plugin_dir: 'C:/plugins/auto_plugin',
-          supported_steps: ['ocr'],
-          supported_modes: ['standard'],
-        },
-        messages: [
-          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
-          { id: 'assistant-1', role: 'assistant', content: '建议创建新插件。', timestamp: '2026-01-01T00:00:01Z' },
-        ],
-        events: [],
-        touched_files: [],
-        file_previews: {},
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'ready',
+      pending_target: null,
+      locked_target: {
+        plugin_id: 'auto_plugin',
+        display_name: 'Auto Plugin',
+        plugin_dir: 'C:/plugins/auto_plugin',
+        supported_steps: ['ocr'],
+        supported_modes: ['standard'],
       },
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '做一个 OCR 插件',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '建议创建新插件。',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      ],
+      events: [],
+      touched_files: [],
+      file_previews: {},
     })
 
     startPluginAgentExecutionMock.mockResolvedValue({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'running',
-        messages: [],
-        events: [
-          {
-            id: 2,
-            type: 'state',
-            payload: {
-              run_state: 'running',
-              label: '开始执行',
-              message: 'Agent 已开始在锁定插件目录中执行。',
-            },
-            timestamp: '2026-01-01T00:00:02Z',
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'running',
+      job_id: 'job-1',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '做一个 OCR 插件',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '建议创建新插件。',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      ],
+      events: [
+        {
+          id: 2,
+          type: 'state',
+          payload: {
+            run_state: 'running',
+            label: '开始执行',
+            message: 'Agent 已开始在锁定插件目录中执行。',
           },
-        ],
-        touched_files: [],
-        file_previews: {},
-      },
+          timestamp: '2026-01-01T00:00:02Z',
+        },
+      ],
+      touched_files: [],
+      file_previews: {},
     })
-    subscribePluginAgentEventsMock.mockImplementation(async (_sessionId, options) => {
-      await options.onEvent({
-        id: 3,
-        type: 'assistant_delta',
-        payload: {
-          stream_id: 'exec-1',
-          phase: 'execution',
-          delta: '正在编写插件骨架',
-          content: '正在编写插件骨架',
-        },
-        timestamp: '2026-01-01T00:00:03Z',
-      })
-      await options.onEvent({
-        id: 4,
-        type: 'assistant',
-        payload: {
-          stream_id: 'exec-1',
-          phase: 'execution',
-          message: '正在编写插件骨架',
-        },
-        timestamp: '2026-01-01T00:00:04Z',
-      })
-      await options.onEvent({
-        id: 5,
-        type: 'tool_call',
-        payload: {
-          group_id: 'tool-1',
-          tool: 'write_file',
-          summary: '写入插件入口文件 __init__.py',
-          args_preview: {
-            path: '__init__.py',
+    listPluginAgentJobEventsMock.mockResolvedValue({
+      cursor: 8,
+      events: [
+        {
+          id: 3,
+          eventKey: 'job:3',
+          type: 'assistant_delta',
+          payload: {
+            stream_id: 'exec-1',
+            phase: 'execution',
+            delta: '正在编写插件骨架',
+            content: '正在编写插件骨架',
           },
+          timestamp: '2026-01-01T00:00:03Z',
         },
-        timestamp: '2026-01-01T00:00:05Z',
-      })
-      await options.onEvent({
-        id: 6,
-        type: 'tool_result',
-        payload: {
-          group_id: 'tool-1',
-          tool: 'write_file',
-          summary: '已写入 __init__.py',
-          success: true,
-          changed_files: ['__init__.py'],
-          file_previews: {
-            '__init__.py': 'from .plugin import AutoPlugin',
+        {
+          id: 4,
+          eventKey: 'job:4',
+          type: 'assistant',
+          payload: {
+            stream_id: 'exec-1',
+            phase: 'execution',
+            message: '正在编写插件骨架',
           },
-          debug_result: {
+          timestamp: '2026-01-01T00:00:04Z',
+        },
+        {
+          id: 5,
+          eventKey: 'job:5',
+          type: 'tool_call',
+          payload: {
+            group_id: 'tool-1',
+            tool: 'write_file',
+            summary: '写入插件入口文件 __init__.py',
+            args_preview: { path: '__init__.py' },
+          },
+          timestamp: '2026-01-01T00:00:05Z',
+        },
+        {
+          id: 6,
+          eventKey: 'job:6',
+          type: 'tool_result',
+          payload: {
+            group_id: 'tool-1',
+            tool: 'write_file',
+            summary: '已写入 __init__.py',
             success: true,
-            path: '__init__.py',
+            changed_files: ['__init__.py'],
+            file_previews: { '__init__.py': 'from .plugin import AutoPlugin' },
+            debug_result: { success: true, path: '__init__.py' },
           },
+          timestamp: '2026-01-01T00:00:06Z',
         },
-        timestamp: '2026-01-01T00:00:06Z',
-      })
-      await options.onEvent({
-        id: 7,
-        type: 'validation',
-        payload: {
-          summary: '插件校验通过',
-          success: true,
-          details: {
+        {
+          id: 7,
+          eventKey: 'job:7',
+          type: 'validation',
+          payload: {
+            summary: '插件校验通过',
             success: true,
+            details: { success: true },
           },
+          timestamp: '2026-01-01T00:00:07Z',
         },
-        timestamp: '2026-01-01T00:00:07Z',
-      })
-      await options.onEvent({
-        id: 8,
-        type: 'done',
-        payload: {
-          message: '插件开发已完成',
-          validation: {
-            success: true,
+        {
+          id: 8,
+          eventKey: 'job:8',
+          type: 'done',
+          payload: {
+            message: '插件开发已完成',
+            validation: { success: true },
+            refresh_result: { success: true },
+            run_state: 'completed',
           },
-          refresh_result: {
-            success: true,
-          },
-          run_state: 'completed',
+          timestamp: '2026-01-01T00:00:08Z',
         },
-        timestamp: '2026-01-01T00:00:08Z',
-      })
+      ],
     })
+    pluginAgentEventFromJobEventMock.mockReturnValue(null)
 
     fetchModelsMock.mockResolvedValue({
-      success: true,
       models: [
         { id: 'glm-4.5', name: 'GLM-4.5' },
         { id: 'glm-5.1', name: 'GLM-5.1' },
@@ -434,7 +460,10 @@ describe('PluginAgentModal', () => {
   })
 
   it('keeps scoped modal colors on semantic tokens instead of raw owner palettes', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
 
     expect(styleBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
@@ -443,7 +472,10 @@ describe('PluginAgentModal', () => {
   })
 
   it('lets UiButton own disabled button styling instead of local modal skins', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
 
     expect(source).not.toContain('--plugin-agent-disabled-border')
     expect(source).not.toContain('--plugin-agent-disabled-background')
@@ -452,14 +484,20 @@ describe('PluginAgentModal', () => {
   })
 
   it('does not keep stale button-era hooks for execution cancellation', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('plugin-agent-cancel-action')
     expect(source).not.toContain('plugin-agent-cancel-btn')
   })
 
   it('uses owner action hooks for plugin agent commands', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('plugin-agent-save-settings-action')
     expect(source).toContain('plugin-agent-clear-session-action')
@@ -470,7 +508,10 @@ describe('PluginAgentModal', () => {
   })
 
   it('uses owner modifiers for plugin agent timeline card state', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('plugin-agent-step-card--${item.kind}')
     expect(source).toContain('plugin-agent-step-card--status-${item.status}')
@@ -492,9 +533,13 @@ describe('PluginAgentModal', () => {
   })
 
   it('keeps plugin agent modal presentation hooks explicit outside markdown content', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
-    const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-      .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
+    const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+      match[1]!.split(/\s+/).filter(Boolean)
+    )
 
     for (const requiredClass of [
       'plugin-agent-modal__block-title',
@@ -524,7 +569,9 @@ describe('PluginAgentModal', () => {
 
     expect(source).toContain('.plugin-agent-overview-item p')
     expect(source).toContain('.plugin-agent-step-content p')
-    expect(source).not.toMatch(/<h3>(?:任务模式|Agent 设置|插件开发提示|对话与过程|输入|本轮任务工件|触达文件)<\/h3>/)
+    expect(source).not.toMatch(
+      /<h3>(?:任务模式|Agent 设置|插件开发提示|对话与过程|输入|本轮任务工件|触达文件)<\/h3>/
+    )
     expect(source).not.toMatch(/<h4>(?:示例描述|待锁定目标|最后校验)<\/h4>/)
   })
 
@@ -573,18 +620,21 @@ describe('PluginAgentModal', () => {
     await flushPromises()
 
     const fieldLabels = wrapper.findAllComponents(UiField).map(field => field.props('label'))
-    expect(fieldLabels).toEqual(expect.arrayContaining([
-      '服务商',
-      'API Key',
-      'Base URL',
-      '模型名称',
-      'RPM',
-      '业务重试',
-      '传输重试',
-      '输出选项',
-    ]))
+    expect(fieldLabels).toEqual(
+      expect.arrayContaining([
+        '服务商',
+        'API Key',
+        'Base URL',
+        '模型名称',
+        'RPM',
+        '业务重试',
+        '传输重试',
+        '输出选项',
+      ])
+    )
 
-    const settingsActions = wrapper.findAllComponents(ProductActionRow)
+    const settingsActions = wrapper
+      .findAllComponents(ProductActionRow)
       .find(row => row.props('ariaLabel') === 'Agent 设置操作')
     expect(settingsActions?.props('justify')).toBe('start')
   })
@@ -598,21 +648,24 @@ describe('PluginAgentModal', () => {
     await flushPromises()
 
     const fields = wrapper.findAllComponents(UiField)
-    const controlIds = fields
-      .map(field => field.props('controlId'))
-      .filter(Boolean)
+    const controlIds = fields.map(field => field.props('controlId')).filter(Boolean)
 
-    expect(controlIds).toEqual(expect.arrayContaining([
-      'pluginAgentProvider',
-      'pluginAgentApiKey',
-      'pluginAgentBaseUrl',
-      'pluginAgentModelName',
-      'pluginAgentRpmLimit',
-      'pluginAgentBusinessRetries',
-      'pluginAgentTransportRetries',
-    ]))
+    expect(controlIds).toEqual(
+      expect.arrayContaining([
+        'pluginAgentProvider',
+        'pluginAgentApiKey',
+        'pluginAgentBaseUrl',
+        'pluginAgentModelName',
+        'pluginAgentRpmLimit',
+        'pluginAgentBusinessRetries',
+        'pluginAgentTransportRetries',
+      ])
+    )
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
     expect(source).toContain('id="pluginAgentProvider"')
     expect(source).toContain('input-id="pluginAgentApiKey"')
     expect(source).toContain('id="pluginAgentBaseUrl"')
@@ -636,14 +689,20 @@ describe('PluginAgentModal', () => {
     expect(numberFields.map(field => field.props('max'))).toEqual([undefined, 10, 10])
     expect(numberFields.map(field => field.props('step'))).toEqual([1, 1, 1])
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
     expect(source).not.toMatch(/UiInput[^>]+type="number"|type="number"[^>]+UiInput/)
   })
 
   it('renders conversation history through shared scroll and message primitives', async () => {
     let resolveSend: ((value: unknown) => void) | null = null
     sendPluginAgentMessageMock.mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve }),
+      () =>
+        new Promise(resolve => {
+          resolveSend = resolve
+        })
     )
 
     const wrapper = mount(PluginAgentModal, {
@@ -668,25 +727,32 @@ describe('PluginAgentModal', () => {
     expect(wrapper.find('.plugin-agent-message-loading').exists()).toBe(true)
 
     resolveSend?.({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'awaiting_target_lock',
-        pending_target: {
-          plugin_id: 'auto_plugin',
-          display_name: 'Auto Plugin',
-          supported_steps: ['ocr'],
-          supported_modes: ['standard'],
-        },
-        messages: [
-          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
-          { id: 'assistant-1', role: 'assistant', content: '建议创建新插件。', timestamp: '2026-01-01T00:00:01Z' },
-        ],
-        events: [],
-        touched_files: [],
-        file_previews: {},
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'awaiting_target_lock',
+      pending_target: {
+        plugin_id: 'auto_plugin',
+        display_name: 'Auto Plugin',
+        supported_steps: ['ocr'],
+        supported_modes: ['standard'],
       },
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '做一个 OCR 插件',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '建议创建新插件。',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      ],
+      events: [],
+      touched_files: [],
+      file_previews: {},
     })
     await flushPromises()
 
@@ -695,7 +761,10 @@ describe('PluginAgentModal', () => {
   })
 
   it('uses product status feedback for empty conversation and touched files', async () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
     expect(source).toContain('ProductStatusBanner')
     expect(source).not.toContain('plugin-agent-empty')
 
@@ -707,16 +776,15 @@ describe('PluginAgentModal', () => {
     await flushPromises()
 
     const statusBanners = wrapper.findAllComponents(ProductStatusBanner)
-    expect(statusBanners.map(banner => banner.props('title'))).toEqual(expect.arrayContaining([
-      '插件 Agent',
-      '暂无文件变更',
-    ]))
-    expect(statusBanners.map(banner => banner.props('tone'))).toEqual(expect.arrayContaining([
-      'neutral',
-    ]))
-    expect(statusBanners.map(banner => banner.props('role'))).toEqual(expect.arrayContaining([
-      'note',
-    ]))
+    expect(statusBanners.map(banner => banner.props('title'))).toEqual(
+      expect.arrayContaining(['插件 Agent', '暂无文件变更'])
+    )
+    expect(statusBanners.map(banner => banner.props('tone'))).toEqual(
+      expect.arrayContaining(['neutral'])
+    )
+    expect(statusBanners.map(banner => banner.props('role'))).toEqual(
+      expect.arrayContaining(['note'])
+    )
     expect(wrapper.text()).toContain('描述你想创建或修改的插件需求')
     expect(wrapper.text()).toContain('执行后会在这里显示本轮写入或修改的文件')
     expect(wrapper.find('.plugin-agent-empty').exists()).toBe(false)
@@ -743,13 +811,18 @@ describe('PluginAgentModal', () => {
     await lockButton.trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')).toBeUndefined()
+    expect(
+      wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')
+    ).toBeUndefined()
   })
 
   it('shows the user message immediately and renders a waiting animation while the agent is replying', async () => {
     let resolveSend: ((value: unknown) => void) | null = null
     sendPluginAgentMessageMock.mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve }),
+      () =>
+        new Promise(resolve => {
+          resolveSend = resolve
+        })
     )
 
     const wrapper = mount(PluginAgentModal, {
@@ -769,25 +842,32 @@ describe('PluginAgentModal', () => {
     expect(wrapper.find('.plugin-agent-submit-message-action').text()).toContain('等待回复...')
 
     resolveSend?.({
-      success: true,
-      session: {
-        session_id: 'session-1',
-        mode: 'create',
-        run_state: 'awaiting_target_lock',
-        pending_target: {
-          plugin_id: 'auto_plugin',
-          display_name: 'Auto Plugin',
-          supported_steps: ['ocr'],
-          supported_modes: ['standard'],
-        },
-        messages: [
-          { id: 'user-1', role: 'user', content: '做一个 OCR 插件', timestamp: '2026-01-01T00:00:00Z' },
-          { id: 'assistant-1', role: 'assistant', content: '建议创建新插件。', timestamp: '2026-01-01T00:00:01Z' },
-        ],
-        events: [],
-        touched_files: [],
-        file_previews: {},
+      session_id: 'session-1',
+      mode: 'create',
+      run_state: 'awaiting_target_lock',
+      pending_target: {
+        plugin_id: 'auto_plugin',
+        display_name: 'Auto Plugin',
+        supported_steps: ['ocr'],
+        supported_modes: ['standard'],
       },
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '做一个 OCR 插件',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '建议创建新插件。',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      ],
+      events: [],
+      touched_files: [],
+      file_previews: {},
     })
     await flushPromises()
 
@@ -828,12 +908,17 @@ describe('PluginAgentModal', () => {
     expect(wrapper.find('.plugin-agent-history-panel').exists()).toBe(true)
     expect(wrapper.find('.plugin-agent-composer-panel').exists()).toBe(true)
     expect(wrapper.find('.plugin-agent-scroll-column').exists()).toBe(true)
-    expect(wrapper.get('textarea.plugin-agent-input').getComponent(UiTextarea).props()).toMatchObject({
+    expect(
+      wrapper.get('textarea.plugin-agent-input').getComponent(UiTextarea).props()
+    ).toMatchObject({
       variant: 'panel',
       rows: 4,
     })
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
     expect(source).toContain('variant="panel"')
     expect(source).not.toMatch(/--ui-(?:input|textarea)-/)
 
@@ -849,7 +934,10 @@ describe('PluginAgentModal', () => {
   })
 
   it('collapses the agent workbench from the modal content container', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/PluginAgentModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('class="plugin-agent-layout-shell"')
     expect(source).toContain('container: plugin-agent-modal / inline-size')
@@ -858,7 +946,10 @@ describe('PluginAgentModal', () => {
   })
 
   it('does not assert shared textarea primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/pluginAgentModal.spec.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'tests/unit/pluginAgentModal.spec.ts'),
+      'utf8'
+    )
     const textareaClassPrefix = 'ui-' + 'textarea--'
 
     expect(source).not.toContain(textareaClassPrefix)
@@ -872,7 +963,8 @@ describe('PluginAgentModal', () => {
     })
     await flushPromises()
 
-    const exampleChips = wrapper.findAllComponents(ProductChipList)
+    const exampleChips = wrapper
+      .findAllComponents(ProductChipList)
       .find(chips => chips.props('ariaLabel') === '插件 Agent 示例描述')
     expect(exampleChips).toBeTruthy()
     expect(exampleChips?.props('items')).toEqual([
@@ -894,14 +986,11 @@ describe('PluginAgentModal', () => {
 
   it('sanitizes plugin agent markdown before rendering it as html', async () => {
     getPluginAgentSettingsMock.mockResolvedValueOnce({
-      success: true,
       overview: [],
       overview_sections: [
         {
           title: '安全提示',
-          items: [
-            '<img src=x onerror="alert(1)">[危险链接](javascript:alert(2))',
-          ],
+          items: ['<img src=x onerror="alert(1)">[危险链接](javascript:alert(2))'],
         },
       ],
       prompt_examples: [],
@@ -941,10 +1030,12 @@ describe('PluginAgentModal', () => {
     expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'plugin_agent')
     const updatedModelPicker = wrapper.getComponent(UiModelPicker)
     expect(updatedModelPicker.props('modelCount')).toBe(2)
-    expect(updatedModelPicker.props('options')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'GLM-4.5', value: 'glm-4.5' }),
-      expect.objectContaining({ label: 'GLM-5.1', value: 'glm-5.1' }),
-    ]))
+    expect(updatedModelPicker.props('options')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'GLM-4.5', value: 'glm-4.5' }),
+        expect.objectContaining({ label: 'GLM-5.1', value: 'glm-5.1' }),
+      ])
+    )
     expect(wrapper.text()).toContain('共 2 个模型')
 
     updatedModelPicker.vm.$emit('change', 'glm-5.1')
@@ -955,7 +1046,7 @@ describe('PluginAgentModal', () => {
   })
 
   it('ignores stale fetched model responses after the agent provider changes', async () => {
-    const pendingModels = createDeferred<{ success: boolean; models: Array<{ id: string; name: string }> }>()
+    const pendingModels = createDeferred<{ models: Array<{ id: string; name: string }> }>()
     fetchModelsMock.mockReset()
     fetchModelsMock.mockReturnValueOnce(pendingModels.promise)
 
@@ -975,7 +1066,6 @@ describe('PluginAgentModal', () => {
     providerSelect.vm.$emit('change', 'deepseek')
 
     pendingModels.resolve({
-      success: true,
       models: [{ id: 'stale-plugin-agent-model', name: 'Stale Plugin Agent Model' }],
     })
     await flushPromises()
@@ -1020,7 +1110,7 @@ describe('PluginAgentModal', () => {
           message: 'tool_result',
           detail: expect.stringContaining('"debug_result"'),
         }),
-      ]),
+      ])
     )
     expect(wrapper.text()).not.toContain('"group_id": "tool-1"')
 
@@ -1047,7 +1137,8 @@ describe('PluginAgentModal', () => {
     await wrapper.find('.plugin-agent-start-execution-action').trigger('click')
     await flushPromises()
 
-    const fileCards = wrapper.findAllComponents(ProductRecordCard)
+    const fileCards = wrapper
+      .findAllComponents(ProductRecordCard)
       .filter(card => card.props('ariaLabel')?.startsWith('触达文件：'))
     expect(fileCards).toHaveLength(1)
     expect(fileCards[0].props('ariaLabel')).toBe('触达文件：__init__.py')

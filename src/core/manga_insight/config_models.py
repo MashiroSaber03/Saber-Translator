@@ -23,6 +23,7 @@ class VLMConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gemini-2.0-flash"
     base_url: Optional[str] = None
+    credential_version_id: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(default_factory=lambda: OpenAICompatibleOptions(
         request=OpenAICompatibleRequestOptions(
             force_json_output=False,
@@ -46,6 +47,7 @@ class ChatLLMConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gemini-2.0-flash"
     base_url: Optional[str] = None
+    credential_version_id: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(default_factory=lambda: OpenAICompatibleOptions(
         request=OpenAICompatibleRequestOptions(),
         execution=OpenAICompatibleExecutionOptions(
@@ -64,6 +66,7 @@ class EmbeddingConfig(SerializableMixin):
     api_key: str = ""
     model: str = "text-embedding-3-small"
     base_url: Optional[str] = None
+    credential_version_id: Optional[str] = None
     rpm_limit: int = 0
     transport_retries: int = 10
     business_retries: int = 10
@@ -77,6 +80,8 @@ class ImageGenConfig(SerializableMixin):
     api_key: str = ""
     model: str = "gpt-image-2"
     base_url: Optional[str] = None
+    credential_version_id: Optional[str] = None
+    rpm_limit: int = 0
     transport_retries: int = 10
     business_retries: int = 10
     timeout_seconds: float = 0

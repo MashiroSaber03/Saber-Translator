@@ -102,7 +102,7 @@ describe('WebImportDisclaimer', () => {
     await enabledConfirmButton?.trigger('click')
     await flushPromises()
 
-    expect(store.disclaimerAccepted).toBe(true)
+    expect(localStorage.getItem('webImportDisclaimerAccepted')).toBe('true')
     expect(store.modalVisible).toBe(true)
   })
 

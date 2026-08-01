@@ -38,7 +38,6 @@ describe('useAiModelDiscovery', () => {
   it('stores discovered models and reports the current result', async () => {
     const notify = vi.fn()
     const fetcher = vi.fn().mockResolvedValue({
-      success: true,
       models: [
         { id: 'model-a', name: 'Model A' },
         { id: 'model-b', name: 'Model B' },
@@ -64,7 +63,6 @@ describe('useAiModelDiscovery', () => {
 
   it('allows model discovery through a credential already stored by the backend', async () => {
     const fetcher = vi.fn().mockResolvedValue({
-      success: true,
       models: [{ id: 'stored-model', name: 'Stored Model' }],
     } satisfies FetchModelsResponse)
     const discovery = useAiModelDiscovery({
@@ -98,7 +96,7 @@ describe('useAiModelDiscovery', () => {
 
     const pending = discovery.fetchModels()
     provider.value = 'deepseek'
-    request.resolve({ success: true, models: [{ id: 'stale', name: 'Stale' }] })
+    request.resolve({ models: [{ id: 'stale', name: 'Stale' }] })
     await pending
 
     expect(discovery.models.value).toEqual([])
@@ -117,7 +115,7 @@ describe('useAiModelDiscovery', () => {
 
     const pending = discovery.fetchModels()
     discovery.invalidate()
-    request.resolve({ success: true, models: [{ id: 'stale', name: 'Stale' }] })
+    request.resolve({ models: [{ id: 'stale', name: 'Stale' }] })
     await pending
 
     expect(discovery.models.value).toEqual([])

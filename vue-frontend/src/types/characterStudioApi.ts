@@ -3,7 +3,6 @@ import type {
   CharacterStudioChatSessionSummary,
   CharacterStudioGreetingOption,
 } from './characterStudioChat'
-import type { CharacterStudioDocument } from './characterStudioDocument'
 
 export interface CharacterStudioCandidate {
   name: string
@@ -26,16 +25,11 @@ export interface CharacterStudioSummary {
   sample_pages: number[]
 }
 
-export interface CharacterStudioChatStateResponse {
-  success: boolean
-  doc_id?: string
+export interface CharacterStudioChatState {
+  doc_id: string
   active_session?: CharacterStudioChatSession
-  archived_sessions?: CharacterStudioChatSessionSummary[]
-  available_greetings?: CharacterStudioGreetingOption[]
-  session?: CharacterStudioChatSession
-  prompt_preview?: string
-  error?: string
-  message?: string
+  archived_sessions: CharacterStudioChatSessionSummary[]
+  available_greetings: CharacterStudioGreetingOption[]
 }
 
 export interface ExportDiagnostic {
@@ -45,32 +39,10 @@ export interface ExportDiagnostic {
   checks: Record<string, boolean>
 }
 
-export interface CharacterStudioReviewReport {
-  summary: string
-  issues: string[]
-  suggestions: string[]
-  generated_at?: string
-}
-
-export interface CardAgentResponse {
-  content: string
-  context: string
-}
-
-export interface CharacterStudioIndexResponse {
-  success: boolean
-  book_id?: string
-  documents?: CharacterStudioSummary[]
-  candidates?: CharacterStudioCandidate[]
-  count?: number
-  has_timeline?: boolean
-  error?: string
-  message?: string
-}
-
-export interface CharacterStudioDocumentResponse {
-  success: boolean
-  document?: CharacterStudioDocument
-  error?: string
-  message?: string
+export interface CharacterStudioIndex {
+  book_id: string
+  documents: CharacterStudioSummary[]
+  candidates: CharacterStudioCandidate[]
+  count: number
+  has_timeline: boolean
 }

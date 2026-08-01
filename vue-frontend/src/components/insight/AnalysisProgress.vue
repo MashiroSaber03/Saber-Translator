@@ -11,7 +11,8 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 import { ref, computed, watch } from 'vue'
-import { useInsightStore, type AnalysisMode } from '@/stores/insightStore'
+import { useInsightStore } from '@/stores/insightStore'
+import type { AnalysisMode } from '@/types/insight'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
 import type { ApiError } from '@/types'
@@ -130,13 +131,8 @@ const estimatedTime = computed(() => {
 
 const progressPercent = computed(() => Math.max(0, Math.min(100, insightStore.progressPercent)))
 
-function onAnalysisModeChange(): void {
-  insightStore.setAnalysisMode(analysisMode.value)
-}
-
 function updateAnalysisMode(value: string | number): void {
   analysisMode.value = value as AnalysisMode
-  onAnalysisModeChange()
 }
 
 function updateSelectedChapter(value: string | number): void {
@@ -187,17 +183,10 @@ async function startAnalysis(): Promise<void> {
       options.mode = insightStore.incrementalAnalysis ? 'incremental' : 'full'
     }
 
-    const response = await insightApi.startAnalysis(insightStore.currentBookId, options)
-
-    if (response.success) {
-      if (response.task_id) {
-        insightStore.setCurrentTaskId(response.task_id)
-      }
-      insightStore.setAnalysisStatus('running')
-      await taskCenterStore.refresh()
-    } else {
-      errorMessage.value = response.error || '启动分析失败'
-    }
+    const submission = await insightApi.startAnalysis(insightStore.currentBookId, options)
+    insightStore.setCurrentTaskId(submission.jobId)
+    insightStore.setAnalysisStatus('running')
+    await taskCenterStore.refresh()
   } catch (error) {
     errorMessage.value = getStartErrorMessage(error)
   } finally {
@@ -206,47 +195,33 @@ async function startAnalysis(): Promise<void> {
 }
 
 async function pauseAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId) return
+  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.pauseAnalysis(
-      insightStore.currentBookId,
-      insightStore.currentTaskId || undefined
-    )
-    if (response.success) {
-      insightStore.setAnalysisStatus('paused')
-      await taskCenterStore.refresh()
-    } else {
-      errorMessage.value = response.error || '暂停分析失败'
-    }
+    await insightApi.pauseAnalysis(insightStore.currentTaskId)
+    insightStore.setAnalysisStatus('paused')
+    await taskCenterStore.refresh()
   } catch {
     errorMessage.value = '暂停分析失败'
   }
 }
 
 async function resumeAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId) return
+  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.resumeAnalysis(
-      insightStore.currentBookId,
-      insightStore.currentTaskId || undefined
-    )
-    if (response.success) {
-      insightStore.setAnalysisStatus('running')
-      await taskCenterStore.refresh()
-    } else {
-      errorMessage.value = response.error || '继续分析失败'
-    }
+    await insightApi.resumeAnalysis(insightStore.currentTaskId)
+    insightStore.setAnalysisStatus('running')
+    await taskCenterStore.refresh()
   } catch {
     errorMessage.value = '继续分析失败'
   }
 }
 
 async function cancelAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId) return
+  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
   const confirmed = await confirmProductAction({
     title: '取消分析',
     message: '确定要取消分析吗？',
@@ -258,17 +233,10 @@ async function cancelAnalysis(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.cancelAnalysis(
-      insightStore.currentBookId,
-      insightStore.currentTaskId || undefined
-    )
-    if (response.success) {
-      insightStore.setAnalysisStatus('idle')
-      insightStore.setCurrentTaskId(null)
-      await taskCenterStore.refresh()
-    } else {
-      errorMessage.value = response.error || '取消分析失败'
-    }
+    await insightApi.cancelAnalysis(insightStore.currentTaskId)
+    insightStore.setAnalysisStatus('idle')
+    insightStore.setCurrentTaskId(null)
+    await taskCenterStore.refresh()
   } catch {
     errorMessage.value = '取消分析失败'
   }
@@ -281,13 +249,8 @@ async function exportAnalysis(): Promise<void> {
   }
 
   try {
-    const response = await insightApi.exportAnalysis(insightStore.currentBookId)
-
-    if (response.success) {
-      errorMessage.value = '导出任务已进入任务中心，完成后可在那里下载'
-    } else {
-      errorMessage.value = response.error || '导出失败'
-    }
+    await insightApi.exportAnalysis(insightStore.currentBookId)
+    errorMessage.value = '导出任务已进入任务中心，完成后可在那里下载'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '导出失败'
   }

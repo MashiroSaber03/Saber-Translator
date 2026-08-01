@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useExportImport } from '@/composables/useExportImport'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 
 const mocks = vi.hoisted(() => ({
   commitChapterTextImport: vi.fn(),
@@ -46,12 +47,12 @@ vi.mock('@/utils/toast', () => ({
 
 function seedChapter() {
   const store = useImageStore()
-  store.addImage('001.png', '/api/v2/assets/source-1', {
+  addTestImage(store, '001.png', '/api/v2/assets/source-1', {
     chapterId: 'chapter-1',
     id: 'page-1',
     sourceAssetUrl: '/api/v2/assets/source-1',
   })
-  store.addImage('002.png', '/api/v2/assets/source-2', {
+  addTestImage(store, '002.png', '/api/v2/assets/source-2', {
     chapterId: 'chapter-1',
     id: 'page-2',
     sourceAssetUrl: '/api/v2/assets/source-2',
@@ -178,7 +179,10 @@ describe('backend-owned export/import contracts', () => {
     expect(source).not.toContain('readAsDataURL')
     expect(source).not.toContain('downloadStartSession')
     expect(source).not.toContain('exportTextToJson')
+    expect(source).not.toContain('WatchStopHandle')
+    expect(source).not.toContain('30 * 60')
     expect(source).toContain('createChapterExportJob')
     expect(source).toContain('previewChapterTextImport')
+    expect(source).toContain('taskCenterStore.waitForJob')
   })
 })

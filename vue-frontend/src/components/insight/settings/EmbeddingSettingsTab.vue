@@ -10,10 +10,7 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import {
-  EMBEDDING_PROVIDER_OPTIONS,
-  EMBEDDING_DEFAULT_MODELS,
-} from './types'
+import { EMBEDDING_PROVIDER_OPTIONS, EMBEDDING_DEFAULT_MODELS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -38,9 +35,9 @@ const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 10)
 const timeoutSeconds = ref(insightStore.config.embedding.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() => (
+const hasStoredCredential = computed(() =>
   insightApi.hasInsightCredential('insight_embedding', provider.value)
-))
+)
 const {
   isFetchingModels,
   modelOptions,
@@ -84,7 +81,11 @@ async function testConnection(): Promise<void> {
       business_retries: businessRetries.value,
       timeout_seconds: timeoutSeconds.value,
     })
-    emit('showMessage', response.success ? 'Embedding 连接成功' : '连接失败: ' + (response.error || '未知错误'), response.success ? 'success' : 'error')
+    emit(
+      'showMessage',
+      response.success ? 'Embedding 连接成功' : '连接失败: ' + (response.message || '未知错误'),
+      response.success ? 'success' : 'error'
+    )
   } catch {
     emit('showMessage', '测试失败', 'error')
   } finally {
@@ -101,7 +102,7 @@ function buildDraftConfig(): StoreEmbeddingConfig {
     rpmLimit: rpmLimit.value,
     transportRetries: transportRetries.value,
     businessRetries: businessRetries.value,
-    timeoutSeconds: timeoutSeconds.value
+    timeoutSeconds: timeoutSeconds.value,
   }
 }
 
@@ -117,7 +118,16 @@ function applyDraftConfig(config: StoreEmbeddingConfig): void {
 }
 
 useInsightSettingsDraft<StoreEmbeddingConfig>({
-  sources: [provider, apiKey, model, baseUrl, rpmLimit, transportRetries, businessRetries, timeoutSeconds],
+  sources: [
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    rpmLimit,
+    transportRetries,
+    businessRetries,
+    timeoutSeconds,
+  ],
   buildDraft: buildDraftConfig,
   applyDraft: applyDraftConfig,
   loadDraft: () => insightStore.config.embedding,
@@ -127,7 +137,9 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
 </script>
 
 <template>
-  <InsightSettingsPanel description="Embedding（向量化模型）用于将文本转换为向量，支持语义搜索和问答功能。">
+  <InsightSettingsPanel
+    description="Embedding（向量化模型）用于将文本转换为向量，支持语义搜索和问答功能。"
+  >
     <InsightModelProviderSection
       v-model:provider="provider"
       v-model:api-key="apiKey"
@@ -153,20 +165,61 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
       @test="testConnection"
     />
 
-    <UiField variant="settings" label="RPM 限制" hint="每分钟最大请求数，0 表示不限制" control-id="insight-embedding-rpm-limit">
-      <UiNumberField v-model="rpmLimit" input-id="insight-embedding-rpm-limit" :min="0" :max="1000" />
+    <UiField
+      variant="settings"
+      label="RPM 限制"
+      hint="每分钟最大请求数，0 表示不限制"
+      control-id="insight-embedding-rpm-limit"
+    >
+      <UiNumberField
+        v-model="rpmLimit"
+        input-id="insight-embedding-rpm-limit"
+        :min="0"
+        :max="1000"
+      />
     </UiField>
 
-    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10" control-id="insight-embedding-transport-retries">
-      <UiNumberField v-model="transportRetries" input-id="insight-embedding-transport-retries" :min="0" :max="100" />
+    <UiField
+      variant="settings"
+      label="传输重试次数"
+      hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10"
+      control-id="insight-embedding-transport-retries"
+    >
+      <UiNumberField
+        v-model="transportRetries"
+        input-id="insight-embedding-transport-retries"
+        :min="0"
+        :max="100"
+      />
     </UiField>
 
-    <UiField variant="settings" label="业务重试次数" hint="当接口返回空向量或数量不匹配时的额外重试次数，默认 10" control-id="insight-embedding-business-retries">
-      <UiNumberField v-model="businessRetries" input-id="insight-embedding-business-retries" :min="0" :max="100" />
+    <UiField
+      variant="settings"
+      label="业务重试次数"
+      hint="当接口返回空向量或数量不匹配时的额外重试次数，默认 10"
+      control-id="insight-embedding-business-retries"
+    >
+      <UiNumberField
+        v-model="businessRetries"
+        input-id="insight-embedding-business-retries"
+        :min="0"
+        :max="100"
+      />
     </UiField>
 
-    <UiField variant="settings" label="单次请求超时（秒）" hint="0 表示不限制；大于 0 时作为单次 Embedding HTTP 请求超时" control-id="insight-embedding-timeout-seconds">
-      <UiNumberField v-model="timeoutSeconds" input-id="insight-embedding-timeout-seconds" :min="0" :max="3600" :step="1" />
+    <UiField
+      variant="settings"
+      label="单次请求超时（秒）"
+      hint="0 表示不限制；大于 0 时作为单次 Embedding HTTP 请求超时"
+      control-id="insight-embedding-timeout-seconds"
+    >
+      <UiNumberField
+        v-model="timeoutSeconds"
+        input-id="insight-embedding-timeout-seconds"
+        :min="0"
+        :max="3600"
+        :step="1"
+      />
     </UiField>
   </InsightSettingsPanel>
 </template>

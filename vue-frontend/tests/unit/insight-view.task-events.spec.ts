@@ -65,10 +65,7 @@ const ProductPageHeaderStub = {
   `,
 }
 
-type BookDetailSuccess = {
-  success: true
-  book: BookData
-}
+type BookDetailSuccess = BookData
 
 function createBook(id: string, title: string): BookData {
   return {
@@ -516,16 +513,16 @@ describe('InsightView task event projection', () => {
     expect(source).not.toContain('.insight-page .insight-view__')
   })
 
-  it('uses the shared bookshelf normalizer instead of reading wire aliases in the page view', () => {
+  it('uses the current bookshelf DTO without wire aliases', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/InsightView.vue'), 'utf8')
 
-    expect(source).toContain("import { normalizeBookData } from '@/utils/bookshelfModels'")
+    expect(source).not.toContain('normalizeBookData')
     expect(source).not.toContain('function getChapterPageCount')
     expect(source).not.toContain('chapter.page_count')
     expect(source).not.toContain('chapter.image_count')
     expect(source).not.toContain('book.total_pages')
     expect(source).not.toContain('currentBook?.total_pages')
-    expect(source).toContain('normalizedBook.totalPages')
+    expect(source).toContain('book.totalPages')
     expect(source).toContain('currentBook?.totalPages')
   })
 
@@ -680,12 +677,12 @@ describe('InsightView task event projection', () => {
     secondButton!.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
 
-    secondLoad.resolve({ success: true, book: createBook('book-2', 'Second Book') })
+    secondLoad.resolve(createBook('book-2', 'Second Book'))
     await flushPromises()
 
     expect(wrapper.text()).toContain('Second Book')
 
-    firstLoad.resolve({ success: true, book: createBook('book-1', 'First Book') })
+    firstLoad.resolve(createBook('book-1', 'First Book'))
     await flushPromises()
 
     expect(insightStore.currentBookId).toBe('book-2')

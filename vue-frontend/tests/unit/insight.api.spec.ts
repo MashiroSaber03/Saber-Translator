@@ -70,7 +70,7 @@ function accepted(jobId: string) {
   return { batchId: 'batch-1', jobIds: [jobId], runId: 'run-1', status: 'queued' }
 }
 
-describe('insight v2 api facade', () => {
+describe('insight v2 api', () => {
   beforeEach(() => {
     vi.resetModules()
     deleteMock.mockReset()
@@ -96,11 +96,11 @@ describe('insight v2 api facade', () => {
       pages: [1, 2],
       force: true,
     })
-    await pauseAnalysis('book/id one', 'job-1')
-    await resumeAnalysis('book/id one', 'job-1')
-    await cancelAnalysis('book/id one', 'job-1')
+    await pauseAnalysis('job-1')
+    await resumeAnalysis('job-1')
+    await cancelAnalysis('job-1')
 
-    expect(result).toMatchObject({ success: true, task_id: 'job-1', run_id: 'run-1' })
+    expect(result).toEqual({ jobId: 'job-1', runId: 'run-1' })
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/insight/books/book%2Fid%20one/pages',
       { params: { cursor: 0, limit: 100 } },
@@ -147,10 +147,7 @@ describe('insight v2 api facade', () => {
       { bookId: 'book/id one' },
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
-    expect(timelineResult).toMatchObject({
-      success: true,
-      task_id: 'timeline-job',
-    })
+    expect(timelineResult).toBe('timeline-job')
     expect(postMock).toHaveBeenNthCalledWith(
       2,
       '/api/v2/insight/timeline',
@@ -163,7 +160,7 @@ describe('insight v2 api facade', () => {
       {},
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
-    expect(vectorResult).toMatchObject({ success: true, task_id: 'vector-job' })
+    expect(vectorResult).toBe('vector-job')
   })
 
   it('reads mode-specific QA readiness and rebuilds global compressed context', async () => {
@@ -194,10 +191,7 @@ describe('insight v2 api facade', () => {
       {},
       { headers: { 'Idempotency-Key': expect.any(String) } },
     )
-    expect(rebuild).toMatchObject({
-      success: true,
-      task_id: 'compressed-context-job',
-    })
+    expect(rebuild).toBe('compressed-context-job')
   })
 
   it('serializes precise QA with the backend exact-mode contract', async () => {
@@ -238,11 +232,7 @@ describe('insight v2 api facade', () => {
       topK: 5,
       threshold: 0,
     })
-    expect(result).toMatchObject({
-      success: true,
-      answer: '回答',
-      citations: [{ page: 2 }],
-    })
+    expect(result).toMatchObject({ answer: '回答', citations: [{ page: 2 }] })
   })
 
   it('loads an existing overview without creating a duplicate rebuild job', async () => {
@@ -261,11 +251,7 @@ describe('insight v2 api facade', () => {
 
     const result = await regenerateOverview('book/id one', 'no_spoiler', false)
 
-    expect(result).toMatchObject({
-      success: true,
-      content: 'cached overview',
-      cached: true,
-    })
+    expect(result).toEqual({ kind: 'cached', content: 'cached overview' })
     expect(postMock).not.toHaveBeenCalled()
   })
 
@@ -290,12 +276,10 @@ describe('insight v2 api facade', () => {
     const result = await getAnalysisStatus('book/id one')
 
     expect(result).toMatchObject({
-      success: true,
-      analyzed_pages_count: 14,
-      fully_analyzed: true,
-      status: 'completed',
+      analyzedPagesCount: 14,
+      fullyAnalyzed: true,
     })
-    expect(result.current_task).toBeUndefined()
+    expect(result.currentTask).toBeUndefined()
   })
 
   it('maps durable timeline page IDs into renderable page-number groups', async () => {
@@ -318,9 +302,7 @@ describe('insight v2 api facade', () => {
     const { getTimeline } = await import('@/api/insight')
 
     const result = await getTimeline('book/id one')
-    const timeline = result.timeline as unknown as Record<string, unknown>
-
-    expect(timeline).toMatchObject({
+    expect(result).toMatchObject({
       story_summary: '故事概述',
       groups: [{
         id: 'event-1',
@@ -362,9 +344,9 @@ describe('insight v2 api facade', () => {
     await updateNote('book/id one', 'note/id one', {
       citations: [{ page: 2, content: 'updated evidence' }],
     })
-    await deleteNote('book/id one', 'note/id one')
+    await deleteNote('note/id one')
 
-    expect(loaded.notes?.[0]).toMatchObject({
+    expect(loaded[0]).toMatchObject({
       id: 'note/id one',
       content: 'note body',
       revision: 7,

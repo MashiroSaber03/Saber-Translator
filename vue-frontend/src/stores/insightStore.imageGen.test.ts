@@ -52,7 +52,10 @@ describe('useInsightStore imageGen config', () => {
       timeoutSeconds: 6,
     })
 
-    store.setImageGenProvider('future-image-provider')
+    store.switchImageGenProviderDraft({
+      ...store.config.imageGen,
+      provider: 'future-image-provider',
+    })
     store.updateImageGenConfig({
       provider: 'future-image-provider',
       apiKey: 'second-key',
@@ -62,7 +65,10 @@ describe('useInsightStore imageGen config', () => {
       businessRetries: 8,
       timeoutSeconds: 9,
     })
-    store.setImageGenProvider('gpt2api')
+    store.switchImageGenProviderDraft({
+      ...store.config.imageGen,
+      provider: 'gpt2api',
+    })
 
     expect(store.config.imageGen).toEqual({
       provider: 'gpt2api',
@@ -78,7 +84,10 @@ describe('useInsightStore imageGen config', () => {
   it('does not backfill gpt-image-2 when switching to newapi without a cached model', () => {
     const store = useInsightStore()
 
-    store.setImageGenProvider('newapi')
+    store.switchImageGenProviderDraft({
+      ...store.config.imageGen,
+      provider: 'newapi',
+    })
 
     expect(store.config.imageGen.provider).toBe('newapi')
     expect(store.config.imageGen.model).toBe('')

@@ -42,27 +42,27 @@
         导入插件或使用自动生成插件开始。
       </ProductStatusBanner>
       <div v-else class="plugin-manager__list">
-        <ProductRecordCard v-for="plugin in plugins" :key="plugin.id" class="plugin-manager__plugin-card">
+        <ProductRecordCard v-for="plugin in plugins" :key="plugin.pluginId" class="plugin-manager__plugin-card">
           <template #meta>
             <div class="plugin-manager__plugin-header">
-              <span class="plugin-manager__plugin-name">{{ plugin.display_name }}</span>
-              <span class="plugin-manager__plugin-version">v{{ plugin.version || '1.0.0' }}</span>
+              <span class="plugin-manager__plugin-name">{{ plugin.displayName }}</span>
+              <span class="plugin-manager__plugin-version">v{{ plugin.packageVersion }}</span>
             </div>
           </template>
 
           <template #actions>
             <div class="plugin-manager__plugin-controls">
               <UiSwitch
-                :model-value="plugin.enabled"
-                :accessibility-label="`${plugin.enabled ? '禁用' : '启用'}插件 ${plugin.display_name}`"
+                :model-value="plugin.runtimeEnabled"
+                :accessibility-label="`${plugin.runtimeEnabled ? '禁用' : '启用'}插件 ${plugin.displayName}`"
                 @change="setPluginEnabled(plugin, $event)"
               />
               <UiButton variant="secondary" @click="downloadPlugin(plugin)" title="导出" size="sm">导出</UiButton>
               <UiIconButton
-                v-if="plugin.has_config"
+                v-if="Object.keys(plugin.configSchema).length > 0"
                 variant="soft"
                 size="sm"
-                :label="`配置插件 ${plugin.display_name}`"
+                :label="`配置插件 ${plugin.displayName}`"
                 @click="openPluginConfig(plugin)"
               >
                 <UiIcon name="settings" />
@@ -70,7 +70,7 @@
               <UiIconButton
                 variant="danger"
                 size="sm"
-                :label="`删除插件 ${plugin.display_name}`"
+                :label="`删除插件 ${plugin.displayName}`"
                 @click="deletePlugin(plugin)"
               >
                 <UiIcon name="trash" />
@@ -80,10 +80,10 @@
 
           <p class="plugin-manager__plugin-description">{{ plugin.description || '暂无描述' }}</p>
           <p v-if="plugin.state === 'error'" class="plugin-manager__plugin-error">
-            加载错误：{{ plugin.error_message || '插件完整性或入口加载失败' }}
+            加载错误：{{ plugin.errorMessage || '插件完整性或入口加载失败' }}
           </p>
-          <p class="plugin-manager__plugin-meta">步骤: {{ (plugin.supported_steps || []).join(', ') || '无' }}</p>
-          <p class="plugin-manager__plugin-meta">模式: {{ (plugin.supported_modes || []).join(', ') || '无' }}</p>
+          <p class="plugin-manager__plugin-meta">步骤: {{ plugin.manifest.supported_steps.join(', ') || '无' }}</p>
+          <p class="plugin-manager__plugin-meta">模式: {{ plugin.manifest.supported_modes.join(', ') || '无' }}</p>
         </ProductRecordCard>
       </div>
     </ProductFormSection>
@@ -91,19 +91,19 @@
     <ProductFormSection>
       <template #title>默认启用状态</template>
       <p class="plugin-manager__settings-hint">设置插件在新会话中的默认启用状态</p>
-      <div v-for="plugin in plugins" :key="'default-' + plugin.id" class="plugin-manager__default-state-item">
-        <span class="plugin-manager__plugin-name">{{ plugin.display_name }}</span>
+      <div v-for="plugin in plugins" :key="'default-' + plugin.pluginId" class="plugin-manager__default-state-item">
+        <span class="plugin-manager__plugin-name">{{ plugin.displayName }}</span>
         <UiSwitch
-          :model-value="Boolean(defaultStates[plugin.id])"
-          :accessibility-label="`${defaultStates[plugin.id] ? '关闭' : '开启'} ${plugin.display_name} 默认启用状态`"
-          @change="updateDefaultState(plugin.id, $event)"
+          :model-value="Boolean(defaultStates[plugin.pluginId])"
+          :accessibility-label="`${defaultStates[plugin.pluginId] ? '关闭' : '开启'} ${plugin.displayName} 默认启用状态`"
+          @change="updateDefaultState(plugin.pluginId, $event)"
         />
       </div>
     </ProductFormSection>
 
     <BaseModal
       :model-value="showConfigModal"
-      :title="`${configPlugin?.display_name || '插件'} 配置`"
+      :title="`${configPlugin?.displayName || '插件'} 配置`"
       custom-class="plugin-config-modal"
       frame-variant="outlined"
       divider-variant="soft"
@@ -211,7 +211,7 @@ import UiSwitch from '@/components/ui/UiSwitch.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { ref, onMounted } from 'vue'
 import * as pluginApi from '@/api/plugin'
-import type { PluginData } from '@/types'
+import type { PluginData } from '@/api/plugin'
 import { useToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { triggerBlobDownload } from '@/utils/browserDownload'
@@ -258,7 +258,7 @@ async function loadPlugins() {
   isLoading.value = true
   try {
     const result = await pluginApi.getPlugins()
-    plugins.value = result.plugins || []
+    plugins.value = result
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '加载插件列表失败'
     toast.error(errorMessage)
@@ -270,7 +270,7 @@ async function loadPlugins() {
 async function loadDefaultStates() {
   try {
     const result = await pluginApi.getPluginDefaultStates()
-    defaultStates.value = result.default_states || {}
+    defaultStates.value = result
   } catch {
     defaultStates.value = {}
   }
@@ -285,12 +285,12 @@ async function refreshPluginListCore(options: { showToast: boolean }) {
   closeConfigModal()
   try {
     const result = await pluginApi.refreshPlugins()
-    plugins.value = result.plugins || []
-    defaultStates.value = result.default_states || {}
+    plugins.value = result.plugins
+    defaultStates.value = result.defaultStates
 
     if (options.showToast) {
-      if (result.partial_success) {
-        const failedCount = result.summary?.failed ?? result.failures?.length ?? 0
+      if (result.partialSuccess) {
+        const failedCount = result.summary.failed
         toast.warning(
           failedCount > 0
             ? `部分插件刷新失败（${failedCount} 个）`
@@ -309,17 +309,17 @@ async function refreshPluginListCore(options: { showToast: boolean }) {
 }
 
 async function setPluginEnabled(plugin: Plugin, enabled: boolean) {
-  if (plugin.enabled === enabled) return
+  if (plugin.runtimeEnabled === enabled) return
 
   try {
     if (enabled) {
-      await pluginApi.enablePlugin(plugin.id)
-      plugin.enabled = true
-      toast.success(`已启用 ${plugin.display_name}`)
+      await pluginApi.enablePlugin(plugin.pluginId)
+      plugin.runtimeEnabled = true
+      toast.success(`已启用 ${plugin.displayName}`)
     } else {
-      await pluginApi.disablePlugin(plugin.id)
-      plugin.enabled = false
-      toast.success(`已禁用 ${plugin.display_name}`)
+      await pluginApi.disablePlugin(plugin.pluginId)
+      plugin.runtimeEnabled = false
+      toast.success(`已禁用 ${plugin.displayName}`)
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '操作失败'
@@ -342,11 +342,11 @@ async function updateDefaultState(pluginName: string, enabled: boolean) {
 async function openPluginConfig(plugin: Plugin) {
   configPlugin.value = plugin
   try {
-    const schemaResult = await pluginApi.getPluginConfigSchema(plugin.id)
-    configSchema.value = (schemaResult.schema || {}) as Record<string, ConfigField>
+    const schemaResult = await pluginApi.getPluginConfigSchema(plugin.pluginId)
+    configSchema.value = schemaResult as Record<string, ConfigField>
 
-    const configResult = await pluginApi.getPluginConfig(plugin.id)
-    configValues.value = configResult.config || {}
+    const configResult = await pluginApi.getPluginConfig(plugin.pluginId)
+    configValues.value = configResult
 
     showConfigModal.value = true
   } catch (error: unknown) {
@@ -365,7 +365,7 @@ function closeConfigModal() {
 async function savePluginConfig() {
   if (!configPlugin.value) return
   try {
-    await pluginApi.savePluginConfig(configPlugin.value.id, configValues.value)
+    await pluginApi.savePluginConfig(configPlugin.value.pluginId, configValues.value)
     toast.success('配置保存成功')
     closeConfigModal()
   } catch (error: unknown) {
@@ -377,14 +377,14 @@ async function savePluginConfig() {
 async function deletePlugin(plugin: Plugin) {
   const confirmed = await confirmProductAction({
     title: '删除插件',
-    message: `确定要删除插件 "${plugin.display_name}" 吗？`,
+    message: `确定要删除插件 "${plugin.displayName}" 吗？`,
     confirmText: '删除',
     cancelText: '取消',
     tone: 'danger',
   })
   if (!confirmed) return
   try {
-    await pluginApi.deletePlugin(plugin.id)
+    await pluginApi.deletePlugin(plugin.pluginId)
     toast.success('插件删除成功')
     await loadPlugins()
     await loadDefaultStates()
@@ -400,9 +400,9 @@ function triggerImport() {
 
 async function downloadPlugin(plugin: Plugin) {
   try {
-    const result = await pluginApi.exportPlugin(plugin.id)
+    const result = await pluginApi.exportPlugin(plugin.pluginId)
     triggerBlobDownload(result.blob, result.filename)
-    toast.success(`已导出 ${plugin.display_name}`)
+    toast.success(`已导出 ${plugin.displayName}`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '导出插件失败'
     toast.error(errorMessage)

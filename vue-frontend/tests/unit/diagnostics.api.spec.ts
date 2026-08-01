@@ -20,7 +20,7 @@ import {
 describe('v2 diagnostics api', () => {
   beforeEach(() => {
     postMock.mockReset()
-    postMock.mockResolvedValue({ success: true, models: [] })
+    postMock.mockResolvedValue({ models: [] })
   })
 
   it('uses the unified model and connection diagnostic endpoints', async () => {

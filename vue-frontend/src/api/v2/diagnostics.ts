@@ -1,13 +1,7 @@
 import { normalizeProviderId } from '@/config/aiProviders'
-import type {
-  DiagnosticConnectionTestResponse,
-  FetchModelsResponse,
-} from '@/types'
+import type { FetchModelsResponse } from '@/types'
 
-import {
-  fetchV2ModelCatalog,
-  runV2ConnectionTest,
-} from './settings'
+import { fetchV2ModelCatalog, runV2ConnectionTest, type V2ConnectionTestResult } from './settings'
 
 export interface AiVisionOcrTestParams {
   provider: string
@@ -28,10 +22,10 @@ export interface AiTranslateTestParams {
 
 function secretOrDomain(
   domain: string,
-  secret: Record<string, string>,
+  secret: Record<string, string>
 ): { domain?: string; secret?: Record<string, string> } {
   const present = Object.fromEntries(
-    Object.entries(secret).filter(([, value]) => value.trim().length > 0),
+    Object.entries(secret).filter(([, value]) => value.trim().length > 0)
   )
   return Object.keys(present).length > 0 ? { secret: present } : { domain }
 }
@@ -40,7 +34,7 @@ export function fetchModels(
   provider: string,
   apiKey: string,
   baseUrl?: string,
-  domain = 'translation',
+  domain = 'translation'
 ): Promise<FetchModelsResponse> {
   const secretField = domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key'
   return fetchV2ModelCatalog({
@@ -50,18 +44,14 @@ export function fetchModels(
   })
 }
 
-export function testOllamaConnection(baseUrl?: string): Promise<DiagnosticConnectionTestResponse> {
-  return runV2ConnectionTest('ollama', { baseUrl, domain: 'translation' })
-}
-
-export function testSakuraConnection(baseUrl?: string): Promise<DiagnosticConnectionTestResponse> {
+export function testSakuraConnection(baseUrl?: string): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('sakura', { baseUrl, domain: 'translation' })
 }
 
 export function testBaiduOcrConnection(
   apiKey: string,
-  secretKey: string,
-): Promise<DiagnosticConnectionTestResponse> {
+  secretKey: string
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('baidu_ocr', {
     ...secretOrDomain('ocr', {
       baidu_api_key: apiKey,
@@ -70,13 +60,9 @@ export function testBaiduOcrConnection(
   })
 }
 
-export function testLamaRepair(): Promise<DiagnosticConnectionTestResponse> {
-  return runV2ConnectionTest('lama_repair')
-}
-
 export function testAiVisionOcrConnection(
-  params: AiVisionOcrTestParams,
-): Promise<DiagnosticConnectionTestResponse> {
+  params: AiVisionOcrTestParams
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('ai_vision_ocr', {
     provider: normalizeProviderId(params.provider),
     model: params.modelName,
@@ -89,8 +75,8 @@ export function testAiVisionOcrConnection(
 }
 
 export function testAiTranslateConnection(
-  params: AiTranslateTestParams,
-): Promise<DiagnosticConnectionTestResponse> {
+  params: AiTranslateTestParams
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('ai_translate', {
     provider: normalizeProviderId(params.provider),
     model: params.modelName || undefined,
@@ -101,8 +87,8 @@ export function testAiTranslateConnection(
 
 export function testBaiduTranslateConnection(
   appId: string,
-  appKey: string,
-): Promise<DiagnosticConnectionTestResponse> {
+  appKey: string
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('baidu_translate', {
     provider: 'baidu_translate',
     ...secretOrDomain('translation', { app_id: appId, app_key: appKey }),
@@ -111,8 +97,8 @@ export function testBaiduTranslateConnection(
 
 export function testYoudaoTranslateConnection(
   appKey: string,
-  appSecret: string,
-): Promise<DiagnosticConnectionTestResponse> {
+  appSecret: string
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('youdao_translate', {
     provider: 'youdao_translate',
     ...secretOrDomain('translation', { app_key: appKey, app_secret: appSecret }),

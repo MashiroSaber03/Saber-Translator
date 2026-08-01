@@ -72,19 +72,12 @@ async function loadPageDetail(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.getPageData(bookId, pageNum)
+    const page = await insightApi.getPageData(bookId, pageNum)
 
     if (!isCurrentPageDetailRequest(requestId, bookId, pageNum)) return
 
-    if (response.success) {
-      pageAnalysis.value = response.analysis ?? null
-      loadedImageUrl.value = response.source_url ?? ''
-    } else {
-      pageAnalysis.value = null
-      if (response.error) {
-        errorMessage.value = response.error
-      }
-    }
+    pageAnalysis.value = page.analysis
+    loadedImageUrl.value = page.sourceUrl
   } catch (error) {
     if (!isCurrentPageDetailRequest(requestId, bookId, pageNum)) return
     pageAnalysis.value = null
@@ -125,20 +118,13 @@ async function reanalyzePage(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const response = await insightApi.reanalyzePage(
+    const submission = await insightApi.reanalyzePage(
       insightStore.currentBookId,
       selectedPageNum.value
     )
-
-    if (response.success) {
-      if (response.task_id) {
-        insightStore.setCurrentTaskId(response.task_id)
-      }
-      pendingReanalyzePage.value = selectedPageNum.value
-      insightStore.setAnalysisStatus('running')
-    } else {
-      errorMessage.value = response.error || '重新分析失败'
-    }
+    insightStore.setCurrentTaskId(submission.jobId)
+    pendingReanalyzePage.value = selectedPageNum.value
+    insightStore.setAnalysisStatus('running')
   } catch (error) {
     const message = (error as { message?: string })?.message
     errorMessage.value = message || '重新分析失败'

@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, getCurrentInstance, onUnmounted, ref, watch } from 'vue'
 
 import { getPageSummary } from '@/api/v2/content'
 import { createChapterStyleApplyJob } from '@/api/v2/translation'
@@ -44,6 +44,13 @@ export function useTextStyleSync() {
   const taskCenterStore = useTaskCenterStore()
   const currentImage = computed(() => imageStore.currentImage)
   const isSyncingTextStyle = ref(false)
+  let renderedAssetRefreshToken = 0
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      renderedAssetRefreshToken += 1
+    })
+  }
 
   function syncImageToSidebar(image: typeof imageStore.currentImage) {
     if (!image) return
@@ -144,14 +151,17 @@ export function useTextStyleSync() {
   }
 
   async function refreshRenderedAsset(pageId: string, minimumRevision: number): Promise<void> {
+    const token = ++renderedAssetRefreshToken
     for (let attempt = 0; attempt < 50; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 200))
+      if (token !== renderedAssetRefreshToken) return
       let summary
       try {
         summary = await getPageSummary(pageId)
       } catch {
         continue
       }
+      if (token !== renderedAssetRefreshToken) return
       if (
         summary.renderStatus !== 'ready'
         || (summary.renderedRevision ?? 0) < minimumRevision
@@ -265,8 +275,5 @@ export function useTextStyleSync() {
     handleAutoFontSizeChanged,
     handleAutoTextColorChanged,
     handleTextStyleChanged,
-    isSyncingTextStyle,
-    syncImageToSidebar,
-    syncSidebarToImage,
   }
 }

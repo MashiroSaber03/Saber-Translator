@@ -45,14 +45,11 @@ describe('useInsightNotes', () => {
 
   it('always persists new notes even if a caller supplies a client id', async () => {
     createNoteMock.mockResolvedValueOnce({
-      success: true,
-      note: {
-        id: 'backend-note',
-        type: 'text',
-        content: 'persist me',
-        createdAt: '2026-07-30T00:00:00.000Z',
-        updatedAt: '2026-07-30T00:00:00.000Z',
-      },
+      id: 'backend-note',
+      type: 'text',
+      content: 'persist me',
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:00:00.000Z',
     })
     const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
     const notesState = useInsightNotes({ currentBookId: ref('book-1') })
@@ -69,7 +66,7 @@ describe('useInsightNotes', () => {
   })
 
   it('ignores stale note loads after the selected book changes', async () => {
-    let resolveBookOne!: (value: { success: boolean; notes: Array<Record<string, unknown>> }) => void
+    let resolveBookOne!: (value: Array<Record<string, unknown>>) => void
     getNotesMock.mockImplementationOnce(() => new Promise((resolve) => {
       resolveBookOne = resolve
     }))
@@ -81,26 +78,20 @@ describe('useInsightNotes', () => {
     currentBookId.value = 'book-2'
     notesState.clearNotes()
 
-    resolveBookOne({
-      success: true,
-      notes: [{
+    resolveBookOne([{
         id: 'note-stale',
         type: 'text',
         content: 'stale note',
         createdAt: '2026-06-25T00:00:00.000Z',
         updatedAt: '2026-06-25T00:00:00.000Z',
-      }],
-    })
+      }])
     await pendingLoad
 
     expect(notesState.notes.value).toEqual([])
   })
 
-  it('keeps notes empty when the backend returns an error response', async () => {
-    getNotesMock.mockResolvedValueOnce({
-      success: false,
-      error: 'notes service unavailable',
-    })
+  it('keeps notes empty when the backend request fails', async () => {
+    getNotesMock.mockRejectedValueOnce(new Error('notes service unavailable'))
 
     const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
     const notesState = useInsightNotes({ currentBookId: ref('book-1') })
@@ -112,9 +103,7 @@ describe('useInsightNotes', () => {
   })
 
   it('maps API note payloads through a typed current-schema mapper', async () => {
-    getNotesMock.mockResolvedValueOnce({
-      success: true,
-      notes: [{
+    getNotesMock.mockResolvedValueOnce([{
         id: 'note-1',
         type: 'qa',
         content: 'answer',
@@ -127,8 +116,7 @@ describe('useInsightNotes', () => {
         comment: '保留当前字段',
         createdAt: '2026-06-25T00:00:00.000Z',
         updatedAt: '2026-06-25T00:00:01.000Z',
-      }],
-    })
+      }])
 
     const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
     const notesState = useInsightNotes({ currentBookId: ref('book-1') })
@@ -162,32 +150,7 @@ describe('useInsightNotes', () => {
   })
 
   it('keeps note payload validation in a focused model helper', async () => {
-    const {
-      filterValidInsightNotes,
-      mapInsightApiNote,
-    } = await import('@/stores/insight/insightNotesModels')
-
-    expect(filterValidInsightNotes([
-      {
-        id: 'valid-note',
-        type: 'text',
-        content: 'stored note',
-        pageNum: 2,
-      },
-      {
-        id: 'invalid-note',
-        type: 'text',
-        content: 'bad citations',
-        citations: [{ page: Number.NaN, content: 'bad' }],
-      },
-    ])).toEqual([
-      {
-        id: 'valid-note',
-        type: 'text',
-        content: 'stored note',
-        pageNum: 2,
-      },
-    ])
+    const { mapInsightApiNote } = await import('@/stores/insight/insightNotesModels')
 
     expect(mapInsightApiNote({
       id: 'api-note',

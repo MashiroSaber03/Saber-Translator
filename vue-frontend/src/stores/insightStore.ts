@@ -17,25 +17,19 @@ import { applyActiveInsightConfigFromApi } from './insight/insightConfigApiHydra
 import { deepClone } from '@/utils/deepClone'
 
 import type {
-  AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
-  StoreAnalysisProgress, PageData, ChapterInfo, OverviewData, TimelineEvent,
+  AnalysisStatus, NoteType,
+  StoreAnalysisProgress, ChapterInfo,
   QAMessage, NoteData, StoreVlmConfig, StoreLlmConfig, StoreEmbeddingConfig,
   StoreRerankerConfig, StoreImageGenConfig, BatchConfig, StoreInsightConfig
 } from '@/types/insight'
 
-export type {
-  AnalysisStatus, AnalysisMode, OverviewTemplateType, NoteType,
-  PageData, ChapterInfo, OverviewData, TimelineEvent,
-  QAMessage, NoteData, BatchConfig
-}
-
-export type AnalysisProgress = StoreAnalysisProgress
-export type VlmConfig = StoreVlmConfig
-export type LlmConfig = StoreLlmConfig
-export type EmbeddingConfig = StoreEmbeddingConfig
-export type RerankerConfig = StoreRerankerConfig
-export type ImageGenConfig = StoreImageGenConfig
-export type InsightConfig = StoreInsightConfig
+type AnalysisProgress = StoreAnalysisProgress
+type VlmConfig = StoreVlmConfig
+type LlmConfig = StoreLlmConfig
+type EmbeddingConfig = StoreEmbeddingConfig
+type RerankerConfig = StoreRerankerConfig
+type ImageGenConfig = StoreImageGenConfig
+type InsightConfig = StoreInsightConfig
 export interface InsightConfigStateSnapshot {
   config: StoreInsightConfig
   providerConfigs: ProviderConfigsCache
@@ -48,13 +42,8 @@ export const useInsightStore = defineStore('insight', () => {
   const progress = ref<AnalysisProgress>({ current: 0, total: 0, status: 'idle' })
   const bookTotalPages = ref(0)
   const analyzedPagesCount = ref(0)
-  const analysisMode = ref<AnalysisMode>('full')
   const incrementalAnalysis = ref(true)
   const chapters = ref<ChapterInfo[]>([])
-  const pages = ref<Map<number, PageData>>(new Map())
-  const overview = ref<OverviewData | null>(null)
-  const generatedTemplates = ref<OverviewTemplateType[]>([])
-  const timeline = ref<TimelineEvent[]>([])
   const selectedPageNum = ref<number | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
@@ -107,15 +96,8 @@ export const useInsightStore = defineStore('insight', () => {
 
   const progressPercent = computed(() => progress.value.total === 0 ? 0 : Math.round((progress.value.current / progress.value.total) * 100))
   const isAnalyzing = computed(() => analysisStatus.value === 'running')
-  const isAnalysisCompleted = computed(() => analysisStatus.value === 'completed')
-  const analyzedPageCount = computed(() => {
-    if (analyzedPagesCount.value > 0) return analyzedPagesCount.value
-    let count = 0
-    pages.value.forEach(page => { if (page.analyzed) count++ })
-    return count
-  })
-  const totalPageCount = computed(() => bookTotalPages.value || pages.value.size)
-  const selectedPage = computed(() => selectedPageNum.value === null ? null : pages.value.get(selectedPageNum.value) || null)
+  const analyzedPageCount = computed(() => analyzedPagesCount.value)
+  const totalPageCount = computed(() => bookTotalPages.value)
 
   function setCurrentBook(bookId: string | null): void {
     const previousBookId = currentBookId.value
@@ -132,21 +114,14 @@ export const useInsightStore = defineStore('insight', () => {
   function setAnalysisStatus(status: AnalysisStatus): void { analysisStatus.value = status; progress.value.status = status }
   function setCurrentTaskId(taskId: string | null): void { currentTaskId.value = taskId }
   function updateProgress(current: number, total: number, message?: string): void { progress.value = { current, total, status: analysisStatus.value, message } }
-  function setAnalysisMode(mode: AnalysisMode): void { analysisMode.value = mode }
   function setIncrementalAnalysis(incremental: boolean): void { incrementalAnalysis.value = incremental }
   function setBookTotalPages(totalPages: number): void { bookTotalPages.value = totalPages }
   function setAnalyzedPagesCount(count: number): void { analyzedPagesCount.value = count }
   function setChapters(chapterList: ChapterInfo[]): void { chapters.value = chapterList }
-  function setPageData(pageNum: number, data: PageData): void { pages.value.set(pageNum, data) }
-  function setPages(pageDataList: PageData[]): void { pages.value.clear(); pageDataList.forEach(p => pages.value.set(p.pageNum, p)) }
   function selectPage(pageNum: number | null): void { selectedPageNum.value = pageNum }
-  function setOverview(data: OverviewData | null): void { overview.value = data; if (data && !generatedTemplates.value.includes(data.type)) generatedTemplates.value.push(data.type) }
-  function setGeneratedTemplates(templates: OverviewTemplateType[]): void { generatedTemplates.value = templates }
-  function setTimeline(events: TimelineEvent[]): void { timeline.value = events }
   function triggerDataRefresh(): void { dataRefreshKey.value = Date.now() }
 
   function addQAMessage(message: QAMessage): void { qaComposable.qaHistory.value.push(message) }
-  function updateLastAssistantMessage(content: string): void { const h = qaComposable.qaHistory.value; const m = h[h.length - 1]; if (m?.role === 'assistant') m.content = content }
   function clearQAHistory(): void { qaComposable.clearHistory() }
   function removeLoadingMessages(): void { qaComposable.qaHistory.value = qaComposable.qaHistory.value.filter(m => !m.isLoading) }
   function setStreaming(streaming: boolean): void { qaComposable.setStreaming(streaming) }
@@ -192,12 +167,6 @@ export const useInsightStore = defineStore('insight', () => {
   function updateImageGenConfig(c: Partial<ImageGenConfig>): void { config.value.imageGen = normalizeInsightImageGenConfig(c, config.value.imageGen); configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen) }
   function updateBatchConfig(c: Partial<BatchConfig>): void { config.value.batch = { ...config.value.batch, ...c } }
   function updatePrompts(prompts: Record<string, string>): void { config.value.prompts = { ...config.value.prompts, ...prompts } }
-
-  function setVlmProvider(p: string): void { if (config.value.vlm.provider === p) return; configManager.vlmManager.switch(config.value.vlm.provider, p, config.value.vlm); config.value.vlm.provider = p }
-  function setLlmProvider(p: string): void { if (config.value.llm.provider === p) return; configManager.llmManager.switch(config.value.llm.provider, p, config.value.llm); config.value.llm.provider = p }
-  function setEmbeddingProvider(p: string): void { if (config.value.embedding.provider === p) return; configManager.embeddingManager.switch(config.value.embedding.provider, p, config.value.embedding); config.value.embedding.provider = p }
-  function setRerankerProvider(p: string): void { if (config.value.reranker.provider === p) return; configManager.rerankerManager.switch(config.value.reranker.provider, p, config.value.reranker); config.value.reranker.provider = p }
-  function setImageGenProvider(p: string): void { if (config.value.imageGen.provider === p) return; configManager.imageGenManager.switch(config.value.imageGen.provider, p, config.value.imageGen); config.value.imageGen.provider = p }
 
   function switchVlmProviderDraft(draft: VlmConfig): VlmConfig {
     const previousProvider = config.value.vlm.provider
@@ -254,14 +223,6 @@ export const useInsightStore = defineStore('insight', () => {
     return config.value.imageGen
   }
 
-  function setConfig(newConfig: InsightConfig): void {
-    config.value = {
-      ...newConfig,
-      reranker: normalizeInsightRerankerConfig(newConfig.reranker, config.value.reranker),
-      imageGen: normalizeInsightImageGenConfig(newConfig.imageGen, config.value.imageGen),
-    }
-  }
-
   function getConfigForApi(): Record<string, unknown> {
     return buildInsightConfigApiPayload(config.value, providerConfigs.value)
   }
@@ -289,16 +250,15 @@ export const useInsightStore = defineStore('insight', () => {
     configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen)
   }
 
-  function resetAnalysis(): void { analysisStatus.value = 'idle'; progress.value = { current: 0, total: 0, status: 'idle' }; pages.value.clear(); overview.value = null; timeline.value = [] }
-  function reset(): void { currentBookId.value = null; analysisStatus.value = 'idle'; progress.value = { current: 0, total: 0, status: 'idle' }; analysisMode.value = 'full'; incrementalAnalysis.value = true; chapters.value = []; pages.value.clear(); overview.value = null; generatedTemplates.value = []; timeline.value = []; qaComposable.clearHistory(); notesComposable.clearNotes(); selectedPageNum.value = null; notesComposable.setNoteTypeFilter('all'); isLoading.value = false; qaComposable.setStreaming(false); error.value = null }
+  function reset(): void { currentBookId.value = null; analysisStatus.value = 'idle'; progress.value = { current: 0, total: 0, status: 'idle' }; incrementalAnalysis.value = true; chapters.value = []; qaComposable.clearHistory(); notesComposable.clearNotes(); selectedPageNum.value = null; notesComposable.setNoteTypeFilter('all'); isLoading.value = false; qaComposable.setStreaming(false); error.value = null }
 
   return {
-    currentBookId, currentTaskId, analysisStatus, progress, analysisMode, incrementalAnalysis, chapters, pages, overview, generatedTemplates, timeline, qaHistory: qaComposable.qaHistory, notes: notesComposable.notes, selectedPageNum, noteTypeFilter: notesComposable.noteTypeFilter, isLoading, isStreaming: qaComposable.isStreaming, error, config,
-    progressPercent, isAnalyzing, isAnalysisCompleted, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes, selectedPage,
-    setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setAnalysisMode, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, setPageData, setPages, selectPage, setOverview, setGeneratedTemplates, setTimeline, dataRefreshKey, triggerDataRefresh,
-    addQAMessage, updateLastAssistantMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
-    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, setConfig, getConfigForApi, setConfigFromApi, snapshotConfigState, restoreConfigState, setVlmProvider, setLlmProvider, setEmbeddingProvider, setRerankerProvider, setImageGenProvider,
+    currentBookId, currentTaskId, analysisStatus, progress, incrementalAnalysis, chapters, qaHistory: qaComposable.qaHistory, notes: notesComposable.notes, selectedPageNum, noteTypeFilter: notesComposable.noteTypeFilter, isLoading, isStreaming: qaComposable.isStreaming, error, config,
+    progressPercent, isAnalyzing, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes,
+    setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, selectPage, dataRefreshKey, triggerDataRefresh,
+    addQAMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
+    updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, getConfigForApi, setConfigFromApi, snapshotConfigState, restoreConfigState,
     switchVlmProviderDraft, switchLlmProviderDraft, switchEmbeddingProviderDraft, switchRerankerProviderDraft, switchImageGenProviderDraft,
-    resetAnalysis, reset
+    reset
   }
 })

@@ -1,193 +1,125 @@
-"""
-Shared provider-scoped RPM limiting helpers for OpenAI-compatible flows.
-"""
+"""Provider RPM limiting shared by API and Worker processes."""
 
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
+from dataclasses import dataclass
 import logging
 import threading
 import time
-from collections import defaultdict
-from typing import Callable
+from typing import Protocol
 
 from src.shared.ai_providers import normalize_provider_id
 
+
 logger = logging.getLogger("SharedOpenAIRateLimits")
 
-_CAPABILITY_SERVICE_NAMES = {
-    "translation": "Translation",
-    "hq_translation": "HQTranslation",
-    "vision_ocr": "AIVisionOCR",
-    "plugin_agent": "PluginAgent",
-    "chat": "MangaInsightChat",
-    "vlm": "MangaInsightVLM",
-}
 
-_sync_last_reset_by_bucket = defaultdict(lambda: [0.0])
-_sync_request_count_by_bucket = defaultdict(lambda: [0])
-_sync_lock_by_bucket = defaultdict(threading.Lock)
+@dataclass(frozen=True, slots=True)
+class RateLimitDecision:
+    allowed: bool
+    remaining: int
+    retry_after_seconds: float
 
 
-def build_openai_rpm_bucket_key(capability: str, provider: str) -> str:
-    normalized_provider = normalize_provider_id(provider) or "unknown"
-    return f"{capability}:{normalized_provider}"
+class ProviderRateLimitStore(Protocol):
+    def acquire(
+        self,
+        *,
+        provider: str,
+        credential_version_id: str,
+        rpm_limit: int,
+    ) -> RateLimitDecision: ...
+
+
+_store: ProviderRateLimitStore | None = None
+_local_windows: dict[str, tuple[float, int, int]] = {}
+_local_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+
+
+def configure_provider_rate_limit_store(
+    store: ProviderRateLimitStore | None,
+) -> None:
+    global _store
+    _store = store
 
 
 def build_openai_rpm_service_name(capability: str, provider: str) -> str:
     normalized_provider = normalize_provider_id(provider) or "unknown"
-    capability_label = _CAPABILITY_SERVICE_NAMES.get(capability, capability)
-    return f"{capability_label} ({normalized_provider})"
-
-
-def enforce_sync_rpm_limit_window(
-    rpm_limit: int,
-    service_name: str,
-    last_reset_time_ref: list,
-    request_count_ref: list,
-) -> None:
-    if rpm_limit <= 0:
-        return
-
-    current_time = time.time()
-
-    if current_time - last_reset_time_ref[0] >= 60:
-        logger.info("rpm: %s - 1分钟窗口已过，重置计数器和时间。", service_name)
-        last_reset_time_ref[0] = current_time
-        request_count_ref[0] = 0
-
-    if request_count_ref[0] >= rpm_limit:
-        time_to_wait = 60 - (current_time - last_reset_time_ref[0])
-        if time_to_wait > 0:
-            logger.info(
-                "rpm: %s - 已达到每分钟 %s 次请求上限。将等待 %.2f 秒...",
-                service_name,
-                rpm_limit,
-                time_to_wait,
-            )
-            time.sleep(time_to_wait)
-            last_reset_time_ref[0] = time.time()
-            request_count_ref[0] = 0
-        else:
-            logger.info("rpm: %s - 窗口已过但计数未重置，立即重置。", service_name)
-            last_reset_time_ref[0] = current_time
-            request_count_ref[0] = 0
-
-    if request_count_ref[0] == 0 and last_reset_time_ref[0] == 0:
-        last_reset_time_ref[0] = current_time
-        logger.info("rpm: %s - 启动新的1分钟请求窗口。", service_name)
-
-    request_count_ref[0] += 1
-    logger.debug(
-        "rpm: %s - 当前窗口请求计数: %s/%s",
-        service_name,
-        request_count_ref[0],
-        rpm_limit if rpm_limit > 0 else "无限制",
-    )
-
-
-def apply_sync_rpm_limit(
-    bucket_key: str,
-    rpm_limit: int,
-    service_name: str,
-    enforcer: Callable[[int, str, list, list], None],
-) -> None:
-    if rpm_limit <= 0:
-        return
-
-    with _sync_lock_by_bucket[bucket_key]:
-        enforcer(
-            rpm_limit,
-            service_name,
-            _sync_last_reset_by_bucket[bucket_key],
-            _sync_request_count_by_bucket[bucket_key],
-        )
+    return f"{capability} ({normalized_provider})"
 
 
 class SharedRPMLimiter:
-    _last_reset_by_bucket = defaultdict(float)
-    _count_by_bucket = defaultdict(int)
-    _lock_by_bucket = defaultdict(threading.Lock)
-
-    def __init__(self, rpm_limit: int = 0, bucket_id: str | None = None):
+    def __init__(
+        self,
+        rpm_limit: int,
+        *,
+        provider: str,
+        credential_version_id: str | None,
+    ) -> None:
         self.rpm_limit = max(0, int(rpm_limit or 0))
-        self.bucket_id = bucket_id
-        self._instance_last_reset = 0.0
-        self._instance_count = 0
-        self._instance_lock = threading.Lock()
+        self.provider = normalize_provider_id(provider) or "unknown"
+        self.credential_version_id = credential_version_id
 
-    async def wait(self):
+    def wait_sync(self) -> None:
+        while True:
+            wait_seconds = self._acquire()
+            if wait_seconds <= 0:
+                return
+            logger.info(
+                "RPM 限制(%s): 等待 %.1f 秒",
+                self.provider,
+                wait_seconds,
+            )
+            time.sleep(wait_seconds)
+
+    async def wait(self) -> None:
+        while True:
+            wait_seconds = self._acquire()
+            if wait_seconds <= 0:
+                return
+            logger.info(
+                "RPM 限制(%s): 等待 %.1f 秒",
+                self.provider,
+                wait_seconds,
+            )
+            await asyncio.sleep(wait_seconds)
+
+    def _acquire(self) -> float:
         if self.rpm_limit <= 0:
-            return
+            return 0.0
+        if self.credential_version_id:
+            if _store is None:
+                raise RuntimeError("provider rate-limit store is not configured")
+            decision = _store.acquire(
+                provider=self.provider,
+                credential_version_id=self.credential_version_id,
+                rpm_limit=self.rpm_limit,
+            )
+            return 0.0 if decision.allowed else decision.retry_after_seconds
+        return self._acquire_local()
 
-        if not self.bucket_id:
-            await self._wait_instance()
-            return
-
-        await self._wait_bucket()
-
-    async def _wait_instance(self):
-        while True:
-            wait_time = 0.0
-            with self._instance_lock:
-                current_time = time.time()
-                if current_time - self._instance_last_reset >= 60:
-                    self._instance_last_reset = current_time
-                    self._instance_count = 0
-
-                if self._instance_count >= self.rpm_limit:
-                    wait_time = max(0.0, 60 - (current_time - self._instance_last_reset))
-                else:
-                    if self._instance_count == 0 and self._instance_last_reset == 0:
-                        self._instance_last_reset = current_time
-                    self._instance_count += 1
-                    return
-
-            if wait_time > 0:
-                logger.info("RPM 限制: 等待 %.1f 秒", wait_time)
-                await asyncio.sleep(wait_time)
-            else:
-                await asyncio.sleep(0)
-
-    async def _wait_bucket(self):
-        while True:
-            wait_time = 0.0
-            lock = self._lock_by_bucket[self.bucket_id]
-            with lock:
-                current_time = time.time()
-                last_reset = self._last_reset_by_bucket[self.bucket_id]
-                request_count = self._count_by_bucket[self.bucket_id]
-
-                if current_time - last_reset >= 60:
-                    last_reset = current_time
-                    request_count = 0
-
-                if request_count >= self.rpm_limit:
-                    wait_time = max(0.0, 60 - (current_time - last_reset))
-                else:
-                    if request_count == 0 and last_reset == 0:
-                        last_reset = current_time
-                    request_count += 1
-                    self._last_reset_by_bucket[self.bucket_id] = last_reset
-                    self._count_by_bucket[self.bucket_id] = request_count
-                    return
-
-                self._last_reset_by_bucket[self.bucket_id] = last_reset
-                self._count_by_bucket[self.bucket_id] = request_count
-
-            if wait_time > 0:
-                logger.info("RPM 限制(%s): 等待 %.1f 秒", self.bucket_id, wait_time)
-                await asyncio.sleep(wait_time)
-            else:
-                await asyncio.sleep(0)
-
-    def reset(self):
-        if self.bucket_id:
-            lock = self._lock_by_bucket[self.bucket_id]
-            with lock:
-                self._last_reset_by_bucket[self.bucket_id] = 0.0
-                self._count_by_bucket[self.bucket_id] = 0
-            return
-
-        self._instance_last_reset = 0.0
-        self._instance_count = 0
+    def _acquire_local(self) -> float:
+        current_time = time.monotonic()
+        with _local_locks[self.provider]:
+            started_at, count, stored_limit = _local_windows.get(
+                self.provider,
+                (current_time, 0, self.rpm_limit),
+            )
+            elapsed = current_time - started_at
+            if elapsed >= 60:
+                started_at, count, stored_limit = (
+                    current_time,
+                    0,
+                    self.rpm_limit,
+                )
+            effective_limit = min(stored_limit, self.rpm_limit)
+            if count >= effective_limit:
+                return max(0.0, 60 - elapsed)
+            _local_windows[self.provider] = (
+                started_at,
+                count + 1,
+                effective_limit,
+            )
+            return 0.0

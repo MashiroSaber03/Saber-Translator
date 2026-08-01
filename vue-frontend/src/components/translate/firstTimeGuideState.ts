@@ -27,11 +27,3 @@ export function dismissFirstTimeGuide(storage?: Storage): void {
     // Storage can be unavailable in restricted browser contexts; dismissal still works for this session.
   }
 }
-
-export function resetFirstTimeGuideDismissal(storage?: Storage): void {
-  try {
-    resolveStorage(storage)?.removeItem(DISMISS_SETUP_REMINDER_KEY)
-  } catch {
-    // Storage can be unavailable in restricted browser contexts; callers already fall back to showing the guide.
-  }
-}

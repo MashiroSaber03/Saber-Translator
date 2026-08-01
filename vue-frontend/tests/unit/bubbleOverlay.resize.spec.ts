@@ -229,7 +229,6 @@ describe('BubbleOverlay rotated resize', () => {
         clientY: 90,
       }))
 
-      expect(wrapper.emitted('rotateStart')).toBeTruthy()
       expect(wrapper.emitted('rotateEnd')).toBeTruthy()
       expect(logSpy).not.toHaveBeenCalled()
     } finally {

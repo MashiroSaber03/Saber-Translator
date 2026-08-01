@@ -33,7 +33,11 @@
         control="checkbox"
         label="启用混合OCR"
         control-id="settingsHybridOcrEnabled"
-        :hint="settings.hybridOcr.enabled ? '首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。' : ''"
+        :hint="
+          settings.hybridOcr.enabled
+            ? '首批混合OCR仅支持 MangaOCR / 48px OCR，推荐顺序为 48px OCR → MangaOCR。启用后会优先走 textline 级专用链路。'
+            : ''
+        "
       >
         <UiCheckbox
           input-id="settingsHybridOcrEnabled"
@@ -157,10 +161,9 @@
           :show-base-url="false"
           :include-base-url="false"
           api-key-placeholder="请输入API Key"
-          :has-stored-credential="settingsStore.hasCredential(
-            'ai_vision_ocr',
-            settings.aiVisionOcr.provider,
-          )"
+          :has-stored-credential="
+            settingsStore.hasCredential('ai_vision_ocr', settings.aiVisionOcr.provider)
+          "
           api-key-show-label="显示 AI 视觉 API Key"
           api-key-hide-label="隐藏 AI 视觉 API Key"
           @update:api-key="localAiVisionOcr.apiKey = $event"
@@ -198,10 +201,7 @@
           rows="3"
           placeholder="AI视觉OCR提示词"
         />
-        <SavedPromptsPicker
-          prompt-type="ai_vision_ocr"
-          @select="handleAiVisionPromptSelect"
-        />
+        <SavedPromptsPicker prompt-type="ai_vision_ocr" @select="handleAiVisionPromptSelect" />
         <ProductActionRow aria-label="AI 视觉 OCR 提示词格式" justify="start">
           <UiSelect
             :model-value="currentPromptMode"
@@ -233,13 +233,30 @@
         control-id="settingsRpmAiVisionOcr"
         hint="0 表示无限制"
       >
-        <UiNumberField input-id="settingsRpmAiVisionOcr" v-model="localAiVisionOcr.rpmLimit" :min="0" :step="1" />
+        <UiNumberField
+          input-id="settingsRpmAiVisionOcr"
+          v-model="localAiVisionOcr.rpmLimit"
+          :min="0"
+          :step="1"
+        />
       </UiField>
       <UiField variant="settings" label="业务重试" control-id="settingsAiVisionBusinessRetries">
-        <UiNumberField input-id="settingsAiVisionBusinessRetries" v-model="localAiVisionOcr.businessRetries" :min="0" :max="10" :step="1" />
+        <UiNumberField
+          input-id="settingsAiVisionBusinessRetries"
+          v-model="localAiVisionOcr.businessRetries"
+          :min="0"
+          :max="10"
+          :step="1"
+        />
       </UiField>
       <UiField variant="settings" label="传输重试" control-id="settingsAiVisionTransportRetries">
-        <UiNumberField input-id="settingsAiVisionTransportRetries" v-model="localAiVisionOcr.transportRetries" :min="0" :max="10" :step="1" />
+        <UiNumberField
+          input-id="settingsAiVisionTransportRetries"
+          v-model="localAiVisionOcr.transportRetries"
+          :min="0"
+          :max="10"
+          :step="1"
+        />
       </UiField>
       <UiField
         variant="settings"
@@ -259,7 +276,12 @@
         control-id="settingsMinImageSize"
         hint="VLM模型通常要求图片尺寸 ≥28px，设为0则不自动放大小图"
       >
-        <UiNumberField input-id="settingsMinImageSize" v-model="localAiVisionOcr.minImageSize" :min="0" :step="1" />
+        <UiNumberField
+          input-id="settingsMinImageSize"
+          v-model="localAiVisionOcr.minImageSize"
+          :min="0"
+          :step="1"
+        />
       </UiField>
       <ProductActionRow aria-label="AI 视觉 OCR 操作" justify="start">
         <UiButton variant="secondary" @click="testAiVisionOcr" :disabled="isTesting">
@@ -274,7 +296,6 @@
   </div>
 </template>
 <script setup lang="ts">
-
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
@@ -294,7 +315,7 @@ import { ref, computed, watch } from 'vue'
 import {
   normalizeProviderId,
   providerRequiresApiKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
 import {
@@ -308,7 +329,7 @@ import {
   DEFAULT_AI_VISION_OCR_JSON_PROMPT,
   getPaddleOcrVlPrompt,
   inferPaddleOcrVlPromptLanguage,
-  PADDLEOCR_VL_LANG_MAP
+  PADDLEOCR_VL_LANG_MAP,
 } from '@/constants'
 import type { OcrEngine } from '@/types/settings'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
@@ -318,7 +339,7 @@ import {
   getHybridCounterpartEngine,
   isSupportedHybridOcrEngine,
   RECOMMENDED_HYBRID_SECONDARY_ENGINE,
-  SUPPORTED_HYBRID_OCR_ENGINES
+  SUPPORTED_HYBRID_OCR_ENGINES,
 } from '@/utils/hybridOcr'
 import {
   aiVisionProviderOptions,
@@ -327,16 +348,19 @@ import {
   baiduVersionOptions,
   paddleOcrVlSourceLanguageGroups,
   promptModeOptions,
-  sourceLanguageGroups
+  sourceLanguageGroups,
 } from './ocrSettingsOptions'
-import { useAiModelDiscovery, type AiModelDiscoveryMessageTone } from '@/composables/useAiModelDiscovery'
+import {
+  useAiModelDiscovery,
+  type AiModelDiscoveryMessageTone,
+} from '@/composables/useAiModelDiscovery'
 const settingsStore = useSettingsStore()
 const toast = useToast()
 const localBaiduOcr = ref({
   apiKey: settingsStore.settings.baiduOcr.apiKey,
   secretKey: settingsStore.settings.baiduOcr.secretKey,
   version: settingsStore.settings.baiduOcr.version,
-  sourceLanguage: settingsStore.settings.baiduOcr.sourceLanguage
+  sourceLanguage: settingsStore.settings.baiduOcr.sourceLanguage,
 })
 const localAiVisionOcr = ref({
   apiKey: settingsStore.settings.aiVisionOcr.apiKey,
@@ -349,64 +373,102 @@ const localAiVisionOcr = ref({
   businessRetries: settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries,
   extraBody: settingsStore.settings.aiVisionOcr.openaiOptions.request.extraBody,
   useStream: settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream,
-  minImageSize: settingsStore.settings.aiVisionOcr.minImageSize
+  minImageSize: settingsStore.settings.aiVisionOcr.minImageSize,
 })
 const settings = computed(() => settingsStore.settings)
-const hasStoredBaiduCredential = computed(() => (
-  settingsStore.hasCredential('ocr', 'baidu')
-))
-const baiduStoredCredentialHint = computed(() => (
-  hasStoredBaiduCredential.value
-  && !localBaiduOcr.value.apiKey
-  && !localBaiduOcr.value.secretKey
+const hasStoredBaiduCredential = computed(() => settingsStore.hasCredential('ocr', 'baidu'))
+const baiduStoredCredentialHint = computed(() =>
+  hasStoredBaiduCredential.value && !localBaiduOcr.value.apiKey && !localBaiduOcr.value.secretKey
     ? '百度 OCR 凭据已安全保存在后端；留空表示保持不变，更换时必须同时填写两项'
     : ''
-))
-const baiduStoredCredentialPlaceholder = computed(() => (
+)
+const baiduStoredCredentialPlaceholder = computed(() =>
   baiduStoredCredentialHint.value ? '已保存在后端，留空保持不变' : ''
-))
-watch(() => localBaiduOcr.value.apiKey, (val) => {
-  settingsStore.updateBaiduOcr({ apiKey: val })
-})
-watch(() => localBaiduOcr.value.secretKey, (val) => {
-  settingsStore.updateBaiduOcr({ secretKey: val })
-})
-watch(() => localBaiduOcr.value.version, (val) => {
-  settingsStore.updateBaiduOcr({ version: val })
-})
-watch(() => localBaiduOcr.value.sourceLanguage, (val) => {
-  settingsStore.updateBaiduOcr({ sourceLanguage: val })
-})
-watch(() => localAiVisionOcr.value.apiKey, (val) => {
-  settingsStore.updateAiVisionOcr({ apiKey: val })
-})
-watch(() => localAiVisionOcr.value.modelName, (val) => {
-  settingsStore.updateAiVisionOcr({ modelName: val })
-})
-watch(() => localAiVisionOcr.value.customBaseUrl, (val) => {
-  settingsStore.updateAiVisionOcr({ customBaseUrl: val })
-})
-watch(() => localAiVisionOcr.value.prompt, (val) => {
-  settingsStore.updateAiVisionOcr({ prompt: val })
-})
-watch(() => localAiVisionOcr.value.rpmLimit, (val) => {
-  settingsStore.updateAiVisionOcr({ rpmLimit: val })
-})
-watch(() => localAiVisionOcr.value.transportRetries, (val) => {
-  settingsStore.updateAiVisionOcr({ transportRetries: val })
-})
-watch(() => localAiVisionOcr.value.businessRetries, (val) => {
-  settingsStore.updateAiVisionOcr({ businessRetries: val })
-})
-watch(() => localAiVisionOcr.value.extraBody, (val) => {
-  settingsStore.updateAiVisionOcr({ extraBody: val })
-})
-watch(() => localAiVisionOcr.value.useStream, (val) => {
-  settingsStore.updateAiVisionOcr({ useStream: val })
-})
-watch(() => localAiVisionOcr.value.minImageSize, (val) => {
-  settingsStore.updateAiVisionOcr({ minImageSize: val })
-})
+)
+watch(
+  () => localBaiduOcr.value.apiKey,
+  val => {
+    settingsStore.updateBaiduOcr({ apiKey: val })
+  }
+)
+watch(
+  () => localBaiduOcr.value.secretKey,
+  val => {
+    settingsStore.updateBaiduOcr({ secretKey: val })
+  }
+)
+watch(
+  () => localBaiduOcr.value.version,
+  val => {
+    settingsStore.updateBaiduOcr({ version: val })
+  }
+)
+watch(
+  () => localBaiduOcr.value.sourceLanguage,
+  val => {
+    settingsStore.updateBaiduOcr({ sourceLanguage: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.apiKey,
+  val => {
+    settingsStore.updateAiVisionOcr({ apiKey: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.modelName,
+  val => {
+    settingsStore.updateAiVisionOcr({ modelName: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.customBaseUrl,
+  val => {
+    settingsStore.updateAiVisionOcr({ customBaseUrl: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.prompt,
+  val => {
+    settingsStore.updateAiVisionOcr({ prompt: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.rpmLimit,
+  val => {
+    settingsStore.updateAiVisionOcr({ rpmLimit: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.transportRetries,
+  val => {
+    settingsStore.updateAiVisionOcr({ transportRetries: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.businessRetries,
+  val => {
+    settingsStore.updateAiVisionOcr({ businessRetries: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.extraBody,
+  val => {
+    settingsStore.updateAiVisionOcr({ extraBody: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.useStream,
+  val => {
+    settingsStore.updateAiVisionOcr({ useStream: val })
+  }
+)
+watch(
+  () => localAiVisionOcr.value.minImageSize,
+  val => {
+    settingsStore.updateAiVisionOcr({ minImageSize: val })
+  }
+)
 const isTesting = ref(false)
 function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
   toast[tone](message)
@@ -418,15 +480,10 @@ const aiVisionModelDiscovery = useAiModelDiscovery({
     baseUrl: localAiVisionOcr.value.customBaseUrl,
     hasStoredCredential: settingsStore.hasCredential(
       'ai_vision_ocr',
-      settingsStore.settings.aiVisionOcr.provider,
+      settingsStore.settings.aiVisionOcr.provider
     ),
   }),
-  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(
-    provider,
-    apiKey,
-    baseUrl,
-    'ai_vision_ocr',
-  ),
+  fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'ai_vision_ocr'),
   notify: notifyModelDiscovery,
   emptyBaseUrl: '',
 })
@@ -444,14 +501,13 @@ const ocrEngineOptions = computed(() => {
     return allOcrEngineOptions
   }
   const supported = new Set<string>(SUPPORTED_HYBRID_OCR_ENGINES)
-  return allOcrEngineOptions.filter((option) => supported.has(option.value))
+  return allOcrEngineOptions.filter(option => supported.has(option.value))
 })
 const hybridSecondaryEngineOptions = computed(() =>
   allOcrEngineOptions
     .filter(
-      (option) =>
-        isSupportedHybridOcrEngine(option.value) &&
-        option.value !== settings.value.ocrEngine
+      option =>
+        isSupportedHybridOcrEngine(option.value) && option.value !== settings.value.ocrEngine
     )
     .map(option => ({ ...option }))
 )
@@ -523,15 +579,20 @@ function syncLocalAiVisionOcr() {
   localAiVisionOcr.value.customBaseUrl = settingsStore.settings.aiVisionOcr.customBaseUrl
   localAiVisionOcr.value.prompt = settingsStore.settings.aiVisionOcr.prompt
   localAiVisionOcr.value.promptMode = settingsStore.settings.aiVisionOcr.promptMode
-  localAiVisionOcr.value.rpmLimit = settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit
-  localAiVisionOcr.value.transportRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries
-  localAiVisionOcr.value.businessRetries = settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries
-  localAiVisionOcr.value.extraBody = settingsStore.settings.aiVisionOcr.openaiOptions.request.extraBody
-  localAiVisionOcr.value.useStream = settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream
+  localAiVisionOcr.value.rpmLimit =
+    settingsStore.settings.aiVisionOcr.openaiOptions.execution.rpmLimit
+  localAiVisionOcr.value.transportRetries =
+    settingsStore.settings.aiVisionOcr.openaiOptions.execution.transportRetries
+  localAiVisionOcr.value.businessRetries =
+    settingsStore.settings.aiVisionOcr.openaiOptions.execution.businessRetries
+  localAiVisionOcr.value.extraBody =
+    settingsStore.settings.aiVisionOcr.openaiOptions.request.extraBody
+  localAiVisionOcr.value.useStream =
+    settingsStore.settings.aiVisionOcr.openaiOptions.execution.useStream
   localAiVisionOcr.value.minImageSize = settingsStore.settings.aiVisionOcr.minImageSize
   paddleOcrVlSourceLang.value = inferPaddleOcrVlPromptLanguage(
     settingsStore.settings.aiVisionOcr.prompt,
-    paddleOcrVlSourceLang.value,
+    paddleOcrVlSourceLang.value
   )
 }
 const currentPromptMode = computed(() => {
@@ -565,14 +626,12 @@ function handlePromptModeChange(mode: string) {
   settingsStore.updateAiVisionOcr({
     prompt: newPrompt,
     promptMode: mode as 'normal' | 'json' | 'paddleocr_vl',
-    forceJsonOutput: mode === 'json'
+    forceJsonOutput: mode === 'json',
   })
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = mode as 'normal' | 'json' | 'paddleocr_vl'
 }
-const paddleOcrVlSourceLang = ref(
-  inferPaddleOcrVlPromptLanguage(localAiVisionOcr.value.prompt),
-)
+const paddleOcrVlSourceLang = ref(inferPaddleOcrVlPromptLanguage(localAiVisionOcr.value.prompt))
 function handlePaddleOcrVlLangChange(langCode: string) {
   paddleOcrVlSourceLang.value = langCode
   const langName = PADDLEOCR_VL_LANG_MAP[langCode] || '日语'
@@ -580,7 +639,7 @@ function handlePaddleOcrVlLangChange(langCode: string) {
   settingsStore.updateAiVisionOcr({
     prompt: newPrompt,
     promptMode: 'paddleocr_vl',
-    forceJsonOutput: false
+    forceJsonOutput: false,
   })
   localAiVisionOcr.value.prompt = newPrompt
   localAiVisionOcr.value.promptMode = 'paddleocr_vl'
@@ -588,10 +647,7 @@ function handlePaddleOcrVlLangChange(langCode: string) {
 async function testBaiduOcr() {
   const apiKey = localBaiduOcr.value.apiKey?.trim()
   const secretKey = localBaiduOcr.value.secretKey?.trim()
-  if (
-    (!apiKey || !secretKey)
-    && !settingsStore.hasCredential('ocr', 'baidu')
-  ) {
+  if ((!apiKey || !secretKey) && !settingsStore.hasCredential('ocr', 'baidu')) {
     toast.warning('请填写百度OCR的API Key和Secret Key')
     return
   }
@@ -602,7 +658,7 @@ async function testBaiduOcr() {
     if (result.success) {
       toast.success(result.message || '百度OCR连接成功!')
     } else {
-      toast.error(result.message || result.error || '百度OCR连接失败')
+      toast.error(result.message || '百度OCR连接失败')
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'
@@ -625,7 +681,7 @@ async function testAiVisionOcr() {
     if (result.success) {
       toast.success('AI视觉OCR连接成功')
     } else {
-      toast.error(`AI视觉OCR连接失败: ${result.error || '未知错误'}`)
+      toast.error(`AI视觉OCR连接失败: ${result.message || '未知错误'}`)
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'
@@ -636,23 +692,22 @@ async function testAiVisionOcr() {
 }
 const fetchAiVisionModels = aiVisionModelDiscovery.fetchModels
 function handleAiVisionPromptSelect(content: string, name: string) {
-  const inferredMode: 'normal' | 'json' | 'paddleocr_vl' =
-    content.includes('"extracted_text"')
-      ? 'json'
-      : content.startsWith('对图中的') && content.endsWith('进行OCR:')
-        ? 'paddleocr_vl'
-        : 'normal'
+  const inferredMode: 'normal' | 'json' | 'paddleocr_vl' = content.includes('"extracted_text"')
+    ? 'json'
+    : content.startsWith('对图中的') && content.endsWith('进行OCR:')
+      ? 'paddleocr_vl'
+      : 'normal'
   settingsStore.updateAiVisionOcr({
     prompt: content,
     promptMode: inferredMode,
-    forceJsonOutput: inferredMode === 'json'
+    forceJsonOutput: inferredMode === 'json',
   })
   localAiVisionOcr.value.prompt = content
   localAiVisionOcr.value.promptMode = inferredMode
   if (inferredMode === 'paddleocr_vl') {
     paddleOcrVlSourceLang.value = inferPaddleOcrVlPromptLanguage(
       content,
-      paddleOcrVlSourceLang.value,
+      paddleOcrVlSourceLang.value
     )
   }
   toast.success(`已应用提示词: ${name}`)

@@ -196,7 +196,7 @@ const currentDocumentOrigin = computed(() => {
 
 const avatarUrl = computed(() => {
   if (!props.bookId || !store.currentDocument?.id || !store.currentDocument.avatarUrl) return ''
-  return getCharacterStudioAvatarUrl(props.bookId, store.currentDocument.id)
+  return getCharacterStudioAvatarUrl(store.currentDocument.id)
 })
 
 async function runAction(action: () => Promise<void>) {
@@ -372,9 +372,9 @@ async function regenerateChatMessage(messageId: string) {
   await runAction(() => store.regenerateChatMessage(messageId))
 }
 
-async function summarizeChatSession(cutoffMessageId?: string) {
+async function summarizeChatSession() {
   store.activeWorkspaceTab = 'runtime'
-  await runAction(() => store.summarizeChatSession(cutoffMessageId))
+  await runAction(() => store.summarizeChatSession())
 }
 
 async function exportChatSession() {

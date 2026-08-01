@@ -16,10 +16,6 @@ export function pageSelectionToPageIndexes(selectedPages: number[]): number[] {
   return normalizePageSelection(selectedPages).map((page) => page - 1)
 }
 
-export function pageIndexesToSelection(pageIndexes: number[]): number[] {
-  return normalizePageSelection(pageIndexes.map((pageIndex) => pageIndex + 1))
-}
-
 export function createPageSelectionSummary(selectedPages: number[]): string {
   const normalized = normalizePageSelection(selectedPages)
   if (normalized.length === 0) {

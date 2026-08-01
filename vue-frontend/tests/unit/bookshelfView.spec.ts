@@ -84,8 +84,8 @@ describe('BookshelfView', () => {
     getBooksMock.mockReset()
     getTagsMock.mockReset()
     getServerInfoMock.mockReset()
-    getBooksMock.mockResolvedValue({ success: true, books: [] })
-    getTagsMock.mockResolvedValue({ success: true, tags: [] })
+    getBooksMock.mockResolvedValue([])
+    getTagsMock.mockResolvedValue([])
     getServerInfoMock.mockResolvedValue({ success: true, lan_url: 'http://localhost:5173' })
   })
 

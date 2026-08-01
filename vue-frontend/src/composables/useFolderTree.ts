@@ -105,7 +105,6 @@ export function useFolderTree(images: Ref<ImageData[]>) {
     useTreeMode,
     folderTree,
     breadcrumbs,
-    currentFolder,
     currentSubfolders,
     currentImages,
     enterFolder,

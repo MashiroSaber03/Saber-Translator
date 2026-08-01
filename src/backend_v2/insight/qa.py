@@ -540,6 +540,12 @@ class DefaultQARetrievalAlgorithms:
                         api_key=_api_key(section),
                         model=model,
                         inputs=[str(query)],
+                        credential_version_id=(
+                            str(section["credential_version_id"])
+                            if section.get("credential_version_id")
+                            else None
+                        ),
+                        rpm_limit=int(section.get("rpm_limit", 0)),
                         base_url=_base_url(section),
                         timeout=float(
                             section.get("timeout_seconds", 120) or 120
@@ -911,6 +917,12 @@ class DefaultQAApiAlgorithms:
             provider=provider,
             api_key=_api_key(section),
             model=model,
+            credential_version_id=(
+                str(section["credential_version_id"])
+                if section.get("credential_version_id")
+                else None
+            ),
+            rpm_limit=int(section.get("rpm_limit", 0)),
             query=question,
             documents=documents,
             top_n=min(top_k, len(documents)),
@@ -1013,6 +1025,11 @@ class DefaultQAApiAlgorithms:
             provider=provider,
             api_key=_api_key(section),
             model=model,
+            credential_version_id=(
+                str(section["credential_version_id"])
+                if section.get("credential_version_id")
+                else None
+            ),
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},

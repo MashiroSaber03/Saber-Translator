@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import { useEditWorkspaceProcessingActions } from '@/composables/edit/useEditWorkspaceProcessingActions'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 const mocks = vi.hoisted(() => ({
@@ -53,7 +54,7 @@ function createActions(pageCount = 1) {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
   for (let index = 0; index < pageCount; index += 1) {
-    imageStore.addImage(`${index + 1}.png`, `/api/v2/assets/source-${index + 1}`, {
+    addTestImage(imageStore, `${index + 1}.png`, `/api/v2/assets/source-${index + 1}`, {
       chapterId: 'chapter-1',
       documentRevision: 3,
       id: `page-${index + 1}`,
@@ -98,8 +99,7 @@ describe('useEditWorkspaceProcessingActions', () => {
       pageId: 'page-1',
       pageStyleDefaults: {},
       pageStyleSchemaVersion: 1,
-      renderedRevision: null,
-      sourceRevision: 1,
+      renderStatus: 'not_rendered',
     })
     mocks.registerPageDocument.mockReturnValue([])
     mocks.createChapterDetectJob.mockResolvedValue({

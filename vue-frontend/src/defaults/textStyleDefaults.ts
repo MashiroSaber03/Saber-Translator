@@ -1,5 +1,4 @@
 import textStyleDefaultsJson from '../../../src/shared/text_style_defaults_factory.json'
-import type { BubbleGlobalDefaults, TextDirection } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import type { TextStyleSettings } from '@/types/settings'
 
@@ -194,35 +193,6 @@ export function parseCompleteTextStyleSettings(value: unknown): TextStyleSetting
     }
   }
   return parsed
-}
-
-export function resolveBubbleTextDirection(
-  layoutDirection?: TextDirection | null
-): 'vertical' | 'horizontal' {
-  return layoutDirection === 'horizontal' ? 'horizontal' : 'vertical'
-}
-
-export function getBubbleDefaultsFromTextStyle(
-  style?: Partial<TextStyleSettings> | null
-): BubbleGlobalDefaults {
-  const normalized = normalizeTextStyleSettings(style)
-  return {
-    fontSize: normalized.fontSize,
-    fontFamily: normalized.fontFamily,
-    textDirection: resolveBubbleTextDirection(normalized.layoutDirection),
-    textColor: normalized.textColor,
-    fillColor: normalized.fillColor,
-    inpaintMethod: normalized.inpaintMethod,
-    strokeEnabled: normalized.strokeEnabled,
-    strokeColor: normalized.strokeColor,
-    strokeWidth: normalized.strokeWidth,
-    lineSpacing: normalized.lineSpacing,
-    textAlign: normalized.textAlign
-  }
-}
-
-export function getImageTextStyleDefaults(): ImageTextStyleFields {
-  return buildTextStyleFields({}, getTextStyleDefaults())
 }
 
 export function normalizeImageTextStyleFields(

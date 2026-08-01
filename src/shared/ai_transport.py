@@ -52,6 +52,7 @@ RETRYABLE_EXCEPTIONS = (
     httpx.RemoteProtocolError,
     ConnectionResetError,
 )
+from src.shared.openai_rate_limits import SharedRPMLimiter
 
 
 @dataclass
@@ -60,6 +61,7 @@ class UnifiedChatRequest:
     api_key: str
     model: str
     messages: List[Dict[str, Any]]
+    credential_version_id: Optional[str] = None
     base_url: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(default_factory=OpenAICompatibleOptions)
     runtime_options: OpenAICompatibleRuntimeOptions = field(default_factory=OpenAICompatibleRuntimeOptions)
@@ -103,6 +105,7 @@ class UnifiedVisionRequest:
     model: str
     prompt: str
     image_base64: str
+    credential_version_id: Optional[str] = None
     base_url: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(default_factory=OpenAICompatibleOptions)
     runtime_options: OpenAICompatibleRuntimeOptions = field(default_factory=OpenAICompatibleRuntimeOptions)
@@ -131,6 +134,8 @@ class UnifiedEmbeddingRequest:
     api_key: str
     model: str
     inputs: List[str]
+    credential_version_id: Optional[str] = None
+    rpm_limit: int = 0
     base_url: Optional[str] = None
     timeout: Optional[float] = None
     request_overrides: Dict[str, Any] = field(default_factory=dict)
@@ -144,6 +149,8 @@ class UnifiedRerankRequest:
     query: str
     documents: List[str]
     top_n: int
+    credential_version_id: Optional[str] = None
+    rpm_limit: int = 0
     base_url: Optional[str] = None
     timeout: float = 30.0
     endpoint: Optional[str] = None
@@ -308,8 +315,19 @@ class OpenAICompatibleChatTransport:
     ) -> str:
         invocation = _resolve_chat_invocation(request, resolved_invocation)
         base_url = resolve_provider_base_url(invocation.provider, request.base_url)
+        limiter = SharedRPMLimiter(
+            invocation.effective_options.execution.rpm_limit,
+            provider=invocation.provider,
+            credential_version_id=request.credential_version_id,
+        )
+
+        def prepare_request() -> None:
+            if before_request is not None:
+                before_request()
+            limiter.wait_sync()
+
         if invocation.use_stream:
-            return self._complete_stream(request, base_url, invocation, before_request)
+            return self._complete_stream(request, base_url, invocation, prepare_request)
 
         if not base_url:
             raise ValueError("缺少 Base URL")
@@ -322,7 +340,7 @@ class OpenAICompatibleChatTransport:
             api_key=request.api_key,
             body=_build_chat_body(request, invocation),
             max_retries=invocation.effective_options.execution.transport_retries,
-            before_request=before_request,
+            before_request=prepare_request,
         )
         return _extract_chat_content_from_payload(payload)
 
@@ -344,6 +362,7 @@ class OpenAICompatibleChatTransport:
             provider=request.provider,
             api_key=request.api_key,
             model=request.model,
+            credential_version_id=request.credential_version_id,
             base_url=request.base_url,
             capability=request.capability,
             openai_options=clone_openai_compatible_options(request.openai_options),
@@ -617,8 +636,19 @@ class AsyncOpenAICompatibleTransport:
     ) -> str:
         invocation = _resolve_chat_invocation(request, resolved_invocation)
         base_url = resolve_provider_base_url(invocation.provider, request.base_url)
+        limiter = SharedRPMLimiter(
+            invocation.effective_options.execution.rpm_limit,
+            provider=invocation.provider,
+            credential_version_id=request.credential_version_id,
+        )
+
+        async def prepare_request() -> None:
+            if before_request is not None:
+                await before_request()
+            await limiter.wait()
+
         if invocation.use_stream:
-            return await self._complete_stream(request, base_url, invocation, before_request)
+            return await self._complete_stream(request, base_url, invocation, prepare_request)
 
         if not base_url:
             raise ValueError("缺少 Base URL")
@@ -631,7 +661,7 @@ class AsyncOpenAICompatibleTransport:
             api_key=request.api_key,
             body=_build_chat_body(request, invocation),
             max_retries=invocation.effective_options.execution.transport_retries,
-            before_request=before_request,
+            before_request=prepare_request,
         )
         return _extract_chat_content_from_payload(payload)
 
@@ -653,6 +683,7 @@ class AsyncOpenAICompatibleTransport:
             provider=request.provider,
             api_key=request.api_key,
             model=request.model,
+            credential_version_id=request.credential_version_id,
             base_url=request.base_url,
             capability=request.capability,
             openai_options=clone_openai_compatible_options(request.openai_options),
@@ -681,6 +712,11 @@ class AsyncOpenAICompatibleTransport:
         if not base_url:
             raise ValueError("缺少 Base URL")
         url = f"{base_url.rstrip('/')}/embeddings"
+        limiter = SharedRPMLimiter(
+            request.rpm_limit,
+            provider=request.provider,
+            credential_version_id=request.credential_version_id,
+        )
         payload = await self._request_json(
             base_url=base_url,
             timeout=request.timeout,
@@ -689,6 +725,7 @@ class AsyncOpenAICompatibleTransport:
             api_key=request.api_key,
             body=_build_embedding_body(request),
             max_retries=self.max_retries,
+            before_request=limiter.wait,
         )
         return [item["embedding"] for item in payload.get("data", [])]
 
@@ -698,6 +735,11 @@ class AsyncOpenAICompatibleTransport:
             raise ValueError("缺少 Base URL")
         endpoint = request.endpoint or resolve_provider_endpoint_for_capability(request.provider, RERANK_CAPABILITY) or "/rerank"
         url = f"{base_url.rstrip('/')}{endpoint}"
+        limiter = SharedRPMLimiter(
+            request.rpm_limit,
+            provider=request.provider,
+            credential_version_id=request.credential_version_id,
+        )
         return await self._request_json(
             base_url=base_url,
             timeout=request.timeout,
@@ -706,6 +748,7 @@ class AsyncOpenAICompatibleTransport:
             api_key=request.api_key,
             body=_build_rerank_body(request),
             max_retries=self.max_retries,
+            before_request=limiter.wait,
         )
 
     async def _request_json(

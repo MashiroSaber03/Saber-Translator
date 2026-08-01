@@ -1,6 +1,5 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosError } from 'axios'
-import type { ApiError, ApiResponse } from '@/types'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
+import type { ApiError } from '@/types'
 
 interface ApiClientErrorInit {
   code: string
@@ -75,31 +74,26 @@ class ApiClient {
   }
 
   async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    assertBackendActionAllowed()
     const response = await this.instance.post<T>(url, data, config)
     return response.data
   }
 
   async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    assertBackendActionAllowed()
     const response = await this.instance.put<T>(url, data, config)
     return response.data
   }
 
   async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    assertBackendActionAllowed()
     const response = await this.instance.patch<T>(url, data, config)
     return response.data
   }
 
   async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    assertBackendActionAllowed()
     const response = await this.instance.delete<T>(url, config)
     return response.data
   }
 
   async upload<T>(url: string, formData: FormData, config?: AxiosRequestConfig): Promise<T> {
-    assertBackendActionAllowed()
     const response = await this.instance.post<T>(url, formData, {
       ...config,
       headers: {
@@ -110,13 +104,8 @@ class ApiClient {
     return response.data
   }
 
-  getAxiosInstance(): AxiosInstance {
-    return this.instance
-  }
 }
 
 export const apiClient = new ApiClient()
 
-export type { ApiError, ApiResponse }
-
-export default apiClient
+export type { ApiError }

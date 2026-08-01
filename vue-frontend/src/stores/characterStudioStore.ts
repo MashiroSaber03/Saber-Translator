@@ -282,14 +282,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
     bookId.value = nextBookId
     try {
-      const response = await getCharacterStudioIndex(nextBookId)
+      const index = await getCharacterStudioIndex(nextBookId)
       if (!isActiveWorkspaceRequest(requestId, nextBookId)) return
-      if (!response.success) {
-        throw new Error(response.error || '加载角色工坊失败')
-      }
-      documents.value = response.documents || []
-      candidates.value = response.candidates || []
-      hasTimeline.value = response.has_timeline !== false
+      documents.value = index.documents
+      candidates.value = index.candidates
+      hasTimeline.value = index.has_timeline
       if (
         currentDocument.value &&
         !documents.value.some(item => item.id === currentDocument.value?.id)
@@ -314,11 +311,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     openingDocumentId.value = docId
     clearErrorMessage()
     try {
-      const response = await getCharacterStudioDocument(requestedBookId, docId)
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '加载角色文档失败')
-      }
-      const document = response.document
+      const document = await getCharacterStudioDocument(docId)
       if (!isActiveDocumentRequest(requestId, requestedBookId)) return
       await runWithoutAutosave(async () => {
         abortActiveChatStream()
@@ -356,11 +349,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isCreatingManual.value = true
     clearErrorMessage()
     try {
-      const response = await createCharacterStudioDocument(bookId.value, { title })
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '创建角色失败')
-      }
-      const document = response.document
+      const document = await createCharacterStudioDocument(bookId.value, { title })
       await loadWorkspace(bookId.value)
       await openDocument(document.id)
     } catch (error) {
@@ -375,11 +364,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     creatingCandidateName.value = candidateName
     clearErrorMessage()
     try {
-      const response = await createCharacterStudioDocument(bookId.value, { candidate_name: candidateName })
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '创建角色失败')
-      }
-      const document = response.document
+      const document = await createCharacterStudioDocument(bookId.value, { candidate_name: candidateName })
       await loadWorkspace(bookId.value)
       await openDocument(document.id)
     } catch (error) {
@@ -399,11 +384,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isSaving.value = true
     clearErrorMessage()
     try {
-      const response = await saveCharacterStudioDocument(bookId.value, currentDocument.value.id, currentDocument.value)
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '保存失败')
-      }
-      const document = response.document
+      const document = await saveCharacterStudioDocument(currentDocument.value.id, currentDocument.value)
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
@@ -477,10 +458,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isDeleting.value = true
     clearErrorMessage()
     try {
-      const response = await deleteCharacterStudioDocument(bookId.value, docId)
-      if (!response.success) {
-        throw new Error(response.error || '删除失败')
-      }
+      await deleteCharacterStudioDocument(docId)
       currentDocument.value = null
       markDocumentSynced(null)
       invalidateDocumentDerivedCaches()
@@ -501,11 +479,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     generatingSection.value = section
     clearErrorMessage()
     try {
-      const response = await generateCharacterStudioSection(bookId.value, currentDocument.value.id, section)
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '生成失败')
-      }
-      const document = response.document
+      const document = await generateCharacterStudioSection(currentDocument.value.id, section)
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
@@ -525,23 +499,18 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isValidating.value = true
     clearErrorMessage()
     try {
-      const response = await validateCharacterStudioDocument(bookId.value, currentDocument.value.id)
-      if (!response.success) {
-        throw new Error(response.error || '诊断失败')
-      }
+      const response = await validateCharacterStudioDocument(currentDocument.value.id)
       diagnostics.value = {
         valid: response.valid,
-        errors: response.errors || [],
-        warnings: response.warnings || [],
-        checks: response.checks || {},
+        errors: response.errors,
+        warnings: response.warnings,
+        checks: response.checks,
       }
-      if (response.document) {
-        const refreshedDocument = response.document
-        await runWithoutAutosave(async () => {
-          currentDocument.value = refreshedDocument
-          markDocumentSynced(refreshedDocument)
-        })
-      }
+      const refreshedDocument = response.document
+      await runWithoutAutosave(async () => {
+        currentDocument.value = refreshedDocument
+        markDocumentSynced(refreshedDocument)
+      })
     } catch (error) {
       throw createActionError(error, '诊断失败')
     } finally {
@@ -583,11 +552,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     clearErrorMessage()
     agentMessages.value.push({ role: 'user', content: message })
     try {
-      const response = await runCharacterStudioAgent(bookId.value, currentDocument.value.id, message)
-      if (!response.success) {
-        throw new Error(response.error || 'Agent 调用失败')
-      }
-      const content = response.content || ''
+      const content = await runCharacterStudioAgent(currentDocument.value.id, message)
       const output = parseCharacterStudioAgentOutput(content)
       agentMessages.value.push({ role: 'assistant', content })
       pendingAgentPatch.value = output.patch
@@ -630,12 +595,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatLoading.value = true
     clearErrorMessage()
     try {
-      const response = await getCharacterStudioChatState(requestedBookId, docId)
+      const state = await getCharacterStudioChatState(docId)
       if (!isActiveChatStateRequest(requestId, requestedBookId, docId)) return
-      if (!response.success) {
-        throw new Error(response.error || '加载聊天状态失败')
-      }
-      applyChatStatePayload(response)
+      applyChatStatePayload(state)
     } catch (error) {
       if (!isActiveChatStateRequest(requestId, requestedBookId, docId)) return
       throw createActionError(error, '加载聊天状态失败')
@@ -652,11 +614,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const response = await createCharacterStudioChatSession(bookId.value, currentDocument.value.id, greetingId)
-      if (!response.success) {
-        throw new Error(response.error || '创建聊天会话失败')
-      }
-      applyChatStatePayload(response)
+      const state = await createCharacterStudioChatSession(currentDocument.value.id, greetingId)
+      applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '创建聊天会话失败')
     } finally {
@@ -671,11 +630,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const response = await switchCharacterStudioChatSession(bookId.value, currentDocument.value.id, sessionId)
-      if (!response.success) {
-        throw new Error(response.error || '切换聊天会话失败')
-      }
-      applyChatStatePayload(response)
+      const state = await switchCharacterStudioChatSession(currentDocument.value.id, sessionId)
+      applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '切换聊天会话失败')
     } finally {
@@ -692,16 +648,12 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const response = await deleteCharacterStudioChatSession(
-        bookId.value,
+      const state = await deleteCharacterStudioChatSession(
         currentDocument.value.id,
         sessionId,
         revision,
       )
-      if (!response.success) {
-        throw new Error(response.error || '删除归档会话失败')
-      }
-      applyChatStatePayload(response)
+      applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '删除归档会话失败')
     } finally {
@@ -715,17 +667,12 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const response = await editCharacterStudioChatMessage(
-        bookId.value,
-        currentDocument.value.id,
+      const session = await editCharacterStudioChatMessage(
         activeChatSession.value.session_id,
         messageId,
         content,
       )
-      if (!response.success) {
-        throw new Error(response.error || '编辑消息失败')
-      }
-      applyChatStatePayload({ active_session: response.session as CharacterStudioChatSession })
+      applyChatStatePayload({ active_session: session })
     } catch (error) {
       throw createActionError(error, '编辑消息失败')
     } finally {
@@ -739,16 +686,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const response = await deleteCharacterStudioChatMessage(
-        bookId.value,
-        currentDocument.value.id,
+      const session = await deleteCharacterStudioChatMessage(
         activeChatSession.value.session_id,
         messageId,
       )
-      if (!response.success) {
-        throw new Error(response.error || '删除消息失败')
-      }
-      applyChatStatePayload({ active_session: response.session as CharacterStudioChatSession })
+      applyChatStatePayload({ active_session: session })
     } catch (error) {
       throw createActionError(error, '删除消息失败')
     } finally {
@@ -757,21 +699,15 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  async function summarizeChatSession(cutoffMessageId?: string) {
+  async function summarizeChatSession() {
     if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
     isChatSummarizing.value = true
     clearErrorMessage()
     try {
-      const response = await summarizeCharacterStudioChatSession(
-        bookId.value,
-        currentDocument.value.id,
+      const session = await summarizeCharacterStudioChatSession(
         activeChatSession.value.session_id,
-        cutoffMessageId,
       )
-      if (!response.success) {
-        throw new Error(response.error || '总结聊天失败')
-      }
-      applyChatStatePayload({ active_session: response.session as CharacterStudioChatSession })
+      applyChatStatePayload({ active_session: session })
     } catch (error) {
       throw createActionError(error, '总结聊天失败')
     } finally {
@@ -786,8 +722,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     clearErrorMessage()
     try {
       await downloadStudioChatTranscript(
-        bookId.value,
-        currentDocument.value.id,
         activeChatSession.value.session_id,
       )
     } catch (error) {
@@ -803,11 +737,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatImporting.value = true
     clearErrorMessage()
     try {
-      const response = await importCharacterStudioChatSession(bookId.value, currentDocument.value.id, file)
-      if (!response.success) {
-        throw new Error(response.error || '导入聊天记录失败')
-      }
-      applyChatStatePayload(response)
+      const state = await importCharacterStudioChatSession(currentDocument.value.id, file)
+      applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '导入聊天记录失败')
     } finally {
@@ -827,16 +758,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
     try {
-      const response = await getCharacterStudioChatPromptPreview(
-        requestedBookId,
-        requestedDocId,
+      const promptPreview = await getCharacterStudioChatPromptPreview(
         requestedSessionId,
       )
       if (!isActiveChatPromptPreviewRequest(requestId, requestedBookId, requestedDocId, requestedSessionId)) return
-      if (!response.success) {
-        throw new Error(response.error || '加载提示词预览失败')
-      }
-      applyChatStatePayload(response)
+      chatPromptPreview.value = promptPreview
     } catch (error) {
       if (!isActiveChatPromptPreviewRequest(requestId, requestedBookId, requestedDocId, requestedSessionId)) return
       chatPromptPreviewError.value = error instanceof Error ? error.message : '加载提示词预览失败'
@@ -853,11 +779,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isImportingFile.value = true
     clearErrorMessage()
     try {
-      const response = await importCharacterStudioFile(bookId.value, file)
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '导入失败')
-      }
-      const document = response.document
+      const document = await importCharacterStudioFile(bookId.value, file)
       await loadWorkspace(bookId.value)
       await openDocument(document.id)
     } catch (error) {
@@ -872,11 +794,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isImportingWorldbook.value = true
     clearErrorMessage()
     try {
-      const response = await importWorldbookIntoCharacterStudioDocument(bookId.value, currentDocument.value.id, file)
-      if (!response.success || !response.document) {
-        throw new Error(response.error || '世界书导入失败')
-      }
-      const document = response.document
+      const document = await importWorldbookIntoCharacterStudioDocument(currentDocument.value.id, file)
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
@@ -897,7 +815,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     downloadingFormat.value = format
     clearErrorMessage()
     try {
-      await downloadStudioDocumentExport(bookId.value, currentDocument.value.id, format)
+      await downloadStudioDocumentExport(currentDocument.value.id, format)
     } catch (error) {
       throw createActionError(error, '导出失败')
     } finally {
@@ -957,7 +875,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     updateCurrentDocument,
     loadWorkspace,
     openDocument,
-    loadChatState,
     createChatSession,
     switchChatSession,
     deleteArchivedChatSession,

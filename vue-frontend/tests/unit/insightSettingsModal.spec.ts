@@ -83,7 +83,7 @@ describe('InsightSettingsModal', () => {
     vi.useFakeTimers()
     setActivePinia(createPinia())
     apiMocks.getGlobalConfig.mockReset().mockResolvedValue({ success: true, config: {} })
-    apiMocks.saveGlobalConfig.mockReset().mockResolvedValue({ success: true })
+    apiMocks.saveGlobalConfig.mockReset().mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -244,10 +244,7 @@ describe('InsightSettingsModal', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const insightStore = useInsightStore()
-    apiMocks.saveGlobalConfig.mockResolvedValueOnce({
-      success: false,
-      error: 'write conflict',
-    })
+    apiMocks.saveGlobalConfig.mockRejectedValueOnce(new Error('write conflict'))
 
     const wrapper = mount(InsightSettingsModal, {
       global: {

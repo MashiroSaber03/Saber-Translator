@@ -1,13 +1,15 @@
 import { apiClient } from './client'
 import { newIdempotencyKey } from './v2/content'
 import type { components } from '@/api/generated/v2'
-import type { ApiResponse, BookData, ChapterData, TagData } from '@/types'
+import type { BookData, ChapterData, TagData } from '@/types'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 
 type V2Book = components['schemas']['Book']
+type V2BookList = components['schemas']['BookList']
 type V2Chapter = components['schemas']['Chapter']
 type V2ConstraintDocument = components['schemas']['TranslationConstraintDocument']
 type V2Tag = components['schemas']['Tag']
+type V2TagList = components['schemas']['TagList']
 
 const BOOKS_ENDPOINT = '/api/v2/books'
 const TAGS_ENDPOINT = '/api/v2/tags'
@@ -15,47 +17,11 @@ const tagIdsByName = new Map<string, string>()
 const chapterOrderRevisions = new Map<string, number>()
 const constraintRevisions = new Map<string, number>()
 
-export interface BookListResponse {
-  success: boolean
-  books?: BookData[]
-  error?: string
-}
-
-export interface BookDetailResponse {
-  success: boolean
-  book?: BookData
-  error?: string
-}
-
 export interface GetBooksParams {
   search?: string
   tags?: string[]
   sortBy?: 'title' | 'createdAt' | 'updatedAt'
   sortOrder?: 'asc' | 'desc'
-}
-
-export interface ChapterListResponse {
-  success: boolean
-  chapters?: ChapterData[]
-  error?: string
-}
-
-export interface ChapterDetailResponse {
-  success: boolean
-  chapter?: ChapterData
-  error?: string
-}
-
-export interface TagListResponse {
-  success: boolean
-  tags?: TagData[]
-  error?: string
-}
-
-export interface TagDetailResponse {
-  success: boolean
-  tag?: TagData
-  error?: string
 }
 
 export type BookBatchDeleteResult = components['schemas']['BookBatchDeleteResult']
@@ -181,7 +147,7 @@ async function saveConstraints(
   return constraintsFromV2(document)
 }
 
-export async function getBooks(params?: GetBooksParams): Promise<BookListResponse> {
+export async function getBooks(params?: GetBooksParams): Promise<BookData[]> {
   const query = new URLSearchParams()
   if (params?.search) query.set('search', params.search)
   const tagIds = await resolveTagIds(params?.tags)
@@ -194,21 +160,18 @@ export async function getBooks(params?: GetBooksParams): Promise<BookListRespons
   if (params?.sortBy) query.set('sort_by', sortMap[params.sortBy])
   if (params?.sortOrder) query.set('sort_order', params.sortOrder)
   const suffix = query.size ? `?${query}` : ''
-  const result = await apiClient.get<{ items: V2Book[] }>(
+  const result = await apiClient.get<V2BookList>(
     `${BOOKS_ENDPOINT}${suffix}`,
   )
-  return {
-    success: true,
-    books: result.items.map(book => toBook(book)),
-  }
+  return result.items.map(book => toBook(book))
 }
 
-export async function getBookDetail(bookId: string): Promise<BookDetailResponse> {
+export async function getBookDetail(bookId: string): Promise<BookData> {
   const [book, constraints] = await Promise.all([
     apiClient.get<V2Book & { chapters: V2Chapter[] }>(bookPath(bookId)),
     getConstraints(bookId),
   ])
-  return { success: true, book: toBook(book, constraints) }
+  return toBook(book, constraints)
 }
 
 function bookFormData(
@@ -225,11 +188,10 @@ function bookFormData(
 
 export async function createBook(
   title: string,
-  _description?: string,
   cover?: File,
   tags?: string[],
   translationConstraints?: BookTranslationConstraints,
-): Promise<BookDetailResponse> {
+): Promise<BookData> {
   const tagIds = await resolveTagIds(tags) || []
   const created = cover
     ? await apiClient.upload<V2Book>(
@@ -252,12 +214,11 @@ export async function updateBook(
   bookId: string,
   data: {
     title?: string
-    description?: string
     cover?: File
     tags?: string[]
     translationConstraints?: BookTranslationConstraints
   },
-): Promise<BookDetailResponse> {
+): Promise<BookData> {
   if (
     data.title !== undefined
     || data.tags !== undefined
@@ -288,11 +249,10 @@ export async function updateBook(
   return getBookDetail(bookId)
 }
 
-export async function deleteBook(bookId: string): Promise<ApiResponse> {
+export async function deleteBook(bookId: string): Promise<void> {
   await apiClient.delete(bookPath(bookId), idempotencyConfig())
   chapterOrderRevisions.delete(bookId)
   constraintRevisions.delete(bookId)
-  return { success: true }
 }
 
 export function batchDeleteBooks(bookIds: string[]): Promise<BookBatchDeleteResult> {
@@ -316,61 +276,40 @@ export async function batchUpdateBookTags(
   )
 }
 
-export async function getChapters(bookId: string): Promise<ChapterListResponse> {
-  const result = await apiClient.get<{
-    book: { chapterOrderRevision?: number }
-    chapters: V2Chapter[]
-  }>(bookPath(bookId, '/chapters'))
-  if (result.book.chapterOrderRevision) {
-    chapterOrderRevisions.set(bookId, result.book.chapterOrderRevision)
-  }
-  return {
-    success: true,
-    chapters: result.chapters.map(toChapter),
-  }
-}
-
 export async function createChapter(
   bookId: string,
   title: string,
-): Promise<ChapterDetailResponse> {
+): Promise<ChapterData> {
   const chapter = await apiClient.post<V2Chapter>(
     bookPath(bookId, '/chapters'),
     { title },
     idempotencyConfig(),
   )
-  return { success: true, chapter: toChapter(chapter) }
+  return toChapter(chapter)
 }
 
 export async function updateChapter(
-  _bookId: string,
   chapterId: string,
   title: string,
-): Promise<ChapterDetailResponse> {
+): Promise<ChapterData> {
   const chapter = await apiClient.put<V2Chapter>(
     chapterPath(chapterId),
     { title },
     idempotencyConfig(),
   )
-  return { success: true, chapter: toChapter({
-    ...chapter,
-    ordinal: chapter.ordinal || 1,
-    pageOrderRevision: chapter.pageOrderRevision || 1,
-  }) }
+  return toChapter(chapter)
 }
 
 export async function deleteChapter(
-  _bookId: string,
   chapterId: string,
-): Promise<ApiResponse> {
+): Promise<void> {
   await apiClient.delete(chapterPath(chapterId), idempotencyConfig())
-  return { success: true }
 }
 
 export async function reorderChapters(
   bookId: string,
   chapterIds: string[],
-): Promise<ApiResponse> {
+): Promise<void> {
   let baseRevision = chapterOrderRevisions.get(bookId)
   if (!baseRevision) {
     await getBookDetail(bookId)
@@ -385,24 +324,23 @@ export async function reorderChapters(
     idempotencyConfig(),
   )
   chapterOrderRevisions.set(bookId, result.chapterOrderRevision)
-  return { success: true }
 }
 
-export async function getTags(): Promise<TagListResponse> {
-  const result = await apiClient.get<{ items: V2Tag[] }>(TAGS_ENDPOINT)
-  return { success: true, tags: result.items.map(toTag) }
+export async function getTags(): Promise<TagData[]> {
+  const result = await apiClient.get<V2TagList>(TAGS_ENDPOINT)
+  return result.items.map(toTag)
 }
 
 export async function createTag(
   name: string,
   color = '#808080',
-): Promise<TagDetailResponse> {
+): Promise<TagData> {
   const tag = await apiClient.post<V2Tag>(
     TAGS_ENDPOINT,
     { name, color },
     idempotencyConfig(),
   )
-  return { success: true, tag: toTag(tag) }
+  return toTag(tag)
 }
 
 function requireTagId(name: string): string {
@@ -411,21 +349,20 @@ function requireTagId(name: string): string {
   return id
 }
 
-export async function deleteTag(tagName: string): Promise<ApiResponse> {
+export async function deleteTag(tagName: string): Promise<void> {
   const tagId = requireTagId(tagName)
   await apiClient.delete(
     `${TAGS_ENDPOINT}/${encodeURIComponent(tagId)}`,
     idempotencyConfig(),
   )
   tagIdsByName.delete(tagName)
-  return { success: true }
 }
 
 export async function updateTag(
   currentName: string,
   name: string,
   color: string,
-): Promise<TagDetailResponse> {
+): Promise<TagData> {
   const tagId = requireTagId(currentName)
   const tag = await apiClient.put<V2Tag>(
     `${TAGS_ENDPOINT}/${encodeURIComponent(tagId)}`,
@@ -433,5 +370,5 @@ export async function updateTag(
     idempotencyConfig(),
   )
   tagIdsByName.delete(currentName)
-  return { success: true, tag: toTag(tag) }
+  return toTag(tag)
 }

@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import * as continuationApi from '@/api/continuation'
 import type { ContinuationState } from './useContinuationState'
-import { runContinuationMutation, toContinuationActionError } from './continuationActionRunner'
+import { runContinuationMutation } from './continuationActionRunner'
 
 export interface CharacterManagementComposable {
     addCharacter: (name: string, aliases: string[], description: string) => Promise<void>
@@ -18,7 +18,7 @@ export interface CharacterManagementComposable {
         charName: string,
         formId: string,
         sourceImages: File[],
-    ) => Promise<continuationApi.UploadImageResponse>
+    ) => Promise<string>
     setFormReference: (charName: string, formId: string, imagePath: string) => Promise<void>
 }
 
@@ -142,14 +142,11 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         const activeBookId = bookId.value
         if (!activeBookId) return
 
-        const formData = new FormData()
-        formData.append('file', file)
-
         await runContinuationMutation({
             state,
             failurePrefix: '上传失败',
             successMessage: '图片上传成功',
-            run: () => continuationApi.uploadFormImage(activeBookId, charName, formId, formData),
+            run: () => continuationApi.uploadFormImage(activeBookId, charName, formId, file),
             afterSuccess: async () => {
                 state.imageRefreshKey.value = Date.now()
                 await state.initializeData()
@@ -197,30 +194,16 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
     }
 
     async function generateOrtho(charName: string, formId: string, sourceImages: File[]) {
-        if (!bookId.value) return { success: false, error: 'No book ID' }
-
-        try {
-            const result = await continuationApi.generateFormOrtho(bookId.value, charName, formId, sourceImages)
-            return result
-        } catch (error) {
-            return {
-                success: false,
-                error: toContinuationActionError(error)
-            }
-        }
+        if (!bookId.value) throw new Error('当前未选择漫画')
+        return continuationApi.generateFormOrtho(bookId.value, charName, formId, sourceImages)
     }
 
     async function setFormReference(charName: string, formId: string, imagePath: string) {
         if (!bookId.value) return
 
-        const result = await continuationApi.setFormReference(bookId.value, charName, formId, imagePath)
-
-        if (result.success) {
-            state.imageRefreshKey.value = Date.now()
-            await state.initializeData()
-        } else {
-            throw new Error(result.error)
-        }
+        await continuationApi.setFormReference(bookId.value, charName, formId, imagePath)
+        state.imageRefreshKey.value = Date.now()
+        await state.initializeData()
     }
 
     return {

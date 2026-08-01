@@ -107,20 +107,21 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     ): Promise<boolean> {
         if (!activeBookId) return false
 
-        const charResult = await continuationApi.getCharacters(activeBookId)
-        if (!isCurrentRequest()) {
-            return false
-        }
-        if (charResult.success && charResult.characters) {
-            characters.value = charResult.characters
+        try {
+            const charactersResult = await continuationApi.getCharacters(activeBookId)
+            if (!isCurrentRequest()) {
+                return false
+            }
+            characters.value = charactersResult
             imageRefreshKey.value = Date.now()
             return true
+        } catch (error) {
+            if (isCurrentRequest()) {
+                const message = error instanceof Error ? error.message : '网络错误'
+                setMessageState(`加载角色失败：${message}`, 'error', persistentError)
+            }
+            return false
         }
-
-        if (!charResult.success && charResult.error) {
-            setMessageState(`加载角色失败：${charResult.error}`, 'error', persistentError)
-        }
-        return false
     }
 
     function applySavedContinuationData(data: {
@@ -183,14 +184,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                 return
             }
 
-            if (result.success && result.saved_data) {
-                const data = result.saved_data
-                applySavedContinuationData(data)
-                applyPreparationResult(result)
-                await loadCharactersForBook(activeBookId, true, isCurrentRequest)
-            } else if (!result.success && result.error) {
-                setMessageState(result.error, 'error', true)
-            }
+            applySavedContinuationData(result.saved_data)
+            applyPreparationResult(result)
+            await loadCharactersForBook(activeBookId, true, isCurrentRequest)
         } catch {
             if (isCurrentRequest()) {
                 setMessageState('初始化数据失败', 'error', true)
@@ -214,12 +210,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         try {
             const result = await continuationApi.syncContinuationAnalysis(activeBookId)
             if (!isCurrentRequest()) {
-                return
-            }
-
-            if (!result.success) {
-                const message = result.error || '分析数据同步失败'
-                setMessageState(message, 'error', true)
                 return
             }
 

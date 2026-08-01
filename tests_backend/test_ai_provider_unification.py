@@ -1,7 +1,5 @@
 import unittest
 from unittest import mock
-import threading
-import time
 
 from PIL import Image
 
@@ -228,121 +226,6 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         self.assertNotIn("max_tokens", fake_client.last_request["json"])
 
 class ProviderRegistryContractTests(unittest.TestCase):
-    def test_ai_vision_rpm_limit_is_scoped_per_provider(self) -> None:
-        from src.shared.ai_providers import VISION_OCR_CAPABILITY
-        from src.shared.openai_rate_limits import (
-            apply_sync_rpm_limit,
-            build_openai_rpm_bucket_key,
-        )
-
-        seen_refs = []
-
-        def record_refs(rpm_limit, service_name, last_reset_ref, request_count_ref):
-            seen_refs.append((service_name, last_reset_ref, request_count_ref))
-
-        apply_sync_rpm_limit(
-            build_openai_rpm_bucket_key(VISION_OCR_CAPABILITY, "siliconflow"),
-            5,
-            "AI Vision OCR (siliconflow)",
-            record_refs,
-        )
-        apply_sync_rpm_limit(
-            build_openai_rpm_bucket_key(VISION_OCR_CAPABILITY, "gemini"),
-            5,
-            "AI Vision OCR (gemini)",
-            record_refs,
-        )
-
-        self.assertEqual(len(seen_refs), 2)
-        self.assertNotEqual(seen_refs[0][0], seen_refs[1][0])
-        self.assertIsNot(seen_refs[0][1], seen_refs[1][1])
-        self.assertIsNot(seen_refs[0][2], seen_refs[1][2])
-
-    def test_ai_vision_rpm_limit_serializes_same_provider_calls(self) -> None:
-        from src.shared.ai_providers import VISION_OCR_CAPABILITY
-        from src.shared.openai_rate_limits import (
-            apply_sync_rpm_limit,
-            build_openai_rpm_bucket_key,
-        )
-
-        start_event = threading.Event()
-        active = 0
-        overlap_detected = False
-        state_lock = threading.Lock()
-
-        def slow_limit(*args, **kwargs):
-            nonlocal active, overlap_detected
-            with state_lock:
-                active += 1
-                if active > 1:
-                    overlap_detected = True
-            time.sleep(0.05)
-            with state_lock:
-                active -= 1
-
-        def worker():
-            start_event.wait()
-            apply_sync_rpm_limit(
-                build_openai_rpm_bucket_key(VISION_OCR_CAPABILITY, "siliconflow"),
-                5,
-                "AI Vision OCR (siliconflow)",
-                slow_limit,
-            )
-
-        threads = [threading.Thread(target=worker) for _ in range(2)]
-        for thread in threads:
-            thread.start()
-        start_event.set()
-        for thread in threads:
-            thread.join()
-
-        self.assertFalse(overlap_detected)
-
-    def test_translation_rpm_limit_is_scoped_per_provider(self) -> None:
-        from src.core.translation import _apply_translation_rpm_limit
-
-        seen_refs = []
-
-        def record_refs(rpm_limit, service_name, last_reset_ref, request_count_ref):
-            seen_refs.append((service_name, last_reset_ref, request_count_ref))
-
-        with mock.patch("src.core.translation._enforce_rpm_limit", side_effect=record_refs):
-            _apply_translation_rpm_limit("siliconflow", 5)
-            _apply_translation_rpm_limit("gemini", 5)
-
-        self.assertEqual(len(seen_refs), 2)
-        self.assertIsNot(seen_refs[0][1], seen_refs[1][1])
-        self.assertIsNot(seen_refs[0][2], seen_refs[1][2])
-
-    def test_hq_translation_rpm_limit_is_scoped_per_provider(self) -> None:
-        from src.shared.ai_providers import HQ_TRANSLATION_CAPABILITY
-        from src.shared.openai_rate_limits import (
-            apply_sync_rpm_limit,
-            build_openai_rpm_bucket_key,
-        )
-
-        seen_refs = []
-
-        def record_refs(rpm_limit, service_name, last_reset_ref, request_count_ref):
-            seen_refs.append((service_name, last_reset_ref, request_count_ref))
-
-        apply_sync_rpm_limit(
-            build_openai_rpm_bucket_key(HQ_TRANSLATION_CAPABILITY, "siliconflow"),
-            5,
-            "HQTranslation (siliconflow)",
-            record_refs,
-        )
-        apply_sync_rpm_limit(
-            build_openai_rpm_bucket_key(HQ_TRANSLATION_CAPABILITY, "gemini"),
-            5,
-            "HQTranslation (gemini)",
-            record_refs,
-        )
-
-        self.assertEqual(len(seen_refs), 2)
-        self.assertIsNot(seen_refs[0][1], seen_refs[1][1])
-        self.assertIsNot(seen_refs[0][2], seen_refs[1][2])
-
     def test_translate_single_text_attempts_once_when_max_retries_is_zero(self) -> None:
         from src.core.translation import translate_single_text
         from src.shared.openai_options import OpenAICompatibleOptions

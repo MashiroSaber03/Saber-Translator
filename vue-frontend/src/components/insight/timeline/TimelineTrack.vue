@@ -2,7 +2,7 @@
 import UiButton from '@/components/ui/UiButton.vue'
 import TimelineArcCard from './TimelineArcCard.vue'
 import TimelineGroupCard from './TimelineGroupCard.vue'
-import type { TimelineArc, TimelineGroup } from './timelineTypes'
+import type { TimelineArc, TimelineGroup } from '@/types/insight'
 
 const props = defineProps<{
   expandedIds: string[]

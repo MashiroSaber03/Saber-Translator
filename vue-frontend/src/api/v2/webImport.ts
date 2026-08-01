@@ -1,7 +1,8 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
+import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
-import { runV2ConnectionTest } from './settings'
+import { runV2ConnectionTest, type V2ConnectionTestResult } from './settings'
 
 const ROOT = '/api/v2/web-import'
 
@@ -21,6 +22,7 @@ export function createWebImportDraft(command: {
   engine: string
   sourceUrl: string
 }): Promise<WebImportDraftAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/drafts`,
     command,
@@ -63,6 +65,7 @@ export function commitWebImportDraft(
   draftId: string,
   baseRevision: number,
 ): Promise<WebImportDraftAccepted> {
+  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/drafts/${encodeURIComponent(draftId)}/commit`,
     { baseRevision },
@@ -72,7 +75,7 @@ export function commitWebImportDraft(
 
 export function testFirecrawlConnection(
   apiKey: string,
-): Promise<{ success: boolean; message?: string }> {
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest(
     'firecrawl',
     apiKey
@@ -86,7 +89,7 @@ export function testAgentConnection(
   apiKey: string,
   customBaseUrl: string,
   modelName: string,
-): Promise<{ success: boolean; message?: string }> {
+): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('web_import_agent', {
     provider,
     baseUrl: customBaseUrl || undefined,

@@ -99,10 +99,9 @@ describe('plugin v3 api', () => {
       packageVersion: '1.0.0',
       currentRevision: 7,
     })
-    getMock.mockResolvedValue({ items: [pluginV2] })
 
     const { importPlugin } = await import('@/api/plugin')
-    const result = await importPlugin(file)
+    await importPlugin(file)
 
     expect(uploadMock).toHaveBeenCalledTimes(1)
     const [url, formData, config] = uploadMock.mock.calls[0] || []
@@ -113,7 +112,7 @@ describe('plugin v3 api', () => {
     expect(config).toEqual({
       headers: { 'Idempotency-Key': 'test-idempotency-key' },
     })
-    expect(result.plugin?.id).toBe('sample_plugin')
+    expect(getMock).not.toHaveBeenCalled()
   })
 
   it('retries an existing package with backend-provided CAS metadata', async () => {
@@ -134,26 +133,13 @@ describe('plugin v3 api', () => {
         packageVersion: '2.0.0',
         currentRevision: 8,
       })
-    getMock.mockResolvedValue({
-      items: [{
-        ...pluginV2,
-        pluginVersionId: 'version-2',
-        packageVersion: '2.0.0',
-        currentRevision: 8,
-      }],
-    })
-
     const { importPlugin } = await import('@/api/plugin')
     await expect(importPlugin(file)).rejects.toMatchObject({ status: 409 })
-    const result = await importPlugin(file, true)
+    await importPlugin(file, true)
 
     const replacementForm = uploadMock.mock.calls[1]?.[1] as FormData
     expect(replacementForm.get('baseRevision')).toBe('7')
-    expect(result.plugin).toMatchObject({
-      id: 'sample_plugin',
-      version: '2.0.0',
-      current_revision: 8,
-    })
+    expect(getMock).not.toHaveBeenCalled()
   })
 
   it('uses v2 management routes and cached CAS revisions', async () => {

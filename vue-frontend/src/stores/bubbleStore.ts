@@ -3,28 +3,23 @@ import { ref, computed } from 'vue'
 import type {
   BubbleState,
   BubbleCoords,
-  BubbleStateOverrides,
   BubbleStateUpdates
 } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 
 import {
-  createBubbleState as createBubbleStateFromFactory,
+  createBubbleState,
   cloneBubbleStates,
-  isValidBubbleState,
   detectTextDirection
 } from '@/utils/bubbleFactory'
 
-export { cloneBubbleStates, isValidBubbleState }
-
-export function createBubbleState(overrides?: BubbleStateOverrides | BubbleCoords): BubbleState {
-  if (Array.isArray(overrides)) {
-    return createBubbleStateFromFactory({ coords: overrides })
-  }
-  return createBubbleStateFromFactory(overrides)
+function bubbleIdentity(bubble: BubbleState | undefined): string | null {
+  if (!bubble) return null
+  if (bubble.backendBubbleId) return `backend:${bubble.backendBubbleId}`
+  if (bubble.clientMutationId) return `client:${bubble.clientMutationId}`
+  return null
 }
-
 
 export const useBubbleStore = defineStore('bubble', () => {
   const bubbles = ref<BubbleState[]>([])
@@ -42,13 +37,6 @@ export const useBubbleStore = defineStore('bubble', () => {
   const bubbleCount = computed<number>(() => bubbles.value.length)
   const hasBubbles = computed<boolean>(() => bubbles.value.length > 0)
   const hasSelection = computed<boolean>(() => selectedIndex.value >= 0)
-  const isMultiSelect = computed<boolean>(() => selectedIndices.value.length > 1)
-  const selectedBubbles = computed<BubbleState[]>(() => {
-    return selectedIndices.value
-      .filter((i) => i >= 0 && i < bubbles.value.length)
-      .map((i) => bubbles.value[i])
-      .filter((b): b is BubbleState => b !== undefined)
-  })
 
   function syncToCurrentImage(): void {
     const imageStore = useImageStore()
@@ -61,22 +49,22 @@ export const useBubbleStore = defineStore('bubble', () => {
   }
 
   function setBubbles(newBubbles: BubbleState[], skipSync: boolean = false): void {
-    const primaryBubbleId = selectedBubble.value?.backendBubbleId
-    const selectedBubbleIds = selectedIndices.value
-      .map(index => bubbles.value[index]?.backendBubbleId)
-      .filter((id): id is string => Boolean(id))
+    const primaryIdentity = bubbleIdentity(selectedBubble.value ?? undefined)
+    const selectedIdentities = selectedIndices.value
+      .map(index => bubbleIdentity(bubbles.value[index]))
+      .filter((identity): identity is string => Boolean(identity))
     bubbles.value = newBubbles
     initialStates.value = cloneBubbleStates(newBubbles)
-    const indexById = new Map(
+    const indexByIdentity = new Map(
       newBubbles
-        .map((bubble, index) => [bubble.backendBubbleId, index] as const)
+        .map((bubble, index) => [bubbleIdentity(bubble), index] as const)
         .filter((entry): entry is readonly [string, number] => Boolean(entry[0])),
     )
-    selectedIndices.value = selectedBubbleIds
-      .map(id => indexById.get(id))
+    selectedIndices.value = selectedIdentities
+      .map(identity => indexByIdentity.get(identity))
       .filter((index): index is number => index !== undefined)
-    selectedIndex.value = primaryBubbleId
-      ? (indexById.get(primaryBubbleId) ?? -1)
+    selectedIndex.value = primaryIdentity
+      ? (indexByIdentity.get(primaryIdentity) ?? -1)
       : -1
     if (!skipSync) {
       syncToCurrentImage()
@@ -119,27 +107,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     bubbles.value.push(newBubble)
     syncToCurrentImage()
     return newBubble
-  }
-
-  function deleteBubble(index: number): boolean {
-    if (index < 0 || index >= bubbles.value.length) {
-      return false
-    }
-
-    bubbles.value.splice(index, 1)
-
-    if (selectedIndex.value === index) {
-      selectedIndex.value = -1
-    } else if (selectedIndex.value > index) {
-      selectedIndex.value--
-    }
-
-    selectedIndices.value = selectedIndices.value
-      .filter((i) => i !== index)
-      .map((i) => (i > index ? i - 1 : i))
-
-    syncToCurrentImage()
-    return true
   }
 
   function deleteSelected(): void {
@@ -245,24 +212,6 @@ export const useBubbleStore = defineStore('bubble', () => {
     return updateBubble(selectedIndex.value, updates)
   }
 
-  function updateAllSelected(updates: BubbleStateUpdates): void {
-    const indices = selectedIndices.value.length > 0
-      ? selectedIndices.value
-      : (selectedIndex.value >= 0 ? [selectedIndex.value] : [])
-
-    for (const index of indices) {
-      const bubble = bubbles.value[index]
-      if (bubble) {
-        const updatesWithAutoDirection = { ...updates }
-        if (updates.coords) {
-          updatesWithAutoDirection.autoTextDirection = detectTextDirection(updates.coords)
-        }
-        Object.assign(bubble, updatesWithAutoDirection)
-      }
-    }
-    syncToCurrentImage()
-  }
-
   function updateAllBubbles(updates: BubbleStateUpdates): void {
     for (let i = 0; i < bubbles.value.length; i++) {
       const bubble = bubbles.value[i]
@@ -277,118 +226,8 @@ export const useBubbleStore = defineStore('bubble', () => {
     syncToCurrentImage()
   }
 
-  function hasChanges(): boolean {
-    if (bubbles.value.length !== initialStates.value.length) {
-      return true
-    }
-
-    for (let i = 0; i < bubbles.value.length; i++) {
-      const current = bubbles.value[i]
-      const initial = initialStates.value[i]
-
-      if (!current || !initial) continue
-
-      if (
-        current.translatedText !== initial.translatedText ||
-        current.textboxText !== initial.textboxText ||
-        current.fontSize !== initial.fontSize ||
-        current.fontFamily !== initial.fontFamily ||
-        current.textDirection !== initial.textDirection ||
-        current.textColor !== initial.textColor ||
-        current.fillColor !== initial.fillColor ||
-        current.rotationAngle !== initial.rotationAngle ||
-        current.strokeEnabled !== initial.strokeEnabled ||
-        current.strokeColor !== initial.strokeColor ||
-        current.strokeWidth !== initial.strokeWidth ||
-        current.lineSpacing !== initial.lineSpacing ||
-        current.textAlign !== initial.textAlign ||
-        current.inpaintMethod !== initial.inpaintMethod ||
-        JSON.stringify(current.coords) !== JSON.stringify(initial.coords)
-      ) {
-        return true
-      }
-    }
-
-    return false
-  }
-
-  function resetToInitial(): void {
-    bubbles.value = cloneBubbleStates(initialStates.value)
-    clearSelection()
-    syncToCurrentImage()
-  }
-
   function saveAsInitial(): void {
     initialStates.value = cloneBubbleStates(bubbles.value)
-  }
-
-  function toApiRequest(): {
-    bubble_coords: BubbleCoords[]
-    bubble_texts: string[]
-    textbox_texts: string[]
-    font_sizes: number[]
-    font_families: string[]
-    text_directions: string[]
-    text_colors: string[]
-    fill_colors: string[]
-    rotation_angles: number[]
-    stroke_enabled: boolean[]
-    stroke_colors: string[]
-    stroke_widths: number[]
-    line_spacings: number[]
-    text_aligns: string[]
-    inpaint_methods: string[]
-  } {
-    return {
-      bubble_coords: bubbles.value.map(b => b.coords),
-      bubble_texts: bubbles.value.map(b => b.translatedText),
-      textbox_texts: bubbles.value.map(b => b.textboxText),
-      font_sizes: bubbles.value.map(b => b.fontSize),
-      font_families: bubbles.value.map(b => b.fontFamily),
-      text_directions: bubbles.value.map(b => {
-        if (b.textDirection === 'vertical' || b.textDirection === 'horizontal') {
-          return b.textDirection === 'vertical' ? 'v' : 'h'
-        }
-        if (b.autoTextDirection === 'vertical' || b.autoTextDirection === 'horizontal') {
-          return b.autoTextDirection === 'vertical' ? 'v' : 'h'
-        }
-        return 'v'
-      }),
-      text_colors: bubbles.value.map(b => b.textColor),
-      fill_colors: bubbles.value.map(b => b.fillColor),
-      rotation_angles: bubbles.value.map(b => b.rotationAngle),
-      stroke_enabled: bubbles.value.map(b => b.strokeEnabled),
-      stroke_colors: bubbles.value.map(b => b.strokeColor),
-      stroke_widths: bubbles.value.map(b => b.strokeWidth),
-      line_spacings: bubbles.value.map(b => b.lineSpacing),
-      text_aligns: bubbles.value.map(b => b.textAlign),
-      inpaint_methods: bubbles.value.map(b => b.inpaintMethod)
-    }
-  }
-
-  function serialize(): string {
-    return JSON.stringify(bubbles.value)
-  }
-
-  function deserialize(json: string): boolean {
-    try {
-      const parsed = JSON.parse(json)
-      if (!Array.isArray(parsed)) {
-        return false
-      }
-
-      const validStates: BubbleState[] = []
-      for (const item of parsed) {
-        if (isValidBubbleState(item)) {
-          validStates.push(item as BubbleState)
-        }
-      }
-
-      setBubbles(validStates)
-      return true
-    } catch {
-      return false
-    }
   }
 
   return {
@@ -401,12 +240,9 @@ export const useBubbleStore = defineStore('bubble', () => {
     bubbleCount,
     hasBubbles,
     hasSelection,
-    isMultiSelect,
-    selectedBubbles,
 
     setBubbles,
     addBubble,
-    deleteBubble,
     deleteSelected,
     clearBubbles,
     clearBubblesLocal,
@@ -420,15 +256,7 @@ export const useBubbleStore = defineStore('bubble', () => {
 
     updateBubble,
     updateSelectedBubble,
-    updateAllSelected,
     updateAllBubbles,
-
-    hasChanges,
-    resetToInitial,
     saveAsInitial,
-
-    toApiRequest,
-    serialize,
-    deserialize
   }
 })

@@ -39,13 +39,6 @@ export const FONT_NAME_MAP: Record<string, string> = {
   'fonts/simsun.ttc': '宋体',
 }
 
-export const BUILTIN_FONTS = Array.from(new Set([
-  TEXT_STYLE_DEFAULTS.fontFamily,
-  'fonts/msyh.ttc',
-  'fonts/simhei.ttf',
-  'fonts/simsun.ttc',
-]))
-
 export function getFontDisplayName(fontPath: string): string {
   if (FONT_NAME_MAP[fontPath]) {
     return FONT_NAME_MAP[fontPath]
