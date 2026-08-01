@@ -2,10 +2,20 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const persistenceMocks = vi.hoisted(() => ({
+  flushPageDocument: vi.fn(),
   queuePageDocumentMutation: vi.fn(),
 }))
 
+const translationMocks = vi.hoisted(() => ({
+  createChapterStyleApplyJob: vi.fn(),
+}))
+
+const taskCenterMocks = vi.hoisted(() => ({
+  refresh: vi.fn(),
+}))
+
 vi.mock('@/services/pageDocumentPersistence', () => ({
+  flushPageDocument: persistenceMocks.flushPageDocument,
   queuePageDocumentMutation: persistenceMocks.queuePageDocumentMutation,
 }))
 
@@ -14,7 +24,11 @@ vi.mock('@/api/v2/content', () => ({
 }))
 
 vi.mock('@/api/v2/translation', () => ({
-  createChapterStyleApplyJob: vi.fn(),
+  createChapterStyleApplyJob: translationMocks.createChapterStyleApplyJob,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ refresh: taskCenterMocks.refresh }),
 }))
 
 import { useTextStyleSync } from './useTextStyleSync'
@@ -24,8 +38,14 @@ import { useSettingsStore } from '@/stores/settings'
 describe('useTextStyleSync page defaults', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    persistenceMocks.flushPageDocument.mockReset()
+    persistenceMocks.flushPageDocument.mockResolvedValue(undefined)
     persistenceMocks.queuePageDocumentMutation.mockReset()
     persistenceMocks.queuePageDocumentMutation.mockResolvedValue(undefined)
+    translationMocks.createChapterStyleApplyJob.mockReset()
+    translationMocks.createChapterStyleApplyJob.mockResolvedValue({ jobIds: ['job-1'] })
+    taskCenterMocks.refresh.mockReset()
+    taskCenterMocks.refresh.mockResolvedValue(undefined)
   })
 
   it('persists inpaintMethod as a page default without propagating it to existing bubbles', async () => {
@@ -136,6 +156,51 @@ describe('useTextStyleSync page defaults', () => {
           fillColor: '#abcdef',
         },
         propagateStyleFields: ['textColor', 'fillColor'],
+      },
+    )
+  })
+
+  it('flushes the source page style and freezes its committed revision for apply-to-all', async () => {
+    const imageStore = useImageStore()
+    imageStore.setImages([{
+      id: '00000000-0000-0000-0000-000000000001',
+      chapterId: '00000000-0000-0000-0000-000000000002',
+      documentRevision: 3,
+      fileName: 'page.png',
+      sourceAssetUrl: '/source',
+      translatedAssetUrl: null,
+      cleanAssetUrl: null,
+      bubbleStates: [],
+      translationStatus: 'pending',
+      translationFailed: false,
+      hasUnsavedChanges: false,
+    }])
+    persistenceMocks.flushPageDocument.mockImplementation(async () => {
+      imageStore.updateCurrentImage({ documentRevision: 4 })
+    })
+
+    await useTextStyleSync().handleApplyToAll({
+      fillColor: false,
+      fontFamily: false,
+      fontSize: false,
+      layoutDirection: false,
+      lineSpacing: false,
+      strokeColor: false,
+      strokeEnabled: false,
+      strokeWidth: false,
+      textAlign: false,
+      textColor: true,
+    })
+
+    expect(persistenceMocks.flushPageDocument).toHaveBeenCalledWith(
+      '00000000-0000-0000-0000-000000000001',
+    )
+    expect(translationMocks.createChapterStyleApplyJob).toHaveBeenCalledWith(
+      '00000000-0000-0000-0000-000000000002',
+      {
+        selectedFields: ['textColor'],
+        sourceDocumentRevision: 4,
+        sourcePageId: '00000000-0000-0000-0000-000000000001',
       },
     )
   })

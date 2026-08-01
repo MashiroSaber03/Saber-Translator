@@ -503,13 +503,14 @@ def test_job_failures_never_expose_frozen_credentials(job_platform) -> None:
 
 
 def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
-    _engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
     existing_job = _create_job(repository)
     existing = repository.events_after(after=0)
     assert existing[-1]["jobId"] == existing_job
 
     broadcaster = JobEventBroadcaster(
         repository,
+        epoch_repository=ProcessEpochRepository(engine),
         poll_seconds=0.01,
         subscriber_capacity=8,
     )

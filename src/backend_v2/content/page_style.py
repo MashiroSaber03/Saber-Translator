@@ -91,6 +91,16 @@ def _color(value: object, *, field: str) -> str:
     return value
 
 
+def rgb_to_hex(value: object) -> str:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return "#000000"
+    red, green, blue = (
+        max(0, min(255, int(part)))
+        for part in value[:3]
+    )
+    return f"#{red:02X}{green:02X}{blue:02X}"
+
+
 def validate_page_style(
     value: object,
     *,

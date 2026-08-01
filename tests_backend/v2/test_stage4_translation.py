@@ -10,7 +10,7 @@ import zipfile
 
 from PIL import Image
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
@@ -45,9 +45,11 @@ from src.backend_v2.storage.schema import (
     translation_constraints,
 )
 from src.backend_v2.storage.seeding import seed_system_records
+from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.translation.commands import (
     TranslationJobCommandService,
     normalize_translation_command,
+    step_kinds_for_mode,
 )
 from src.backend_v2.translation.auxiliary import (
     AuxiliaryTranslationCommands,
@@ -60,7 +62,7 @@ from src.backend_v2.translation.pipeline import (
     _restore_non_translate_text,
     _validate_stable_batch_result,
 )
-from src.backend_v2.testing.fake_provider import (
+from tests_backend.fake_provider import (
     DETERMINISTIC_FAKE_PROVIDER_ID,
     DeterministicFakeProvider,
     registered_deterministic_fake_provider,
@@ -83,6 +85,35 @@ class PluginMutationAlgorithms(FakeAlgorithms):
             "textbox": ["你好"],
             "mode": mode,
         }
+
+
+class InvalidTranslationCountAlgorithms(FakeAlgorithms):
+    def translate(self, _texts, _config, *, mode):
+        return {
+            "translated": ["第一条", "多出来的一条"],
+            "textbox": [],
+            "mode": mode,
+        }
+
+
+class TranslationShapeRuntime:
+    def __init__(self, *, phase: str, field: str) -> None:
+        self.phase = phase
+        self.field = field
+
+    def run_atomic(
+        self,
+        _fence,
+        *,
+        phase: str,
+        step: str,
+        page_id: str,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        result = dict(data)
+        if step == "translate" and phase == self.phase:
+            result[self.field] = ["第一条", "多出来的一条"]
+        return result
 
 
 def test_non_translate_restore_accepts_model_returned_fragment() -> None:
@@ -122,6 +153,7 @@ class PageStyleRecordingAlgorithms(FakeAlgorithms):
         super().__init__()
         self.repair_configs: list[dict[str, Any]] = []
         self.repair_masks: list[tuple[str, tuple[int, int], int] | None] = []
+        self.render_payloads: list[list[dict[str, Any]]] = []
 
     def repair(self, image, payloads, config, *, precise_mask=None):
         self.repair_configs.append(dict(config))
@@ -140,6 +172,10 @@ class PageStyleRecordingAlgorithms(FakeAlgorithms):
             config,
             precise_mask=precise_mask,
         )
+
+    def render(self, image, payloads, config):
+        self.render_payloads.append([dict(payload) for payload in payloads])
+        return super().render(image, payloads, config)
 
 
 class ConstraintAwareFakeAlgorithms(FakeAlgorithms):
@@ -237,7 +273,7 @@ def test_legacy_repair_adapter_passes_precise_text_mask(
     repaired = LegacyTranslationAlgorithms().repair(
         image,
         [{"coords": [0, 0, 3, 2], "polygon": []}],
-        {"method": "solid"},
+        {"disable_resize": True, "method": "solid"},
         precise_mask=precise_mask,
     )
 
@@ -245,9 +281,67 @@ def test_legacy_repair_adapter_passes_precise_text_mask(
         [0, 255, 0],
         [0, 0, 0],
     ]
+    assert captured["disable_resize"] is True
     repaired.close()
     precise_mask.close()
     image.close()
+
+
+def test_legacy_translation_adapter_honors_batch_textbox_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import translation
+
+    calls: list[dict[str, Any]] = []
+
+    def fake_translate(texts, **kwargs):
+        calls.append({"texts": list(texts), **kwargs})
+        return [
+            f"{kwargs['prompt_content']}:{text}"
+            for text in texts
+        ]
+
+    monkeypatch.setattr(translation, "translate_text_list", fake_translate)
+    result = LegacyTranslationAlgorithms().translate(
+        ["一", "二"],
+        {
+            "api_key": "secret",
+            "custom_base_url": "https://example.test/v1",
+            "model_name": "model",
+            "openai_options": {
+                "execution": {},
+                "request": {"forceJsonOutput": True},
+            },
+            "prompt_content": "primary",
+            "provider": "custom",
+            "target_language": "zh",
+            "textbox_prompt_content": "textbox",
+            "translation_mode": "batch",
+            "use_textbox_prompt": True,
+            "enable_debug_logs": False,
+        },
+        mode="standard",
+    )
+
+    assert result["translated"] == ["primary:一", "primary:二"]
+    assert result["textbox"] == ["textbox:一", "textbox:二"]
+    assert [call["prompt_content"] for call in calls] == [
+        "primary",
+        "textbox",
+    ]
+    assert calls[0]["openai_options"].request.force_json_output is True
+    assert calls[1]["openai_options"].request.force_json_output is False
+
+
+def test_remove_text_ocr_step_follows_the_frozen_setting() -> None:
+    assert step_kinds_for_mode(
+        "remove_text",
+        remove_text_with_ocr=False,
+    ) == ("detect", "repair", "publish_clean")
+    assert step_kinds_for_mode(
+        "remove_text",
+        remove_text_with_ocr=True,
+    ) == ("detect", "ocr", "repair", "publish_clean")
 
 
 @pytest.fixture(autouse=True)
@@ -592,6 +686,75 @@ def test_translation_plugins_mutate_domain_text_before_persistence(
     assert payload["translatedText"] == "你好【hook】"
 
 
+def test_translation_rejects_provider_result_count_mismatch(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    accepted = TranslationJobCommandService(
+        platform["engine"]
+    ).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="translation-provider-count-mismatch",
+    )
+
+    job_id = _run_translation_job(
+        platform,
+        InvalidTranslationCountAlgorithms(),
+    )
+    detail = JobQueueRepository(platform["engine"]).get_job(job_id)
+
+    assert job_id == accepted["jobIds"][0]
+    assert detail["status"] == "completed_with_errors"
+    assert detail["items"][0]["error"]["message"] == (
+        "translation result count does not match bubbles"
+    )
+
+
+@pytest.mark.parametrize(
+    ("phase", "field", "expected_message"),
+    (
+        (
+            "before",
+            "originalTexts",
+            "before_translate original text count does not match bubbles",
+        ),
+        (
+            "after",
+            "textboxTexts",
+            "textbox translation result count does not match bubbles",
+        ),
+    ),
+)
+def test_translation_rejects_plugin_result_count_mismatch(
+    translation_platform,
+    phase: str,
+    field: str,
+    expected_message: str,
+) -> None:
+    platform = translation_platform
+    accepted = TranslationJobCommandService(
+        platform["engine"]
+    ).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key=f"translation-plugin-count-mismatch-{phase}",
+    )
+
+    job_id = _run_translation_job(
+        platform,
+        FakeAlgorithms(),
+        plugin_runtime=TranslationShapeRuntime(phase=phase, field=field),
+    )
+    detail = JobQueueRepository(platform["engine"]).get_job(job_id)
+
+    assert job_id == accepted["jobIds"][0]
+    assert detail["status"] == "completed_with_errors"
+    assert detail["items"][0]["error"]["message"] == expected_message
+
+
 def test_translation_uses_current_page_layout_and_inpainting_defaults(
     translation_platform,
 ) -> None:
@@ -648,8 +811,18 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert payload["lineSpacing"] == 1.4
     assert payload["textAlign"] == "end"
     assert payload["inpaintMethod"] == "litelama"
+    assert algorithms.render_payloads[0][0]["textColor"] == "#000000"
+    assert algorithms.render_payloads[0][0]["fillColor"] == "#123456"
+    assert algorithms.render_payloads[0][0]["textDirection"] == "horizontal"
+    assert algorithms.render_payloads[0][0]["fontSize"] == 37
+    assert algorithms.render_payloads[0][0]["strokeEnabled"] is False
+    assert algorithms.render_payloads[0][0]["strokeColor"] == "#AABBCC"
+    assert algorithms.render_payloads[0][0]["strokeWidth"] == 7
+    assert algorithms.render_payloads[0][0]["lineSpacing"] == 1.4
+    assert algorithms.render_payloads[0][0]["textAlign"] == "end"
     assert algorithms.repair_configs == [
         {
+            "disable_resize": False,
             "method": "lama",
             "lama_model": "litelama",
             "fill_color": "#123456",
@@ -716,10 +889,11 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
     source_page_id = platform["page_id"]
     target_page_id = _import_extra_page(platform, "style-target.png")
 
-    source = content.mutate_page_document(
+    source, _ = content.mutate_page_document(
         page_id=source_page_id,
         base_revision=1,
         mutations=[],
+        idempotency_key="style-source",
         page_style_defaults_patch={
             "autoFontSize": True,
             "fontSize": 88,
@@ -761,6 +935,7 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
                 "fields": target_payload,
             }
         ],
+        idempotency_key="style-target",
         page_style_defaults_patch={
             "autoFontSize": False,
             "fontSize": 41,
@@ -860,6 +1035,7 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
                 "fields": payload,
             }
         ],
+        idempotency_key="translation-color-source",
         page_style_defaults_patch={
             "autoFontSize": True,
             "useAutoTextColor": True,
@@ -912,6 +1088,44 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
         ).scalar_one_or_none()
     assert page == (3, 3, "ready")
     assert translated is not None
+
+
+def test_text_export_reads_all_bubbles_with_one_query(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    _import_extra_page(platform, "page-2.png")
+    _import_extra_page(platform, "page-3.png")
+    statements: list[str] = []
+
+    def record_statement(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        statements.append(statement.upper())
+
+    event.listen(
+        platform["engine"],
+        "before_cursor_execute",
+        record_statement,
+    )
+    try:
+        exported = AuxiliaryTranslationCommands(
+            platform["engine"]
+        ).export_text(str(platform["chapter"]["id"]))
+    finally:
+        event.remove(
+            platform["engine"],
+            "before_cursor_execute",
+            record_statement,
+        )
+
+    assert len(exported["pages"]) == 3
+    assert sum("FROM BUBBLES" in statement for statement in statements) == 1
 
 
 def test_batch_detect_republishes_changed_translated_page_and_precise_mask(
@@ -1386,9 +1600,14 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
         "provider": "custom",
         "batchNormalPrompt": "backend prompt",
         "batchJsonPrompt": "backend json prompt",
-        "singleNormalPrompt": "single",
+        "singleNormalPrompt": "backend single prompt",
         "singleJsonPrompt": "single json",
+        "translationMode": "single",
     }
+    payload["lamaDisableResize"] = True
+    payload["enableVerboseLogs"] = True
+    payload["textboxPrompt"] = "backend textbox prompt"
+    payload["useTextboxPrompt"] = True
     settings.save_transaction(
         settings=(
             SettingMutation(
@@ -1414,6 +1633,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                 payload={
                     "modelName": "backend-model",
                     "customBaseUrl": "https://backend.example/v1",
+                    "translationMode": "batch",
                 },
                 base_revision=0,
                 credential_edit_ref="translation",
@@ -1456,11 +1676,109 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
         )
     assert frozen["translation"]["model_name"] == "backend-model"
     assert frozen["translation"]["prompt_content"] == "backend prompt"
+    assert frozen["translation"]["textbox_prompt_content"] == "backend textbox prompt"
+    assert frozen["translation"]["translation_mode"] == "batch"
+    assert frozen["translation"]["use_textbox_prompt"] is True
+    assert frozen["translation"]["enable_debug_logs"] is True
+    assert frozen["inpainting"]["disable_resize"] is True
     assert frozen["deepLearningConcurrency"] == 3
     assert "backend-only-secret" not in json.dumps(frozen)
     assert steps[0] == "ocr"
     assert "detect" not in steps
     assert credential_count == 1
+
+
+def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    payload = default_translation_settings()
+    payload["translation"] = {
+        **payload["translation"],
+        "provider": DETERMINISTIC_FAKE_PROVIDER_ID,
+    }
+    payload["ocrEngine"] = "ai_vision"
+    payload["aiVisionOcr"] = {
+        **payload["aiVisionOcr"],
+        "provider": DETERMINISTIC_FAKE_PROVIDER_ID,
+        "prompt": "global ocr prompt",
+        "promptMode": "normal",
+        "minImageSize": 32,
+    }
+    payload["hqTranslation"] = {
+        **payload["hqTranslation"],
+        "provider": DETERMINISTIC_FAKE_PROVIDER_ID,
+        "batchSize": 2,
+        "prompt": "global hq prompt",
+    }
+    SettingsRepository(platform["engine"]).save_transaction(
+        settings=(
+            SettingMutation(
+                domain="translation",
+                payload=payload,
+                base_revision=1,
+                schema_version=3,
+            ),
+        ),
+        credentials_edits=(
+            CredentialEdit(
+                domain="hq",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
+                secret={"api_key": "hq-secret"},
+                base_revision=0,
+                client_ref="hq",
+            ),
+            CredentialEdit(
+                domain="ai_vision_ocr",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
+                secret={"ai_vision_api_key": "ocr-secret"},
+                base_revision=0,
+                client_ref="ocr",
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="hq",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
+                payload={
+                    "batchSize": 7,
+                    "modelName": "provider-hq-model",
+                    "prompt": "provider hq prompt",
+                },
+                base_revision=0,
+                credential_edit_ref="hq",
+            ),
+            ProviderSettingMutation(
+                domain="ai_vision_ocr",
+                provider=DETERMINISTIC_FAKE_PROVIDER_ID,
+                payload={
+                    "minImageSize": 96,
+                    "modelName": "provider-ocr-model",
+                    "prompt": "provider ocr prompt",
+                    "promptMode": "json",
+                },
+                base_revision=0,
+                credential_edit_ref="ocr",
+            ),
+        ),
+    )
+    resolver = SettingsResolver(platform["engine"])
+    standard = resolver.resolve_translation(
+        chapter_id=str(platform["chapter"]["id"]),
+        command={"mode": "standard"},
+    )
+    hq = resolver.resolve_translation(
+        chapter_id=str(platform["chapter"]["id"]),
+        command={"mode": "hq"},
+    )
+
+    assert standard["ocr"]["ai_vision_model_name"] == "provider-ocr-model"
+    assert standard["ocr"]["ai_vision_ocr_prompt"] == "provider ocr prompt"
+    assert standard["ocr"]["ai_vision_prompt_mode"] == "json"
+    assert standard["ocr"]["ai_vision_min_image_size"] == 96
+    assert hq["translation"]["model_name"] == "provider-hq-model"
+    assert hq["translation"]["prompt_content"] == "provider hq prompt"
+    assert hq["translation"]["batchSize"] == 7
 
 
 def _import_extra_page(
@@ -1563,6 +1881,8 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
 def _run_translation_job(
     platform: Mapping[str, Any],
     algorithms: FakeAlgorithms,
+    *,
+    plugin_runtime: Any | None = None,
 ) -> str:
     repository = JobQueueRepository(platform["engine"])
     service = TranslationPipelineService(
@@ -1570,6 +1890,7 @@ def _run_translation_job(
         engine=platform["engine"],
         jobs=repository,
         algorithms=algorithms,
+        plugin_runtime=plugin_runtime,
     )
     handlers = {
         kind: service.handler

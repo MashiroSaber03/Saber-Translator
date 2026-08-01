@@ -165,7 +165,6 @@ class PluginAgentController:
                     raise ValueError(final_validation.get("error") or "插件校验失败")
                 return {
                     "assistant_message": assistant_message or "插件任务完成。",
-                    "refresh_plugins": True,
                     "validation": final_validation,
                 }
 
@@ -178,11 +177,13 @@ class PluginAgentController:
             if tool_name == "validate_plugin":
                 last_validation = tool_result
                 emit_event("validation", self._build_validation_payload(tool_result))
+            elif tool_name in {"write_file", "delete_file"}:
+                last_validation = None
 
             recent_results.append(
                 {
                     "tool": tool_name,
-                    "args": tool_args,
+                    "args": self._shrink_tool_args(tool_name, tool_args),
                     "result": self._shrink_tool_result(tool_result),
                 }
             )
@@ -394,6 +395,20 @@ class PluginAgentController:
         return raw
 
     @staticmethod
+    def _shrink_tool_args(
+        tool_name: str,
+        tool_args: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw = dict(tool_args)
+        if tool_name == "write_file":
+            content = str(raw.pop("content", ""))
+            raw["content_length"] = len(content)
+        for key, value in tuple(raw.items()):
+            if isinstance(value, str) and len(value) > 1200:
+                raw[key] = value[:1200] + "\n...[truncated]..."
+        return raw
+
+    @staticmethod
     def _extract_assistant_message_prefix(raw_text: str) -> Tuple[Optional[str], bool]:
         match = _ASSISTANT_MESSAGE_PATTERN.search(raw_text)
         if not match:
@@ -459,8 +474,12 @@ class PluginAgentController:
     def _build_validation_payload(validation_result: Dict[str, Any]) -> Dict[str, Any]:
         success = bool(validation_result.get("success"))
         if success:
-            plugin_meta = validation_result.get("plugin") or {}
-            plugin_label = str(plugin_meta.get("display_name") or plugin_meta.get("id") or "当前插件")
+            plugin_label = str(
+                validation_result.get("plugin_id") or "当前插件"
+            )
+            package_version = validation_result.get("package_version")
+            if package_version:
+                plugin_label = f"{plugin_label} {package_version}"
             summary = f"插件校验通过：{plugin_label}"
         else:
             summary = f"插件校验失败：{validation_result.get('error') or '未知错误'}"

@@ -5,7 +5,7 @@
 """
 
 import logging
-from typing import Dict, Type, Optional, Literal
+from typing import Dict, Type, Literal
 
 from PIL import Image
 
@@ -21,13 +21,6 @@ DETECTOR_DEFAULT = 'default'  # DBNet ResNet34 (detect-20241225.ckpt)
 DETECTOR_SABER_YOLO = 'saber_yolo'
 
 DetectorType = Literal['default', 'ctd', 'yolo', 'saber_yolo']
-
-# 支持的检测器描述
-SUPPORTED_DETECTORS = {
-    DETECTOR_DEFAULT: 'Default (DBNet ResNet34)',
-    DETECTOR_CTD: 'CTD (Comic Text Detector)',
-    DETECTOR_YOLO: 'YSGYolo',
-}
 
 # 默认检测器
 DEFAULT_DETECTOR = DETECTOR_DEFAULT
@@ -155,14 +148,14 @@ def detect(
     
     # 判断是否启用大图检测
     if enable_large_image is None:
-        enable_large_image = getattr(constants, 'LARGE_IMAGE_ENABLED', True)
+        enable_large_image = constants.LARGE_IMAGE_ENABLED
     
     if enable_large_image:
         # 使用大图检测包装器
         try:
             from src.core.large_image_detection import LargeImageDetectorWrapper
             
-            target_size = getattr(constants, 'LARGE_IMAGE_TARGET_SIZE', 1536)
+            target_size = constants.LARGE_IMAGE_TARGET_SIZE
             
             wrapper = LargeImageDetectorWrapper(
                 detector=detector,
@@ -197,20 +190,3 @@ def detect(
         expand_right=expand_right,
         **kwargs
     )
-
-
-def detect_to_legacy_format(
-    image: Image.Image,
-    detector_type: DetectorType = None,
-    **kwargs
-) -> dict:
-    """
-    检测并返回旧格式结果
-    
-    向后兼容接口
-    
-    Returns:
-        dict: {'coords': [...], 'polygons': [...], 'angles': [...]}
-    """
-    result = detect(image, detector_type=detector_type, **kwargs)
-    return result.to_legacy_format()

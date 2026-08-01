@@ -13,6 +13,7 @@ import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 const exportImportMock = vi.hoisted(() => ({
@@ -85,6 +86,40 @@ describe('ImageResultDisplay', () => {
     expect(resultImage.attributes('src')).toBe('/api/v2/assets/source-1')
     expect(resultImage.attributes('alt')).toBe('原图：page.png')
     expect(wrapper.text()).toContain('查看消字图')
+  })
+
+  it('shows detection boxes only when the saved debug setting is enabled', async () => {
+    exportImportMock.state.isDownloading = false
+    const imageStore = useImageStore()
+    const settingsStore = useSettingsStore()
+    imageStore.addImage('page.png', '/api/v2/assets/source-1', {
+      width: 1000,
+      height: 1500,
+      bubbleStates: [{
+        ...createBubbleState(),
+        backendBubbleId: 'bubble-1',
+        coords: [100, 200, 400, 500],
+      }],
+    })
+
+    const wrapper = mount(ImageResultDisplay)
+    expect(wrapper.find('[data-testid="detection-debug-overlay"]').exists()).toBe(false)
+
+    settingsStore.settings.showDetectionDebug = true
+    await wrapper.vm.$nextTick()
+
+    const overlay = wrapper.get('[data-testid="detection-debug-overlay"]')
+    expect(overlay.attributes('viewBox')).toBe('0 0 1000 1500')
+    expect(overlay.get('rect').attributes()).toMatchObject({
+      x: '100',
+      y: '200',
+      width: '300',
+      height: '300',
+    })
+
+    settingsStore.settings.showDetectionDebug = false
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="detection-debug-overlay"]').exists()).toBe(false)
   })
 
   it('uses the product select primitive for fixed download formats', async () => {

@@ -1,8 +1,35 @@
-from operator import mod
-from cv2 import imshow
-# from utils.yolov5_utils import scale_img
 from copy import deepcopy
-from .common import *
+import math
+from pathlib import Path
+
+import torch
+from torch import nn
+
+from .common import (
+    Bottleneck,
+    BottleneckCSP,
+    C3,
+    C3Ghost,
+    C3SPP,
+    C3TR,
+    Concat,
+    Contract,
+    Conv,
+    DWConv,
+    Expand,
+    Focus,
+    GhostBottleneck,
+    GhostConv,
+    SPP,
+    SPPF,
+)
+from ..utils.yolov5_utils import (
+    check_anchor_order,
+    check_version,
+    fuse_conv_and_bn,
+    initialize_weights,
+    make_divisible,
+)
 
 class Detect(nn.Module):
     stride = None  # strides computed during build
@@ -133,33 +160,6 @@ class Model(nn.Module):
         else:
             return x
 
-    def _descale_pred(self, p, flips, scale, img_size):
-        # de-scale predictions following augmented inference (inverse operation)
-        if self.inplace:
-            p[..., :4] /= scale  # de-scale
-            if flips == 2:
-                p[..., 1] = img_size[0] - p[..., 1]  # de-flip ud
-            elif flips == 3:
-                p[..., 0] = img_size[1] - p[..., 0]  # de-flip lr
-        else:
-            x, y, wh = p[..., 0:1] / scale, p[..., 1:2] / scale, p[..., 2:4] / scale  # de-scale
-            if flips == 2:
-                y = img_size[0] - y  # de-flip ud
-            elif flips == 3:
-                x = img_size[1] - x  # de-flip lr
-            p = torch.cat((x, y, wh, p[..., 4:]), -1)
-        return p
-
-    def _clip_augmented(self, y):
-        # Clip YOLOv5 augmented inference tails
-        nl = self.model[-1].nl  # number of detection layers (P3-P5)
-        g = sum(4 ** x for x in range(nl))  # grid points
-        e = 1  # exclude layer count
-        i = (y[0].shape[1] // g) * sum(4 ** x for x in range(e))  # indices
-        y[0] = y[0][:, :-i]  # large
-        i = (y[-1].shape[1] // g) * sum(4 ** (nl - 1 - x) for x in range(e))  # indices
-        y[-1] = y[-1][:, i:]  # small
-        return y
 
     def _profile_one_layer(self, m, x, dt):
         c = isinstance(m, Detect)  # is final layer, copy input as inplace fix
@@ -176,11 +176,6 @@ class Model(nn.Module):
             b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
             b.data[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
             mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
-    def _print_biases(self):
-        m = self.model[-1]  # Detect() module
-        for mi in m.m:  # from
-            b = mi.bias.detach().view(m.na, -1).T  # conv.bias(255) to (3,85)
 
     def fuse(self):  # fuse model Conv2d() + BatchNorm2d() layers
         for m in self.model.modules():
@@ -220,7 +215,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             except NameError:
                 pass
 
-        n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
+        n = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
                  BottleneckCSP, C3, C3TR, C3SPP, C3Ghost]:
             c1, c2 = ch[f], args[0]
@@ -258,29 +253,6 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         ch.append(c2)
     return nn.Sequential(*layers), sorted(save)
 
-def load_yolov5(weights, map_location='cuda', fuse=True, inplace=True, out_indices=[1, 3, 5, 7, 9]):
-    if isinstance(weights, str):
-        ckpt = torch.load(weights, map_location=map_location)  # load
-    else:
-        ckpt = weights
-
-    if fuse:
-        model = ckpt['model'].float().fuse().eval()  # FP32 model
-    else:
-        model = ckpt['model'].float().eval()  # without layer fuse
-
-    # Compatibility updates
-    for m in model.modules():
-        if type(m) in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Model]:
-            m.inplace = inplace  # pytorch 1.7.0 compatibility
-            if type(m) is Detect:
-                if not isinstance(m.anchor_grid, list):  # new Detect Layer compatibility
-                    delattr(m, 'anchor_grid')
-                    setattr(m, 'anchor_grid', [torch.zeros(1)] * m.nl)
-        elif type(m) is Conv:
-            m._non_persistent_buffers_set = set()  # pytorch 1.6.0 compatibility
-    model.out_indices = out_indices
-    return model
 
 @torch.no_grad()
 def load_yolov5_ckpt(weights, map_location='cpu', fuse=True, inplace=True, out_indices=[1, 3, 5, 7, 9]):

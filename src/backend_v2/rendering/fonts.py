@@ -7,6 +7,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import assets, bubbles, fonts, pages
 from src.shared import constants
@@ -62,7 +63,10 @@ def materialize_render_payloads(
             .order_by(bubbles.c.ordinal)
         ).mappings()
     )
-    style_defaults = json.loads(page["page_style_defaults_json"] or "{}")
+    style_defaults = validate_page_style(
+        json.loads(page["page_style_defaults_json"]),
+        partial=False,
+    )
     result = []
     for row in rows:
         persisted = json.loads(row["payload_json"])
@@ -73,28 +77,28 @@ def materialize_render_payloads(
         )
         if (
             "layoutDirection" in initialize_auto_fields
-            and style_defaults.get("layoutDirection") == "auto"
+            and style_defaults["layoutDirection"] == "auto"
         ):
             auto_direction = persisted.get("autoTextDirection")
             if auto_direction in {"vertical", "horizontal"}:
                 persisted["textDirection"] = auto_direction
         if (
             initialize_auto_fields.intersection({"textColor", "fillColor"})
-            and style_defaults.get("useAutoTextColor")
+            and style_defaults["useAutoTextColor"]
         ):
             if (
                 "textColor" in initialize_auto_fields
                 and persisted.get("autoFgColor") is not None
             ):
-                persisted["textColor"] = _rgb_hex(persisted["autoFgColor"])
+                persisted["textColor"] = rgb_to_hex(persisted["autoFgColor"])
             if (
                 "fillColor" in initialize_auto_fields
                 and persisted.get("autoBgColor") is not None
             ):
-                persisted["fillColor"] = _rgb_hex(persisted["autoBgColor"])
+                persisted["fillColor"] = rgb_to_hex(persisted["autoBgColor"])
         if (
             "fontSize" in initialize_auto_fields
-            and style_defaults.get("autoFontSize")
+            and style_defaults["autoFontSize"]
         ):
             coords = persisted.get("coords")
             if isinstance(coords, list) and len(coords) == 4:
@@ -108,13 +112,3 @@ def materialize_render_payloads(
         render_payload = {**persisted, "fontFamily": font_path}
         result.append((str(row["id"]), persisted, render_payload))
     return result
-
-
-def _rgb_hex(value: object) -> str:
-    if not isinstance(value, (list, tuple)) or len(value) < 3:
-        return "#000000"
-    red, green, blue = (
-        max(0, min(255, int(part)))
-        for part in value[:3]
-    )
-    return f"#{red:02X}{green:02X}{blue:02X}"

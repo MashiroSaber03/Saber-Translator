@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 import base64
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 from typing import Any
 import uuid
@@ -12,6 +12,8 @@ import uuid
 from sqlalchemy import Engine, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import iso_utc as _iso, utcnow
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
@@ -56,31 +58,10 @@ class InsightLocked(InsightConflict):
     pass
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
 def _load(value: str | None, default: object) -> object:
     if not value:
         return default
     return json.loads(value)
-
-
-def _iso(value: datetime | str | None) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    return value.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _encode_note_cursor(updated_at: datetime, note_id: str) -> str:
@@ -399,31 +380,48 @@ class InsightRepository:
             raise InsightNotFound("analysis run not found")
         if any(target["status"] == "pending" for target in targets):
             raise InsightConflict("analysis run still has pending targets")
+        completed_targets = [
+            target for target in targets if target["status"] == "completed"
+        ]
+        current_by_page: dict[str, Mapping[str, Any]] = {}
+        current_page_ids = [
+            str(target["page_id"])
+            for target in completed_targets
+            if target["page_id"] is not None
+        ]
+        if current_page_ids:
+            current_by_page = {
+                str(row["page_id"]): row
+                for row in connection.execute(
+                    select(
+                        page_assets.c.page_id,
+                        page_assets.c.asset_id,
+                        assets.c.checksum,
+                    )
+                    .join(assets, assets.c.id == page_assets.c.asset_id)
+                    .where(
+                        page_assets.c.page_id.in_(current_page_ids),
+                        page_assets.c.role == "source",
+                    )
+                ).mappings()
+            }
         changed: list[str] = []
-        for target in targets:
-            if target["status"] != "completed":
-                continue
-            current = connection.execute(
-                select(page_assets.c.asset_id, assets.c.checksum)
-                .join(assets, assets.c.id == page_assets.c.asset_id)
-                .where(
-                    page_assets.c.page_id == target["page_id"],
-                    page_assets.c.role == "source",
-                )
-            ).mappings().one_or_none()
+        for target in completed_targets:
+            current = current_by_page.get(str(target["page_id"]))
             if (
                 current is not None
                 and str(current["asset_id"]) == str(target["source_asset_id"])
                 and str(current["checksum"]) == str(target["source_checksum"])
             ):
                 continue
-            page_id = str(target["page_id_snapshot"])
-            changed.append(page_id)
+            changed.append(str(target["page_id_snapshot"]))
+        if changed:
             connection.execute(
                 update(analysis_run_targets)
                 .where(
                     analysis_run_targets.c.run_id == run_id,
-                    analysis_run_targets.c.ordinal == target["ordinal"],
+                    analysis_run_targets.c.page_id_snapshot.in_(changed),
+                    analysis_run_targets.c.status == "completed",
                 )
                 .values(
                     status="conflict",
@@ -701,7 +699,6 @@ class InsightRepository:
         connection: Connection,
         *,
         run_id: str,
-        message: str,
     ) -> None:
         now = utcnow()
         missing = list(
@@ -902,10 +899,23 @@ class InsightRepository:
             raise ValueError("cursor must be nonnegative")
         if limit < 1 or limit > 100:
             raise ValueError("limit must be between 1 and 100")
-        rows = self._book_page_rows(book_id)
-        if chapter_id:
-            rows = [row for row in rows if str(row["chapter_id"]) == chapter_id]
-        window = rows[after : after + limit]
+        with self.engine.connect() as connection:
+            self._assert_book(connection, book_id)
+            book_pages = self._book_page_statement(book_id).subquery()
+            statement = select(book_pages)
+            if chapter_id:
+                statement = statement.where(
+                    book_pages.c.chapter_id == chapter_id
+                )
+            rows = list(
+                connection.execute(
+                    statement.order_by(book_pages.c.page_number)
+                    .offset(after)
+                    .limit(limit + 1)
+                ).mappings()
+            )
+        has_more = len(rows) > limit
+        window = rows[:limit]
         items = [
             {
                 "pageId": str(row["page_id"]),
@@ -922,10 +932,9 @@ class InsightRepository:
             }
             for row in window
         ]
-        next_cursor = after + len(window)
         return {
             "items": items,
-            "nextCursor": next_cursor if next_cursor < len(rows) else None,
+            "nextCursor": after + len(window) if has_more else None,
         }
 
     def page_detail(
@@ -957,7 +966,11 @@ class InsightRepository:
             ).mappings().one_or_none()
             if page is None:
                 raise InsightNotFound("page not found")
-            page_number = self._page_number(connection, page_id)
+            page_number = self._page_number(
+                connection,
+                page_id=page_id,
+                book_id=str(page["book_id"]),
+            )
             preview = run_id is not None
             if run_id:
                 result = connection.execute(
@@ -1070,11 +1083,30 @@ class InsightRepository:
             )
             has_more = len(rows) > limit
             selected_rows = rows[:limit]
+            citations_by_note: dict[str, list[Mapping[str, Any]]] = {}
+            if selected_rows:
+                for citation in connection.execute(
+                    select(note_citations)
+                    .where(
+                        note_citations.c.note_id.in_(
+                            [str(row["id"]) for row in selected_rows]
+                        )
+                    )
+                    .order_by(
+                        note_citations.c.note_id,
+                        note_citations.c.ordinal,
+                    )
+                ).mappings():
+                    citations_by_note.setdefault(
+                        str(citation["note_id"]),
+                        [],
+                    ).append(citation)
             items = [
                 self._note_dto(
                     connection,
                     row,
                     summary=not include_content,
+                    citations=citations_by_note.get(str(row["id"]), ()),
                 )
                 for row in selected_rows
             ]
@@ -1105,8 +1137,7 @@ class InsightRepository:
         book_id: str,
         title: str,
         content: str,
-        citations: Sequence[Mapping[str, Any] | str] | None = None,
-        page_ids: Sequence[str] | None = None,
+        citations: Sequence[Mapping[str, Any]] = (),
         kind: str = "text",
         tags: Sequence[str] = (),
         comments: Sequence[Mapping[str, Any] | str] = (),
@@ -1120,11 +1151,6 @@ class InsightRepository:
             kind=kind,
             tags=tags,
             comments=comments,
-        )
-        normalized_citations = (
-            list(citations)
-            if citations is not None
-            else list(page_ids or ())
         )
         note_id = str(uuid.uuid4())
         with immediate_transaction(self.engine) as connection:
@@ -1144,7 +1170,7 @@ class InsightRepository:
                 connection,
                 note_id=note_id,
                 book_id=book_id,
-                citations=normalized_citations,
+                citations=citations,
             )
             row = connection.execute(
                 select(notes).where(notes.c.id == note_id)
@@ -1158,8 +1184,7 @@ class InsightRepository:
         base_revision: int,
         title: str,
         content: str,
-        citations: Sequence[Mapping[str, Any] | str] | None = None,
-        page_ids: Sequence[str] | None = None,
+        citations: Sequence[Mapping[str, Any]] = (),
         kind: str = "text",
         tags: Sequence[str] = (),
         comments: Sequence[Mapping[str, Any] | str] = (),
@@ -1173,11 +1198,6 @@ class InsightRepository:
             kind=kind,
             tags=tags,
             comments=comments,
-        )
-        normalized_citations = (
-            list(citations)
-            if citations is not None
-            else list(page_ids or ())
         )
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
@@ -1210,7 +1230,7 @@ class InsightRepository:
                 connection,
                 note_id=note_id,
                 book_id=str(current["book_id"]),
-                citations=normalized_citations,
+                citations=citations,
             )
             row = connection.execute(
                 select(notes).where(notes.c.id == note_id)
@@ -1234,92 +1254,126 @@ class InsightRepository:
                 raise InsightConflict("note revision changed")
 
     def _book_page_rows(self, book_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as connection:
+            self._assert_book(connection, book_id)
+            return list(
+                connection.execute(
+                    self._book_page_statement(book_id).order_by(
+                        chapters.c.ordinal,
+                        pages.c.ordinal,
+                    )
+                ).mappings()
+            )
+
+    @staticmethod
+    def _numbered_book_pages_statement(book_id: str):
+        return (
+            select(
+                pages.c.id.label("page_id"),
+                func.row_number()
+                .over(order_by=(chapters.c.ordinal, pages.c.ordinal))
+                .label("page_number"),
+            )
+            .join(chapters, chapters.c.id == pages.c.chapter_id)
+            .where(chapters.c.book_id == book_id)
+        )
+
+    @staticmethod
+    def _book_page_statement(book_id: str):
         source_pointer = page_assets.alias("insight_source_pointer")
         thumbnail_pointer = page_assets.alias("insight_thumbnail_pointer")
         page_head = analysis_heads.alias("insight_page_head")
         book_head = analysis_heads.alias("insight_book_head")
-        with self.engine.connect() as connection:
-            self._assert_book(connection, book_id)
-            rows = list(
-                connection.execute(
-                    select(
-                        pages.c.id.label("page_id"),
-                        pages.c.ordinal.label("page_ordinal"),
-                        chapters.c.id.label("chapter_id"),
-                        chapters.c.title.label("chapter_title"),
-                        chapters.c.ordinal.label("chapter_ordinal"),
-                        source_pointer.c.asset_id.label("source_asset_id"),
-                        assets.c.checksum.label("source_checksum"),
-                        thumbnail_pointer.c.asset_id.label("thumbnail_asset_id"),
-                        page_head.c.active_result_id,
-                        page_head.c.active_run_id.label("page_run_id"),
-                        book_head.c.active_run_id.label("book_run_id"),
-                        analysis_page_results.c.source_checksum.label(
-                            "analysis_source_checksum"
-                        ),
-                    )
-                    .join(chapters, chapters.c.id == pages.c.chapter_id)
-                    .join(
-                        source_pointer,
-                        (source_pointer.c.page_id == pages.c.id)
-                        & (source_pointer.c.role == "source"),
-                    )
-                    .join(assets, assets.c.id == source_pointer.c.asset_id)
-                    .join(
-                        thumbnail_pointer,
-                        (thumbnail_pointer.c.page_id == pages.c.id)
-                        & (thumbnail_pointer.c.role == "thumbnail_source"),
-                        isouter=True,
-                    )
-                    .join(
-                        page_head,
-                        page_head.c.page_id == pages.c.id,
-                        isouter=True,
-                    )
-                    .join(
-                        book_head,
-                        (book_head.c.book_id == chapters.c.book_id)
-                        & book_head.c.page_id.is_(None),
-                        isouter=True,
-                    )
-                    .join(
-                        analysis_page_results,
-                        analysis_page_results.c.id == page_head.c.active_result_id,
-                        isouter=True,
-                    )
-                    .where(chapters.c.book_id == book_id)
-                    .order_by(chapters.c.ordinal, pages.c.ordinal)
-                ).mappings()
+        ranked_targets = (
+            select(
+                analysis_run_targets.c.page_id_snapshot.label("page_id"),
+                analysis_run_targets.c.status.label("target_status"),
+                jobs.c.status.label("job_status"),
+                func.row_number()
+                .over(
+                    partition_by=analysis_run_targets.c.page_id_snapshot,
+                    order_by=(
+                        analysis_runs.c.created_at.desc(),
+                        analysis_runs.c.id.desc(),
+                    ),
+                )
+                .label("target_rank"),
             )
-            target_rows = list(
-                connection.execute(
-                    select(
-                        analysis_run_targets.c.page_id_snapshot,
-                        analysis_run_targets.c.status,
-                        analysis_runs.c.created_at,
-                        jobs.c.status.label("job_status"),
-                    )
-                    .join(
-                        analysis_runs,
-                        analysis_runs.c.id == analysis_run_targets.c.run_id,
-                    )
-                    .join(jobs, jobs.c.id == analysis_runs.c.job_id, isouter=True)
-                    .where(analysis_runs.c.book_id == book_id)
-                    .order_by(analysis_runs.c.created_at.desc())
-                ).mappings()
+            .join(
+                analysis_runs,
+                analysis_runs.c.id == analysis_run_targets.c.run_id,
             )
-        latest_targets: dict[str, Mapping[str, Any]] = {}
-        for target in target_rows:
-            latest_targets.setdefault(str(target["page_id_snapshot"]), target)
-        result = []
-        for page_number, row in enumerate(rows, start=1):
-            value = dict(row)
-            value["page_number"] = page_number
-            target = latest_targets.get(str(row["page_id"]))
-            value["latest_target_status"] = target["status"] if target else None
-            value["latest_job_status"] = target["job_status"] if target else None
-            result.append(value)
-        return result
+            .join(jobs, jobs.c.id == analysis_runs.c.job_id, isouter=True)
+            .where(analysis_runs.c.book_id == book_id)
+            .subquery("insight_ranked_targets")
+        )
+        latest_target = (
+            select(
+                ranked_targets.c.page_id,
+                ranked_targets.c.target_status,
+                ranked_targets.c.job_status,
+            )
+            .where(ranked_targets.c.target_rank == 1)
+            .subquery("insight_latest_target")
+        )
+        return (
+            select(
+                pages.c.id.label("page_id"),
+                pages.c.ordinal.label("page_ordinal"),
+                chapters.c.id.label("chapter_id"),
+                chapters.c.title.label("chapter_title"),
+                chapters.c.ordinal.label("chapter_ordinal"),
+                func.row_number()
+                .over(order_by=(chapters.c.ordinal, pages.c.ordinal))
+                .label("page_number"),
+                source_pointer.c.asset_id.label("source_asset_id"),
+                assets.c.checksum.label("source_checksum"),
+                thumbnail_pointer.c.asset_id.label("thumbnail_asset_id"),
+                page_head.c.active_result_id,
+                page_head.c.active_run_id.label("page_run_id"),
+                book_head.c.active_run_id.label("book_run_id"),
+                analysis_page_results.c.source_checksum.label(
+                    "analysis_source_checksum"
+                ),
+                latest_target.c.target_status.label("latest_target_status"),
+                latest_target.c.job_status.label("latest_job_status"),
+            )
+            .join(chapters, chapters.c.id == pages.c.chapter_id)
+            .join(
+                source_pointer,
+                (source_pointer.c.page_id == pages.c.id)
+                & (source_pointer.c.role == "source"),
+            )
+            .join(assets, assets.c.id == source_pointer.c.asset_id)
+            .join(
+                thumbnail_pointer,
+                (thumbnail_pointer.c.page_id == pages.c.id)
+                & (thumbnail_pointer.c.role == "thumbnail_source"),
+                isouter=True,
+            )
+            .join(
+                page_head,
+                page_head.c.page_id == pages.c.id,
+                isouter=True,
+            )
+            .join(
+                book_head,
+                (book_head.c.book_id == chapters.c.book_id)
+                & book_head.c.page_id.is_(None),
+                isouter=True,
+            )
+            .join(
+                analysis_page_results,
+                analysis_page_results.c.id == page_head.c.active_result_id,
+                isouter=True,
+            )
+            .join(
+                latest_target,
+                latest_target.c.page_id == pages.c.id,
+                isouter=True,
+            )
+            .where(chapters.c.book_id == book_id)
+        )
 
     @staticmethod
     def _state_for_row(row: Mapping[str, Any]) -> str:
@@ -1481,27 +1535,23 @@ class InsightRepository:
         ).scalar_one_or_none() is None:
             raise InsightNotFound("book not found")
 
-    @staticmethod
-    def _page_number(connection: Connection, page_id: str) -> int:
-        book_id = connection.execute(
-            select(chapters.c.book_id)
-            .join(pages, pages.c.chapter_id == chapters.c.id)
-            .where(pages.c.id == page_id)
+    @classmethod
+    def _page_number(
+        cls,
+        connection: Connection,
+        *,
+        page_id: str,
+        book_id: str,
+    ) -> int:
+        book_pages = cls._numbered_book_pages_statement(book_id).subquery()
+        page_number = connection.execute(
+            select(book_pages.c.page_number).where(
+                book_pages.c.page_id == page_id
+            )
         ).scalar_one_or_none()
-        if book_id is None:
+        if page_number is None:
             raise InsightNotFound("page not found")
-        ordered = list(
-            connection.execute(
-                select(pages.c.id)
-                .join(chapters, chapters.c.id == pages.c.chapter_id)
-                .where(chapters.c.book_id == book_id)
-                .order_by(chapters.c.ordinal, pages.c.ordinal)
-            ).scalars()
-        )
-        try:
-            return ordered.index(page_id) + 1
-        except ValueError as exc:
-            raise InsightNotFound("page not found") from exc
+        return int(page_number)
 
     @staticmethod
     def _replace_citations(
@@ -1509,16 +1559,9 @@ class InsightRepository:
         *,
         note_id: str,
         book_id: str,
-        citations: Sequence[Mapping[str, Any] | str],
+        citations: Sequence[Mapping[str, Any]],
     ) -> None:
-        normalized = [
-            (
-                {"pageId": value}
-                if isinstance(value, str)
-                else dict(value)
-            )
-            for value in citations
-        ]
+        normalized = [dict(value) for value in citations]
         page_ids = [
             str(value.get("pageId", ""))
             for value in normalized
@@ -1532,17 +1575,28 @@ class InsightRepository:
         )
         if not page_ids:
             return
-        ordered = list(
-            connection.execute(
-                select(pages.c.id)
-                .join(chapters, chapters.c.id == pages.c.chapter_id)
-                .where(chapters.c.book_id == book_id)
-                .order_by(chapters.c.ordinal, pages.c.ordinal)
-            ).scalars()
-        )
-        page_numbers = {str(value): index for index, value in enumerate(ordered, 1)}
+        book_pages = InsightRepository._numbered_book_pages_statement(
+            book_id
+        ).subquery()
+        page_numbers = {
+            str(row["page_id"]): int(row["page_number"])
+            for row in connection.execute(
+                select(book_pages.c.page_id, book_pages.c.page_number).where(
+                    book_pages.c.page_id.in_(page_ids)
+                )
+            ).mappings()
+        }
         if not set(page_ids).issubset(page_numbers):
             raise ValueError("all citation pages must belong to the note book")
+        active_results = {
+            str(row["page_id"]): row["active_result_id"]
+            for row in connection.execute(
+                select(
+                    analysis_heads.c.page_id,
+                    analysis_heads.c.active_result_id,
+                ).where(analysis_heads.c.page_id.in_(page_ids))
+            ).mappings()
+        }
         connection.execute(
             insert(note_citations),
             [
@@ -1552,11 +1606,7 @@ class InsightRepository:
                     "page_id": page_id,
                     "page_id_snapshot": page_id,
                     "page_number_snapshot": page_numbers[page_id],
-                    "source_analysis_id": connection.execute(
-                        select(analysis_heads.c.active_result_id).where(
-                            analysis_heads.c.page_id == page_id
-                        )
-                    ).scalar_one_or_none(),
+                    "source_analysis_id": active_results.get(page_id),
                     "excerpt": str(
                         normalized[ordinal - 1].get("excerpt", "")
                     )[:2000],
@@ -1576,14 +1626,17 @@ class InsightRepository:
         row: Mapping[str, Any],
         *,
         summary: bool = False,
+        citations: Sequence[Mapping[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        citations = list(
-            connection.execute(
-                select(note_citations)
-                .where(note_citations.c.note_id == row["id"])
-                .order_by(note_citations.c.ordinal)
-            ).mappings()
-        )
+        if citations is None:
+            citations = list(
+                connection.execute(
+                    select(note_citations)
+                    .where(note_citations.c.note_id == row["id"])
+                    .order_by(note_citations.c.ordinal)
+                ).mappings()
+            )
+        comments = _load(row["comments_json"], [])
         return {
             "noteId": str(row["id"]),
             "bookId": str(row["book_id"]),
@@ -1599,9 +1652,9 @@ class InsightRepository:
             "comments": (
                 []
                 if summary
-                else _load(row["comments_json"], [])
+                else comments
             ),
-            "commentCount": len(_load(row["comments_json"], [])),
+            "commentCount": len(comments),
             "revision": int(row["revision"]),
             "citations": [
                 {

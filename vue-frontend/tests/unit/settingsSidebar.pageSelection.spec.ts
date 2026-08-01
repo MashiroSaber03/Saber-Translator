@@ -83,6 +83,8 @@ vi.mock('@/components/translate/PageSelectionModal.vue', () => ({
 
 import SettingsSidebar from '@/components/translate/SettingsSidebar.vue'
 import PageSelectionSection from '@/components/translate/settings-sidebar/PageSelectionSection.vue'
+import TextStyleSection from '@/components/translate/settings-sidebar/TextStyleSection.vue'
+import WorkflowSection from '@/components/translate/settings-sidebar/WorkflowSection.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
@@ -106,6 +108,7 @@ describe('SettingsSidebar page selection workflow', () => {
     imageStore.addImage('008.png', 'data:image/png;base64,hhh')
     imageStore.addImage('009.png', 'data:image/png;base64,iii')
     imageStore.addImage('010.png', 'data:image/png;base64,jjj')
+    imageStore.updateCurrentImage({ bubbleStates: [] })
   })
 
   it('opens page selection modal and emits selected pages for batch workflow', async () => {
@@ -143,6 +146,21 @@ describe('SettingsSidebar page selection workflow', () => {
         },
       },
     ])
+  })
+
+  it('keeps page settings and workflows disabled until the page document is ready', async () => {
+    const imageStore = useImageStore()
+    imageStore.updateCurrentImage({ bubbleStates: null })
+    const wrapper = mount(SettingsSidebar)
+
+    expect(wrapper.getComponent(TextStyleSection).props('disabled')).toBe(true)
+    expect(wrapper.getComponent(WorkflowSection).props('canRunWorkflow')).toBe(false)
+
+    imageStore.updateCurrentImage({ bubbleStates: [] })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.getComponent(TextStyleSection).props('disabled')).toBe(false)
+    expect(wrapper.getComponent(WorkflowSection).props('canRunWorkflow')).toBe(true)
   })
 
   it('uses product status/action primitives and semantic tokens for page selection', () => {

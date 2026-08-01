@@ -89,6 +89,14 @@ def test_container_import_and_export_are_worker_owned_and_durable(
         filename="pages.cbz",
         idempotency_key="container-1",
     )
+    replayed = commands.create_container_import(
+        chapter_id=str(chapter["id"]),
+        upload=BytesIO(archive_bytes.getvalue()),
+        filename="pages.cbz",
+        idempotency_key="container-1",
+    )
+    assert replayed == accepted
+    assert len(list((data_root / "temp" / "container-import").glob("*.cbz"))) == 1
     import_job_id = _run_job(jobs, worker, epoch_id)
     assert import_job_id == accepted["jobIds"][0]
 

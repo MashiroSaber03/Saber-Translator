@@ -1,19 +1,11 @@
 import logging
-import os
 import numpy as np
 from PIL import Image, ImageDraw
 import cv2 # 需要 cv2 来创建掩码
 
-# 导入接口和常量
-# 尝试导入接口，如果失败则标记为不可用
-try:
-    from src.interfaces.lama_interface import clean_image_with_lama, is_lama_available
-except ImportError:
-    is_lama_available = lambda: False # 定义一个返回 False 的函数
-    clean_image_with_lama = None # 定义一个空函数
+from src.interfaces.lama_interface import clean_image_with_lama, is_lama_available
 
 from src.shared import constants
-from src.shared.path_helpers import get_debug_dir, resource_path # 导入 resource_path 用于测试
 
 logger = logging.getLogger("CoreInpainting")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -101,15 +93,9 @@ def create_bubble_mask(image_size, bubble_coords, bubble_polygons=None):
             kernel = np.ones((3, 3), np.uint8)
             mask = cv2.erode(mask, kernel, iterations=1)
 
-    try:
-        debug_dir = get_debug_dir("inpainting_masks")
-        cv2.imwrite(os.path.join(debug_dir, "bubble_mask_core.png"), mask)
-    except Exception as save_e:
-        logger.warning(f"保存修复掩码调试图像失败: {save_e}")
-
     return mask
 
-def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_METHOD, fill_color=constants.DEFAULT_FILL_COLOR, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe'):
+def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_METHOD, fill_color=constants.DEFAULT_FILL_COLOR, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe', disable_resize=False):
     """
     根据指定方法修复或填充图像中的气泡区域。
 
@@ -130,6 +116,7 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
         mask_dilate_size (int): 掩膜膨胀大小（像素），用于扩大修复区域。
         mask_box_expand_ratio (int): 标注框区域扩大比例（%），用于扩大标注框的收录范围。
         lama_model (str): LAMA 模型选择 'lama_mpe' (速度优化) 或 'litelama' (通用)
+        disable_resize (bool): 是否禁止 LaMA 自动缩放。
 
     Returns:
         PIL.Image.Image: 处理后的 PIL 图像。
@@ -206,12 +193,6 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
             bubble_mask_np = 255 - dilated
             logger.debug(f"掩膜膨胀: {mask_dilate_size}px")
         
-        # 保存自动掩膜调试图像
-        try:
-            debug_dir = get_debug_dir("inpainting_masks")
-            cv2.imwrite(os.path.join(debug_dir, "auto_mask_before_user.png"), bubble_mask_np)
-        except Exception as save_e:
-            logger.debug(f"保存自动掩膜调试图像失败: {save_e}")
     else:
         # 使用坐标/多边形生成掩膜
         bubble_mask_np = create_bubble_mask(image_size, bubble_coords, bubble_polygons)
@@ -243,13 +224,6 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
         user_preserve_mask = user_mask < 50
         bubble_mask_np[user_preserve_mask] = 255
         
-        # 保存最终掩膜调试图像
-        try:
-            debug_dir = get_debug_dir("inpainting_masks")
-            cv2.imwrite(os.path.join(debug_dir, "final_mask_with_user.png"), bubble_mask_np)
-        except Exception as save_e:
-            logger.debug(f"保存最终掩膜调试图像失败: {save_e}")
-        
         # 统计最终掩膜
         final_repair_count = np.sum(bubble_mask_np < 128)
         logger.debug(f"最终掩膜修复区域: {final_repair_count}px ({final_repair_count * 100 / bubble_mask_np.size:.2f}%)")
@@ -261,11 +235,9 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
     inpainting_successful = False
 
     # 2. 根据方法进行处理
-    if method == 'lama' and is_lama_available() and clean_image_with_lama:
+    if method == 'lama' and is_lama_available():
         logger.debug(f"使用 LAMA 修复 (模型: {lama_model})")
         try:
-            # 从 constants 读取是否禁用缩放的配置
-            disable_resize = getattr(constants, 'LAMA_DISABLE_RESIZE', False)
             # 直接传递掩码，不需要在这里反转，因为clean_image_with_lama已经处理掩码反转
             repaired_img = clean_image_with_lama(image_pil, bubble_mask_pil, lama_model=lama_model, disable_resize=disable_resize)
             if repaired_img:
@@ -344,76 +316,8 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
              clean_background = None
 
 
-    # 保存调试图像
-    try:
-        debug_dir = get_debug_dir("inpainting_results")
-        final_method = method if inpainting_successful else 'solid_fallback'
-        result_img.save(os.path.join(debug_dir, f"inpainted_result_{final_method}.png"))
-        if clean_background:
-            # 将干净背景标记附加到主结果图像对象上
-            setattr(result_img, '_clean_background', clean_background)
-            setattr(result_img, '_clean_image', clean_background)
-            clean_background.save(os.path.join(debug_dir, f"clean_background_{final_method}.png"))
-    except Exception as save_e:
-        logger.warning(f"保存修复结果调试图像失败: {save_e}")
+    if clean_background:
+        setattr(result_img, '_clean_background', clean_background)
+        setattr(result_img, '_clean_image', clean_background)
 
     return result_img, clean_background
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    from PIL import Image, ImageDraw # 需要导入 ImageDraw
-    # 假设 detection 模块已完成
-    try:
-        from detection import get_bubble_coordinates
-    except ImportError:
-        print("错误：无法导入 detection 模块，请确保该模块已创建并包含 get_bubble_coordinates 函数。")
-        get_bubble_coordinates = None # 设置为 None 以跳过依赖检测的测试
-
-    print("--- 测试修复/填充核心逻辑 ---")
-    test_image_path = resource_path('pic/before1.png')
-
-    if os.path.exists(test_image_path) and get_bubble_coordinates:
-        print(f"加载测试图片: {test_image_path}")
-        try:
-            img_pil = Image.open(test_image_path)
-            print("获取气泡坐标...")
-            coords = get_bubble_coordinates(img_pil)
-
-            if coords:
-                print(f"找到 {len(coords)} 个气泡。")
-
-                # 测试纯色填充
-                print("\n测试纯色填充...")
-                filled_img, clean_solid = inpaint_bubbles(img_pil, coords, method='solid', fill_color='#FF0000')
-                if filled_img:
-                    save_path = get_debug_dir("test_result_solid.png")
-                    filled_img.save(save_path)
-                    print(f"纯色填充结果已保存到: {save_path}")
-                if clean_solid:
-                     save_path_clean = get_debug_dir("test_clean_solid.png")
-                     clean_solid.save(save_path_clean)
-                     print(f"纯色填充干净背景已保存到: {save_path_clean}")
-
-                # 测试 LAMA
-                print("\n测试 LAMA...")
-                if is_lama_available():
-                    lama_img, clean_lama = inpaint_bubbles(img_pil, coords, method='lama')
-                    if lama_img:
-                        save_path = get_debug_dir("test_result_lama.png")
-                        lama_img.save(save_path)
-                        print(f"LAMA 结果已保存到: {save_path}")
-                    if clean_lama:
-                         save_path_clean = get_debug_dir("test_clean_lama.png")
-                         clean_lama.save(save_path_clean)
-                         print(f"LAMA 干净背景已保存到: {save_path_clean}")
-                else:
-                    print("LAMA 不可用，跳过测试。")
-
-            else:
-                print("未找到气泡，无法测试修复。")
-        except Exception as e:
-            print(f"测试过程中发生错误: {e}")
-    elif not get_bubble_coordinates:
-         print("跳过修复测试，因为 detection 模块不可用。")
-    else:
-        print(f"错误：测试图片未找到 {test_image_path}")

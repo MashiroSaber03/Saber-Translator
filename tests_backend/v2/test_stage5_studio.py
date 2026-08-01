@@ -26,6 +26,7 @@ from src.backend_v2.storage.epochs import (
 )
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
+    assets,
     metadata,
     studio_documents,
     timeline_characters,
@@ -434,11 +435,19 @@ def test_generate_operation_freezes_analysis_context(
         "dependencyFingerprint": "context-fingerprint",
         "payload": {"summary": "角色在第六页发现碎片"},
     }
+    chat_config = {"provider": "chat-provider", "modelName": "chat-model"}
     accepted = repository.create_generate_operation(
         document_id=str(document["id"]),
         base_revision=int(document["revision"]),
         section="identity",
-        config={},
+        config={
+            "chat": chat_config,
+            "vlm": {"provider": "vlm-provider", "modelName": "vlm-model"},
+            "embedding": {
+                "provider": "unused-provider",
+                "modelName": "unused-model",
+            },
+        },
         analysis_context=context,
         idempotency_key="context-generate",
     )
@@ -446,6 +455,7 @@ def test_generate_operation_freezes_analysis_context(
         str(accepted["operationId"])
     )
     assert stored["request"]["analysisContext"] == context
+    assert stored["request"]["config"] == {"chat": chat_config}
 
 
 def test_generate_rejects_unchanged_document_without_revision_bump(
@@ -509,6 +519,7 @@ def test_chat_operation_persists_reply_after_request_lifecycle(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="预览",
+        base_index_revision=1,
     )
     accepted = repository.send_message(
         session_id=str(session["sessionId"]),
@@ -552,6 +563,7 @@ def test_abort_advances_generation_and_fences_late_reply(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="预览",
+        base_index_revision=1,
     )
     accepted = repository.send_message(
         session_id=str(session["sessionId"]),
@@ -642,6 +654,7 @@ def test_generate_and_edit_idempotency_replay_precedes_revision_checks(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="预览",
+        base_index_revision=1,
     )
     sent = repository.send_message(
         session_id=str(session["sessionId"]),
@@ -701,6 +714,7 @@ def test_message_delete_truncates_chain_without_creating_operation(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="预览",
+        base_index_revision=1,
         greeting="开场",
     )
     result = repository.delete_message_chain(
@@ -745,6 +759,7 @@ def test_new_chat_session_runs_initialization_state_tasks(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="初始化回归",
+        base_index_revision=1,
         greeting="开场",
     )
     assert session["variables"] == {"trust_score": "20"}
@@ -831,6 +846,7 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="运行态回归",
+        base_index_revision=1,
         greeting="开场",
     )
     sent = repository.send_message(
@@ -926,6 +942,73 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
     }
 
 
+def test_chat_input_regex_uses_prompt_text_without_rewriting_user_message(
+    studio_platform,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class CapturingAlgorithms(FakeStudioAlgorithms):
+        def chat(self, *, messages, system, config, on_chunk=None) -> str:
+            captured["messages"] = messages
+            return "完成"
+
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="正则角色",
+    )
+    changed = dict(document)
+    changed["regexScripts"] = [
+        {
+            "id": "prompt-only",
+            "scriptName": "仅修改模型提示",
+            "findRegex": "原文",
+            "replaceString": "模型文本",
+            "placement": [1],
+            "promptOnly": True,
+            "runOnEdit": True,
+        }
+    ]
+    document = repository.update_document(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        title=str(document["title"]),
+        document=changed,
+    )
+    session = repository.create_session(
+        document_id=str(document["id"]),
+        title="正则会话",
+        base_index_revision=1,
+    )
+    repository.send_message(
+        session_id=str(session["sessionId"]),
+        base_revision=int(session["revision"]),
+        content="原文",
+        asset_ids=[],
+        config={},
+        idempotency_key="prompt-regex",
+    )
+    service = StudioOperationService(
+        engine=studio_platform["engine"],
+        repository=repository,
+        algorithms=CapturingAlgorithms(),
+    )
+    current = repository.get_session(str(session["sessionId"]))
+    preview = service.prompt_preview(document=document, session=current)
+    assert preview["messages"][-1]["content"] == "模型文本"
+
+    claimed = OperationRepository(studio_platform["engine"]).claim_next(
+        executor_role="api",
+        executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_chat",),
+    )
+    assert claimed is not None
+    service.handle(*claimed)
+    assert captured["messages"][-1]["content"] == "模型文本"
+    restored = repository.get_session(str(session["sessionId"]))
+    assert restored["messages"][0]["content"] == "原文"
+
+
 def test_png_and_session_portable_roundtrip_uses_asset_ids(
     studio_platform,
 ) -> None:
@@ -935,21 +1018,17 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
         engine=studio_platform["engine"],
         repository=repository,
     )
-    document = repository.create_document(
-        book_id=str(studio_platform["book"]["id"]),
-        title="Saber",
-    )
     image_buffer = BytesIO()
     Image.new("RGB", (24, 32), (10, 20, 30)).save(
         image_buffer,
         format="PNG",
     )
     image_bytes = image_buffer.getvalue()
-    document = io_service.set_avatar(
-        document_id=str(document["id"]),
-        base_revision=int(document["revision"]),
+    document = io_service.import_document(
+        book_id=str(studio_platform["book"]["id"]),
         upload=BytesIO(image_bytes),
-        idempotency_key="avatar-roundtrip",
+        filename="Saber.png",
+        idempotency_key="plain-image-import",
     )
     card_png = io_service.export_png(document)
     assert read_card_png(card_png)["spec"] == "chara_card_v3"
@@ -965,9 +1044,11 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
     repository.create_session(
         document_id=str(document["id"]),
         title="旧会话",
+        base_index_revision=1,
     )
     imported_session = io_service.import_session(
         document_id=str(document["id"]),
+        base_index_revision=2,
         idempotency_key="session-import-roundtrip",
         payload={
             "title": "便携会话",
@@ -1005,6 +1086,62 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
     assert exported["messages"][0]["attachments"][0]["blob_base64"]
 
 
+def test_failed_session_attachment_import_marks_published_assets_for_gc(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    io_service = StudioIOService(
+        data_root=studio_platform["data_root"],
+        engine=studio_platform["engine"],
+        repository=repository,
+    )
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="附件清理角色",
+    )
+    image_buffer = BytesIO()
+    Image.new("RGB", (8, 8), (10, 20, 30)).save(
+        image_buffer,
+        format="PNG",
+    )
+    with studio_platform["engine"].connect() as connection:
+        before = set(connection.execute(select(assets.c.id)).scalars())
+
+    with pytest.raises(ValueError, match="base64"):
+        io_service.import_session(
+            document_id=str(document["id"]),
+            base_index_revision=1,
+            idempotency_key="failed-attachment-import",
+            payload={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "附件",
+                        "attachments": [
+                            {
+                                "blob_base64": base64.b64encode(
+                                    image_buffer.getvalue()
+                                ).decode("ascii")
+                            },
+                            {"blob_base64": "not-base64"},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    with studio_platform["engine"].connect() as connection:
+        published = list(
+            connection.execute(
+                select(assets.c.id, assets.c.gc_marked_at).where(
+                    assets.c.id.not_in(before)
+                )
+            ).mappings()
+        )
+    assert len(published) == 1
+    assert published[0]["gc_marked_at"] is not None
+
+
 def test_summary_window_and_summary_invalidation_follow_message_ordinals(
     studio_platform,
 ) -> None:
@@ -1022,6 +1159,7 @@ def test_summary_window_and_summary_invalidation_follow_message_ordinals(
     session = repository.create_session(
         document_id=str(document["id"]),
         title="摘要会话",
+        base_index_revision=1,
     )
     first = repository.send_message(
         session_id=str(session["sessionId"]),
@@ -1148,6 +1286,7 @@ def test_draft_greeting_alignment_and_archived_only_deletion(
     first_session = repository.create_session(
         document_id=str(document["id"]),
         title="草稿",
+        base_index_revision=1,
         greeting="初始问候",
         greeting_source={"type": "first_message", "index": 0},
     )
@@ -1168,6 +1307,7 @@ def test_draft_greeting_alignment_and_archived_only_deletion(
     active = repository.create_session(
         document_id=str(document["id"]),
         title="新会话",
+        base_index_revision=2,
     )
     with pytest.raises(StudioConflict, match="archived"):
         repository.delete_session(
@@ -1180,6 +1320,7 @@ def test_draft_greeting_alignment_and_archived_only_deletion(
         base_revision=int(archived["revision"]),
     )
     assert result["deleted"]
+    assert repository.chat_state(str(document["id"]))["indexRevision"] == 4
     with pytest.raises(LookupError):
         repository.get_session(str(archived["sessionId"]))
 
@@ -1370,11 +1511,13 @@ def test_short_command_idempotency_is_atomic_under_concurrency(
     first = repository.create_session(
         document_id=str(created[0]["id"]),
         title="幂等会话",
+        base_index_revision=1,
         idempotency_key="same-session",
     )
     replay = repository.create_session(
         document_id=str(created[0]["id"]),
         title="幂等会话",
+        base_index_revision=1,
         idempotency_key="same-session",
     )
     assert replay["sessionId"] == first["sessionId"]
@@ -1390,6 +1533,22 @@ def test_chat_bootstrap_is_atomic_under_concurrency(
     document = repository.create_document(
         book_id=str(studio_platform["book"]["id"]),
         title="并发会话角色",
+    )
+    changed = dict(document)
+    changed["stateTasks"] = [
+        {
+            "id": "bootstrap-task",
+            "name": "初始化状态",
+            "triggerTiming": "initialization",
+            "interval": 0,
+            "commands": "/setvar key=bootstrapped yes",
+        }
+    ]
+    document = repository.update_document(
+        document_id=str(document["id"]),
+        base_revision=int(document["revision"]),
+        title=str(document["title"]),
+        document=changed,
     )
 
     def ensure_once() -> dict[str, Any]:
@@ -1407,6 +1566,10 @@ def test_chat_bootstrap_is_atomic_under_concurrency(
     assert len(state["sessions"]) == 1
     assert state["indexRevision"] == 2
     assert state["activeSession"]["messages"][0]["content"] == "你好"
+    assert state["activeSession"]["variables"] == {"bootstrapped": "yes"}
+    assert state["activeSession"]["messages"][0]["runtimeLog"][0][
+        "type"
+    ] == "task"
     created = repository.create_session(
         document_id=str(document["id"]),
         title="第二次对话",
@@ -1516,24 +1679,6 @@ def test_studio_http_short_commands_and_operation_event_catchup(
     )
     assert created_response.status_code == 201
     document = created_response.get_json()
-
-    image_buffer = BytesIO()
-    Image.new("RGB", (8, 8), (90, 40, 20)).save(
-        image_buffer,
-        format="PNG",
-    )
-    avatar = client.post(
-        f"/api/v2/studio/documents/{document['id']}/avatar",
-        data={
-            "baseRevision": str(document["revision"]),
-            "file": (BytesIO(image_buffer.getvalue()), "avatar.png"),
-        },
-        content_type="multipart/form-data",
-        headers={"Idempotency-Key": "studio-http-avatar"},
-    )
-    assert avatar.status_code == 201
-    document = avatar.get_json()
-    assert document["avatarUrl"].startswith("/api/v2/assets/")
 
     session_response = client.post(
         f"/api/v2/studio/documents/{document['id']}/chat/sessions",

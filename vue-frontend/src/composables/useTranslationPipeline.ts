@@ -14,11 +14,13 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import {
+  flushPageDocument,
   hasPendingPageDocument,
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
 import { useToast } from '@/utils/toast'
 import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
+import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
 export type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
 export interface PageSelection {
@@ -244,10 +246,12 @@ export function restoreTranslationFromBootstrap(
 async function refreshCurrentChapter(
   imageStore: ReturnType<typeof useImageStore>,
   bubbleStore: ReturnType<typeof useBubbleStore>,
+  settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
   const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
   if (!chapterId) return
   const currentPageId = imageStore.currentImage?.id
+  if (currentPageId) await flushPageDocument(currentPageId)
   const result = await listChapterPages(chapterId, { all: true })
   const summaries = new Map(result.items.map(page => [page.id, page]))
   for (const [index, image] of imageStore.images.entries()) {
@@ -274,16 +278,28 @@ async function refreshCurrentChapter(
   const document = await getPageDocument(currentPageId)
   if (imageStore.currentImage?.id !== currentPageId) return
   const bubbles = registerPageDocument(document)
+  const pageTextStyle = parseCompleteTextStyleSettings({
+    ...document.pageStyleDefaults,
+    ...(document.defaultFontId
+      ? { fontFamily: document.defaultFontId }
+      : {}),
+  })
   imageStore.updateCurrentImage({
+    ...pageTextStyle,
     bubbleStates: bubbles,
     documentRevision: document.documentRevision,
     hasUnsavedChanges: false,
   })
+  settingsStore.updateTextStyle(pageTextStyle)
   bubbleStore.setBubbles(bubbles, true)
   bubbleStore.saveAsInitial()
 }
 
-export function useTranslation() {
+export interface TranslationPipelineOptions {
+  beforeCreateJob?: () => Promise<boolean>
+}
+
+export function useTranslation(options: TranslationPipelineOptions = {}) {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
   const settingsStore = useSettingsStore()
@@ -318,7 +334,7 @@ export function useTranslation() {
 
       // Any terminal task may have changed the open chapter. This also covers a task
       // that survived a browser restart and therefore has no local activeJobId.
-      void refreshCurrentChapter(imageStore, bubbleStore).catch((error) => {
+      void refreshCurrentChapter(imageStore, bubbleStore, settingsStore).catch((error) => {
         toast.error(
           `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
         )
@@ -355,7 +371,7 @@ export function useTranslation() {
       imageStore.setBatchTranslationInProgress(false)
       activeJobId.value = null
       activePageIds.value = []
-      void refreshCurrentChapter(imageStore, bubbleStore).catch((error) => {
+      void refreshCurrentChapter(imageStore, bubbleStore, settingsStore).catch((error) => {
         toast.error(
           `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
         )
@@ -364,10 +380,24 @@ export function useTranslation() {
     { deep: true },
   )
 
+  async function prepareJobCreation(pageIds: string[]): Promise<void> {
+    if (
+      options.beforeCreateJob
+      && !(await options.beforeCreateJob())
+    ) {
+      throw new Error('章节工作态设置写入后端失败，未创建任务')
+    }
+    await Promise.all(
+      pageIds
+        .filter(hasPendingPageDocument)
+        .map(pageId => flushPageDocument(pageId)),
+    )
+  }
+
   async function translatePages(
     pageIndexes: number[],
     mode: TranslationMode,
-    options: { reuseExistingBubbles?: boolean } = {},
+    pageOptions: { reuseExistingBubbles?: boolean } = {},
   ): Promise<TranslateResult> {
     const uniqueIndexes = [...new Set(pageIndexes)]
     if (uniqueIndexes.length === 0) {
@@ -386,22 +416,14 @@ export function useTranslation() {
     }
 
     const pageIds = pages.map(page => page!.id)
-    if (pageIds.some(hasPendingPageDocument)) {
-      toast.error('页面编辑正在写入后端或写入失败，请稍后重试')
-      return {
-        success: false,
-        completed: 0,
-        failed: 0,
-        errors: ['页面文档尚未完成后端写入'],
-      }
-    }
     try {
+      await prepareJobCreation(pageIds)
       const batch = await createChapterTranslationJob(chapterId, pageIds, {
         executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
         mode: mode === 'removeText' ? 'remove_text' : mode,
-        ...(options.reuseExistingBubbles === undefined
+        ...(pageOptions.reuseExistingBubbles === undefined
           ? {}
-          : { reuseExistingBubbles: options.reuseExistingBubbles }),
+          : { reuseExistingBubbles: pageOptions.reuseExistingBubbles }),
       })
       const jobId = batch.jobIds[0]
       if (!jobId) throw new Error('后端没有返回任务')
@@ -481,6 +503,7 @@ export function useTranslation() {
       return false
     }
     try {
+      await prepareJobCreation(imageStore.images.map(image => image.id))
       const accepted = await taskCenterStore.retryLatestFailed(
         chapterId,
         ['translation'],

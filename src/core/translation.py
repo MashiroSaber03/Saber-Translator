@@ -1,16 +1,7 @@
 import logging
 import time
-import requests
 import json
 import re
-import os
-import sys
-from pathlib import Path
-
-# 添加项目根目录到 Python 路径
-root_dir = str(Path(__file__).resolve().parent.parent.parent)
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
 # 导入项目内模块
 from src.shared import constants
@@ -69,52 +60,6 @@ def _enforce_rpm_limit(rpm_limit: int, service_name: str, last_reset_time_ref: l
         request_count_ref,
     )
 
-def _safely_extract_from_json(json_str, field_name):
-    """
-    安全地从JSON字符串中提取特定字段，处理各种异常情况。
-
-    Args:
-        json_str (str): JSON格式的字符串
-        field_name (str): 要提取的字段名
-
-    Returns:
-        str: 提取的文本，如果失败则返回简化处理的原始文本
-    """
-    # 尝试直接解析
-    try:
-        data = json.loads(json_str)
-        if field_name in data:
-            return data[field_name]
-    except (json.JSONDecodeError, TypeError, KeyError):
-        pass
-
-    # 解析失败，尝试使用正则表达式提取
-    try:
-        # 匹配 "field_name": "内容" 或 "field_name":"内容" 的模式
-        pattern = r'"' + re.escape(field_name) + r'"\s*:\s*"(.+?)"'
-        # 多行模式，使用DOTALL
-        match = re.search(pattern, json_str, re.DOTALL)
-        if match:
-            # 反转义提取的文本
-            extracted = match.group(1)
-            # 处理转义字符
-            extracted = extracted.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
-            return extracted
-    except Exception:
-        pass
-
-    # 如果依然失败，尝试清理明显的JSON结构，仅保留文本内容
-    try:
-        # 删除常见JSON结构字符
-        cleaned = re.sub(r'[{}"\[\]]', '', json_str)
-        # 删除字段名和冒号
-        cleaned = re.sub(fr'{field_name}\s*:', '', cleaned)
-        # 删除多余空白
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        return cleaned
-    except Exception:
-        # 所有方法都失败，返回原始文本
-        return json_str
 
 
 def _build_text_chat_messages(prompt_content: str, text: str) -> list:
@@ -125,7 +70,7 @@ def _build_text_chat_messages(prompt_content: str, text: str) -> list:
     return messages
 
 
-def _apply_translation_rpm_limit(provider: str, rpm_limit: int, *, batch: bool = False) -> None:
+def _apply_translation_rpm_limit(provider: str, rpm_limit: int) -> None:
     if rpm_limit <= 0:
         return
 
@@ -195,7 +140,7 @@ def _parse_batch_translation_response(
     use_json_format: bool,
 ) -> list[str]:
     translations = (
-        _parse_batch_json_response(response_text, len(texts))
+        _parse_batch_json_response(response_text)
         if use_json_format
         else _parse_batch_response(response_text, len(texts))
     )
@@ -308,7 +253,7 @@ def translate_single_text(
         total_attempts = business_retries + 1
         for attempt in range(total_attempts):
             try:
-                _apply_translation_rpm_limit(model_provider, rpm_limit_translation, batch=False)
+                _apply_translation_rpm_limit(model_provider, rpm_limit_translation)
 
                 if canonical_provider == 'caiyun':
                     if not api_key:
@@ -369,26 +314,6 @@ def translate_single_text(
     return translated_text
 
 
-# 添加测试用的 Mock 翻译提供商
-def translate_with_mock(text, target_language, api_key=None, model_name=None, prompt_content=None):
-    """只用于测试的模拟翻译提供商"""
-    if not text or not text.strip():
-        return ""
-        
-    # 简单添加目标语言作为前缀
-    translated = f"[测试{target_language}] {text[:15]}..."
-    
-    # 如果文本为日语，模拟一些简单的翻译规则
-    if text and any(ord(c) > 0x3000 for c in text):
-        if target_language.lower() in ["chinese", "zh"]:
-            translated = f"中文翻译: {text[:15]}..."
-        elif target_language.lower() in ["english", "en"]:
-            translated = f"English translation: {text[:15]}..."
-    
-    logger.info(f"Mock 翻译: '{text[:20]}...' -> '{translated}'")
-    return translated
-
-
 def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_format: bool = False) -> tuple:
     """
     将多个文本组装成批量翻译的 prompt
@@ -414,10 +339,9 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
         messages.append({"role": "system", "content": system_prompt})
         
         # 2. Few-shot learning: JSON 格式示例
-        if hasattr(constants, 'BATCH_TRANSLATE_JSON_SAMPLE_INPUT') and hasattr(constants, 'BATCH_TRANSLATE_JSON_SAMPLE_OUTPUT'):
-            messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_INPUT})
-            messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_OUTPUT})
-            logger.debug("已添加 JSON 模式翻译示例")
+        messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_INPUT})
+        messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_OUTPUT})
+        logger.debug("已添加 JSON 模式翻译示例")
         
         # 3. User prompt：构建 JSON 格式的输入
         import json
@@ -434,10 +358,9 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
         messages.append({"role": "system", "content": system_prompt})
         
         # 2. Few-shot learning: 添加翻译示例
-        if hasattr(constants, 'BATCH_TRANSLATE_SAMPLE_INPUT') and hasattr(constants, 'BATCH_TRANSLATE_SAMPLE_OUTPUT'):
-            messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_SAMPLE_INPUT})
-            messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_SAMPLE_OUTPUT})
-            logger.debug("已添加翻译示例")
+        messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_SAMPLE_INPUT})
+        messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_SAMPLE_OUTPUT})
+        logger.debug("已添加翻译示例")
         
         # 3. User prompt：将所有文本编号并合并
         user_prompt = constants.BATCH_TRANSLATE_USER_TEMPLATE
@@ -496,7 +419,7 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
     if not has_numeric_prefix:
         logger.warning(f"响应中未找到 <|n|> 格式的编号，无法解析。响应内容: {response_text[:200]}...")
         raise TranslationParseException(
-            f"无法在响应中找到批量翻译的编号格式 <|n|>，AI 可能未按要求输出"
+            "无法在响应中找到批量翻译的编号格式 <|n|>，AI 可能未按要求输出"
         )
     
     if has_numeric_prefix and min_index_line != -1:
@@ -551,14 +474,12 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
 
 
 
-def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
+def _parse_batch_json_response(response_text: str) -> list:
     """
     解析 JSON 格式的批量翻译响应
     
     Args:
         response_text: LLM 返回的响应文本 (应为 JSON 格式)
-        expected_count: 期望的翻译数量
-        
     Returns:
         list: 解析后的翻译列表
         
@@ -595,26 +516,18 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list:
     # 4. 提取翻译结果
     translations = []
     
-    # 支持两种格式:
-    # 格式1: {"translations": [{"id": 1, "text": "..."}, ...]}
-    # 格式2: {"TextList": [{"ID": 1, "text": "..."}, ...]} (备用格式)
-    
-    if 'translations' in data:
-        items = data['translations']
-    elif 'TextList' in data:
-        items = data['TextList']
-    else:
-        logger.warning("JSON 格式不正确，找不到 translations 或 TextList 字段")
+    if 'translations' not in data:
+        logger.warning("JSON 格式不正确，找不到 translations 字段")
         # 🔍 修改：不再降级，直接抛出异常
         raise TranslationParseException(
-            f"JSON 格式不正确，期望包含 'translations' 或 'TextList' 字段，实际收到: {list(data.keys())}"
+            f"JSON 格式不正确，期望包含 'translations' 字段，实际收到: {list(data.keys())}"
         )
+    items = data['translations']
     
     # 按 id 排序并提取文本
     try:
-        # 统一 id 字段名称 (支持 'id' 和 'ID')
         for item in items:
-            item_id = item.get('id') or item.get('ID')
+            item_id = item.get('id')
             item_text = item.get('text', '')
             translations.append((item_id, item_text))
         
@@ -785,27 +698,10 @@ def translate_text_list(
         default_rpm_limit=constants.DEFAULT_rpm_TRANSLATION,
         default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
     )
-    use_json_format = effective_options.request.force_json_output
     rpm_limit_translation = effective_options.execution.rpm_limit
-    business_retries = effective_options.execution.business_retries
 
     canonical_provider = normalize_provider_id(model_provider)
     logger.info(f"开始批量翻译 {len(non_empty_texts)} 个文本片段 (使用 {canonical_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
-    
-    # 特殊处理模拟翻译提供商
-    if model_provider.lower() == 'mock':
-        logger.info("使用模拟翻译提供商")
-        for i, text in enumerate(non_empty_texts):
-            translated = translate_with_mock(
-                text,
-                target_language,
-                api_key=api_key,
-                model_name=model_name,
-                prompt_content=prompt_content
-            )
-            final_translations[non_empty_indices[i]] = translated
-        logger.info("批量翻译完成。")
-        return final_translations
     
     # 检查是否为支持批量翻译的提供商 (LLM)
     supports_batch_translation = (
@@ -878,97 +774,3 @@ def translate_text_list(
     
     logger.info(f"批量翻译完成。成功 {len([t for t in final_translations if t])} / {len(texts)}")
     return final_translations
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    # 设置基本的日志配置，以便在测试时查看日志
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    print("--- 测试翻译核心逻辑 ---")
-    test_text_jp = "これはテストです。"
-    test_text_en = "This is a test."
-
-    # --- 配置你的测试 API Key 和模型 ---
-    test_api_key_sf = os.environ.get("TEST_SILICONFLOW_API_KEY", None)
-    test_model_sf = "alibaba/Qwen1.5-14B-Chat"
-
-    test_api_key_ds = os.environ.get("TEST_DEEPSEEK_API_KEY", None)
-    test_model_ds = "deepseek-chat"
-
-    test_api_key_volcano = os.environ.get("TEST_VOLCANO_API_KEY", None)
-    test_model_volcano = "deepseek-v3-250324"
-
-    test_model_ollama = "llama3"
-    test_model_sakura = "sakura-14b-qwen2.5-v1.0"
-    # ------------------------------------
-
-    print(f"\n测试 SiliconFlow ({test_model_sf}):")
-    if test_api_key_sf:
-        result_sf = translate_single_text(test_text_en, 'zh', 'siliconflow', test_api_key_sf, test_model_sf)
-        print(f"  '{test_text_en}' -> '{result_sf}'")
-    else:
-        print("  跳过 SiliconFlow 测试，未设置 TEST_SILICONFLOW_API_KEY 环境变量。")
-
-    print(f"\n测试 DeepSeek ({test_model_ds}):")
-    if test_api_key_ds:
-        result_ds = translate_single_text(test_text_en, 'zh', 'deepseek', test_api_key_ds, test_model_ds)
-        print(f"  '{test_text_en}' -> '{result_ds}'")
-    else:
-        print("  跳过 DeepSeek 测试，未设置 TEST_DEEPSEEK_API_KEY 环境变量。")
-        
-    # 测试百度翻译
-    test_baidu_app_id = os.environ.get("TEST_BAIDU_TRANSLATE_APP_ID", None)
-    test_baidu_app_key = os.environ.get("TEST_BAIDU_TRANSLATE_APP_KEY", None)
-    
-    print(f"\n测试 百度翻译 API:")
-    if test_baidu_app_id and test_baidu_app_key:
-        result_baidu = translate_single_text(test_text_en, 'zh', constants.BAIDU_TRANSLATE_ENGINE_ID, test_baidu_app_id, test_baidu_app_key)
-        print(f"  '{test_text_en}' -> '{result_baidu}'")
-        
-        result_baidu_jp = translate_single_text(test_text_jp, 'zh', constants.BAIDU_TRANSLATE_ENGINE_ID, test_baidu_app_id, test_baidu_app_key)
-        print(f"  '{test_text_jp}' -> '{result_baidu_jp}'")
-    else:
-        print("  跳过百度翻译测试，未设置 TEST_BAIDU_TRANSLATE_APP_ID 或 TEST_BAIDU_TRANSLATE_APP_KEY 环境变量。")
-
-    print(f"\n测试 火山引擎 ({test_model_volcano}):")
-    if test_api_key_volcano:
-        try:
-            result_volcano = translate_single_text(test_text_en, 'zh', 'volcano', test_api_key_volcano, test_model_volcano)
-            print(f"  '{test_text_en}' -> '{result_volcano}'")
-        except Exception as e:
-            print(f"  火山引擎测试出错: {e}")
-    else:
-        print("  跳过火山引擎测试，未设置 TEST_VOLCANO_API_KEY 环境变量。")
-
-    print(f"\n测试 Ollama ({test_model_ollama}):")
-    try:
-        requests.get("http://localhost:11434")
-        result_ollama = translate_single_text(test_text_en, 'zh', 'ollama', model_name=test_model_ollama)
-        print(f"  '{test_text_en}' -> '{result_ollama}'")
-    except requests.exceptions.ConnectionError:
-        print("  跳过 Ollama 测试，无法连接到 http://localhost:11434。")
-    except Exception as e:
-         print(f"  Ollama 测试出错: {e}")
-
-    print(f"\n测试 Sakura ({test_model_sakura}):")
-    try:
-        requests.get("http://localhost:8080")
-        result_sakura = translate_single_text(test_text_jp, 'zh', 'sakura', model_name=test_model_sakura)
-        print(f"  '{test_text_jp}' -> '{result_sakura}'")
-    except requests.exceptions.ConnectionError:
-        print("  跳过 Sakura 测试，无法连接到 http://localhost:8080。")
-    except Exception as e:
-         print(f"  Sakura 测试出错: {e}")
-
-    print("\n--- 测试批量翻译 ---")
-    test_list = ["Hello", "World", "これはペンです"]
-    # 尝试使用 Ollama 进行批量测试，如果 Ollama 不可用，则此部分会失败
-    try:
-        requests.get("http://localhost:11434")
-        translated_list = translate_text_list(test_list, 'zh', 'ollama', model_name=test_model_ollama)
-        print(f"批量翻译结果 ({len(translated_list)}):")
-        for i, t in enumerate(translated_list):
-            print(f"  '{test_list[i]}' -> '{t}'")
-    except requests.exceptions.ConnectionError:
-        print("  跳过批量翻译测试，无法连接到 Ollama。")
-    except Exception as e:
-        print(f"  批量翻译测试出错: {e}")

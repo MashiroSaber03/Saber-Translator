@@ -8,7 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 const mocks = vi.hoisted(() => ({
   createChapterTranslationJob: vi.fn(),
@@ -63,11 +65,12 @@ describe('useTranslationPipeline', () => {
       failedOnly: true,
     })
     mocks.listChapterPages.mockResolvedValue({ items: [] })
+    const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
     mocks.getPageDocument.mockResolvedValue({
       pageId: 'page-1',
       documentRevision: 2,
-      defaultFontId: 'font-default',
-      pageStyleDefaults: {},
+      defaultFontId: fontFamily,
+      pageStyleDefaults,
       bubbles: [],
     })
   })
@@ -99,6 +102,24 @@ describe('useTranslationPipeline', () => {
     )
   })
 
+  it('does not create a job when chapter settings preflight fails', async () => {
+    const imageStore = useImageStore()
+    imageStore.addImage('001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+    const beforeCreateJob = vi.fn().mockResolvedValue(false)
+
+    const result = await useTranslation({ beforeCreateJob }).translatePages(
+      [0],
+      'standard',
+    )
+
+    expect(result.success).toBe(false)
+    expect(beforeCreateJob).toHaveBeenCalledOnce()
+    expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+  })
+
   it('rejects pages that are not owned by one backend chapter', async () => {
     const imageStore = useImageStore()
     imageStore.addImage('001.png', '/api/v2/assets/source-1', {
@@ -119,6 +140,7 @@ describe('useTranslationPipeline', () => {
   it('rehydrates the current page document when a durable job finishes', async () => {
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
+    const settingsStore = useSettingsStore()
     const taskCenterStore = useTaskCenterStore()
     imageStore.addImage('001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
@@ -145,11 +167,17 @@ describe('useTranslationPipeline', () => {
         thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
       }],
     })
+    const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
     mocks.getPageDocument.mockResolvedValue({
       pageId: 'page-1',
       documentRevision: 2,
-      defaultFontId: 'font-default',
-      pageStyleDefaults: {},
+      defaultFontId: fontFamily,
+      pageStyleDefaults: {
+        ...pageStyleDefaults,
+        layoutDirection: 'horizontal',
+        textColor: '#123456',
+        useAutoTextColor: false,
+      },
       bubbles: [{
         bubbleId: 'bubble-1',
         ordinal: 1,
@@ -180,6 +208,16 @@ describe('useTranslationPipeline', () => {
       '/api/v2/assets/translated-1',
     )
     expect(bubbleStore.bubbles[0]?.translatedText).toBe('你好')
+    expect(imageStore.currentImage).toMatchObject({
+      layoutDirection: 'horizontal',
+      textColor: '#123456',
+      useAutoTextColor: false,
+    })
+    expect(settingsStore.settings.textStyle).toMatchObject({
+      layoutDirection: 'horizontal',
+      textColor: '#123456',
+      useAutoTextColor: false,
+    })
   })
 
   it('reconciles a tracked job from durable queue and history snapshots', async () => {

@@ -15,11 +15,12 @@ import uuid
 from sqlalchemy import Engine, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.repository import (
     InsightConflict,
     InsightNotFound,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
@@ -29,6 +30,7 @@ from src.backend_v2.jobs.repository import (
     JobSpec,
 )
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
     analysis_heads,
@@ -39,7 +41,6 @@ from src.backend_v2.storage.schema import (
     analysis_runs,
     assets,
     chapters,
-    credential_versions,
     pages,
     page_assets,
     timeline_characters,
@@ -52,15 +53,6 @@ from src.backend_v2.storage.schema import (
 DERIVED_KINDS = frozenset(
     {"overview", "compressed_context", "timeline", "vector"}
 )
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def _load(value: str | None, default: object) -> object:
@@ -785,18 +777,27 @@ class InsightDerivedRepository:
                         .order_by(analysis_layer_results.c.unit_index)
                     ).mappings()
                 )
+                covered_by_result: dict[str, list[Mapping[str, Any]]] = {}
+                if rows:
+                    for page in connection.execute(
+                        select(analysis_layer_result_pages)
+                        .where(
+                            analysis_layer_result_pages.c.layer_result_id.in_(
+                                tuple(str(row["id"]) for row in rows)
+                            )
+                        )
+                        .order_by(
+                            analysis_layer_result_pages.c.layer_result_id,
+                            analysis_layer_result_pages.c.ordinal,
+                        )
+                    ).mappings():
+                        covered_by_result.setdefault(
+                            str(page["layer_result_id"]),
+                            [],
+                        ).append(page)
                 source_units = []
                 for row in rows:
-                    covered = list(
-                        connection.execute(
-                            select(analysis_layer_result_pages)
-                            .where(
-                                analysis_layer_result_pages.c.layer_result_id
-                                == row["id"]
-                            )
-                            .order_by(analysis_layer_result_pages.c.ordinal)
-                        ).mappings()
-                    )
+                    covered = covered_by_result.get(str(row["id"]), ())
                     source_units.append(
                         {
                             "content": _load(row["content_json"], {}),
@@ -1342,7 +1343,6 @@ class InsightDerivedRepository:
 
 class InsightDerivedCommandService:
     def __init__(self, engine: Engine) -> None:
-        self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.settings = SettingsResolver(engine)
         self.repository = InsightDerivedRepository(engine)
@@ -1438,6 +1438,7 @@ class InsightDerivedWorkerService:
         self.engine = engine
         self.jobs = jobs
         self.repository = InsightDerivedRepository(engine)
+        self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or LegacyDerivedAlgorithms()
         self.vector_store = vector_store or InsightVectorStore(data_root)
 
@@ -1447,10 +1448,31 @@ class InsightDerivedWorkerService:
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         raw_config = _object(step.get("config"))
-        config = self._with_credentials(raw_config)
+        kind = str(step["stepKind"])
+        if kind in {"insight_build_vectors", "insight_stage_vectors"}:
+            credential_sections = ("embedding",)
+        elif (
+            kind.startswith("insight_build_layer_")
+            or kind
+            in {
+                "insight_build_overview",
+                "insight_stage_overview_no_spoiler",
+                "insight_stage_overview_story_summary",
+                "insight_build_compressed_context",
+                "insight_stage_compressed_context",
+                "insight_build_timeline",
+                "insight_stage_timeline",
+            }
+        ):
+            credential_sections = _chat_credential_sections(raw_config)
+        else:
+            raise JobConflict(f"unsupported derived step: {kind}")
+        config = self._with_credentials(
+            raw_config,
+            section_names=credential_sections,
+        )
         book_id = str(config.get("bookId", ""))
         run_id = str(config.get("runId", ""))
-        kind = str(step["stepKind"])
         full_stage = (
             str(config.get("scope", "")) == "full"
             and bool(run_id)
@@ -1508,29 +1530,11 @@ class InsightDerivedWorkerService:
                 )
                 completed_units = []
                 for unit in layer_units:
-                    algorithm = getattr(
-                        self.algorithms,
-                        "build_layer",
-                        None,
+                    content = self.algorithms.build_layer(
+                        unit["inputs"],
+                        layer=unit["layer"],
+                        config=config,
                     )
-                    if algorithm is None:
-                        content = {
-                            "summary": "\n".join(
-                                str(
-                                    value.get(
-                                        "page_summary",
-                                        value.get("summary", ""),
-                                    )
-                                )
-                                for value in unit["inputs"]
-                            ).strip()
-                        }
-                    else:
-                        content = algorithm(
-                            unit["inputs"],
-                            layer=unit["layer"],
-                            config=config,
-                        )
                     completed_units.append(
                         {
                             **unit,
@@ -1797,27 +1801,22 @@ class InsightDerivedWorkerService:
     def _with_credentials(
         self,
         config: Mapping[str, Any],
+        *,
+        section_names: Sequence[str],
     ) -> dict[str, Any]:
-        result = json.loads(json.dumps(config))
-        for key in ("vlm", "chat", "embedding", "reranker", "imageGen"):
-            section = _object(result.get(key))
-            version_id = section.pop("credentialVersionId", None)
-            if version_id:
-                with self.engine.connect() as connection:
-                    value = connection.execute(
-                        select(credential_versions.c.secret_json).where(
-                            credential_versions.c.id == version_id
-                        )
-                    ).scalar_one_or_none()
-                if value is None:
-                    raise JobConflict(
-                        f"frozen {key} credential version no longer exists"
-                    )
-                secret = json.loads(value)
-                if isinstance(secret, Mapping):
-                    section.update(secret)
-            result[key] = section
-        return result
+        try:
+            return self.credentials.resolve_credential_sections(
+                config,
+                section_names,
+            )
+        except LookupError as exc:
+            raise JobConflict(
+                "frozen Insight credential version no longer exists"
+            ) from exc
+
+
+def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
+    return ("chat",) if _object(config.get("chat")).get("provider") else ("vlm",)
 
 
 def _publication_status(

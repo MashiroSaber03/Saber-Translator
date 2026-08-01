@@ -1,7 +1,8 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebImportStore } from '@/stores/webImportStore'
-import type { WebImportEngine } from '@/types/webImport'
+import type { AgentLog, WebImportEngine } from '@/types/webImport'
+import { jobsApi } from '@/api/v2/jobs'
 import {
   checkWebImportSupport,
   commitWebImportDraft,
@@ -47,6 +48,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const activeDraftRevision = ref(0)
   const draftPageIdsByNumber = new Map<number, string>()
   let draftPollGeneration = 0
+  let agentLogCursor = 0
+  let agentLogJobId: string | null = null
   const settingsActions: WebImportSettingsActions = {
     setAgentApiKey: webImportStore.setAgentApiKey,
     setAgentBaseUrl: webImportStore.setAgentBaseUrl,
@@ -205,6 +208,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     activeDraftId.value = null
     activeDraftRevision.value = 0
     draftPageIdsByNumber.clear()
+    agentLogCursor = 0
+    agentLogJobId = null
   }
 
   async function handleSaveSettings(showSuccessFeedback = true): Promise<boolean> {
@@ -286,9 +291,10 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         chapterId: bootstrap.chapter.id,
         sourceUrl: url,
         engine: selectedEngine.value,
-        config: {},
       })
       activeDraftId.value = accepted.draftId
+      agentLogCursor = 0
+      agentLogJobId = null
       webImportStore.addLog({
         timestamp: new Date().toISOString(),
         type: 'info',
@@ -352,10 +358,47 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     return new Promise(resolve => setTimeout(resolve, milliseconds))
   }
 
+  async function pollAgentLogs(
+    draft: Awaited<ReturnType<typeof getWebImportDraft>>,
+  ): Promise<void> {
+    if (
+      draft.requestedEngine !== 'ai-agent'
+      && draft.actualEngine !== 'ai-agent'
+    ) return
+    const extractJob = draft.jobs.find(job => job.kind === 'web_extract')
+    if (!extractJob) return
+    if (agentLogJobId !== extractJob.id) {
+      agentLogJobId = extractJob.id
+      agentLogCursor = 0
+    }
+    try {
+      const response = await jobsApi.events(extractJob.id, {
+        after: agentLogCursor,
+        limit: 200,
+      })
+      for (const event of response.items) {
+        agentLogCursor = Math.max(agentLogCursor, event.eventId)
+        if (event.type !== 'web_import_agent_log') continue
+        const payload = event.payload as unknown as Partial<AgentLog>
+        if (
+          typeof payload.timestamp === 'string'
+          && typeof payload.type === 'string'
+          && typeof payload.message === 'string'
+        ) {
+          webImportStore.addLog(payload as AgentLog)
+        }
+      }
+    } catch {
+      // Log retrieval must not interrupt the durable import task.
+    }
+  }
+
   async function pollDraft(draftId: string): Promise<void> {
     const generation = ++draftPollGeneration
     while (generation === draftPollGeneration) {
       const draft = await getWebImportDraft(draftId)
+      if (generation !== draftPollGeneration) return
+      await pollAgentLogs(draft)
       if (generation !== draftPollGeneration) return
       activeDraftRevision.value = draft.revision
       webImportStore.updateDownloadProgress(
@@ -395,8 +438,18 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
           engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
         })
         webImportStore.setStatus('extracted')
-        if (webImportStore.settings.ui.autoImport && successful.length > 0) {
-          await handleImport()
+        if (draft.autoImport && successful.length > 0) {
+          const extractJob = draft.jobs.find(job => job.kind === 'web_extract')
+          if (
+            extractJob
+            && ['completed', 'completed_with_errors', 'failed', 'cancelled']
+              .includes(extractJob.status)
+          ) {
+            webImportStore.setError('后端自动入库未能启动，请在任务中心查看详情')
+            return
+          }
+          await delay(250)
+          continue
         }
         return
       }

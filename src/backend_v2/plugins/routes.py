@@ -8,6 +8,11 @@ from typing import Any
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _idempotency_key,
+)
 from src.backend_v2.plugins.package import MAX_ARCHIVE_BYTES
 from src.backend_v2.plugins.repository import (
     PluginConflict,
@@ -146,13 +151,6 @@ def create_plugins_blueprint(
     return blueprint
 
 
-def _json_body() -> dict[str, Any]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
 def _required_bool(body: dict[str, Any], field: str) -> bool:
     value = body.get(field)
     if not isinstance(value, bool):
@@ -174,23 +172,3 @@ def _positive_int(
     if normalized < minimum:
         raise ValueError(f"{field} must be at least {minimum}")
     return normalized
-
-
-def _idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError("Idempotency-Key is required")
-    return value
-
-
-def _error(
-    code: str,
-    message: str,
-    status: int,
-    *,
-    details: dict[str, object] | None = None,
-):
-    error: dict[str, object] = {"code": code, "message": message}
-    if details:
-        error["details"] = details
-    return jsonify({"error": error}), status

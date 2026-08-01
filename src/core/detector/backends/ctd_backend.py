@@ -11,7 +11,6 @@ from typing import List, Tuple, Optional
 import cv2
 import numpy as np
 import torch
-import einops
 
 from ..base import BaseTextDetector
 from ..data_types import TextLine
@@ -87,30 +86,6 @@ class CTDBackend(BaseTextDetector):
         
         logger.info(f"CTD 检测器初始化完成 - 设备: {self.device}")
     
-    def _det_batch_forward(self, batch: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """批量前向推理"""
-        from src.interfaces.ctd.basemodel import TextDetBase, TextDetBaseDNN
-        
-        if isinstance(self.model, TextDetBase):
-            batch = einops.rearrange(batch.astype(np.float32) / 255., 'n h w c -> n c h w')
-            batch = torch.from_numpy(batch).to(self.device)
-            _, mask, lines = self.model(batch)
-            mask = mask.detach().cpu().numpy()
-            lines = lines.detach().cpu().numpy()
-        elif isinstance(self.model, TextDetBaseDNN):
-            mask_lst, line_lst = [], []
-            for b in batch:
-                _, mask, lines = self.model(b)
-                if mask.shape[1] == 2:
-                    tmp = mask
-                    mask = lines
-                    lines = tmp
-                mask_lst.append(mask)
-                line_lst.append(lines)
-            lines, mask = np.concatenate(line_lst, 0), np.concatenate(mask_lst, 0)
-        else:
-            raise NotImplementedError
-        return lines, mask
     
     def _preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float, int, int]:
         """预处理图像"""

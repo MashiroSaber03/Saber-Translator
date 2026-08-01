@@ -27,7 +27,6 @@ from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.backend_v2.storage.schema import (
     app_settings,
     assets,
-    books,
     chapter_write_locks,
     chapters,
     fonts,
@@ -386,6 +385,7 @@ def test_page_style_patch_is_validated_by_the_backend_domain(
             page_id=str(result["page"]["id"]),
             base_revision=1,
             mutations=[],
+            idempotency_key=f"style-validation-document-{message}",
             page_style_defaults_patch=patch,
         )
 
@@ -625,12 +625,10 @@ def test_last_visited_page_is_independent_last_write_wins(
     initial = repository.update_last_visited_page(
         chapter_id=str(chapter["id"]),
         page_id=str(first["page"]["id"]),
-        base_revision=0,
     )
     stale_tab = repository.update_last_visited_page(
         chapter_id=str(chapter["id"]),
         page_id=str(second["page"]["id"]),
-        base_revision=0,
     )
     bootstrap = repository.translation_bootstrap(
         book_id=str(book["id"]),
@@ -769,7 +767,7 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
     )
     page_id = str(imported["page"]["id"])
     bubble_id = "00000000-0000-0000-0000-000000000111"
-    created = repository.mutate_page_document(
+    created, _ = repository.mutate_page_document(
         page_id=page_id,
         base_revision=1,
         mutations=[
@@ -779,10 +777,11 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
                 "fields": {"text": "hello", "fontSize": 24},
             }
         ],
+        idempotency_key="document-create",
     )
     assert created["documentRevision"] == 2
     assert created["bubbles"][0]["bubbleId"] == bubble_id
-    patched = repository.mutate_page_document(
+    patched, _ = repository.mutate_page_document(
         page_id=page_id,
         base_revision=2,
         mutations=[
@@ -792,6 +791,7 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
                 "fields": {"text": "translated"},
             }
         ],
+        idempotency_key="document-patch",
     )
     assert patched["bubbles"][0]["payload"]["text"] == "translated"
     with pytest.raises(ContentConflict):
@@ -804,6 +804,7 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
                     "bubbleId": bubble_id,
                 }
             ],
+            idempotency_key="document-stale-delete",
         )
 
 
@@ -966,7 +967,7 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
         key="auto-style",
     )
     page_id = str(imported["page"]["id"])
-    document = repository.mutate_page_document(
+    document, _ = repository.mutate_page_document(
         page_id=page_id,
         base_revision=1,
         mutations=[
@@ -982,6 +983,7 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
                 },
             }
         ],
+        idempotency_key="auto-style-create",
         page_style_defaults_patch={
             "autoFontSize": True,
             "layoutDirection": "auto",
@@ -1027,10 +1029,11 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
         render_payload["fontFamily"]
     )
 
-    manual = repository.mutate_page_document(
+    manual, _ = repository.mutate_page_document(
         page_id=page_id,
         base_revision=2,
         mutations=[],
+        idempotency_key="auto-style-manual",
         page_style_defaults_patch={
             "useAutoTextColor": False,
             "textColor": "#123456",

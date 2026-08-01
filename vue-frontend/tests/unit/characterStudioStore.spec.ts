@@ -10,10 +10,10 @@ import { deepClone } from '@/utils/deepClone'
 const demoDocument = {
   id: 'doc_alpha',
   bookId: 'book-demo',
-  origin: { type: 'manual', source_character: null, source_pages: [] },
+  origin: { type: 'manual', source_character: null },
   status: { is_favorite: false, frozen_sections: [], last_validated_at: null },
   meta: { title: '阿尔法', tags: ['主角'], created_at: '2026-05-15T00:00:00', updated_at: '2026-05-15T00:00:00' },
-  avatar: { mode: 'none', asset_path: null, source_page: null },
+  avatar: { asset_path: null },
   identity: { name: '阿尔法', aliases: [], description: '测试角色', personality: '沉稳', scenario: '测试场景' },
   coreMessages: {
     first_message: '我是阿尔法。',
@@ -112,7 +112,7 @@ const structuredDocument: CharacterStudioDocument = {
 const candidateDocument: CharacterStudioDocument = {
   ...demoDocument,
   id: 'doc_candidate',
-  origin: { type: 'analysis', source_character: '候选角色', source_pages: [] },
+  origin: { type: 'analysis', source_character: '候选角色' },
   meta: { ...demoDocument.meta, title: '候选角色', tags: [] },
   identity: { ...demoDocument.identity, name: '候选角色', aliases: [], description: '', personality: '', scenario: '' },
   coreMessages: { ...demoDocument.coreMessages, first_message: '', alternate_greetings: [] },

@@ -56,8 +56,6 @@ const {
   isSettingsButtonHighlighted,
 } = useValidation()
 
-const translation = useTranslation()
-
 const {
   handleTextStyleChanged,
   handleAutoFontSizeChanged,
@@ -66,6 +64,9 @@ const {
 } = useTextStyleSync()
 
 const translateInit = useTranslateInit()
+const translation = useTranslation({
+  beforeCreateJob: translateInit.flushChapterWorkState,
+})
 
 const showSettingsModal = ref(false)
 const showBookGlossaryModal = ref(false)
@@ -127,6 +128,9 @@ async function flushCurrentPageDocument(): Promise<void> {
 
 async function guardDocumentFlush(): Promise<boolean> {
   try {
+    if (!(await translateInit.flushChapterWorkState())) {
+      throw new Error('章节工作态设置尚未写入后端')
+    }
     await flushCurrentPageDocument()
     return true
   } catch (error) {

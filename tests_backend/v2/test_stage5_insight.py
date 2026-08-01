@@ -12,13 +12,12 @@ import zipfile
 from PIL import Image
 import pytest
 from flask import Flask
-from sqlalchemy import insert, select, update
+from sqlalchemy import event, insert, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.insight.commands import InsightAnalysisCommandService
 from src.backend_v2.insight.continuation import (
-    ContinuationAlgorithms,
     ContinuationCommandService,
     ContinuationRepository,
     ContinuationWorkerService,
@@ -173,7 +172,11 @@ class FakeVectorStore:
 
 
 class FakeContinuationAlgorithms:
+    def __init__(self) -> None:
+        self.script_contexts: list[Mapping[str, Any]] = []
+
     def generate_script(self, *, context, config):
+        self.script_contexts.append(context)
         return "第1页：新的开始\n第2页：继续前进"
 
     def generate_page(self, *, ordinal, script, previous, config):
@@ -465,6 +468,7 @@ def _run_derived_job(
 
 def test_full_analysis_freezes_assets_and_publishes_canonical_results(
     insight_platform,
+    monkeypatch,
 ) -> None:
     platform = insight_platform
     command = InsightAnalysisCommandService(platform["engine"])
@@ -475,6 +479,13 @@ def test_full_analysis_freezes_assets_and_publishes_canonical_results(
         },
         idempotency_key="full-1",
     )
+    monkeypatch.setattr(
+        command,
+        "_resolve_targets",
+        lambda **_kwargs: pytest.fail(
+            "idempotent replay reread current Insight targets"
+        ),
+    )
     replay = command.create_analysis_job(
         command={
             "bookId": str(platform["book"]["id"]),
@@ -484,6 +495,40 @@ def test_full_analysis_freezes_assets_and_publishes_canonical_results(
     )
     assert replay == accepted
     assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    validation_statements: list[str] = []
+
+    def record_validation_statement(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        validation_statements.append(statement.upper())
+
+    event.listen(
+        platform["engine"],
+        "before_cursor_execute",
+        record_validation_statement,
+    )
+    try:
+        with platform["engine"].begin() as connection:
+            InsightRepository.validate_run_sources(
+                connection,
+                run_id=str(accepted["runId"]),
+            )
+    finally:
+        event.remove(
+            platform["engine"],
+            "before_cursor_execute",
+            record_validation_statement,
+        )
+    assert sum(
+        "FROM PAGE_ASSETS JOIN ASSETS" in statement
+        for statement in validation_statements
+    ) == 1
 
     with platform["engine"].connect() as connection:
         run = connection.execute(
@@ -838,7 +883,7 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
         book_id=str(platform["book"]["id"]),
         title="线索",
         content="内容",
-        page_ids=[platform["page_ids"][1]],
+        citations=[{"pageId": platform["page_ids"][1]}],
     )
     assert note["revision"] == 1
     assert note["citations"][0]["pageNumberSnapshot"] == 2
@@ -847,7 +892,7 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
         base_revision=1,
         title="线索（更新）",
         content="新内容",
-        page_ids=[platform["page_ids"][0]],
+        citations=[{"pageId": platform["page_ids"][0]}],
     )
     assert updated["revision"] == 2
     with pytest.raises(InsightConflict, match="revision"):
@@ -856,7 +901,7 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
             base_revision=1,
             title="过期写入",
             content="",
-            page_ids=[],
+            citations=[],
         )
     page = repository.list_notes(
         book_id=str(platform["book"]["id"]),
@@ -870,6 +915,88 @@ def test_note_revision_and_citation_snapshots(insight_platform) -> None:
     )
     assert detail_page["items"][0]["content"] == "新内容"
     assert repository.get_note(note_id=note["noteId"])["content"] == "新内容"
+
+
+def test_note_citations_use_bulk_queries(insight_platform) -> None:
+    platform = insight_platform
+    repository = InsightRepository(platform["engine"])
+    create_statements: list[str] = []
+
+    def record_create_statement(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        create_statements.append(statement.upper())
+
+    event.listen(
+        platform["engine"],
+        "before_cursor_execute",
+        record_create_statement,
+    )
+    try:
+        repository.create_note(
+            book_id=str(platform["book"]["id"]),
+            title="批量引用",
+            content="内容",
+            citations=[
+                {"pageId": page_id} for page_id in platform["page_ids"]
+            ],
+        )
+    finally:
+        event.remove(
+            platform["engine"],
+            "before_cursor_execute",
+            record_create_statement,
+        )
+    assert sum(
+        "FROM ANALYSIS_HEADS" in statement
+        for statement in create_statements
+    ) == 1
+
+    repository.create_note(
+        book_id=str(platform["book"]["id"]),
+        title="第二条",
+        content="内容",
+        citations=[{"pageId": platform["page_ids"][0]}],
+    )
+    list_statements: list[str] = []
+
+    def record_list_statement(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        list_statements.append(statement.upper())
+
+    event.listen(
+        platform["engine"],
+        "before_cursor_execute",
+        record_list_statement,
+    )
+    try:
+        listed = repository.list_notes(
+            book_id=str(platform["book"]["id"]),
+            limit=10,
+        )
+    finally:
+        event.remove(
+            platform["engine"],
+            "before_cursor_execute",
+            record_list_statement,
+        )
+
+    assert len(listed["items"]) == 2
+    assert sum(
+        "FROM NOTE_CITATIONS" in statement
+        for statement in list_statements
+    ) == 1
 
 
 def test_insight_bootstrap_identifies_active_job_kinds(
@@ -1116,7 +1243,6 @@ def test_page_analysis_schema_uses_backend_identity_for_single_page() -> None:
 
 
 def test_browser_cannot_supply_provider_or_prompt_configuration() -> None:
-    command = InsightAnalysisCommandService
     with pytest.raises(ValueError, match="unknown Insight command fields"):
         from src.backend_v2.insight.commands import normalize_analysis_command
 
@@ -1173,6 +1299,15 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     project = repository.sync_latest(
         book_id=str(platform["book"]["id"])
     )
+    original_run_id = project["sourceRunId"]
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="continuation-newer-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
     project = repository.update_project(
         project_id=str(project["projectId"]),
         base_revision=int(project["revision"]),
@@ -1184,11 +1319,12 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     )
     commands = ContinuationCommandService(platform["engine"])
     queue = JobQueueRepository(platform["engine"])
+    algorithms = FakeContinuationAlgorithms()
     worker = ContinuationWorkerService(
         data_root=platform["data_root"],
         engine=platform["engine"],
         jobs=queue,
-        algorithms=FakeContinuationAlgorithms(),
+        algorithms=algorithms,
     )
     commands.create_script_job(
         book_id=str(platform["book"]["id"]),
@@ -1199,6 +1335,11 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     while (step := queue.next_step(fence)) is not None:
         assert worker.handle(fence, step)["__already_published__"]
     assert queue.finish_if_complete(fence) == "completed"
+    assert project["sourceRunId"] == original_run_id
+    assert {
+        "overview:story_summary",
+        "compressed_context:default",
+    }.issubset(algorithms.script_contexts[0]["artifacts"])
 
     commands.create_pages_job(
         book_id=str(platform["book"]["id"]),
@@ -1210,9 +1351,37 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     while (step := queue.next_step(fence)) is not None:
         assert worker.handle(fence, step)["__already_published__"]
     assert queue.finish_if_complete(fence) == "completed"
-    restored = repository.bootstrap(
-        book_id=str(platform["book"]["id"])
-    )["project"]
+    bootstrap_statements: list[str] = []
+
+    def record_bootstrap_statement(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        bootstrap_statements.append(statement.upper())
+
+    event.listen(
+        platform["engine"],
+        "before_cursor_execute",
+        record_bootstrap_statement,
+    )
+    try:
+        restored = repository.bootstrap(
+            book_id=str(platform["book"]["id"])
+        )["project"]
+    finally:
+        event.remove(
+            platform["engine"],
+            "before_cursor_execute",
+            record_bootstrap_statement,
+        )
+    assert sum(
+        "FROM CONTINUATION_IMAGE_VERSIONS" in statement
+        for statement in bootstrap_statements
+    ) == 1
     assert restored["script"]["content"].startswith("第1页")
     assert [page["payload"]["storyText"] for page in restored["pages"]] == [
         "第 1 页剧情",
@@ -1271,6 +1440,11 @@ def test_continuation_character_forms_and_sheet_are_versioned(
         name="战斗服",
         payload={"colors": ["black", "red"]},
     )
+    repository.create_form(
+        character_id=character["characterId"],
+        name="常服",
+        payload={"colors": ["white"]},
+    )
     with platform["engine"].connect() as connection:
         reference_asset_id = str(
             connection.execute(
@@ -1320,9 +1494,40 @@ def test_continuation_character_forms_and_sheet_are_versioned(
     while (step := queue.next_step(fence)) is not None:
         assert worker.handle(fence, step)["__already_published__"]
     assert queue.finish_if_complete(fence) == "completed"
-    generated = repository.list_forms(
-        project_id=project["projectId"]
-    )["items"][0]
+    form_list_statements: list[str] = []
+
+    def record_form_list_statement(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        form_list_statements.append(statement.upper())
+
+    event.listen(
+        platform["engine"],
+        "before_cursor_execute",
+        record_form_list_statement,
+    )
+    try:
+        listed_forms = repository.list_forms(
+            project_id=project["projectId"]
+        )["items"]
+    finally:
+        event.remove(
+            platform["engine"],
+            "before_cursor_execute",
+            record_form_list_statement,
+        )
+    assert sum(
+        "FROM CONTINUATION_FORM_IMAGE_VERSIONS" in statement
+        for statement in form_list_statements
+    ) == 1
+    generated = next(
+        item for item in listed_forms if item["formId"] == form["formId"]
+    )
     assert generated["imageVersions"][0]["thumbnailUrl"]
     adopted = repository.adopt_form_image(
         form_id=form["formId"],
@@ -1647,6 +1852,7 @@ def test_qa_http_response_streams_without_creating_job_history(
     app.register_blueprint(
         create_insight_blueprint(
             engine=platform["engine"],
+            data_root=platform["data_root"],
             qa_algorithms=FakeQAApiAlgorithms(),
         )
     )

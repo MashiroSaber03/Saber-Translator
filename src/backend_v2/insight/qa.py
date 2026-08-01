@@ -21,21 +21,22 @@ import uuid
 from sqlalchemy import Engine, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.derived import (
     InsightDerivedRepository,
     InsightVectorStore,
 )
 from src.backend_v2.insight.repository import (
     InsightConflict,
-    InsightNotFound,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.redaction import (
     redact_sensitive_value,
     secret_values_from_json,
 )
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
     analysis_layer_result_pages,
@@ -46,7 +47,6 @@ from src.backend_v2.storage.schema import (
 )
 
 
-ACTIVE_TRANSIENT_STATUSES = ("pending", "running", "completed")
 LOGGER = logging.getLogger("saber.worker.insight_qa")
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u9fff]{2,}")
 _QUESTION_WORDS = frozenset(
@@ -64,15 +64,6 @@ _QUESTION_WORDS = frozenset(
         "告诉我",
     }
 )
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def _load(value: str | None, default: object) -> object:
@@ -579,12 +570,12 @@ class InsightQAWorkerService:
         repository: TransientRequestRepository | None = None,
         algorithms: QARetrievalAlgorithms | None = None,
     ) -> None:
-        self.data_root = data_root
         self.engine = engine
         self.worker_epoch_id = worker_epoch_id
         self.repository = repository or TransientRequestRepository(engine)
         self.algorithms = algorithms or DefaultQARetrievalAlgorithms()
         self.vector_store = InsightVectorStore(data_root)
+        self.credentials = SettingsRepository(engine)
 
     def run_one(self) -> bool:
         fence = self.repository.claim_next(
@@ -869,22 +860,13 @@ class InsightQAWorkerService:
         self,
         config: Mapping[str, Any],
     ) -> dict[str, Any]:
-        result = json.loads(json.dumps(config))
-        section = _object(result.get("embedding"))
-        credential_id = section.pop("credentialVersionId", None)
-        if credential_id:
-            with self.engine.connect() as connection:
-                secret_json = connection.execute(
-                    select(credential_versions.c.secret_json).where(
-                        credential_versions.c.id == credential_id
-                    )
-                ).scalar_one_or_none()
-            if secret_json is None:
-                raise QAConflict("frozen embedding credential is missing")
-            secret = _object(_load(str(secret_json), {}))
-            section.update(secret)
-        result["embedding"] = section
-        return result
+        try:
+            return self.credentials.resolve_credential_sections(
+                config,
+                ("embedding",),
+            )
+        except LookupError as exc:
+            raise QAConflict("frozen embedding credential is missing") from exc
 
 
 class QAApiAlgorithms(Protocol):
@@ -1016,14 +998,22 @@ class DefaultQAApiAlgorithms:
         class ConnectionClosed(RuntimeError):
             pass
 
-        def on_chunk(chunk: str, _full_text: str) -> None:
+        def publish_chunk(value: object) -> bool:
             while not cancelled.is_set():
                 try:
-                    chunks.put(chunk, timeout=0.1)
-                    return
+                    chunks.put(value, timeout=0.1)
+                    return True
                 except queue.Full:
                     continue
-            raise ConnectionClosed("QA connection closed")
+            return False
+
+        def on_chunk(chunk: str, _full_text: str) -> None:
+            if not publish_chunk(chunk):
+                raise ConnectionClosed("QA connection closed")
+
+        def before_request() -> None:
+            if cancelled.is_set():
+                raise ConnectionClosed("QA connection closed")
 
         request = UnifiedChatRequest(
             provider=provider,
@@ -1045,20 +1035,14 @@ class DefaultQAApiAlgorithms:
             try:
                 OpenAICompatibleChatTransport().complete(
                     request,
-                    before_request=lambda: (
-                        (_ for _ in ()).throw(
-                            ConnectionClosed("QA connection closed")
-                        )
-                        if cancelled.is_set()
-                        else None
-                    ),
+                    before_request=before_request,
                 )
             except ConnectionClosed:
                 pass
             except BaseException as exc:
-                chunks.put(exc)
+                publish_chunk(exc)
             finally:
-                chunks.put(done)
+                publish_chunk(done)
 
         thread = threading.Thread(
             target=run,
@@ -1093,6 +1077,7 @@ class InsightQACommandService:
         self.engine = engine
         self.repository = repository or TransientRequestRepository(engine)
         self.settings = SettingsResolver(engine)
+        self.credentials = SettingsRepository(engine)
         self.derived = InsightDerivedRepository(engine)
 
     def create(
@@ -1175,25 +1160,19 @@ class InsightQACommandService:
     def materialize_api_config(
         self,
         config: Mapping[str, Any],
+        *,
+        include_reranker: bool,
     ) -> dict[str, Any]:
-        result = json.loads(json.dumps(config))
-        for key in ("chat", "vlm", "reranker"):
-            section = _object(result.get(key))
-            credential_id = section.pop("credentialVersionId", None)
-            if credential_id:
-                with self.engine.connect() as connection:
-                    secret_json = connection.execute(
-                        select(credential_versions.c.secret_json).where(
-                            credential_versions.c.id == credential_id
-                        )
-                    ).scalar_one_or_none()
-                if secret_json is None:
-                    raise QAConflict(
-                        f"frozen {key} credential is missing"
-                    )
-                section.update(_object(_load(str(secret_json), {})))
-            result[key] = section
-        return result
+        section_names = list(_chat_credential_sections(config))
+        if include_reranker:
+            section_names.append("reranker")
+        try:
+            return self.credentials.resolve_credential_sections(
+                config,
+                section_names,
+            )
+        except LookupError as exc:
+            raise QAConflict("frozen QA credential is missing") from exc
 
     def _validate_global_context(
         self,
@@ -1267,7 +1246,6 @@ def citations_for(
 
 
 def suggested_questions(
-    question: str,
     candidates: Sequence[Mapping[str, Any]],
 ) -> list[str]:
     pages = [
@@ -1342,6 +1320,10 @@ def _answer_context(candidates: Sequence[Mapping[str, Any]]) -> str:
 
 def _api_key(section: Mapping[str, Any]) -> str:
     return str(section.get("api_key", section.get("apiKey", "")))
+
+
+def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
+    return ("chat",) if _object(config.get("chat")).get("provider") else ("vlm",)
 
 
 def _base_url(section: Mapping[str, Any]) -> str | None:

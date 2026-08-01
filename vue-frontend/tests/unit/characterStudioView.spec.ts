@@ -70,10 +70,10 @@ describe('CharacterStudioView workspace shell', () => {
     studioStore.currentDocument = {
       id: 'doc_alpha',
       bookId: 'book-demo',
-      origin: { type: 'manual', source_character: null, source_pages: [] },
+      origin: { type: 'manual', source_character: null },
       status: { is_favorite: false, frozen_sections: [], last_validated_at: null },
       meta: { title: '阿尔法', tags: [], created_at: '2026-05-15T00:00:00', updated_at: '2026-05-15T00:00:00' },
-      avatar: { mode: 'none', asset_path: null, source_page: null },
+      avatar: { asset_path: null },
       identity: { name: '阿尔法', aliases: [], description: '', personality: '', scenario: '' },
       coreMessages: {
         first_message: '',

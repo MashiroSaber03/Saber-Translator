@@ -29,6 +29,12 @@ FORMAT_DETAILS: dict[str, tuple[str, str]] = {
 @dataclass(frozen=True, slots=True)
 class ImportSafetyLimits:
     max_image_bytes: int = 128 * 1024 * 1024
+    max_container_bytes: int = 1024 * 1024 * 1024
+    max_archive_entries: int = 10_000
+    max_expanded_bytes: int = 4 * 1024 * 1024 * 1024
+    max_compression_ratio: float = 1000.0
+    max_container_pages: int = 10_000
+    max_html_bytes: int = 16 * 1024 * 1024
     stream_chunk_bytes: int = 1024 * 1024
 
 

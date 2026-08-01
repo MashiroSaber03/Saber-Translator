@@ -8,16 +8,17 @@ from typing import Any, Mapping
 from sqlalchemy import Engine, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json
+from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     JobItemSpec,
     JobQueueRepository,
     JobSpec,
 )
-from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.translation.commands import resolve_chapter_pages
 from src.backend_v2.storage.schema import (
-    books,
     assets,
     bubbles,
     chapter_write_locks,
@@ -51,16 +52,6 @@ TEXT_IMPORT_FIELDS = {
 }
 
 
-def _rgb_hex(value: object) -> str:
-    if not isinstance(value, (list, tuple)) or len(value) < 3:
-        return "#000000"
-    red, green, blue = (
-        max(0, min(255, int(part)))
-        for part in value[:3]
-    )
-    return f"#{red:02X}{green:02X}{blue:02X}"
-
-
 class AuxiliaryTranslationCommands:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -77,7 +68,12 @@ class AuxiliaryTranslationCommands:
         retry_mode: str | None = None,
         idempotency_scope: str | None = None,
     ) -> dict[str, object]:
-        chapter, ordered = self._chapter_pages(chapter_id, page_ids)
+        chapter, ordered = resolve_chapter_pages(
+            self.engine,
+            chapter_id=chapter_id,
+            requested_page_ids=page_ids,
+            empty_message="job requires at least one page",
+        )
         resolved = self.settings.resolve_translation(
             chapter_id=chapter_id,
             command={
@@ -88,11 +84,11 @@ class AuxiliaryTranslationCommands:
             },
         )
         config = {
+            "deepLearningConcurrency": int(resolved["deepLearningConcurrency"]),
             "detector": dict(resolved["detector"]),
             "executionMode": "parallel",
             "settingsSnapshot": dict(resolved["settingsSnapshot"]),
         }
-        plugin_snapshots = self._plugin_snapshots()
         return self.jobs.create_batch(
             kind="detect",
             display_name=f"检测 {chapter['book_title']} / {chapter['title']}",
@@ -114,7 +110,6 @@ class AuxiliaryTranslationCommands:
                         "chapter": chapter["title"],
                         "pageCount": len(ordered),
                     },
-                    plugin_snapshots=plugin_snapshots,
                     retry_of_job_id=retry_of_job_id,
                     retry_mode=retry_mode,
                 )
@@ -146,7 +141,12 @@ class AuxiliaryTranslationCommands:
             or not selected.issubset(STYLE_FIELDS)
         ):
             raise ValueError("selectedFields must be a non-empty unique style field list")
-        chapter, ordered = self._chapter_pages(chapter_id, None)
+        chapter, ordered = resolve_chapter_pages(
+            self.engine,
+            chapter_id=chapter_id,
+            requested_page_ids=None,
+            empty_message="job requires at least one page",
+        )
         with self.engine.connect() as connection:
             source = connection.execute(
                 select(
@@ -162,7 +162,10 @@ class AuxiliaryTranslationCommands:
             raise ValueError("source page does not belong to the chapter")
         if source["document_revision"] != source_document_revision:
             raise ValueError("source page document revision changed")
-        defaults = json.loads(source["page_style_defaults_json"] or "{}")
+        defaults = validate_page_style(
+            json.loads(source["page_style_defaults_json"]),
+            partial=False,
+        )
         frozen = {
             field: defaults.get(field)
             for field in selected
@@ -185,7 +188,6 @@ class AuxiliaryTranslationCommands:
             "frozenStyle": frozen,
             "executionMode": "sequential",
         }
-        plugin_snapshots = self._plugin_snapshots()
         return self.jobs.create_batch(
             kind="style_apply",
             display_name=f"应用样式 {chapter['book_title']} / {chapter['title']}",
@@ -217,7 +219,6 @@ class AuxiliaryTranslationCommands:
                         and source["default_font_id"] is not None
                         else None
                     ),
-                    plugin_snapshots=plugin_snapshots,
                 )
             ],
             idempotency_scope=f"style-apply:{chapter_id}",
@@ -230,10 +231,6 @@ class AuxiliaryTranslationCommands:
                 "frozenStyle": frozen,
             },
         )
-
-    def _plugin_snapshots(self) -> dict[str, dict[str, Any]]:
-        with self.engine.connect() as connection:
-            return enabled_plugin_snapshots(connection)
 
     def export_text(self, chapter_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:
@@ -260,15 +257,18 @@ class AuxiliaryTranslationCommands:
                     .order_by(pages.c.ordinal)
                 ).mappings()
             )
+            bubble_rows_by_page: dict[str, list[Mapping[str, Any]]] = {}
+            for row in connection.execute(
+                select(bubbles)
+                .join(pages, pages.c.id == bubbles.c.page_id)
+                .where(pages.c.chapter_id == chapter_id)
+                .order_by(pages.c.ordinal, bubbles.c.ordinal)
+            ).mappings():
+                bubble_rows_by_page.setdefault(str(row["page_id"]), []).append(
+                    row
+                )
             exported_pages: list[dict[str, object]] = []
             for page in page_rows:
-                bubble_rows = list(
-                    connection.execute(
-                        select(bubbles)
-                        .where(bubbles.c.page_id == page["id"])
-                        .order_by(bubbles.c.ordinal)
-                    ).mappings()
-                )
                 exported_pages.append(
                     {
                         "page_id": page["id"],
@@ -276,7 +276,11 @@ class AuxiliaryTranslationCommands:
                         "source_checksum": page["checksum"],
                         "document_revision": page["document_revision"],
                         "bubbles": [
-                            self._text_bubble(row) for row in bubble_rows
+                            self._text_bubble(row)
+                            for row in bubble_rows_by_page.get(
+                                str(page["id"]),
+                                (),
+                            )
                         ],
                     }
                 )
@@ -432,7 +436,12 @@ class AuxiliaryTranslationCommands:
     ) -> dict[str, object]:
         if not confirmed_pages:
             raise ValueError("confirmedPages must contain at least one page")
-        chapter, ordered = self._chapter_pages(chapter_id, None)
+        chapter, ordered = resolve_chapter_pages(
+            self.engine,
+            chapter_id=chapter_id,
+            requested_page_ids=None,
+            empty_message="job requires at least one page",
+        )
         order_index = {page_id: index for index, page_id in enumerate(ordered)}
         normalized: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -584,43 +593,6 @@ class AuxiliaryTranslationCommands:
             "text_direction": payload.get("textDirection", "vertical"),
         }
 
-    def _chapter_pages(
-        self,
-        chapter_id: str,
-        requested: list[str] | None,
-    ):
-        with self.engine.connect() as connection:
-            chapter = connection.execute(
-                select(
-                    chapters.c.id,
-                    chapters.c.book_id,
-                    chapters.c.title,
-                    books.c.title.label("book_title"),
-                )
-                .join(books, books.c.id == chapters.c.book_id)
-                .where(chapters.c.id == chapter_id)
-            ).mappings().one_or_none()
-            ordered = [
-                str(value)
-                for value in connection.execute(
-                    select(pages.c.id)
-                    .where(pages.c.chapter_id == chapter_id)
-                    .order_by(pages.c.ordinal)
-                ).scalars()
-            ]
-        if chapter is None:
-            raise ValueError("chapter not found")
-        if requested is not None:
-            if not requested or len(requested) != len(set(requested)):
-                raise ValueError("pageIds must contain unique page IDs")
-            if not set(requested).issubset(set(ordered)):
-                raise ValueError("pageIds must all belong to the chapter")
-            ordered = [page_id for page_id in ordered if page_id in set(requested)]
-        if not ordered:
-            raise ValueError("job requires at least one page")
-        return chapter, ordered
-
-
 class StyleApplyWorkerService:
     def __init__(self, *, engine: Engine, jobs: JobQueueRepository) -> None:
         self.engine = engine
@@ -659,7 +631,10 @@ class StyleApplyWorkerService:
                 ).scalar_one_or_none()
                 is not None
             )
-        defaults = json.loads(page["page_style_defaults_json"] or "{}")
+        defaults = validate_page_style(
+            json.loads(page["page_style_defaults_json"]),
+            partial=False,
+        )
         new_defaults = dict(defaults)
         default_font_id = page["default_font_id"]
         for field in selected:
@@ -741,7 +716,7 @@ class StyleApplyWorkerService:
                     )
                     automatic = updated.get(automatic_field)
                     if automatic is not None:
-                        updated[field] = _rgb_hex(automatic)
+                        updated[field] = rgb_to_hex(automatic)
                     # Missing automatic backup preserves the target bubble's
                     # current effective value instead of copying a source-page
                     # manual fallback.
@@ -786,12 +761,7 @@ class StyleApplyWorkerService:
             if changed:
                 for bubble_id, payload in updated_payloads:
                     values: dict[str, object] = {
-                        "payload_json": json.dumps(
-                            payload,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
+                        "payload_json": canonical_json(payload),
                         "updated_revision": new_revision,
                     }
                     if "fontFamily" in selected:
@@ -812,12 +782,7 @@ class StyleApplyWorkerService:
                     )
                     .values(
                         default_font_id=default_font_id,
-                        page_style_defaults_json=json.dumps(
-                            new_defaults,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
+                        page_style_defaults_json=canonical_json(new_defaults),
                         document_revision=new_revision,
                         rendered_revision=(
                             new_revision
@@ -963,12 +928,7 @@ class TextImportWorkerService:
                         bubbles.c.page_id == page_id,
                     )
                     .values(
-                        payload_json=json.dumps(
-                            payload,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
+                        payload_json=canonical_json(payload),
                         updated_revision=new_revision,
                     )
                 )

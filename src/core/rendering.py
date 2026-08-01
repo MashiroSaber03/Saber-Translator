@@ -2,11 +2,9 @@ import logging
 import math
 import os
 import re
-import functools
 from pathlib import Path
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from PIL import Image, ImageDraw, ImageFont
-import cv2 # 导入 cv2 备用
 import numpy as np
 
 # FreeType 字体回退支持
@@ -19,7 +17,7 @@ except ImportError:
 
 # 导入常量和路径助手
 from src.shared import constants
-from src.shared.path_helpers import resource_path, get_debug_dir, get_font_path # 导入路径助手函数
+from src.shared.path_helpers import resource_path, get_font_path
 
 # 类型提示（避免循环导入）
 if TYPE_CHECKING:
@@ -39,7 +37,6 @@ _font_file_handles = {}  # 保存文件句柄，防止被垃圾回收
 
 # --- 字体路径 ---
 FONTS_DIR = os.path.join('src', 'backend_v2', 'resources', 'fonts')
-DEFAULT_FONT_PATH = constants.DEFAULT_FONT_RELATIVE_PATH
 
 # --- 回退字体列表 ---
 FALLBACK_FONTS = [
@@ -595,21 +592,6 @@ def process_text_for_vertical(text: str) -> str:
     return text
 
 
-def map_to_vertical_punctuation(text: str) -> str:
-    """
-    将文本中的标点符号映射为竖排标点符号
-    
-    这是对外公开的主要接口函数，内部调用 process_text_for_vertical。
-    保持函数名不变以确保向后兼容。
-    
-    Args:
-        text: 原始文本
-        
-    Returns:
-        转换后的文本，标点符号已替换为竖排版本
-    """
-    return process_text_for_vertical(text)
-
 def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, font_size=constants.DEFAULT_FONT_SIZE):
     """
     加载字体文件，带缓存。
@@ -889,7 +871,7 @@ def render_horizontal_block(content: str, font, font_size: int,
     return allocated_height
 
 
-def render_ellipsis_block(content: str, font, font_size: int,
+def render_ellipsis_block(content: str, font,
                           fill, stroke_enabled: bool, stroke_color,
                           stroke_width, canvas_image: Optional[Image.Image],
                           current_x_col: int, current_y: float,
@@ -1033,7 +1015,6 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                  stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
                                  stroke_color=constants.DEFAULT_STROKE_COLOR,
                                  stroke_width=constants.DEFAULT_STROKE_WIDTH,
-                                 bubble_width=None,
                                  font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH,
                                  line_spacing=constants.DEFAULT_LINE_SPACING,
                                  text_align=constants.DEFAULT_TEXT_ALIGN):
@@ -1052,7 +1033,6 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         x: 气泡右边界（第一列贴该边界）
         y: 气泡顶边界（列内字符起点的参考原点）
         max_height: 气泡高度，限制每列最多能放多少字符
-        bubble_width: 保留用于调用方兼容，Word 逻辑下第一列固定贴气泡右边，不再整体居中
         line_spacing: 列间距倍数（影响 column_width_approx）
         text_align: 列内字符垂直对齐方式 'start'=顶 | 'center'=中 | 'end'=底
     """
@@ -1060,7 +1040,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         return
     
     # 预处理文本（省略号等）
-    text = map_to_vertical_punctuation(text)
+    text = process_text_for_vertical(text)
     
     # 获取绘制的 Image 对象（用于单字符旋转时创建临时图像）
     # draw 对象是 ImageDraw.Draw，其 _image 属性指向原始 Image
@@ -1170,8 +1150,6 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
 
     # Word 逻辑：水平方向始终从气泡右边开始（第一列贴气泡右边界，不再整体居中）
     # 传入的 x 是气泡右边界，current_x_col 表示当前列的右边界
-    # bubble_width 保留用于调用方兼容，当前逻辑不再需要
-    _ = bubble_width
     current_x_base = x
 
     # 垂直方向每列独立对齐（在主循环内按 line_heights[line_idx] 计算）
@@ -1237,7 +1215,6 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                     block_height = render_horizontal_block(
                         content=content,
                         font=font,
-                        font_size=font_size,
                         fill=fill,
                         stroke_enabled=stroke_enabled,
                         stroke_color=stroke_color,
@@ -1256,7 +1233,6 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                     block_height = render_ellipsis_block(
                         content=content,
                         font=font,
-                        font_size=font_size,
                         fill=fill,
                         stroke_enabled=stroke_enabled,
                         stroke_color=stroke_color,
@@ -1278,7 +1254,6 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         block_height = render_ellipsis_block(
                             content=converted_char,
                             font=font,
-                            font_size=font_size,
                             fill=fill,
                             stroke_enabled=stroke_enabled,
                             stroke_color=stroke_color,
@@ -1455,7 +1430,6 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   stroke_color=constants.DEFAULT_STROKE_COLOR,
                                   stroke_width=constants.DEFAULT_STROKE_WIDTH,
                                   bubble_width=None,
-                                  bubble_height=None,
                                   font_family_path=constants.DEFAULT_FONT_RELATIVE_PATH,
                                   line_spacing=constants.DEFAULT_LINE_SPACING,
                                   text_align=constants.DEFAULT_TEXT_ALIGN):
@@ -1467,7 +1441,6 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     
     Args:
         bubble_width: 气泡宽度，用于按 text_align 计算每行水平对齐偏移（start=左/center=中/end=右）
-        bubble_height: 保留用于调用方兼容，当前 Word 逻辑下文字始终从气泡顶部开始，不再需要垂直居中
     """
     if not text:
         return
@@ -1519,8 +1492,6 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
     line_widths = [sum(widths) for widths in line_char_widths]
 
     # Word 逻辑：垂直方向始终从气泡顶部开始（不居中，text_align 只管水平方向）
-    # bubble_height 参数保留用于调用方兼容，当前逻辑不再需要
-    _ = bubble_height
     current_y = y
 
     # 预加载NotoSans字体，用于特殊字符
@@ -1592,444 +1563,8 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
             current_x += char_width
         current_y += line_height
 
-def render_all_bubbles(draw_image, all_texts, bubble_coords, bubble_states):
-    """
-    在图像上渲染所有气泡的文本，使用各自的样式。
-    
-    旋转优化：使用外接圆方案，每个气泡只创建一个临时图像进行旋转，
-    而不是为每个字符创建临时图像，大幅提升旋转渲染性能。
 
-    Args:
-        draw_image (PIL.Image.Image): 要绘制文本的 PIL 图像对象 (会被直接修改)。
-        all_texts (list): 所有气泡的文本列表。
-        bubble_coords (list): 气泡坐标列表 [(x1, y1, x2, y2), ...]。
-        bubble_states (dict): 包含每个气泡样式的字典，键为气泡索引(字符串),
-                              值为样式字典 {'fontSize':, 'fontFamily':,
-                              'textDirection':, 'position_offset':, 'textColor':, 'rotationAngle':}。
-    """
-    if not all_texts or not bubble_coords or len(all_texts) != len(bubble_coords):
-        logger.warning(f"文本({len(all_texts) if all_texts else 0})、坐标({len(bubble_coords) if bubble_coords else 0})数量不匹配，无法渲染。")
-        return
 
-    draw = ImageDraw.Draw(draw_image)
-    logger.info(f"开始渲染 {len(bubble_coords)} 个气泡的文本...")
-
-    for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-        # 确保索引有效
-        if i >= len(all_texts):
-            logger.warning(f"索引 {i} 超出文本列表范围，跳过。")
-            continue
-
-        style = bubble_states.get(str(i), {}) # 获取当前气泡样式
-        text = all_texts[i] if all_texts[i] is not None else "" # 处理 None 值
-
-        # --- 获取样式参数 ---
-        font_size_setting = style.get('fontSize', constants.DEFAULT_FONT_SIZE)
-        font_family_rel = style.get('fontFamily', constants.DEFAULT_FONT_RELATIVE_PATH)
-        text_direction = style.get('text_direction', constants.DEFAULT_TEXT_DIRECTION)
-        position_offset = style.get('position_offset', {'x': 0, 'y': 0})
-        text_color = style.get('text_color', constants.DEFAULT_TEXT_COLOR)
-        rotation_angle = style.get('rotation_angle', constants.DEFAULT_ROTATION_ANGLE)
-
-        stroke_enabled = style.get('stroke_enabled', constants.DEFAULT_STROKE_ENABLED)
-        stroke_color = style.get('stroke_color', constants.DEFAULT_STROKE_COLOR)
-        stroke_width = style.get('stroke_width', constants.DEFAULT_STROKE_WIDTH)
-
-        line_spacing = style.get('line_spacing', style.get('lineSpacing', constants.DEFAULT_LINE_SPACING))
-        text_align = style.get('text_align', style.get('textAlign', constants.DEFAULT_TEXT_ALIGN))
-
-        # --- 处理字体大小 ---
-        bubble_width = x2 - x1
-        bubble_height = y2 - y1
-        
-        # 直接使用保存的字号
-        if isinstance(font_size_setting, (int, float)) and font_size_setting > 0:
-            current_font_size = int(font_size_setting)
-        elif isinstance(font_size_setting, str) and font_size_setting.isdigit():
-            current_font_size = int(font_size_setting)
-        else:
-            current_font_size = constants.DEFAULT_FONT_SIZE
-
-        # --- 加载字体 ---
-        font = get_font(font_family_rel, current_font_size)
-        if font is None:
-            logger.error(f"气泡 {i}: 无法加载字体 {font_family_rel} (大小: {current_font_size})，跳过渲染。")
-            continue
-
-        # --- 计算绘制参数 ---
-        offset_x = position_offset.get('x', 0)
-        offset_y = position_offset.get('y', 0)
-        max_text_width = max(10, bubble_width)
-        max_text_height = max(10, bubble_height)
-
-        # --- 调用绘制函数 ---
-        try:
-            if rotation_angle != 0:
-                # ===== 旋转渲染：使用外接圆方案 =====
-                # 计算外接圆直径（确保旋转后内容不被裁剪）
-                diagonal = int(math.ceil(math.sqrt(bubble_width**2 + bubble_height**2)))
-                # 增加一点边距，确保描边等不会被裁剪
-                padding = max(10, int(stroke_width * 2) if stroke_enabled else 0)
-                temp_size = diagonal + padding * 2
-                
-                # 创建外接圆大小的透明临时图像
-                temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
-                temp_draw = ImageDraw.Draw(temp_img)
-                
-                # 计算气泡在临时图像中的居中偏移
-                temp_offset_x = (temp_size - bubble_width) // 2
-                temp_offset_y = (temp_size - bubble_height) // 2
-                
-                # 在临时图像上绘制文字（相对于临时图像的坐标）
-                if text_direction == 'vertical':
-                    # 竖排时，x是右边界
-                    temp_vertical_x = temp_offset_x + bubble_width
-                    draw_multiline_text_vertical(
-                        temp_draw, text, font, 
-                        temp_vertical_x, temp_offset_y, max_text_height,
-                        fill=text_color,
-                        stroke_enabled=stroke_enabled,
-                        stroke_color=stroke_color,
-                        stroke_width=stroke_width,
-                        bubble_width=max_text_width,
-                        font_family_path=font_family_rel,
-                        line_spacing=line_spacing,
-                        text_align=text_align
-                    )
-                elif text_direction == 'horizontal':
-                    draw_multiline_text_horizontal(
-                        temp_draw, text, font,
-                        temp_offset_x, temp_offset_y, max_text_width,
-                        fill=text_color,
-                        stroke_enabled=stroke_enabled,
-                        stroke_color=stroke_color,
-                        stroke_width=stroke_width,
-                        bubble_width=max_text_width,
-                        bubble_height=max_text_height,
-                        font_family_path=font_family_rel,
-                        line_spacing=line_spacing,
-                        text_align=text_align
-                    )
-                else:
-                    logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
-                    continue
-                
-                # 以临时图像中心为旋转中心进行旋转
-                # 注意：PIL的rotate是逆时针旋转，检测角度是顺时针，所以取反
-                temp_center = temp_size // 2
-                rotated_img = temp_img.rotate(
-                    -rotation_angle,  # 取反以匹配检测角度方向
-                    resample=Image.Resampling.BICUBIC,
-                    center=(temp_center, temp_center),
-                    expand=False
-                )
-                
-                # 计算粘贴位置：气泡中心 - 临时图像半边长 + 位置偏移
-                bubble_center_x = (x1 + x2) // 2
-                bubble_center_y = (y1 + y2) // 2
-                paste_x = bubble_center_x - temp_center + offset_x
-                paste_y = bubble_center_y - temp_center + offset_y
-                
-                # 粘贴到原图（使用 alpha 通道作为蒙版）
-                draw_image.paste(rotated_img, (paste_x, paste_y), rotated_img)
-                
-            else:
-                # ===== 无旋转：直接在原图上绘制 =====
-                draw_x = x1 + offset_x
-                draw_y = y1 + offset_y
-                vertical_draw_x = x2 + offset_x
-                
-                if text_direction == 'vertical':
-                    draw_multiline_text_vertical(
-                        draw, text, font, vertical_draw_x, draw_y, max_text_height,
-                        fill=text_color,
-                        stroke_enabled=stroke_enabled,
-                        stroke_color=stroke_color,
-                        stroke_width=stroke_width,
-                        bubble_width=max_text_width,
-                        font_family_path=font_family_rel,
-                        line_spacing=line_spacing,
-                        text_align=text_align
-                    )
-                elif text_direction == 'horizontal':
-                    draw_multiline_text_horizontal(
-                        draw, text, font, draw_x, draw_y, max_text_width,
-                        fill=text_color,
-                        stroke_enabled=stroke_enabled,
-                        stroke_color=stroke_color,
-                        stroke_width=stroke_width,
-                        bubble_width=max_text_width,
-                        bubble_height=max_text_height,
-                        font_family_path=font_family_rel,
-                        line_spacing=line_spacing,
-                        text_align=text_align
-                    )
-                else:
-                    logger.warning(f"气泡 {i}: 未知的文本方向 '{text_direction}'，跳过渲染。")
-                    
-        except Exception as render_e:
-             logger.error(f"渲染气泡 {i} 时出错: {render_e}", exc_info=True)
-
-    logger.info("所有气泡文本渲染完成。")
-
-def render_single_bubble(
-    image,
-    bubble_index,
-    all_texts,
-    bubble_coords,
-    fontSize=constants.DEFAULT_FONT_SIZE,
-    fontFamily=constants.DEFAULT_FONT_RELATIVE_PATH,
-    text_direction=constants.DEFAULT_TEXT_DIRECTION,
-    position_offset={'x': 0, 'y': 0},
-    use_inpainting=False,
-    is_single_bubble_style=False,
-    text_color=constants.DEFAULT_TEXT_COLOR,
-    rotation_angle=constants.DEFAULT_ROTATION_ANGLE,
-    use_lama=False,
-    fill_color=constants.DEFAULT_FILL_COLOR,
-    stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
-    stroke_color=constants.DEFAULT_STROKE_COLOR,
-    stroke_width=constants.DEFAULT_STROKE_WIDTH,
-    line_spacing=constants.DEFAULT_LINE_SPACING,
-    text_align=constants.DEFAULT_TEXT_ALIGN
-    ):
-    """
-    使用新的文本和样式重新渲染单个气泡（通过更新样式并渲染所有气泡实现）。
-    """
-    logger.info(f"开始渲染单气泡 {bubble_index}，字体: {fontFamily}, 大小: {fontSize}, 方向: {text_direction}")
-
-    if bubble_index < 0 or bubble_index >= len(bubble_coords):
-        logger.error(f"无效的气泡索引 {bubble_index}")
-        return image # 返回原始图像
-
-    # --- 获取基础图像 (优先使用干净背景) ---
-    img_pil = None
-    clean_image_base = None
-    if hasattr(image, '_clean_image') and isinstance(getattr(image, '_clean_image'), Image.Image):
-        clean_image_base = getattr(image, '_clean_image').copy()
-        img_pil = clean_image_base
-    elif hasattr(image, '_clean_background') and isinstance(getattr(image, '_clean_background'), Image.Image):
-        clean_image_base = getattr(image, '_clean_background').copy()
-        img_pil = clean_image_base
-
-    if img_pil is None:
-        logger.warning(f"单气泡 {bubble_index} 渲染时未找到干净背景，将执行修复/填充...")
-        target_coords = [bubble_coords[bubble_index]]
-        
-        # 导入修复相关模块
-        from src.core.inpainting import inpaint_bubbles
-        from src.interfaces.lama_interface import is_lama_available
-        # from src.interfaces.migan_interface import is_migan_available
-        
-        inpainting_method = constants.DEFAULT_INPAINT_METHOD
-        if use_lama and is_lama_available(): inpainting_method = 'lama'
-        # elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
-        img_pil, generated_clean_bg = inpaint_bubbles(
-            image, target_coords, method=inpainting_method, fill_color=fill_color
-        )
-        if generated_clean_bg: clean_image_base = generated_clean_bg.copy()
-
-    # --- 获取或创建样式字典 ---
-    bubble_states_to_use = {}
-    if hasattr(image, '_bubble_states') and isinstance(getattr(image, '_bubble_states'), dict):
-         bubble_states_to_use = getattr(image, '_bubble_states').copy()
-         bubble_states_to_use = {str(k): v for k, v in bubble_states_to_use.items()}
-         logger.debug(f"单气泡渲染：从图像加载了 {len(bubble_states_to_use)} 个样式。")
-    else:
-         logger.warning("单气泡渲染：未找到保存的气泡样式，将创建默认样式。")
-         # 如果图像没有样式，为所有气泡创建基于全局默认的样式
-         global_font_size_setting = constants.DEFAULT_FONT_SIZE
-         global_font_family = constants.DEFAULT_FONT_RELATIVE_PATH
-         global_text_dir = constants.DEFAULT_TEXT_DIRECTION
-         global_text_color = constants.DEFAULT_TEXT_COLOR
-         global_rot_angle = constants.DEFAULT_ROTATION_ANGLE
-    
-         for i in range(len(bubble_coords)):
-             bubble_states_to_use[str(i)] = {
-                 'fontSize': global_font_size_setting,
-                 'fontFamily': global_font_family, 'text_direction': global_text_dir,
-                 'position_offset': {'x': 0, 'y': 0}, 'text_color': global_text_color,
-                 'rotation_angle': global_rot_angle,
-                 'stroke_enabled': stroke_enabled,
-                 'stroke_color': stroke_color,
-                 'stroke_width': stroke_width,
-                 'line_spacing': line_spacing,
-                 'text_align': text_align
-             }
-
-    # --- 更新目标气泡的样式 ---
-    target_style = bubble_states_to_use.get(str(bubble_index), {}).copy()
-    target_font_rel = fontFamily
-    
-    # 直接使用传入的字号（已经在首次翻译时计算好了）
-    actual_font_size = fontSize if isinstance(fontSize, int) and fontSize > 0 else constants.DEFAULT_FONT_SIZE
-    
-    target_style.update({
-        'fontSize': actual_font_size,
-        'fontFamily': target_font_rel,
-        'text_direction': text_direction,
-        'position_offset': position_offset,
-        'text_color': text_color,
-        'rotation_angle': rotation_angle,
-        'stroke_enabled': stroke_enabled,
-        'stroke_color': stroke_color,
-        'stroke_width': stroke_width,
-        'line_spacing': line_spacing,
-        'text_align': text_align
-    })
-
-    bubble_states_to_use[str(bubble_index)] = target_style
-    logger.debug(f"单气泡渲染：更新气泡 {bubble_index} 的样式为: {target_style}")
-
-    # --- 更新目标气泡的文本 ---
-    # 确保 all_texts 长度足够
-    if len(all_texts) <= bubble_index:
-         all_texts.extend([""] * (bubble_index - len(all_texts) + 1))
-    # 更新文本 (假设 all_texts 是从前端获取的最新列表)
-    # logger.debug(f"单气泡渲染：使用文本列表: {all_texts}")
-
-    # --- 调用核心渲染函数渲染所有气泡 ---
-    render_all_bubbles(
-        img_pil,
-        all_texts, # 传递包含所有最新文本的列表
-        bubble_coords,
-        bubble_states_to_use # 传递更新后的样式字典
-    )
-
-    # --- 准备返回值 ---
-    img_with_bubbles_pil = img_pil
-    # 附加必要的属性
-    if hasattr(image, '_lama_inpainted'): setattr(img_with_bubbles_pil, '_lama_inpainted', getattr(image, '_lama_inpainted', False))
-    if clean_image_base:
-         setattr(img_with_bubbles_pil, '_clean_image', clean_image_base)
-         setattr(img_with_bubbles_pil, '_clean_background', clean_image_base)
-    # 附加更新后的样式
-    setattr(img_with_bubbles_pil, '_bubble_states', bubble_states_to_use)
-
-    return img_with_bubbles_pil
-
-def re_render_text_in_bubbles(
-    image,
-    all_texts,
-    bubble_coords,
-    fontSize=constants.DEFAULT_FONT_SIZE,
-    fontFamily=constants.DEFAULT_FONT_RELATIVE_PATH,
-    text_direction=constants.DEFAULT_TEXT_DIRECTION,
-    use_inpainting=False,
-    use_lama=False,
-    fill_color=constants.DEFAULT_FILL_COLOR,
-    text_color=constants.DEFAULT_TEXT_COLOR,
-    rotation_angle=constants.DEFAULT_ROTATION_ANGLE,
-    stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
-    stroke_color=constants.DEFAULT_STROKE_COLOR,
-    stroke_width=constants.DEFAULT_STROKE_WIDTH,
-    line_spacing=constants.DEFAULT_LINE_SPACING,
-    text_align=constants.DEFAULT_TEXT_ALIGN
-    ):
-    """
-    使用新的文本和样式重新渲染气泡中的文字。
-    """
-    logger.info(f"开始重新渲染，字体: {fontFamily}, 大小: {fontSize}, 方向: {text_direction}")
-
-    if not all_texts or not bubble_coords:
-        logger.warning("缺少文本或坐标，无法重新渲染。")
-        return image # 返回原始图像
-
-    # --- 获取基础图像 (优先使用干净背景) ---
-    img_pil = None
-    clean_image_base = None
-    if hasattr(image, '_clean_image') and isinstance(getattr(image, '_clean_image'), Image.Image):
-        clean_image_base = getattr(image, '_clean_image').copy()
-        img_pil = clean_image_base
-        logger.info("重渲染：使用 _clean_image 作为基础。")
-    elif hasattr(image, '_clean_background') and isinstance(getattr(image, '_clean_background'), Image.Image):
-        clean_image_base = getattr(image, '_clean_background').copy()
-        img_pil = clean_image_base
-        logger.info("重渲染：使用 _clean_background 作为基础。")
-
-    # 如果没有干净背景，则需要重新执行修复/填充
-    if img_pil is None:
-        logger.warning("重渲染时未找到干净背景，将重新执行修复/填充...")
-        
-        # 导入修复相关模块
-        from src.core.inpainting import inpaint_bubbles
-        from src.interfaces.lama_interface import is_lama_available
-        # from src.interfaces.migan_interface import is_migan_available
-        
-        inpainting_method = constants.DEFAULT_INPAINT_METHOD
-        if use_lama and is_lama_available(): inpainting_method = 'lama'
-        # elif use_inpainting and is_migan_available(): inpainting_method = 'migan'
-
-        logger.info(f"重渲染时选择修复/填充方法: {inpainting_method}")
-        img_pil, generated_clean_bg = inpaint_bubbles(
-            image, bubble_coords, method=inpainting_method, fill_color=fill_color
-        )
-        if generated_clean_bg: clean_image_base = generated_clean_bg.copy()
-
-    # --- 准备样式字典 ---
-    bubble_states_to_use = {}
-    
-    # 检查图像是否已经有预定义的气泡样式字典
-    if hasattr(image, '_bubble_states') and isinstance(getattr(image, '_bubble_states'), dict):
-        # 优先使用预定义样式
-        bubble_states_to_use = getattr(image, '_bubble_states').copy() # 深拷贝
-        bubble_states_to_use = {str(k): v for k, v in bubble_states_to_use.items()}
-        logger.info(f"使用图像预定义的气泡样式，共 {len(bubble_states_to_use)} 个")
-        for i_str in bubble_states_to_use:
-            if 'stroke_enabled' not in bubble_states_to_use[i_str]:
-                bubble_states_to_use[i_str]['stroke_enabled'] = stroke_enabled
-            if 'stroke_color' not in bubble_states_to_use[i_str]:
-                bubble_states_to_use[i_str]['stroke_color'] = stroke_color
-            if 'stroke_width' not in bubble_states_to_use[i_str]:
-                bubble_states_to_use[i_str]['stroke_width'] = stroke_width
-            if 'line_spacing' not in bubble_states_to_use[i_str]:
-                bubble_states_to_use[i_str]['line_spacing'] = line_spacing
-            if 'text_align' not in bubble_states_to_use[i_str]:
-                bubble_states_to_use[i_str]['text_align'] = text_align
-    else:
-        # 没有预定义样式，使用全局设置创建新样式
-        logger.info("没有找到预定义气泡样式，使用全局设置创建样式")
-        
-        font_family_rel = fontFamily
-        # 直接使用传入的字号
-        actual_font_size = fontSize if isinstance(fontSize, int) and fontSize > 0 else constants.DEFAULT_FONT_SIZE
-        
-        logger.info(f"使用传入的全局颜色设置: {text_color}, 旋转角度: {rotation_angle}")
-        
-        # 为所有气泡创建新的样式字典，使用全局设置
-        for i in range(len(bubble_coords)):
-            bubble_states_to_use[str(i)] = {
-                'fontSize': actual_font_size,
-                'fontFamily': font_family_rel,
-                'text_direction': text_direction,
-                'position_offset': {'x': 0, 'y': 0},
-                'text_color': text_color,
-                'rotation_angle': rotation_angle,
-                'stroke_enabled': stroke_enabled,
-                'stroke_color': stroke_color,
-                'stroke_width': stroke_width,
-                'line_spacing': line_spacing,
-                'text_align': text_align
-            }
-
-    # --- 调用核心渲染函数 ---
-    render_all_bubbles(
-        img_pil, # 在获取的基础图像上绘制
-        all_texts,
-        bubble_coords,
-        bubble_states_to_use
-    )
-
-    # --- 准备返回值 ---
-    img_with_bubbles_pil = img_pil
-    # 附加必要的属性
-    if hasattr(image, '_lama_inpainted'): setattr(img_with_bubbles_pil, '_lama_inpainted', getattr(image, '_lama_inpainted', False))
-    if clean_image_base:
-         setattr(img_with_bubbles_pil, '_clean_image', clean_image_base)
-         setattr(img_with_bubbles_pil, '_clean_background', clean_image_base)
-    setattr(img_with_bubbles_pil, '_bubble_states', bubble_states_to_use) # 附加更新后的样式
-
-    return img_with_bubbles_pil
 
 
 # ============================================================
@@ -2110,7 +1645,6 @@ def render_bubbles_unified(
                         stroke_enabled=state.stroke_enabled,
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
-                        bubble_width=max_text_width,
                         font_family_path=state.font_family,
                         line_spacing=state.line_spacing,
                         text_align=state.text_align
@@ -2124,7 +1658,6 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
-                        bubble_height=max_text_height,
                         font_family_path=state.font_family,
                         line_spacing=state.line_spacing,
                         text_align=state.text_align
@@ -2158,7 +1691,6 @@ def render_bubbles_unified(
                         stroke_enabled=state.stroke_enabled,
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
-                        bubble_width=max_text_width,
                         font_family_path=state.font_family,
                         line_spacing=state.line_spacing,
                         text_align=state.text_align
@@ -2171,7 +1703,6 @@ def render_bubbles_unified(
                         stroke_color=state.stroke_color,
                         stroke_width=state.stroke_width,
                         bubble_width=max_text_width,
-                        bubble_height=max_text_height,
                         font_family_path=state.font_family,
                         line_spacing=state.line_spacing,
                         text_align=state.text_align
@@ -2254,124 +1785,3 @@ def render_single_bubble_unified(
     setattr(img_to_render, '_bubble_states', bubble_states)
     
     return img_to_render
-
-
-def re_render_with_states(
-    image: Image.Image,
-    bubble_states: List["BubbleState"],
-    use_lama: bool = False,
-    fill_color: str = constants.DEFAULT_FILL_COLOR,
-    auto_font_size: bool = False
-) -> Image.Image:
-    """
-    使用 BubbleState 列表重新渲染整个图像。
-    
-    这是给 re_render_image API 使用的统一函数。
-    
-    Args:
-        image: 当前图像
-        bubble_states: BubbleState 列表
-        use_lama: 是否使用 LAMA 修复（如果没有干净背景）
-        fill_color: 默认填充色（如果没有干净背景）
-        auto_font_size: 是否为每个气泡自动计算字号
-        
-    Returns:
-        渲染后的图像
-    """
-    if not bubble_states:
-        logger.warning("bubble_states 为空，返回原图像。")
-        return image
-    
-    # 获取干净背景
-    img_to_render = None
-    clean_image_base = None
-    
-    if hasattr(image, '_clean_image') and isinstance(getattr(image, '_clean_image'), Image.Image):
-        clean_image_base = getattr(image, '_clean_image').copy()
-        img_to_render = clean_image_base
-        logger.info("re_render_with_states: 使用 _clean_image 作为基础。")
-    elif hasattr(image, '_clean_background') and isinstance(getattr(image, '_clean_background'), Image.Image):
-        clean_image_base = getattr(image, '_clean_background').copy()
-        img_to_render = clean_image_base
-        logger.info("re_render_with_states: 使用 _clean_background 作为基础。")
-    
-    if img_to_render is None:
-        logger.warning("re_render_with_states: 未找到干净背景，将重新执行修复...")
-        from src.core.inpainting import inpaint_bubbles
-        from src.interfaces.lama_interface import is_lama_available
-        
-        bubble_coords = [list(s.coords) for s in bubble_states]
-        inpainting_method = constants.DEFAULT_INPAINT_METHOD
-        if use_lama and is_lama_available():
-            inpainting_method = 'lama'
-        
-        img_to_render, generated_clean_bg = inpaint_bubbles(
-            image, bubble_coords, method=inpainting_method, fill_color=fill_color
-        )
-        if generated_clean_bg:
-            clean_image_base = generated_clean_bg.copy()
-    
-    # 如果启用自动字号，为每个气泡计算字号
-    if auto_font_size:
-        logger.info("re_render_with_states: 启用自动字号计算...")
-        for i, state in enumerate(bubble_states):
-            if state.translated_text:
-                x1, y1, x2, y2 = state.coords
-                bubble_width = x2 - x1
-                bubble_height = y2 - y1
-                calculated_size = calculate_auto_font_size(
-                    state.translated_text, bubble_width, bubble_height,
-                    state.text_direction, state.font_family
-                )
-                state.font_size = calculated_size
-                logger.debug(f"气泡 {i}: 自动计算字号为 {calculated_size}px")
-    
-    # 渲染所有气泡
-    render_bubbles_unified(img_to_render, bubble_states)
-    
-    # 附加属性
-    if hasattr(image, '_lama_inpainted'):
-        setattr(img_to_render, '_lama_inpainted', getattr(image, '_lama_inpainted', False))
-    if clean_image_base:
-        setattr(img_to_render, '_clean_image', clean_image_base)
-        setattr(img_to_render, '_clean_background', clean_image_base)
-    
-    # 附加 BubbleState 列表
-    setattr(img_to_render, '_bubble_states', bubble_states)
-    
-    return img_to_render
-
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    print("--- 测试渲染核心逻辑 (字体加载和自动字号) ---")
-
-    # 测试字体加载
-    print("\n测试字体加载:")
-    font_default = get_font()
-    print(f"默认字体: {type(font_default)}")
-    font_custom = get_font(constants.DEFAULT_FONT_RELATIVE_PATH, 30) # 使用常量
-    print(f"宋体 30px: {type(font_custom)}")
-    font_cached = get_font(constants.DEFAULT_FONT_RELATIVE_PATH, 30)
-    print(f"宋体 30px (缓存): {type(font_cached)}")
-    font_fail = get_font("non_existent.ttf", 20)
-    print(f"无效字体: {type(font_fail)}")
-
-    # 测试自动字号
-    print("\n测试自动字号:")
-    text_short = "短文本"
-    text_long_v = "这是一段非常非常非常非常非常非常非常非常非常非常非常非常长的竖排测试文本内容"
-    text_long_h = "This is a very very very very very very very very very very very very long horizontal test text content"
-    bubble_w, bubble_h = 100, 200
-
-    size_short = calculate_auto_font_size(text_short, bubble_w, bubble_h, 'vertical')
-    print(f"短文本竖排 ({bubble_w}x{bubble_h}): {size_short}px")
-
-    size_long_v = calculate_auto_font_size(text_long_v, bubble_w, bubble_h, 'vertical')
-    print(f"长文本竖排 ({bubble_w}x{bubble_h}): {size_long_v}px")
-
-    size_long_h = calculate_auto_font_size(text_long_h, bubble_w, bubble_h, 'horizontal')
-    print(f"长文本横排 ({bubble_w}x{bubble_h}): {size_long_h}px")
-
-    size_long_h_wide = calculate_auto_font_size(text_long_h, 300, 100, 'horizontal')
-    print(f"长文本横排宽气泡 (300x100): {size_long_h_wide}px")

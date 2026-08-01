@@ -1,10 +1,8 @@
 import cv2
-import copy
 import torch
 import torch.nn as nn
 
 from .utils.yolov5_utils import fuse_conv_and_bn
-from .utils.weight_init import init_weights
 from .yolov5.yolo import load_yolov5_ckpt
 from .yolov5.common import C3, Conv
 
@@ -71,8 +69,6 @@ class UnetHead(nn.Module):
             else:
                 return mask, [f80, f40, u40]
 
-    def init_weight(self, init_func):
-        self.apply(init_func)
 
 class DBHead(nn.Module):
     def __init__(self, in_channels, k = 50, shrink_with_sigmoid=True, act=True):
@@ -118,8 +114,6 @@ class DBHead(nn.Module):
             else:
                 return torch.cat((shrink_maps, threshold_maps), dim=1)
 
-    def init_weight(self, init_func):
-        self.apply(init_func)
 
     def _init_thresh(self, inner_channels, serial=False, smooth=False, bias=False):
         in_channels = inner_channels

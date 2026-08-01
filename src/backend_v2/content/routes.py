@@ -8,6 +8,11 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _require_idempotency_key,
+)
 from src.backend_v2.content.image_import import (
     ImageImportService,
     UnsupportedImage,
@@ -114,15 +119,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             raise ValueError("tagIds must be a string array")
         cover = request.files.get("cover")
         cover_asset = importer.publish_cover(cover.stream) if cover else None
-        try:
-            created = repository.create_book(
-                title=str(body.get("title", "")),
-                tag_ids=tag_ids,
-                cover_asset_id=cover_asset.id if cover_asset else None,
-            )
-        except Exception:
-            storage.collect_garbage()
-            raise
+        created = repository.create_book(
+            title=str(body.get("title", "")),
+            tag_ids=tag_ids,
+            cover_asset_id=cover_asset.id if cover_asset else None,
+        )
         return jsonify(created), 201
 
     @blueprint.get("/books/<book_id>")
@@ -142,25 +143,19 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         cover = request.files.get("cover")
         cover_asset = importer.publish_cover(cover.stream) if cover else None
         clear_cover = _as_bool(body.get("clearCover", False))
-        try:
-            result = repository.update_book(
-                book_id=book_id,
-                title=str(body.get("title", "")),
-                tag_ids=tag_ids,
-                cover_asset_id=cover_asset.id if cover_asset else None,
-                replace_cover=bool(cover_asset) or clear_cover,
-            )
-        except Exception:
-            storage.collect_garbage()
-            raise
-        storage.collect_garbage()
+        result = repository.update_book(
+            book_id=book_id,
+            title=str(body.get("title", "")),
+            tag_ids=tag_ids,
+            cover_asset_id=cover_asset.id if cover_asset else None,
+            replace_cover=bool(cover_asset) or clear_cover,
+        )
         return jsonify(result)
 
     @blueprint.delete("/books/<book_id>")
     def delete_book(book_id: str) -> Response:
         _require_idempotency_key()
         repository.delete_book(book_id)
-        storage.collect_garbage()
         return jsonify({"deleted": True})
 
     @blueprint.post("/books/batch-delete")
@@ -173,7 +168,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         ):
             raise ValueError("bookIds must be a string array")
         result = repository.batch_delete_books(book_ids)
-        storage.collect_garbage()
         return jsonify(result)
 
     @blueprint.post("/books/batch-tags")
@@ -225,7 +219,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     def delete_chapter(chapter_id: str) -> Response:
         _require_idempotency_key()
         repository.delete_chapter(chapter_id)
-        storage.collect_garbage()
         return jsonify({"deleted": True})
 
     @blueprint.put("/books/<book_id>/chapters/order")
@@ -262,7 +255,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     def clear_chapter_pages(chapter_id: str) -> Response:
         _require_idempotency_key()
         deleted_count = repository.clear_chapter_pages(chapter_id)
-        storage.collect_garbage()
         return jsonify({"deletedCount": deleted_count})
 
     @blueprint.get("/pages/<page_id>")
@@ -289,7 +281,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     def delete_page(page_id: str) -> Response:
         _require_idempotency_key()
         repository.delete_page(page_id)
-        storage.collect_garbage()
         return jsonify({"deleted": True})
 
     @blueprint.post("/pages/<page_id>/replace-source")
@@ -298,19 +289,14 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
-        try:
-            result, replayed = importer.replace_page_source(
-                page_id=page_id,
-                base_source_revision=int(
-                    request.form.get("baseSourceRevision", "0")
-                ),
-                upload=upload.stream,
-                idempotency_key=idempotency_key,
-            )
-        except Exception:
-            storage.collect_garbage()
-            raise
-        storage.collect_garbage()
+        result, replayed = importer.replace_page_source(
+            page_id=page_id,
+            base_source_revision=int(
+                request.form.get("baseSourceRevision", "0")
+            ),
+            upload=upload.stream,
+            idempotency_key=idempotency_key,
+        )
         response = jsonify(result)
         response.headers["Idempotency-Replayed"] = (
             "true" if replayed else "false"
@@ -344,7 +330,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             repository.update_last_visited_page(
                 chapter_id=chapter_id,
                 page_id=str(body.get("pageId", "")),
-                base_revision=int(body.get("baseRevision", 0)),
             )
         )
 
@@ -368,7 +353,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         )
 
     @blueprint.patch("/pages/<page_id>/document")
-    @blueprint.patch("/pages/<page_id>/document/batch")
     def mutate_page_document(page_id: str) -> Response:
         idempotency_key = _require_idempotency_key()
         body = _json_body()
@@ -378,24 +362,18 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         optional_arguments: dict[str, object] = {}
         if "defaultFontId" in body:
             optional_arguments["default_font_id"] = body["defaultFontId"]
-        elif "default_font_id" in body:
-            optional_arguments["default_font_id"] = body["default_font_id"]
         result, replayed = repository.mutate_page_document(
             page_id=page_id,
-            base_revision=int(
-                body.get("baseRevision", body.get("base_revision", 0))
-            ),
+            base_revision=int(body.get("baseRevision", 0)),
             mutations=mutations,
             idempotency_key=idempotency_key,
             page_style_defaults_patch=_optional_object(
                 body,
                 "pageStyleDefaultsPatch",
-                "page_style_defaults_patch",
             ),
             propagate_style_fields=_optional_string_array(
                 body,
                 "propagateStyleFields",
-                "propagate_style_fields",
             ),
             **optional_arguments,
         )
@@ -557,13 +535,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     return blueprint
 
 
-def _json_body() -> dict[str, object]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
 def _book_body() -> dict[str, object]:
     if request.is_json:
         return _json_body()
@@ -587,38 +558,25 @@ def _as_bool(value: object) -> bool:
 
 def _optional_object(
     body: dict[str, object],
-    camel_key: str,
-    snake_key: str,
+    key: str,
 ) -> dict[str, object] | None:
-    value = body.get(camel_key, body.get(snake_key))
+    value = body.get(key)
     if value is None:
         return None
     if not isinstance(value, dict):
-        raise ValueError(f"{camel_key} must be an object")
+        raise ValueError(f"{key} must be an object")
     return value
 
 
 def _optional_string_array(
     body: dict[str, object],
-    camel_key: str,
-    snake_key: str,
+    key: str,
 ) -> list[str] | None:
-    value = body.get(camel_key, body.get(snake_key))
+    value = body.get(key)
     if value is None:
         return None
     if not isinstance(value, list) or not all(
         isinstance(item, str) for item in value
     ):
-        raise ValueError(f"{camel_key} must be a string array")
+        raise ValueError(f"{key} must be a string array")
     return value
-
-
-def _require_idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError("Idempotency-Key is required and must be at most 200 characters")
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

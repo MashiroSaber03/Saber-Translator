@@ -97,6 +97,11 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const currentImage = computed(() => imageStore.currentImage)
 
+  const isCurrentPageReady = computed(() => (
+    currentImage.value !== null
+    && currentImage.value.bubbleStates !== null
+  ))
+
   const hasImages = computed(() => imageStore.hasImages)
 
   const totalImages = computed(() => imageStore.images.length)
@@ -114,6 +119,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   const canGoNext = computed(() => imageStore.canGoNext)
 
   const canRunWorkflow = computed(() => {
+    if (!isCurrentPageReady.value) return false
     const mode = selectedWorkflowMode.value
     const selectionInvalid =
       isPageSelectionActiveForCurrentMode.value && !hasValidPageSelection.value
@@ -533,6 +539,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     canGoPrevious,
     canGoNext,
     canRunWorkflow,
+    isCurrentPageReady,
     textStyle,
     failedImageCount,
     hasFailedImages,

@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import base64
-from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
 import json
+import logging
 from pathlib import Path
 import re
 from typing import Any, Protocol
@@ -18,16 +18,23 @@ from PIL import Image
 from sqlalchemy import Engine, delete, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import utcnow
+from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
 from src.backend_v2.content.translation_constraints import (
     validate_translation_constraints,
     with_glossary_delta,
 )
 from src.backend_v2.jobs.repository import AttemptFence, JobConflict, JobQueueRepository
+from src.backend_v2.rendering.service import (
+    publish_png_asset,
+    publish_thumbnail_asset,
+)
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     assets,
     bubbles,
-    credential_versions,
     job_items,
     jobs,
     job_steps,
@@ -36,6 +43,9 @@ from src.backend_v2.storage.schema import (
     pages,
     translation_constraints,
 )
+
+
+LOGGER = logging.getLogger("saber.worker.translation")
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +233,7 @@ def _batch_input_fingerprint(
     round_index: int | None,
     constraint_context: Mapping[str, Any],
 ) -> str:
-    payload = json.dumps(
+    payload = _json(
         {
             "pageId": page_id,
             "documentRevision": document_revision,
@@ -232,9 +242,6 @@ def _batch_input_fingerprint(
             "roundIndex": round_index,
             "translationConstraints": constraint_context,
         },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -480,6 +487,7 @@ class LegacyTranslationAlgorithms:
         }
         kwargs = {key: value for key, value in config.items() if key in allowed}
         kwargs["textlines_per_bubble"] = textlines
+        kwargs["strict_errors"] = True
         results = recognize_ocr_results_in_bubbles(image, coords, **kwargs)
         return {
             "texts": extract_texts_from_ocr_results(results),
@@ -579,20 +587,66 @@ class LegacyTranslationAlgorithms:
         *,
         mode: str,
     ) -> Mapping[str, Any]:
-        from src.core.translation import translate_text_list
+        from src.core.translation import translate_single_text, translate_text_list
 
         provider = config.get("provider", config.get("model_provider", "siliconflow"))
-        translated = translate_text_list(
-            texts,
-            target_language=str(config.get("target_language", "zh")),
-            model_provider=str(provider),
-            api_key=config.get("api_key"),
-            model_name=config.get("model_name"),
-            prompt_content=config.get("prompt_content"),
-            custom_base_url=config.get("custom_base_url"),
-            openai_options=_openai_options(config.get("openai_options")),
+        target_language = str(config.get("target_language", "zh"))
+        translation_mode = str(config["translation_mode"])
+        if translation_mode not in {"batch", "single"}:
+            raise ValueError("unsupported translation mode")
+        openai_options = _openai_options(config.get("openai_options"))
+        enable_debug_logs = bool(config["enable_debug_logs"])
+
+        def run(prompt: object, options: object, *, label: str) -> list[str]:
+            if enable_debug_logs:
+                LOGGER.info(
+                    "[详细日志][%s] 提示词：%s\n输入文本：%s",
+                    label,
+                    prompt,
+                    json.dumps(texts, ensure_ascii=False),
+                )
+            arguments = {
+                "target_language": target_language,
+                "model_provider": str(provider),
+                "api_key": config.get("api_key"),
+                "model_name": config.get("model_name"),
+                "prompt_content": prompt,
+                "custom_base_url": config.get("custom_base_url"),
+                "openai_options": options,
+            }
+            if translation_mode == "single":
+                result = [
+                    translate_single_text(text, **arguments)
+                    for text in texts
+                ]
+            else:
+                result = translate_text_list(texts, **arguments)
+            if enable_debug_logs:
+                LOGGER.info(
+                    "[详细日志][%s] 模型结果：%s",
+                    label,
+                    json.dumps(result, ensure_ascii=False),
+                )
+            return result
+
+        translated = run(
+            config.get("prompt_content"),
+            openai_options,
+            label="标准翻译",
         )
-        return {"translated": translated, "textbox": [], "mode": mode}
+        textbox: list[str] = []
+        textbox_prompt = str(config["textbox_prompt_content"])
+        if bool(config["use_textbox_prompt"]) and textbox_prompt:
+            textbox_options = type(openai_options).from_dict(
+                openai_options.to_dict()
+            )
+            textbox_options.request.force_json_output = False
+            textbox = run(
+                textbox_prompt,
+                textbox_options,
+                label="文本框二次翻译",
+            )
+        return {"translated": translated, "textbox": textbox, "mode": mode}
 
     def translate_batch(
         self,
@@ -680,6 +734,40 @@ class LegacyTranslationAlgorithms:
             config.get("provider", config.get("model_provider", ""))
         )
         options = _openai_options(config.get("openai_options"))
+        enable_debug_logs = bool(config["enable_debug_logs"])
+        if enable_debug_logs:
+            LOGGER.info(
+                "[详细日志][%s] 完整消息结构，共 %d 条消息",
+                "AI校对" if mode == "proofread" else "高质量翻译",
+                len(messages),
+            )
+            for message_index, message in enumerate(messages, start=1):
+                LOGGER.info(
+                    "[详细日志] Message %d role=%s",
+                    message_index,
+                    message.get("role"),
+                )
+                message_content = message.get("content")
+                if isinstance(message_content, str):
+                    LOGGER.info("[详细日志] %s", message_content)
+                elif isinstance(message_content, list):
+                    for item_index, item in enumerate(message_content, start=1):
+                        if item.get("type") == "text":
+                            LOGGER.info(
+                                "[详细日志] 文本块 %d：%s",
+                                item_index,
+                                item.get("text", ""),
+                            )
+                        elif item.get("type") == "image_url":
+                            image_url = str(
+                                dict(item.get("image_url", {})).get("url", "")
+                            )
+                            LOGGER.info(
+                                "[详细日志] 图片块 %d：%s...（长度 %d）",
+                                item_index,
+                                image_url[:100],
+                                len(image_url),
+                            )
         executor = OpenAICompatibleSyncExecutor()
 
         def parse(raw: str) -> dict[str, dict[str, str]]:
@@ -712,6 +800,12 @@ class LegacyTranslationAlgorithms:
             capability=HQ_TRANSLATION_CAPABILITY,
             parser=parse,
         )
+        if enable_debug_logs:
+            LOGGER.info(
+                "[详细日志][%s] 模型原始结果（前 1000 字符）：%s",
+                "AI校对" if mode == "proofread" else "高质量翻译",
+                result.raw_content[:1000],
+            )
         return {
             "rawContent": result.raw_content,
             "pages": result.parsed,
@@ -746,6 +840,7 @@ class LegacyTranslationAlgorithms:
             mask_dilate_size=int(config.get("mask_dilate_size", 0)),
             mask_box_expand_ratio=float(config.get("mask_box_expand_ratio", 0)),
             lama_model=str(config.get("lama_model", "lama_mpe")),
+            disable_resize=bool(config["disable_resize"]),
         )
         return repaired
 
@@ -774,10 +869,10 @@ class TranslationPipelineService:
         algorithms: TranslationAlgorithms | None = None,
         plugin_runtime: Any | None = None,
     ) -> None:
-        self.data_root = data_root
         self.engine = engine
         self.jobs = jobs
         self.storage = AssetStorageService(data_root, engine)
+        self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or LegacyTranslationAlgorithms()
         self.plugin_runtime = plugin_runtime
 
@@ -1004,10 +1099,7 @@ class TranslationPipelineService:
                         "source",
                     )
                 )
-            translator = getattr(self.algorithms, "translate_batch", None)
-            if not callable(translator):
-                raise JobConflict("translation algorithms do not support HQ batches")
-            result = translator(
+            result = self.algorithms.translate_batch(
                 request_pages,
                 images,
                 section,
@@ -1044,12 +1136,7 @@ class TranslationPipelineService:
         raw_payload = (
             raw_content
             if raw_content
-            else json.dumps(
-                {"pages": parsed},
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
+            else _json({"pages": parsed})
         )
         raw_asset = self.storage.publish_bytes(
             raw_payload.encode("utf-8"),
@@ -1221,12 +1308,12 @@ class TranslationPipelineService:
         mask_record: AssetRecord | None = None
         mask = result.get("raw_mask")
         if isinstance(mask, Image.Image):
-            mask_record = self._publish_image(mask, mode="L")
+            mask_record = publish_png_asset(self.storage, mask, mode="L")
             mask.close()
         elif mask is not None:
             mask_image = Image.fromarray(mask)
             try:
-                mask_record = self._publish_image(mask_image, mode="L")
+                mask_record = publish_png_asset(self.storage, mask_image, mode="L")
             finally:
                 mask_image.close()
         after = self._atomic_hook(
@@ -1355,7 +1442,8 @@ class TranslationPipelineService:
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
         source = self._bound_asset(fence, step, page_id, "source")
-        raw_section = self._config(step).get("ocr", {})
+        config = self._config(step)
+        raw_section = config.get("ocr", {})
         before = self._atomic_hook(
             fence,
             phase="before",
@@ -1377,7 +1465,7 @@ class TranslationPipelineService:
             section = self._with_credential(before["ocrConfig"])
             section.setdefault(
                 "source_language",
-                self._config(step).get("sourceLanguage", "japanese"),
+                config.get("sourceLanguage", "japanese"),
             )
             result = self.algorithms.ocr(
                 image,
@@ -1480,9 +1568,7 @@ class TranslationPipelineService:
         if len(colors) != len(snapshot.bubbles):
             raise JobConflict("color result count does not match persisted bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
-        uses_auto_color = bool(
-            snapshot.style_defaults.get("useAutoTextColor", False)
-        )
+        uses_auto_color = bool(snapshot.style_defaults["useAutoTextColor"])
         for payload, color in zip(updated, colors):
             foreground = color.get("fg_color")
             background = color.get("bg_color")
@@ -1490,9 +1576,9 @@ class TranslationPipelineService:
             payload["autoBgColor"] = background
             payload["colorConfidence"] = float(color.get("confidence", 0))
             if uses_auto_color and foreground is not None:
-                payload["textColor"] = _rgb_hex(foreground)
+                payload["textColor"] = rgb_to_hex(foreground)
             if uses_auto_color and background is not None:
-                payload["fillColor"] = _rgb_hex(background)
+                payload["fillColor"] = rgb_to_hex(background)
         return self._publish_bubble_update(
             fence,
             step,
@@ -1508,6 +1594,7 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        config = self._config(step)
         texts = [
             str(payload.get("originalText", "")).strip()
             for payload in snapshot.bubbles
@@ -1519,19 +1606,16 @@ class TranslationPipelineService:
         )
         glossary = effective_before["glossary"]
         baseline_revision = int(
-            self._config(step).get("translationConstraintRevision", 0)
+            config.get("translationConstraintRevision", 0)
         )
         fingerprint = hashlib.sha256(
-            json.dumps(
+            _json(
                 {
                     "pageId": page_id,
                     "texts": texts,
                     "baselineRevision": baseline_revision,
                     "effectiveGlossary": glossary["entries"],
                 },
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
 
@@ -1556,11 +1640,8 @@ class TranslationPipelineService:
             )
             return checkpoint
 
-        section = self._with_credential(self._config(step).get("translation", {}))
-        extractor = getattr(self.algorithms, "extract_terms", None)
-        if not callable(extractor):
-            raise JobConflict("translation algorithms do not support term extraction")
-        result = extractor(
+        section = self._with_credential(config.get("translation", {}))
+        result = self.algorithms.extract_terms(
             texts,
             section,
             prompt=str(glossary["autoExtractPrompt"]),
@@ -1603,17 +1684,10 @@ class TranslationPipelineService:
             if (str(entry["matchMode"]), str(entry["source"])) not in before_keys
         ]
         duplicate_count = len(candidates) - added_count
-        raw_content = str(
-            result.get(
-                "rawContent",
-                json.dumps(
-                    candidates,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ),
-            )
-        )
+        raw_content_value = result.get("rawContent")
+        if raw_content_value is None:
+            raw_content_value = _json(candidates)
+        raw_content = str(raw_content_value)
         raw_asset = self.storage.publish_bytes(
             raw_content.encode("utf-8"),
             extension="json",
@@ -1668,14 +1742,9 @@ class TranslationPipelineService:
                     translation_constraints.c.revision == current["revision"],
                 )
                 .values(
-                    payload_json=json.dumps(
-                        merged,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
+                    payload_json=_json(merged),
                     revision=int(current["revision"]) + 1,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=utcnow(),
                 )
             )
             if changed.rowcount != 1:
@@ -1700,6 +1769,7 @@ class TranslationPipelineService:
         mode: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        config = self._config(step)
         persisted_texts = [
             str(payload.get("originalText", ""))
             for payload in snapshot.bubbles
@@ -1708,7 +1778,7 @@ class TranslationPipelineService:
             step,
             include_current_page=True,
         )
-        raw_section = self._config(step).get("translation", {})
+        raw_section = config.get("translation", {})
         before = self._atomic_hook(
             fence,
             phase="before",
@@ -1725,6 +1795,10 @@ class TranslationPipelineService:
             },
         )
         texts = list(before["originalTexts"])
+        if len(texts) != len(snapshot.bubbles):
+            raise JobConflict(
+                "before_translate original text count does not match bubbles"
+            )
         section = self._with_constraint_prompt(
             self._with_credential(
                 before["translationConfig"]
@@ -1738,7 +1812,7 @@ class TranslationPipelineService:
         )
         section.setdefault(
             "target_language",
-            self._config(step).get("targetLanguage", "zh"),
+            config.get("targetLanguage", "zh"),
         )
         non_translate = constraints["nonTranslate"]
         protected_texts: list[str] = []
@@ -1756,11 +1830,24 @@ class TranslationPipelineService:
             protected_texts.append(protected)
             restore_by_index.append(restore)
         result = self.algorithms.translate(protected_texts, section, mode=mode)
+        raw_translated = list(result.get("translated", []))
+        if len(raw_translated) != len(restore_by_index):
+            raise JobConflict("translation result count does not match bubbles")
         translated = [
             _restore_non_translate_text(str(value), restore_by_index[index])
-            for index, value in enumerate(list(result.get("translated", [])))
+            for index, value in enumerate(raw_translated)
         ]
-        textbox = list(result.get("textbox", []))
+        raw_textbox = list(result.get("textbox", []))
+        if raw_textbox and len(raw_textbox) != len(restore_by_index):
+            raise JobConflict("textbox translation result count does not match bubbles")
+        textbox = [
+            (
+                _restore_non_translate_text(str(value), restore_by_index[index])
+                if str(value)
+                else ""
+            )
+            for index, value in enumerate(raw_textbox)
+        ]
         after = self._atomic_hook(
             fence,
             phase="after",
@@ -1777,6 +1864,8 @@ class TranslationPipelineService:
         textbox = list(after.get("textboxTexts", []))
         if len(translated) != len(snapshot.bubbles):
             raise JobConflict("translation result count does not match bubbles")
+        if textbox and len(textbox) != len(snapshot.bubbles):
+            raise JobConflict("textbox translation result count does not match bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
         warnings = _translation_constraint_warnings(
             persisted_texts,
@@ -1806,7 +1895,7 @@ class TranslationPipelineService:
                 "constraintWarnings": warnings,
             },
             input_fingerprint=hashlib.sha256(
-                json.dumps(
+                _json(
                     {
                         "pageId": page_id,
                         "documentRevision": snapshot.document_revision,
@@ -1814,9 +1903,6 @@ class TranslationPipelineService:
                         "mode": mode,
                         "translationConstraints": constraints,
                     },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
                 ).encode("utf-8")
             ).hexdigest(),
         )
@@ -1847,7 +1933,7 @@ class TranslationPipelineService:
                 "textMaskAssetId": precise_mask_asset_id,
                 "bubbles": [dict(value) for value in snapshot.bubbles],
                 "method": str(snapshot.style_defaults["inpaintMethod"]),
-                "fillColor": snapshot.style_defaults.get("fillColor"),
+                "fillColor": snapshot.style_defaults["fillColor"],
             },
         )
         image = self._open_asset(str(before["inputAssetId"]), "RGB")
@@ -1876,7 +1962,7 @@ class TranslationPipelineService:
             image.close()
             if precise_mask is not None:
                 precise_mask.close()
-        record = self._publish_image(repaired)
+        record = publish_png_asset(self.storage, repaired, mode="RGB")
         repaired.close()
         after = self._atomic_hook(
             fence,
@@ -2007,8 +2093,8 @@ class TranslationPipelineService:
             )
         finally:
             clean.close()
-        translated = self._publish_image(rendered)
-        thumbnail = self._publish_thumbnail(rendered)
+        translated = publish_png_asset(self.storage, rendered, mode="RGB")
+        thumbnail = publish_thumbnail_asset(self.storage, rendered)
         rendered.close()
         after = self._atomic_hook(
             fence,
@@ -2274,7 +2360,10 @@ class TranslationPipelineService:
                 source_revision=int(page["source_revision"]),
                 document_revision=int(page["document_revision"]),
                 render_status=str(page["render_status"]),
-                style_defaults=json.loads(page["page_style_defaults_json"] or "{}"),
+                style_defaults=validate_page_style(
+                    json.loads(page["page_style_defaults_json"]),
+                    partial=False,
+                ),
                 bubble_ids=tuple(str(row.id) for row in rows),
                 bubbles=tuple(json.loads(row.payload_json) for row in rows),
             )
@@ -2329,37 +2418,10 @@ class TranslationPipelineService:
         return image
 
     def _asset_record(self, asset_id: str) -> AssetRecord:
-        with self.engine.connect() as connection:
-            row = connection.execute(
-                select(
-                    assets.c.id,
-                    assets.c.relative_path,
-                    assets.c.mime_type,
-                    assets.c.checksum,
-                    assets.c.byte_size,
-                    assets.c.width,
-                    assets.c.height,
-                ).where(assets.c.id == asset_id)
-            ).mappings().one_or_none()
-        if row is None:
+        record = self.storage.get_record(asset_id)
+        if record is None:
             raise JobConflict("plugin referenced an unknown asset")
-        return AssetRecord(
-            id=str(row["id"]),
-            relative_path=str(row["relative_path"]),
-            mime_type=str(row["mime_type"]),
-            checksum=str(row["checksum"]),
-            byte_size=int(row["byte_size"]),
-            width=(
-                int(row["width"])
-                if row["width"] is not None
-                else None
-            ),
-            height=(
-                int(row["height"])
-                if row["height"] is not None
-                else None
-            ),
-        )
+        return record
 
     def _completed_step_asset_id(
         self,
@@ -2393,53 +2455,6 @@ class TranslationPipelineService:
                 )
             ).scalar_one_or_none()
         return str(value) if value is not None else None
-
-    def _open_completed_step_image(
-        self,
-        fence: AttemptFence,
-        step: Mapping[str, Any],
-        *,
-        step_kind: str,
-        role: str,
-        mode: str,
-    ) -> Image.Image | None:
-        """Open an immutable image output produced earlier by this job item."""
-
-        with self.engine.connect() as connection:
-            relative_path = connection.execute(
-                select(assets.c.relative_path)
-                .join(
-                    job_step_asset_outputs,
-                    job_step_asset_outputs.c.asset_id == assets.c.id,
-                )
-                .join(
-                    job_steps,
-                    job_steps.c.id == job_step_asset_outputs.c.job_step_id,
-                )
-                .join(
-                    job_items,
-                    job_items.c.id == job_steps.c.job_item_id,
-                )
-                .where(
-                    job_items.c.id == str(step["itemId"]),
-                    job_items.c.job_id == fence.job_id,
-                    job_steps.c.kind == step_kind,
-                    job_steps.c.status == "completed",
-                    job_step_asset_outputs.c.role == role,
-                )
-            ).scalar_one_or_none()
-        if relative_path is None:
-            return None
-        image = Image.open(
-            self.storage.resolve_relative_path(str(relative_path))
-        )
-        if image.mode != mode:
-            converted = image.convert(mode)
-            image.close()
-            image = converted
-        else:
-            image.load()
-        return image
 
     def _atomic_hook(
         self,
@@ -2555,76 +2570,34 @@ class TranslationPipelineService:
             "必须遵守以下按 pageId 冻结的翻译约束。glossary 中 text/regex "
             "规则规定原文到译文的固定映射；nonTranslate 中 text/regex 匹配到的"
             "内容必须原样保留。不得把某一页稍后产生的术语反向用于更早页。\n"
-            + json.dumps(
-                {"pageConstraints": active_contexts},
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
+            + _json({"pageConstraints": active_contexts})
         )
         base_prompt = str(result.get("prompt_content", "")).rstrip()
         result["prompt_content"] = (
             f"{base_prompt}\n\n{instruction}" if base_prompt else instruction
         )
+        if bool(result.get("use_textbox_prompt")):
+            textbox_prompt = str(
+                result.get("textbox_prompt_content", "")
+            ).rstrip()
+            if textbox_prompt:
+                result["textbox_prompt_content"] = (
+                    f"{textbox_prompt}\n\n{instruction}"
+                )
         return result
 
     def _with_credential(self, section: object) -> dict[str, Any]:
         result = dict(section) if isinstance(section, Mapping) else {}
         version_id = result.pop("credentialVersionId", None)
         if version_id:
-            with self.engine.connect() as connection:
-                value = connection.execute(
-                    select(credential_versions.c.secret_json).where(
-                        credential_versions.c.id == version_id
-                    )
-                ).scalar_one_or_none()
-            if value is None:
-                raise JobConflict("frozen credential version no longer exists")
-            secret = json.loads(value)
-            if isinstance(secret, dict):
-                result.update(secret)
+            try:
+                secret = self.credentials.resolve_secret(str(version_id))
+            except LookupError as exc:
+                raise JobConflict(
+                    "frozen credential version no longer exists"
+                ) from exc
+            result.update(secret)
         return result
-
-    def _publish_image(
-        self,
-        image: Image.Image,
-        *,
-        mode: str = "RGB",
-    ) -> AssetRecord:
-        converted = image if image.mode == mode else image.convert(mode)
-        output = BytesIO()
-        converted.save(output, format="PNG")
-        if converted is not image:
-            converted.close()
-        return self.storage.publish_bytes(
-            output.getvalue(),
-            extension="png",
-            mime_type="image/png",
-            width=image.width,
-            height=image.height,
-        )
-
-    def _publish_thumbnail(self, image: Image.Image) -> AssetRecord:
-        thumbnail = image.copy()
-        if thumbnail.height / max(thumbnail.width, 1) > 4:
-            if thumbnail.width > 320:
-                height = max(1, round(thumbnail.height * 320 / thumbnail.width))
-                thumbnail = thumbnail.resize((320, height), Image.Resampling.LANCZOS)
-            if thumbnail.height > 1280:
-                thumbnail = thumbnail.crop((0, 0, thumbnail.width, 1280))
-        else:
-            thumbnail.thumbnail((320, 320), Image.Resampling.LANCZOS)
-        output = BytesIO()
-        thumbnail.save(output, format="WEBP", quality=80, method=4)
-        width, height = thumbnail.size
-        thumbnail.close()
-        return self.storage.publish_bytes(
-            output.getvalue(),
-            extension="webp",
-            mime_type="image/webp",
-            width=width,
-            height=height,
-        )
 
     @staticmethod
     def _assert_revision(
@@ -2731,14 +2704,3 @@ class TranslationPipelineService:
         if style.get("layoutDirection") in {"vertical", "horizontal"}:
             defaults["textDirection"] = style["layoutDirection"]
         return defaults
-
-
-def _json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _rgb_hex(value: object) -> str:
-    if not isinstance(value, (list, tuple)) or len(value) < 3:
-        return "#000000"
-    red, green, blue = (max(0, min(255, int(part))) for part in value[:3])
-    return f"#{red:02X}{green:02X}{blue:02X}"

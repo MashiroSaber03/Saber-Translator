@@ -9,7 +9,6 @@ import sqlite3
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import Connection
-from sqlalchemy.orm import Session, sessionmaker
 
 
 DEFAULT_BUSY_TIMEOUT_MS = 5_000
@@ -50,20 +49,6 @@ def create_sqlite_engine(
             cursor.close()
 
     return engine
-
-
-def create_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
-
-
-@contextmanager
-def session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
-    session = factory()
-    try:
-        with session.begin():
-            yield session
-    finally:
-        session.close()
 
 
 @contextmanager

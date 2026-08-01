@@ -55,7 +55,7 @@ const document = {
   },
   lorebook: { name: '', entries: [] },
   meta: { title: 'Saber', tags: [] },
-  origin: { type: 'manual', source_character: null, source_pages: [] },
+  origin: { type: 'manual', source_character: null },
   regexScripts: [],
   revision: 3,
   stateTasks: [],

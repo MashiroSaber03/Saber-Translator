@@ -12,12 +12,17 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import threading
 import types
 from typing import Any, Callable
 
 from sqlalchemy import Engine, select, update
 
-from src.backend_v2.jobs.repository import AttemptFence, JobQueueRepository
+from src.backend_v2.jobs.repository import (
+    AttemptFence,
+    AttemptFenced,
+    JobQueueRepository,
+)
 from src.backend_v2.operations.repository import (
     OperationFence,
     OperationRepository,
@@ -53,13 +58,9 @@ class PluginHookFailure(RuntimeError):
         *,
         plugin_id: str,
         hook: str,
-        scope: str,
         message: str,
     ) -> None:
         super().__init__(f"{plugin_id}.{hook} failed: {message}")
-        self.plugin_id = plugin_id
-        self.hook = hook
-        self.scope = scope
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,7 +240,13 @@ class _PluginLoader:
 
     def release_cached_instances(self) -> None:
         """Drop Worker-owned plugin instances at a model-cache safe point."""
+        namespaces = {
+            "saber_plugin_" + version_id.replace("-", "_")
+            for version_id in self._instances
+        }
         self._instances.clear()
+        for namespace in namespaces:
+            self._purge_namespace(namespace)
 
     def load_job(self, job_id: str) -> list[_LoadedPlugin]:
         with self.engine.connect() as connection:
@@ -296,9 +303,11 @@ class _PluginLoader:
         loaded: list[_LoadedPlugin] = []
         for row in rows:
             version_id = str(row["plugin_version_id"])
+            snapshot = _json_object(row["config_json"])
+            if snapshot.get("protectOnly") is True:
+                continue
             manifest_raw = _json_object(row["manifest_json"])
             manifest = parse_manifest(manifest_raw)
-            snapshot = _json_object(row["config_json"])
             config = snapshot.get("config", snapshot)
             if not isinstance(config, Mapping):
                 raise PluginContractError(
@@ -414,12 +423,19 @@ class _PluginLoader:
             plugin_type = getattr(module, class_name)
             instance = plugin_type()
         except Exception:
-            sys.modules.pop(module_name, None)
+            self._purge_namespace(namespace)
             raise
         finally:
             sys.dont_write_bytecode = previous_dont_write_bytecode
         self._instances[version_id] = (checksum, instance)
         return instance
+
+    @staticmethod
+    def _purge_namespace(namespace: str) -> None:
+        prefix = f"{namespace}."
+        for module_name in tuple(sys.modules):
+            if module_name == namespace or module_name.startswith(prefix):
+                sys.modules.pop(module_name, None)
 
 
 class PluginJobRuntime:
@@ -436,9 +452,15 @@ class PluginJobRuntime:
             data_root=data_root,
             engine=engine,
         )
+        self._stage_cache: dict[
+            str, set[tuple[str, str | None]]
+        ] = {}
+        self._stage_lock = threading.Lock()
 
     def release_cached_instances(self) -> None:
         self.loader.release_cached_instances()
+        with self._stage_lock:
+            self._stage_cache.clear()
 
     def before_job(
         self,
@@ -451,11 +473,15 @@ class PluginJobRuntime:
             step="job",
             scope="job",
             data=data,
+            persist_job_config=True,
         )
 
     def before_pipeline(
         self,
         fence: AttemptFence,
+        *,
+        item_id: str,
+        page_id: str,
         data: Mapping[str, Any],
     ) -> dict[str, Any]:
         return self._run(
@@ -464,6 +490,8 @@ class PluginJobRuntime:
             step="pipeline",
             scope="pipeline",
             data=data,
+            item_id=item_id,
+            page_id=page_id,
         )
 
     def run_atomic(
@@ -497,6 +525,9 @@ class PluginJobRuntime:
     def after_pipeline(
         self,
         fence: AttemptFence,
+        *,
+        item_id: str,
+        page_id: str,
         data: Mapping[str, Any],
     ) -> dict[str, Any]:
         return self._run(
@@ -505,6 +536,8 @@ class PluginJobRuntime:
             step="pipeline",
             scope="pipeline",
             data=data,
+            item_id=item_id,
+            page_id=page_id,
         )
 
     def after_job(
@@ -528,50 +561,91 @@ class PluginJobRuntime:
         step: str,
         scope: str,
         data: Mapping[str, Any],
+        item_id: str | None = None,
         page_id: str | None = None,
         validator: Callable[[object], dict[str, Any]] = validate_hook_data,
+        persist_job_config: bool = False,
     ) -> dict[str, Any]:
-        if scope in {"job", "pipeline"} and self.jobs.plugin_stage_completed(
+        stage_item_id = item_id if scope == "pipeline" else None
+        stage_key = (hook, stage_item_id)
+        if scope in {"job", "pipeline"} and self._stage_completed(
             fence,
-            hook=hook,
+            stage_key,
         ):
             return dict(data)
         metadata = self._job_metadata(fence.job_id)
         mode = str(metadata["config"].get("mode", "standard"))
-        result = _execute_hooks(
-            plugins=self.loader.load_job(fence.job_id),
-            hook=hook,
-            step=step,
-            scope=scope,
-            mode=mode,
-            data=data,
-            context_fields={
-                "job_id": fence.job_id,
-                "batch_id": _optional_text(metadata.get("batch_id")),
-                "book_id": _optional_text(metadata.get("book_id")),
-                "chapter_id": _optional_text(
-                    metadata.get("chapter_id")
+        try:
+            result = _execute_hooks(
+                plugins=self.loader.load_job(fence.job_id),
+                hook=hook,
+                step=step,
+                scope=scope,
+                mode=mode,
+                data=data,
+                context_fields={
+                    "job_id": fence.job_id,
+                    "batch_id": _optional_text(metadata.get("batch_id")),
+                    "book_id": _optional_text(metadata.get("book_id")),
+                    "chapter_id": _optional_text(
+                        metadata.get("chapter_id")
+                    ),
+                    "page_id": page_id,
+                },
+                repository=self.loader.repository,
+                assets=self.loader.assets,
+                validator=validator,
+                emit=lambda event_type, payload: (
+                    self.jobs.append_worker_event(
+                        fence,
+                        event_type=event_type,
+                        payload=payload,
+                    )
                 ),
-                "page_id": page_id,
-            },
-            repository=self.loader.repository,
-            assets=self.loader.assets,
-            validator=validator,
-            emit=lambda event_type, payload: (
-                self.jobs.append_plugin_event(
-                    fence,
-                    event_type=event_type,
-                    payload=payload,
-                )
-            ),
-        )
-        if scope in {"job", "pipeline"}:
-            self.jobs.append_plugin_event(
-                fence,
-                event_type="plugin_stage_completed",
-                payload={"hook": hook, "scope": scope},
             )
+        except AttemptFenced:
+            raise
+        except Exception:
+            if scope in {"job", "pipeline"}:
+                self.jobs.complete_plugin_stage(
+                    fence,
+                    hook=hook,
+                    scope=scope,
+                    item_id=stage_item_id,
+                    page_id=page_id,
+                    outcome="failed",
+                )
+                with self._stage_lock:
+                    self._stage_cache.setdefault(fence.job_id, set()).add(
+                        stage_key
+                    )
+            raise
+        if scope in {"job", "pipeline"}:
+            self.jobs.complete_plugin_stage(
+                fence,
+                hook=hook,
+                scope=scope,
+                item_id=stage_item_id,
+                page_id=page_id,
+                job_config=result if persist_job_config else None,
+            )
+            with self._stage_lock:
+                self._stage_cache.setdefault(fence.job_id, set()).add(
+                    stage_key
+                )
         return result
+
+    def _stage_completed(
+        self,
+        fence: AttemptFence,
+        stage_key: tuple[str, str | None],
+    ) -> bool:
+        with self._stage_lock:
+            completed = self._stage_cache.get(fence.job_id)
+            if completed is None:
+                completed = self.jobs.completed_plugin_stages(fence)
+                self._stage_cache[fence.job_id] = completed
+            return stage_key in completed
 
     def _job_metadata(self, job_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
@@ -724,7 +798,6 @@ def _execute_hooks(
             raise PluginHookFailure(
                 plugin_id=manifest.plugin_id,
                 hook=hook,
-                scope=scope,
                 message=redact_sensitive_text(exc),
             ) from exc
         logger = _PluginLogger(
@@ -761,7 +834,6 @@ def _execute_hooks(
             raise PluginHookFailure(
                 plugin_id=manifest.plugin_id,
                 hook=hook,
-                scope=scope,
                 message=redact_sensitive_text(exc),
             ) from exc
         emit(

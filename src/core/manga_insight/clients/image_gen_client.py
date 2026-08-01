@@ -32,11 +32,11 @@ from src.shared.ai_providers import (
     normalize_provider_id,
     provider_requires_model,
     provider_supports_capability,
+    resolve_provider_base_url_for_capability,
 )
 
 from ..config_models import ImageGenConfig
 from .base_client import BaseAPIClient
-from .provider_registry import get_image_gen_base_url
 
 logger = logging.getLogger("MangaInsight.ImageGenClient")
 
@@ -81,7 +81,13 @@ class ImageGenClient(BaseAPIClient):
 
     def __init__(self, config: ImageGenConfig):
         self.config = config
-        resolved_base_url = config.base_url or get_image_gen_base_url(config.provider)
+        resolved_base_url = config.base_url or (
+            resolve_provider_base_url_for_capability(
+                config.provider,
+                IMAGE_GEN_CAPABILITY,
+            )
+            or ""
+        )
         timeout_value = float(config.timeout_seconds or 0)
         self._timeout = None if timeout_value <= 0 else timeout_value
         transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_IMAGE_GEN_TRANSPORT_RETRIES

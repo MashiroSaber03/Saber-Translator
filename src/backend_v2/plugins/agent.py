@@ -18,14 +18,19 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
-from src.backend_v2.plugins.contract import PLUGIN_ID_PATTERN
+from src.backend_v2.plugins.contract import (
+    HOOK_STEPS,
+    PLUGIN_ID_PATTERN,
+    PLUGIN_MODES,
+)
 from src.backend_v2.plugins.repository import (
     PluginNotFound,
     PluginRegistry,
 )
+from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     app_settings,
-    credential_versions,
     provider_settings,
 )
 from src.core.plugin_agent.controller import PluginAgentController
@@ -48,6 +53,7 @@ class PluginAgentProviderResolver:
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
+        self.credentials = SettingsRepository(engine)
 
     def snapshot(self) -> dict[str, Any]:
         with self.engine.connect() as connection:
@@ -161,18 +167,14 @@ class PluginAgentProviderResolver:
         credential_version_id = frozen.get("credentialVersionId")
         secret: dict[str, Any] = {}
         if credential_version_id:
-            with self.engine.connect() as connection:
-                raw = connection.execute(
-                    select(credential_versions.c.secret_json).where(
-                        credential_versions.c.id
-                        == str(credential_version_id)
-                    )
-                ).scalar_one_or_none()
-            if raw is None:
+            try:
+                secret = self.credentials.resolve_secret(
+                    str(credential_version_id)
+                )
+            except LookupError as exc:
                 raise ValueError(
                     "Plugin Agent credential version is unavailable"
-                )
-            secret = _json_object(raw)
+                ) from exc
         return {
             "provider": str(frozen.get("provider", "")),
             "api_key": str(
@@ -263,6 +265,7 @@ class PluginAgentSessionService:
     def delete(self, session_id: str) -> dict[str, Any]:
         """Delete planning state only; a queued/running job is unaffected."""
 
+        self._cleanup()
         with self._lock:
             existed = self._sessions.pop(session_id, None) is not None
             self._targets.pop(session_id, None)
@@ -281,6 +284,7 @@ class PluginAgentSessionService:
             raise ValueError(
                 "content must contain 1-100000 characters"
             )
+        self._cleanup()
         with self._lock:
             session = self._require(session_id)
             if session.run_state == "running":
@@ -343,6 +347,7 @@ class PluginAgentSessionService:
         session_id: str,
         proposal: Mapping[str, Any],
     ) -> dict[str, Any]:
+        self._cleanup()
         with self._lock:
             session = self._require(session_id)
             if session.mode != "create":
@@ -352,8 +357,6 @@ class PluginAgentSessionService:
             if session.locked_target is not None:
                 return self._dto(session)
             normalized = _proposal(proposal)
-            if not PLUGIN_ID_PATTERN.fullmatch(normalized.plugin_id):
-                raise ValueError("plugin_id is invalid")
             try:
                 self.registry.get_plugin(normalized.plugin_id)
             except PluginNotFound:
@@ -382,6 +385,7 @@ class PluginAgentSessionService:
         session_id: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
+        self._cleanup()
         with self._lock:
             session = self._require(session_id)
             target = self._targets.get(session_id)
@@ -404,6 +408,17 @@ class PluginAgentSessionService:
                 message.to_dict() for message in session.messages
             ]
         provider = self.provider_resolver.snapshot()
+        with self.engine.connect() as connection:
+            plugin_snapshots = enabled_plugin_snapshots(connection)
+        target_version_id = target.get("pluginVersionId")
+        if isinstance(target_version_id, str) and target_version_id:
+            plugin_snapshots.setdefault(
+                target_version_id,
+                {
+                    "pluginId": str(target["plugin_id"]),
+                    "protectOnly": True,
+                },
+            )
         config = {
             "executionMode": "sequential",
             "sessionId": session_id,
@@ -438,6 +453,7 @@ class PluginAgentSessionService:
                         if provider.get("credentialVersionId")
                         else None
                     ),
+                    plugin_snapshots=plugin_snapshots,
                     target_display={
                         "pluginId": target["plugin_id"],
                         "mode": target["mode"],
@@ -656,18 +672,42 @@ def _proposal(value: Mapping[str, Any]) -> PluginTargetProposal:
         raise ValueError(
             "proposal requires plugin_id and display_name"
         )
+    if not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
+        raise ValueError("plugin_id is invalid")
+    supported_steps = _proposal_values(
+        value.get("supported_steps", []),
+        field="supported_steps",
+        allowed=frozenset(HOOK_STEPS),
+    )
+    supported_modes = _proposal_values(
+        value.get("supported_modes", []),
+        field="supported_modes",
+        allowed=PLUGIN_MODES,
+    )
     return PluginTargetProposal(
         plugin_id=plugin_id,
         display_name=display_name,
-        supported_steps=[
-            str(item)
-            for item in value.get("supported_steps", [])
-        ],
-        supported_modes=[
-            str(item)
-            for item in value.get("supported_modes", [])
-        ],
+        supported_steps=supported_steps,
+        supported_modes=supported_modes,
     )
+
+
+def _proposal_values(
+    value: object,
+    *,
+    field: str,
+    allowed: frozenset[str],
+) -> list[str]:
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) for item in value
+    ):
+        raise ValueError(f"{field} must be a string array")
+    normalized = [item.strip() for item in value]
+    if any(not item or item not in allowed for item in normalized):
+        raise ValueError(f"{field} contains an unsupported value")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{field} must not contain duplicates")
+    return normalized
 
 
 def _locked_target(

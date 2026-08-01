@@ -7,6 +7,8 @@ from datetime import datetime
 import json
 from typing import Any, Mapping
 
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import iso_utc
 from src.backend_v2.studio.pure import (
     create_empty_document,
     ensure_document_shape,
@@ -56,11 +58,6 @@ def normalize_document(
     shaped = ensure_document_shape(raw, book_id=book_id)
     shaped["identity"]["name"] = canonical_title
     shaped["meta"]["title"] = canonical_title
-    shaped.pop("grounding", None)
-    shaped.pop("chatPreset", None)
-    avatar = shaped.get("avatar")
-    if isinstance(avatar, dict):
-        avatar.pop("asset_path", None)
     shaped["title"] = canonical_title
     return shaped
 
@@ -132,7 +129,6 @@ def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
         "origin": {
             "type": str(row["origin_type"]),
             "source_character": row.get("source_character"),
-            "source_pages": [],
         },
         "status": {
             "is_favorite": bool(row.get("is_favorite")),
@@ -140,17 +136,13 @@ def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
                 row.get("frozen_sections_json")
             ),
             "last_diagnostics": last_diagnostics,
-            "last_validated_at": _iso(
+            "last_validated_at": iso_utc(
                 row.get("last_validated_at")
             ),
         },
         "meta": {
             "title": title,
             "tags": _load_list(row.get("tags_json")),
-        },
-        "avatar": {
-            "mode": "asset" if avatar_id else "none",
-            "source_page": None,
         },
         "identity": identity,
         "coreMessages": _load_object(row.get("core_messages_json")),
@@ -167,28 +159,9 @@ def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
         "avatarUrl": (
             f"/api/v2/assets/{avatar_id}" if avatar_id else None
         ),
-        "createdAt": _iso(row.get("created_at")),
-        "updatedAt": _iso(row.get("updated_at")),
+        "createdAt": iso_utc(row.get("created_at")),
+        "updatedAt": iso_utc(row.get("updated_at")),
     }
-
-
-def _iso(value: object) -> str | None:
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        rendered = value.isoformat()
-    else:
-        rendered = str(value)
-    return rendered if rendered.endswith("Z") else rendered + "Z"
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def _object(value: object) -> dict[str, Any]:

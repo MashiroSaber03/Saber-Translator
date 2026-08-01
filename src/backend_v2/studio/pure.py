@@ -16,14 +16,13 @@ import uuid
 def create_empty_document(book_id: str, *, title: str = "新角色") -> dict[str, Any]:
     return {
         "bookId": book_id,
-        "origin": {"type": "manual", "source_character": None, "source_pages": []},
+        "origin": {"type": "manual", "source_character": None},
         "status": {
             "is_favorite": False,
             "frozen_sections": [],
             "last_validated_at": None,
         },
         "meta": {"title": title, "tags": []},
-        "avatar": {"mode": "none", "source_page": None},
         "identity": {
             "name": title,
             "aliases": [],
@@ -47,6 +46,22 @@ def create_empty_document(book_id: str, *, title: str = "新角色") -> dict[str
     }
 
 
+def select_provider_section(
+    config: Mapping[str, Any],
+    *,
+    prefer_vlm: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    """Return the single provider section a Studio request will use."""
+
+    primary_name = "vlm" if prefer_vlm else "chat"
+    fallback_name = "chat" if prefer_vlm else "vlm"
+    primary = _object(config.get(primary_name))
+    fallback = _object(config.get(fallback_name))
+    if primary.get("provider") or not fallback.get("provider"):
+        return primary_name, primary
+    return fallback_name, fallback
+
+
 def ensure_document_shape(
     document: Mapping[str, Any],
     *,
@@ -57,6 +72,10 @@ def ensure_document_shape(
     result["bookId"] = book_id
     result.pop("grounding", None)
     result.pop("chatPreset", None)
+    result.pop("avatar", None)
+    origin = _object(result.get("origin"))
+    origin.pop("source_pages", None)
+    result["origin"] = origin
     identity = _object(result.get("identity"))
     meta = _object(result.get("meta"))
     name = str(identity.get("name") or meta.get("title") or "新角色").strip()
@@ -80,9 +99,6 @@ def ensure_document_shape(
         result.get("stateTasks"),
         prefix="task",
     )
-    avatar = _object(result.get("avatar"))
-    avatar.pop("asset_path", None)
-    result["avatar"] = avatar
     return result
 
 

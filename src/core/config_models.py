@@ -1,23 +1,10 @@
 """
 配置数据模型
 
-使用 dataclass 定义配置对象，减少函数参数传递的复杂度。
-包含统一的气泡状态模型 BubbleState，用于前后端统一管理气泡渲染参数。
-
-注意：以下类和函数已删除，因为它们是为已废弃的 process_image_translation 设计的：
-- create_bubble_states_from_response (未被任何地方导入使用)
-- bubble_states_from_api_request (未被任何地方导入使用)
-- OCRConfig (只在 TranslationRequest 中使用)
-- TranslationConfig (只在 TranslationRequest 中使用)
-- InpaintingConfig (只在 TranslationRequest 中使用)
-- RenderConfig (只在 TranslationRequest 和 create_bubble_states_from_response 中使用)
-- TranslationRequest (只在已删除的 processing.py 中导入)
-
-新的原子步骤架构使用 parallel_routes.py 中的 API 端点，
-每个步骤独立处理，不需要这些整合配置类。
+包含后端渲染边界使用的统一气泡状态模型。
 """
 
-from dataclasses import dataclass, field, fields as dataclass_fields
+from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict, Any
 from src.shared import constants
 from src.core.ocr_types import OcrResult
@@ -85,7 +72,7 @@ class BubbleState:
     命名约定:
     - Python后端使用下划线命名 (snake_case)
     - 前端使用驼峰命名 (camelCase)
-    - from_dict() 支持自动转换
+    - from_dict() 只接收当前 API 的驼峰字段
     """
     # === 文本内容 ===
     original_text: str = ""           # 原文
@@ -168,32 +155,14 @@ class BubbleState:
             "ocrResult": self.ocr_result.to_dict() if self.ocr_result else None,
         }
     
-    def to_render_dict(self) -> Dict[str, Any]:
-        """
-        转换为后端渲染函数需要的字典格式（使用下划线命名）。
-        用于兼容现有的 render_all_bubbles 函数。
-        """
-        return {
-            "fontSize": self.font_size,
-            "fontFamily": self.font_family,
-            "text_direction": self.text_direction,
-            "position_offset": self.position_offset,
-            "text_color": self.text_color,
-            "rotation_angle": self.rotation_angle,
-            "stroke_enabled": self.stroke_enabled,
-            "stroke_color": self.stroke_color,
-            "stroke_width": self.stroke_width,
-            "line_spacing": self.line_spacing,
-            "text_align": self.text_align,
-        }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BubbleState":
         """
-        从字典创建 BubbleState（支持前端驼峰命名自动转换）。
+        从当前 API 的驼峰字段创建 BubbleState。
         
         Args:
-            data: 来自前端的字典数据（可能使用驼峰命名）
+            data: 后端渲染服务生成的标准气泡字典
             
         Returns:
             BubbleState 实例
@@ -204,7 +173,6 @@ class BubbleState:
             "originalText": "original_text",
             "translatedText": "translated_text",
             "textboxText": "textbox_text",
-            "text": "translated_text",  # 兼容旧的 'text' 字段
             # 坐标信息
             "coords": "coords",
             "polygon": "polygon",
@@ -212,54 +180,36 @@ class BubbleState:
             "fontSize": "font_size",
             "fontFamily": "font_family",
             "textDirection": "text_direction",
-            "text_direction": "text_direction",  # 兼容后端命名
             "autoTextDirection": "auto_text_direction",  # 自动检测的排版方向
-            "auto_text_direction": "auto_text_direction",  # 兼容后端命名
             "textColor": "text_color",
-            "text_color": "text_color",  # 兼容后端命名
             "fillColor": "fill_color",
             "rotationAngle": "rotation_angle",
-            "rotation_angle": "rotation_angle",  # 兼容后端命名
             "position": "position_offset",
-            "position_offset": "position_offset",  # 兼容后端命名
             # 描边参数
             "strokeEnabled": "stroke_enabled",
-            "stroke_enabled": "stroke_enabled",
             "strokeColor": "stroke_color",
-            "stroke_color": "stroke_color",
             "strokeWidth": "stroke_width",
-            "stroke_width": "stroke_width",
             # 排版参数
             "lineSpacing": "line_spacing",
-            "line_spacing": "line_spacing",
             "textAlign": "text_align",
-            "text_align": "text_align",
             # 修复参数
             "inpaintMethod": "inpaint_method",
             # 自动颜色提取
             "autoFgColor": "auto_fg_color",
-            "auto_fg_color": "auto_fg_color",
             "autoBgColor": "auto_bg_color",
-            "auto_bg_color": "auto_bg_color",
             "colorConfidence": "color_confidence",
-            "color_confidence": "color_confidence",
             "textlines": "textlines",
             "ocrResult": "ocr_result",
-            "ocr_result": "ocr_result",
         }
         
         # 转换字典键名
         converted = {}
         for key, value in data.items():
-            snake_key = camel_to_snake.get(key, key)
-            converted[snake_key] = value
+            snake_key = camel_to_snake.get(key)
+            if snake_key is not None:
+                converted[snake_key] = value
         
-        # 只保留 BubbleState 定义的字段
-        valid_field_names = {f.name for f in dataclass_fields(cls)}
-        filtered = {}
-        for k, v in converted.items():
-            if k in valid_field_names:
-                filtered[k] = v
+        filtered = converted
         
         # 处理 coords 可能是列表的情况
         if "coords" in filtered and isinstance(filtered["coords"], list):
@@ -277,38 +227,8 @@ class BubbleState:
         
         return cls(**filtered)
     
-    def update_from_dict(self, data: Dict[str, Any]) -> "BubbleState":
-        """
-        使用字典中的值更新当前状态（部分更新）。
-        
-        Args:
-            data: 要更新的字段字典
-            
-        Returns:
-            更新后的 self（支持链式调用）
-        """
-        temp = BubbleState.from_dict(data)
-        for field_info in dataclass_fields(self):
-            new_value = getattr(temp, field_info.name)
-            # 只更新非默认值的字段
-            default_instance = BubbleState()
-            if new_value != getattr(default_instance, field_info.name):
-                setattr(self, field_info.name, new_value)
-        return self
 
 
 # ============================================================
 # 工具函数
 # ============================================================
-
-def bubble_states_to_api_response(states: List[BubbleState]) -> List[Dict]:
-    """
-    将 BubbleState 列表转换为 API 响应格式。
-    
-    Args:
-        states: BubbleState 列表
-        
-    Returns:
-        用于 JSON 响应的字典列表
-    """
-    return [state.to_dict() for state in states]

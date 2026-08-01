@@ -188,16 +188,3 @@ class BaseTextDetector(ABC):
             mask=mask,
             raw_lines=textlines
         )
-    
-    def detect_to_legacy_format(
-        self,
-        image: Image.Image,
-        **kwargs
-    ) -> dict:
-        """
-        检测并返回旧格式结果
-        
-        向后兼容接口，返回 {'coords': [...], 'polygons': [...], 'angles': [...]}
-        """
-        result = self.detect(image, **kwargs)
-        return result.to_legacy_format()

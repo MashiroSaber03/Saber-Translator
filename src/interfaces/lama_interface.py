@@ -2,10 +2,10 @@ import os
 import logging
 import numpy as np
 import cv2
-from PIL import Image, ImageDraw
+from PIL import Image
 
 # 导入路径助手
-from src.shared.path_helpers import resource_path, get_debug_dir
+from src.shared.path_helpers import resource_path
 
 logger = logging.getLogger("LAMAInterface")
 
@@ -19,7 +19,6 @@ LAMA_LITELAMA_AVAILABLE = False
 
 # --- 检查 LAMA MPE ---
 try:
-    import torch
     from src.interfaces.lama_mpe_interface import (
         is_lama_mpe_available,
         inpaint_with_lama_mpe
@@ -429,14 +428,6 @@ def clean_image_with_lama(image, mask, lama_model='lama_mpe', disable_resize=Fal
             mask_np = (255 - mask_np).astype(np.uint8)
             inverted_mask = Image.fromarray(mask_np)
         
-        # 保存反转后的掩码用于调试
-        try:
-            debug_dir = get_debug_dir()
-            inverted_mask.save(os.path.join(debug_dir, "inverted_mask_for_lama.png"))
-            logger.debug("已保存 LAMA 调试掩码")
-        except Exception:
-            pass
-        
         # 调用统一的 LAMA 清理函数
         result = lama_clean_object(image, inverted_mask, lama_model=lama_model, disable_resize=disable_resize)
         
@@ -468,64 +459,3 @@ def is_lama_available(lama_model=None):
         return LAMA_LITELAMA_AVAILABLE
     else:
         return LAMA_AVAILABLE
-
-
-def get_available_lama_models():
-    """
-    获取所有可用的 LAMA 模型列表
-    
-    Returns:
-        list: 可用模型列表，如 ['lama_mpe', 'litelama']
-    """
-    models = []
-    if LAMA_MPE_AVAILABLE:
-        models.append('lama_mpe')
-    if LAMA_LITELAMA_AVAILABLE:
-        models.append('litelama')
-    return models
-
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    print("--- 测试 LAMA 接口 ---")
-    print(f"LAMA 可用状态: {LAMA_AVAILABLE}")
-
-    # 配置日志以便查看输出
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    if LAMA_AVAILABLE:
-        # 需要一个测试图片和掩码路径
-        test_image_path = resource_path('pic/before1.png')  # 替换为你的测试图片
-        # 创建一个简单的测试掩码
-        try:
-            from src.core.detection import get_bubble_coordinates
-
-            img = Image.open(test_image_path).convert("RGB")
-            # clean_image_with_lama 期望黑色区域表示修复区，因此这里使用白底黑框。
-            mask = Image.new("L", img.size, 255)
-            draw = ImageDraw.Draw(mask)
-            w, h = img.size
-            # 在中间画一个黑色矩形表示要修复的区域
-            draw.rectangle([(w//4, h//4), (w*3//4, h*3//4)], fill=0)
-            mask_path = os.path.join(get_debug_dir(), "lama_interface_test_mask.png")
-            mask.save(mask_path)
-            print(f"测试掩码已保存到: {mask_path}")
-
-            print("开始 LAMA 修复测试...")
-            repaired_image = clean_image_with_lama(img, mask)
-
-            if repaired_image:
-                result_path = os.path.join(get_debug_dir(), "lama_interface_test_result.png")
-                repaired_image.save(result_path)
-                print(f"LAMA 修复测试成功，结果已保存到: {result_path}")
-            else:
-                print("LAMA 修复测试失败。")
-
-        except ImportError:
-            print("错误：无法导入 src.core.detection 进行测试。请确保该模块存在。")
-        except FileNotFoundError:
-            print(f"错误：测试图片未找到 {test_image_path}")
-        except Exception as e:
-            print(f"LAMA 测试过程中发生错误: {e}")
-    else:
-        print("LAMA 功能不可用，跳过修复测试。")

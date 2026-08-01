@@ -44,7 +44,7 @@ def sort_regions(
     # 1. 分镜检测 + 分镜内排序
     if img is not None:
         try:
-            panels_raw = get_panels_from_array(img, rtl=right_to_left)
+            panels_raw = get_panels_from_array(img)
             # 转换为 [x1, y1, x2, y2]
             panels = [(x, y, x + w, y + h) for x, y, w, h in panels_raw]
             # 使用自定义排序保持垂直堆叠的分镜在一起

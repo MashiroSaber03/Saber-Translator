@@ -13,12 +13,13 @@ from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.operations.repository import (
     OperationFence,
     OperationFenced,
     OperationRepository,
-    utcnow,
 )
+from src.backend_v2.timestamps import iso_utc, utcnow
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     assets,
@@ -39,7 +40,10 @@ from src.backend_v2.studio.model import (
     normalize_document,
     to_storage,
 )
-from src.backend_v2.studio.pure import run_state_tasks
+from src.backend_v2.studio.pure import (
+    run_state_tasks,
+    select_provider_section,
+)
 
 
 ACTIVE_OPERATION_STATUSES = ("pending", "running")
@@ -55,15 +59,6 @@ class StudioConflict(RuntimeError):
 
 class StudioBusy(StudioConflict):
     pass
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def _load(value: str | None, default: object) -> object:
@@ -111,7 +106,7 @@ class StudioRepository:
                     "sourceCharacter": row["source_character"],
                     "tags": _load(row["tags_json"], []),
                     "isFavorite": bool(row["is_favorite"]),
-                    "updatedAt": str(row["updated_at"]),
+                    "updatedAt": iso_utc(row["updated_at"]),
                 }
                 for row in rows
             ],
@@ -277,8 +272,8 @@ class StudioRepository:
             report = build_diagnostics_report(document)
             status = _mapping(document.get("status"))
             status["last_diagnostics"] = report
-            status["last_validated_at"] = (
-                now.replace(microsecond=0).isoformat() + "Z"
+            status["last_validated_at"] = iso_utc(
+                now.replace(microsecond=0)
             )
             document["status"] = status
             title, storage_values = to_storage(
@@ -317,49 +312,6 @@ class StudioRepository:
             request={
                 "documentId": document_id,
                 "baseRevision": base_revision,
-            },
-            http_status=200,
-            resource_type="studio_document",
-            mutation=mutate,
-        )
-        return result
-
-    def set_avatar(
-        self,
-        *,
-        document_id: str,
-        base_revision: int,
-        asset_id: str | None,
-        idempotency_key: str | None = None,
-        idempotency_request: Mapping[str, Any] | None = None,
-        idempotency_scope: str | None = None,
-    ) -> dict[str, Any]:
-        def mutate(
-            connection: Connection,
-            now,
-        ) -> tuple[dict[str, Any], str]:
-            return (
-                self._set_avatar_on_connection(
-                    connection,
-                    document_id=document_id,
-                    base_revision=base_revision,
-                    asset_id=asset_id,
-                    now=now,
-                ),
-                document_id,
-            )
-
-        result, _replayed = self._execute_short_command(
-            scope=(
-                idempotency_scope
-                or f"POST:setStudioAvatar:{document_id}"
-            ),
-            key=idempotency_key,
-            request=idempotency_request
-            or {
-                "documentId": document_id,
-                "baseRevision": base_revision,
-                "assetId": asset_id,
             },
             http_status=200,
             resource_type="studio_document",
@@ -417,7 +369,7 @@ class StudioRepository:
         *,
         document_id: str,
         title: str,
-        base_index_revision: int | None = None,
+        base_index_revision: int,
         greeting: str | None = None,
         greeting_source: Mapping[str, Any] | None = None,
         idempotency_key: str | None = None,
@@ -430,22 +382,7 @@ class StudioRepository:
             now,
         ) -> tuple[dict[str, Any], str]:
             document = self._assert_document(connection, document_id)
-            session_work: dict[str, Any] = {
-                "variables": {},
-                "_runtime": _default_chat_runtime_state(),
-            }
-            initial_runtime_log = run_state_tasks(
-                session_work,
-                from_storage(document).get("stateTasks", []),
-                event="initialization",
-            )
-            initial_variables = _mapping(session_work.get("variables"))
-            initial_runtime = _mapping(session_work.get("_runtime"))
-            if (
-                base_index_revision is not None
-                and int(document["chat_index_revision"])
-                != base_index_revision
-            ):
+            if int(document["chat_index_revision"]) != base_index_revision:
                 raise StudioConflict(
                     "studio chat session index revision changed"
                 )
@@ -466,68 +403,15 @@ class StudioRepository:
                     .where(studio_chat_sessions.c.id == active)
                     .values(archived_at=now, updated_at=now)
                 )
-            connection.execute(
-                insert(studio_chat_sessions).values(
-                    id=session_id,
-                    document_id=document_id,
-                    title=title or f"{document['title']} 对话",
-                    revision=1,
-                    generation=1,
-                    greeting_source_json=_json(dict(greeting_source or {})),
-                    variables_json=_json(initial_variables),
-                    summary_blocks_json="[]",
-                    summary_generation=0,
-                    runtime_state_json=_json(initial_runtime),
-                    runtime_schema_version=1,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            if greeting:
-                connection.execute(
-                    insert(studio_messages).values(
-                        id=str(uuid.uuid4()),
-                        session_id=session_id,
-                        ordinal=1,
-                        role="assistant",
-                        content=greeting,
-                        runtime_log=_json(initial_runtime_log),
-                        variables_snapshot_json=_json(initial_variables),
-                        generation_meta_json=_json(
-                            {
-                                "source": "greeting",
-                                "runtimeState": initial_runtime,
-                            }
-                        ),
-                        metadata_json="{}",
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-                connection.execute(
-                    update(studio_chat_sessions)
-                    .where(studio_chat_sessions.c.id == session_id)
-                    .values(revision=2)
-                )
-            connection.execute(
-                update(studio_documents)
-                .where(studio_documents.c.id == document_id)
-                .values(
-                    chat_index_revision=(
-                        studio_documents.c.chat_index_revision + 1
-                    )
-                )
-            )
-            session = connection.execute(
-                select(studio_chat_sessions).where(
-                    studio_chat_sessions.c.id == session_id
-                )
-            ).mappings().one()
             return (
-                self._session_dto(
+                self._insert_session_on_connection(
                     connection,
-                    session,
-                    self._message_rows(connection, session_id),
+                    document=document,
+                    session_id=session_id,
+                    title=title,
+                    greeting=greeting,
+                    greeting_source=greeting_source,
+                    now=now,
                 ),
                 session_id,
             )
@@ -574,77 +458,105 @@ class StudioRepository:
                     active,
                     self._message_rows(connection, str(active["id"])),
                 )
+            return self._insert_session_on_connection(
+                connection,
+                document=document,
+                session_id=session_id,
+                title=title,
+                greeting=greeting,
+                greeting_source=greeting_source,
+                now=now,
+            )
+
+    def _insert_session_on_connection(
+        self,
+        connection: Connection,
+        *,
+        document: Mapping[str, Any],
+        session_id: str,
+        title: str,
+        greeting: str | None,
+        greeting_source: Mapping[str, Any] | None,
+        now,
+    ) -> dict[str, Any]:
+        session_work: dict[str, Any] = {
+            "variables": {},
+            "_runtime": _default_chat_runtime_state(),
+        }
+        initial_runtime_log = run_state_tasks(
+            session_work,
+            from_storage(document).get("stateTasks", []),
+            event="initialization",
+        )
+        initial_variables = _mapping(session_work.get("variables"))
+        initial_runtime = _mapping(session_work.get("_runtime"))
+        connection.execute(
+            insert(studio_chat_sessions).values(
+                id=session_id,
+                document_id=document["id"],
+                title=title or f"{document['title']} 对话",
+                revision=1,
+                generation=1,
+                greeting_source_json=_json(dict(greeting_source or {})),
+                variables_json=_json(initial_variables),
+                summary_blocks_json="[]",
+                summary_generation=0,
+                runtime_state_json=_json(initial_runtime),
+                runtime_schema_version=1,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        if greeting:
             connection.execute(
-                insert(studio_chat_sessions).values(
-                    id=session_id,
-                    document_id=document_id,
-                    title=title or f"{document['title']} 对话",
-                    revision=1,
-                    generation=1,
-                    greeting_source_json=_json(dict(greeting_source or {})),
-                    variables_json="{}",
-                    summary_blocks_json="[]",
-                    summary_generation=0,
-                    runtime_state_json=_json(
-                        {
-                            "event_counts": {
-                                "message_received": 0,
-                                "message_sent": 0,
-                            },
-                            "matched_lorebook_ids": [],
-                        }
-                    ),
-                    runtime_schema_version=1,
-                    created_at=now,
+                insert(studio_messages).values(
+                    id=str(uuid.uuid4()),
+                    session_id=session_id,
+                    ordinal=1,
+                    role="assistant",
+                    content=greeting,
+                    runtime_log=_json(initial_runtime_log),
+                    variables_snapshot_json=_json(initial_variables),
+                        generation_meta_json=_json(
+                            {
+                                "source": "greeting",
+                                "runtimeState": initial_runtime,
+                            }
+                        ),
+                        created_at=now,
                     updated_at=now,
                 )
             )
-            if greeting:
-                connection.execute(
-                    insert(studio_messages).values(
-                        id=str(uuid.uuid4()),
-                        session_id=session_id,
-                        ordinal=1,
-                        role="assistant",
-                        content=greeting,
-                        runtime_log="",
-                        variables_snapshot_json="{}",
-                        generation_meta_json=_json({"source": "greeting"}),
-                        metadata_json="{}",
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-                connection.execute(
-                    update(studio_chat_sessions)
-                    .where(studio_chat_sessions.c.id == session_id)
-                    .values(revision=2)
-                )
             connection.execute(
-                update(studio_documents)
-                .where(studio_documents.c.id == document_id)
-                .values(
-                    chat_index_revision=(
-                        studio_documents.c.chat_index_revision + 1
-                    )
+                update(studio_chat_sessions)
+                .where(studio_chat_sessions.c.id == session_id)
+                .values(revision=2)
+            )
+        connection.execute(
+            update(studio_documents)
+            .where(studio_documents.c.id == document["id"])
+            .values(
+                chat_index_revision=(
+                    studio_documents.c.chat_index_revision + 1
                 )
             )
-            session = connection.execute(
-                select(studio_chat_sessions).where(
-                    studio_chat_sessions.c.id == session_id
-                )
-            ).mappings().one()
-            return self._session_dto(
-                connection,
-                session,
-                self._message_rows(connection, session_id),
+        )
+        session = connection.execute(
+            select(studio_chat_sessions).where(
+                studio_chat_sessions.c.id == session_id
             )
+        ).mappings().one()
+        return self._session_dto(
+            connection,
+            session,
+            self._message_rows(connection, session_id),
+        )
 
     def import_session(
         self,
         *,
         document_id: str,
-        base_index_revision: int | None = None,
+        base_index_revision: int,
         payload: Mapping[str, Any],
         idempotency_key: str | None = None,
         idempotency_request: Mapping[str, Any] | None = None,
@@ -689,7 +601,6 @@ class StudioRepository:
                         "generationMeta",
                         raw.get("generation_meta", {}),
                     ),
-                    "metadata": raw.get("metadata", {}),
                     "asset_ids": list(asset_ids),
                 }
             )
@@ -700,11 +611,7 @@ class StudioRepository:
             now,
         ) -> tuple[dict[str, Any], str]:
             document = self._assert_document(connection, document_id)
-            if (
-                base_index_revision is not None
-                and int(document["chat_index_revision"])
-                != base_index_revision
-            ):
+            if int(document["chat_index_revision"]) != base_index_revision:
                 raise StudioConflict(
                     "studio chat session index revision changed"
                 )
@@ -794,7 +701,6 @@ class StudioRepository:
                         generation_meta_json=_json(
                             message["generation_meta"]
                         ),
-                        metadata_json=_json(message["metadata"]),
                         created_at=now,
                         updated_at=now,
                     )
@@ -886,6 +792,41 @@ class StudioRepository:
             messages = self._message_rows(connection, session_id)
             return self._session_dto(connection, session, messages)
 
+    def session_book_id(self, session_id: str) -> str:
+        with self.engine.connect() as connection:
+            value = connection.execute(
+                select(studio_documents.c.book_id)
+                .join(
+                    studio_chat_sessions,
+                    studio_chat_sessions.c.document_id
+                    == studio_documents.c.id,
+                )
+                .where(studio_chat_sessions.c.id == session_id)
+            ).scalar_one_or_none()
+        if value is None:
+            raise StudioNotFound("studio chat session not found")
+        return str(value)
+
+    def message_book_id(self, message_id: str) -> str:
+        with self.engine.connect() as connection:
+            value = connection.execute(
+                select(studio_documents.c.book_id)
+                .join(
+                    studio_chat_sessions,
+                    studio_chat_sessions.c.document_id
+                    == studio_documents.c.id,
+                )
+                .join(
+                    studio_messages,
+                    studio_messages.c.session_id
+                    == studio_chat_sessions.c.id,
+                )
+                .where(studio_messages.c.id == message_id)
+            ).scalar_one_or_none()
+        if value is None:
+            raise StudioNotFound("studio message not found")
+        return str(value)
+
     def chat_state(self, document_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
             document = self._assert_document(connection, document_id)
@@ -947,7 +888,7 @@ class StudioRepository:
                         "revision": int(row["revision"]),
                         "generation": int(row["generation"]),
                         "archived": row["archived_at"] is not None,
-                        "updatedAt": str(row["updated_at"]),
+                        "updatedAt": iso_utc(row["updated_at"]),
                         "messageCount": int(row["message_count"]),
                         "lastMessageExcerpt": str(
                             row["last_message_excerpt"] or ""
@@ -1016,7 +957,7 @@ class StudioRepository:
             request_payload = {
                 "section": section,
                 "document": document,
-                "config": dict(config),
+                "config": _provider_snapshot(config),
                 "analysisContext": (
                     dict(analysis_context)
                     if analysis_context is not None
@@ -1031,8 +972,6 @@ class StudioRepository:
                 base_revision=base_revision,
                 base_generation=0,
                 request_payload=request_payload,
-                idempotency_scope=None,
-                idempotency_key=None,
                 now=now,
             )
             self._store_idempotency(
@@ -1113,7 +1052,6 @@ class StudioRepository:
                             )
                         }
                     ),
-                    metadata_json="{}",
                     created_at=now,
                     updated_at=now,
                 )
@@ -1147,6 +1085,15 @@ class StudioRepository:
             messages = self._message_rows(connection, session_id)
             message_dtos = self._messages_dto(connection, messages)
             document = from_storage(document_row)
+            config_snapshot = _provider_snapshot(
+                config,
+                prefer_vlm=_messages_have_attachments(
+                    message_dtos,
+                    summary_through_message_id=session[
+                        "summary_through_message_id"
+                    ],
+                ),
+            )
             operation = self._insert_operation(
                 connection,
                 kind="studio_chat",
@@ -1169,10 +1116,8 @@ class StudioRepository:
                     "summaryThroughMessageId": session[
                         "summary_through_message_id"
                     ],
-                    "config": dict(config),
+                    "config": config_snapshot,
                 },
-                idempotency_scope=None,
-                idempotency_key=None,
                 now=now,
             )
             self._bind_operation_message_assets(
@@ -1276,10 +1221,8 @@ class StudioRepository:
                 base_generation=int(session["generation"]),
                 request_payload={
                     "messages": message_dtos,
-                    "config": dict(config),
+                    "config": _provider_snapshot(config),
                 },
-                idempotency_scope=None,
-                idempotency_key=None,
                 now=now,
             )
             self._store_idempotency(
@@ -1376,7 +1319,7 @@ class StudioRepository:
         self,
         session_id: str,
         *,
-        base_index_revision: int | None = None,
+        base_index_revision: int,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         def mutate(
@@ -1394,11 +1337,7 @@ class StudioRepository:
                 connection,
                 str(target["document_id"]),
             )
-            if (
-                base_index_revision is not None
-                and int(document["chat_index_revision"])
-                != base_index_revision
-            ):
+            if int(document["chat_index_revision"]) != base_index_revision:
                 raise StudioConflict(
                     "studio chat session index revision changed"
                 )
@@ -1504,6 +1443,15 @@ class StudioRepository:
             connection.execute(
                 delete(studio_chat_sessions).where(
                     studio_chat_sessions.c.id == session_id
+                )
+            )
+            connection.execute(
+                update(studio_documents)
+                .where(studio_documents.c.id == row["document_id"])
+                .values(
+                    chat_index_revision=(
+                        studio_documents.c.chat_index_revision + 1
+                    )
                 )
             )
             return {"deleted": True, "sessionId": session_id}, session_id
@@ -1729,6 +1677,11 @@ class StudioRepository:
                 connection,
                 self._message_rows(connection, session_id),
             )
+            summary_through_message_id = (
+                None
+                if clear_summary
+                else session["summary_through_message_id"]
+            )
             operation = self._insert_operation(
                 connection,
                 kind="studio_chat",
@@ -1750,14 +1703,18 @@ class StudioRepository:
                         )
                     ),
                     "summaryThroughMessageId": (
-                        None
-                        if clear_summary
-                        else session["summary_through_message_id"]
+                        summary_through_message_id
                     ),
-                    "config": dict(config),
+                    "config": _provider_snapshot(
+                        config,
+                        prefer_vlm=_messages_have_attachments(
+                            message_dtos,
+                            summary_through_message_id=(
+                                summary_through_message_id
+                            ),
+                        ),
+                    ),
                 },
-                idempotency_scope=None,
-                idempotency_key=None,
                 now=now,
             )
             self._bind_operation_message_assets(
@@ -1916,7 +1873,6 @@ class StudioRepository:
                             "runtimeState": dict(runtime_state),
                         }
                     ),
-                    metadata_json="{}",
                     created_at=utcnow(),
                     updated_at=utcnow(),
                 )
@@ -2026,23 +1982,8 @@ class StudioRepository:
         base_revision: int,
         base_generation: int,
         request_payload: Mapping[str, Any],
-        idempotency_scope: str | None,
-        idempotency_key: str | None,
         now,
     ) -> dict[str, Any]:
-        request_hash = hashlib.sha256(
-            _json(request_payload).encode("utf-8")
-        ).hexdigest()
-        if idempotency_scope and idempotency_key:
-            replay = self._idempotency_replay(
-                connection,
-                scope=idempotency_scope,
-                key=idempotency_key,
-                request_hash=request_hash,
-                now=now,
-            )
-            if replay is not None:
-                return replay
         operation_id = str(uuid.uuid4())
         try:
             connection.execute(
@@ -2079,16 +2020,6 @@ class StudioRepository:
             "baseRevision": base_revision,
             "baseGeneration": base_generation,
         }
-        if idempotency_scope and idempotency_key:
-            self._store_idempotency(
-                connection,
-                scope=idempotency_scope,
-                key=idempotency_key,
-                request_hash=request_hash,
-                response=response,
-                resource_id=operation_id,
-                now=now,
-            )
         return response
 
     def replay_short_command(
@@ -2206,36 +2137,6 @@ class StudioRepository:
             raise StudioNotFound("studio document not found")
         return from_storage(row)
 
-    def _set_avatar_on_connection(
-        self,
-        connection: Connection,
-        *,
-        document_id: str,
-        base_revision: int,
-        asset_id: str | None,
-        now,
-    ) -> dict[str, Any]:
-        row = self._assert_document(connection, document_id)
-        if int(row["revision"]) != base_revision:
-            raise StudioConflict("studio document revision changed")
-        if asset_id is not None:
-            self._assert_assets(connection, [asset_id])
-        changed = connection.execute(
-            update(studio_documents)
-            .where(
-                studio_documents.c.id == document_id,
-                studio_documents.c.revision == base_revision,
-            )
-            .values(
-                avatar_asset_id=asset_id,
-                revision=base_revision + 1,
-                updated_at=now,
-            )
-        )
-        if changed.rowcount != 1:
-            raise StudioConflict("studio document revision changed")
-        return self._document_from_connection(connection, document_id)
-
     @staticmethod
     def _assert_book(connection: Connection, book_id: str) -> None:
         if connection.execute(
@@ -2338,7 +2239,6 @@ class StudioRepository:
                         runtime_log="",
                         variables_snapshot_json=session["variables_json"],
                         generation_meta_json=_json({"source": "greeting"}),
-                        metadata_json="{}",
                         created_at=now,
                         updated_at=now,
                     )
@@ -2524,6 +2424,8 @@ class StudioRepository:
                 {},
             ),
             "generationMeta": _load(row["generation_meta_json"], {}),
+            "createdAt": iso_utc(row["created_at"]),
+            "updatedAt": iso_utc(row["updated_at"]),
         }
 
     def _messages_dto(
@@ -2639,6 +2541,8 @@ class StudioRepository:
             "runtimeState": _load(row["runtime_state_json"], {}),
             "archived": row["archived_at"] is not None,
             "messages": self._messages_dto(connection, messages),
+            "createdAt": iso_utc(row["created_at"]),
+            "updatedAt": iso_utc(row["updated_at"]),
         }
 
     @staticmethod
@@ -2722,6 +2626,35 @@ def _credential_references(value: Mapping[str, Any]) -> dict[str, str]:
 
     visit(value, ())
     return result
+
+
+def _provider_snapshot(
+    config: Mapping[str, Any],
+    *,
+    prefer_vlm: bool = False,
+) -> dict[str, Any]:
+    section_name, section = select_provider_section(
+        config,
+        prefer_vlm=prefer_vlm,
+    )
+    return {section_name: section}
+
+
+def _messages_have_attachments(
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    summary_through_message_id: object,
+) -> bool:
+    include = summary_through_message_id is None
+    for message in messages:
+        if not include:
+            if message.get("messageId") == summary_through_message_id:
+                include = True
+            continue
+        attachments = message.get("attachments")
+        if isinstance(attachments, list) and attachments:
+            return True
+    return False
 
 
 def _mapping(value: object) -> dict[str, Any]:

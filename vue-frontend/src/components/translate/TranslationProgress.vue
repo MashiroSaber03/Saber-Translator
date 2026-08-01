@@ -60,7 +60,6 @@
 import { computed } from 'vue'
 
 import {
-  useTranslation,
   type TranslationPoolProgress,
   type TranslationProgress,
 } from '@/composables/useTranslationPipeline'
@@ -68,19 +67,18 @@ import { useImageStore } from '@/stores/imageStore'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 
 interface Props {
-  progress?: TranslationProgress
+  progress: TranslationProgress
 }
 
 const props = defineProps<Props>()
 const imageStore = useImageStore()
-const translation = useTranslation()
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.min(100, Math.max(0, value))
 }
 
-const currentProgress = computed(() => props.progress || translation.progress.value)
+const currentProgress = computed(() => props.progress)
 const showProgress = computed(() => (
   currentProgress.value.isInProgress || imageStore.isBatchTranslationInProgress
 ))

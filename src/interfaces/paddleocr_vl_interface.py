@@ -13,10 +13,9 @@ PaddleOCR-VL 接口实现
 import os
 import sys
 import logging
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple
 from PIL import Image
 import numpy as np
-import cv2
 
 import torch
 
@@ -57,9 +56,6 @@ PADDLEOCR_VL_LANG_MAP = {
     'greek': '希腊语',
     'hebrew': '希伯来语',
     
-    # 兼容旧代码
-    'japan': '日语',
-    'en': '英语',
 }
 
 
@@ -291,7 +287,6 @@ class PaddleOCRVLHandler:
         self, 
         image: Image.Image, 
         bubble_coords: List[Tuple[int, int, int, int]],
-        textlines_per_bubble: Optional[List[List[Dict]]] = None,
         source_language: str = 'japanese'
     ) -> List[str]:
         """
@@ -300,7 +295,6 @@ class PaddleOCRVLHandler:
         Args:
             image: PIL Image
             bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
-            textlines_per_bubble: 每个气泡对应的原始文本行列表（可选）
             source_language: 源语言代码
         
         Returns:
@@ -382,51 +376,3 @@ def reset_paddleocr_vl_handler():
             torch.cuda.empty_cache()
     _paddleocr_vl_handler = None
     logger.info("PaddleOCR-VL 处理器已重置")
-
-
-# 测试代码
-if __name__ == '__main__':
-    import sys
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    print("=" * 60)
-    print("PaddleOCR-VL 接口测试")
-    print("=" * 60)
-    
-    handler = get_paddleocr_vl_handler()
-    
-    # 测试初始化
-    print("\n[测试1] 初始化模型...")
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if handler.initialize(device):
-        print(f"✅ 模型初始化成功 (设备: {device})")
-    else:
-        print("❌ 模型初始化失败")
-        print("请确保已安装: pip install transformers>=4.40.0")
-        sys.exit(1)
-    
-    # 测试识别（需要测试图片）
-    test_image_path = resource_path('pic/before1.png')
-    if os.path.exists(test_image_path):
-        print(f"\n[测试2] 测试图像识别: {test_image_path}")
-        try:
-            img = Image.open(test_image_path)
-            
-            # 模拟气泡坐标
-            test_coords = [(100, 100, 300, 200)]
-            
-            results = handler.recognize_text(img, test_coords)
-            print(f"识别结果: {results}")
-            
-        except Exception as e:
-            print(f"❌ 测试失败: {e}")
-    else:
-        print(f"\n⚠️  测试图片不存在: {test_image_path}")
-    
-    print("\n" + "=" * 60)
-    print("测试完成")
-    print("=" * 60)

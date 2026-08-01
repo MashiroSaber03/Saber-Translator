@@ -1,18 +1,21 @@
-"""Repositories for settings, immutable credentials/plugins, fonts, and rate limits."""
+"""Repositories for settings, immutable credentials, fonts, and rate limits."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 import hashlib
 import json
-from pathlib import PurePosixPath
 import uuid
 from typing import Any
 
 from sqlalchemy import Engine, and_, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.serialization import canonical_json as _canonical_json
+from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.page_style import validate_text_style_defaults
 from src.backend_v2.settings.validation import (
     validate_book_setting_payload,
@@ -30,9 +33,6 @@ from src.backend_v2.storage.schema import (
     credentials,
     fonts,
     idempotency_records,
-    plugin_current_versions,
-    plugin_versions,
-    plugins,
     provider_rate_limits,
     provider_settings,
     prompts,
@@ -42,14 +42,6 @@ from src.backend_v2.storage.database import immediate_transaction
 
 class RevisionConflict(RuntimeError):
     pass
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _require_object(value: object, label: str) -> dict[str, Any]:
@@ -678,8 +670,59 @@ class SettingsRepository:
                 select(credential_versions.c.secret_json).where(
                     credential_versions.c.id == credential_version_id
                 )
-            ).scalar_one()
+            ).scalar_one_or_none()
+        if value is None:
+            raise LookupError("credential version not found")
         return _require_object(json.loads(value), "stored credential secret")
+
+    def resolve_credential_sections(
+        self,
+        config: Mapping[str, Any],
+        section_names: Iterable[str],
+    ) -> dict[str, Any]:
+        """Materialize frozen credential versions into selected config sections."""
+
+        result = deepcopy(dict(config))
+        requested: dict[str, str] = {}
+        for section_name in section_names:
+            raw_section = result.get(section_name)
+            section = dict(raw_section) if isinstance(raw_section, Mapping) else {}
+            version_id = section.pop("credentialVersionId", None)
+            result[section_name] = section
+            if version_id is None:
+                continue
+            if not isinstance(version_id, str) or not version_id:
+                raise ValueError(
+                    f"{section_name}.credentialVersionId must be a non-empty string"
+                )
+            requested[section_name] = version_id
+        if not requested:
+            return result
+
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(
+                    credential_versions.c.id,
+                    credential_versions.c.secret_json,
+                ).where(
+                    credential_versions.c.id.in_(set(requested.values()))
+                )
+            ).mappings()
+            secrets = {
+                str(row["id"]): _require_object(
+                    json.loads(str(row["secret_json"])),
+                    "stored credential secret",
+                )
+                for row in rows
+            }
+        for section_name, version_id in requested.items():
+            secret = secrets.get(version_id)
+            if secret is None:
+                raise LookupError(
+                    f"credential version for {section_name} not found"
+                )
+            result[section_name].update(secret)
+        return result
 
     def resolve_current_secret(self, credential_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
@@ -896,104 +939,9 @@ class PromptRepository:
         }
 
 
-class PluginVersionRepository:
-    def __init__(self, engine: Engine) -> None:
-        self.engine = engine
-
-    def install_version(
-        self,
-        *,
-        plugin_id: str | None,
-        name: str,
-        version: str,
-        package_relative_path: str,
-        checksum: str,
-        manifest: dict[str, Any],
-        base_revision: int,
-    ) -> dict[str, object]:
-        path = PurePosixPath(package_relative_path)
-        if path.is_absolute() or ".." in path.parts:
-            raise ValueError("plugin package path must be data-root-relative")
-        with self.engine.begin() as connection:
-            if plugin_id is None:
-                if base_revision != 0:
-                    raise RevisionConflict("new plugin requires base revision zero")
-                plugin_id = str(uuid.uuid4())
-                connection.execute(insert(plugins).values(id=plugin_id, name=name))
-                current_revision = 0
-            else:
-                current_revision = connection.execute(
-                    select(plugin_current_versions.c.revision).where(
-                        plugin_current_versions.c.plugin_id == plugin_id
-                    )
-                ).scalar_one_or_none()
-                if current_revision != base_revision:
-                    raise RevisionConflict("plugin current version changed")
-
-            version_id = str(uuid.uuid4())
-            connection.execute(
-                insert(plugin_versions).values(
-                    id=version_id,
-                    plugin_id=plugin_id,
-                    version=version,
-                    package_relative_path=path.as_posix(),
-                    checksum=checksum,
-                    manifest_json=_canonical_json(_require_object(manifest, "manifest")),
-                )
-            )
-            if current_revision == 0:
-                connection.execute(
-                    insert(plugin_current_versions).values(
-                        plugin_id=plugin_id,
-                        plugin_version_id=version_id,
-                        revision=1,
-                    )
-                )
-                revision = 1
-            else:
-                changed = connection.execute(
-                    update(plugin_current_versions)
-                    .where(
-                        plugin_current_versions.c.plugin_id == plugin_id,
-                        plugin_current_versions.c.revision == base_revision,
-                    )
-                    .values(
-                        plugin_version_id=version_id,
-                        revision=base_revision + 1,
-                        updated_at=_utcnow(),
-                    )
-                )
-                if changed.rowcount != 1:
-                    raise RevisionConflict("plugin current version changed")
-                revision = base_revision + 1
-        return {
-            "pluginId": plugin_id,
-            "pluginVersionId": version_id,
-            "revision": revision,
-        }
-
-
 class FontRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
-
-    def ensure_builtin(self, *, builtin_key: str, display_name: str) -> str:
-        with self.engine.begin() as connection:
-            existing = connection.execute(
-                select(fonts.c.id).where(fonts.c.builtin_key == builtin_key)
-            ).scalar_one_or_none()
-            if existing is not None:
-                return str(existing)
-            font_id = str(uuid.uuid4())
-            connection.execute(
-                insert(fonts).values(
-                    id=font_id,
-                    kind="builtin",
-                    builtin_key=builtin_key,
-                    display_name=display_name,
-                )
-            )
-            return font_id
 
     def register_uploaded(self, *, asset_id: str, display_name: str) -> str:
         font_id = str(uuid.uuid4())
@@ -1065,11 +1013,10 @@ class ProviderRateLimiter:
         provider: str,
         credential_version_id: str,
         rpm_limit: int,
-        now: datetime | None = None,
     ) -> RateLimitDecision:
         if rpm_limit < 1:
             raise ValueError("rpm_limit must be positive")
-        current_time = now or _utcnow()
+        current_time = _utcnow()
         window_cutoff = current_time - timedelta(minutes=1)
 
         for _attempt in range(8):

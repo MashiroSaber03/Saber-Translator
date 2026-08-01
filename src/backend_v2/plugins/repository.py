@@ -14,7 +14,8 @@ import uuid
 
 from sqlalchemy import Engine, case, delete, insert, select, update
 
-from src.backend_v2.jobs.repository import utcnow
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.plugins.contract import (
     PluginContractError,
@@ -28,7 +29,6 @@ from src.backend_v2.plugins.package import (
     extract_archive,
     parse_archive,
 )
-from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     idempotency_records,
@@ -59,15 +59,6 @@ class PluginLocked(PluginConflict):
     pass
 
 
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
 def _load(value: str | None, default: object) -> object:
     return json.loads(value) if value else default
 
@@ -80,23 +71,6 @@ class PluginRegistry:
         self.temp_root = self.data_root / "temp" / "plugins"
         self.plugins_root.mkdir(parents=True, exist_ok=True)
         self.temp_root.mkdir(parents=True, exist_ok=True)
-
-    def reset_runtime_enabled(self) -> None:
-        with immediate_transaction(self.engine) as connection:
-            connection.execute(
-                update(plugins).values(
-                    runtime_enabled=plugins.c.default_enabled,
-                    state=case(
-                        (plugins.c.state == "error", "error"),
-                        (
-                            plugins.c.default_enabled.is_(True),
-                            "enabled",
-                        ),
-                        else_="disabled",
-                    ),
-                    updated_at=utcnow(),
-                )
-            )
 
     def list_plugins(self) -> dict[str, Any]:
         with self.engine.connect() as connection:
@@ -228,10 +202,6 @@ class PluginRegistry:
                             "currentRevision": current_revision,
                         },
                     )
-                if plugin is None and base_revision != 0:
-                    raise PluginConflict(
-                        "new plugin import requires baseRevision 0"
-                    )
                 schema = parsed.manifest.config_schema
                 if plugin is None:
                     config = default_config(schema)
@@ -267,7 +237,15 @@ class PluginRegistry:
                         raise PluginConflict(
                             "stored plugin config is invalid"
                         )
-                    config = validate_config(schema, loaded_config)
+                    # Package upgrades may remove obsolete settings.  Keep
+                    # values whose fields still exist and seed new fields from
+                    # the new schema defaults.
+                    retained_config = {
+                        str(key): value
+                        for key, value in loaded_config.items()
+                        if key in schema
+                    }
+                    config = validate_config(schema, retained_config)
                     connection.execute(
                         update(plugins)
                         .where(plugins.c.id == plugin_id)
@@ -470,16 +448,7 @@ class PluginRegistry:
 
     def export_current(self, plugin_id: str) -> tuple[bytes, str]:
         plugin = self.get_plugin(plugin_id)
-        version_id = str(plugin["pluginVersionId"])
-        relative = plugin.get("packageRelativePath")
-        if not isinstance(relative, str):
-            with self.engine.connect() as connection:
-                relative = connection.execute(
-                    select(plugin_versions.c.package_relative_path).where(
-                        plugin_versions.c.id == version_id
-                    )
-                ).scalar_one()
-        root = self._managed_path(str(relative))
+        root = self._managed_path(str(plugin["packageRelativePath"]))
         return (
             build_archive(root),
             f"{plugin_id}-{plugin['packageVersion']}.zip",
@@ -555,9 +524,6 @@ class PluginRegistry:
         trash = self.temp_root / f"delete-{uuid.uuid4()}"
         moved = False
         try:
-            if plugin_root.exists():
-                os.replace(plugin_root, trash)
-                moved = True
             with immediate_transaction(self.engine) as connection:
                 current = connection.execute(
                     select(plugin_current_versions.c.revision).where(
@@ -603,6 +569,11 @@ class PluginRegistry:
                         raise PluginLocked(
                             "plugin version is referenced by task history"
                         )
+                # Do not make package code disappear before all database
+                # revision/reference checks have succeeded.
+                if plugin_root.exists():
+                    os.replace(plugin_root, trash)
+                    moved = True
                 connection.execute(
                     delete(plugin_current_versions).where(
                         plugin_current_versions.c.plugin_id == plugin_id
@@ -624,10 +595,6 @@ class PluginRegistry:
                 plugin_root.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(trash, plugin_root)
             raise
-
-    def enabled_snapshots(self) -> dict[str, dict[str, Any]]:
-        with self.engine.connect() as connection:
-            return enabled_plugin_snapshots(connection)
 
     def _managed_path(self, relative: str) -> Path:
         path = (self.data_root / Path(relative)).resolve()

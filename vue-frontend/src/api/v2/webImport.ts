@@ -18,7 +18,6 @@ export function checkWebImportSupport(sourceUrl: string): Promise<WebImportSuppo
 
 export function createWebImportDraft(command: {
   chapterId: string
-  config: Record<string, unknown>
   engine: string
   sourceUrl: string
 }): Promise<WebImportDraftAccepted> {

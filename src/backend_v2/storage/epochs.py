@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 import hashlib
 import json
 import secrets
 from typing import Literal
 
-from sqlalchemy import Engine, and_, delete, exists, func, insert, select, update
+from sqlalchemy import Engine, delete, exists, func, insert, select, update
 
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     api_executor_leases,
@@ -30,10 +31,6 @@ ProcessRole = Literal["launcher", "api", "worker"]
 REMOTE_API_OPERATION_KINDS = frozenset(
     {"bubble_translate", "studio_generate", "studio_chat", "studio_summary"}
 )
-
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def hash_epoch_token(token: str) -> str:

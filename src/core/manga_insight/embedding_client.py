@@ -17,9 +17,14 @@ from src.shared.openai_execution import (
     parse_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
+from src.shared.ai_providers import (
+    CHAT_CAPABILITY,
+    EMBEDDING_CAPABILITY,
+    normalize_provider_id,
+    resolve_provider_base_url_for_capability,
+)
 
 from .clients.base_client import RPMLimiter
-from .clients.provider_registry import get_base_url
 from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
@@ -33,12 +38,6 @@ class EmbeddingBusinessRetryableError(ValueError):
     """仅用于 Embedding 结果级别的可重试错误。"""
 
 
-def _provider_id(value) -> str:
-    if isinstance(value, str):
-        return value.lower()
-    return str(getattr(value, "value", value)).lower()
-
-
 class EmbeddingClient:
     """
     向量模型客户端（复用共享 async transport）。
@@ -46,8 +45,12 @@ class EmbeddingClient:
 
     def __init__(self, config: EmbeddingConfig):
         self.config = config
-        self.provider = _provider_id(config.provider)
-        self._base_url = get_base_url(self.provider, config.base_url)
+        self.provider = normalize_provider_id(config.provider)
+        self._base_url = resolve_provider_base_url_for_capability(
+            self.provider,
+            EMBEDDING_CAPABILITY,
+            config.base_url,
+        ) or ""
         self._rpm_limiter = RPMLimiter(config.rpm_limit, bucket_id=f"embedding:{self.provider}")
         timeout_value = float(config.timeout_seconds or 0)
         self._timeout = None if timeout_value <= 0 else timeout_value
@@ -156,10 +159,14 @@ class ChatClient:
     def __init__(self, config: ChatLLMConfig):
         self.config = config
 
-        provider = _provider_id(getattr(config, "provider", "openai"))
-        custom_url = config.base_url if hasattr(config, "base_url") and config.base_url else None
+        provider = normalize_provider_id(config.provider)
+        custom_url = config.base_url or None
         self.provider = provider
-        self._base_url = get_base_url(provider, custom_url)
+        self._base_url = resolve_provider_base_url_for_capability(
+            provider,
+            CHAT_CAPABILITY,
+            custom_url,
+        ) or ""
         self._timeout = 120.0
         self._total_timeout = 300.0
         self._transport = AsyncOpenAICompatibleTransport()
@@ -218,7 +225,7 @@ class ChatClient:
                         api_key=self.config.api_key,
                         model=self.config.model,
                         messages=self._build_messages(prompt, system),
-                        base_url=getattr(self.config, "base_url", None) or None,
+                        base_url=self.config.base_url or None,
                         capability="chat",
                         openai_options=options,
                         runtime_options=build_openai_compatible_runtime_options(

@@ -6,7 +6,7 @@
 
 import logging
 import httpx
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 logger = logging.getLogger("WebImport.FirecrawlTools")
 
@@ -107,147 +107,16 @@ FIRECRAWL_TOOLS = [
 ]
 
 
-class FirecrawlClient:
-    """Firecrawl API 客户端"""
-    
-    def __init__(self, api_key: str, timeout: int = 60):
-        """
-        初始化 Firecrawl 客户端
-        
-        Args:
-            api_key: Firecrawl API Key
-            timeout: 请求超时时间（秒）
-        """
-        self.api_key = api_key
-        self.timeout = timeout
-        self.headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-    
-    async def scrape(
-        self,
-        url: str,
-        formats: List[str] = None,
-        wait_for: int = 0,
-        actions: List[Dict] = None
-    ) -> Dict[str, Any]:
-        """
-        抓取单个网页
-        
-        Args:
-            url: 目标 URL
-            formats: 返回格式列表
-            wait_for: 等待时间（毫秒）
-            actions: 页面操作列表
-        
-        Returns:
-            抓取结果
-        """
-        payload = {"url": url}
-        
-        if formats:
-            payload["formats"] = formats
-        if wait_for > 0:
-            payload["waitFor"] = wait_for
-        if actions:
-            payload["actions"] = actions
-        
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{FIRECRAWL_API_BASE}/scrape",
-                headers=self.headers,
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()
-    
-    async def extract(
-        self,
-        urls: List[str],
-        prompt: str = None,
-        schema: Dict = None
-    ) -> Dict[str, Any]:
-        """
-        从网页提取结构化数据
-        
-        Args:
-            urls: URL 列表
-            prompt: 提取提示词
-            schema: 输出 Schema
-        
-        Returns:
-            提取结果
-        """
-        payload = {"urls": urls}
-        
-        if prompt:
-            payload["prompt"] = prompt
-        if schema:
-            payload["schema"] = schema
-        
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{FIRECRAWL_API_BASE}/extract",
-                headers=self.headers,
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()
 
 
-async def execute_firecrawl_tool(
-    tool_name: str,
-    tool_args: Dict[str, Any],
-    api_key: str,
-    timeout: int = 60
-) -> Dict[str, Any]:
-    """
-    执行 Firecrawl 工具调用 (异步版本)
-    
-    Args:
-        tool_name: 工具名称
-        tool_args: 工具参数
-        api_key: Firecrawl API Key
-        timeout: 超时时间
-    
-    Returns:
-        工具执行结果
-    """
-    client = FirecrawlClient(api_key, timeout)
-    
-    try:
-        if tool_name == "firecrawl_scrape":
-            result = await client.scrape(
-                url=tool_args.get("url"),
-                formats=tool_args.get("formats", ["markdown", "html"]),
-                wait_for=tool_args.get("wait_for", 0),
-                actions=tool_args.get("actions")
-            )
-        elif tool_name == "firecrawl_extract":
-            result = await client.extract(
-                urls=tool_args.get("urls", []),
-                prompt=tool_args.get("prompt"),
-                schema=tool_args.get("schema")
-            )
-        else:
-            return {"error": f"未知的工具: {tool_name}"}
-        
-        return result
-        
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Firecrawl API 错误: {e.response.status_code} - {e.response.text}")
-        return {"error": f"API 错误: {e.response.status_code}"}
-    except Exception as e:
-        logger.error(f"执行 Firecrawl 工具失败: {e}")
-        return {"error": str(e)}
 
 
 def execute_firecrawl_tool_sync(
     tool_name: str,
     tool_args: Dict[str, Any],
     api_key: str,
-    timeout: int = 60
+    timeout: int = 60,
+    bypass_proxy: bool = False,
 ) -> Dict[str, Any]:
     """
     执行 Firecrawl 工具调用 (同步版本)
@@ -279,7 +148,10 @@ def execute_firecrawl_tool_sync(
             if actions:
                 payload["actions"] = actions
             
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(
+                timeout=timeout,
+                trust_env=not bypass_proxy,
+            ) as client:
                 response = client.post(
                     f"{FIRECRAWL_API_BASE}/scrape",
                     headers=headers,
@@ -297,7 +169,10 @@ def execute_firecrawl_tool_sync(
             if schema:
                 payload["schema"] = schema
             
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(
+                timeout=timeout,
+                trust_env=not bypass_proxy,
+            ) as client:
                 response = client.post(
                     f"{FIRECRAWL_API_BASE}/extract",
                     headers=headers,

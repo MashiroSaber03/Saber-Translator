@@ -72,15 +72,6 @@ class ColorExtractionResult:
             'confidence': self.confidence
         }
     
-    @property
-    def has_fg_color(self) -> bool:
-        """是否有有效的前景色"""
-        return self.fg_color is not None
-    
-    @property
-    def has_bg_color(self) -> bool:
-        """是否有有效的背景色"""
-        return self.bg_color is not None
     
     def __repr__(self):
         return f"ColorExtractionResult(fg={self.fg_color}, bg={self.bg_color}, conf={self.confidence:.2f})"
@@ -102,8 +93,8 @@ class ColorExtractor:
         """Return whether the underlying 48px model is still loaded."""
         return (
             self._ocr_handler is not None
-            and bool(getattr(self._ocr_handler, "initialized", False))
-            and getattr(self._ocr_handler, "model", None) is not None
+            and self._ocr_handler.initialized
+            and self._ocr_handler.model is not None
         )
     
     def initialize(self, device: Optional[str] = None) -> bool:
@@ -207,24 +198,6 @@ class ColorExtractor:
             logger.error(f"颜色提取失败: {e}", exc_info=True)
             return [ColorExtractionResult() for _ in bubble_coords]
     
-    def extract_colors_simple(
-        self,
-        image: Image.Image,
-        bubble_coords: List[Tuple[int, int, int, int]]
-    ) -> List[ColorExtractionResult]:
-        """
-        简化版颜色提取（不使用原始文本行）
-        
-        适用于没有文本行信息的场景。
-        
-        Args:
-            image: PIL 图像
-            bubble_coords: 气泡坐标列表
-        
-        Returns:
-            颜色提取结果列表
-        """
-        return self.extract_colors(image, bubble_coords, None)
 
 
 def get_color_extractor() -> ColorExtractor:
@@ -270,7 +243,7 @@ def extract_bubble_colors(
     extractor = get_color_extractor()
     resolved_device = _resolve_preferred_device(device)
 
-    if (not extractor.is_initialized) or getattr(extractor, "_device", None) != resolved_device:
+    if not extractor.is_initialized or extractor._device != resolved_device:
         if not extractor.initialize(resolved_device):
             logger.error("颜色提取器初始化失败")
             return [{'fg_color': None, 'bg_color': None, 'confidence': 0.0} for _ in bubble_coords]

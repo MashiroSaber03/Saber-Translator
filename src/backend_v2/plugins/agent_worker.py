@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import json
 from pathlib import Path
 import shutil
 from typing import Any
@@ -79,7 +78,7 @@ class PluginAgentWorkerService:
         previews: dict[str, str] = {}
 
         def emit(event_type: str, payload: Mapping[str, Any]) -> None:
-            self.jobs.append_plugin_event(
+            self.jobs.append_worker_event(
                 fence,
                 event_type=(
                     "plugin_agent_" + event_type.replace("-", "_")
@@ -135,11 +134,10 @@ class PluginAgentWorkerService:
                 tools,
                 emit,
             )
-            validation = (
-                result.get("validation")
-                if isinstance(result, Mapping)
-                else None
-            ) or tools.validate_plugin()
+            # The controller is an untrusted planner.  Validate the final
+            # worktree again at the Worker publication boundary so a stale or
+            # fabricated controller result can never publish a package.
+            validation = tools.validate_plugin()
             if not validation.get("success"):
                 raise ValueError(
                     str(
@@ -149,16 +147,17 @@ class PluginAgentWorkerService:
                         )
                     )
                 )
+            locked_plugin_id = str(target.get("plugin_id", ""))
+            if validation.get("plugin_id") != locked_plugin_id:
+                raise ValueError(
+                    "generated manifest plugin_id changed from locked target"
+                )
             archive = build_archive(worktree)
             published = self.registry.import_archive(
                 data=archive,
                 base_revision=int(target.get("baseRevision", 0)),
                 idempotency_key=f"plugin-agent:{fence.job_id}",
             )
-            if published["pluginId"] != target.get("plugin_id"):
-                raise ValueError(
-                    "generated manifest plugin_id changed from locked target"
-                )
             emit(
                 "done",
                 {

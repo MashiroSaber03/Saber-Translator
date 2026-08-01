@@ -4,14 +4,11 @@
 
 import os
 import sys
-import tempfile
 import logging
 
 from src.shared.constants import DEFAULT_FONT_RELATIVE_PATH
 
 logger = logging.getLogger("PathHelpers")
-# 配置日志（如果需要独立测试或记录路径问题）
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def get_project_root():
@@ -41,34 +38,6 @@ def get_resource_root():
         return base_path
 
 
-def get_app_root():
-    """
-    获取应用根目录（可写运行时目录）。
-
-    开发环境下返回源码项目根目录；PyInstaller onedir 下返回 exe 所在目录。
-    """
-    if is_packaged():
-        executable_path = os.path.abspath(getattr(sys, 'executable', '') or '')
-        if executable_path:
-            app_root = os.path.dirname(executable_path)
-            logger.debug(f"打包环境中，应用根目录: {app_root}")
-            return app_root
-
-    app_root = get_project_root()
-    logger.debug(f"开发环境中，应用根目录: {app_root}")
-    return app_root
-
-
-def get_data_root():
-    """获取用户数据根目录。"""
-    return os.path.join(get_app_root(), 'data')
-
-
-def get_logs_root():
-    """获取日志根目录。"""
-    return os.path.join(get_app_root(), 'logs')
-
-
 def resource_path(relative_path):
     """
     获取资源的绝对路径，适用于开发环境和PyInstaller打包环境
@@ -79,72 +48,9 @@ def resource_path(relative_path):
     Returns:
         资源的绝对路径
     """
-    normalized_relative_path = str(relative_path or "").replace("\\", "/").lstrip("/")
-    if normalized_relative_path == "data" or normalized_relative_path.startswith("data/"):
-        base_path = get_app_root()
-    else:
-        base_path = get_resource_root()
-
-    abs_path = os.path.join(base_path, relative_path)
+    abs_path = os.path.join(get_resource_root(), relative_path)
     logger.debug(f"资源路径解析: '{relative_path}' -> '{abs_path}'")
     return abs_path
-
-
-def get_debug_dir(subdirectory=None):
-    """
-    获取debug目录的绝对路径 (data/debug/)
-    
-    Args:
-        subdirectory: 子目录名，可选
-    
-    Returns:
-        debug目录的绝对路径
-    """
-    debug_base = os.path.join(get_data_root(), 'debug')
-    
-    try:
-        os.makedirs(debug_base, exist_ok=True)
-        if subdirectory:
-            debug_path = os.path.join(debug_base, subdirectory)
-            os.makedirs(debug_path, exist_ok=True)
-            return debug_path
-        return debug_base
-    except Exception as e:
-        logger.error(f"无法创建或访问调试目录: {debug_base} - {e}", exc_info=True)
-        
-        # 尝试在用户目录创建
-        try:
-            user_home = os.path.expanduser("~")
-            user_debug_base = os.path.join(user_home, "Saber-Translator", "debug")
-            os.makedirs(user_debug_base, exist_ok=True)
-            
-            if subdirectory:
-                user_debug_path = os.path.join(user_debug_base, subdirectory)
-                os.makedirs(user_debug_path, exist_ok=True)
-                return user_debug_path
-            return user_debug_base
-        except Exception as e2:
-            logger.error(f"无法在用户目录创建debug目录: {e2}", exc_info=True)
-            
-            # 回退到临时目录作为最后的手段
-            temp_dir = tempfile.gettempdir()
-            debug_temp = os.path.join(temp_dir, "Saber-Translator-debug")
-            os.makedirs(debug_temp, exist_ok=True)
-            if subdirectory:
-                subdir_temp = os.path.join(debug_temp, subdirectory)
-                os.makedirs(subdir_temp, exist_ok=True)
-                return subdir_temp
-            return debug_temp
-
-
-def is_packaged():
-    """
-    检测是否在PyInstaller环境中运行
-    
-    Returns:
-        布尔值，表示是否在打包环境中运行
-    """
-    return getattr(sys, 'frozen', False)
 
 
 def get_font_path(font_path):
@@ -189,17 +95,3 @@ def get_font_path(font_path):
     # 如果所有尝试都失败，返回默认字体
     logger.warning(f"未找到字体 {font_path}，使用默认字体")
     return resource_path(DEFAULT_FONT_RELATIVE_PATH)
-
-
-# 测试代码
-if __name__ == '__main__':
-    # 启用日志输出以便测试
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
-    print("--- 测试路径函数 ---")
-    print("项目根目录:", resource_path(''))
-    print("调试目录:", get_debug_dir())
-    print("气泡调试目录:", get_debug_dir('bubbles'))
-    print("默认字体路径:", get_font_path(None))
-    print("尝试获取 STXINGKA:", get_font_path('static/fonts/STXINGKA.TTF'))
-    print("尝试获取不存在字体:", get_font_path('nonexistentfont.ttf'))

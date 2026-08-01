@@ -18,6 +18,7 @@ from src.backend_v2.operations.repository import (
     OperationRepository,
     RenderRequestRepository,
 )
+from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
@@ -40,6 +41,7 @@ class PageRepairService:
         self.repository = repository
         self.storage = AssetStorageService(data_root, engine)
         self.renders = RenderRequestRepository(engine)
+        self.settings = SettingsResolver(engine)
         self.plugin_runtime = plugin_runtime
 
     def create_for_bubble(
@@ -106,6 +108,11 @@ class PageRepairService:
             return replay, True
         if row["document_revision"] != base_revision:
             raise OperationConflict("page document revision changed")
+        repair_settings = (
+            self.settings.resolve_page_repair(page_id=page_id)
+            if method in {"lama_mpe", "litelama"}
+            else {"disableResize": False, "settingsSnapshot": {}}
+        )
         mask_asset = self._publish_mask_payload(
             mask_payload,
             width=width,
@@ -116,6 +123,8 @@ class PageRepairService:
             base_revision=base_revision,
             method=method,
             fill_color=str(fill_color) if fill_color is not None else None,
+            disable_resize=bool(repair_settings["disableResize"]),
+            settings_snapshot=repair_settings["settingsSnapshot"],
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
@@ -179,6 +188,11 @@ class PageRepairService:
         )
         if replay is not None:
             return replay, True
+        repair_settings = (
+            self.settings.resolve_page_repair(page_id=page_id)
+            if method in {"lama_mpe", "litelama"}
+            else {"disableResize": False, "settingsSnapshot": {}}
+        )
         mask_asset = self._publish_mask_payload(
             mask_payload,
             width=int(dimensions[0]),
@@ -189,6 +203,8 @@ class PageRepairService:
             base_revision=base_revision,
             method=method,
             fill_color=fill_color,
+            disable_resize=bool(repair_settings["disableResize"]),
+            settings_snapshot=repair_settings["settingsSnapshot"],
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
@@ -264,6 +280,7 @@ class PageRepairService:
                     fill_color=str(before.get("fillColor") or "#FFFFFF"),
                     user_mask=np.array(mask),
                     lama_model=method,
+                    disable_resize=bool(request["disableResize"]),
                 )
                 warning = None
                 if not bool(getattr(repaired, "_lama_inpainted", False)):
@@ -391,37 +408,10 @@ class PageRepairService:
         )
 
     def _asset_record(self, asset_id: str) -> AssetRecord:
-        with self.engine.connect() as connection:
-            row = connection.execute(
-                select(
-                    assets.c.id,
-                    assets.c.relative_path,
-                    assets.c.mime_type,
-                    assets.c.checksum,
-                    assets.c.byte_size,
-                    assets.c.width,
-                    assets.c.height,
-                ).where(assets.c.id == asset_id)
-            ).mappings().one_or_none()
-        if row is None:
+        record = self.storage.get_record(asset_id)
+        if record is None:
             raise RuntimeError("plugin referenced an unknown asset")
-        return AssetRecord(
-            id=str(row["id"]),
-            relative_path=str(row["relative_path"]),
-            mime_type=str(row["mime_type"]),
-            checksum=str(row["checksum"]),
-            byte_size=int(row["byte_size"]),
-            width=(
-                int(row["width"])
-                if row["width"] is not None
-                else None
-            ),
-            height=(
-                int(row["height"])
-                if row["height"] is not None
-                else None
-            ),
-        )
+        return record
 
     def _open_asset(self, asset_id: str, mode: str) -> Image.Image:
         with self.engine.connect() as connection:

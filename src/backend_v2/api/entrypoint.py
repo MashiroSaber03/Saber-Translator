@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.import_guard import loaded_forbidden_api_modules
@@ -21,12 +22,12 @@ LOGGER = logging.getLogger("saber.api")
 
 
 def run_api(args: object) -> int:
-    data_root = ensure_data_root(resolve_data_root(getattr(args, "data_dir", None)))
-    if not getattr(args, "probe", False):
+    data_root = ensure_data_root(resolve_data_root(args.data_dir))
+    if not args.probe:
         log_path = configure_backend_logging(
             role="api",
             data_root=data_root,
-            console_level=getattr(args, "log_level", None),
+            console_level=args.log_level,
         )
         LOGGER.info(
             "API 进程启动：pid=%s，data_root=%s，日志=%s",
@@ -34,13 +35,20 @@ def run_api(args: object) -> int:
             data_root,
             log_path,
         )
-    identity = RuntimeIdentity.for_api(test_mode=bool(getattr(args, "test_mode", False)))
+    identity = RuntimeIdentity.for_api(test_mode=args.test_mode)
     heartbeat: EpochHeartbeat | None = None
     repository: ProcessEpochRepository | None = None
-    engine = None
+    engine = create_sqlite_engine(database_path_for(data_root))
     fenced = threading.Event()
+    close_server: Callable[[], None] | None = None
+
+    def stop_fenced_server() -> None:
+        LOGGER.error("API 进程租约失效，正在停止服务")
+        fenced.set()
+        if close_server is not None:
+            close_server()
+
     if not identity.test_mode:
-        engine = create_sqlite_engine(database_path_for(data_root))
         repository = ProcessEpochRepository(engine)
         if not repository.validate(
             role="api",
@@ -49,82 +57,83 @@ def run_api(args: object) -> int:
         ):
             engine.dispose()
             raise RuntimeError("Launcher-issued API epoch is missing, expired, or invalid")
-    app = create_api_app(
-        ApiSettings(
-            data_root=data_root,
-            identity=identity,
-            epoch_healthy=lambda: not fenced.is_set(),
-            engine=engine,
-            host=str(getattr(args, "host", "0.0.0.0")),
-            port=int(getattr(args, "port", 5000)),
-        )
-    )
-    if not getattr(args, "probe", False):
-        LOGGER.info(
-            "API 应用初始化完成：已注册 %s 条路由",
-            sum(1 for _rule in app.url_map.iter_rules()),
-        )
-
-    if getattr(args, "probe", False):
-        print(
-            json.dumps(
-                {
-                    "role": "api",
-                    "status": "ready",
-                    "epochId": identity.epoch_id,
-                    "dataRootFingerprint": data_root_fingerprint(data_root),
-                    "forbiddenModules": loaded_forbidden_api_modules(),
-                    "routes": sorted(rule.rule for rule in app.url_map.iter_rules()),
-                },
-                sort_keys=True,
-            )
-        )
-        app.extensions["saber_v2_runtime"].close()
-        if engine is not None:
-            engine.dispose()
-        return 0
-
-    from waitress.server import create_server
-
-    server = create_server(
-        app,
-        host=str(getattr(args, "host", "0.0.0.0")),
-        port=int(getattr(args, "port", 5000)),
-        threads=24,
-    )
-    app.extensions["saber_v2_runtime"].start()
-    LOGGER.info(
-        "API 服务就绪：http://127.0.0.1:%s/（监听 %s:%s，线程数=24）",
-        getattr(args, "port", 5000),
-        getattr(args, "host", "0.0.0.0"),
-        getattr(args, "port", 5000),
-    )
-
-    def stop_fenced_server() -> None:
-        LOGGER.error("API 进程租约失效，正在停止服务")
-        fenced.set()
-        server.close()
-
-    if repository is not None:
         heartbeat = EpochHeartbeat(
             repository,
             role="api",
             identity=identity,
             on_fenced=stop_fenced_server,
         )
+        # API route/runtime construction can take longer than one lease on a
+        # busy machine.  The process owns the epoch as soon as validation
+        # succeeds, so renewal must cover initialization as well as serving.
         heartbeat.start()
+
+    app = None
+    server = None
     try:
+        app = create_api_app(
+            ApiSettings(
+                data_root=data_root,
+                identity=identity,
+                epoch_healthy=lambda: not fenced.is_set(),
+                engine=engine,
+                host=args.host,
+                port=args.port,
+            )
+        )
+        if not args.probe:
+            LOGGER.info(
+                "API 应用初始化完成：已注册 %s 条路由",
+                sum(1 for _rule in app.url_map.iter_rules()),
+            )
+        if args.probe:
+            print(
+                json.dumps(
+                    {
+                        "role": "api",
+                        "status": "ready",
+                        "epochId": identity.epoch_id,
+                        "dataRootFingerprint": data_root_fingerprint(data_root),
+                        "forbiddenModules": loaded_forbidden_api_modules(),
+                        "routes": sorted(rule.rule for rule in app.url_map.iter_rules()),
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        from waitress.server import create_server
+
+        server = create_server(
+            app,
+            host=args.host,
+            port=args.port,
+            threads=24,
+        )
+        close_server = server.close
+        if fenced.is_set():
+            return 75
+        app.extensions["saber_v2_runtime"].start()
+        LOGGER.info(
+            "API 服务就绪：http://127.0.0.1:%s/（监听 %s:%s，线程数=24）",
+            args.port,
+            args.host,
+            args.port,
+        )
         server.run()
     finally:
-        LOGGER.info("API 服务正在关闭")
+        if server is not None:
+            LOGGER.info("API 服务正在关闭")
         if heartbeat is not None:
             heartbeat.stop()
-        server.close()
-        server.task_dispatcher.shutdown(cancel_pending=True, timeout=5)
-        app.extensions["saber_v2_runtime"].close()
-        if engine is not None:
-            engine.dispose()
-        LOGGER.info("API 服务已关闭")
+        if server is not None:
+            server.close()
+            server.task_dispatcher.shutdown(cancel_pending=True, timeout=5)
+        if app is not None:
+            app.extensions["saber_v2_runtime"].close()
+        engine.dispose()
+        if server is not None:
+            LOGGER.info("API 服务已关闭")
     if fenced.is_set():
         return 75
     return 0

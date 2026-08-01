@@ -7,6 +7,11 @@ import json
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _require_idempotency_key,
+)
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.translation.commands import TranslationJobCommandService
 from src.backend_v2.translation.auxiliary import AuxiliaryTranslationCommands
@@ -164,21 +169,3 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
         return jsonify(result), 202
 
     return blueprint
-
-
-def _json_body() -> dict[str, object]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
-def _require_idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError("Idempotency-Key is required and must be at most 200 characters")
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

@@ -150,7 +150,6 @@ const demoStudioDocument = {
   origin: {
     type: 'analysis',
     source_character: '绫濑澪',
-    source_pages: [1, 2],
   },
   status: {
     is_favorite: true,
@@ -164,9 +163,7 @@ const demoStudioDocument = {
     updated_at: '2026-01-01T00:00:00Z',
   },
   avatar: {
-    mode: 'none',
     asset_path: null,
-    source_page: null,
   },
   identity: {
     name: '绫濑澪',

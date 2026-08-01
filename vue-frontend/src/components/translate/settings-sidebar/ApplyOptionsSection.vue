@@ -23,11 +23,14 @@ const APPLY_OPTION_ITEMS = [
   label: string
 }>
 
-defineProps<{
+withDefaults(defineProps<{
   applyOptions: ApplySettingsOptions
+  disabled?: boolean
   hasImages: boolean
   showApplyOptions: boolean
-}>()
+}>(), {
+  disabled: false,
+})
 
 defineEmits<{
   (event: 'apply'): void
@@ -49,7 +52,7 @@ defineEmits<{
         type="button"
         class="apply-options-section__action"
         block
-        :disabled="!hasImages"
+        :disabled="disabled || !hasImages"
         @click="$emit('apply')"
       >
         应用到全部
@@ -63,6 +66,7 @@ defineEmits<{
         aria-haspopup="true"
         :aria-expanded="showApplyOptions ? 'true' : 'false'"
         :aria-controls="showApplyOptions ? APPLY_OPTIONS_MENU_ID : undefined"
+        :disabled="disabled"
         @click="$emit('toggleOptions')"
       >
         <UiIcon name="settings" size="15" />
@@ -79,6 +83,7 @@ defineEmits<{
       <div class="apply-options-section__option">
         <UiCheckbox
           :model-value="Object.values(applyOptions).every(Boolean)"
+          :disabled="disabled"
           label="全选"
           @change="$emit('toggleSelectAll')"
         />
@@ -91,6 +96,7 @@ defineEmits<{
       >
         <UiCheckbox
           :model-value="applyOptions[option.key]"
+          :disabled="disabled"
           :label="option.label"
           @change="$emit('updateOption', option.key, $event)"
         />

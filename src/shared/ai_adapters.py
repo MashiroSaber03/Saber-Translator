@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any, Dict, List
@@ -84,41 +83,3 @@ def translate_with_youdao(text: str, target_language: str, app_key: str, app_sec
     _youdao_translate.app_secret = app_secret
     to_lang = constants.PROJECT_TO_YOUDAO_TRANSLATE_LANG_MAP.get(target_language, "zh-CHS")
     return _youdao_translate.translate(text, "auto", to_lang)
-
-
-def fetch_local_models(provider: str) -> List[Dict[str, str]]:
-    provider = provider.lower()
-    if provider == "sakura":
-        response = requests.get("http://localhost:8080/v1/models", timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        return [
-            {"id": model.get("id", ""), "name": model.get("id", "")}
-            for model in data.get("data", [])
-            if model.get("id")
-        ]
-
-    raise ValueError(f"不支持获取模型列表的本地服务商: {provider}")
-
-
-def test_caiyun_connection(token: str) -> tuple[bool, str]:
-    response = requests.post(
-        "https://api.interpreter.caiyunai.com/v1/translator",
-        headers={
-            "Content-Type": "application/json",
-            "X-Authorization": f"token {token}",
-        },
-        json={
-            "source": ["Hello"],
-            "trans_type": "en2zh",
-            "request_id": "test",
-            "detect": True,
-        },
-        timeout=15,
-    )
-    response.raise_for_status()
-    data = response.json()
-    targets = data.get("target") or []
-    if not targets:
-        raise ValueError("未获得预期的翻译结果")
-    return True, targets[0]

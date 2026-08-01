@@ -39,12 +39,12 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
 
 
 def run_worker(args: object) -> int:
-    data_root = ensure_data_root(resolve_data_root(getattr(args, "data_dir", None)))
-    if not getattr(args, "probe", False):
+    data_root = ensure_data_root(resolve_data_root(args.data_dir))
+    if not args.probe:
         log_path = configure_backend_logging(
             role="worker",
             data_root=data_root,
-            console_level=getattr(args, "log_level", None),
+            console_level=args.log_level,
         )
         LOGGER.info(
             "Worker 进程启动：pid=%s，data_root=%s，日志=%s",
@@ -52,7 +52,7 @@ def run_worker(args: object) -> int:
             data_root,
             log_path,
         )
-    identity = RuntimeIdentity.for_worker(test_mode=bool(getattr(args, "test_mode", False)))
+    identity = RuntimeIdentity.for_worker(test_mode=args.test_mode)
     engine = None
     repository = None
     if not identity.test_mode:
@@ -66,7 +66,7 @@ def run_worker(args: object) -> int:
             engine.dispose()
             raise RuntimeError("Launcher-issued Worker epoch is missing, expired, or invalid")
 
-    if getattr(args, "probe", False):
+    if args.probe:
         print(
             json.dumps(
                 {
@@ -215,6 +215,7 @@ def run_worker(args: object) -> int:
                         "web_extract_scan",
                         "web_extract_page",
                         "web_extract_finalize",
+                        "web_extract_auto_commit",
                         "web_import_commit_page",
                         "web_import_commit_finalize",
                     )
@@ -361,6 +362,7 @@ def run_worker(args: object) -> int:
                 batch_handlers={
                     "hq_translate": translation.batch_handler,
                     "proofread": translation.batch_handler,
+                    "web_extract_page": web_import.handle_download_batch,
                 },
                 safe_point=run_immediate_work,
                 plugin_runtime=plugin_job_runtime,

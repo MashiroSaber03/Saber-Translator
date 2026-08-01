@@ -4,25 +4,27 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import hashlib
 import json
 import secrets
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, delete, exists, insert, select, update
+from sqlalchemy import Engine, exists, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import iso_utc as _iso, utcnow
 from src.backend_v2.redaction import (
+    credential_version_references,
     redact_sensitive_value,
     secret_values_from_json,
 )
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import (
-    OPERATION_KINDS,
     bubbles,
     chapter_write_intents,
     chapter_write_locks,
@@ -45,9 +47,6 @@ PUBLIC_PAGE_OPERATION_KINDS = frozenset(
 )
 WORKER_OPERATION_KINDS = frozenset(
     {"bubble_ocr", "bubble_color", "page_detect"}
-)
-API_REMOTE_OPERATION_KINDS = frozenset(
-    {"bubble_translate", "studio_generate", "studio_chat", "studio_summary"}
 )
 
 
@@ -88,46 +87,8 @@ class RenderFence:
     lease_expires_at: datetime
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
 def _load_json(value: str | None, default: object) -> object:
     return json.loads(value) if value else default
-
-
-def _credential_version_references(
-    value: Mapping[str, Any],
-) -> dict[str, str]:
-    references: dict[str, str] = {}
-
-    def visit(current: object, path: tuple[str, ...]) -> None:
-        if isinstance(current, Mapping):
-            for key, child in current.items():
-                key_text = str(key)
-                next_path = (*path, key_text)
-                if (
-                    key_text == "credentialVersionId"
-                    and isinstance(child, str)
-                ):
-                    role = ".".join(path) or "default"
-                    if len(role) > 64:
-                        role = hashlib.sha256(
-                            role.encode("utf-8")
-                        ).hexdigest()
-                    references[role] = child
-                else:
-                    visit(child, next_path)
-        elif isinstance(current, (list, tuple)):
-            for index, child in enumerate(current):
-                visit(child, (*path, str(index)))
-
-    visit(value, ())
-    return references
 
 
 def _operation_secret_values(
@@ -253,7 +214,7 @@ class OperationRepository:
                 page_id=page_id,
                 roles=self._input_roles(kind),
             )
-            credential_refs = _credential_version_references(
+            credential_refs = credential_version_references(
                 request_payload
             )
             if credential_refs:
@@ -294,76 +255,6 @@ class OperationRepository:
             )
             return response, False
 
-    def create_internal(
-        self,
-        *,
-        kind: str,
-        executor_role: str,
-        request_payload: Mapping[str, Any],
-        page_id: str | None = None,
-        bubble_id: str | None = None,
-        studio_document_id: str | None = None,
-        studio_session_id: str | None = None,
-        base_revision: int | None = None,
-        base_generation: int | None = None,
-        input_assets: Mapping[str, str] | None = None,
-    ) -> dict[str, object]:
-        if kind not in OPERATION_KINDS:
-            raise ValueError(f"unsupported operation kind: {kind}")
-        if executor_role not in {"api", "worker"}:
-            raise ValueError("executor_role must be api or worker")
-        now = utcnow()
-        operation_id = str(uuid.uuid4())
-        try:
-            with immediate_transaction(self.engine) as connection:
-                if page_id:
-                    chapter_id = connection.execute(
-                        select(pages.c.chapter_id).where(pages.c.id == page_id)
-                    ).scalar_one_or_none()
-                    if chapter_id is None:
-                        raise OperationNotFound("page not found")
-                    self._assert_new_page_write_allowed(
-                        connection, str(chapter_id)
-                    )
-                connection.execute(
-                    insert(operations).values(
-                        id=operation_id,
-                        kind=kind,
-                        executor_role=executor_role,
-                        status="pending",
-                        page_id=page_id,
-                        bubble_id=bubble_id,
-                        studio_document_id=studio_document_id,
-                        studio_session_id=studio_session_id,
-                        base_revision=base_revision,
-                        base_generation=base_generation,
-                        request_json=_json(dict(request_payload)),
-                        request_schema_version=1,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-                if input_assets:
-                    connection.execute(
-                        insert(operation_asset_inputs),
-                        [
-                            {
-                                "operation_id": operation_id,
-                                "role": role,
-                                "asset_id": asset_id,
-                            }
-                            for role, asset_id in input_assets.items()
-                        ],
-                    )
-                if executor_role == "worker":
-                    self._snapshot_plugins(
-                        connection,
-                        operation_id=operation_id,
-                    )
-        except IntegrityError as exc:
-            raise OperationConflict("an active operation already targets this entity") from exc
-        return self.get(operation_id)
-
     def create_page_repair(
         self,
         *,
@@ -371,6 +262,8 @@ class OperationRepository:
         base_revision: int,
         method: str,
         fill_color: str | None,
+        disable_resize: bool,
+        settings_snapshot: object,
         mask_asset_id: str,
         mask_checksum: str,
         idempotency_key: str,
@@ -381,15 +274,27 @@ class OperationRepository:
             not isinstance(fill_color, str) or not fill_color
         ):
             raise ValueError("fillColor is required for this repair method")
-        payload = {
+        request_identity = {
             "method": method,
             "fillColor": fill_color if method != "restore_source" else None,
             "repairRevision": base_revision + 1,
         }
         request_hash = self._page_repair_request_hash(
-            payload=payload,
+            payload=request_identity,
             mask_checksum=mask_checksum,
         )
+        payload = dict(request_identity)
+        if method in {"lama_mpe", "litelama"}:
+            if not isinstance(disable_resize, bool):
+                raise ValueError("disableResize must be boolean")
+            if not isinstance(settings_snapshot, Mapping):
+                raise ValueError("settingsSnapshot must be an object")
+            payload.update(
+                {
+                    "disableResize": disable_resize,
+                    "settingsSnapshot": dict(settings_snapshot),
+                }
+            )
         scope = f"page-repair:{page_id}"
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
@@ -601,11 +506,7 @@ class OperationRepository:
                 "operationId": str(row["operation_id"]),
                 "type": str(row["type"]),
                 "payload": _load_json(row["payload_json"], {}),
-                "createdAt": (
-                    row["created_at"].isoformat() + "Z"
-                    if hasattr(row["created_at"], "isoformat")
-                    else str(row["created_at"])
-                ),
+                "createdAt": row["created_at"].isoformat() + "Z",
             }
             for row in rows
         ]
@@ -1345,11 +1246,3 @@ class RenderRequestRepository:
                 .where(pages.c.id == fence.page_id)
                 .values(render_status="render_failed", updated_at=now)
             )
-
-
-def _iso(value: datetime | str | None) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    return value.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")

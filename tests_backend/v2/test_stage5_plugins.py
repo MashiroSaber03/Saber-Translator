@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import json
 from pathlib import Path
+import threading
 import uuid
 import zipfile
 
@@ -15,6 +16,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
+from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.plugins.contract import (
     PluginContractError,
     parse_manifest,
@@ -25,12 +27,14 @@ from src.backend_v2.plugins.package import build_archive, parse_archive
 from src.backend_v2.plugins.repository import (
     PluginConflict,
     PluginLocked,
+    PluginNotFound,
     PluginRegistry,
 )
 from src.backend_v2.plugins.runtime import (
     PluginHookFailure,
     PluginJobRuntime,
 )
+from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.plugins.agent import PluginAgentSessionService
 from src.backend_v2.plugins.agent_worker import (
     PluginAgentWorkerService,
@@ -43,11 +47,15 @@ from src.backend_v2.storage.epochs import (
     ProcessEpochRepository,
 )
 from src.backend_v2.storage.schema import (
+    assets,
     books,
     chapters,
+    job_events,
+    job_items,
     job_plugin_snapshots,
     metadata,
     operation_plugin_snapshots,
+    page_assets,
     pages,
     jobs as jobs_table,
 )
@@ -56,6 +64,11 @@ from src.core.plugin_agent.controller import PluginAgentController
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
 )
+
+
+def _enabled_snapshots(engine):
+    with engine.connect() as connection:
+        return enabled_plugin_snapshots(connection)
 
 
 def _plugin_archive(
@@ -68,6 +81,7 @@ def _plugin_archive(
     priority: int = 50,
     failure_policy: str = "continue",
     source: str | None = None,
+    config_schema: dict[str, dict[str, object]] | None = None,
 ) -> bytes:
     declared_hooks = hooks or ["before_translate", "after_translate"]
     manifest = {
@@ -86,16 +100,20 @@ def _plugin_archive(
         "author": "tests",
         "description": "immutable v3 test plugin",
         "default_enabled": default_enabled,
-        "config_schema": {
-            "prefix": {
-                "type": "text",
-                "default": "[v3]",
-            },
-            "strict": {
-                "type": "boolean",
-                "default": False,
-            },
-        },
+        "config_schema": (
+            config_schema
+            if config_schema is not None
+            else {
+                "prefix": {
+                    "type": "text",
+                    "default": "[v3]",
+                },
+                "strict": {
+                    "type": "boolean",
+                    "default": False,
+                },
+            }
+        ),
     }
     output = BytesIO()
     with zipfile.ZipFile(
@@ -195,6 +213,47 @@ def test_plugin_versions_are_immutable_and_config_is_revisioned(
     assert parse_archive(exported).manifest.plugin_id == "test_v3"
 
 
+def test_plugin_upgrade_drops_removed_config_fields_and_seeds_new_defaults(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    registry.import_archive(
+        data=_plugin_archive(plugin_id="schema_v3"),
+        base_revision=0,
+        idempotency_key="schema-v1",
+    )
+    registry.update_config(
+        plugin_id="schema_v3",
+        base_revision=1,
+        config={"prefix": "obsolete", "strict": True},
+    )
+
+    registry.import_archive(
+        data=_plugin_archive(
+            plugin_id="schema_v3",
+            package_version="2.0.0",
+            config_schema={
+                "strict": {
+                    "type": "boolean",
+                    "default": False,
+                },
+                "suffix": {
+                    "type": "text",
+                    "default": "!",
+                },
+            },
+        ),
+        base_revision=1,
+        idempotency_key="schema-v2",
+    )
+
+    assert registry.get_config("schema_v3")["value"] == {
+        "strict": True,
+        "suffix": "!",
+    }
+
+
 def test_runtime_default_snapshot_and_reference_lock(
     plugin_platform,
 ) -> None:
@@ -206,9 +265,9 @@ def test_runtime_default_snapshot_and_reference_lock(
         idempotency_key="snapshot-plugin",
     )
     registry.set_runtime_enabled(plugin_id="test_v3", enabled=False)
-    assert registry.enabled_snapshots() == {}
-    registry.reset_runtime_enabled()
-    snapshots = registry.enabled_snapshots()
+    assert _enabled_snapshots(engine) == {}
+    seed_system_records(engine)
+    snapshots = _enabled_snapshots(engine)
     version_id = str(installed["pluginVersionId"])
     assert snapshots[version_id]["pluginId"] == "test_v3"
     assert snapshots[version_id]["config"] == {
@@ -414,7 +473,7 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
         base_revision=0,
         idempotency_key="frozen-v1",
     )
-    frozen = registry.enabled_snapshots()
+    frozen = _enabled_snapshots(engine)
     jobs = JobQueueRepository(engine)
     created = jobs.create_batch(
         kind="export",
@@ -511,7 +570,17 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
     book_id = str(uuid.uuid4())
     chapter_id = str(uuid.uuid4())
     page_id = str(uuid.uuid4())
+    source_asset_id = str(uuid.uuid4())
     with engine.begin() as connection:
+        connection.execute(
+            assets.insert().values(
+                id=source_asset_id,
+                relative_path="objects/test/plugin-operation-source.png",
+                mime_type="image/png",
+                checksum="0" * 64,
+                byte_size=0,
+            )
+        )
         connection.execute(
             books.insert().values(
                 id=book_id,
@@ -535,13 +604,24 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
                 logical_source_path="page.png",
             )
         )
-    operation = OperationRepository(engine).create_internal(
+        connection.execute(
+            page_assets.insert().values(
+                page_id=page_id,
+                role="source",
+                asset_id=source_asset_id,
+                input_source_revision=1,
+                input_document_revision=1,
+            )
+        )
+    operation, replayed = OperationRepository(engine).create_page_operation(
         kind="page_detect",
-        executor_role="worker",
-        request_payload={},
         page_id=page_id,
         base_revision=1,
+        bubble_id=None,
+        payload={},
+        idempotency_key="plugin-operation-snapshot",
     )
+    assert replayed is False
     with engine.connect() as connection:
         operation_version = connection.execute(
             select(
@@ -554,7 +634,7 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
     assert operation_version == installed["pluginVersionId"]
 
     jobs = JobQueueRepository(engine)
-    created = jobs.create_batch(
+    jobs.create_batch(
         kind="export",
         display_name="strict plugin",
         specs=[
@@ -567,7 +647,7 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
                         step_kinds=("export_package",),
                     ),
                 ),
-                plugin_snapshots=registry.enabled_snapshots(),
+                plugin_snapshots=_enabled_snapshots(engine),
             )
         ],
     )
@@ -602,6 +682,173 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
         )
 
 
+def test_worker_plugin_lifecycle_is_job_once_and_pipeline_once_per_page(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    book_id = str(uuid.uuid4())
+    chapter_id = str(uuid.uuid4())
+    first_page_id = str(uuid.uuid4())
+    second_page_id = str(uuid.uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            books.insert().values(
+                id=book_id,
+                kind="library",
+                title="Plugin lifecycle",
+            )
+        )
+        connection.execute(
+            chapters.insert().values(
+                id=chapter_id,
+                book_id=book_id,
+                ordinal=1,
+                title="Chapter",
+            )
+        )
+        connection.execute(
+            pages.insert(),
+            [
+                {
+                    "id": first_page_id,
+                    "chapter_id": chapter_id,
+                    "ordinal": 1,
+                    "logical_source_path": "first.png",
+                },
+                {
+                    "id": second_page_id,
+                    "chapter_id": chapter_id,
+                    "ordinal": 2,
+                    "logical_source_path": "second.png",
+                },
+            ],
+        )
+    PluginRegistry(data_root=data_root, engine=engine).import_archive(
+        data=_plugin_archive(
+            plugin_id="lifecycle_v3",
+            hooks=[
+                "before_job",
+                "after_job",
+                "before_pipeline",
+                "after_pipeline",
+            ],
+            supported_steps=["job", "pipeline"],
+            failure_policy="fail",
+            source=(
+                "class Plugin:\n"
+                "    def before_job(self, context, payload):\n"
+                "        result = dict(payload)\n"
+                "        result['pluginInjected'] = True\n"
+                "        return result\n"
+                "    def after_job(self, context, payload):\n"
+                "        return payload\n"
+                "    def before_pipeline(self, context, payload):\n"
+                "        return payload\n"
+                "    def after_pipeline(self, context, payload):\n"
+                f"        if context.page_id == {first_page_id!r}:\n"
+                "            raise RuntimeError('first page rejected')\n"
+                "        return payload\n"
+            ),
+        ),
+        base_revision=0,
+        idempotency_key="lifecycle-v1",
+    )
+    jobs = JobQueueRepository(engine)
+    created = jobs.create_batch(
+        kind="export",
+        display_name="plugin lifecycle",
+        specs=[
+            JobSpec(
+                kind="export",
+                book_id=book_id,
+                chapter_id=chapter_id,
+                config={"mode": "standard", "executionMode": "sequential"},
+                items=(
+                    JobItemSpec(
+                        page_id=first_page_id,
+                        step_kinds=("fixture_prepare", "fixture_publish"),
+                    ),
+                    JobItemSpec(
+                        page_id=second_page_id,
+                        step_kinds=("fixture_prepare", "fixture_publish"),
+                    ),
+                ),
+                plugin_snapshots=_enabled_snapshots(engine),
+            )
+        ],
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(
+            role="worker",
+            epoch_id=epoch_id,
+            token="worker-token",
+            pid=1236,
+        )
+    )
+    fence = jobs.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    seen_configs: list[dict[str, object]] = []
+
+    def handle(_fence, step):
+        seen_configs.append(dict(step["config"]))
+        return {"handled": True}
+
+    runtime = PluginJobRuntime(
+        data_root=data_root,
+        engine=engine,
+        repository=jobs,
+    )
+    JobWorkerLoop(
+        jobs,
+        worker_epoch_id=epoch_id,
+        handlers={
+            "fixture_prepare": handle,
+            "fixture_publish": handle,
+        },
+        plugin_runtime=runtime,
+    )._run_attempt(fence, threading.Event())
+
+    assert len(seen_configs) == 4
+    assert all(config["pluginInjected"] is True for config in seen_configs)
+    with engine.connect() as connection:
+        job = connection.execute(
+            select(jobs_table.c.status, jobs_table.c.config_json).where(
+                jobs_table.c.id == created["jobIds"][0]
+            )
+        ).mappings().one()
+        item_statuses = list(
+            connection.execute(
+                select(job_items.c.status)
+                .where(job_items.c.job_id == created["jobIds"][0])
+                .order_by(job_items.c.ordinal)
+            ).scalars()
+        )
+        stages = [
+            json.loads(value)
+            for value in connection.execute(
+                select(job_events.c.payload_json).where(
+                    job_events.c.job_id == created["jobIds"][0],
+                    job_events.c.event_type == "plugin_stage_completed",
+                )
+            ).scalars()
+        ]
+    assert job["status"] == "completed_with_errors"
+    assert json.loads(job["config_json"])["pluginInjected"] is True
+    assert item_statuses == ["failed", "completed"]
+    assert [stage["hook"] for stage in stages].count("before_job") == 1
+    assert [stage["hook"] for stage in stages].count("after_job") == 1
+    assert [stage["hook"] for stage in stages].count("before_pipeline") == 2
+    assert [stage["hook"] for stage in stages].count("after_pipeline") == 2
+    first_after = next(
+        stage
+        for stage in stages
+        if stage["hook"] == "after_pipeline"
+        and stage["pageId"] == first_page_id
+    )
+    assert first_after["outcome"] == "failed"
+
+
 class _FakeAgentProvider:
     def snapshot(self):
         return {
@@ -623,6 +870,9 @@ class _FakeAgentProvider:
 
 
 class _FakeAgentController:
+    def __init__(self, *, generated_plugin_id: str | None = None):
+        self.generated_plugin_id = generated_plugin_id
+
     def plan_turn(self, _session, _skill, _config):
         return {
             "assistant_message": "方案已明确。",
@@ -644,7 +894,10 @@ class _FakeAgentController:
     ):
         manifest = {
             "schema_version": 3,
-            "plugin_id": session.locked_target.plugin_id,
+            "plugin_id": (
+                self.generated_plugin_id
+                or session.locked_target.plugin_id
+            ),
             "display_name": session.locked_target.display_name,
             "package_version": "1.0.0",
             "entrypoint": "plugin.py:Plugin",
@@ -785,6 +1038,165 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
         / job_id
         / "plugin-worktree"
     ).exists()
+
+
+def test_plugin_agent_rejects_generated_manifest_for_another_plugin(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    provider = _FakeAgentProvider()
+    controller = _FakeAgentController(
+        generated_plugin_id="different_v3",
+    )
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=controller,
+        provider_resolver=provider,
+    )
+    session_id = sessions.create(
+        mode="create",
+        plugin_id=None,
+    )["session_id"]
+    planned = sessions.send_message(
+        session_id=session_id,
+        content="创建一个翻译后处理插件",
+    )
+    sessions.lock_target(
+        session_id=session_id,
+        proposal=planned["pending_target"],
+    )
+    started = sessions.start(
+        session_id=session_id,
+        idempotency_key="agent-mismatched-id",
+    )
+
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(
+            role="worker",
+            epoch_id=epoch_id,
+            token="worker-token",
+            pid=4322,
+        )
+    )
+    queue = JobQueueRepository(engine)
+    fence = queue.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    step = queue.next_step(fence)
+    assert step is not None
+    worker = PluginAgentWorkerService(
+        data_root=data_root,
+        engine=engine,
+        jobs=queue,
+        controller=controller,
+        provider_resolver=provider,
+    )
+
+    with pytest.raises(ValueError, match="locked target"):
+        worker.handle(fence, step)
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    with pytest.raises(PluginNotFound):
+        registry.get_plugin("different_v3")
+    with pytest.raises(PluginNotFound):
+        registry.get_plugin("agent_v3")
+    assert not (
+        data_root
+        / "temp"
+        / "jobs"
+        / started["jobId"]
+        / "plugin-worktree"
+    ).exists()
+
+
+def test_modify_agent_job_protects_disabled_target_version(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    installed = registry.import_archive(
+        data=_plugin_archive(
+            plugin_id="disabled_target_v3",
+            default_enabled=False,
+        ),
+        base_revision=0,
+        idempotency_key="disabled-target",
+    )
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=_FakeAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+    session_id = sessions.create(
+        mode="modify",
+        plugin_id="disabled_target_v3",
+    )["session_id"]
+    sessions.send_message(
+        session_id=session_id,
+        content="修改这个插件",
+    )
+    started = sessions.start(
+        session_id=session_id,
+        idempotency_key="modify-disabled-target",
+    )
+
+    with engine.connect() as connection:
+        snapshot = connection.execute(
+            select(job_plugin_snapshots.c.config_json).where(
+                job_plugin_snapshots.c.job_id == started["jobId"],
+                job_plugin_snapshots.c.plugin_version_id
+                == installed["pluginVersionId"],
+            )
+        ).scalar_one()
+    assert json.loads(snapshot) == {
+        "pluginId": "disabled_target_v3",
+        "protectOnly": True,
+    }
+    with pytest.raises(PluginLocked, match="task history"):
+        registry.delete_plugin(
+            plugin_id="disabled_target_v3",
+            base_revision=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("supported_steps", ["unknown_step"]),
+        ("supported_modes", ["unknown_mode"]),
+        ("supported_steps", ["translate", "translate"]),
+    ],
+)
+def test_plugin_agent_target_rejects_invalid_capability_values(
+    plugin_platform,
+    field: str,
+    value: list[str],
+) -> None:
+    data_root, engine = plugin_platform
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=_FakeAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+    session_id = sessions.create(
+        mode="create",
+        plugin_id=None,
+    )["session_id"]
+    proposal = {
+        "plugin_id": "validated_v3",
+        "display_name": "Validated v3",
+        "supported_steps": ["translate"],
+        "supported_modes": ["standard"],
+    }
+    proposal[field] = value
+
+    with pytest.raises(ValueError):
+        sessions.lock_target(
+            session_id=session_id,
+            proposal=proposal,
+        )
 
 
 def test_plugin_builder_skill_states_the_actual_v3_manifest_contract() -> None:

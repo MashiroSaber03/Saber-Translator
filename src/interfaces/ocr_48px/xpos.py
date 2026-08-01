@@ -3,8 +3,6 @@
 # 
 # XPOS相对位置编码模块
 
-import einops
-import numpy as np
 import torch
 import torch.nn as nn
 

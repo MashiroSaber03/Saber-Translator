@@ -28,7 +28,6 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
-    database_path_for,
     migrate_database,
     schema_smoke_test,
     sqlite_backup,
@@ -37,7 +36,6 @@ import src.backend_v2.storage.lifecycle as lifecycle_module
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     FontRepository,
-    PluginVersionRepository,
     ProviderRateLimiter,
     ProviderSettingMutation,
     RevisionConflict,
@@ -57,7 +55,6 @@ from src.backend_v2.storage.schema import (
     metadata,
     object_commit_journal,
     operations,
-    page_assets,
     pages,
     process_epochs,
     render_requests,
@@ -341,6 +338,15 @@ def test_0016_normalizes_saved_browser_settings_without_losing_user_values(
         insight,
         schema_version=1,
     ) == insight
+
+
+def test_custom_insight_architecture_requires_at_least_two_layers() -> None:
+    payload = deepcopy(DEFAULT_INSIGHT_SETTINGS)
+    payload["analysis"]["batch"]["architecturePreset"] = "custom"
+    payload["analysis"]["batch"]["customLayers"] = []
+
+    with pytest.raises(ValueError, match="must contain 2-8 layers"):
+        validate_setting_payload("insight", payload, schema_version=1)
 
 
 def test_0017_restores_only_accidentally_materialized_automatic_colors(
@@ -937,7 +943,7 @@ def test_worker_maintenance_runs_only_when_due(platform) -> None:
     assert maintenance.run_if_due() is True
 
 
-def test_worker_maintenance_is_best_effort_and_reports_failed_actions(
+def test_worker_maintenance_continues_after_failed_action(
     platform,
     monkeypatch,
 ) -> None:
@@ -954,19 +960,13 @@ def test_worker_maintenance_is_best_effort_and_reports_failed_actions(
 
     monkeypatch.setattr(maintenance.storage, "recover_journal", fail_recovery)
     monkeypatch.setattr(
-        maintenance.storage,
-        "scan_integrity",
-        lambda: completed.append("scan_integrity"),
-    )
-    monkeypatch.setattr(
         maintenance.vector_store,
         "collect_orphan_collections",
         lambda _engine: completed.append("vector_gc"),
     )
 
     assert maintenance.run_if_due(force=True) is True
-    assert maintenance.last_errors == ("recover_journal",)
-    assert completed == ["scan_integrity", "vector_gc"]
+    assert completed == ["vector_gc"]
 
 
 def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None:
@@ -1092,33 +1092,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
         assert connection.execute(select(credentials.c.id)).scalars().all() == [
             credential_id
         ]
-
-    plugin = PluginVersionRepository(engine).install_version(
-        plugin_id=None,
-        name="Fake Plugin",
-        version="1.0.0",
-        package_relative_path="plugins/fake/versions/1",
-        checksum="a" * 64,
-        manifest={"apiVersion": 3},
-        base_revision=0,
-    )
-    upgraded = PluginVersionRepository(engine).install_version(
-        plugin_id=str(plugin["pluginId"]),
-        name="Fake Plugin",
-        version="1.1.0",
-        package_relative_path="plugins/fake/versions/2",
-        checksum="b" * 64,
-        manifest={"apiVersion": 3},
-        base_revision=1,
-    )
-    assert upgraded["revision"] == 2
-    assert FontRepository(engine).ensure_builtin(
-        builtin_key="default",
-        display_name="Default",
-    ) == FontRepository(engine).ensure_builtin(
-        builtin_key="default",
-        display_name="Default",
-    )
 
     limiter = ProviderRateLimiter(engine)
     first = limiter.acquire(

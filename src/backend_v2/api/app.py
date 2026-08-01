@@ -26,8 +26,8 @@ LOGGER = logging.getLogger("saber.api.http")
 class ApiSettings:
     data_root: Path
     identity: RuntimeIdentity
+    engine: Engine
     epoch_healthy: Callable[[], bool] = lambda: True
-    engine: Engine | None = None
     host: str = "0.0.0.0"
     port: int = 5000
 
@@ -200,10 +200,9 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     from src.backend_v2.api.web import create_web_blueprint
     from src.backend_v2.api.system_routes import create_system_blueprint
-    from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
     from src.backend_v2.storage.epochs import ProcessEpochRepository
 
-    engine = settings.engine or create_sqlite_engine(database_path_for(settings.data_root))
+    engine = settings.engine
     broadcaster = JobEventBroadcaster(
         JobQueueRepository(engine),
         epoch_repository=ProcessEpochRepository(engine),

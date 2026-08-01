@@ -16,11 +16,12 @@ import zipfile
 from sqlalchemy import Engine, delete, exists, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.repository import (
     InsightConflict,
     InsightNotFound,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     JobConflict,
@@ -31,6 +32,7 @@ from src.backend_v2.jobs.repository import (
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
     analysis_heads,
@@ -45,7 +47,6 @@ from src.backend_v2.storage.schema import (
     continuation_project_reference_assets,
     continuation_projects,
     continuation_scripts,
-    credential_versions,
     chapters,
     jobs,
     job_artifacts,
@@ -65,15 +66,6 @@ NONTERMINAL_JOB_STATUSES = (
     "cancelling",
     "interrupted",
 )
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def _load(value: str | None, default: object) -> object:
@@ -441,7 +433,6 @@ class ContinuationRepository:
         base_revision: int,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
-        now = utcnow()
         with immediate_transaction(self.engine) as connection:
             changed = connection.execute(
                 update(continuation_pages)
@@ -739,13 +730,30 @@ class ContinuationRepository:
             )
             has_more = len(rows) > limit
             selected_rows = rows[:limit]
+            versions_by_form: dict[str, list[Mapping[str, Any]]] = {}
+            if selected_rows:
+                for version in connection.execute(
+                    select(continuation_form_image_versions)
+                    .where(
+                        continuation_form_image_versions.c.form_id.in_(
+                            [str(row["id"]) for row in selected_rows]
+                        )
+                    )
+                    .order_by(
+                        continuation_form_image_versions.c.form_id,
+                        continuation_form_image_versions.c.version.desc(),
+                    )
+                ).mappings():
+                    form_versions = versions_by_form.setdefault(
+                        str(version["form_id"]),
+                        [],
+                    )
+                    if len(form_versions) < 5:
+                        form_versions.append(version)
             items = [
                 self._form_dto(
                     row,
-                    image_versions=self._form_versions(
-                        connection,
-                        str(row["id"]),
-                    ),
+                    image_versions=versions_by_form.get(str(row["id"]), ()),
                 )
                 for row in selected_rows
             ]
@@ -979,6 +987,85 @@ class ContinuationRepository:
                 )
             ).scalars()
         )
+        versions_by_page: dict[str, list[Mapping[str, Any]]] = {}
+        if pages_rows:
+            for version in connection.execute(
+                select(continuation_image_versions)
+                .where(
+                    continuation_image_versions.c.continuation_page_id.in_(
+                        [str(page["id"]) for page in pages_rows]
+                    )
+                )
+                .order_by(
+                    continuation_image_versions.c.continuation_page_id,
+                    continuation_image_versions.c.version.desc(),
+                )
+            ).mappings():
+                page_versions = versions_by_page.setdefault(
+                    str(version["continuation_page_id"]),
+                    [],
+                )
+                if len(page_versions) < 5:
+                    page_versions.append(version)
+        thumbnail_by_reference: dict[str, str] = {}
+        if references:
+            for form in connection.execute(
+                select(
+                    continuation_character_forms.c.reference_asset_id,
+                    continuation_character_forms.c.reference_thumbnail_asset_id,
+                )
+                .where(
+                    continuation_character_forms.c.reference_asset_id.in_(
+                        references
+                    ),
+                    continuation_character_forms.c.reference_thumbnail_asset_id.is_not(
+                        None
+                    ),
+                )
+                .order_by(continuation_character_forms.c.id)
+            ).mappings():
+                thumbnail_by_reference.setdefault(
+                    str(form["reference_asset_id"]),
+                    str(form["reference_thumbnail_asset_id"]),
+                )
+            for version in connection.execute(
+                select(
+                    continuation_image_versions.c.asset_id,
+                    continuation_image_versions.c.thumbnail_asset_id,
+                )
+                .where(continuation_image_versions.c.asset_id.in_(references))
+                .order_by(continuation_image_versions.c.id)
+            ).mappings():
+                thumbnail_by_reference.setdefault(
+                    str(version["asset_id"]),
+                    str(version["thumbnail_asset_id"]),
+                )
+            reference_source = page_assets.alias(
+                "continuation_reference_source"
+            )
+            reference_thumbnail = page_assets.alias(
+                "continuation_reference_thumbnail"
+            )
+            for pointer in connection.execute(
+                select(
+                    reference_source.c.asset_id.label("reference_asset_id"),
+                    reference_thumbnail.c.asset_id.label("thumbnail_asset_id"),
+                )
+                .select_from(reference_source)
+                .join(
+                    reference_thumbnail,
+                    (reference_thumbnail.c.page_id == reference_source.c.page_id)
+                    & (reference_thumbnail.c.role == "thumbnail_source"),
+                )
+                .where(
+                    reference_source.c.asset_id.in_(references),
+                    reference_source.c.role == "source",
+                )
+            ).mappings():
+                thumbnail_by_reference.setdefault(
+                    str(pointer["reference_asset_id"]),
+                    str(pointer["thumbnail_asset_id"]),
+                )
         return {
             "projectId": str(row["id"]),
             "bookId": str(row["book_id"]),
@@ -997,19 +1084,7 @@ class ContinuationRepository:
             "pages": [
                 _page_dto(
                     page,
-                    image_versions=list(
-                        connection.execute(
-                            select(continuation_image_versions)
-                            .where(
-                                continuation_image_versions.c.continuation_page_id
-                                == page["id"]
-                            )
-                            .order_by(
-                                continuation_image_versions.c.version.desc()
-                            )
-                            .limit(5)
-                        ).mappings()
-                    ),
+                    image_versions=versions_by_page.get(str(page["id"]), ()),
                 )
                 for page in pages_rows
             ],
@@ -1019,7 +1094,7 @@ class ContinuationRepository:
                     "assetUrl": f"/api/v2/assets/{asset_id}",
                     "thumbnailUrl": (
                         f"/api/v2/assets/"
-                        f"{_reference_thumbnail_asset_id(connection, str(asset_id))}"
+                        f"{thumbnail_by_reference.get(str(asset_id), str(asset_id))}"
                     ),
                 }
                 for asset_id in references
@@ -1192,7 +1267,6 @@ class ContinuationCommandService:
                     )
                 ).mappings()
             }
-            now = utcnow()
             targets = []
             for ordinal in selected:
                 row = existing.get(ordinal)
@@ -1746,11 +1820,10 @@ class ContinuationWorkerService:
         jobs: JobQueueRepository,
         algorithms: ContinuationAlgorithms | None = None,
     ) -> None:
-        self.data_root = data_root
         self.engine = engine
         self.jobs = jobs
-        self.repository = ContinuationRepository(engine)
         self.storage = AssetStorageService(data_root, engine)
+        self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or DefaultContinuationAlgorithms()
 
     def handle(
@@ -1758,12 +1831,31 @@ class ContinuationWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        config = self._with_credentials(
-            dict(step.get("config"))
+        raw_config = (
+            dict(step["config"])
             if isinstance(step.get("config"), Mapping)
             else {}
         )
         kind = str(step["stepKind"])
+        if kind in {"continuation_generate_script", "continuation_generate_page"}:
+            credential_sections = _chat_credential_sections(raw_config)
+        elif kind in {
+            "continuation_generate_character_sheet",
+            "continuation_generate_image",
+        }:
+            credential_sections = ("imageGen",)
+        elif kind == "continuation_export":
+            credential_sections = ()
+        else:
+            raise JobConflict(f"unsupported continuation step: {kind}")
+        config = (
+            self._with_credentials(
+                raw_config,
+                section_names=credential_sections,
+            )
+            if credential_sections
+            else raw_config
+        )
         if kind == "continuation_generate_script":
             context = self._script_context(config)
             content = self.algorithms.generate_script(
@@ -1899,22 +1991,7 @@ class ContinuationWorkerService:
                 reference_paths=reference_paths,
                 config=config,
             )
-            image_info = _image_info(image_bytes)
-            thumbnail = _thumbnail_image(image_bytes)
-            asset = self.storage.publish_bytes(
-                image_bytes,
-                extension=image_info["extension"],
-                mime_type=image_info["mimeType"],
-                width=image_info["width"],
-                height=image_info["height"],
-            )
-            thumbnail_asset = self.storage.publish_bytes(
-                thumbnail["bytes"],
-                extension="webp",
-                mime_type="image/webp",
-                width=thumbnail["width"],
-                height=thumbnail["height"],
-            )
+            asset, thumbnail_asset = self._publish_generated_image(image_bytes)
             checkpoint = {}
 
             def publish(connection: Connection) -> None:
@@ -2043,22 +2120,7 @@ class ContinuationWorkerService:
                 reference_paths=reference_paths,
                 config=config,
             )
-            image_info = _image_info(image_bytes)
-            thumbnail = _thumbnail_image(image_bytes)
-            asset = self.storage.publish_bytes(
-                image_bytes,
-                extension=image_info["extension"],
-                mime_type=image_info["mimeType"],
-                width=image_info["width"],
-                height=image_info["height"],
-            )
-            thumbnail_asset = self.storage.publish_bytes(
-                thumbnail["bytes"],
-                extension="webp",
-                mime_type="image/webp",
-                width=thumbnail["width"],
-                height=thumbnail["height"],
-            )
+            asset, thumbnail_asset = self._publish_generated_image(image_bytes)
             checkpoint = {}
 
             def publish(connection: Connection) -> None:
@@ -2269,34 +2331,29 @@ class ContinuationWorkerService:
                     if asset_id in path_by_id
                 ][: count - len(rows)]
                 rows.extend(selected)
-            if len(rows) < count:
-                book_id = connection.execute(
-                    select(continuation_projects.c.book_id).where(
-                        continuation_projects.c.id == project_id
-                    )
-                ).scalar_one()
-                original = list(
-                    connection.execute(
-                        select(assets.c.relative_path)
-                        .join(page_assets, page_assets.c.asset_id == assets.c.id)
-                        .join(pages, pages.c.id == page_assets.c.page_id)
-                        .join(chapters, chapters.c.id == pages.c.chapter_id)
-                        .where(
-                            page_assets.c.role == "source",
-                            chapters.c.book_id == book_id,
-                        )
-                        .order_by(
-                            chapters.c.ordinal.desc(),
-                            pages.c.ordinal.desc(),
-                        )
-                        .limit(count - len(rows))
-                    ).scalars()
-                )
-                rows.extend(original)
         return [
             self.storage.resolve_relative_path(str(relative_path))
             for relative_path in reversed(rows)
         ]
+
+    def _publish_generated_image(self, payload: bytes):
+        image_info = _image_info(payload)
+        thumbnail = _thumbnail_image(payload)
+        asset = self.storage.publish_bytes(
+            payload,
+            extension=image_info["extension"],
+            mime_type=image_info["mimeType"],
+            width=image_info["width"],
+            height=image_info["height"],
+        )
+        thumbnail_asset = self.storage.publish_bytes(
+            thumbnail["bytes"],
+            extension="webp",
+            mime_type="image/webp",
+            width=thumbnail["width"],
+            height=thumbnail["height"],
+        )
+        return asset, thumbnail_asset
 
     def _build_export(
         self,
@@ -2385,8 +2442,9 @@ class ContinuationWorkerService:
                         analysis_artifacts.c.payload_json,
                     ).where(
                         analysis_artifacts.c.run_id == run_id,
-                        analysis_artifacts.c.is_active.is_(True),
+                        analysis_artifacts.c.status.in_(("ready", "degraded")),
                     )
+                    .order_by(analysis_artifacts.c.revision)
                 )
             }
         return {
@@ -2405,31 +2463,23 @@ class ContinuationWorkerService:
     def _with_credentials(
         self,
         config: Mapping[str, Any],
+        *,
+        section_names: Sequence[str],
     ) -> dict[str, Any]:
-        result = json.loads(json.dumps(config))
-        for key in ("vlm", "chat", "imageGen"):
-            section = (
-                dict(result.get(key))
-                if isinstance(result.get(key), Mapping)
-                else {}
+        try:
+            return self.credentials.resolve_credential_sections(
+                config,
+                section_names,
             )
-            credential_id = section.pop("credentialVersionId", None)
-            if credential_id:
-                with self.engine.connect() as connection:
-                    secret = connection.execute(
-                        select(credential_versions.c.secret_json).where(
-                            credential_versions.c.id == credential_id
-                        )
-                    ).scalar_one_or_none()
-                if secret is None:
-                    raise JobConflict(
-                        "continuation credential version is missing"
-                    )
-                loaded = json.loads(secret)
-                if isinstance(loaded, Mapping):
-                    section.update(loaded)
-            result[key] = section
-        return result
+        except LookupError as exc:
+            raise JobConflict(
+                "continuation credential version is missing"
+            ) from exc
+
+
+def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
+    chat = config.get("chat")
+    return ("chat",) if isinstance(chat, Mapping) and chat.get("provider") else ("vlm",)
 
 
 def _missing_prerequisites(
@@ -2516,42 +2566,6 @@ def _form_name(value: str) -> str:
     if not result or len(result) > 500:
         raise ValueError("form name must contain 1-500 characters")
     return result
-
-
-def _reference_thumbnail_asset_id(
-    connection: Connection,
-    asset_id: str,
-) -> str:
-    thumbnail = connection.execute(
-        select(
-            continuation_character_forms.c.reference_thumbnail_asset_id
-        ).where(
-            continuation_character_forms.c.reference_asset_id == asset_id
-        ).limit(1)
-    ).scalar_one_or_none()
-    if thumbnail is None:
-        thumbnail = connection.execute(
-            select(
-                continuation_image_versions.c.thumbnail_asset_id
-            )
-            .where(continuation_image_versions.c.asset_id == asset_id)
-            .limit(1)
-        ).scalar_one_or_none()
-    if thumbnail is None:
-        source_page_id = connection.execute(
-            select(page_assets.c.page_id).where(
-                page_assets.c.asset_id == asset_id,
-                page_assets.c.role == "source",
-            )
-        ).scalar_one_or_none()
-        if source_page_id is not None:
-            thumbnail = connection.execute(
-                select(page_assets.c.asset_id).where(
-                    page_assets.c.page_id == source_page_id,
-                    page_assets.c.role == "thumbnail_source",
-                )
-            ).scalar_one_or_none()
-    return str(thumbnail or asset_id)
 
 
 def _image_info(payload: bytes) -> dict[str, Any]:

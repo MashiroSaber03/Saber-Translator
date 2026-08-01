@@ -11,15 +11,12 @@ from PIL import Image
 from collections import Counter
 
 from src.shared import constants
-from src.core.detector import detect
+from src.core.detector import DETECTOR_DEFAULT, detect
 from src.core.detector.refinement import apply_saber_yolo_refinement
 
 logger = logging.getLogger("CoreDetection")
 
 
-class DetectionException(Exception):
-    """检测过程失败异常"""
-    pass
 
 
 # ========== 主要检测接口 ==========
@@ -93,179 +90,8 @@ def _detect_with_optional_saber_refinement(
         reference_overlap_threshold=saber_yolo_refine_overlap_threshold,
     )
 
-def get_bubble_detection_result(
-    image_pil: Image.Image, 
-    conf_threshold: float = 0.6,
-    detector_type: str = None,
-    expand_ratio: float = 0,
-    expand_top: float = 0,
-    expand_bottom: float = 0,
-    expand_left: float = 0,
-    expand_right: float = 0,
-    edge_ratio_threshold: float = None,
-    enable_aux_yolo_detection: bool = None,
-    aux_yolo_conf_threshold: float = None,
-    aux_yolo_overlap_threshold: float = None,
-    enable_saber_yolo_refine: bool = None,
-    saber_yolo_refine_overlap_threshold: float = None,
-    min_text_block_area_percent: float = 0,
-) -> dict:
-    """
-    使用指定检测器检测图像中的文本区域，返回完整检测结果（含角度信息）
-    
-    Args:
-        image_pil: 输入的 PIL 图像对象
-        conf_threshold: 检测的置信度阈值 (保留接口兼容性)
-        detector_type: 检测器类型，默认使用 Default
-        expand_ratio: 整体扩展比例 (%)
-        expand_top/bottom/left/right: 各边额外扩展比例 (%)
-        edge_ratio_threshold: 边缘距离比例阈值，用于防止跨气泡错误合并
-        enable_saber_yolo_refine: 是否启用 SaberYOLO 二阶段纠错（None 时使用配置/默认值）
-        saber_yolo_refine_overlap_threshold: SaberYOLO 参考块重叠阈值（支持 0-1 或 0-100 输入）
-    
-    Returns:
-        dict: {
-            'coords': List[Tuple[int, int, int, int]],  # 轴对齐边界框
-            'polygons': List[List[List[int]]],  # 带角度的四边形
-            'angles': List[float],  # 旋转角度（度）
-            'raw_mask': Optional[np.ndarray]  # 模型生成的精确文字掩膜（仅 CTD/Default 支持）
-        }
-    """
-    if detector_type is None:
-        detector_type = constants.DEFAULT_DETECTOR
-    
-    if edge_ratio_threshold is None:
-        edge_ratio_threshold = constants.CTD_EDGE_RATIO_THRESHOLD
-    
-    try:
-        logger.debug(f"使用 {detector_type} 检测器")
-        
-        result = _detect_with_optional_saber_refinement(
-            image_pil,
-            detector_type=detector_type,
-            edge_ratio_threshold=edge_ratio_threshold,
-            merge_lines=None,
-            enable_aux_yolo_detection=enable_aux_yolo_detection,
-            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
-            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
-            enable_saber_yolo_refine=enable_saber_yolo_refine,
-            saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
-        )
-        result.blocks = _filter_small_text_blocks(
-            result.blocks,
-            image_pil.width,
-            image_pil.height,
-            min_text_block_area_percent=min_text_block_area_percent,
-        )
-        
-        # 转换为旧格式
-        legacy = result.to_legacy_format()
-
-        if legacy['coords']:
-            legacy['coords'] = expand_coordinates(
-                legacy['coords'],
-                image_pil.width,
-                image_pil.height,
-                expand_ratio,
-                expand_top,
-                expand_bottom,
-                expand_left,
-                expand_right
-            )
-        
-        # 保存模型生成的精确文字掩膜（仅 CTD/Default 支持）
-        legacy['raw_mask'] = result.mask
-        # 保存原始文本行（合并前的单行框，用于 debug 显示）
-        legacy['raw_lines'] = result.raw_lines
-        
-        # 智能排序已在检测器的后处理中完成，这里不再排序
-        
-        logger.debug(f"获取 {len(legacy['coords'])} 个文本区域")
-        return legacy
-    
-    except Exception as e:
-        logger.error(f"检测过程出错 (检测器: {detector_type}): {e}", exc_info=True)
-        return {'coords': [], 'polygons': [], 'angles': [], 'raw_mask': None, 'raw_lines': []}
 
 
-def get_bubble_coordinates(
-    image_pil: Image.Image, 
-    conf_threshold: float = 0.6,
-    detector_type: str = None,
-    expand_ratio: float = 0,
-    expand_top: float = 0,
-    expand_bottom: float = 0,
-    expand_left: float = 0,
-    expand_right: float = 0,
-    edge_ratio_threshold: float = None,
-    enable_aux_yolo_detection: bool = None,
-    aux_yolo_conf_threshold: float = None,
-    aux_yolo_overlap_threshold: float = None,
-    enable_saber_yolo_refine: bool = None,
-    saber_yolo_refine_overlap_threshold: float = None,
-    min_text_block_area_percent: float = 0,
-) -> List[Tuple[int, int, int, int]]:
-    """
-    使用指定检测器检测图像中的文本区域并返回排序后的坐标列表
-    （兼容旧接口，只返回 AABB 坐标）
-    """
-    result = get_bubble_detection_result(
-        image_pil, conf_threshold, detector_type,
-        expand_ratio, expand_top, expand_bottom, expand_left, expand_right,
-        edge_ratio_threshold,
-        enable_aux_yolo_detection, aux_yolo_conf_threshold, aux_yolo_overlap_threshold,
-        enable_saber_yolo_refine, saber_yolo_refine_overlap_threshold,
-        min_text_block_area_percent,
-    )
-    return result.get('coords', [])
-
-
-def detect_textlines(
-    image_pil: Image.Image,
-    detector_type: str = None,
-    edge_ratio_threshold: float = None,
-    enable_aux_yolo_detection: bool = None,
-    aux_yolo_conf_threshold: float = None,
-    aux_yolo_overlap_threshold: float = None,
-    enable_saber_yolo_refine: bool = None,
-    saber_yolo_refine_overlap_threshold: float = None,
-) -> List[Dict[str, Any]]:
-    """
-    检测图像中的原始文本行，不进行文本块合并。
-
-    返回的顺序基于检测器后处理结果，适合作为 OCR 的 textline 级输入。
-    """
-    if detector_type is None:
-        detector_type = constants.DEFAULT_DETECTOR
-
-    if edge_ratio_threshold is None:
-        edge_ratio_threshold = constants.CTD_EDGE_RATIO_THRESHOLD
-
-    try:
-        detection_result = _detect_with_optional_saber_refinement(
-            image_pil,
-            detector_type=detector_type,
-            edge_ratio_threshold=edge_ratio_threshold,
-            merge_lines=False,
-            enable_aux_yolo_detection=enable_aux_yolo_detection,
-            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
-            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
-            enable_saber_yolo_refine=enable_saber_yolo_refine,
-            saber_yolo_refine_overlap_threshold=saber_yolo_refine_overlap_threshold,
-        )
-    except Exception as error:
-        logger.error(f"提取文本行失败: {error}", exc_info=True)
-        return []
-
-    textlines_info: List[Dict[str, Any]] = []
-    for block in detection_result.blocks:
-        for line in block.lines:
-            textlines_info.append({
-                'polygon': line.pts.tolist(),
-                'direction': line.direction,
-                'confidence': float(line.confidence),
-            })
-    return textlines_info
 
 
 # ========== 坐标处理函数 ==========
@@ -381,7 +207,6 @@ def analyze_direction_from_textlines(textlines: List[Dict[str, Any]]) -> str:
 
 def get_bubble_detection_result_with_auto_directions(
     image_pil: Image.Image,
-    conf_threshold: float = 0.6,
     detector_type: str = None,
     expand_ratio: float = 0,
     expand_top: float = 0,
@@ -400,7 +225,7 @@ def get_bubble_detection_result_with_auto_directions(
     获取气泡检测结果，并返回每个气泡的自动排版方向
     """
     if detector_type is None:
-        detector_type = constants.DEFAULT_DETECTOR
+        detector_type = DETECTOR_DEFAULT
     
     if edge_ratio_threshold is None:
         edge_ratio_threshold = constants.CTD_EDGE_RATIO_THRESHOLD
@@ -473,10 +298,8 @@ def get_bubble_detection_result_with_auto_directions(
             # 判断方向
             if textlines_info:
                 auto_dir = analyze_direction_from_textlines(textlines_info)
-            elif hasattr(block, 'vertical') and block.vertical is not None:
-                auto_dir = 'v' if block.vertical else 'h'
             else:
-                auto_dir = 'v' if (y2 - y1) > (x2 - x1) else 'h'
+                auto_dir = 'v' if block.vertical else 'h'
             
             result['auto_directions'].append(auto_dir)
         
@@ -502,29 +325,3 @@ def get_bubble_detection_result_with_auto_directions(
     except Exception as e:
         logger.error(f"自动排版检测出错: {e}", exc_info=True)
         return result
-
-
-# ========== 测试代码 ==========
-
-if __name__ == '__main__':
-    from PIL import Image
-    from src.shared.path_helpers import resource_path
-    import os
-    
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    print("--- 测试气泡检测核心逻辑 (重构版) ---")
-    test_image_path = resource_path('pic/before1.png')
-    if os.path.exists(test_image_path):
-        print(f"加载测试图片: {test_image_path}")
-        try:
-            img_pil = Image.open(test_image_path)
-            print("开始检测坐标...")
-            coords = get_bubble_coordinates(img_pil, conf_threshold=0.5)
-            print(f"检测完成，找到 {len(coords)} 个气泡坐标:")
-            for i, coord in enumerate(coords):
-                print(f"  - 气泡 {i+1}: {coord}")
-        except Exception as e:
-            print(f"测试过程中发生错误: {e}")
-    else:
-        print(f"错误：测试图片未找到 {test_image_path}")

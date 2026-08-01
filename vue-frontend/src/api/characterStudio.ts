@@ -108,7 +108,6 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
   const origin = record(raw.origin)
   const status = record(raw.status)
   const meta = record(raw.meta)
-  const avatar = record(raw.avatar)
   return {
     id: raw.id,
     bookId: raw.bookId,
@@ -119,7 +118,6 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
       source_character: typeof origin.source_character === 'string'
         ? origin.source_character
         : null,
-      source_pages: array(origin.source_pages).map(Number).filter(Number.isFinite),
     },
     status: {
       is_favorite: Boolean(status.is_favorite),
@@ -136,9 +134,7 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
       updated_at: raw.updatedAt ?? '',
     },
     avatar: {
-      mode: String(avatar.mode ?? (raw.avatarAssetId ? 'asset' : 'none')),
       asset_path: raw.avatarUrl,
-      source_page: typeof avatar.source_page === 'number' ? avatar.source_page : null,
     },
     identity: {
       name: String(record(raw.identity).name ?? raw.title),

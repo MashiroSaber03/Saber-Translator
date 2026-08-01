@@ -143,7 +143,7 @@ export async function listAllInsightNotes(
 
 export function createInsightNote(command: {
   bookId: string
-  citations: Array<Record<string, unknown> | string>
+  citations: Array<Record<string, unknown>>
   comments: Array<Record<string, unknown> | string>
   content: string
   kind: 'qa' | 'text'
@@ -161,7 +161,7 @@ export function updateInsightNote(
   noteId: string,
   command: {
     baseRevision: number
-    citations: Array<Record<string, unknown> | string>
+    citations: Array<Record<string, unknown>>
     comments: Array<Record<string, unknown> | string>
     content: string
     kind: 'qa' | 'text'

@@ -1005,7 +1005,6 @@ studio_messages = Table(
     Column("runtime_log", Text, nullable=False, server_default=""),
     Column("variables_snapshot_json", Text, nullable=False, server_default="{}"),
     Column("generation_meta_json", Text, nullable=False, server_default="{}"),
-    Column("metadata_json", Text, nullable=False, server_default="{}"),
     *_timestamps(),
     UniqueConstraint("session_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),

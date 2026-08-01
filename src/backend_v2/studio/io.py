@@ -19,7 +19,7 @@ from src.backend_v2.content.image_import import (
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import assets
-from src.backend_v2.operations.repository import utcnow
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.studio.media import read_card_png, write_card_png
 from src.backend_v2.studio.pure import (
     build_export_bundle,
@@ -37,7 +37,6 @@ class StudioIOService:
         repository: StudioRepository,
         limits: ImportSafetyLimits = ImportSafetyLimits(),
     ) -> None:
-        self.data_root = data_root
         self.engine = engine
         self.repository = repository
         self.limits = limits
@@ -82,65 +81,6 @@ class StudioIOService:
                     mutation=lambda: (
                         _asset_row_dto(row),
                         asset_id,
-                    ),
-                )
-            )
-            if replayed:
-                connection.execute(
-                    update(assets)
-                    .where(assets.c.id == asset_id)
-                    .values(gc_marked_at=utcnow())
-                )
-            result.update(response)
-
-        self.images.publish_standalone_source(
-            BytesIO(payload),
-            bind=bind,
-        )
-        return result
-
-    def set_avatar(
-        self,
-        *,
-        document_id: str,
-        base_revision: int,
-        upload: BinaryIO,
-        idempotency_key: str,
-    ) -> dict[str, Any]:
-        payload = self._read_limited(upload)
-        request_identity = {
-            "documentId": document_id,
-            "baseRevision": base_revision,
-            **_binary_request_identity(payload),
-        }
-        scope = f"POST:uploadStudioAvatar:{document_id}"
-        replay = self.repository.replay_short_command(
-            scope=scope,
-            key=idempotency_key,
-            request=request_identity,
-        )
-        if replay is not None:
-            return replay
-        result: dict[str, Any] = {}
-
-        def bind(connection, asset_id: str) -> None:
-            response, replayed = (
-                self.repository.execute_bound_short_command(
-                    connection,
-                    scope=scope,
-                    key=idempotency_key,
-                    request=request_identity,
-                    http_status=201,
-                    resource_type="studio_document",
-                    mutation=lambda: (
-                        self.repository._set_avatar_on_connection(
-                            connection,
-                            document_id=document_id,
-                            base_revision=base_revision,
-                            asset_id=asset_id,
-                            now=utcnow(),
-                        ),
-                        document_id,
                     ),
                 )
             )
@@ -203,16 +143,20 @@ class StudioIOService:
             title = Path(filename or "导入角色").stem or "导入角色"
             document = None
         avatar = self.images.publish_standalone_source(BytesIO(payload))
-        created = self.repository.create_document(
-            book_id=book_id,
-            title=title,
-            document=document,
-            kind="imported",
-            avatar_asset_id=avatar.id,
-            idempotency_key=idempotency_key,
-            idempotency_request=request_identity,
-            idempotency_scope=scope,
-        )
+        try:
+            created = self.repository.create_document(
+                book_id=book_id,
+                title=title,
+                document=document,
+                kind="imported",
+                avatar_asset_id=avatar.id,
+                idempotency_key=idempotency_key,
+                idempotency_request=request_identity,
+                idempotency_scope=scope,
+            )
+        except Exception:
+            self._mark_assets_for_gc([avatar.id])
+            raise
         if created.get("avatarAssetId") != avatar.id:
             self._mark_assets_for_gc([avatar.id])
         return created
@@ -266,7 +210,7 @@ class StudioIOService:
         self,
         *,
         document_id: str,
-        base_index_revision: int | None = None,
+        base_index_revision: int,
         payload: Mapping[str, Any],
         idempotency_key: str,
     ) -> dict[str, Any]:
@@ -287,48 +231,18 @@ class StudioIOService:
         messages = imported.get("messages", [])
         if not isinstance(messages, list):
             raise ValueError("session messages must be an array")
-        for message in messages:
-            if not isinstance(message, dict):
-                raise ValueError("each session message must be an object")
-            restored_ids: list[str] = []
-            attachments = message.pop("attachments", [])
-            if not isinstance(attachments, list):
-                raise ValueError("message attachments must be an array")
-            for attachment in attachments:
-                if not isinstance(attachment, Mapping):
-                    raise ValueError("each attachment must be an object")
-                encoded = str(
-                    attachment.get(
-                        "blob_base64",
-                        attachment.get("blobBase64", ""),
-                    )
-                    or ""
-                )
-                if not encoded:
-                    continue
-                try:
-                    binary = base64.b64decode(encoded, validate=True)
-                except ValueError as exc:
-                    raise ValueError(
-                        "attachment base64 is invalid"
-                    ) from exc
-                if len(binary) > self.limits.max_image_bytes:
-                    raise ValueError(
-                        "attachment exceeds the configured single-file byte limit"
-                    )
-                restored_ids.append(
-                    self.images.publish_standalone_source(
-                        BytesIO(binary)
-                    ).id
-                )
-            message["assetIds"] = restored_ids
-        result = self.repository.import_session(
-            document_id=document_id,
-            base_index_revision=base_index_revision,
-            payload=imported,
-            idempotency_key=idempotency_key,
-            idempotency_request=request_identity,
-        )
+        imported_assets = self._restore_session_attachments(messages)
+        try:
+            result = self.repository.import_session(
+                document_id=document_id,
+                base_index_revision=base_index_revision,
+                payload=imported,
+                idempotency_key=idempotency_key,
+                idempotency_request=request_identity,
+            )
+        except Exception:
+            self._mark_assets_for_gc(imported_assets)
+            raise
         referenced = {
             str(attachment.get("assetId"))
             for message in result.get("messages", [])
@@ -336,12 +250,6 @@ class StudioIOService:
             if isinstance(attachment, Mapping)
             and attachment.get("assetId")
         }
-        imported_assets = [
-            asset_id
-            for message in imported.get("messages", [])
-            for asset_id in message.get("assetIds", [])
-            if isinstance(asset_id, str)
-        ]
         self._mark_assets_for_gc(
             [
                 asset_id
@@ -350,6 +258,52 @@ class StudioIOService:
             ]
         )
         return result
+
+    def _restore_session_attachments(
+        self,
+        messages: list[Any],
+    ) -> list[str]:
+        imported_assets: list[str] = []
+        try:
+            for message in messages:
+                if not isinstance(message, dict):
+                    raise ValueError("each session message must be an object")
+                restored_ids: list[str] = []
+                attachments = message.pop("attachments", [])
+                if not isinstance(attachments, list):
+                    raise ValueError("message attachments must be an array")
+                for attachment in attachments:
+                    if not isinstance(attachment, Mapping):
+                        raise ValueError("each attachment must be an object")
+                    encoded = str(
+                        attachment.get(
+                            "blob_base64",
+                            attachment.get("blobBase64", ""),
+                        )
+                        or ""
+                    )
+                    if not encoded:
+                        continue
+                    try:
+                        binary = base64.b64decode(encoded, validate=True)
+                    except ValueError as exc:
+                        raise ValueError(
+                            "attachment base64 is invalid"
+                        ) from exc
+                    if len(binary) > self.limits.max_image_bytes:
+                        raise ValueError(
+                            "attachment exceeds the configured single-file byte limit"
+                        )
+                    asset_id = self.images.publish_standalone_source(
+                        BytesIO(binary)
+                    ).id
+                    restored_ids.append(asset_id)
+                    imported_assets.append(asset_id)
+                message["assetIds"] = restored_ids
+        except Exception:
+            self._mark_assets_for_gc(imported_assets)
+            raise
+        return imported_assets
 
     def _asset_path(self, asset_id: object) -> Path | None:
         if not isinstance(asset_id, str) or not asset_id:
@@ -391,17 +345,6 @@ class StudioIOService:
         if not output:
             raise ValueError("uploaded file is empty")
         return bytes(output)
-
-
-def _asset_dto(asset) -> dict[str, Any]:
-    return {
-        "assetId": asset.id,
-        "assetUrl": f"/api/v2/assets/{asset.id}",
-        "mimeType": asset.mime_type,
-        "byteSize": asset.byte_size,
-        "width": asset.width,
-        "height": asset.height,
-    }
 
 
 def _asset_row_dto(row: Mapping[str, Any]) -> dict[str, Any]:

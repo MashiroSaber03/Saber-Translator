@@ -38,12 +38,6 @@ class FakeResponse:
 
 
 class SharedProviderRegistryImageGenTests(unittest.TestCase):
-    def test_image_gen_provider_enum_exposes_newapi(self) -> None:
-        from src.core.manga_insight.config_models import APIProvider
-
-        self.assertEqual(APIProvider.GPT2API.value, "gpt2api")
-        self.assertEqual(APIProvider.NEWAPI.value, "newapi")
-
     def test_shared_registry_exposes_gpt2api_and_newapi_as_image_gen_providers(self) -> None:
         from src.shared.ai_providers import (
             IMAGE_GEN_CAPABILITY,
@@ -82,6 +76,7 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(client._timeout)
             self.assertEqual(client._transport_retries, 10)
             self.assertEqual(client._business_retries, 10)
+            self.assertEqual(client.base_url, "https://gateway.example.com")
         finally:
             await client.close()
 

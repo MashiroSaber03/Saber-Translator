@@ -14,6 +14,7 @@ from typing import List, Optional, Sequence
 from src.shared import constants
 
 from .data_types import TextLine
+from .registry import DETECTOR_YOLO, get_detector
 
 logger = logging.getLogger("AuxYoloDetection")
 
@@ -141,9 +142,7 @@ def detect_aux_yolo_lines(
     aux_detector=None,
 ) -> List[TextLine]:
     """在 OpenCV BGR 图像上运行辅助 YSGYolo，返回原始 TextLine 列表。"""
-    from .registry import get_detector
-
-    detector = aux_detector or get_detector(constants.DETECTOR_YOLO)
+    detector = aux_detector or get_detector(DETECTOR_YOLO)
     conf = constants.AUX_YOLO_CONF_THRESHOLD if conf_threshold is None else float(conf_threshold)
     textlines, _ = detector._detect_raw(image_cv, conf_thresh=conf)
     return textlines or []
@@ -161,7 +160,7 @@ def maybe_merge_with_aux_yolo(
     """按配置决定是否执行辅助检测并融合主检测器文本行。"""
     if enabled is None:
         enabled = constants.ENABLE_AUX_YOLO_DETECTION
-    if not enabled or detector_type == constants.DETECTOR_YOLO:
+    if not enabled or detector_type == DETECTOR_YOLO:
         return list(main_lines)
 
     try:

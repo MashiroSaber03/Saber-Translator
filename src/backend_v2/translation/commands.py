@@ -12,7 +12,6 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
-from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import books, chapters, jobs, pages
 from src.backend_v2.storage.schema import NONTERMINAL_JOB_STATUSES
 from src.backend_v2.settings.resolver import SettingsResolver
@@ -36,6 +35,50 @@ ALLOWED_CONFIG_KEYS = frozenset(
 )
 
 
+def resolve_chapter_pages(
+    engine: Engine,
+    *,
+    chapter_id: str,
+    requested_page_ids: Sequence[str] | None,
+    empty_message: str = "translation task requires at least one page",
+) -> tuple[Mapping[str, Any], list[str]]:
+    """Return one chapter and its requested pages in persisted order."""
+
+    with engine.connect() as connection:
+        chapter = connection.execute(
+            select(
+                chapters.c.id,
+                chapters.c.book_id,
+                chapters.c.title,
+                books.c.title.label("book_title"),
+            )
+            .join(books, books.c.id == chapters.c.book_id)
+            .where(chapters.c.id == chapter_id)
+        ).mappings().one_or_none()
+        if chapter is None:
+            raise ValueError("chapter not found")
+        ordered = [
+            str(value)
+            for value in connection.execute(
+                select(pages.c.id)
+                .where(pages.c.chapter_id == chapter_id)
+                .order_by(pages.c.ordinal)
+            ).scalars()
+        ]
+    if requested_page_ids is not None:
+        if not requested_page_ids or len(set(requested_page_ids)) != len(
+            requested_page_ids
+        ):
+            raise ValueError("pageIds must contain unique page IDs")
+        requested = set(requested_page_ids)
+        if not requested.issubset(set(ordered)):
+            raise ValueError("pageIds must all belong to the chapter")
+        ordered = [page_id for page_id in ordered if page_id in requested]
+    if not ordered:
+        raise ValueError(empty_message)
+    return chapter, ordered
+
+
 class TranslationJobCommandService:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -54,41 +97,13 @@ class TranslationJobCommandService:
         idempotency_scope: str | None = None,
     ) -> dict[str, object]:
         command = normalize_translation_command(config)
-        chapter, ordered_pages = self._resolve_chapter_pages(
+        mode = str(command["mode"])
+        job_kind = "remove_text" if mode == "remove_text" else "translation"
+        chapter, ordered_pages, normalized, spec = self._translation_spec(
             chapter_id=chapter_id,
             requested_page_ids=page_ids,
-        )
-        normalized = self.settings.resolve_translation(
-            chapter_id=chapter_id,
             command=command,
-        )
-        plugin_snapshots = self._plugin_snapshots()
-        mode = str(command["mode"])
-        step_kinds = step_kinds_for_mode(
-            mode,
-            reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
-            proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
-        )
-        validate_translation_job_requirements(normalized, step_kinds)
-        job_kind = "remove_text" if mode == "remove_text" else "translation"
-        spec = JobSpec(
-            kind=job_kind,
-            book_id=str(chapter["book_id"]),
-            chapter_id=chapter_id,
-            config=normalized,
-            items=tuple(
-                JobItemSpec(
-                    page_id=page_id,
-                    step_kinds=step_kinds,
-                )
-                for page_id in ordered_pages
-            ),
-            target_display={
-                "book": chapter["book_title"],
-                "chapter": chapter["title"],
-                "pageCount": len(ordered_pages),
-            },
-            plugin_snapshots=plugin_snapshots,
+            job_kind=job_kind,
             retry_of_job_id=retry_of_job_id,
             retry_mode=retry_mode,
         )
@@ -133,7 +148,6 @@ class TranslationJobCommandService:
         )
         if replay is not None:
             return replay
-        plugin_snapshots = self._plugin_snapshots()
         specs: list[JobSpec] = []
         skipped: list[dict[str, str]] = []
         with self.engine.connect() as connection:
@@ -159,20 +173,12 @@ class TranslationJobCommandService:
                 )
                 continue
             try:
-                chapter, ordered_pages = self._resolve_chapter_pages(
+                _chapter, _ordered_pages, _normalized, spec = self._translation_spec(
                     chapter_id=chapter_id,
                     requested_page_ids=None,
-                )
-                normalized = self.settings.resolve_translation(
-                    chapter_id=chapter_id,
                     command=command,
+                    job_kind=job_kind,
                 )
-                step_kinds = step_kinds_for_mode(
-                    mode,
-                    reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
-                    proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
-                )
-                validate_translation_job_requirements(normalized, step_kinds)
             except ValueError as exc:
                 message = str(exc)
                 skipped.append(
@@ -183,27 +189,7 @@ class TranslationJobCommandService:
                     }
                 )
                 continue
-            specs.append(
-                JobSpec(
-                    kind=job_kind,
-                    book_id=str(chapter["book_id"]),
-                    chapter_id=chapter_id,
-                    config=normalized,
-                    items=tuple(
-                        JobItemSpec(
-                            page_id=page_id,
-                            step_kinds=step_kinds,
-                        )
-                        for page_id in ordered_pages
-                    ),
-                    target_display={
-                        "book": chapter["book_title"],
-                        "chapter": chapter["title"],
-                        "pageCount": len(ordered_pages),
-                    },
-                    plugin_snapshots=plugin_snapshots,
-                )
-            )
+            specs.append(spec)
         if not specs:
             summary = "；".join(
                 f"{item['chapterId']}: {item['message']}" for item in skipped
@@ -223,49 +209,51 @@ class TranslationJobCommandService:
             idempotency_payload=idempotency_payload,
         )
 
-    def _resolve_chapter_pages(
+    def _translation_spec(
         self,
         *,
         chapter_id: str,
         requested_page_ids: Sequence[str] | None,
-    ) -> tuple[Mapping[str, Any], list[str]]:
-        with self.engine.connect() as connection:
-            chapter = connection.execute(
-                select(
-                    chapters.c.id,
-                    chapters.c.book_id,
-                    chapters.c.title,
-                    books.c.title.label("book_title"),
-                )
-                .join(books, books.c.id == chapters.c.book_id)
-                .where(chapters.c.id == chapter_id)
-            ).mappings().one_or_none()
-            if chapter is None:
-                raise ValueError("chapter not found")
-            ordered = list(
-                connection.execute(
-                    select(pages.c.id)
-                    .where(pages.c.chapter_id == chapter_id)
-                    .order_by(pages.c.ordinal)
-                ).scalars()
-            )
-        if requested_page_ids is not None:
-            if not requested_page_ids or len(set(requested_page_ids)) != len(
-                requested_page_ids
-            ):
-                raise ValueError("pageIds must contain unique page IDs")
-            requested = set(requested_page_ids)
-            if not requested.issubset(set(ordered)):
-                raise ValueError("pageIds must all belong to the chapter")
-            ordered = [page_id for page_id in ordered if page_id in requested]
-        if not ordered:
-            raise ValueError("translation task requires at least one page")
-        return chapter, [str(page_id) for page_id in ordered]
-
-    def _plugin_snapshots(self) -> dict[str, dict[str, Any]]:
-        with self.engine.connect() as connection:
-            return enabled_plugin_snapshots(connection)
-
+        command: Mapping[str, Any],
+        job_kind: str,
+        retry_of_job_id: str | None = None,
+        retry_mode: str | None = None,
+    ) -> tuple[Mapping[str, Any], list[str], dict[str, Any], JobSpec]:
+        chapter, ordered_pages = resolve_chapter_pages(
+            self.engine,
+            chapter_id=chapter_id,
+            requested_page_ids=requested_page_ids,
+        )
+        normalized = self.settings.resolve_translation(
+            chapter_id=chapter_id,
+            command=command,
+        )
+        mode = str(command["mode"])
+        step_kinds = step_kinds_for_mode(
+            mode,
+            reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
+            proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
+            remove_text_with_ocr=bool(normalized["removeTextWithOcr"]),
+        )
+        validate_translation_job_requirements(normalized, step_kinds)
+        spec = JobSpec(
+            kind=job_kind,
+            book_id=str(chapter["book_id"]),
+            chapter_id=chapter_id,
+            config=normalized,
+            items=tuple(
+                JobItemSpec(page_id=page_id, step_kinds=step_kinds)
+                for page_id in ordered_pages
+            ),
+            target_display={
+                "book": chapter["book_title"],
+                "chapter": chapter["title"],
+                "pageCount": len(ordered_pages),
+            },
+            retry_of_job_id=retry_of_job_id,
+            retry_mode=retry_mode,
+        )
+        return chapter, ordered_pages, normalized, spec
 
 def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
     unknown = set(config) - ALLOWED_CONFIG_KEYS
@@ -303,6 +291,7 @@ def step_kinds_for_mode(
     *,
     reuse_existing_bubbles: bool = False,
     proofreading_rounds: int = 1,
+    remove_text_with_ocr: bool = False,
 ) -> tuple[str, ...]:
     if mode == "standard":
         steps = (
@@ -337,7 +326,12 @@ def step_kinds_for_mode(
             "save",
         )
     if mode == "remove_text":
-        return ("detect", "ocr", "repair", "publish_clean")
+        return (
+            "detect",
+            *(("ocr",) if remove_text_with_ocr else ()),
+            "repair",
+            "publish_clean",
+        )
     raise ValueError(f"unsupported translation mode: {mode}")
 
 

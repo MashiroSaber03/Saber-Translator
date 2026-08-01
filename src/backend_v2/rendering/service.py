@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from io import BytesIO
-import json
 from pathlib import Path
 
 from PIL import Image
 from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json
 from src.backend_v2.operations.repository import RenderFence
 from src.backend_v2.rendering.fonts import materialize_render_payloads
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
@@ -19,6 +19,63 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
+
+
+def publish_png_asset(
+    storage: AssetStorageService,
+    image: Image.Image,
+    *,
+    mode: str | None = None,
+) -> AssetRecord:
+    converted = image if mode is None or image.mode == mode else image.convert(mode)
+    try:
+        output = BytesIO()
+        converted.save(output, format="PNG")
+    finally:
+        if converted is not image:
+            converted.close()
+    return storage.publish_bytes(
+        output.getvalue(),
+        extension="png",
+        mime_type="image/png",
+        width=image.width,
+        height=image.height,
+    )
+
+
+def publish_thumbnail_asset(
+    storage: AssetStorageService,
+    image: Image.Image,
+) -> AssetRecord:
+    thumbnail = image.copy()
+    try:
+        if thumbnail.height / max(thumbnail.width, 1) > 4:
+            if thumbnail.width > 320:
+                height = max(1, round(thumbnail.height * 320 / thumbnail.width))
+                resized = thumbnail.resize(
+                    (320, height),
+                    Image.Resampling.LANCZOS,
+                )
+                thumbnail.close()
+                thumbnail = resized
+            if thumbnail.height > 1280:
+                cropped = thumbnail.crop((0, 0, thumbnail.width, 1280))
+                thumbnail.close()
+                thumbnail = cropped
+        else:
+            thumbnail.thumbnail((320, 320), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        thumbnail.save(output, format="WEBP", quality=80, method=4)
+        width, height = thumbnail.size
+    finally:
+        thumbnail.close()
+    return storage.publish_bytes(
+        output.getvalue(),
+        extension="webp",
+        mime_type="image/webp",
+        width=width,
+        height=height,
+    )
 
 
 class AuthoritativeRenderService:
@@ -76,8 +133,8 @@ class AuthoritativeRenderService:
             rendered = base.copy()
             if states:
                 render_bubbles_unified(rendered, states)
-            translated = self._publish_png(rendered)
-            thumbnail = self._publish_thumbnail(rendered)
+            translated = publish_png_asset(self.storage, rendered)
+            thumbnail = publish_thumbnail_asset(self.storage, rendered)
         finally:
             base.close()
             if "rendered" in locals():
@@ -93,12 +150,7 @@ class AuthoritativeRenderService:
                         bubbles.c.updated_revision <= fence.rendering_revision,
                     )
                     .values(
-                        payload_json=json.dumps(
-                            payload,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
+                        payload_json=canonical_json(payload),
                         updated_revision=fence.rendering_revision,
                     )
                 )
@@ -121,38 +173,6 @@ class AuthoritativeRenderService:
 
         return publish
 
-    def _publish_png(self, image: Image.Image) -> AssetRecord:
-        output = BytesIO()
-        image.save(output, format="PNG")
-        return self.storage.publish_bytes(
-            output.getvalue(),
-            extension="png",
-            mime_type="image/png",
-            width=image.width,
-            height=image.height,
-        )
-
-    def _publish_thumbnail(self, image: Image.Image) -> AssetRecord:
-        thumbnail = image.copy()
-        if thumbnail.height / max(thumbnail.width, 1) > 4:
-            if thumbnail.width > 320:
-                height = max(1, round(thumbnail.height * 320 / thumbnail.width))
-                thumbnail = thumbnail.resize((320, height), Image.Resampling.LANCZOS)
-            if thumbnail.height > 1280:
-                thumbnail = thumbnail.crop((0, 0, thumbnail.width, 1280))
-        else:
-            thumbnail.thumbnail((320, 320), Image.Resampling.LANCZOS)
-        output = BytesIO()
-        thumbnail.save(output, format="WEBP", quality=80, method=4)
-        width, height = thumbnail.size
-        thumbnail.close()
-        return self.storage.publish_bytes(
-            output.getvalue(),
-            extension="webp",
-            mime_type="image/webp",
-            width=width,
-            height=height,
-        )
     @staticmethod
     def _set_pointer(
         connection: Connection,

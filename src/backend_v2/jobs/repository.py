@@ -25,6 +25,9 @@ from sqlalchemy import (
     select,
     update,
 )
+
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import iso_utc as _iso, utcnow
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Connection
 
@@ -35,6 +38,7 @@ from src.backend_v2.domain.state_machines import (
     transition_job,
 )
 from src.backend_v2.redaction import (
+    credential_version_references,
     redact_sensitive_text,
     redact_sensitive_value,
     secret_values_from_json,
@@ -171,43 +175,10 @@ class AttemptFence:
     lease_expires_at: datetime
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
 def _load_json(value: str | None, default: object) -> object:
     if not value:
         return default
     return json.loads(value)
-
-
-def _credential_version_references(
-    value: Mapping[str, Any],
-) -> dict[str, str]:
-    references: dict[str, str] = {}
-
-    def visit(current: object, path: tuple[str, ...]) -> None:
-        if isinstance(current, Mapping):
-            for key, child in current.items():
-                key_text = str(key)
-                next_path = (*path, key_text)
-                if key_text == "credentialVersionId" and isinstance(child, str):
-                    role = ".".join(path) or "default"
-                    if len(role) > 64:
-                        role = hashlib.sha256(role.encode("utf-8")).hexdigest()
-                    references[role] = child
-                else:
-                    visit(child, next_path)
-        elif isinstance(current, (list, tuple)):
-            for index, child in enumerate(current):
-                visit(child, (*path, str(index)))
-
-    visit(value, ())
-    return references
 
 
 def _job_secret_values(connection: Connection, job_id: str) -> tuple[str, ...]:
@@ -339,7 +310,11 @@ class JobQueueRepository:
                         select(func.coalesce(func.max(jobs.c.queue_rank), 0))
                     ).scalar_one()
                 )
-                current_plugin_snapshots = enabled_plugin_snapshots(connection)
+                current_plugin_snapshots = (
+                    enabled_plugin_snapshots(connection)
+                    if any(spec.plugin_snapshots is None for spec in specs)
+                    else {}
+                )
                 for spec in specs:
                     next_rank += 1
                     job_id = str(uuid.uuid4())
@@ -383,7 +358,7 @@ class JobQueueRepository:
                         )
                     )
                     credential_refs = {
-                        **_credential_version_references(spec.config),
+                        **credential_version_references(spec.config),
                         **dict(spec.credential_snapshots or {}),
                     }
                     if credential_refs:
@@ -777,7 +752,7 @@ class JobQueueRepository:
                 "kind": row["kind"],
                 "assetId": row["asset_id"],
                 "url": f"/api/v2/assets/{row['asset_id']}",
-                "expiresAt": self._iso(row["expires_at"]),
+                "expiresAt": _iso(row["expires_at"]),
             }
             for row in artifact_rows
         ]
@@ -821,7 +796,7 @@ class JobQueueRepository:
             "displayName": batch["display_name"],
             "summary": _load_json(batch["status_summary_json"], {}),
             "jobs": [self._job_dto(row) for row in member_rows],
-            "createdAt": self._iso(batch["created_at"]),
+            "createdAt": _iso(batch["created_at"]),
         }
 
     def events_after(
@@ -1344,7 +1319,6 @@ class JobQueueRepository:
                 ).mappings()
             )
             for candidate in candidates:
-                job_id = str(candidate["id"])
                 if candidate["kind"] in WRITE_JOB_KINDS:
                     reservation = self._advance_write_reservation(
                         connection,
@@ -1546,15 +1520,18 @@ class JobQueueRepository:
             secret_values = _job_secret_values(connection, fence.job_id)
         return redact_sensitive_text(message, secret_values=secret_values)
 
-    def append_plugin_event(
+    def append_worker_event(
         self,
         fence: AttemptFence,
         *,
         event_type: str,
         payload: Mapping[str, Any],
     ) -> int:
-        if not event_type.startswith("plugin_") or len(event_type) > 64:
-            raise ValueError("plugin event type is invalid")
+        if (
+            not event_type.startswith(("plugin_", "web_import_"))
+            or len(event_type) > 64
+        ):
+            raise ValueError("worker event type is invalid")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(
@@ -1571,12 +1548,10 @@ class JobQueueRepository:
                 now=now,
             )
 
-    def plugin_stage_completed(
+    def completed_plugin_stages(
         self,
         fence: AttemptFence,
-        *,
-        hook: str,
-    ) -> bool:
+    ) -> set[tuple[str, str | None]]:
         now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
@@ -1592,9 +1567,63 @@ class JobQueueRepository:
                     == "plugin_stage_completed",
                 )
             ).scalars()
-            return any(
-                _load_json(str(payload), {}).get("hook") == hook
-                for payload in rows
+            result: set[tuple[str, str | None]] = set()
+            for payload in rows:
+                data = _load_json(str(payload), {})
+                hook = data.get("hook")
+                if not isinstance(hook, str):
+                    continue
+                item_id = data.get("itemId")
+                result.add(
+                    (hook, str(item_id) if item_id is not None else None)
+                )
+            return result
+
+    def complete_plugin_stage(
+        self,
+        fence: AttemptFence,
+        *,
+        hook: str,
+        scope: str,
+        item_id: str | None = None,
+        page_id: str | None = None,
+        job_config: Mapping[str, Any] | None = None,
+        outcome: str = "completed",
+    ) -> None:
+        if outcome not in {"completed", "failed"}:
+            raise ValueError("plugin stage outcome is invalid")
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            if job_config is not None:
+                changed = connection.execute(
+                    update(jobs)
+                    .where(
+                        jobs.c.id == fence.job_id,
+                        jobs.c.attempt_id == fence.attempt_id,
+                        jobs.c.lease_token == fence.lease_token,
+                    )
+                    .values(config_json=_json(dict(job_config)), updated_at=now)
+                )
+                if changed.rowcount != 1:
+                    raise AttemptFenced("plugin job config write was fenced")
+            self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type="plugin_stage_completed",
+                payload={
+                    "hook": hook,
+                    "scope": scope,
+                    "outcome": outcome,
+                    "itemId": item_id,
+                    "pageId": page_id,
+                },
+                now=now,
             )
 
     def active_step_counts(self, fence: AttemptFence) -> tuple[int, int]:
@@ -1617,6 +1646,65 @@ class JobQueueRepository:
             ))
         counts = {str(status): int(count) for status, count in rows}
         return counts.get("pending", 0), counts.get("running", 0)
+
+    def item_statuses(
+        self,
+        fence: AttemptFence,
+        item_ids: Sequence[str],
+    ) -> dict[str, str]:
+        if not item_ids:
+            return {}
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            rows = connection.execute(
+                select(job_items.c.id, job_items.c.status).where(
+                    job_items.c.job_id == fence.job_id,
+                    job_items.c.id.in_(tuple(item_ids)),
+                )
+            )
+            return {str(item_id): str(status) for item_id, status in rows}
+
+    def terminal_page_items(
+        self,
+        fence: AttemptFence,
+    ) -> list[dict[str, str]]:
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            rows = connection.execute(
+                select(
+                    job_items.c.id,
+                    job_items.c.page_id,
+                    job_items.c.status,
+                )
+                .where(
+                    job_items.c.job_id == fence.job_id,
+                    job_items.c.page_id.is_not(None),
+                    job_items.c.status.in_(
+                        ("completed", "failed", "skipped", "cancelled")
+                    ),
+                )
+                .order_by(job_items.c.ordinal)
+            ).mappings()
+            return [
+                {
+                    "itemId": str(row["id"]),
+                    "pageId": str(row["page_id"]),
+                    "status": str(row["status"]),
+                }
+                for row in rows
+            ]
 
     def pending_step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
         """Return the durable step kinds that still need a Worker handler."""
@@ -1674,6 +1762,8 @@ class JobQueueRepository:
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
             prior_step = job_steps.alias("prior_step")
+            first_boundary_step = job_steps.alias("first_boundary_step")
+            last_boundary_step = job_steps.alias("last_boundary_step")
             proofread_barrier_step = job_steps.alias("proofread_barrier_step")
             proofread_barrier_item = job_items.alias("proofread_barrier_item")
             conditions = [
@@ -1721,6 +1811,22 @@ class JobQueueRepository:
                     job_items.c.page_id,
                     jobs.c.kind.label("job_kind"),
                     jobs.c.config_json,
+                    ~exists(
+                        select(first_boundary_step.c.id).where(
+                            first_boundary_step.c.job_item_id
+                            == job_steps.c.job_item_id,
+                            first_boundary_step.c.ordinal
+                            < job_steps.c.ordinal,
+                        )
+                    ).label("is_first_step"),
+                    ~exists(
+                        select(last_boundary_step.c.id).where(
+                            last_boundary_step.c.job_item_id
+                            == job_steps.c.job_item_id,
+                            last_boundary_step.c.ordinal
+                            > job_steps.c.ordinal,
+                        )
+                    ).label("is_last_step"),
                 )
                 .join(job_items, job_items.c.id == job_steps.c.job_item_id)
                 .join(jobs, jobs.c.id == job_items.c.job_id)
@@ -1786,6 +1892,8 @@ class JobQueueRepository:
                 "stepId": row["step_id"],
                 "stepOrdinal": row["step_ordinal"],
                 "stepKind": row["step_kind"],
+                "isFirstStep": bool(row["is_first_step"]),
+                "isLastStep": bool(row["is_last_step"]),
             }
 
     def next_step_batch(
@@ -1795,19 +1903,21 @@ class JobQueueRepository:
         step_kind: str,
         limit: int,
     ) -> list[dict[str, object]]:
-        """Claim one durable HQ/proofreading batch at a shared round boundary.
+        """Claim one durable step batch at a shared round boundary.
 
         A partial batch is only released when no page with the same step ordinal
         is still waiting on an upstream step. This gives the Worker bounded
         buffering without using an in-memory page list as scheduler state.
         """
 
-        if not step_kind or limit < 1 or limit > 10:
+        if not step_kind or limit < 1 or limit > 32:
             raise ValueError("step batch kind/limit is invalid")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
             prior_step = job_steps.alias("batch_prior_step")
+            first_boundary_step = job_steps.alias("batch_first_boundary_step")
+            last_boundary_step = job_steps.alias("batch_last_boundary_step")
             ready_condition = ~exists(
                 select(prior_step.c.id).where(
                     prior_step.c.job_item_id == job_steps.c.job_item_id,
@@ -1841,6 +1951,22 @@ class JobQueueRepository:
                         job_items.c.page_id,
                         jobs.c.kind.label("job_kind"),
                         jobs.c.config_json,
+                        ~exists(
+                            select(first_boundary_step.c.id).where(
+                                first_boundary_step.c.job_item_id
+                                == job_steps.c.job_item_id,
+                                first_boundary_step.c.ordinal
+                                < job_steps.c.ordinal,
+                            )
+                        ).label("is_first_step"),
+                        ~exists(
+                            select(last_boundary_step.c.id).where(
+                                last_boundary_step.c.job_item_id
+                                == job_steps.c.job_item_id,
+                                last_boundary_step.c.ordinal
+                                > job_steps.c.ordinal,
+                            )
+                        ).label("is_last_step"),
                     )
                     .join(job_items, job_items.c.id == job_steps.c.job_item_id)
                     .join(jobs, jobs.c.id == job_items.c.job_id)
@@ -1912,6 +2038,8 @@ class JobQueueRepository:
                         "stepId": row["step_id"],
                         "stepOrdinal": row["step_ordinal"],
                         "stepKind": row["step_kind"],
+                        "isFirstStep": bool(row["is_first_step"]),
+                        "isLastStep": bool(row["is_last_step"]),
                     }
                 )
             snapshot = self._load_progress_snapshot(connection, fence.job_id)
@@ -2017,6 +2145,72 @@ class JobQueueRepository:
             publisher=publisher,
         )
 
+    def fail_terminal_item(
+        self,
+        fence: AttemptFence,
+        *,
+        item_id: str,
+        code: str,
+        message: str,
+    ) -> None:
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            job_status = self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            row = connection.execute(
+                select(job_items.c.status, job_items.c.page_id).where(
+                    job_items.c.id == item_id,
+                    job_items.c.job_id == fence.job_id,
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise AttemptFenced("plugin pipeline item no longer exists")
+            if row["status"] == "failed":
+                return
+            if row["status"] not in {"completed", "skipped", "cancelled"}:
+                raise AttemptFenced("plugin pipeline item is not terminal")
+            safe_error = redact_sensitive_value(
+                {"code": code, "message": message},
+                secret_values=_job_secret_values(connection, fence.job_id),
+            )
+            connection.execute(
+                update(job_items)
+                .where(job_items.c.id == item_id)
+                .values(
+                    status="failed",
+                    error_json=_json(safe_error),
+                    updated_at=now,
+                )
+            )
+            snapshot = self._progress_snapshot(connection, fence.job_id)
+            connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.lease_token == fence.lease_token,
+                    jobs.c.status == job_status,
+                )
+                .values(latest_progress_json=_json(snapshot), updated_at=now)
+            )
+            self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type="page_failed",
+                payload={
+                    "itemId": item_id,
+                    "pageId": row["page_id"],
+                    "status": "failed",
+                    "error": safe_error,
+                    "progress": snapshot,
+                },
+                now=now,
+            )
+
     def skip_remaining_item(
         self,
         fence: AttemptFence,
@@ -2094,6 +2288,18 @@ class JobQueueRepository:
                 now=now,
             )
 
+    def completion_status(self, fence: AttemptFence) -> str | None:
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running",),
+            )
+            outcome = self._completion_outcome(connection, fence.job_id)
+        return outcome[0] if outcome is not None else None
+
     def finish_if_complete(self, fence: AttemptFence) -> str | None:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
@@ -2103,30 +2309,10 @@ class JobQueueRepository:
                 now,
                 allowed_statuses=("running",),
             )
-            active_steps = int(
-                connection.execute(
-                    select(func.count())
-                    .select_from(job_steps)
-                    .join(job_items, job_items.c.id == job_steps.c.job_item_id)
-                    .where(
-                        job_items.c.job_id == fence.job_id,
-                        job_steps.c.status.in_(("pending", "running")),
-                    )
-                ).scalar_one()
-            )
-            if active_steps:
+            outcome = self._completion_outcome(connection, fence.job_id)
+            if outcome is None:
                 return None
-            failed = int(
-                connection.execute(
-                    select(func.count())
-                    .select_from(job_items)
-                    .where(
-                        job_items.c.job_id == fence.job_id,
-                        job_items.c.status == "failed",
-                    )
-                ).scalar_one()
-            )
-            final = "completed_with_errors" if failed else "completed"
+            final, failed = outcome
             final_progress = self._progress_snapshot(
                 connection,
                 fence.job_id,
@@ -2173,27 +2359,38 @@ class JobQueueRepository:
             self._refresh_batch_summary(connection, fence.job_id, now)
             return final
 
-    def write_progress(
-        self,
-        fence: AttemptFence,
-        progress: Mapping[str, Any],
-    ) -> None:
-        now = utcnow()
-        with self.engine.begin() as connection:
-            result = connection.execute(
-                update(jobs)
+    @staticmethod
+    def _completion_outcome(
+        connection: Any,
+        job_id: str,
+    ) -> tuple[str, int] | None:
+        active_steps = int(
+            connection.execute(
+                select(func.count())
+                .select_from(job_steps)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
                 .where(
-                    jobs.c.id == fence.job_id,
-                    jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
-                    jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                    jobs.c.lease_expires_at > now,
-                    jobs.c.status.in_(("running", "pausing", "cancelling")),
+                    job_items.c.job_id == job_id,
+                    job_steps.c.status.in_(("pending", "running")),
                 )
-                .values(latest_progress_json=_json(dict(progress)), updated_at=now)
-            )
-            if result.rowcount != 1:
-                raise AttemptFenced("job progress write was fenced")
+            ).scalar_one()
+        )
+        if active_steps:
+            return None
+        failed = int(
+            connection.execute(
+                select(func.count())
+                .select_from(job_items)
+                .where(
+                    job_items.c.job_id == job_id,
+                    job_items.c.status == "failed",
+                )
+            ).scalar_one()
+        )
+        return (
+            "completed_with_errors" if failed else "completed",
+            failed,
+        )
 
     def write_pipeline_progress(
         self,
@@ -3648,9 +3845,9 @@ class JobQueueRepository:
             "blockedByJobId": row.get("blocked_by_job_id"),
             "progress": _load_json(row.get("latest_progress_json"), {}),
             "target": _load_json(row.get("target_display_json"), {}),
-            "createdAt": JobQueueRepository._iso(row.get("created_at")),
-            "startedAt": JobQueueRepository._iso(row.get("started_at")),
-            "finishedAt": JobQueueRepository._iso(row.get("finished_at")),
+            "createdAt": _iso(row.get("created_at")),
+            "startedAt": _iso(row.get("started_at")),
+            "finishedAt": _iso(row.get("finished_at")),
         }
 
     @staticmethod
@@ -3660,16 +3857,8 @@ class JobQueueRepository:
             "jobId": row["job_id"],
             "type": row["event_type"],
             "payload": _load_json(row["payload_json"], {}),
-            "createdAt": JobQueueRepository._iso(row["created_at"]),
+            "createdAt": _iso(row["created_at"]),
         }
-
-    @staticmethod
-    def _iso(value: datetime | str | None) -> str | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            return value
-        return value.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
     @staticmethod
     def _append_event(
@@ -3737,8 +3926,4 @@ class JobQueueRepository:
                 ),
                 updated_at=now,
             )
-        )
-        JobQueueRepository._prune_history_batches(
-            connection,
-            now=now,
         )

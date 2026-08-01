@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
@@ -12,16 +12,14 @@ import re
 from typing import BinaryIO
 import uuid
 
-from sqlalchemy import Engine, delete, exists, func, insert, or_, select, update
+from sqlalchemy import Engine, delete, exists, insert, or_, select, update
 
+from src.backend_v2.timestamps import utcnow as _utcnow
+from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import assets, metadata, object_commit_journal
 
 
 _EXTENSION_PATTERN = re.compile(r"^[a-z0-9]{1,12}$")
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +85,31 @@ class AssetStorageService:
             height=height,
             bind=bind,
             failpoint=failpoint,
+        )
+
+    def get_record(self, asset_id: str) -> AssetRecord | None:
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    assets.c.id,
+                    assets.c.relative_path,
+                    assets.c.mime_type,
+                    assets.c.checksum,
+                    assets.c.byte_size,
+                    assets.c.width,
+                    assets.c.height,
+                ).where(assets.c.id == asset_id)
+            ).mappings().one_or_none()
+        if row is None:
+            return None
+        return AssetRecord(
+            id=str(row["id"]),
+            relative_path=str(row["relative_path"]),
+            mime_type=str(row["mime_type"]),
+            checksum=str(row["checksum"]),
+            byte_size=int(row["byte_size"]),
+            width=int(row["width"]) if row["width"] is not None else None,
+            height=int(row["height"]) if row["height"] is not None else None,
         )
 
     def publish_stream(
@@ -237,13 +260,21 @@ class AssetStorageService:
                 )
 
             if database_has_asset:
+                if not final_path.exists() and staging_path.exists():
+                    final_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(staging_path, final_path)
+                    self._fsync_directory(final_path.parent)
                 with self.engine.begin() as connection:
-                    if not final_path.exists():
-                        connection.execute(
-                            update(assets)
-                            .where(assets.c.id == asset_id)
-                            .values(integrity_status="missing", updated_at=now)
+                    connection.execute(
+                        update(assets)
+                        .where(assets.c.id == asset_id)
+                        .values(
+                            integrity_status=(
+                                "ok" if final_path.exists() else "missing"
+                            ),
+                            updated_at=now,
                         )
+                    )
                     connection.execute(
                         delete(object_commit_journal).where(
                             object_commit_journal.c.asset_id == asset_id
@@ -253,36 +284,18 @@ class AssetStorageService:
                 recovered += 1
                 continue
 
-            if staging_path.exists() and not final_path.exists():
-                final_path.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(staging_path, final_path)
-                with self.engine.begin() as connection:
-                    connection.execute(
-                        update(object_commit_journal)
-                        .where(object_commit_journal.c.asset_id == asset_id)
-                        .values(state="file_published")
-                    )
-                    if expired:
-                        connection.execute(
-                            delete(object_commit_journal).where(
-                                object_commit_journal.c.asset_id == asset_id
-                            )
-                        )
-                if expired:
-                    final_path.unlink(missing_ok=True)
-                recovered += 1
+            if not expired:
                 continue
 
-            if expired:
-                staging_path.unlink(missing_ok=True)
-                final_path.unlink(missing_ok=True)
-                with self.engine.begin() as connection:
-                    connection.execute(
-                        delete(object_commit_journal).where(
-                            object_commit_journal.c.asset_id == asset_id
-                        )
+            staging_path.unlink(missing_ok=True)
+            final_path.unlink(missing_ok=True)
+            with self.engine.begin() as connection:
+                connection.execute(
+                    delete(object_commit_journal).where(
+                        object_commit_journal.c.asset_id == asset_id
                     )
-                recovered += 1
+                )
+            recovered += 1
         referenced_staging = {
             str(row["staging_relative_path"])
             for row in rows
@@ -335,7 +348,6 @@ class AssetStorageService:
         self,
         *,
         grace_seconds: int = 3600,
-        now: datetime | None = None,
     ) -> OrphanObjectReconciliationResult:
         """Remove old object files that have neither a DB row nor a journal.
 
@@ -347,7 +359,7 @@ class AssetStorageService:
 
         if grace_seconds < 0:
             raise ValueError("grace_seconds must be nonnegative")
-        current_time = now or _utcnow()
+        current_time = _utcnow()
         cutoff_timestamp = (
             current_time - timedelta(seconds=grace_seconds)
         ).timestamp()
@@ -400,7 +412,6 @@ class AssetStorageService:
         now: datetime | None = None,
     ) -> GarbageCollectionResult:
         current_time = now or _utcnow()
-        delete_candidates: list[tuple[str, str]] = []
         cutoff = current_time - timedelta(seconds=grace_seconds)
         referenced = self._asset_is_referenced()
         with self.engine.begin() as connection:
@@ -432,28 +443,50 @@ class AssetStorageService:
                 )
                 .values(gc_marked_at=current_time, updated_at=current_time)
             ).rowcount
-            for row in candidates:
+
+        deleted_rows = 0
+        deleted_files = 0
+        for row in candidates:
+            asset_id = str(row["id"])
+            path = self.resolve_relative_path(str(row["relative_path"]))
+            with immediate_transaction(self.engine) as connection:
+                connection.execute(
+                    update(assets)
+                    .where(
+                        assets.c.id == asset_id,
+                        assets.c.gc_marked_at.is_not(None),
+                        referenced,
+                    )
+                    .values(gc_marked_at=None, updated_at=current_time)
+                )
+                still_deletable = connection.execute(
+                    select(assets.c.id).where(
+                        assets.c.id == asset_id,
+                        assets.c.gc_marked_at == row["gc_marked_at"],
+                        ~referenced,
+                    )
+                ).scalar_one_or_none()
+                if still_deletable is None:
+                    continue
+                existed = path.exists()
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    continue
                 deleted = connection.execute(
                     delete(assets).where(
-                        assets.c.id == row["id"],
+                        assets.c.id == asset_id,
                         assets.c.gc_marked_at == row["gc_marked_at"],
                         ~referenced,
                     )
                 )
                 if deleted.rowcount == 1:
-                    delete_candidates.append(
-                        (str(row["id"]), str(row["relative_path"]))
-                    )
-
-        deleted_files = 0
-        for _asset_id, relative_path in delete_candidates:
-            path = self.resolve_relative_path(relative_path)
-            if path.exists():
-                path.unlink()
-                deleted_files += 1
+                    deleted_rows += 1
+                    if existed:
+                        deleted_files += 1
         return GarbageCollectionResult(
             marked=int(marked or 0),
-            deleted_rows=len(delete_candidates),
+            deleted_rows=deleted_rows,
             deleted_files=deleted_files,
         )
 
@@ -476,24 +509,3 @@ class AssetStorageService:
                         )
                     )
         return or_(*references)
-
-    def _referenced_asset_ids(self) -> set[str]:
-        referenced: set[str] = set()
-        with self.engine.connect() as connection:
-            for table in metadata.tables.values():
-                if table is assets or table is object_commit_journal:
-                    continue
-                for column in table.columns:
-                    if not any(
-                        foreign_key.column.table is assets
-                        for foreign_key in column.foreign_keys
-                    ):
-                        continue
-                    referenced.update(
-                        value
-                        for value in connection.execute(
-                            select(column).where(column.is_not(None))
-                        ).scalars()
-                        if value is not None
-                    )
-        return referenced

@@ -20,9 +20,6 @@ logger = logging.getLogger("LAMAMPEInterface")
 # 工具函数
 # ============================================================
 
-def set_requires_grad(module, value):
-    for param in module.parameters():
-        param.requires_grad = value
 
 
 def get_activation(kind='tanh'):
@@ -50,33 +47,6 @@ def resize_keep_aspect(img: np.ndarray, size: int) -> np.ndarray:
 # ============================================================
 # FFC (Fast Fourier Convolution) 模块
 # ============================================================
-
-class FFCSE_block(nn.Module):
-    def __init__(self, channels, ratio_g):
-        super(FFCSE_block, self).__init__()
-        in_cg = int(channels * ratio_g)
-        in_cl = channels - in_cg
-        r = 16
-
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.conv1 = nn.Conv2d(channels, channels // r, kernel_size=1, bias=True)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.conv_a2l = None if in_cl == 0 else nn.Conv2d(channels // r, in_cl, kernel_size=1, bias=True)
-        self.conv_a2g = None if in_cg == 0 else nn.Conv2d(channels // r, in_cg, kernel_size=1, bias=True)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        x = x if type(x) is tuple else (x, 0)
-        id_l, id_g = x
-
-        x = id_l if type(id_g) is int else torch.cat([id_l, id_g], dim=1)
-        x = self.avgpool(x)
-        x = self.relu1(self.conv1(x))
-
-        x_l = 0 if self.conv_a2l is None else id_l * self.sigmoid(self.conv_a2l(x))
-        x_g = 0 if self.conv_a2g is None else id_g * self.sigmoid(self.conv_a2g(x))
-        return x_l, x_g
-
 
 class FourierUnit(nn.Module):
     def __init__(self, in_channels, out_channels, groups=1, spatial_scale_factor=None, 
@@ -108,7 +78,6 @@ class FourierUnit(nn.Module):
             x = F.interpolate(x, scale_factor=self.spatial_scale_factor, 
                             mode=self.spatial_scale_mode, align_corners=False)
 
-        r_size = x.size()
         fft_dim = (-3, -2, -1) if self.ffc3d else (-2, -1)
 
         if x.dtype in (torch.float16, torch.bfloat16):

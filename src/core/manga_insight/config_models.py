@@ -6,8 +6,7 @@ Manga Insight 配置数据模型
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
-from enum import Enum
+from typing import Optional
 
 from .config.serialization import SerializableMixin
 from src.shared.openai_options import (
@@ -15,34 +14,6 @@ from src.shared.openai_options import (
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
 )
-
-
-class APIProvider(Enum):
-    """
-    统一的 API 服务商枚举
-
-    所有模型类型（VLM、Embedding、Reranker、生图）共用此枚举。
-    各服务商支持的能力不同，通过 provider_registry 查询。
-    """
-    OPENAI = "openai"
-    GEMINI = "gemini"
-    QWEN = "qwen"
-    SILICONFLOW = "siliconflow"
-    DEEPSEEK = "deepseek"
-    VOLCANO = "volcano"
-    OLLAMA = "ollama"
-    JINA = "jina"
-    COHERE = "cohere"
-    CUSTOM = "custom"
-    GPT2API = "gpt2api"
-    NEWAPI = "newapi"
-
-
-class AnalysisDepth(Enum):
-    """分析深度枚举"""
-    QUICK = "quick"        # 仅基础信息提取
-    STANDARD = "standard"  # 标准分析
-    DEEP = "deep"          # 深度分析（主题、情感等）
 
 
 @dataclass
@@ -100,19 +71,6 @@ class EmbeddingConfig(SerializableMixin):
 
 
 @dataclass
-class RerankerConfig(SerializableMixin):
-    """重排序模型配置（配置 API Key 后生效）"""
-    provider: str = "jina"
-    api_key: str = ""
-    model: str = "jina-reranker-v2-base-multilingual"
-    base_url: Optional[str] = None
-    top_k: int = 5
-    transport_retries: int = 10
-    business_retries: int = 10
-    timeout_seconds: float = 0
-
-
-@dataclass
 class ImageGenConfig(SerializableMixin):
     """生图模型配置"""
     provider: str = "gpt2api"
@@ -122,83 +80,6 @@ class ImageGenConfig(SerializableMixin):
     transport_retries: int = 10
     business_retries: int = 10
     timeout_seconds: float = 0
-
-
-# 预设架构模板
-ARCHITECTURE_PRESETS = {
-    "simple": {
-        "name": "简洁模式",
-        "description": "批量分析 → 全书总结（适合短篇，100页以内）",
-        "layers": [
-            {"name": "批量分析", "units_per_group": 5, "align_to_chapter": False},
-            {"name": "全书总结", "units_per_group": 0, "align_to_chapter": False}
-        ]
-    },
-    "standard": {
-        "name": "标准模式",
-        "description": "批量分析 → 段落总结 → 全书总结（通用）",
-        "layers": [
-            {"name": "批量分析", "units_per_group": 5, "align_to_chapter": False},
-            {"name": "段落总结", "units_per_group": 5, "align_to_chapter": False},
-            {"name": "全书总结", "units_per_group": 0, "align_to_chapter": False}
-        ]
-    },
-    "chapter_based": {
-        "name": "章节模式",
-        "description": "批量分析 → 章节总结 → 全书总结（有明确章节的漫画）",
-        "layers": [
-            {"name": "批量分析", "units_per_group": 5, "align_to_chapter": True},
-            {"name": "章节总结", "units_per_group": 0, "align_to_chapter": True},
-            {"name": "全书总结", "units_per_group": 0, "align_to_chapter": False}
-        ]
-    },
-    "full": {
-        "name": "完整模式",
-        "description": "批量分析 → 小总结 → 章节总结 → 全书总结（长篇连载）",
-        "layers": [
-            {"name": "批量分析", "units_per_group": 5, "align_to_chapter": False},
-            {"name": "小总结", "units_per_group": 5, "align_to_chapter": False},
-            {"name": "章节总结", "units_per_group": 0, "align_to_chapter": True},
-            {"name": "全书总结", "units_per_group": 0, "align_to_chapter": False}
-        ]
-    }
-}
-
-
-@dataclass
-class BatchAnalysisSettings(SerializableMixin):
-    """批量分析设置"""
-    pages_per_batch: int = 5                # 每批次分析的页数 (1-10)
-    context_batch_count: int = 3            # 作为上文参考的前置批次数量 (0-5)
-
-    # 层级架构配置
-    architecture_preset: str = "standard"   # 预设架构: simple/standard/chapter_based/full
-    custom_layers: List[Dict[str, Any]] = field(default_factory=list)  # 自定义层级
-
-    def get_layers(self) -> List[Dict[str, Any]]:
-        """获取当前架构的层级列表"""
-        # 如果是自定义模式且有自定义层级，使用自定义
-        if self.architecture_preset == "custom" and self.custom_layers and len(self.custom_layers) > 0:
-            return self.custom_layers
-
-        # 否则使用预设（custom 模式但没有自定义层级时回退到 standard）
-        preset_key = self.architecture_preset if self.architecture_preset in ARCHITECTURE_PRESETS else "standard"
-        preset = ARCHITECTURE_PRESETS.get(preset_key, ARCHITECTURE_PRESETS["standard"])
-        return preset["layers"]
-
-    def get_preset_info(self) -> Dict[str, Any]:
-        """获取当前预设的信息"""
-        return ARCHITECTURE_PRESETS.get(self.architecture_preset, ARCHITECTURE_PRESETS["standard"])
-
-
-@dataclass
-class AnalysisSettings(SerializableMixin):
-    """分析设置"""
-    depth: str = "standard"
-    auto_analyze_new_chapters: bool = False
-    save_intermediate_results: bool = True
-    batch: BatchAnalysisSettings = field(default_factory=BatchAnalysisSettings)
-
 
 @dataclass
 class PromptsConfig(SerializableMixin):
@@ -211,43 +92,3 @@ class PromptsConfig(SerializableMixin):
     qa_response: str = ""          # 问答响应提示词
     question_decompose: str = ""   # 问题分解提示词
     analysis_system: str = ""      # 分析系统提示词
-
-
-@dataclass
-class MangaInsightConfig(SerializableMixin):
-    """Manga Insight 完整配置"""
-    schema_version: int = 2
-    vlm: VLMConfig = field(default_factory=VLMConfig)
-    chat_llm: ChatLLMConfig = field(default_factory=ChatLLMConfig)
-    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
-    reranker: RerankerConfig = field(default_factory=RerankerConfig)
-    image_gen: ImageGenConfig = field(default_factory=ImageGenConfig)
-    analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
-    prompts: PromptsConfig = field(default_factory=PromptsConfig)
-    # 服务商配置缓存（用于切换服务商时保存/恢复配置）
-    provider_settings: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict)
-
-# ============================================================
-# 提示词模板
-# ============================================================
-
-from .prompts import (
-    DEFAULT_QA_SYSTEM_PROMPT,
-    DEFAULT_ANALYSIS_SYSTEM_PROMPT,
-    DEFAULT_QUESTION_DECOMPOSE_PROMPT,
-    DEFAULT_BATCH_ANALYSIS_PROMPT,
-    DEFAULT_SEGMENT_SUMMARY_PROMPT,
-    DEFAULT_CHAPTER_FROM_SEGMENTS_PROMPT,
-    DEFAULT_GROUP_SUMMARY_PROMPT,
-    DEFAULT_BOOK_OVERVIEW_PROMPT
-)
-
-# ============================================================
-# 概要模板
-# ============================================================
-
-from .overview_templates import (
-    OVERVIEW_TEMPLATES,
-    get_overview_templates,
-    get_overview_template_prompt
-)

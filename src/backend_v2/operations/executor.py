@@ -84,7 +84,6 @@ class DurableOperationExecutor:
         self.executor_role = executor_role
         self.executor_epoch_id = executor_epoch_id
         self.handlers = dict(handlers)
-        self.max_workers = max_workers
         self.poll_seconds = poll_seconds
         self._stop = threading.Event()
         self._admission = threading.Semaphore(max_workers)

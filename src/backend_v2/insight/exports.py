@@ -15,8 +15,8 @@ from sqlalchemy.engine import Connection
 from src.backend_v2.insight.repository import (
     InsightConflict,
     InsightNotFound,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     JobItemSpec,
@@ -58,11 +58,7 @@ class InsightExportCommandService:
     ) -> dict[str, object]:
         with self.engine.connect() as connection:
             run = connection.execute(
-                select(
-                    analysis_runs.c.id,
-                    analysis_runs.c.status,
-                    analysis_runs.c.published_at,
-                )
+                select(analysis_runs.c.id)
                 .join(
                     analysis_heads,
                     analysis_heads.c.active_run_id == analysis_runs.c.id,
@@ -93,7 +89,6 @@ class InsightExportCommandService:
         config = {
             "bookId": book_id,
             "sourceRunId": run_id,
-            "sourceRunStatus": str(run["status"]),
             "artifactIds": artifact_ids,
             "timelineVersionId": (
                 str(timeline_id) if timeline_id is not None else None

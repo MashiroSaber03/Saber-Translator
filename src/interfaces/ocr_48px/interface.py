@@ -147,7 +147,7 @@ class Model48pxOCR:
             dict_path = os.path.join(model_dir, constants.MODEL_48PX_DICT)
             
             if not os.path.exists(ckpt_path) or not os.path.exists(dict_path):
-                logger.error(f"❌ 48px OCR 模型文件不存在")
+                logger.error("❌ 48px OCR 模型文件不存在")
                 logger.info("请运行: python scripts/download_48px_model.py")
                 return False
             
@@ -516,31 +516,6 @@ class Model48pxOCR:
                 for line_info in textlines
             ]
     
-    def _recognize_single_line_with_color(
-        self, 
-        line_img: np.ndarray,
-        prob_threshold: float = 0.2
-    ) -> Tuple[str, Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]], float]:
-        """
-        识别单行文本图像并提取颜色
-        
-        颜色提取逻辑：
-        - 模型为每个字符预测前景色和背景色
-        - 使用 fg_ind_pred/bg_ind_pred 判断颜色是否有效
-        - 对所有有效字符的颜色取平均值
-        
-        Returns:
-            (text, fg_color, bg_color, prob)
-            - text: 识别的文本
-            - fg_color: 前景色 RGB (0-255) 或 None
-            - bg_color: 背景色 RGB (0-255) 或 None
-            - prob: 置信度 0-1
-        """
-        return self._infer_regions_with_color(
-            [line_img],
-            prob_threshold=prob_threshold,
-            max_chunk_size=1,
-        )[0]
     
     def _decode_with_colors(
         self,

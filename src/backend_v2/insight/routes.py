@@ -12,6 +12,12 @@ from typing import Any
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _require_idempotency_key,
+    required_string as _required_string,
+)
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.insight.commands import InsightAnalysisCommandService
 from src.backend_v2.content.image_import import ImageImportService
@@ -50,7 +56,7 @@ from src.backend_v2.storage.assets import AssetStorageService
 def create_insight_blueprint(
     *,
     engine: Engine,
-    data_root: Path | None = None,
+    data_root: Path,
     qa_algorithms: QAApiAlgorithms | None = None,
 ) -> Blueprint:
     blueprint = Blueprint("insight_v2", __name__, url_prefix="/api/v2/insight")
@@ -67,14 +73,10 @@ def create_insight_blueprint(
         repository=qa_requests,
     )
     qa_api = qa_algorithms or DefaultQAApiAlgorithms()
-    image_import = (
-        ImageImportService(
-            data_root=data_root,
-            repository=ContentRepository(engine),
-            storage=AssetStorageService(data_root, engine),
-        )
-        if data_root is not None
-        else None
+    image_import = ImageImportService(
+        data_root=data_root,
+        repository=ContentRepository(engine),
+        storage=AssetStorageService(data_root, engine),
     )
 
     @blueprint.errorhandler(InsightNotFound)
@@ -307,19 +309,24 @@ def create_insight_blueprint(
                         int(handle.options["topK"]),
                     ),
                 )
-                config = qa_commands.materialize_api_config(handle.config)
-                if bool(handle.options["useReranker"]) and candidates:
-                    candidates = [
-                        dict(value)
-                        for value in qa_api.rerank(
-                            question=handle.question,
-                            candidates=candidates,
-                            top_k=int(handle.options["topK"]),
-                            config=config,
-                        )
-                    ]
-                else:
-                    candidates = candidates[: int(handle.options["topK"])]
+                config: Mapping[str, Any] = {}
+                if candidates:
+                    config = qa_commands.materialize_api_config(
+                        handle.config,
+                        include_reranker=bool(handle.options["useReranker"]),
+                    )
+                    if bool(handle.options["useReranker"]):
+                        candidates = [
+                            dict(value)
+                            for value in qa_api.rerank(
+                                question=handle.question,
+                                candidates=candidates,
+                                top_k=int(handle.options["topK"]),
+                                config=config,
+                            )
+                        ]
+                    else:
+                        candidates = candidates[: int(handle.options["topK"])]
                 citations = citations_for(candidates)
                 yield _qa_sse(
                     "context",
@@ -354,7 +361,6 @@ def create_insight_blueprint(
                     {
                         "citations": citations,
                         "suggestedQuestions": suggested_questions(
-                            handle.question,
                             candidates,
                         ),
                     },
@@ -535,12 +541,6 @@ def create_insight_blueprint(
     def continuation_state(book_id: str) -> Response:
         return jsonify(continuation.bootstrap(book_id=book_id))
 
-    @blueprint.post("/books/<book_id>/continuation/sync")
-    def sync_continuation(book_id: str) -> Response:
-        _require_idempotency_key()
-        _json_body()
-        return jsonify(continuation.sync_latest(book_id=book_id))
-
     @blueprint.post("/books/<book_id>/continuation/sync-analysis")
     def sync_continuation_analysis(book_id: str) -> Response:
         _require_idempotency_key()
@@ -678,8 +678,6 @@ def create_insight_blueprint(
     @blueprint.post("/continuation/forms/<form_id>/reference")
     def upload_continuation_reference(form_id: str) -> Response:
         _require_idempotency_key()
-        if image_import is None:
-            raise RuntimeError("image storage is unavailable")
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("file is required")
@@ -709,22 +707,6 @@ def create_insight_blueprint(
         )
 
     @blueprint.post(
-        "/books/<book_id>/continuation/character-sheet-jobs"
-    )
-    def continuation_character_sheet_job(book_id: str):
-        body = _json_body()
-        return (
-            jsonify(
-                continuation_commands.create_character_sheet_job(
-                    book_id=book_id,
-                    form_id=_required_string(body, "formId"),
-                    idempotency_key=_require_idempotency_key(),
-                )
-            ),
-            202,
-        )
-
-    @blueprint.post(
         "/continuation/forms/<form_id>/image-versions/<int:version>/adopt"
     )
     def adopt_continuation_character_sheet(
@@ -739,19 +721,6 @@ def create_insight_blueprint(
                 version=version,
                 base_revision=int(body.get("baseRevision", 0)),
             )
-        )
-
-    @blueprint.post("/books/<book_id>/continuation/script-jobs")
-    def continuation_script_job(book_id: str):
-        _json_body()
-        return (
-            jsonify(
-                continuation_commands.create_script_job(
-                    book_id=book_id,
-                    idempotency_key=_require_idempotency_key(),
-                )
-            ),
-            202,
         )
 
     @blueprint.post("/books/<book_id>/continuation/jobs")
@@ -810,26 +779,6 @@ def create_insight_blueprint(
             )
         )
 
-    @blueprint.post("/books/<book_id>/continuation/page-jobs")
-    def continuation_page_job(book_id: str):
-        body = _json_body()
-        ordinals = body.get("ordinals")
-        if ordinals is not None and (
-            not isinstance(ordinals, list)
-            or not all(isinstance(value, int) for value in ordinals)
-        ):
-            raise ValueError("ordinals must be an integer array")
-        return (
-            jsonify(
-                continuation_commands.create_pages_job(
-                    book_id=book_id,
-                    ordinals=ordinals,
-                    idempotency_key=_require_idempotency_key(),
-                )
-            ),
-            202,
-        )
-
     @blueprint.patch("/continuation/pages/<page_id>")
     def update_continuation_page(page_id: str) -> Response:
         _require_idempotency_key()
@@ -843,40 +792,6 @@ def create_insight_blueprint(
                 base_revision=int(body.get("baseRevision", 0)),
                 payload=payload,
             )
-        )
-
-    @blueprint.post("/books/<book_id>/continuation/image-jobs")
-    def continuation_image_job(book_id: str):
-        body = _json_body()
-        ordinals = body.get("ordinals")
-        if ordinals is not None and (
-            not isinstance(ordinals, list)
-            or not all(isinstance(value, int) for value in ordinals)
-        ):
-            raise ValueError("ordinals must be an integer array")
-        return (
-            jsonify(
-                continuation_commands.create_images_job(
-                    book_id=book_id,
-                    ordinals=ordinals,
-                    idempotency_key=_require_idempotency_key(),
-                )
-            ),
-            202,
-        )
-
-    @blueprint.post("/books/<book_id>/continuation/export-jobs")
-    def continuation_export_job(book_id: str):
-        body = _json_body()
-        return (
-            jsonify(
-                continuation_commands.create_export_job(
-                    book_id=book_id,
-                    output_format=_required_string(body, "format"),
-                    idempotency_key=_require_idempotency_key(),
-                )
-            ),
-            202,
         )
 
     @blueprint.post("/continuation/pages/<page_id>/image-versions/<int:version>/activate")
@@ -902,22 +817,6 @@ def create_insight_blueprint(
     return blueprint
 
 
-def _json_body() -> dict[str, Any]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
-def _require_idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError(
-            "Idempotency-Key is required and must be at most 200 characters"
-        )
-    return value
-
-
 def _base_revision() -> int:
     value = request.args.get(
         "baseRevision",
@@ -926,29 +825,19 @@ def _base_revision() -> int:
     return int(value)
 
 
-def _required_string(body: dict[str, Any], key: str) -> str:
-    value = body.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{key} is required")
-    return value.strip()
-
-
 def _citations(
     body: dict[str, Any],
-) -> list[dict[str, Any] | str]:
+) -> list[dict[str, Any]]:
     citations = body.get("citations", [])
     if not isinstance(citations, list):
         raise ValueError("citations must be an array")
-    result: list[dict[str, Any] | str] = []
+    result: list[dict[str, Any]] = []
     for citation in citations:
-        if isinstance(citation, str):
-            result.append(citation)
-        elif isinstance(citation, dict):
-            if not isinstance(citation.get("pageId"), str):
-                raise ValueError("every citation requires pageId")
-            result.append(dict(citation))
-        else:
+        if not isinstance(citation, dict) or not isinstance(
+            citation.get("pageId"), str
+        ):
             raise ValueError("every citation requires pageId")
+        result.append(dict(citation))
     return result
 
 
@@ -975,7 +864,3 @@ def _qa_sse(event: str, payload: Mapping[str, Any]) -> str:
         f"event: {event}\n"
         f"data: {json.dumps(dict(payload), ensure_ascii=False)}\n\n"
     )
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

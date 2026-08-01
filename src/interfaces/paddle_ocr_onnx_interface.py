@@ -17,11 +17,10 @@ import os
 import numpy as np
 import logging
 from PIL import Image
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import time
 
 from src.shared.path_helpers import resource_path
-from src.shared import constants
 from src.core.ocr_types import OcrResult, create_ocr_result
 
 # 设置环境变量
@@ -44,7 +43,6 @@ class PaddleOCRHandlerONNX:
     LANG_TO_MODEL_DIR = {
         # 中日文 - 使用 chinese 模型 (PP-OCRv5 的 chinese 模型支持中日文)
         "japanese": "chinese",
-        "japan": "chinese",
         "chinese": "chinese",
         "ch": "chinese",
         "chinese_cht": "chinese",
@@ -370,57 +368,3 @@ def get_paddle_ocr_handler() -> PaddleOCRHandlerONNX:
     if _paddle_ocr_onnx_handler is None:
         _paddle_ocr_onnx_handler = PaddleOCRHandlerONNX()
     return _paddle_ocr_onnx_handler
-
-
-# 向后兼容：保留旧的类名作为别名
-PaddleOCRHandler = PaddleOCRHandlerONNX
-PaddleOCRHandlerV5 = PaddleOCRHandlerONNX
-
-
-# 测试代码
-if __name__ == '__main__':
-    import sys
-    
-    # 设置日志级别
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    print("=" * 60)
-    print("PaddleOCR ONNX 接口测试")
-    print("=" * 60)
-    
-    # 创建处理器
-    handler = get_paddle_ocr_handler()
-    
-    # 测试初始化（默认中文模型）
-    print("\n[测试1] 初始化中文模型...")
-    if handler.initialize("chinese"):
-        print("✅ 中文模型初始化成功")
-    else:
-        print("❌ 中文模型初始化失败")
-        print("请先运行: python download_paddle_onnx_models.py")
-        sys.exit(1)
-    
-    # 测试识别（需要测试图片）
-    test_image_path = resource_path('pic/before1.png')
-    if os.path.exists(test_image_path):
-        print(f"\n[测试2] 测试图像识别: {test_image_path}")
-        try:
-            img = Image.open(test_image_path)
-            
-            # 模拟气泡坐标（实际应该由 CTD 提供）
-            test_coords = [(100, 100, 300, 200)]
-            
-            results = handler.recognize_text(img, test_coords)
-            print(f"识别结果: {results}")
-            
-        except Exception as e:
-            print(f"❌ 测试失败: {e}")
-    else:
-        print(f"\n⚠️  测试图片不存在: {test_image_path}")
-    
-    print("\n" + "=" * 60)
-    print("测试完成")
-    print("=" * 60)

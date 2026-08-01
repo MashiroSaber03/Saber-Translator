@@ -4,7 +4,7 @@ Manga Insight 配置序列化工具
 提供通用的 dataclass 序列化/反序列化 Mixin，消除重复代码。
 """
 
-from dataclasses import dataclass, fields, field, MISSING
+from dataclasses import fields
 from typing import TypeVar, Type, Dict, Any, get_type_hints, get_origin, get_args, Union
 import logging
 
@@ -59,7 +59,6 @@ class SerializableMixin:
             return {k: self._serialize_value(v) for k, v in value.items()}
         # 基础类型直接返回
         return value
-
     @classmethod
     def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
         """
@@ -132,14 +131,3 @@ class SerializableMixin:
 
         # 基础类型直接返回
         return value
-
-
-def create_default_factory(cls: Type[T]):
-    """
-    创建默认工厂函数
-
-    用于 dataclass 的 field(default_factory=...)
-    """
-    def factory() -> T:
-        return cls()
-    return factory

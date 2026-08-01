@@ -26,7 +26,6 @@ const documentStub: CharacterStudioDocument = {
   origin: {
     type: 'manual',
     source_character: null,
-    source_pages: [],
   },
   status: {
     is_favorite: false,
@@ -40,9 +39,7 @@ const documentStub: CharacterStudioDocument = {
     updated_at: '2026-05-15T00:00:00',
   },
   avatar: {
-    mode: 'none',
     asset_path: null,
-    source_page: null,
   },
   identity: {
     name: '阿尔法',

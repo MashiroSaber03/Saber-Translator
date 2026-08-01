@@ -18,6 +18,12 @@ from flask import (
 )
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _idempotency_key,
+    required_string as _required_string,
+)
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.insight.derived import InsightDerivedRepository
 from src.backend_v2.settings.resolver import SettingsResolver
@@ -199,43 +205,6 @@ def create_studio_blueprint(
                     else None
                 ),
                 document=document,
-                idempotency_key=idempotency_key,
-            )
-        )
-
-    @blueprint.post("/documents/<document_id>/avatar")
-    def upload_avatar(document_id: str):
-        idempotency_key = _idempotency_key()
-        upload = request.files.get("file")
-        if upload is None:
-            raise ValueError("multipart field 'file' is required")
-        return (
-            jsonify(
-                io_service.set_avatar(
-                    document_id=document_id,
-                    base_revision=int(
-                        request.form.get("baseRevision", "0")
-                    ),
-                    upload=upload.stream,
-                    idempotency_key=idempotency_key,
-                )
-            ),
-            201,
-        )
-
-    @blueprint.delete("/documents/<document_id>/avatar")
-    def clear_avatar(document_id: str) -> Response:
-        idempotency_key = _idempotency_key()
-        return jsonify(
-            repository.set_avatar(
-                document_id=document_id,
-                base_revision=int(
-                    request.args.get(
-                        "baseRevision",
-                        request.headers.get("If-Match", "0"),
-                    )
-                ),
-                asset_id=None,
                 idempotency_key=idempotency_key,
             )
         )
@@ -422,8 +391,6 @@ def create_studio_blueprint(
     @blueprint.post("/chat/sessions/<session_id>/messages")
     def send_message(session_id: str):
         body = _json_body()
-        session = repository.get_session(session_id)
-        document = repository.get_document(str(session["documentId"]))
         asset_ids = body.get("assetIds", [])
         if not isinstance(asset_ids, list) or not all(
             isinstance(value, str) for value in asset_ids
@@ -435,7 +402,7 @@ def create_studio_blueprint(
             content=str(body.get("content", "")),
             asset_ids=asset_ids,
             config=settings.resolve_insight(
-                book_id=str(document["bookId"]),
+                book_id=repository.session_book_id(session_id),
                 command={"scope": "full", "force": False},
             ),
             idempotency_key=_idempotency_key(),
@@ -445,13 +412,11 @@ def create_studio_blueprint(
     @blueprint.post("/chat/sessions/<session_id>/summarize")
     def summarize(session_id: str):
         body = _json_body()
-        session = repository.get_session(session_id)
-        document = repository.get_document(str(session["documentId"]))
         response = repository.create_summary_operation(
             session_id=session_id,
             base_revision=int(body.get("baseSessionRevision", 0)),
             config=settings.resolve_insight(
-                book_id=str(document["bookId"]),
+                book_id=repository.session_book_id(session_id),
                 command={"scope": "full", "force": False},
             ),
             idempotency_key=_idempotency_key(),
@@ -473,13 +438,6 @@ def create_studio_blueprint(
     @blueprint.put("/chat/messages/<message_id>")
     def edit_message(message_id: str):
         body = _json_body()
-        session_id = str(
-            repository.get_session(
-                _session_id_for_message(repository, message_id)
-            )["sessionId"]
-        )
-        session = repository.get_session(session_id)
-        document = repository.get_document(str(session["documentId"]))
         return (
             jsonify(
                 repository.edit_or_regenerate_message(
@@ -489,7 +447,7 @@ def create_studio_blueprint(
                     ),
                     content=_required_string(body, "content"),
                     config=settings.resolve_insight(
-                        book_id=str(document["bookId"]),
+                        book_id=repository.message_book_id(message_id),
                         command={"scope": "full", "force": False},
                     ),
                     idempotency_key=_idempotency_key(),
@@ -501,9 +459,6 @@ def create_studio_blueprint(
     @blueprint.post("/chat/messages/<message_id>/regenerate")
     def regenerate_message(message_id: str):
         body = _json_body()
-        session_id = _session_id_for_message(repository, message_id)
-        session = repository.get_session(session_id)
-        document = repository.get_document(str(session["documentId"]))
         return (
             jsonify(
                 repository.edit_or_regenerate_message(
@@ -513,7 +468,7 @@ def create_studio_blueprint(
                     ),
                     content=None,
                     config=settings.resolve_insight(
-                        book_id=str(document["bookId"]),
+                        book_id=repository.message_book_id(message_id),
                         command={"scope": "full", "force": False},
                     ),
                     idempotency_key=_idempotency_key(),
@@ -777,20 +732,6 @@ def create_studio_blueprint(
     return blueprint
 
 
-def _json_body() -> dict[str, Any]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
-def _required_string(body: dict[str, Any], key: str) -> str:
-    value = body.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{key} is required")
-    return value.strip()
-
-
 def _file_or_json_object() -> dict[str, Any]:
     if request.files:
         upload = request.files.get("file") or next(
@@ -843,17 +784,6 @@ def _greetings(document: dict[str, Any]) -> list[dict[str, Any]]:
                     }
                 )
     return result
-
-
-def _idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError("Idempotency-Key is required")
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status
 
 
 def _candidate_item(character: Mapping[str, Any]) -> dict[str, Any]:
@@ -938,21 +868,3 @@ def _positive_revision(value: object, field: str) -> int:
     if revision < 1:
         raise ValueError(f"{field} must be a positive integer")
     return revision
-
-
-def _session_id_for_message(
-    repository: StudioRepository,
-    message_id: str,
-) -> str:
-    with repository.engine.connect() as connection:
-        from src.backend_v2.storage.schema import studio_messages
-        from sqlalchemy import select
-
-        value = connection.execute(
-            select(studio_messages.c.session_id).where(
-                studio_messages.c.id == message_id
-            )
-        ).scalar_one_or_none()
-    if value is None:
-        raise StudioNotFound("studio message not found")
-    return str(value)

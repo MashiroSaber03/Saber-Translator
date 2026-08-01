@@ -525,7 +525,6 @@ def upgrade() -> None:
     sa.Column('ordinal', sa.Integer(), nullable=False),
     sa.Column('role', sa.String(length=16), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('metadata_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("role IN ('system','user','assistant')", name=op.f('ck_studio_messages_role_values')),
     sa.CheckConstraint('ordinal >= 1', name=op.f('ck_studio_messages_ordinal_positive')),

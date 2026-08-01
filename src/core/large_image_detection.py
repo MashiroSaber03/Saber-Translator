@@ -149,7 +149,7 @@ class LargeImageDetectorWrapper:
                 patch_textlines = maybe_merge_with_aux_yolo(
                     patch,
                     patch_textlines,
-                    detector_type=getattr(self.detector, 'detector_id', ''),
+                    detector_type=self.detector.detector_id,
                     enabled=enable_aux_yolo_detection,
                     conf_threshold=aux_yolo_conf_threshold,
                     overlap_threshold=aux_yolo_overlap_threshold,

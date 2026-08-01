@@ -9,6 +9,11 @@ from typing import Iterator
 from flask import Blueprint, Response, jsonify, redirect, request, stream_with_context
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _require_idempotency_key,
+)
 from src.backend_v2.jobs.events import JobEventBroadcaster
 from src.backend_v2.jobs.repository import (
     InvalidJobTransition,
@@ -262,13 +267,6 @@ def _sse(event: dict[str, object]) -> str:
     )
 
 
-def _json_body() -> dict[str, object]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
 def _optional_json_body() -> dict[str, object]:
     body = request.get_json(silent=True)
     if body is None:
@@ -276,14 +274,3 @@ def _optional_json_body() -> dict[str, object]:
     if not isinstance(body, dict):
         raise ValueError("request body must be a JSON object")
     return body
-
-
-def _require_idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError("Idempotency-Key is required and must be at most 200 characters")
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

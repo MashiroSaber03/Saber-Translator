@@ -1,4 +1,4 @@
-"""Closed job and operation state machines."""
+"""Closed job state machine."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from enum import StrEnum
 class InvalidTransition(ValueError):
     def __init__(self, current: StrEnum, event: StrEnum) -> None:
         super().__init__(f"{current.value} does not accept {event.value}")
-        self.current = current
-        self.event = event
 
 
 class JobStatus(StrEnum):
@@ -64,41 +62,5 @@ JOB_TRANSITIONS: dict[tuple[JobStatus, JobEvent], JobStatus] = {
 def transition_job(current: JobStatus, event: JobEvent) -> JobStatus:
     try:
         return JOB_TRANSITIONS[(current, event)]
-    except KeyError as exc:
-        raise InvalidTransition(current, event) from exc
-
-
-class OperationStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class OperationEvent(StrEnum):
-    CLAIM = "claim"
-    COMPLETE = "complete"
-    FAIL = "fail"
-    CANCEL = "cancel"
-
-
-OPERATION_TRANSITIONS: dict[
-    tuple[OperationStatus, OperationEvent], OperationStatus
-] = {
-    (OperationStatus.PENDING, OperationEvent.CLAIM): OperationStatus.RUNNING,
-    (OperationStatus.PENDING, OperationEvent.CANCEL): OperationStatus.CANCELLED,
-    (OperationStatus.RUNNING, OperationEvent.COMPLETE): OperationStatus.COMPLETED,
-    (OperationStatus.RUNNING, OperationEvent.FAIL): OperationStatus.FAILED,
-    (OperationStatus.RUNNING, OperationEvent.CANCEL): OperationStatus.CANCELLED,
-}
-
-
-def transition_operation(
-    current: OperationStatus,
-    event: OperationEvent,
-) -> OperationStatus:
-    try:
-        return OPERATION_TRANSITIONS[(current, event)]
     except KeyError as exc:
         raise InvalidTransition(current, event) from exc

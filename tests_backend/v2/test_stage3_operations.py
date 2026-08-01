@@ -32,6 +32,7 @@ from src.backend_v2.storage.database import (
 )
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
+    app_settings,
     assets,
     bubbles,
     chapter_write_intents,
@@ -580,8 +581,14 @@ def test_bubble_translate_freezes_credential_and_publishes_document(
                 pages.c.id == platform["page_id"]
             )
         ).scalar_one()
+        render_revision = connection.execute(
+            select(render_requests.c.requested_revision).where(
+                render_requests.c.page_id == platform["page_id"]
+            )
+        ).scalar_one()
     assert payload["translatedText"] == "译文"
     assert revision == 2
+    assert render_revision == 2
     assert repository.get(str(accepted["operationId"]))["status"] == "completed"
 
 
@@ -787,6 +794,79 @@ def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
     with Image.open(platform["data_root"] / clean_path) as repaired:
         assert repaired.getpixel((10, 10)) == (255, 0, 0)
         assert repaired.getpixel((30, 30)) == (12, 34, 56)
+
+
+def test_lama_page_repair_freezes_and_consumes_disable_resize(
+    operation_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    platform = operation_platform
+    with platform["engine"].begin() as connection:
+        settings_payload = json.loads(
+            connection.execute(
+                select(app_settings.c.payload_json).where(
+                    app_settings.c.domain == "translation"
+                )
+            ).scalar_one()
+        )
+        settings_payload["lamaDisableResize"] = True
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "translation")
+            .values(payload_json=json.dumps(settings_payload))
+        )
+        bubble_payload = json.loads(
+            connection.execute(
+                select(bubbles.c.payload_json).where(
+                    bubbles.c.id == platform["bubble_id"]
+                )
+            ).scalar_one()
+        )
+        bubble_payload["inpaintMethod"] = "lama_mpe"
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == platform["bubble_id"])
+            .values(payload_json=json.dumps(bubble_payload))
+        )
+
+    captured: dict[str, object] = {}
+
+    def fake_inpaint(image, _coords, **kwargs):
+        captured.update(kwargs)
+        repaired = image.copy()
+        repaired._lama_inpainted = True
+        return repaired, None
+
+    from src.core import inpainting
+
+    monkeypatch.setattr(inpainting, "inpaint_bubbles", fake_inpaint)
+    repository = OperationRepository(platform["engine"])
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    accepted, replayed = service.create_for_bubble(
+        page_id=platform["page_id"],
+        bubble_id=platform["bubble_id"],
+        base_revision=1,
+        idempotency_key="repair-lama-disable-resize",
+    )
+    assert not replayed
+
+    claimed = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("page_repair",),
+    )
+    assert claimed is not None
+    fence, operation = claimed
+    assert operation["request"]["disableResize"] is True
+    assert operation["request"]["settingsSnapshot"]["appRevision"] == 1
+    result = service.handle(fence, operation)
+
+    assert result["documentRevision"] == accepted["documentRevision"]
+    assert captured["disable_resize"] is True
 
 
 def test_failed_page_repair_sets_explicit_page_state(operation_platform) -> None:

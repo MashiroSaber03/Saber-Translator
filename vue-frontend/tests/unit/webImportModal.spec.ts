@@ -17,6 +17,7 @@ const {
   testFirecrawlConnectionMock,
   testAgentConnectionMock,
   confirmProductActionMock,
+  jobEventsMock,
 } = vi.hoisted(() => ({
   checkWebImportSupportMock: vi.fn(),
   commitWebImportDraftMock: vi.fn(),
@@ -29,6 +30,7 @@ const {
   testFirecrawlConnectionMock: vi.fn(),
   testAgentConnectionMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
+  jobEventsMock: vi.fn(),
 }))
 
 vi.mock('@/api/v2/webImport', () => ({
@@ -44,6 +46,10 @@ vi.mock('@/api/v2/webImport', () => ({
 
 vi.mock('@/api/v2/content', () => ({
   getTranslationBootstrap: getTranslationBootstrapMock,
+}))
+
+vi.mock('@/api/v2/jobs', () => ({
+  jobsApi: { events: jobEventsMock },
 }))
 
 vi.mock('vue-router', () => ({
@@ -118,6 +124,7 @@ describe('WebImportModal', () => {
     testFirecrawlConnectionMock.mockReset()
     testAgentConnectionMock.mockReset()
     confirmProductActionMock.mockReset()
+    jobEventsMock.mockReset()
 
     checkWebImportSupportMock.mockResolvedValue({
       galleryDlAvailable: true,
@@ -138,9 +145,12 @@ describe('WebImportModal', () => {
       sourceUrl: 'https://example.com/chapter-1',
       status: 'ready',
       revision: 1,
+      autoImport: false,
       candidateCount: 1,
       failedCount: 0,
+      requestedEngine: 'auto',
       actualEngine: 'ai-agent',
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
     })
     listAllWebImportDraftPagesMock.mockResolvedValue([
       {
@@ -164,6 +174,7 @@ describe('WebImportModal', () => {
       ],
     })
     confirmProductActionMock.mockResolvedValue(true)
+    jobEventsMock.mockResolvedValue({ items: [] })
 
     vi.spyOn(window, 'alert').mockImplementation(() => undefined)
     vi.spyOn(window, 'confirm').mockImplementation(() => true)
@@ -174,11 +185,26 @@ describe('WebImportModal', () => {
     vi.restoreAllMocks()
   })
 
-  it('auto-commits a ready backend draft when autoImport is enabled', async () => {
+  it('does not duplicate an auto-commit already started by the backend', async () => {
     const webImportStore = useWebImportStore()
     webImportStore.modalVisible = true
     webImportStore.settings.ui.autoImport = true
     webImportStore.draftSettings.ui.autoImport = true
+    getWebImportDraftMock.mockResolvedValueOnce({
+      id: 'draft-1',
+      sourceUrl: 'https://example.com/chapter-1',
+      status: 'committing',
+      revision: 2,
+      autoImport: true,
+      candidateCount: 1,
+      failedCount: 0,
+      requestedEngine: 'auto',
+      actualEngine: 'ai-agent',
+      jobs: [
+        { id: 'job-1', kind: 'web_extract', status: 'running' },
+        { id: 'job-2', kind: 'web_import_commit', status: 'queued' },
+      ],
+    })
 
     const wrapper = mount(WebImportModal)
 
@@ -186,10 +212,10 @@ describe('WebImportModal', () => {
     await wrapper.get('form[aria-label="网页导入提取"]').trigger('submit')
     await flushPromises()
 
-    expect(updateWebImportSelectionMock).toHaveBeenCalledWith('draft-1', 1, ['draft-page-1'])
-    expect(commitWebImportDraftMock).toHaveBeenCalledWith('draft-1', 2)
-    expect(wrapper.emitted('commitAccepted')).toEqual([[['job-2']]])
-    expect(webImportStore.status).toBe('idle')
+    expect(updateWebImportSelectionMock).not.toHaveBeenCalled()
+    expect(commitWebImportDraftMock).not.toHaveBeenCalled()
+    expect(wrapper.emitted('commitAccepted')).toBeUndefined()
+    expect(webImportStore.status).toBe('completed')
   })
 
   it('fetches available models for the selected agent provider', async () => {
@@ -337,12 +363,27 @@ describe('WebImportModal', () => {
       sourceUrl: 'https://example.com/cancelled',
       status: 'cancelled',
       revision: 2,
+      autoImport: false,
       candidateCount: 0,
       failedCount: 0,
+      requestedEngine: 'ai-agent',
       actualEngine: null,
       jobs: [
         { id: 'job-1', kind: 'web_extract', status: 'cancelled' },
       ],
+    })
+    jobEventsMock.mockResolvedValueOnce({
+      items: [{
+        eventId: 12,
+        jobId: 'job-1',
+        type: 'web_import_agent_log',
+        payload: {
+          timestamp: '12:00:00',
+          type: 'thinking',
+          message: 'Agent 正在分析页面',
+        },
+        createdAt: '2030-01-01T00:00:00Z',
+      }],
     })
 
     const wrapper = mount(WebImportModal)
@@ -351,6 +392,11 @@ describe('WebImportModal', () => {
 
     expect(webImportStore.status).toBe('error')
     expect(webImportStore.error).toContain('已取消')
+    expect(webImportStore.logs).toContainEqual({
+      timestamp: '12:00:00',
+      type: 'thinking',
+      message: 'Agent 正在分析页面',
+    })
     const input = wrapper.get('#webImportSourceUrl')
     expect(input.attributes('disabled')).toBeUndefined()
     await input.setValue('https://example.com/new-chapter')

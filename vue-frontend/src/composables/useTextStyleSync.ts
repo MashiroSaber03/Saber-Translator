@@ -6,7 +6,10 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
-import { queuePageDocumentMutation } from '@/services/pageDocumentPersistence'
+import {
+  flushPageDocument,
+  queuePageDocumentMutation,
+} from '@/services/pageDocumentPersistence'
 import { showToast } from '@/utils/toast'
 
 export interface ApplySettingsOptions {
@@ -237,9 +240,14 @@ export function useTextStyleSync() {
       return
     }
     try {
+      await flushPageDocument(image.id)
+      const committed = imageStore.images.find(candidate => candidate.id === image.id)
+      if (committed?.documentRevision === undefined) {
+        throw new Error('当前页文档版本不可用')
+      }
       await createChapterStyleApplyJob(image.chapterId, {
         selectedFields,
-        sourceDocumentRevision: image.documentRevision,
+        sourceDocumentRevision: committed.documentRevision,
         sourcePageId: image.id,
       })
       await taskCenterStore.refresh()

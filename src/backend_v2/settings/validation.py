@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
-import json
 import math
 import re
 from typing import Any, Mapping
 
+from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.defaults import default_translation_settings
 from src.shared.ai_providers import (
     CHAT_CAPABILITY,
@@ -110,12 +110,7 @@ def _object(value: object, label: str) -> dict[str, Any]:
 
 
 def _bounded_json(value: object, label: str, maximum: int = 512 * 1024) -> None:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    encoded = canonical_json(value).encode("utf-8")
     if len(encoded) > maximum:
         raise ValueError(f"{label} exceeds {maximum} bytes")
 
@@ -508,6 +503,8 @@ def _validate_insight(payload: dict[str, Any]) -> None:
     layers = batch["customLayers"]
     if not isinstance(layers, list) or len(layers) > 8:
         raise ValueError("insight customLayers must contain at most 8 items")
+    if batch["architecturePreset"] == "custom" and len(layers) < 2:
+        raise ValueError("custom Insight architecture must contain 2-8 layers")
     for index, layer_value in enumerate(layers):
         layer = _object(
             layer_value,

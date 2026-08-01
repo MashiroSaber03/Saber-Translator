@@ -5,14 +5,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 import hashlib
-import json
 from pathlib import Path
 from typing import Any, Protocol
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine
 
 from src.backend_v2.insight.page_schema import normalize_page_analysis
-from src.backend_v2.insight.repository import InsightRepository
+from src.backend_v2.insight.repository import InsightConflict, InsightRepository
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
@@ -20,7 +19,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
 )
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.schema import credential_versions
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 
 
 class InsightAlgorithms(Protocol):
@@ -109,10 +108,10 @@ class InsightAnalysisWorkerService:
         jobs: JobQueueRepository,
         algorithms: InsightAlgorithms | None = None,
     ) -> None:
-        self.engine = engine
         self.jobs = jobs
         self.repository = InsightRepository(engine)
         self.storage = AssetStorageService(data_root, engine)
+        self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or LegacyInsightAlgorithms()
 
     def handle(
@@ -167,7 +166,7 @@ class InsightAnalysisWorkerService:
             digest = hashlib.sha256(image_bytes).hexdigest()
             if digest != str(target["source_checksum"]):
                 raise JobConflict("source file checksum failed validation")
-            algorithm_config = self._with_credentials(config)
+            algorithm_config = self._with_vlm_credentials(config)
             raw = self.algorithms.analyze_page(
                 image_bytes,
                 page_number=int(target["page_number_snapshot"]),
@@ -261,7 +260,6 @@ class InsightAnalysisWorkerService:
                 InsightRepository.mark_run_failed(
                     connection,
                     run_id=run_id,
-                    message="analysis run has no successful pages",
                 )
                 raise InsightConflict(
                     "analysis run has no successful pages"
@@ -313,7 +311,6 @@ class InsightAnalysisWorkerService:
                 InsightRepository.mark_run_failed(
                     connection,
                     run_id=run_id,
-                    message=message,
                 )
 
             self.jobs.fail_step(
@@ -329,30 +326,19 @@ class InsightAnalysisWorkerService:
                 "__already_published__": True,
             }
 
-    def _with_credentials(
+    def _with_vlm_credentials(
         self,
         config: Mapping[str, Any],
     ) -> dict[str, Any]:
-        result = json.loads(json.dumps(config))
-        for key in ("vlm", "chat", "embedding", "reranker", "imageGen"):
-            section = _object(result.get(key))
-            version_id = section.pop("credentialVersionId", None)
-            if version_id:
-                with self.engine.connect() as connection:
-                    value = connection.execute(
-                        select(credential_versions.c.secret_json).where(
-                            credential_versions.c.id == version_id
-                        )
-                    ).scalar_one_or_none()
-                if value is None:
-                    raise JobConflict(
-                        f"frozen {key} credential version no longer exists"
-                    )
-                secret = json.loads(value)
-                if isinstance(secret, Mapping):
-                    section.update(secret)
-            result[key] = section
-        return result
+        try:
+            return self.credentials.resolve_credential_sections(
+                config,
+                ("vlm",),
+            )
+        except LookupError as exc:
+            raise JobConflict(
+                "frozen Insight credential version no longer exists"
+            ) from exc
 
 
 def _object(value: object) -> dict[str, Any]:

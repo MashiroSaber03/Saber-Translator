@@ -5,7 +5,7 @@
 """
 
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional, Union
+from typing import List, Tuple, Optional
 from functools import cached_property
 import numpy as np
 import cv2
@@ -353,9 +353,6 @@ class TextBlock:
     def vertical(self) -> bool:
         return self.direction.startswith('v')
     
-    @cached_property
-    def horizontal(self) -> bool:
-        return self.direction.startswith('h')
     
     @cached_property
     def min_rect(self) -> np.ndarray:
@@ -387,17 +384,6 @@ class TextBlock:
             return ' '.join(self.texts)
         return ' '.join([line.text for line in self.lines if line.text])
     
-    def adjust_bbox(self, im_w: int = None, im_h: int = None):
-        """调整边界框到图像范围内"""
-        if im_w is None or im_h is None:
-            return
-        for line in self.lines:
-            line.clip(im_w, im_h)
-        # 清除缓存
-        if 'xyxy' in self.__dict__:
-            del self.__dict__['xyxy']
-        if 'min_rect' in self.__dict__:
-            del self.__dict__['min_rect']
 
 
 @dataclass
@@ -414,38 +400,3 @@ class DetectionResult:
     
     def __iter__(self):
         return iter(self.blocks)
-    
-    def to_legacy_format(self) -> dict:
-        """
-        转换为原有的 coords/polygons/angles 格式
-        保持向后兼容
-        """
-        coords = []
-        polygons = []
-        angles = []
-        
-        for block in self.blocks:
-            coords.append(block.xyxy)
-            polygons.append(block.polygon)
-            angles.append(block.angle)
-        
-        return {
-            'coords': coords,
-            'polygons': polygons,
-            'angles': angles
-        }
-    
-    @property
-    def coords(self) -> List[Tuple[int, int, int, int]]:
-        """向后兼容：坐标列表"""
-        return [block.xyxy for block in self.blocks]
-    
-    @property
-    def polygons(self) -> List[List[List[int]]]:
-        """向后兼容：多边形列表"""
-        return [block.polygon for block in self.blocks]
-    
-    @property
-    def angles(self) -> List[float]:
-        """向后兼容：角度列表"""
-        return [block.angle for block in self.blocks]

@@ -10,6 +10,12 @@ from flask import Blueprint, Response, jsonify, request
 from fontTools.ttLib import TTFont
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _require_idempotency_key,
+    required_string as _required_string,
+)
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.settings.diagnostics import (
     CONNECTION_TEST_KINDS,
@@ -299,13 +305,12 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     def delete_font(font_id: str) -> Response:
         _require_idempotency_key()
         font_repository.delete_uploaded(font_id)
-        storage.collect_garbage()
         return jsonify({"deleted": True})
 
     @blueprint.post("/maintenance/clean-temp")
     def clean_temp() -> Response:
         _require_idempotency_key()
-        recovered = storage.recover_journal(orphan_grace_seconds=0)
+        recovered = storage.recover_journal()
         return jsonify({"recovered": recovered})
 
     @blueprint.post("/maintenance/clean-debug")
@@ -339,30 +344,3 @@ def _required_object(
     if not isinstance(value, dict):
         raise ValueError(f"{key} must be an object")
     return value
-
-
-def _required_string(body: dict[str, object], key: str) -> str:
-    value = body.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{key} must be a non-empty string")
-    return value.strip()
-
-
-def _json_body() -> dict[str, object]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
-def _require_idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError(
-            "Idempotency-Key is required and must be at most 200 characters"
-        )
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

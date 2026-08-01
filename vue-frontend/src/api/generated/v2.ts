@@ -292,22 +292,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pages/{page_id}/document/batch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["batchMutatePageDocument"];
-        trace?: never;
-    };
     "/pages/{page_id}/repairs": {
         parameters: {
             query?: never;
@@ -753,22 +737,6 @@ export interface paths {
         put: operations["updateStudioDocument"];
         post?: never;
         delete: operations["deleteStudioDocument"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/studio/documents/{document_id}/avatar": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["setStudioAvatar"];
-        delete: operations["clearStudioAvatar"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1981,22 +1949,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/insight/books/{book_id}/continuation/sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["syncContinuationProject"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/insight/books/{book_id}/continuation/sync-analysis": {
         parameters: {
             query?: never;
@@ -2163,38 +2115,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/insight/books/{book_id}/continuation/character-sheet-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createContinuationCharacterSheetJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/insight/books/{book_id}/continuation/script-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createContinuationScriptJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/insight/books/{book_id}/continuation/jobs": {
         parameters: {
             query?: never;
@@ -2227,22 +2147,6 @@ export interface paths {
         patch: operations["updateContinuationScript"];
         trace?: never;
     };
-    "/insight/books/{book_id}/continuation/page-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createContinuationPageJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/insight/continuation/pages/{page_id}": {
         parameters: {
             query?: never;
@@ -2257,38 +2161,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["updateContinuationPage"];
-        trace?: never;
-    };
-    "/insight/books/{book_id}/continuation/image-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createContinuationImageJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/insight/books/{book_id}/continuation/export-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createContinuationExportJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/insight/continuation/pages/{page_id}/image-versions/{version}/activate": {
@@ -3111,9 +2983,6 @@ export interface components {
             meta: {
                 [key: string]: unknown;
             };
-            avatar: {
-                [key: string]: unknown;
-            };
             identity: {
                 [key: string]: unknown;
             };
@@ -3204,6 +3073,10 @@ export interface components {
             generationMeta?: {
                 [key: string]: unknown;
             };
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         } & {
             [key: string]: unknown;
         };
@@ -3230,6 +3103,10 @@ export interface components {
                 [key: string]: unknown;
             };
             messages: components["schemas"]["StudioMessage"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         } & {
             [key: string]: unknown;
         };
@@ -3557,7 +3434,6 @@ export interface components {
         };
         LastVisitedPageCommand: {
             pageId: components["schemas"]["Uuid"];
-            baseRevision: number;
         };
         ChapterNavigation: {
             chapterId: components["schemas"]["Uuid"];
@@ -3965,6 +3841,11 @@ export interface components {
             excerpt: string;
             score: number | null;
         };
+        InsightCitationCommand: {
+            pageId: components["schemas"]["Uuid"];
+            excerpt?: string;
+            score?: number | null;
+        };
         InsightNote: {
             noteId: components["schemas"]["Uuid"];
             bookId: components["schemas"]["Uuid"];
@@ -3991,7 +3872,7 @@ export interface components {
             bookId: components["schemas"]["Uuid"];
             title: string;
             content: string;
-            citations: unknown[];
+            citations: components["schemas"]["InsightCitationCommand"][];
             /** @enum {string} */
             kind: "text" | "qa";
             tags: string[];
@@ -4001,7 +3882,7 @@ export interface components {
             baseRevision: number;
             title: string;
             content: string;
-            citations: unknown[];
+            citations: components["schemas"]["InsightCitationCommand"][];
             /** @enum {string} */
             kind: "text" | "qa";
             tags: string[];
@@ -4130,16 +4011,6 @@ export interface components {
             assetId: components["schemas"]["Uuid"];
             revision: number;
         };
-        ContinuationCharacterSheetJobCommand: {
-            formId: components["schemas"]["Uuid"];
-        };
-        ContinuationOrdinalsCommand: {
-            ordinals?: number[];
-        };
-        ContinuationExportJobCommand: {
-            /** @enum {string} */
-            format: "zip" | "pdf";
-        };
         ContinuationJobCommand: {
             /** @enum {string} */
             kind: "script" | "pages" | "images" | "export" | "character_sheet";
@@ -4181,7 +4052,6 @@ export interface components {
             sourceUrl: string;
             /** @enum {string} */
             engine?: "auto" | "gallery-dl" | "ai-agent";
-            config?: Record<string, never>;
         };
         WebImportDraftAccepted: components["schemas"]["JobBatchAccepted"] & {
             draftId: components["schemas"]["Uuid"];
@@ -4203,6 +4073,7 @@ export interface components {
             /** @enum {string} */
             requestedEngine: "auto" | "gallery-dl" | "ai-agent";
             actualEngine: string | null;
+            autoImport: boolean;
             candidateCount: number;
             selectedCount: number;
             failedCount: number;
@@ -4885,38 +4756,6 @@ export interface operations {
                     };
                 };
             };
-        };
-    };
-    batchMutatePageDocument: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                page_id: components["parameters"]["PageId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PageDocumentBatchMutation"];
-            };
-        };
-        responses: {
-            /** @description The complete authoritative page document after one CAS. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PageDocument"];
-                };
-            };
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-            423: components["responses"]["Locked"];
         };
     };
     createPageRepairOperation: {
@@ -5718,64 +5557,6 @@ export interface operations {
                 content?: never;
             };
             423: components["responses"]["Locked"];
-        };
-    };
-    setStudioAvatar: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                document_id: components["parameters"]["DocumentId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["FileUpload"] & {
-                    baseRevision: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Avatar bound with document revision CAS. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StudioDocument"];
-                };
-            };
-        };
-    };
-    clearStudioAvatar: {
-        parameters: {
-            query: {
-                baseRevision: number;
-            };
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                document_id: components["parameters"]["DocumentId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Avatar reference cleared. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StudioDocument"];
-                };
-            };
         };
     };
     generateStudioDocumentSection: {
@@ -7692,6 +7473,7 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            423: components["responses"]["Locked"];
         };
     };
     listWebImportDraftPages: {
@@ -8461,38 +8243,6 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    syncContinuationProject: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                book_id: components["parameters"]["BookId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmptyCommand"];
-            };
-        };
-        responses: {
-            /** @description Project synchronized with the active analysis. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContinuationProject"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-        };
-    };
     syncContinuationAnalysis: {
         parameters: {
             query?: never;
@@ -8894,70 +8644,6 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    createContinuationCharacterSheetJob: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                book_id: components["parameters"]["BookId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ContinuationCharacterSheetJobCommand"];
-            };
-        };
-        responses: {
-            /** @description Character-sheet generation job accepted. */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobBatchAccepted"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-        };
-    };
-    createContinuationScriptJob: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                book_id: components["parameters"]["BookId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmptyCommand"];
-            };
-        };
-        responses: {
-            /** @description Script generation job accepted. */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobBatchAccepted"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-        };
-    };
     createContinuationRunJob: {
         parameters: {
             query?: never;
@@ -9022,38 +8708,6 @@ export interface operations {
             422: components["responses"]["ValidationError"];
         };
     };
-    createContinuationPageJob: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                book_id: components["parameters"]["BookId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ContinuationOrdinalsCommand"];
-            };
-        };
-        responses: {
-            /** @description Page-generation job accepted. */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobBatchAccepted"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-        };
-    };
     updateContinuationPage: {
         parameters: {
             query?: never;
@@ -9079,70 +8733,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContinuationPage"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-        };
-    };
-    createContinuationImageJob: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                book_id: components["parameters"]["BookId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ContinuationOrdinalsCommand"];
-            };
-        };
-        responses: {
-            /** @description Image-generation job accepted. */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobBatchAccepted"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationError"];
-        };
-    };
-    createContinuationExportJob: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                book_id: components["parameters"]["BookId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ContinuationExportJobCommand"];
-            };
-        };
-        responses: {
-            /** @description Continuation export job accepted. */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobBatchAccepted"];
                 };
             };
             404: components["responses"]["NotFound"];

@@ -5,7 +5,6 @@ AI视觉OCR服务接口模块：用于调用不同服务商的视觉API进行OCR
 import json
 import logging
 import time
-from PIL import Image
 
 from src.shared import constants
 from src.shared.ai_providers import (
@@ -136,32 +135,3 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
     except Exception as e:
         logger.error(f"调用AI视觉OCR服务 ({provider}) 时发生顶层异常: {e}", exc_info=True)
         return ""
-
-def test_ai_vision_ocr(image_path, provider, api_key, model_name, prompt=None,
-                       custom_base_url=None):
-    try:
-        # 加载图片
-        with Image.open(image_path) as img:
-            # 调用OCR服务
-            result = call_ai_vision_ocr_service( # 调用更新后的主服务函数
-                img,
-                provider,
-                api_key,
-                model_name,
-                prompt,
-                prompt_mode='normal',
-                custom_base_url=custom_base_url # <<< 传递自定义 Base URL
-            )
-
-            if result:
-                logger.info(f"测试成功，服务商: {provider}, 模型: {model_name}, 识别结果 (部分): {result[:100]}...")
-                return True, f"识别成功 (部分结果: {result[:50]}...)" # 返回更简洁的消息给前端
-            else:
-                logger.error(f"测试失败，服务商: {provider}, 模型: {model_name}, 未返回有效识别结果")
-                return False, "OCR识别失败，未返回有效结果"
-    except FileNotFoundError:
-        logger.error(f"测试图片未找到: {image_path}")
-        return False, f"测试图片未找到: {image_path}"
-    except Exception as e:
-        logger.error(f"测试过程中发生错误 (服务商: {provider}, 模型: {model_name}): {e}", exc_info=True)
-        return False, f"测试出错: {str(e)}"

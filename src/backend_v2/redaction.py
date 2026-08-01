@@ -9,6 +9,7 @@ when the normal data flow never places a secret in their payload.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import hashlib
 import json
 import re
 from typing import Any
@@ -47,6 +48,33 @@ _PRIVATE_POSIX_PATH = re.compile(
     r"(?<![A-Za-z0-9])/(?:home|Users|tmp|private/tmp|var/tmp)/"
     r"[^\s\"'<>]*"
 )
+
+
+def credential_version_references(
+    value: Mapping[str, Any],
+) -> dict[str, str]:
+    """Collect frozen credential IDs and their stable snapshot roles."""
+
+    references: dict[str, str] = {}
+
+    def visit(current: object, path: tuple[str, ...]) -> None:
+        if isinstance(current, Mapping):
+            for key, child in current.items():
+                key_text = str(key)
+                next_path = (*path, key_text)
+                if key_text == "credentialVersionId" and isinstance(child, str):
+                    role = ".".join(path) or "default"
+                    if len(role) > 64:
+                        role = hashlib.sha256(role.encode("utf-8")).hexdigest()
+                    references[role] = child
+                else:
+                    visit(child, next_path)
+        elif isinstance(current, (list, tuple)):
+            for index, child in enumerate(current):
+                visit(child, (*path, str(index)))
+
+    visit(value, ())
+    return references
 
 
 def secret_values_from_json(secret_json: str | None) -> tuple[str, ...]:

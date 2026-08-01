@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import uuid
 from collections import defaultdict
@@ -18,8 +19,8 @@ from src.backend_v2.jobs.repository import (
     JobNotFound,
     JobQueueRepository,
     JobSpec,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.schema import (
     assets,
@@ -69,6 +70,14 @@ class JobRetryService:
 
         if kind == "insight_analysis":
             response = self._retry_insight(
+                source,
+                selected_items,
+                strategy=strategy,
+                failed_only=failed_only,
+                idempotency_key=idempotency_key,
+            )
+        elif kind == "container_import":
+            response = self._retry_container_import(
                 source,
                 selected_items,
                 strategy=strategy,
@@ -150,6 +159,141 @@ class JobRetryService:
             raise JobConflict("source job has no retryable items")
         return source, selected_items
 
+    def _retry_container_import(
+        self,
+        source: Mapping[str, Any],
+        selected_items: list[Mapping[str, Any]],
+        *,
+        strategy: str,
+        failed_only: bool,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        source_id = str(source["id"])
+        chapter_id = _optional_text(source.get("chapter_id"))
+        config = _json_object(source.get("config_json"))
+        relative_path = _optional_text(config.get("containerRelativePath"))
+        checksum = _optional_text(config.get("checksum"))
+        if not chapter_id or not relative_path or not checksum:
+            raise JobConflict("container retry target or input no longer exists")
+        finished_at = source.get("finished_at") or source.get("updated_at")
+        if finished_at is not None and finished_at <= utcnow() - timedelta(hours=24):
+            raise JobConflict("container retry input has expired; upload it again")
+        container_path = (self.data_root / Path(relative_path)).resolve()
+        try:
+            container_path.relative_to(self.data_root)
+        except ValueError as exc:
+            raise JobConflict("container retry input path is invalid") from exc
+        if (
+            not container_path.is_file()
+            or _sha256_file(container_path) != checksum
+        ):
+            raise JobConflict("container retry input is missing or changed")
+
+        selected_ids = {str(item["id"]) for item in selected_items}
+        with self.engine.connect() as connection:
+            step_rows = list(
+                connection.execute(
+                    select(
+                        job_steps.c.job_item_id,
+                        job_steps.c.kind,
+                    )
+                    .where(job_steps.c.job_item_id.in_(selected_ids))
+                    .order_by(job_steps.c.job_item_id, job_steps.c.ordinal)
+                ).mappings()
+            )
+        step_kinds: dict[str, list[str]] = defaultdict(list)
+        for row in step_rows:
+            step_kinds[str(row["job_item_id"])].append(str(row["kind"]))
+
+        raw_entries = config.get("entries")
+        entries = (
+            [dict(entry) for entry in raw_entries if isinstance(entry, Mapping)]
+            if isinstance(raw_entries, list)
+            else []
+        )
+        retry_entries: list[dict[str, Any]] = []
+        retry_scan = not entries
+        if entries:
+            if failed_only:
+                source_base = int(config.get("entryItemOrdinalBase", 2))
+                for item in selected_items:
+                    kinds = step_kinds.get(str(item["id"]), [])
+                    if "container_scan" in kinds:
+                        retry_scan = True
+                    if "container_import_page" not in kinds:
+                        continue
+                    index = int(item["ordinal"]) - source_base
+                    if index < 0 or index >= len(entries):
+                        raise JobConflict("container retry checkpoint is invalid")
+                    retry_entries.append(entries[index])
+            else:
+                retry_entries = entries
+        if retry_scan:
+            retry_config = {
+                key: value
+                for key, value in config.items()
+                if key not in {"entries", "entryItemOrdinalBase"}
+            }
+            item_specs = (
+                JobItemSpec(page_id=None, step_kinds=("container_scan",)),
+            )
+        else:
+            if not retry_entries:
+                raise JobConflict("source job has no retryable container pages")
+            retry_config = {
+                **config,
+                "entries": retry_entries,
+                "entryItemOrdinalBase": 1,
+            }
+            item_specs = tuple(
+                JobItemSpec(
+                    page_id=None,
+                    step_kinds=("container_import_page",),
+                )
+                for _entry in retry_entries
+            )
+
+        display = _json_object(source.get("target_display_json"))
+        credentials, plugins = self._original_runtime_snapshots(source_id)
+        spec = JobSpec(
+            kind="container_import",
+            book_id=_optional_text(source.get("book_id")),
+            chapter_id=chapter_id,
+            config=retry_config,
+            items=item_specs,
+            target_display={
+                **display,
+                "retryOfJobId": source_id,
+                "retryItemCount": len(item_specs),
+            },
+            credential_snapshots=(
+                credentials if strategy == "original" else None
+            ),
+            plugin_snapshots=plugins if strategy == "original" else None,
+            retry_of_job_id=source_id,
+            retry_mode=strategy,
+        )
+        return self.repository.create_batch(
+            kind="container_import",
+            display_name=(
+                f"重试 · {display.get('chapter') or display.get('book') or '容器导入'}"
+            ),
+            specs=(spec,),
+            idempotency_scope=(
+                f"job-retry:{source_id}:{'failed' if failed_only else 'all'}"
+            ),
+            idempotency_key=idempotency_key,
+            idempotency_payload={
+                "sourceJobId": source_id,
+                "failedOnly": failed_only,
+                "strategy": strategy,
+                "entryPaths": [
+                    str(entry.get("logicalPath", ""))
+                    for entry in retry_entries
+                ],
+            },
+        )
+
     def _retry_web_extract(
         self,
         source: Mapping[str, Any],
@@ -174,7 +318,6 @@ class JobRetryService:
             chapter_id=chapter_id,
             source_url=source_url,
             requested_engine=requested_engine,
-            config={},
             idempotency_key=idempotency_key,
             resolved_options=(
                 _json_object(config.get("options"))
@@ -253,7 +396,9 @@ class JobRetryService:
                 entry_index = int(item["ordinal"]) - 1
                 if entry_index < 0 or entry_index >= len(entries):
                     raise JobConflict("web import retry checkpoint is invalid")
-                retry_entries.append(entries[entry_index])
+                retry_entry = dict(entries[entry_index])
+                retry_entry.pop("logicalPath", None)
+                retry_entries.append(retry_entry)
             if "web_import_commit_finalize" in kinds:
                 needs_finalize = True
         if not retry_entries and not needs_finalize:
@@ -264,25 +409,24 @@ class JobRetryService:
         retry_config = {
             "draftId": draft_id,
             "draftRevision": base_revision + 1,
+            "chapterId": str(source["chapter_id"]),
             "entries": retry_entries,
             "executionMode": "sequential",
         }
         display = _json_object(source.get("target_display_json"))
         credentials, plugins = self._original_runtime_snapshots(source_id)
-        item_specs = tuple(
-            [
+        item_specs = (
+            *(
                 JobItemSpec(
                     page_id=None,
                     step_kinds=("web_import_commit_page",),
                 )
                 for _entry in retry_entries
-            ]
-            + [
-                JobItemSpec(
-                    page_id=None,
-                    step_kinds=("web_import_commit_finalize",),
-                )
-            ]
+            ),
+            JobItemSpec(
+                page_id=None,
+                step_kinds=("web_import_commit_finalize",),
+            ),
         )
         spec = JobSpec(
             kind="web_import_commit",
@@ -910,3 +1054,11 @@ def _json_object(value: object) -> dict[str, Any]:
 
 def _optional_text(value: object) -> str | None:
     return str(value) if value is not None else None
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()

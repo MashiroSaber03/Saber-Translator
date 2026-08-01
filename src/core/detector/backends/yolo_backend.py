@@ -15,9 +15,7 @@ import numpy as np
 
 from ..base import BaseTextDetector
 from ..data_types import TextLine
-from ..geometry import xywh_to_polygon
 from src.shared.path_helpers import resource_path
-from src.shared import constants
 
 logger = logging.getLogger("YoloBackend")
 
@@ -211,8 +209,3 @@ class YoloBackend(BaseTextDetector):
         
         logger.info(f"YSGYolo 检测到 {len(textlines)} 个文本区域")
         return textlines, mask
-    
-    def set_valid_labels(self, labels: dict):
-        """设置有效的标签类别"""
-        self.labels = labels
-        logger.info(f"有效标签已更新: {self.get_valid_labels()}")

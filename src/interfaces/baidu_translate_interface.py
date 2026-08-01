@@ -1,6 +1,5 @@
 import requests
 import random
-import json
 from hashlib import md5
 import logging
 from time import sleep
@@ -101,7 +100,7 @@ class BaiduTranslateInterface:
             return False, "未配置百度翻译API的appid和appkey"
         
         try:
-            result = self.translate("Hello world", from_lang="en", to_lang="zh")
+            self.translate("Hello world", from_lang="en", to_lang="zh")
             return True, "百度翻译API连接成功"
         except Exception as e:
             return False, f"百度翻译API连接失败: {str(e)}"
@@ -111,22 +110,5 @@ class BaiduTranslateInterface:
         """生成MD5签名"""
         return md5(s.encode(encoding)).hexdigest()
 
-# 语言代码映射，将程序内部语言代码映射到百度API支持的语言代码
-LANGUAGE_CODE_MAP = {
-    'zh': 'zh',       # 中文
-    'en': 'en',       # 英语
-    'ja': 'jp',       # 日语 (百度API使用jp)
-    'ko': 'kor',      # 韩语
-    'fr': 'fra',      # 法语
-    'es': 'spa',      # 西班牙语
-    'it': 'it',       # 意大利语
-    'de': 'de',       # 德语
-    'ru': 'ru',       # 俄语
-    'pt': 'pt',       # 葡萄牙语
-    'vi': 'vie',      # 越南语
-    'th': 'th',       # 泰语
-    'auto': 'auto',   # 自动检测
-}
-
 # 百度翻译API单例
-baidu_translate = BaiduTranslateInterface() 
+baidu_translate = BaiduTranslateInterface()

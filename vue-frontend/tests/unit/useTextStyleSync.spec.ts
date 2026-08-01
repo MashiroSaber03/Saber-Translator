@@ -10,11 +10,13 @@ import { useSettingsStore } from '@/stores/settings'
 
 const {
   createStyleJobMock,
+  flushPageDocumentMock,
   queueMutationMock,
   refreshTasksMock,
   showToastMock,
 } = vi.hoisted(() => ({
   createStyleJobMock: vi.fn(),
+  flushPageDocumentMock: vi.fn(),
   queueMutationMock: vi.fn(),
   refreshTasksMock: vi.fn(),
   showToastMock: vi.fn(),
@@ -29,6 +31,7 @@ vi.mock('@/api/v2/translation', () => ({
 }))
 
 vi.mock('@/services/pageDocumentPersistence', () => ({
+  flushPageDocument: flushPageDocumentMock,
   queuePageDocumentMutation: queueMutationMock,
 }))
 
@@ -48,6 +51,7 @@ describe('useTextStyleSync backend ownership', () => {
       jobIds: ['job-1'],
       status: 'queued',
     })
+    flushPageDocumentMock.mockReset().mockResolvedValue(undefined)
     queueMutationMock.mockReset().mockResolvedValue(undefined)
     refreshTasksMock.mockReset().mockResolvedValue(undefined)
     showToastMock.mockReset()
@@ -155,6 +159,7 @@ describe('useTextStyleSync backend ownership', () => {
       sourceDocumentRevision: 4,
       sourcePageId: image.id,
     })
+    expect(flushPageDocumentMock).toHaveBeenCalledWith(image.id)
     expect(refreshTasksMock).toHaveBeenCalled()
     expect(showToastMock).toHaveBeenCalledWith(
       '样式应用任务已加入后端任务中心，可安全关闭页面',

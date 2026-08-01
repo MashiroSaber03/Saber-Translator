@@ -18,12 +18,14 @@ from src.backend_v2.operations.repository import (
     OperationFenced,
 )
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.schema import assets, credential_versions
+from src.backend_v2.storage.platform_repositories import SettingsRepository
+from src.backend_v2.storage.schema import assets
 from src.backend_v2.studio.repository import StudioRepository
 from src.backend_v2.studio.pure import (
     apply_regex_scripts,
     match_lorebook,
     run_state_tasks,
+    select_provider_section,
     sort_lorebook_hits,
 )
 
@@ -312,6 +314,7 @@ class StudioOperationService:
             else None
         )
         self.repository = repository or StudioRepository(engine)
+        self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or DefaultStudioAlgorithms()
 
     def handle(
@@ -320,10 +323,12 @@ class StudioOperationService:
         operation: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         request = _object(operation.get("request"))
-        config = self._with_credentials(_object(request.get("config")))
         kind = str(operation["kind"])
         on_chunk = self._event_callback(fence)
         if kind == "studio_generate":
+            config = self._with_credentials(
+                _object(request.get("config")),
+            )
             document = _object(request.get("document"))
             section = str(request.get("section", ""))
             generated = self.algorithms.generate(
@@ -360,9 +365,12 @@ class StudioOperationService:
                 fence,
                 request,
                 input_assets=_object(operation.get("inputs")),
-                config=config,
+                config=_object(request.get("config")),
             )
         if kind == "studio_summary":
+            config = self._with_credentials(
+                _object(request.get("config")),
+            )
             messages = request.get("messages", [])
             if not isinstance(messages, list):
                 raise ValueError("Studio summary messages are invalid")
@@ -397,7 +405,7 @@ class StudioOperationService:
             "variables": variables,
             "_runtime": runtime_state,
         }
-        visible_user, prompt_user, regex_hits = apply_regex_scripts(
+        _, prompt_user, regex_hits = apply_regex_scripts(
             raw_user,
             document.get("regexScripts", []),
             placement=1,
@@ -438,8 +446,7 @@ class StudioOperationService:
             for key, value in input_assets.items()
             if str(key).startswith("attachment:")
         }
-        if not allowed_asset_ids:
-            allowed_asset_ids = set()
+        asset_data_urls = self._asset_data_urls(allowed_asset_ids)
         summarized_through = request.get("summaryThroughMessageId")
         include = summarized_through is None
         conversation: list[dict[str, Any]] = []
@@ -453,14 +460,14 @@ class StudioOperationService:
             for attachment in item.get("attachments", []) or []:
                 asset_id = str(_object(attachment).get("assetId", ""))
                 if asset_id and asset_id in allowed_asset_ids:
-                    data_url = self._asset_data_url(asset_id)
+                    data_url = asset_data_urls.get(asset_id)
                     if data_url is not None:
                         attachment_urls.append(data_url)
             conversation.append(
                 {
                     "role": str(item.get("role", "assistant")),
                     "content": (
-                        visible_user
+                        prompt_user
                         if index == len(messages) - 1
                         else str(item.get("content", ""))
                     ),
@@ -481,7 +488,12 @@ class StudioOperationService:
         assistant = self.algorithms.chat(
             messages=conversation,
             system=system,
-            config=config,
+            config=self._with_credentials(
+                config,
+                prefer_vlm=any(
+                    item["attachmentDataUrls"] for item in conversation
+                ),
+            ),
             on_chunk=self._event_callback(fence),
         )
         visible_assistant, _, output_hits = apply_regex_scripts(
@@ -515,14 +527,26 @@ class StudioOperationService:
         messages = session.get("messages", [])
         if not isinstance(messages, list):
             messages = []
-        last_user = next(
+        last_user_index = next(
             (
-                str(message.get("content", ""))
-                for message in reversed(messages)
-                if isinstance(message, Mapping)
-                and message.get("role") == "user"
+                index
+                for index in range(len(messages) - 1, -1, -1)
+                if isinstance(messages[index], Mapping)
+                and messages[index].get("role") == "user"
             ),
-            "",
+            None,
+        )
+        last_user = (
+            str(messages[last_user_index].get("content", ""))
+            if last_user_index is not None
+            and isinstance(messages[last_user_index], Mapping)
+            else ""
+        )
+        _, prompt_user, _regex_hits = apply_regex_scripts(
+            last_user,
+            document.get("regexScripts", []),
+            placement=1,
+            respect_run_on_edit=True,
         )
         work = {
             "variables": deepcopy(_object(session.get("variables"))),
@@ -531,7 +555,7 @@ class StudioOperationService:
         hits = sort_lorebook_hits(
             match_lorebook(
                 _object(document.get("lorebook")).get("entries", []),
-                last_user,
+                prompt_user,
                 session=work,
             )
         )
@@ -544,7 +568,7 @@ class StudioOperationService:
         summarized_through = session.get("summaryThroughMessageId")
         include = summarized_through is None
         visible: list[dict[str, Any]] = []
-        for message in messages:
+        for index, message in enumerate(messages):
             if not isinstance(message, Mapping):
                 continue
             if not include:
@@ -554,7 +578,11 @@ class StudioOperationService:
             visible.append(
                 {
                     "role": str(message.get("role", "assistant")),
-                    "content": str(message.get("content", "")),
+                    "content": (
+                        prompt_user
+                        if index == last_user_index
+                        else str(message.get("content", ""))
+                    ),
                     "assetIds": [
                         str(attachment.get("assetId"))
                         for attachment in message.get("attachments", [])
@@ -574,12 +602,6 @@ class StudioOperationService:
                 for entry in hits
             ],
         }
-
-    def resolve_runtime_config(
-        self,
-        config: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        return self._with_credentials(config)
 
     def agent_chunks(
         self,
@@ -679,51 +701,53 @@ class StudioOperationService:
 
         return emit
 
-    def _asset_data_url(self, asset_id: str) -> str | None:
-        if self.storage is None:
-            return None
+    def _asset_data_urls(self, asset_ids: set[str]) -> dict[str, str]:
+        if self.storage is None or not asset_ids:
+            return {}
         with self.engine.connect() as connection:
-            row = connection.execute(
-                select(
-                    assets.c.relative_path,
-                    assets.c.mime_type,
-                    assets.c.integrity_status,
-                ).where(assets.c.id == asset_id)
-            ).mappings().one_or_none()
-        if row is None or row["integrity_status"] != "ok":
-            return None
-        path = self.storage.resolve_relative_path(str(row["relative_path"]))
-        if not path.is_file():
-            return None
-        return (
-            f"data:{row['mime_type']};base64,"
-            + base64.b64encode(path.read_bytes()).decode("ascii")
-        )
+            rows = list(
+                connection.execute(
+                    select(
+                        assets.c.id,
+                        assets.c.relative_path,
+                        assets.c.mime_type,
+                        assets.c.integrity_status,
+                    ).where(assets.c.id.in_(tuple(asset_ids)))
+                ).mappings()
+            )
+        result: dict[str, str] = {}
+        for row in rows:
+            if row["integrity_status"] != "ok":
+                continue
+            path = self.storage.resolve_relative_path(
+                str(row["relative_path"])
+            )
+            if path.is_file():
+                result[str(row["id"])] = (
+                    f"data:{row['mime_type']};base64,"
+                    + base64.b64encode(path.read_bytes()).decode("ascii")
+                )
+        return result
 
     def _with_credentials(
         self,
         config: Mapping[str, Any],
+        *,
+        prefer_vlm: bool = False,
     ) -> dict[str, Any]:
-        result = json.loads(json.dumps(config))
-        for key in ("chat", "vlm"):
-            section = _object(result.get(key))
-            credential_id = section.pop("credentialVersionId", None)
-            if credential_id:
-                with self.engine.connect() as connection:
-                    value = connection.execute(
-                        select(credential_versions.c.secret_json).where(
-                            credential_versions.c.id == credential_id
-                        )
-                    ).scalar_one_or_none()
-                if value is None:
-                    raise OperationFenced(
-                        "Studio credential version no longer exists"
-                    )
-                secret = json.loads(value)
-                if isinstance(secret, Mapping):
-                    section.update(secret)
-            result[key] = section
-        return result
+        section_name, _ = select_provider_section(
+            config,
+            prefer_vlm=prefer_vlm,
+        )
+        try:
+            return self.credentials.resolve_credential_sections(
+                config,
+                (section_name,),
+            )
+        except LookupError as exc:
+            raise OperationFenced(
+                "Studio credential version no longer exists"
+            ) from exc
 
 
 def _provider_config(
@@ -731,11 +755,10 @@ def _provider_config(
     *,
     prefer_vlm: bool = False,
 ) -> dict[str, Any]:
-    primary = "vlm" if prefer_vlm else "chat"
-    fallback = "chat" if prefer_vlm else "vlm"
-    section = _object(config.get(primary))
-    if not section.get("provider"):
-        section = _object(config.get(fallback))
+    _, section = select_provider_section(
+        config,
+        prefer_vlm=prefer_vlm,
+    )
     return {
         "provider": section.get("provider", ""),
         "api_key": section.get("api_key", section.get("apiKey", "")),

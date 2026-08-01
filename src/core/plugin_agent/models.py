@@ -5,17 +5,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
-PLUGIN_AGENT_RUN_STATES = (
-    "drafting",
-    "awaiting_target_lock",
-    "ready",
-    "running",
-    "completed",
-    "failed",
-    "cancelled",
-)
-
-
 def utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 

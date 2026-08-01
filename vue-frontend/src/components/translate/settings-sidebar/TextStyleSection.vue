@@ -12,8 +12,9 @@ import type { TextStyleSettings } from '@/types/settings'
 import type { ApplySettingsOptions } from '../useSettingsSidebar'
 import ApplyOptionsSection from './ApplyOptionsSection.vue'
 
-defineProps<{
+withDefaults(defineProps<{
   applyOptions: ApplySettingsOptions
+  disabled?: boolean
   fontSelectOptions: UiSelectOption[]
   hasImages: boolean
   inpaintMethodOptions: UiSelectOption[]
@@ -21,7 +22,9 @@ defineProps<{
   showApplyOptions: boolean
   textAlignOptions: UiSelectOption[]
   textStyle: TextStyleSettings
-}>()
+}>(), {
+  disabled: false,
+})
 
 defineEmits<{
   (event: 'apply'): void
@@ -68,7 +71,7 @@ const isTextStyleExpanded = ref(true)
             input-id="fontSize"
             :model-value="textStyle.fontSize"
             :min="10"
-            :disabled="textStyle.autoFontSize"
+            :disabled="disabled || textStyle.autoFontSize"
             aria-label="字号"
             :title="textStyle.autoFontSize ? '已启用自动字号，首次翻译时将自动计算' : ''"
             @update:model-value="$event !== null && $emit('updateFontSize', $event)"
@@ -77,6 +80,7 @@ const isTextStyleExpanded = ref(true)
             class="text-style-section__toggle text-style-section__toggle--auto-fontsize"
             input-id="autoFontSize"
             :model-value="textStyle.autoFontSize"
+            :disabled="disabled"
             label="自动计算初始字号"
             description="首次翻译时为每个气泡计算合适字号"
             @change="$emit('updateAutoFontSize', $event)"
@@ -93,6 +97,7 @@ const isTextStyleExpanded = ref(true)
             input-id="fontFamily"
             aria-label="文本字体"
             :model-value="textStyle.fontFamily"
+            :disabled="disabled"
             :options="fontSelectOptions"
             @change="$emit('fontSelectChange', $event)"
           />
@@ -108,6 +113,7 @@ const isTextStyleExpanded = ref(true)
             id="layoutDirection"
             :model-value="textStyle.layoutDirection"
             :options="layoutDirectionOptions"
+            :disabled="disabled"
             @change="$emit('layoutDirectionChange', $event)"
           />
         </UiField>
@@ -124,6 +130,7 @@ const isTextStyleExpanded = ref(true)
             :min="0.5"
             :max="3"
             :step="0.1"
+            :disabled="disabled"
             aria-label="行间距"
             @update:model-value="$event !== null && $emit('updateLineSpacing', $event)"
           />
@@ -139,6 +146,7 @@ const isTextStyleExpanded = ref(true)
             id="textAlign"
             :model-value="textStyle.textAlign"
             :options="textAlignOptions"
+            :disabled="disabled"
             @change="$emit('textAlignChange', $event)"
           />
         </UiField>
@@ -158,7 +166,7 @@ const isTextStyleExpanded = ref(true)
             <UiColorInput
               input-id="textColor"
               :model-value="textStyle.textColor"
-              :disabled="textStyle.useAutoTextColor"
+              :disabled="disabled || textStyle.useAutoTextColor"
               aria-label="文字颜色"
               size="sm"
               @update:model-value="$emit('updateTextColor', $event)"
@@ -167,6 +175,7 @@ const isTextStyleExpanded = ref(true)
               class="text-style-section__toggle text-style-section__toggle--auto-color"
               input-id="useAutoTextColor"
               :model-value="textStyle.useAutoTextColor"
+              :disabled="disabled"
               label="自动"
               @change="$emit('updateUseAutoTextColor', $event)"
             />
@@ -186,6 +195,7 @@ const isTextStyleExpanded = ref(true)
             id="useInpainting"
             :model-value="textStyle.inpaintMethod"
             :options="inpaintMethodOptions"
+            :disabled="disabled"
             @change="$emit('inpaintMethodChange', $event)"
           />
         </UiField>
@@ -201,6 +211,7 @@ const isTextStyleExpanded = ref(true)
             <UiColorInput
               input-id="fillColor"
               :model-value="textStyle.fillColor"
+              :disabled="disabled"
               aria-label="填充颜色"
               @update:model-value="$emit('updateFillColor', $event)"
             />
@@ -215,6 +226,7 @@ const isTextStyleExpanded = ref(true)
             class="text-style-section__toggle text-style-section__toggle--stroke"
             input-id="strokeEnabled"
             :model-value="textStyle.strokeEnabled"
+            :disabled="disabled"
             label="启用描边"
             @change="$emit('updateStrokeEnabled', $event)"
           />
@@ -232,6 +244,7 @@ const isTextStyleExpanded = ref(true)
                 <UiColorInput
                   input-id="strokeColor"
                   :model-value="textStyle.strokeColor"
+                  :disabled="disabled"
                   aria-label="描边颜色"
                   @update:model-value="$emit('updateStrokeColor', $event)"
                 />
@@ -248,6 +261,7 @@ const isTextStyleExpanded = ref(true)
                   :model-value="textStyle.strokeWidth"
                   :min="0"
                   :max="10"
+                  :disabled="disabled"
                   aria-label="描边宽度"
                   @update:model-value="$event !== null && $emit('updateStrokeWidth', $event)"
                 />
@@ -260,6 +274,7 @@ const isTextStyleExpanded = ref(true)
 
     <ApplyOptionsSection
       :apply-options="applyOptions"
+      :disabled="disabled"
       :has-images="hasImages"
       :show-apply-options="showApplyOptions"
       @apply="$emit('apply')"

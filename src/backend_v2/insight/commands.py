@@ -82,6 +82,24 @@ class InsightAnalysisCommandService:
         normalized = normalize_analysis_command(command)
         book_id = str(normalized["bookId"])
         scope = str(normalized["scope"])
+        idempotency_scope = f"insight-analysis:{book_id}"
+        replay = self.jobs.idempotency_replay(
+            scope=idempotency_scope,
+            key=idempotency_key,
+            payload=normalized,
+        )
+        if replay is not None:
+            if "runId" not in replay:
+                with self.engine.connect() as connection:
+                    replay["runId"] = str(
+                        connection.execute(
+                            select(analysis_runs.c.id).where(
+                                analysis_runs.c.job_id
+                                == str(replay["jobIds"][0])
+                            )
+                        ).scalar_one()
+                    )
+            return replay
         book, targets = self._resolve_targets(
             book_id=book_id,
             scope=scope,
@@ -177,18 +195,12 @@ class InsightAnalysisCommandService:
             kind="insight_analysis",
             display_name=f"{book['title']} · {_scope_label(scope)}",
             specs=(spec,),
-            idempotency_scope=f"insight-analysis:{book_id}",
+            response_extra={"runId": run_id},
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
             idempotency_payload=normalized,
             transaction_hook=initialize_run,
         )
-        with self.engine.connect() as connection:
-            persisted_run_id = connection.execute(
-                select(analysis_runs.c.id).where(
-                    analysis_runs.c.job_id == str(response["jobIds"][0])
-                )
-            ).scalar_one()
-        response["runId"] = str(persisted_run_id)
         return response
 
     def _resolve_targets(

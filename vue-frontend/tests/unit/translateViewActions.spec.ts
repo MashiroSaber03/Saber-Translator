@@ -6,6 +6,7 @@ import { useTranslateViewActions } from '@/views/useTranslateViewActions'
 const mocks = vi.hoisted(() => ({
   clearChapterPages: vi.fn(),
   deletePage: vi.fn(),
+  flushPageDocument: vi.fn(),
   resetQuickWorkspace: vi.fn(),
 }))
 
@@ -13,6 +14,10 @@ vi.mock('@/api/v2/content', () => ({
   clearChapterPages: mocks.clearChapterPages,
   deletePage: mocks.deletePage,
   resetQuickWorkspace: mocks.resetQuickWorkspace,
+}))
+
+vi.mock('@/services/pageDocumentPersistence', () => ({
+  flushPageDocument: mocks.flushPageDocument,
 }))
 
 function createOptions() {
@@ -45,6 +50,7 @@ function createOptions() {
     },
     translateInit: {
       initializeBookChapterContext: vi.fn().mockResolvedValue(undefined),
+      flushChapterWorkState: vi.fn().mockResolvedValue(true),
       isBookshelfMode: ref(true),
       switchImage: vi.fn(),
       goToPrevious: vi.fn(),
@@ -62,6 +68,7 @@ function createOptions() {
 describe('useTranslateViewActions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.flushPageDocument.mockResolvedValue(undefined)
   })
 
   it('refreshes authoritative chapter metadata after upload', async () => {
@@ -114,5 +121,18 @@ describe('useTranslateViewActions', () => {
     await actions.clearAllImages()
 
     expect(mocks.resetQuickWorkspace).toHaveBeenCalled()
+  })
+
+  it('flushes chapter settings and the page document before entering edit mode', async () => {
+    const options = createOptions()
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
+
+    await actions.toggleEditMode()
+
+    expect(options.translateInit.flushChapterWorkState).toHaveBeenCalled()
+    expect(mocks.flushPageDocument).toHaveBeenCalledWith('page-1')
+    expect(options.isEditMode.value).toBe(true)
   })
 })

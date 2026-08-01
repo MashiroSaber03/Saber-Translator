@@ -15,7 +15,7 @@ from shapely.geometry import Point, Polygon
 from src.shared import constants
 
 from .data_types import DetectionResult, TextBlock, TextLine
-from .registry import detect
+from .registry import DETECTOR_SABER_YOLO, detect
 from .smart_sort import sort_blocks_by_reading_order
 from .textline_merge import build_text_block_from_lines
 
@@ -185,7 +185,7 @@ def apply_saber_yolo_refinement(
     right_to_left: bool = True,
     reference_overlap_threshold: Optional[float] = None,
 ) -> DetectionResult:
-    if detector_type == constants.DETECTOR_SABER_YOLO:
+    if detector_type == DETECTOR_SABER_YOLO:
         return detection_result
 
     if enabled is None:
@@ -203,7 +203,7 @@ def apply_saber_yolo_refinement(
     try:
         reference_result = detect(
             image,
-            detector_type=constants.DETECTOR_SABER_YOLO,
+            detector_type=DETECTOR_SABER_YOLO,
             merge_lines=False,
             expand_ratio=0,
             expand_top=0,

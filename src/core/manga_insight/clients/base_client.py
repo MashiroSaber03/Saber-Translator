@@ -13,7 +13,7 @@ from typing import Dict, Optional
 
 import httpx
 
-from .provider_registry import get_base_url
+from src.shared.ai_providers import resolve_provider_base_url
 from src.shared.openai_rate_limits import SharedRPMLimiter
 
 logger = logging.getLogger("MangaInsight.BaseClient")
@@ -50,7 +50,11 @@ class BaseAPIClient:
         """
         self.provider = provider.lower()
         self.api_key = api_key
-        self._base_url = resolved_base_url if resolved_base_url is not None else get_base_url(provider, base_url)
+        self._base_url = (
+            resolved_base_url
+            if resolved_base_url is not None
+            else resolve_provider_base_url(provider, base_url) or ""
+        )
         self._rpm_limiter = RPMLimiter(rpm_limit)
         self._timeout = timeout
 

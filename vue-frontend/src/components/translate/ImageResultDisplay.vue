@@ -152,9 +152,13 @@ function handleImportText(file: File): void {
     />
 
     <ResultImageCanvas
+      :debug-bubbles="currentImage.bubbleStates ?? []"
       :image-alt="displayImageAlt"
+      :image-height="currentImage.height"
       :image-size="imageSize"
       :image-url="displayImageUrl"
+      :image-width="currentImage.width"
+      :show-detection-debug="settingsStore.settings.showDetectionDebug"
     />
 
     <DetectedTextPanel :items="detectedTexts" />

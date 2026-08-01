@@ -1,9 +1,8 @@
 import requests
 import base64
-import json
 import logging
 import time
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Optional
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -19,11 +18,9 @@ class BaiduOCRInterface:
     # 参考文档: https://cloud.baidu.com/doc/OCR/s/zk3h7xz52
     LANGUAGE_MAPPING = {
         "japanese": "JAP",   # 日语（必须大写）
-        "japan": "JAP",      # 兼容"japan"的语言代码
         "korean": "KOR",     # 韩语（必须大写）
         "chinese": "CHN_ENG", # 中文和英文
         "english": "ENG",    # 英文
-        "en": "ENG",         # 兼容"en"的语言代码
         "french": "FRE",     # 法语（必须大写）
         "german": "GER",     # 德语（必须大写）
         "spanish": "SPA",    # 西班牙语（必须大写）
@@ -256,27 +253,3 @@ def recognize_text_with_baidu_ocr(image_bytes: bytes, language: str = "auto", ap
     if ocr:
         return ocr.recognize_text(image_bytes, language)
     return []
-
-def test_baidu_ocr_connection(api_key: str, secret_key: str) -> Dict[str, Any]:
-    """
-    测试百度OCR连接
-    
-    Args:
-        api_key: 百度OCR API Key
-        secret_key: 百度OCR Secret Key
-        
-    Returns:
-        测试结果字典 {"success": bool, "message": str}
-    """
-    try:
-        url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={api_key}&client_secret={secret_key}"
-        response = requests.post(url)
-        result = response.json()
-        
-        if 'access_token' in result:
-            return {"success": True, "message": "百度OCR连接测试成功！"}
-        else:
-            error_msg = result.get('error_description', '未知错误')
-            return {"success": False, "message": f"连接失败: {error_msg}"}
-    except Exception as e:
-        return {"success": False, "message": f"连接测试出错: {str(e)}"} 

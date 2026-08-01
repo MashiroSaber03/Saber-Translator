@@ -50,7 +50,6 @@ export interface CharacterStudioDocument {
   origin: {
     type: 'analysis' | 'manual' | 'imported'
     source_character?: string | null
-    source_pages: number[]
   }
   status: {
     is_favorite: boolean
@@ -65,9 +64,7 @@ export interface CharacterStudioDocument {
     updated_at: string
   }
   avatar: {
-    mode: string
     asset_path?: string | null
-    source_page?: number | null
   }
   identity: {
     name: string

@@ -65,7 +65,6 @@ export function useTranslateInit() {
   let bookContextRequestId = 0
   let pageDocumentRequestId = 0
   let pageDocumentAbortController: AbortController | null = null
-  let navigationRevision = 0
   let navigationWriteChain = Promise.resolve()
   let settingsMemoryChapterId: string | null = null
   let settingsMemoryRevision = 0
@@ -73,9 +72,14 @@ export function useTranslateInit() {
   let settingsMemoryWriteTimer: ReturnType<typeof setTimeout> | null = null
   let pendingSettingsMemoryWrite: {
     chapterId: string
+    fingerprint: string
     payload: Record<string, unknown>
   } | null = null
-  let isWritingSettingsMemory = false
+  let activeSettingsMemoryWrite: {
+    chapterId: string
+    fingerprint: string
+  } | null = null
+  let settingsMemoryWritePromise: Promise<boolean> | null = null
 
   function clearSwitchImageFlagTimer(): void {
     if (switchImageFlagTimer) {
@@ -93,8 +97,8 @@ export function useTranslateInit() {
     if (settingsMemoryWriteTimer) {
       clearTimeout(settingsMemoryWriteTimer)
       settingsMemoryWriteTimer = null
-      void flushSettingsMemoryWrite()
     }
+    void flushChapterWorkState()
     isOwnerAlive = false
     bookContextRequestId += 1
     pageDocumentRequestId += 1
@@ -113,9 +117,13 @@ export function useTranslateInit() {
     payload => {
       const chapterId = settingsMemoryChapterId
       if (!chapterId) return
-      const fingerprint = JSON.stringify(payload)
-      if (fingerprint === lastSettingsMemoryFingerprint) return
-      pendingSettingsMemoryWrite = { chapterId, payload }
+      if (!stageChapterWorkState(chapterId, payload)) {
+        if (settingsMemoryWriteTimer) {
+          clearTimeout(settingsMemoryWriteTimer)
+          settingsMemoryWriteTimer = null
+        }
+        return
+      }
       if (settingsMemoryWriteTimer) clearTimeout(settingsMemoryWriteTimer)
       settingsMemoryWriteTimer = setTimeout(() => {
         settingsMemoryWriteTimer = null
@@ -124,6 +132,31 @@ export function useTranslateInit() {
     },
     { deep: true },
   )
+
+  function stageChapterWorkState(
+    chapterId: string,
+    payload: Record<string, unknown>,
+  ): boolean {
+    if (chapterId !== settingsMemoryChapterId) return false
+    const fingerprint = JSON.stringify(payload)
+    const baselineFingerprint = (
+      activeSettingsMemoryWrite?.chapterId === chapterId
+        ? activeSettingsMemoryWrite.fingerprint
+        : lastSettingsMemoryFingerprint
+    )
+    if (fingerprint === baselineFingerprint) {
+      if (pendingSettingsMemoryWrite?.chapterId === chapterId) {
+        pendingSettingsMemoryWrite = null
+      }
+      return false
+    }
+    if (
+      pendingSettingsMemoryWrite?.chapterId === chapterId
+      && pendingSettingsMemoryWrite.fingerprint === fingerprint
+    ) return true
+    pendingSettingsMemoryWrite = { chapterId, fingerprint, payload }
+    return true
+  }
 
   async function initializeApp(force: boolean = false): Promise<void> {
     // SPA 场景下重新进入翻译页时，需要重新加载书籍/章节上下文。
@@ -153,6 +186,12 @@ export function useTranslateInit() {
     const chapterId = route.query.chapter as string | undefined
 
     try {
+      if (
+        settingsMemoryChapterId
+        && !(await flushChapterWorkState())
+      ) {
+        throw new Error('当前章节工作态设置尚未写入后端')
+      }
       const bootstrap = await getTranslationBootstrap({
         bookId: bookId && chapterId ? bookId : undefined,
         chapterId: bookId && chapterId ? chapterId : undefined,
@@ -209,7 +248,6 @@ export function useTranslateInit() {
       )
       imageStore.setImages(bootstrap.pages.items.map(pageSummaryToImage))
       restoreTranslationFromBootstrap(bootstrap.activeJobs, imageStore)
-      navigationRevision = bootstrap.navigation.revision
 
       const lastVisitedIndex = bootstrap.navigation.lastVisitedPageId
         ? imageStore.images.findIndex(image => image.id === bootstrap.navigation.lastVisitedPageId)
@@ -232,52 +270,69 @@ export function useTranslateInit() {
     }
   }
 
-  async function flushSettingsMemoryWrite(): Promise<void> {
-    if (isWritingSettingsMemory) return
-    isWritingSettingsMemory = true
-    try {
-      while (pendingSettingsMemoryWrite) {
-        const pending = pendingSettingsMemoryWrite
-        pendingSettingsMemoryWrite = null
-        if (pending.chapterId !== settingsMemoryChapterId) continue
-        try {
-          const updated = await updateChapterSettingsMemory(
-            pending.chapterId,
-            pending.payload,
-            settingsMemoryRevision,
-          )
+  function flushSettingsMemoryWrite(): Promise<boolean> {
+    if (settingsMemoryWritePromise) return settingsMemoryWritePromise
+    settingsMemoryWritePromise = persistPendingSettingsMemory().finally(() => {
+      settingsMemoryWritePromise = null
+    })
+    return settingsMemoryWritePromise
+  }
+
+  async function persistPendingSettingsMemory(): Promise<boolean> {
+    while (pendingSettingsMemoryWrite) {
+      const pending = pendingSettingsMemoryWrite
+      pendingSettingsMemoryWrite = null
+      if (pending.chapterId !== settingsMemoryChapterId) continue
+      activeSettingsMemoryWrite = {
+        chapterId: pending.chapterId,
+        fingerprint: pending.fingerprint,
+      }
+      try {
+        const updated = await updateChapterSettingsMemory(
+          pending.chapterId,
+          pending.payload,
+          settingsMemoryRevision,
+        )
+        if (pending.chapterId === settingsMemoryChapterId) {
           settingsMemoryRevision = updated.revision
           lastSettingsMemoryFingerprint = JSON.stringify(updated.payload)
-        } catch (error) {
-          showToast(
-            `章节工作态设置未保存：${error instanceof Error ? error.message : '未知错误'}`,
-            'warning',
-          )
         }
-      }
-    } finally {
-      isWritingSettingsMemory = false
-      if (pendingSettingsMemoryWrite && !settingsMemoryWriteTimer) {
-        settingsMemoryWriteTimer = setTimeout(() => {
-          settingsMemoryWriteTimer = null
-          void flushSettingsMemoryWrite()
-        }, 0)
+      } catch (error) {
+        if (
+          pending.chapterId === settingsMemoryChapterId
+          && !pendingSettingsMemoryWrite
+        ) {
+          pendingSettingsMemoryWrite = pending
+        }
+        showToast(
+          `章节工作态设置未保存：${error instanceof Error ? error.message : '未知错误'}`,
+          'warning',
+        )
+        return false
+      } finally {
+        activeSettingsMemoryWrite = null
       }
     }
+    return true
+  }
+
+  async function flushChapterWorkState(): Promise<boolean> {
+    const chapterId = settingsMemoryChapterId
+    if (!chapterId) return true
+    const payload = settingsStore.chapterWorkStatePayload()
+    stageChapterWorkState(chapterId, payload)
+    if (settingsMemoryWriteTimer) {
+      clearTimeout(settingsMemoryWriteTimer)
+      settingsMemoryWriteTimer = null
+    }
+    return flushSettingsMemoryWrite()
   }
 
   function queueLastVisitedPageWrite(chapterId: string, pageId: string): void {
     navigationWriteChain = navigationWriteChain
       .then(async () => {
         if (!isOwnerAlive || currentChapterId.value !== chapterId) return
-        const updated = await updateLastVisitedPage(
-          chapterId,
-          pageId,
-          navigationRevision,
-        )
-        if (isOwnerAlive && currentChapterId.value === chapterId) {
-          navigationRevision = updated.revision
-        }
+        await updateLastVisitedPage(chapterId, pageId)
       })
       .catch(error => {
         if (!isOwnerAlive || currentChapterId.value !== chapterId) return
@@ -344,42 +399,43 @@ export function useTranslateInit() {
     pageDocumentAbortController = new AbortController()
     const pageRequestId = ++pageDocumentRequestId
     const pageId = newImage.id
-    void getPageDocument(pageId, pageDocumentAbortController.signal)
-      .then(document => {
-        if (
-          !isOwnerAlive
-          || pageRequestId !== pageDocumentRequestId
-          || imageStore.currentImage?.id !== pageId
-        ) return
-        const bubbles = registerPageDocument(document)
-        const pageTextStyle = parseCompleteTextStyleSettings({
-          ...document.pageStyleDefaults,
-          ...(document.defaultFontId
-            ? { fontFamily: document.defaultFontId }
-            : {}),
-        })
-        imageStore.updateCurrentImage({
-          ...pageTextStyle,
-          bubbleStates: bubbles,
-          documentRevision: document.documentRevision,
-          hasUnsavedChanges: false,
-        })
-        settingsStore.updateTextStyle(pageTextStyle)
-        bubbleStore.setBubbles(bubbles, true)
+    try {
+      const document = await getPageDocument(
+        pageId,
+        pageDocumentAbortController.signal,
+      )
+      if (
+        !isOwnerAlive
+        || pageRequestId !== pageDocumentRequestId
+        || imageStore.currentImage?.id !== pageId
+      ) return
+      const bubbles = registerPageDocument(document)
+      const pageTextStyle = parseCompleteTextStyleSettings({
+        ...document.pageStyleDefaults,
+        ...(document.defaultFontId
+          ? { fontFamily: document.defaultFontId }
+          : {}),
       })
-      .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        if (pageRequestId === pageDocumentRequestId) {
-          showToast('加载当前页编辑数据失败', 'error')
-        }
+      imageStore.updateCurrentImage({
+        ...pageTextStyle,
+        bubbleStates: bubbles,
+        documentRevision: document.documentRevision,
+        hasUnsavedChanges: false,
       })
-      .finally(() => {
-        if (pageRequestId !== pageDocumentRequestId) return
-        switchImageFlagTimer = setTimeout(() => {
-          switchImageFlagTimer = null
-          isSwitchingImage.value = false
-        }, 100)
-      })
+      settingsStore.updateTextStyle(pageTextStyle)
+      bubbleStore.setBubbles(bubbles, true)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (pageRequestId === pageDocumentRequestId) {
+        showToast('加载当前页编辑数据失败', 'error')
+      }
+    } finally {
+      if (pageRequestId !== pageDocumentRequestId) return
+      switchImageFlagTimer = setTimeout(() => {
+        switchImageFlagTimer = null
+        isSwitchingImage.value = false
+      }, 100)
+    }
   }
 
   async function goToPrevious(): Promise<void> {
@@ -416,6 +472,7 @@ export function useTranslateInit() {
 
     initializeApp,
     initializeBookChapterContext,
+    flushChapterWorkState,
 
     switchImage,
     goToPrevious,

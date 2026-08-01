@@ -13,7 +13,6 @@ _TEXT_STYLE_DEFAULTS = {}
 def refresh_text_style_runtime_defaults() -> None:
     global _TEXT_STYLE_DEFAULTS
     global DEFAULT_FONT_RELATIVE_PATH
-    global DEFAULT_FONT_PATH
     global DEFAULT_FONT_FAMILY
     global DEFAULT_FONT_SIZE
     global DEFAULT_TEXT_DIRECTION
@@ -34,7 +33,6 @@ def refresh_text_style_runtime_defaults() -> None:
         'resources',
         _TEXT_STYLE_DEFAULTS["fontFamily"].replace("/", os.sep)
     )
-    DEFAULT_FONT_PATH = f"static/{os.path.basename(DEFAULT_FONT_RELATIVE_PATH)}"
     DEFAULT_FONT_FAMILY = _TEXT_STYLE_DEFAULTS["fontFamily"]
     DEFAULT_FONT_SIZE = _TEXT_STYLE_DEFAULTS["fontSize"]
     layout_direction = _TEXT_STYLE_DEFAULTS["layoutDirection"]
@@ -53,8 +51,6 @@ refresh_text_style_runtime_defaults()
 
 # --- 提示词相关 ---
 DEFAULT_PROMPT = "你是一个好用的翻译助手。请将我的非中文语句段落连成一句或几句话并翻译成中文，我发给你所有的话都是需要翻译的内容，你只需要回答翻译结果。特别注意：翻译结果字数不能超过原文字数！翻译结果请符合中文的语言习惯。"
-DEFAULT_TEXTBOX_PROMPT = "你是一个专业的外语老师。请将我提供的非中文内容连成一句或几句话并翻译成中文。同时要告诉我为什么这么翻译，这句话有哪些知识点。"
-DEFAULT_PROMPT_NAME = "默认提示词"
 
 # --- 新增 JSON 格式提示词（单气泡翻译专用）---
 DEFAULT_TRANSLATE_JSON_PROMPT = """你是一个专业的翻译引擎。请将用户提供的文本翻译成简体中文。
@@ -173,9 +169,6 @@ BATCH_TRANSLATE_MAX_CHARS_PER_REQUEST = 4000  # 单个请求的最大字符数 (
 
 
 
-# --- 模型与提示词 ---
-DEFAULT_MODEL_PROVIDER = 'siliconflow'
-
 # --- 翻译服务相关 ---
 # 百度翻译API引擎ID
 BAIDU_TRANSLATE_ENGINE_ID = 'baidu_translate'
@@ -188,138 +181,13 @@ YOUDAO_TRANSLATE_ENGINE_ID = 'youdao_translate'
 # - 内置字体随应用发布，位于 src/backend_v2/resources/fonts/
 # - 用户上传字体进入 v2 对象存储，不修改应用资源目录
 
-# --- 默认翻译与渲染参数 ---
-DEFAULT_TARGET_LANG = 'zh'
-DEFAULT_SOURCE_LANG = 'japan'
+# --- 默认渲染参数 ---
 DEFAULT_ROTATION_ANGLE = 0
 # DEFAULT_FONT_SIZE / DEFAULT_TEXT_DIRECTION / DEFAULT_TEXT_COLOR /
 # DEFAULT_FILL_COLOR / DEFAULT_INPAINT_METHOD / DEFAULT_LINE_SPACING /
 # DEFAULT_TEXT_ALIGN 在模块顶部由 refresh_text_style_runtime_defaults() 初始化
 
-# --- OCR 相关 ---
-SUPPORTED_LANGUAGES_OCR = {
-    "japan": "MangaOCR",
-    "en": "PaddleOCR",
-    "korean": "PaddleOCR",
-    "chinese": "PaddleOCR",
-    "chinese_cht": "PaddleOCR",
-    "french": "PaddleOCR",
-    "german": "PaddleOCR",
-    "russian": "PaddleOCR",
-    "italian": "PaddleOCR",
-    "spanish": "PaddleOCR",
-    "portuguese": "PaddleOCR",
-    "arabic": "PaddleOCR",
-    "thai": "PaddleOCR",
-    "greek": "PaddleOCR"
-}
-
-# PaddleOCR v5 ONNX 语言映射（前端语言代码 -> ONNX 模型目录名）
-# 注意：使用 ONNX 版本后，映射值对应 models/paddle_ocr_onnx/languages/ 下的目录名
-PADDLE_V5_LANG_MAP = {
-    # 中日文 - 使用 chinese 模型（PP-OCRv5 chinese 模型支持中文和日文）
-    "japanese": "chinese",      # 日文
-    "japan": "chinese",         # 兼容旧代码
-    "chinese": "chinese",       # 简体中文
-    "ch": "chinese",            # 简体中文
-    "chinese_cht": "chinese",   # 繁体中文
-    
-    # 英文专用模型
-    "en": "english",            # 英文
-    "english": "english",
-    
-    # 韩语专用模型
-    "korean": "korean",         # 韩语
-    
-    # 拉丁语系模型（覆盖 32 种欧洲语言）
-    "french": "latin",          # 法语
-    "german": "latin",          # 德语
-    "spanish": "latin",         # 西班牙语
-    "italian": "latin",         # 意大利语
-    "portuguese": "latin",      # 葡萄牙语
-    "latin": "latin",           # 拉丁语系通用
-    
-    # 斯拉夫语系模型（俄语、乌克兰语、保加利亚语、白俄罗斯语）
-    "russian": "eslav",         # 俄语
-    "eslav": "eslav",           # 东斯拉夫语系
-    "cyrillic": "eslav",        # 西里尔语系 -> 映射到 eslav
-    
-    # 以下语言需要单独下载模型才能使用
-    # 运行: python download_paddle_onnx_models.py thai greek
-    # "thai": "thai",           # 泰语 (需下载)
-    # "th": "thai",
-    # "greek": "greek",         # 希腊语 (需下载)
-    # "el": "greek",
-    # "arabic": "arabic",       # 阿拉伯语 (v5 不支持)
-}
-
-# 前端显示的语言列表（按模型分组）
-PADDLE_V5_LANGUAGES = {
-    "default": {
-        "japanese": "日语",
-        "en": "英语",
-        "chinese": "简体中文",
-        "chinese_cht": "繁体中文",
-    },
-    "specialized": {
-        "korean": "韩语",
-        "french": "法语",
-        "german": "德语",
-        "spanish": "西班牙语",
-        "italian": "意大利语",
-        "portuguese": "葡萄牙语",
-        "russian": "俄语",
-        "arabic": "阿拉伯语",
-        "thai": "泰语",
-        "greek": "希腊语",
-    }
-}
-
-# 保留旧的映射以兼容旧代码
-PADDLE_LANG_MAP = PADDLE_V5_LANG_MAP
-
-# --- 百度OCR相关 ---
-BAIDU_OCR_VERSIONS = {
-    "standard": "标准版",
-    "high_precision": "高精度版"
-}
-
-# 百度OCR语言映射使用大写编码
-# 参考文档: https://cloud.baidu.com/doc/OCR/s/zk3h7xz52
-BAIDU_LANG_MAP = {
-    "japan": "japanese",
-    "japanese": "japanese",
-    "en": "english",
-    "english": "english", 
-    "korean": "korean",
-    "chinese": "chinese",
-    "chinese_cht": "chinese",
-    "french": "french",
-    "german": "german",
-    "russian": "russian",
-    "italian": "italian",
-    "spanish": "spanish"
-}
-
 # --- 百度翻译相关 ---
-# 百度翻译语言映射
-# 参考文档: https://fanyi-api.baidu.com/doc/21
-BAIDU_TRANSLATE_LANG_MAP = {
-    'zh': 'zh',       # 中文
-    'en': 'en',       # 英语
-    'ja': 'jp',       # 日语 (百度API使用jp)
-    'ko': 'kor',      # 韩语
-    'fr': 'fra',      # 法语
-    'es': 'spa',      # 西班牙语
-    'it': 'it',       # 意大利语
-    'de': 'de',       # 德语
-    'ru': 'ru',       # 俄语
-    'pt': 'pt',       # 葡萄牙语
-    'vi': 'vie',      # 越南语
-    'th': 'th',       # 泰语
-    'auto': 'auto',   # 自动检测
-}
-
 # 项目内部语言代码到百度翻译语言代码的映射
 PROJECT_TO_BAIDU_TRANSLATE_LANG_MAP = {
     'zh': 'zh',
@@ -342,39 +210,7 @@ DEFAULT_AI_VISION_OCR_PROMPT = """你是一个ocr助手，你需要将我发送�
 1、完整识别：我发送给你的图片中的文字都是需要识别的内容
 2、非贪婪输出：不要返回任何其他解释和说明。"""
 
-# --- 高质量翻译默认提示词 ---
-DEFAULT_HQ_TRANSLATE_PROMPT = """你是一个漫画翻译助手，我会提供原始漫画图片和导出的只含原文不含译文JSON翻译文件，帮我将原文翻译成中文
-翻译要求：
-1.仅修改JSON中的"translated"译文，保持其他所有结构和字段不变。
-2.json中的"imagelndex"序号是每张图片的页码，在翻译前先根据json文件中每页图片的原文内容和所有漫画图片对我给你的所有图片进行排序，在进行上下文对比时要严格按照"imagelndex"序号进行对比，你在翻译时要按照"imagelndex"的顺序进行顺序翻译，从而使得每句翻译足够连贯，上下文不会突兀
-3.通过json中每页图片的"original"原文内容和所有的漫画图片明确每句话在那页图的哪个位置，并结合漫画图像和上下文语境，让翻译更加连贯自然，符合角色语气和场景
-4.json中的"bubblelndex"标号可能不正确，你需要根据图片自行判断每句话的正确顺序，从而输出符合上下文连贯的翻译，但在输出翻译时不要修改原本的"bubblelndex"标号
-5.保留原文的表达意图和情感，但使用更地道、流畅的表达方式
-6.注意专有名词和术语的一致性翻译
-7.如遇幽默、双关语或文化特定内容，请尽量找到目标语言中恰当的表达
-8.不要添加原文中不存在的信息或解释
-9.保持简洁明了，符合气泡空间限制
-10.译文字数尽量不要超过原文
-11.你需要直接返回修改后的完整JSON文件，无需解释每处修改原因。"""
-
 # --- 有道翻译相关 ---
-# 有道翻译语言映射
-# 参考文档: https://ai.youdao.com/DOCSIRMA/html/trans/api/wbfy/index.html
-YOUDAO_TRANSLATE_LANG_MAP = {
-    'zh': 'zh-CHS',    # 中文简体
-    'en': 'en',        # 英语
-    'ja': 'ja',        # 日语
-    'ko': 'ko',        # 韩语
-    'fr': 'fr',        # 法语
-    'es': 'es',        # 西班牙语
-    'it': 'it',        # 意大利语
-    'de': 'de',        # 德语
-    'ru': 'ru',        # 俄语
-    'pt': 'pt',        # 葡萄牙语
-    'vi': 'vi',        # 越南语
-    'auto': 'auto',    # 自动检测
-}
-
 # 项目内部语言代码到有道翻译语言代码的映射
 PROJECT_TO_YOUDAO_TRANSLATE_LANG_MAP = {
     'zh': 'zh-CHS',
@@ -421,31 +257,11 @@ OCR_ENGINE_PADDLEOCR_VL = 'paddleocr_vl'
 PADDLEOCR_VL_MODEL_DIR = 'models/paddleocr_vl'
 PADDLEOCR_VL_HF_MODEL = 'jzhang533/PaddleOCR-VL-For-Manga'
 
-# --- 文本检测器相关 ---
-DETECTOR_CTD = 'ctd'
-DETECTOR_YOLO = 'yolo'
-DETECTOR_DEFAULT = 'default'  # DBNet ResNet34 (detect-20241225.ckpt)
-DETECTOR_SABER_YOLO = 'saber_yolo'
-DEFAULT_DETECTOR = DETECTOR_DEFAULT
-
-SUPPORTED_DETECTORS = {
-    DETECTOR_DEFAULT: 'Default (DBNet ResNet34)',
-    DETECTOR_CTD: 'CTD (Comic Text Detector)',
-    DETECTOR_YOLO: 'YSGYolo',
-}
-
 # CTD 配置
 # 边缘距离比例阈值：当一个文本行与多个邻居连接时，如果到某个邻居的距离
 # 远大于到最近邻居的距离 (比例超过此阈值)，则断开这个连接，防止跨气泡错误合并
 # 推荐值 3.0-5.0，0 表示禁用
 CTD_EDGE_RATIO_THRESHOLD = 0.0
-
-# YSGYolo 配置
-YOLO_MODEL_DIR = 'models/yolo'
-YOLO_DEFAULT_MODEL = 'ysgyolo_1.2_OS1.0.pt'
-YOLO_CONF_THRESH = 0.3
-YOLO_IOU_THRESH = 0.5
-YOLO_MASK_DILATE_SIZE = 2
 
 # 辅助一阶段 YSGYolo 检测配置
 ENABLE_AUX_YOLO_DETECTION = False
@@ -460,31 +276,14 @@ SABER_YOLO_IOU_THRESH = 0.5
 ENABLE_SABER_YOLO_REFINE = True
 SABER_YOLO_REFINE_OVERLAP_THRESHOLD = 0.5
 
-# Default (DBNet ResNet34) 配置
-DEFAULT_MODEL_DIR = 'models/default'
-DEFAULT_MODEL_NAME = 'detect-20241225.ckpt'
-DEFAULT_DETECT_SIZE = 1536
-DEFAULT_TEXT_THRESHOLD = 0.5
-DEFAULT_BOX_THRESHOLD = 0.7
-DEFAULT_UNCLIP_RATIO = 2.2
-
 # --- 重试机制设置 ---
 DEFAULT_TRANSLATION_MAX_RETRIES = 3  # 普通翻译默认重试次数
-DEFAULT_HQ_TRANSLATION_MAX_RETRIES = 3  # 高质量翻译默认重试次数
-DEFAULT_PROOFREADING_MAX_RETRIES = 2  # AI校对默认重试次数
 
 # --- 超长图片处理 (Large Image Rearrange) ---
-# 当图片满足以下条件时自动启用切割检测:
-#   1. 缩放比 (down_scale_ratio) > LARGE_IMAGE_DOWNSCALE_THRESHOLD
-#   2. 长宽比 (aspect_ratio) > LARGE_IMAGE_ASPECT_THRESHOLD
 LARGE_IMAGE_ENABLED = True  # 是否启用超长图片自动切割
-LARGE_IMAGE_DOWNSCALE_THRESHOLD = 2.5  # 缩放比阈值
-LARGE_IMAGE_ASPECT_THRESHOLD = 3.0  # 长宽比阈值
 LARGE_IMAGE_TARGET_SIZE = 1536  # 切片目标尺寸（与检测器一致）
 
 # --- LAMA 修复相关 ---
-# LAMA 修复时的最大处理尺寸（超过此尺寸会缩放）
-LAMA_INPAINTING_SIZE = 1024
 # 是否禁用 LAMA 修复时的自动缩放（默认 False，即允许缩放）
 # 设为 True 时将使用原图尺寸进行修复，需要更强的 GPU 和更多显存
 LAMA_DISABLE_RESIZE = False

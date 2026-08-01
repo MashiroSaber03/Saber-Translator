@@ -5,9 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    json_body as _json_body,
+    require_idempotency_key as _idempotency_key,
+    required_string as _required_text,
+)
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.plugins.agent import (
     PluginAgentSessionNotFound,
@@ -19,14 +25,13 @@ def create_plugin_agent_blueprint(
     *,
     data_root: Path,
     engine: Engine,
-    service: PluginAgentSessionService | None = None,
 ) -> Blueprint:
     blueprint = Blueprint(
         "plugin_agent_v2",
         __name__,
         url_prefix="/api/v2/plugin-agent",
     )
-    sessions = service or PluginAgentSessionService(
+    sessions = PluginAgentSessionService(
         data_root=data_root,
         engine=engine,
     )
@@ -117,20 +122,6 @@ def create_plugin_agent_blueprint(
     return blueprint
 
 
-def _json_body() -> dict[str, Any]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
-def _required_text(body: dict[str, Any], field: str) -> str:
-    value = body.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field} must be a non-empty string")
-    return value.strip()
-
-
 def _reject_unknown(
     body: dict[str, Any],
     allowed: set[str],
@@ -140,14 +131,3 @@ def _reject_unknown(
         raise ValueError(
             "unknown request fields: " + ", ".join(sorted(unknown))
         )
-
-
-def _idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError("Idempotency-Key is required")
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

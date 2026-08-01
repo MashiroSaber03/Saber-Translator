@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from io import BytesIO
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -12,16 +11,18 @@ from PIL import Image
 from sqlalchemy import Engine, delete, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
+from src.backend_v2.serialization import canonical_json
 from src.backend_v2.operations.repository import (
     OperationFence,
     OperationRepository,
     RenderRequestRepository,
 )
+from src.backend_v2.rendering.service import publish_png_asset
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
+from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
-    assets,
     bubbles,
-    credential_versions,
     page_assets,
     pages,
 )
@@ -30,7 +31,6 @@ from src.backend_v2.translation.pipeline import (
     TranslationAlgorithms,
     TranslationPipelineService,
     _preserve_detected_text,
-    _rgb_hex,
 )
 
 
@@ -47,6 +47,7 @@ class InteractivePageOperationService:
         self.engine = engine
         self.repository = repository
         self.storage = AssetStorageService(data_root, engine)
+        self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or LegacyTranslationAlgorithms()
         self.renders = RenderRequestRepository(engine)
         self.plugin_runtime = plugin_runtime
@@ -168,8 +169,23 @@ class InteractivePageOperationService:
         if textbox:
             payload["textboxText"] = str(textbox[0])
         new_revision = int(page["document_revision"]) + 1
+        has_drawable_text = any(
+            str(
+                payload.get("translatedText", "")
+                if row_index == index
+                else row["payload"].get("translatedText", "")
+            ).strip()
+            for row_index, row in enumerate(rows)
+        )
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
+            has_translated = connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == operation["pageId"],
+                    page_assets.c.role == "translated",
+                )
+            ).scalar_one_or_none()
+            needs_render = has_translated is not None or has_drawable_text
             self._update_one_bubble(
                 connection,
                 page_id=str(operation["pageId"]),
@@ -177,15 +193,9 @@ class InteractivePageOperationService:
                 base_revision=int(page["document_revision"]),
                 new_revision=new_revision,
                 payload=payload,
-                render_changed=True,
+                render_changed=needs_render,
             )
-            has_translated = connection.execute(
-                select(page_assets.c.asset_id).where(
-                    page_assets.c.page_id == operation["pageId"],
-                    page_assets.c.role == "translated",
-                )
-            ).scalar_one_or_none()
-            if has_translated is not None:
+            if needs_render:
                 self.renders.upsert(
                     connection,
                     page_id=str(operation["pageId"]),
@@ -271,17 +281,38 @@ class InteractivePageOperationService:
         payload["autoFgColor"] = color.get("fg_color")
         payload["autoBgColor"] = color.get("bg_color")
         payload["colorConfidence"] = float(color.get("confidence", 0))
-        style_defaults = json.loads(page["page_style_defaults_json"] or "{}")
-        uses_auto_color = bool(style_defaults.get("useAutoTextColor", False))
+        style_defaults = validate_page_style(
+            json.loads(page["page_style_defaults_json"]),
+            partial=False,
+        )
+        uses_auto_color = bool(style_defaults["useAutoTextColor"])
         old_text_color = payload.get("textColor")
         if uses_auto_color and color.get("fg_color") is not None:
-            payload["textColor"] = _rgb_hex(color["fg_color"])
+            payload["textColor"] = rgb_to_hex(color["fg_color"])
         if uses_auto_color and color.get("bg_color") is not None:
-            payload["fillColor"] = _rgb_hex(color["bg_color"])
+            payload["fillColor"] = rgb_to_hex(color["bg_color"])
         changes_render = payload.get("textColor") != old_text_color
         new_revision = int(page["document_revision"]) + 1
+        has_drawable_text = any(
+            str(
+                payload.get("translatedText", "")
+                if row_index == index
+                else row["payload"].get("translatedText", "")
+            ).strip()
+            for row_index, row in enumerate(rows)
+        )
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
+            has_translated = connection.execute(
+                select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == operation["pageId"],
+                    page_assets.c.role == "translated",
+                )
+            ).scalar_one_or_none()
+            needs_render = bool(
+                changes_render
+                and (has_translated is not None or has_drawable_text)
+            )
             self._update_one_bubble(
                 connection,
                 page_id=str(operation["pageId"]),
@@ -289,9 +320,9 @@ class InteractivePageOperationService:
                 base_revision=int(page["document_revision"]),
                 new_revision=new_revision,
                 payload=payload,
-                render_changed=changes_render,
+                render_changed=needs_render,
             )
-            if changes_render and str(payload.get("translatedText", "")).strip():
+            if needs_render:
                 self.renders.upsert(
                     connection,
                     page_id=str(operation["pageId"]),
@@ -339,7 +370,10 @@ class InteractivePageOperationService:
         angles = list(detected.get("angles", []))
         directions = list(detected.get("auto_directions", []))
         textlines = list(detected.get("textlines_per_bubble", []))
-        style = json.loads(page["page_style_defaults_json"] or "{}")
+        style = validate_page_style(
+            json.loads(page["page_style_defaults_json"]),
+            partial=False,
+        )
         payloads = _preserve_detected_text([
             TranslationPipelineService._new_bubble_payload(
                 coords=value,
@@ -356,12 +390,16 @@ class InteractivePageOperationService:
         mask_record: AssetRecord | None = None
         raw_mask = detected.get("raw_mask")
         if isinstance(raw_mask, Image.Image):
-            mask_record = self._publish_image(raw_mask, mode="L")
+            mask_record = publish_png_asset(self.storage, raw_mask, mode="L")
             raw_mask.close()
         elif raw_mask is not None:
             mask_image = Image.fromarray(raw_mask)
             try:
-                mask_record = self._publish_image(mask_image, mode="L")
+                mask_record = publish_png_asset(
+                    self.storage,
+                    mask_image,
+                    mode="L",
+                )
             finally:
                 mask_image.close()
         after = self._atomic_hook(
@@ -419,12 +457,7 @@ class InteractivePageOperationService:
                             "id": str(uuid.uuid4()),
                             "page_id": operation["pageId"],
                             "ordinal": index,
-                            "payload_json": json.dumps(
-                                payload,
-                                ensure_ascii=False,
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ),
+                            "payload_json": canonical_json(payload),
                             "payload_schema_version": 1,
                             "updated_revision": new_revision,
                         }
@@ -486,25 +519,6 @@ class InteractivePageOperationService:
         self.repository.complete(fence, result=response, publisher=publish)
         return response
 
-    def _publish_image(
-        self,
-        image: Image.Image,
-        *,
-        mode: str,
-    ) -> AssetRecord:
-        converted = image if image.mode == mode else image.convert(mode)
-        output = BytesIO()
-        converted.save(output, format="PNG")
-        if converted is not image:
-            converted.close()
-        return self.storage.publish_bytes(
-            output.getvalue(),
-            extension="png",
-            mime_type="image/png",
-            width=image.width,
-            height=image.height,
-        )
-
     def _snapshot(self, page_id: str):
         with self.engine.connect() as connection:
             page = connection.execute(
@@ -538,51 +552,17 @@ class InteractivePageOperationService:
         asset_id: str,
         mode: str,
     ) -> Image.Image:
-        with self.engine.connect() as connection:
-            relative_path = connection.execute(
-                select(assets.c.relative_path).where(
-                    assets.c.id == asset_id
-                )
-            ).scalar_one_or_none()
-        if relative_path is None:
-            raise RuntimeError("plugin referenced an unknown asset")
-        opened = Image.open(self.storage.resolve_relative_path(relative_path))
-        converted = opened.convert(mode)
-        opened.close()
-        return converted
+        record = self._asset_record(asset_id)
+        with Image.open(
+            self.storage.resolve_relative_path(record.relative_path)
+        ) as opened:
+            return opened.convert(mode)
 
     def _asset_record(self, asset_id: str) -> AssetRecord:
-        with self.engine.connect() as connection:
-            row = connection.execute(
-                select(
-                    assets.c.id,
-                    assets.c.relative_path,
-                    assets.c.mime_type,
-                    assets.c.checksum,
-                    assets.c.byte_size,
-                    assets.c.width,
-                    assets.c.height,
-                ).where(assets.c.id == asset_id)
-            ).mappings().one_or_none()
-        if row is None:
-            raise RuntimeError("plugin referenced an unknown asset")
-        return AssetRecord(
-            id=str(row["id"]),
-            relative_path=str(row["relative_path"]),
-            mime_type=str(row["mime_type"]),
-            checksum=str(row["checksum"]),
-            byte_size=int(row["byte_size"]),
-            width=(
-                int(row["width"])
-                if row["width"] is not None
-                else None
-            ),
-            height=(
-                int(row["height"])
-                if row["height"] is not None
-                else None
-            ),
-        )
+        record = self.storage.get_record(asset_id)
+        if record is None:
+            raise RuntimeError("operation referenced an unknown asset")
+        return record
 
     def _atomic_hook(
         self,
@@ -626,17 +606,13 @@ class InteractivePageOperationService:
         version_id = result.pop("credentialVersionId", None)
         if not version_id:
             return result
-        with self.engine.connect() as connection:
-            value = connection.execute(
-                select(credential_versions.c.secret_json).where(
-                    credential_versions.c.id == version_id
-                )
-            ).scalar_one_or_none()
-        if value is None:
-            raise RuntimeError("frozen credential version no longer exists")
-        secret = json.loads(value)
-        if isinstance(secret, dict):
-            result.update(secret)
+        try:
+            secret = self.credentials.resolve_secret(str(version_id))
+        except LookupError as exc:
+            raise RuntimeError(
+                "frozen credential version no longer exists"
+            ) from exc
+        result.update(secret)
         return result
 
     @staticmethod
@@ -694,12 +670,7 @@ class InteractivePageOperationService:
             update(bubbles)
             .where(bubbles.c.id == bubble_id, bubbles.c.page_id == page_id)
             .values(
-                payload_json=json.dumps(
-                    dict(payload),
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ),
+                payload_json=canonical_json(dict(payload)),
                 updated_revision=new_revision,
             )
         )

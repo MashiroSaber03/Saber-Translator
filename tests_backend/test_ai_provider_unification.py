@@ -2,7 +2,6 @@ import unittest
 from unittest import mock
 import threading
 import time
-import tempfile
 
 from PIL import Image
 
@@ -308,8 +307,8 @@ class ProviderRegistryContractTests(unittest.TestCase):
             seen_refs.append((service_name, last_reset_ref, request_count_ref))
 
         with mock.patch("src.core.translation._enforce_rpm_limit", side_effect=record_refs):
-            _apply_translation_rpm_limit("siliconflow", 5, batch=False)
-            _apply_translation_rpm_limit("gemini", 5, batch=False)
+            _apply_translation_rpm_limit("siliconflow", 5)
+            _apply_translation_rpm_limit("gemini", 5)
 
         self.assertEqual(len(seen_refs), 2)
         self.assertIsNot(seen_refs[0][1], seen_refs[1][1])

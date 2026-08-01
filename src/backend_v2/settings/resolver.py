@@ -30,20 +30,6 @@ def _object(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _bounded_int(
-    value: object,
-    *,
-    default: int,
-    minimum: int,
-    maximum: int,
-) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = default
-    return max(minimum, min(maximum, parsed))
-
-
 def _deep_merge(
     base: Mapping[str, Any],
     override: Mapping[str, Any],
@@ -64,21 +50,15 @@ def _provider_section(
     selected: Mapping[str, Any],
     provider_rows: Mapping[tuple[str, str], Mapping[str, Any]],
 ) -> dict[str, Any]:
-    provider = str(selected.get("provider", ""))
+    provider = str(selected["provider"])
     row = provider_rows.get((domain, provider), {})
     payload = _deep_merge(selected, _object(row.get("payload")))
     section = {
         "provider": provider,
         "model_provider": provider,
-        "model_name": payload.get("modelName", payload.get("model_name", "")),
-        "custom_base_url": payload.get(
-            "customBaseUrl",
-            payload.get("custom_base_url", ""),
-        ),
-        "openai_options": payload.get(
-            "openaiOptions",
-            payload.get("openai_options", {}),
-        ),
+        "model_name": payload.get("modelName", ""),
+        "custom_base_url": payload.get("customBaseUrl", ""),
+        "openai_options": payload.get("openaiOptions", {}),
     }
     prompt = payload.get("prompt")
     if prompt is not None:
@@ -117,17 +97,21 @@ def _insight_layers(
     preset: str,
     custom_layers: object,
 ) -> list[dict[str, Any]]:
-    raw_layers: object = (
-        custom_layers
-        if preset == "custom" and isinstance(custom_layers, list) and custom_layers
-        else _INSIGHT_LAYER_PRESETS.get(preset, _INSIGHT_LAYER_PRESETS["standard"])
-    )
+    if preset == "custom":
+        if not isinstance(custom_layers, list):
+            raise ValueError("Insight custom layers must be an array")
+        raw_layers: object = custom_layers
+    else:
+        try:
+            raw_layers = _INSIGHT_LAYER_PRESETS[preset]
+        except KeyError as exc:
+            raise ValueError("Insight architecture preset is invalid") from exc
     result: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_layers):
         if not isinstance(raw, Mapping):
             raise ValueError("Insight layer definitions must be objects")
-        name = str(raw.get("name", "")).strip()
-        units = int(raw.get("unitsPerGroup", raw.get("units_per_group", 0)))
+        name = str(raw["name"]).strip()
+        units = int(raw["unitsPerGroup"])
         if not name or len(name) > 200:
             raise ValueError("Insight layer name must contain 1-200 characters")
         if units < 0 or units > 100:
@@ -137,9 +121,7 @@ def _insight_layers(
                 "index": index,
                 "name": name,
                 "unitsPerGroup": units,
-                "alignToChapter": bool(
-                    raw.get("alignToChapter", raw.get("align_to_chapter", False))
-                ),
+                "alignToChapter": bool(raw["alignToChapter"]),
             }
         )
     if len(result) < 2 or len(result) > 8:
@@ -212,7 +194,10 @@ class SettingsResolver:
             json.loads(app_row["payload_json"]),
             schema_version=int(app_row["schema_version"]),
         )
-        chapter_memory = _object(json.loads(chapter_row["settings_memory_json"]))
+        chapter_memory_value = json.loads(chapter_row["settings_memory_json"])
+        if not isinstance(chapter_memory_value, Mapping):
+            raise ValueError("chapter settings memory must be an object")
+        chapter_memory = dict(chapter_memory_value)
         constraints = validate_translation_constraints(
             json.loads(constraint_row["payload_json"])
         )
@@ -223,18 +208,27 @@ class SettingsResolver:
         )
         mode = str(command.get("mode", "standard"))
 
-        proofreading = _object(effective.get("proofreading"))
-        raw_rounds = proofreading.get("rounds")
+        proofreading = dict(effective["proofreading"])
+        raw_rounds = proofreading["rounds"]
         proofreading_rounds: list[dict[str, Any]] = []
         provider_revision_keys: list[tuple[str, str]] = []
         if mode == "proofread":
-            if not bool(proofreading.get("enabled", False)):
+            if not bool(proofreading["enabled"]):
                 raise ValueError("AI 校对尚未启用，请先在设置中启用并保存")
             if not isinstance(raw_rounds, list) or not raw_rounds:
                 raise ValueError("AI 校对至少需要一轮已保存的校对配置")
             for index, raw_round in enumerate(raw_rounds):
-                selected_round = _object(raw_round)
+                selected_round = dict(raw_round)
                 domain = f"proofreading_{index}"
+                selected_round = _deep_merge(
+                    selected_round,
+                    _object(
+                        provider_rows.get(
+                            (domain, str(selected_round["provider"])),
+                            {},
+                        ).get("payload")
+                    ),
+                )
                 section = _provider_section(
                     domain=domain,
                     selected=selected_round,
@@ -243,14 +237,10 @@ class SettingsResolver:
                 section.update(
                     {
                         "roundIndex": index,
-                        "name": str(
-                            selected_round.get("name", f"第 {index + 1} 轮校对")
-                        ),
-                        "batchSize": _bounded_int(
-                            selected_round.get("batchSize"),
-                            default=3,
-                            minimum=1,
-                            maximum=10,
+                        "name": str(selected_round["name"]),
+                        "batchSize": int(selected_round["batchSize"]),
+                        "enable_debug_logs": bool(
+                            effective["enableVerboseLogs"]
                         ),
                         "prompt_content": self._translation_prompt(
                             effective,
@@ -261,16 +251,28 @@ class SettingsResolver:
                 )
                 proofreading_rounds.append(section)
                 provider_revision_keys.append(
-                    (domain, str(selected_round.get("provider", "")))
+                    (domain, str(selected_round["provider"]))
                 )
             translation = proofreading_rounds[0]
         else:
-            selected_translation = _object(
-                effective.get("hqTranslation")
+            selected_translation = dict(
+                effective["hqTranslation"]
                 if mode == "hq"
-                else effective.get("translation")
+                else effective["translation"]
             )
             translation_domain = "hq" if mode == "hq" else "translation"
+            selected_translation = _deep_merge(
+                selected_translation,
+                _object(
+                    provider_rows.get(
+                        (
+                            translation_domain,
+                            str(selected_translation["provider"]),
+                        ),
+                        {},
+                    ).get("payload")
+                ),
+            )
             translation = _provider_section(
                 domain=translation_domain,
                 selected=selected_translation,
@@ -281,58 +283,57 @@ class SettingsResolver:
                 selected_translation,
                 mode=mode,
             )
-            if mode == "hq":
-                translation["batchSize"] = _bounded_int(
-                    selected_translation.get("batchSize"),
-                    default=3,
-                    minimum=1,
-                    maximum=10,
+            translation["enable_debug_logs"] = bool(
+                effective["enableVerboseLogs"]
+            )
+            if mode not in {"hq", "proofread"}:
+                translation.update(
+                    {
+                        "translation_mode": str(
+                            selected_translation["translationMode"]
+                        ),
+                        "use_textbox_prompt": bool(
+                            effective["useTextboxPrompt"]
+                        ),
+                        "textbox_prompt_content": str(
+                            effective["textboxPrompt"]
+                        ),
+                    }
                 )
+            if mode == "hq":
+                translation["batchSize"] = int(selected_translation["batchSize"])
             provider_revision_keys.append(
                 (
                     translation_domain,
-                    str(selected_translation.get("provider", "")),
+                    str(selected_translation["provider"]),
                 )
             )
 
-        box_expand = _object(effective.get("boxExpand"))
+        box_expand = dict(effective["boxExpand"])
         detector = {
-            "detector_type": effective.get("textDetector", "default"),
-            "min_text_block_area_percent": effective.get(
-                "minTextBlockAreaPercent",
-                0.05,
-            ),
-            "enable_aux_yolo_detection": bool(
-                effective.get("enableAuxYoloDetection", False)
-            ),
-            "aux_yolo_conf_threshold": effective.get(
-                "auxYoloConfThreshold",
-                0.4,
-            ),
-            "aux_yolo_overlap_threshold": effective.get(
-                "auxYoloOverlapThreshold",
-                0.1,
-            ),
-            "enable_saber_yolo_refine": bool(
-                effective.get("enableSaberYoloRefine", True)
-            ),
-            "saber_yolo_refine_overlap_threshold": effective.get(
-                "saberYoloRefineOverlapThreshold",
-                50,
-            ),
-            "expand_ratio": box_expand.get("ratio", 0),
-            "expand_top": box_expand.get("top", 0),
-            "expand_bottom": box_expand.get("bottom", 0),
-            "expand_left": box_expand.get("left", 0),
-            "expand_right": box_expand.get("right", 0),
+            "detector_type": effective["textDetector"],
+            "min_text_block_area_percent": effective["minTextBlockAreaPercent"],
+            "enable_aux_yolo_detection": bool(effective["enableAuxYoloDetection"]),
+            "aux_yolo_conf_threshold": effective["auxYoloConfThreshold"],
+            "aux_yolo_overlap_threshold": effective["auxYoloOverlapThreshold"],
+            "enable_saber_yolo_refine": bool(effective["enableSaberYoloRefine"]),
+            "saber_yolo_refine_overlap_threshold": effective[
+                "saberYoloRefineOverlapThreshold"
+            ],
+            "expand_ratio": box_expand["ratio"],
+            "expand_top": box_expand["top"],
+            "expand_bottom": box_expand["bottom"],
+            "expand_left": box_expand["left"],
+            "expand_right": box_expand["right"],
         }
 
         ocr = self._ocr_section(effective, provider_rows)
-        precise_mask = _object(effective.get("preciseMask"))
-        parallel = _object(effective.get("parallel"))
+        precise_mask = dict(effective["preciseMask"])
+        parallel = dict(effective["parallel"])
         inpainting = {
-            "mask_dilate_size": precise_mask.get("dilateSize", 10),
-            "mask_box_expand_ratio": precise_mask.get("boxExpandRatio", 20),
+            "mask_dilate_size": precise_mask["dilateSize"],
+            "mask_box_expand_ratio": precise_mask["boxExpandRatio"],
+            "disable_resize": bool(effective["lamaDisableResize"]),
         }
 
         provider_revisions = {
@@ -342,24 +343,15 @@ class SettingsResolver:
         return {
             "mode": mode,
             "executionMode": str(command.get("executionMode", "sequential")),
-            "deepLearningConcurrency": _bounded_int(
-                parallel.get("deepLearningLockSize"),
-                default=1,
-                minimum=1,
-                maximum=4,
-            ),
-            "sourceLanguage": str(effective.get("sourceLanguage", "japanese")),
-            "targetLanguage": str(effective.get("targetLanguage", "zh")),
+            "deepLearningConcurrency": int(parallel["deepLearningLockSize"]),
+            "sourceLanguage": str(effective["sourceLanguage"]),
+            "targetLanguage": str(effective["targetLanguage"]),
             "detector": detector,
             "ocr": ocr,
             "translation": translation,
             "proofreadingRounds": proofreading_rounds,
-            "proofreadingMaxRetries": _bounded_int(
-                proofreading.get("maxRetries"),
-                default=2,
-                minimum=0,
-                maximum=10,
-            ),
+            "proofreadingMaxRetries": int(proofreading["maxRetries"]),
+            "removeTextWithOcr": bool(effective["removeTextWithOcr"]),
             "inpainting": inpainting,
             "render": {},
             "translationConstraints": constraints,
@@ -383,6 +375,51 @@ class SettingsResolver:
                 ),
                 "providerRevision": next(iter(provider_revisions.values()), 0),
                 "providerRevisions": provider_revisions,
+            },
+        }
+
+    def resolve_page_repair(self, *, page_id: str) -> dict[str, object]:
+        """Freeze the chapter's LaMA resize setting for one repair operation."""
+
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    app_settings.c.payload_json,
+                    app_settings.c.revision,
+                    app_settings.c.schema_version,
+                    chapters.c.settings_memory_json,
+                    chapters.c.settings_memory_revision,
+                )
+                .select_from(pages)
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .join(
+                    app_settings,
+                    app_settings.c.domain == "translation",
+                )
+                .where(pages.c.id == page_id)
+            ).mappings().one_or_none()
+        if row is None:
+            raise ValueError("page or translation settings not found")
+        global_settings = validate_setting_payload(
+            "translation",
+            json.loads(row["payload_json"]),
+            schema_version=int(row["schema_version"]),
+        )
+        chapter_memory = json.loads(row["settings_memory_json"])
+        if not isinstance(chapter_memory, Mapping):
+            raise ValueError("chapter settings memory must be an object")
+        effective = validate_setting_payload(
+            "translation",
+            _deep_merge(global_settings, chapter_memory),
+            schema_version=int(row["schema_version"]),
+        )
+        return {
+            "disableResize": bool(effective["lamaDisableResize"]),
+            "settingsSnapshot": {
+                "appRevision": int(row["revision"]),
+                "chapterMemoryRevision": int(
+                    row["settings_memory_revision"]
+                ),
             },
         }
 
@@ -417,25 +454,21 @@ class SettingsResolver:
                 "reuseExistingBubbles": True,
             },
         )
-        settings_snapshot = deepcopy(
-            _object(resolved.get("settingsSnapshot"))
-        )
+        settings_snapshot = deepcopy(dict(resolved["settingsSnapshot"]))
         if kind == "page_detect":
             return {
-                **deepcopy(_object(resolved.get("detector"))),
+                **deepcopy(dict(resolved["detector"])),
                 "settingsSnapshot": settings_snapshot,
             }
         if kind == "bubble_ocr":
             return {
-                **deepcopy(_object(resolved.get("ocr"))),
+                **deepcopy(dict(resolved["ocr"])),
                 "settingsSnapshot": settings_snapshot,
             }
         if kind == "bubble_translate":
             return {
-                **deepcopy(_object(resolved.get("translation"))),
-                "target_language": str(
-                    resolved.get("targetLanguage", "zh")
-                ),
+                **deepcopy(dict(resolved["translation"])),
+                "target_language": str(resolved["targetLanguage"]),
                 "settingsSnapshot": settings_snapshot,
             }
         return {"settingsSnapshot": settings_snapshot}
@@ -486,9 +519,9 @@ class SettingsResolver:
             json.loads(app_row["payload_json"]),
             schema_version=int(app_row["schema_version"]),
         )
-        download = _object(effective.get("download"))
-        extraction = _object(effective.get("extraction"))
-        agent_selected = _object(effective.get("agent"))
+        download = dict(effective["download"])
+        extraction = dict(effective["extraction"])
+        agent_selected = dict(effective["agent"])
         agent = _provider_section(
             domain="web_import_agent",
             selected=agent_selected,
@@ -496,12 +529,10 @@ class SettingsResolver:
         )
         agent.update(
             {
-                "useStream": bool(agent_selected.get("useStream", False)),
-                "forceJsonOutput": bool(
-                    agent_selected.get("forceJsonOutput", True)
-                ),
-                "maxRetries": int(agent_selected.get("maxRetries", 3)),
-                "timeout": int(agent_selected.get("timeout", 120)),
+                "useStream": bool(agent_selected["useStream"]),
+                "forceJsonOutput": bool(agent_selected["forceJsonOutput"]),
+                "maxRetries": int(agent_selected["maxRetries"]),
+                "timeout": int(agent_selected["timeout"]),
             }
         )
         firecrawl_row = provider_rows.get(
@@ -510,28 +541,28 @@ class SettingsResolver:
         )
         http_row = provider_rows.get(("web_import_http", "headers"), {})
         options: dict[str, Any] = {
-            "timeout": download.get("timeout", 30),
-            "retries": download.get("retries", 3),
-            "delay": download.get("delay", 100),
+            "concurrency": int(download["concurrency"]),
+            "timeout": download["timeout"],
+            "retries": download["retries"],
+            "delay": download["delay"],
             "referer": (
-                source_url if bool(download.get("useReferer", True)) else None
+                source_url if bool(download["useReferer"]) else None
             ),
             "agent": agent,
             "extraction": {
-                "prompt": extraction.get("prompt", ""),
-                "maxIterations": extraction.get("maxIterations", 10),
+                "prompt": extraction["prompt"],
+                "maxIterations": extraction["maxIterations"],
             },
-            "imagePreprocess": _object(effective.get("imagePreprocess")),
-            "bypassProxy": bool(
-                _object(effective.get("advanced")).get("bypassProxy", False)
-            ),
+            "imagePreprocess": dict(effective["imagePreprocess"]),
+            "bypassProxy": bool(dict(effective["advanced"])["bypassProxy"]),
+            "autoImport": bool(dict(effective["ui"])["autoImport"]),
             "settingsSnapshot": {
                 "appRevision": int(app_row["revision"]),
                 "agentProviderRevision": int(
                     provider_rows.get(
                         (
                             "web_import_agent",
-                            str(agent_selected.get("provider", "")),
+                            str(agent_selected["provider"]),
                         ),
                         {},
                     ).get("revision", 0)
@@ -635,8 +666,6 @@ class SettingsResolver:
             else {}
         )
         effective = _deep_merge(global_settings, per_book)
-        selected_prompts = _object(effective.get("prompts"))
-        prompt_by_id = {str(row["id"]): row for row in prompt_rows}
         factory_by_type = {
             str(row["type"]): row
             for row in prompt_rows
@@ -644,12 +673,7 @@ class SettingsResolver:
         }
         frozen_prompts: dict[str, dict[str, Any]] = {}
         for prompt_type in prompt_types:
-            selected = selected_prompts.get(prompt_type)
-            row = (
-                prompt_by_id.get(str(selected))
-                if selected is not None
-                else factory_by_type.get(prompt_type)
-            )
+            row = factory_by_type.get(prompt_type)
             if row is None:
                 raise ValueError(
                     f"Insight prompt is missing for type {prompt_type}"
@@ -661,43 +685,30 @@ class SettingsResolver:
             }
 
         def provider(domain: str, key: str) -> dict[str, Any]:
-            selected = _object(effective.get(key))
+            selected = dict(effective[key])
             return _provider_section(
                 domain=domain,
                 selected=selected,
                 provider_rows=provider_rows,
             )
 
-        analysis = _object(effective.get("analysis"))
-        batch = _object(analysis.get("batch"))
-        architecture_preset = str(
-            batch.get("architecturePreset", batch.get("architecture_preset", "standard"))
-        )
+        analysis = dict(effective["analysis"])
+        batch = dict(analysis["batch"])
+        architecture_preset = str(batch["architecturePreset"])
         layers = _insight_layers(
             architecture_preset,
-            batch.get("customLayers", batch.get("custom_layers")),
+            batch["customLayers"],
         )
-        pages_per_batch = int(
-            batch.get("pagesPerBatch", batch.get("pages_per_batch", 5))
-        )
-        context_batch_count = int(
-            batch.get(
-                "contextBatchCount",
-                batch.get("context_batch_count", 3),
-            )
-        )
-        if not 1 <= pages_per_batch <= 20:
-            raise ValueError("Insight pagesPerBatch must be between 1 and 20")
-        if not 0 <= context_batch_count <= 10:
-            raise ValueError("Insight contextBatchCount must be between 0 and 10")
+        pages_per_batch = int(batch["pagesPerBatch"])
+        context_batch_count = int(batch["contextBatchCount"])
 
         vlm_section = provider("insight_vlm", "vlm")
-        chat_settings = _object(effective.get("chat"))
+        chat_settings = dict(effective["chat"])
         sections = {
             "vlm": vlm_section,
             "chat": (
                 deepcopy(vlm_section)
-                if bool(chat_settings.get("useSameAsVlm"))
+                if bool(chat_settings["useSameAsVlm"])
                 else provider("insight_chat", "chat")
             ),
             "embedding": provider("insight_embedding", "embedding"),
@@ -712,10 +723,10 @@ class SettingsResolver:
             ("insight_reranker", "reranker"),
             ("insight_image_gen", "imageGen"),
         ):
-            selected = _object(effective.get(key))
+            selected = dict(effective[key])
             provider_revisions[domain] = int(
                 provider_rows.get(
-                    (domain, str(selected.get("provider", ""))),
+                    (domain, str(selected["provider"])),
                     {},
                 ).get("revision", 0)
             )
@@ -732,9 +743,7 @@ class SettingsResolver:
             },
             **sections,
             "prompts": frozen_prompts,
-            "maxSourceBytes": int(
-                effective.get("maxSourceBytes", 100 * 1024 * 1024)
-            ),
+            "maxSourceBytes": 100 * 1024 * 1024,
             "settingsSnapshot": {
                 "appRevision": int(app_row["revision"]),
                 "bookRevision": int(book_row["revision"]) if book_row else 0,
@@ -750,11 +759,11 @@ class SettingsResolver:
         mode: str,
     ) -> str:
         if mode in {"hq", "proofread"}:
-            return str(selected.get("prompt", ""))
-        translation_mode = str(selected.get("translationMode", "batch"))
-        options = _object(selected.get("openaiOptions"))
-        request_options = _object(options.get("request"))
-        json_mode = bool(request_options.get("forceJsonOutput", False))
+            return str(selected["prompt"])
+        translation_mode = str(selected["translationMode"])
+        options = dict(selected["openaiOptions"])
+        request_options = dict(options["request"])
+        json_mode = bool(request_options["forceJsonOutput"])
         key = (
             "singleJsonPrompt"
             if translation_mode == "single" and json_mode
@@ -764,41 +773,50 @@ class SettingsResolver:
             if json_mode
             else "batchNormalPrompt"
         )
-        return str(selected.get(key, effective.get("translatePrompt", "")))
+        return str(selected[key])
 
     @staticmethod
     def _ocr_section(
         effective: Mapping[str, Any],
         provider_rows: Mapping[tuple[str, str], Mapping[str, Any]],
     ) -> dict[str, Any]:
-        engine = str(effective.get("ocrEngine", "manga_ocr"))
-        paddle = _object(effective.get("paddleOcrVl"))
-        hybrid = _object(effective.get("hybridOcr"))
+        engine = str(effective["ocrEngine"])
+        paddle = dict(effective["paddleOcrVl"])
+        hybrid = dict(effective["hybridOcr"])
         result: dict[str, Any] = {
             "ocr_engine": engine,
             "source_language": (
-                paddle.get("sourceLanguage", "japanese")
+                paddle["sourceLanguage"]
                 if engine == "paddleocr_vl"
-                else effective.get("sourceLanguage", "japanese")
+                else effective["sourceLanguage"]
             ),
-            "enable_hybrid_ocr": bool(hybrid.get("enabled", False)),
-            "secondary_ocr_engine": hybrid.get("secondaryEngine", "48px_ocr"),
-            "hybrid_ocr_threshold": hybrid.get("confidenceThreshold", 0.2),
+            "enable_hybrid_ocr": bool(hybrid["enabled"]),
+            "secondary_ocr_engine": hybrid["secondaryEngine"],
+            "hybrid_ocr_threshold": hybrid["confidenceThreshold"],
         }
         if engine == "baidu_ocr":
-            selected = _object(effective.get("baiduOcr"))
+            selected = dict(effective["baiduOcr"])
             row = provider_rows.get(("ocr", "baidu"), {})
             payload = _deep_merge(selected, _object(row.get("payload")))
             result.update(
                 {
-                    "baidu_version": payload.get("version", "standard"),
-                    "baidu_ocr_language": payload.get("sourceLanguage", "JAP"),
+                    "baidu_version": payload["version"],
+                    "baidu_ocr_language": payload["sourceLanguage"],
                 }
             )
             if row.get("credentialVersionId"):
                 result["credentialVersionId"] = row["credentialVersionId"]
         elif engine == "ai_vision":
-            selected = _object(effective.get("aiVisionOcr"))
+            selected = dict(effective["aiVisionOcr"])
+            selected = _deep_merge(
+                selected,
+                _object(
+                    provider_rows.get(
+                        ("ai_vision_ocr", str(selected["provider"])),
+                        {},
+                    ).get("payload")
+                ),
+            )
             provider_section = _provider_section(
                 domain="ai_vision_ocr",
                 selected=selected,
@@ -814,12 +832,9 @@ class SettingsResolver:
                     "ai_vision_openai_options": provider_section[
                         "openai_options"
                     ],
-                    "ai_vision_ocr_prompt": selected.get("prompt", ""),
-                    "ai_vision_prompt_mode": selected.get(
-                        "promptMode",
-                        "normal",
-                    ),
-                    "ai_vision_min_image_size": selected.get("minImageSize", 0),
+                    "ai_vision_ocr_prompt": selected["prompt"],
+                    "ai_vision_prompt_mode": selected["promptMode"],
+                    "ai_vision_min_image_size": selected["minImageSize"],
                 }
             )
             if provider_section.get("credentialVersionId"):

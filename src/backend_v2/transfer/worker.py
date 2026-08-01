@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 from io import BytesIO
-import json
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -17,7 +16,11 @@ from PIL import Image
 from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
-from src.backend_v2.content.image_import import ImageImportService
+from src.backend_v2.serialization import canonical_json
+from src.backend_v2.content.image_import import (
+    ImageImportService,
+    ImportSafetyLimits,
+)
 from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
     ContentRepository,
@@ -27,8 +30,8 @@ from src.backend_v2.content.repository import (
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     JobQueueRepository,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
@@ -61,15 +64,18 @@ class TransferWorkerService:
         data_root: Path,
         engine: Engine,
         jobs_repository: JobQueueRepository,
+        limits: ImportSafetyLimits = ImportSafetyLimits(),
     ) -> None:
         self.data_root = data_root.resolve()
         self.engine = engine
         self.jobs = jobs_repository
+        self.limits = limits
         self.storage = AssetStorageService(data_root, engine)
         self.importer = ImageImportService(
             data_root=data_root,
             repository=ContentRepository(engine),
             storage=self.storage,
+            limits=limits,
         )
 
     def handler(
@@ -95,6 +101,8 @@ class TransferWorkerService:
     ) -> Mapping[str, Any]:
         config = self._config(step)
         container = self._data_path(str(config["containerRelativePath"]))
+        if _sha256_file(container) != config.get("checksum"):
+            raise ValueError("frozen container checksum changed")
         container_type = str(config["containerType"])
         if container_type in {"zip", "cbz"}:
             entries = self._scan_zip(container)
@@ -102,6 +110,8 @@ class TransferWorkerService:
             import fitz
 
             with fitz.open(container) as document:
+                if document.page_count > self.limits.max_container_pages:
+                    raise ValueError("container contains too many pages")
                 entries = [
                     {
                         "kind": "pdf",
@@ -116,7 +126,31 @@ class TransferWorkerService:
             raise ValueError("unsupported container type")
         if not entries:
             raise ValueError("container contains no supported images")
-        new_config = {**config, "entries": entries}
+        if len(entries) > self.limits.max_container_pages:
+            raise ValueError("container contains too many pages")
+        chapter_id = str(self._job_target(fence.job_id)["chapter_id"])
+        with self.engine.connect() as connection:
+            used_paths = set(
+                connection.execute(
+                    select(pages.c.logical_source_path).where(
+                        pages.c.chapter_id == chapter_id
+                    )
+                ).scalars()
+            )
+        frozen_entries: list[dict[str, object]] = []
+        for raw_entry in entries:
+            logical_path = normalize_logical_path(
+                str(raw_entry["logicalPath"])
+            )
+            final_path = _deduplicate_logical_path(logical_path, used_paths)
+            used_paths.add(final_path)
+            frozen_entries.append({**raw_entry, "logicalPath": final_path})
+        entries = frozen_entries
+        new_config = {
+            **config,
+            "entries": entries,
+            "entryItemOrdinalBase": 2,
+        }
         if container_type in {"mobi", "azw", "azw3"}:
             new_config["extractedRelativePath"] = (
                 Path("temp") / "container-import" / fence.job_id
@@ -150,29 +184,6 @@ class TransferWorkerService:
                     )
                 )
                 next_ordinal += 1
-            cleanup_item_id = str(uuid.uuid4())
-            connection.execute(
-                insert(job_items).values(
-                    id=cleanup_item_id,
-                    job_id=fence.job_id,
-                    ordinal=next_ordinal,
-                    status="pending",
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            connection.execute(
-                insert(job_steps).values(
-                    id=str(uuid.uuid4()),
-                    job_item_id=cleanup_item_id,
-                    ordinal=1,
-                    kind="container_cleanup",
-                    status="pending",
-                    checkpoint_schema_version=1,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
             connection.execute(
                 update(jobs)
                 .where(
@@ -180,12 +191,7 @@ class TransferWorkerService:
                     jobs.c.attempt_id == fence.attempt_id,
                 )
                 .values(
-                    config_json=json.dumps(
-                        new_config,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
+                    config_json=canonical_json(new_config),
                     updated_at=now,
                 )
             )
@@ -208,7 +214,9 @@ class TransferWorkerService:
         entries = config.get("entries")
         if not isinstance(entries, list):
             raise RuntimeError("container scan checkpoint is missing")
-        entry_index = int(step["itemOrdinal"]) - 2
+        entry_index = int(step["itemOrdinal"]) - int(
+            config.get("entryItemOrdinalBase", 2)
+        )
         if entry_index < 0 or entry_index >= len(entries):
             raise RuntimeError("container item ordinal is invalid")
         entry = entries[entry_index]
@@ -232,17 +240,6 @@ class TransferWorkerService:
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("container import lost its chapter write lock")
-            existing_paths = set(
-                connection.execute(
-                    select(pages.c.logical_source_path).where(
-                        pages.c.chapter_id == chapter_id
-                    )
-                ).scalars()
-            )
-            final_path = _deduplicate_logical_path(
-                logical_path,
-                existing_paths,
-            )
             ordinal = int(
                 connection.execute(
                     select(pages.c.ordinal)
@@ -258,14 +255,9 @@ class TransferWorkerService:
                     id=page_id,
                     chapter_id=chapter_id,
                     ordinal=ordinal,
-                    logical_source_path=final_path,
+                    logical_source_path=logical_path,
                     default_font_id=default_font_id,
-                    page_style_defaults_json=json.dumps(
-                        style_defaults,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
+                    page_style_defaults_json=canonical_json(style_defaults),
                     created_at=now,
                     updated_at=now,
                 )
@@ -326,21 +318,15 @@ class TransferWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        config = self._config(step)
-        checkpoint = {"cleaned": True}
+        # Older queued jobs can still contain this step.  Container inputs are
+        # retained for the 24-hour retry window and removed by Worker
+        # maintenance, never at job completion.
+        checkpoint = {"retainedForRetry": True}
         self.jobs.complete_step(
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
         )
-        self._data_path(str(config["containerRelativePath"])).unlink(
-            missing_ok=True
-        )
-        extracted = config.get("extractedRelativePath")
-        if isinstance(extracted, str):
-            directory = self._data_path(extracted)
-            if directory.is_dir():
-                shutil.rmtree(directory)
         return {**checkpoint, "__already_published__": True}
 
     def _export(
@@ -353,7 +339,7 @@ class TransferWorkerService:
         export_format = str(config.get("format", ""))
         if not isinstance(entries, list) or export_format not in {"zip", "cbz", "pdf"}:
             raise RuntimeError("export snapshot is invalid")
-        self._assert_export_bindings(fence.job_id, entries)
+        asset_paths = self._bound_export_paths(fence.job_id, entries)
         output_dir = self.data_root / "temp" / "exports"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{fence.job_id}.{export_format}"
@@ -369,8 +355,12 @@ class TransferWorkerService:
             ) as archive:
                 for entry in entries:
                     try:
-                        path = self._asset_path(str(entry["assetId"]))
-                        member = self._export_member_name(entry, used_names)
+                        path = asset_paths[str(entry["assetId"])]
+                        member = self._export_member_name(
+                            entry,
+                            used_names,
+                            extension=path.suffix.lower() or ".png",
+                        )
                         archive.write(path, member)
                         successful += 1
                     except Exception as exc:
@@ -383,7 +373,7 @@ class TransferWorkerService:
             paths: list[str] = []
             for entry in entries:
                 try:
-                    path = self._asset_path(str(entry["assetId"]))
+                    path = asset_paths[str(entry["assetId"])]
                     with Image.open(path) as image:
                         image.verify()
                     paths.append(str(path))
@@ -446,23 +436,40 @@ class TransferWorkerService:
         entries: list[dict[str, object]] = []
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
-            if len(infos) > 10_000:
+            if len(infos) > self.limits.max_archive_entries:
                 raise ValueError("archive contains too many entries")
             total_size = 0
+            seen_members: set[str] = set()
             for info in infos:
                 pure = PurePosixPath(info.filename.replace("\\", "/"))
+                member_key = pure.as_posix()
+                if member_key in seen_members:
+                    raise ValueError("archive contains duplicate member names")
+                seen_members.add(member_key)
+                mode = info.external_attr >> 16
+                file_type = stat.S_IFMT(mode)
                 if (
                     pure.is_absolute()
                     or ".." in pure.parts
-                    or stat.S_ISLNK(info.external_attr >> 16)
+                    or stat.S_ISLNK(mode)
+                    or file_type
+                    not in {0, stat.S_IFREG, stat.S_IFDIR}
                 ):
-                    raise ValueError("archive contains an unsafe path or symlink")
+                    raise ValueError(
+                        "archive contains an unsafe path or special file"
+                    )
                 total_size += info.file_size
-                if total_size > 4 * 1024 * 1024 * 1024:
-                    raise ValueError("archive expands beyond 4 GiB")
+                if total_size > self.limits.max_expanded_bytes:
+                    raise ValueError(
+                        "archive exceeds the configured expanded-byte limit"
+                    )
                 if (
-                    info.compress_size > 0
-                    and info.file_size / info.compress_size > 1000
+                    info.file_size > 0
+                    and (
+                        info.compress_size == 0
+                        or info.file_size / info.compress_size
+                        > self.limits.max_compression_ratio
+                    )
                 ):
                     raise ValueError("archive entry compression ratio is unsafe")
                 if (
@@ -493,10 +500,29 @@ class TransferWorkerService:
         entries: list[dict[str, object]] = []
         try:
             root = Path(extracted_path)
+            resolved_root = root.resolve()
+            total_size = 0
             for source in sorted(root.rglob("*")):
+                if source.is_symlink():
+                    raise ValueError("MOBI extraction contains a symbolic link")
                 if not source.is_file() or source.suffix.lower() not in IMAGE_SUFFIXES:
                     continue
+                resolved_source = source.resolve()
+                try:
+                    resolved_source.relative_to(resolved_root)
+                except ValueError as exc:
+                    raise ValueError(
+                        "MOBI extraction escaped its temporary directory"
+                    ) from exc
                 relative = source.relative_to(root)
+                byte_size = source.stat().st_size
+                total_size += byte_size
+                if total_size > self.limits.max_expanded_bytes:
+                    raise ValueError(
+                        "MOBI exceeds the configured expanded-byte limit"
+                    )
+                if len(entries) >= self.limits.max_container_pages:
+                    raise ValueError("container contains too many pages")
                 target = destination / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
@@ -510,10 +536,12 @@ class TransferWorkerService:
                             / relative
                         ).as_posix(),
                         "logicalPath": relative.as_posix(),
+                        "byteSize": byte_size,
                     }
                 )
         finally:
             shutil.rmtree(temporary_root, ignore_errors=True)
+        entries.sort(key=lambda entry: _natural_path_key(entry["logicalPath"]))
         return entries
 
     def _read_entry(
@@ -526,10 +554,10 @@ class TransferWorkerService:
         if kind == "zip":
             with zipfile.ZipFile(container) as archive:
                 info = archive.getinfo(str(entry["member"]))
-                if info.file_size > 128 * 1024 * 1024:
+                if info.file_size > self.limits.max_image_bytes:
                     raise ValueError("image exceeds the single-file byte limit")
                 with archive.open(info) as source:
-                    raw = source.read(128 * 1024 * 1024 + 1)
+                    raw = source.read(self.limits.max_image_bytes + 1)
         elif kind == "pdf":
             import fitz
 
@@ -537,34 +565,55 @@ class TransferWorkerService:
                 page = document.load_page(int(entry["pageIndex"]))
                 raw = page.get_pixmap(alpha=False).tobytes("png")
         elif kind == "file":
-            raw = self._data_path(str(entry["relativePath"])).read_bytes()
+            raw = self._read_bounded(
+                self._data_path(str(entry["relativePath"]))
+            )
         else:
             raise RuntimeError("unknown container entry kind")
-        if not raw or len(raw) > 128 * 1024 * 1024:
+        if not raw or len(raw) > self.limits.max_image_bytes:
             raise ValueError("image is empty or exceeds the single-file byte limit")
         return raw
 
-    def _assert_export_bindings(
+    def _read_bounded(self, path: Path) -> bytes:
+        if path.stat().st_size > self.limits.max_image_bytes:
+            raise ValueError("image exceeds the single-file byte limit")
+        with path.open("rb") as source:
+            return source.read(self.limits.max_image_bytes + 1)
+
+    def _bound_export_paths(
         self,
         job_id: str,
         entries: list[object],
-    ) -> None:
+    ) -> dict[str, Path]:
         with self.engine.connect() as connection:
-            bound = set(
+            rows = list(
                 connection.execute(
-                    select(job_asset_inputs.c.asset_id).where(
+                    select(
+                        job_asset_inputs.c.asset_id,
+                        assets.c.relative_path,
+                    )
+                    .join(
+                        assets,
+                        assets.c.id == job_asset_inputs.c.asset_id,
+                    )
+                    .where(
                         job_asset_inputs.c.job_id == job_id,
                         job_asset_inputs.c.binding_phase == "create",
                     )
-                ).scalars()
+                ).mappings()
             )
+        bound = {
+            str(row["asset_id"]): self._data_path(str(row["relative_path"]))
+            for row in rows
+        }
         requested = {
             str(entry["assetId"])
             for entry in entries
             if isinstance(entry, dict)
         }
-        if bound != requested:
+        if set(bound) != requested:
             raise RuntimeError("export asset bindings do not match the frozen snapshot")
+        return bound
 
     def _job_target(self, job_id: str):
         with self.engine.connect() as connection:
@@ -583,17 +632,12 @@ class TransferWorkerService:
     def _data_path(self, relative: str) -> Path:
         return self.storage.resolve_relative_path(relative)
 
-    def _asset_path(self, asset_id: str) -> Path:
-        with self.engine.connect() as connection:
-            relative = connection.execute(
-                select(assets.c.relative_path).where(assets.c.id == asset_id)
-            ).scalar_one()
-        return self._data_path(str(relative))
-
     @staticmethod
     def _export_member_name(
         entry: Mapping[str, Any],
         used: set[str],
+        *,
+        extension: str,
     ) -> str:
         logical = PurePosixPath(str(entry["logicalPath"]))
         role = str(entry.get("assetRole") or "")
@@ -604,7 +648,6 @@ class TransferWorkerService:
             if role == "clean"
             else "original"
         )
-        extension = Path(str(entry["relativePath"])).suffix.lower() or ".png"
         parent = "" if str(logical.parent) == "." else f"{logical.parent.as_posix()}/"
         base = f"{parent}{prefix}_{logical.stem}{extension}"
         candidate = base
@@ -616,3 +659,13 @@ class TransferWorkerService:
             counter += 1
         used.add(candidate.lower())
         return candidate
+
+
+def _sha256_file(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()

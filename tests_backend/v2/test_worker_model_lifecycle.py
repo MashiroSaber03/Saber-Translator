@@ -65,6 +65,7 @@ def model_platform(tmp_path: Path):
 
 def test_manual_model_release_is_durable_and_worker_fenced(
     model_platform,
+    monkeypatch,
 ) -> None:
     engine, worker_epoch_id, _page_id = model_platform
     repository = WorkerModelControlRepository(engine)
@@ -73,11 +74,14 @@ def test_manual_model_release_is_durable_and_worker_fenced(
     assert repository.request_release()["commandId"] == accepted["commandId"]
 
     released: list[str] = []
+    monkeypatch.setattr(
+        "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
+        lambda *, release_callbacks: _run_release_callbacks(release_callbacks),
+    )
     lifecycle = WorkerModelLifecycle(
         repository,
         worker_epoch_id=worker_epoch_id,
         release_callbacks=(lambda: released.append("plugins"),),
-        include_loaded_model_modules=False,
     )
     assert lifecycle.run_pending_release() is True
     assert released == ["plugins"]
@@ -125,22 +129,43 @@ def test_release_endpoint_returns_409_during_local_model_inference(
 
 def test_idle_model_cache_is_released_once_after_ten_minutes(
     model_platform,
+    monkeypatch,
 ) -> None:
     engine, worker_epoch_id, _page_id = model_platform
     clock = [0.0]
     released: list[str] = []
+    monkeypatch.setattr(
+        "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
+        lambda *, release_callbacks: _run_release_callbacks(release_callbacks),
+    )
     lifecycle = WorkerModelLifecycle(
         WorkerModelControlRepository(engine),
         worker_epoch_id=worker_epoch_id,
         idle_timeout_seconds=600,
         release_callbacks=(lambda: released.append("plugins"),),
-        include_loaded_model_modules=False,
         monotonic=lambda: clock[0],
     )
+    runtime_checks = 0
+
+    def runtime_busy() -> bool:
+        nonlocal runtime_checks
+        runtime_checks += 1
+        return False
+
+    monkeypatch.setattr(lifecycle.repository, "runtime_busy", runtime_busy)
 
     clock[0] = 599
     assert lifecycle.release_if_idle() is False
+    assert runtime_checks == 0
     clock[0] = 600
     assert lifecycle.release_if_idle() is True
+    assert runtime_checks == 1
     assert lifecycle.release_if_idle() is False
+    assert runtime_checks == 1
     assert released == ["plugins"]
+
+
+def _run_release_callbacks(release_callbacks) -> dict[str, object]:
+    for callback in release_callbacks:
+        callback()
+    return {"released": ["runtime_cache_1"], "releasedCount": 1}

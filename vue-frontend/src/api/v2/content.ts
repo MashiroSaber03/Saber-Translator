@@ -232,11 +232,10 @@ export function promoteQuickWorkspace(
 export function updateLastVisitedPage(
   chapterId: string,
   pageId: string,
-  baseRevision: number,
 ): Promise<V2ChapterNavigation> {
   return apiClient.patch<V2ChapterNavigation>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/last-visited-page`,
-    { pageId, baseRevision },
+    { pageId },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

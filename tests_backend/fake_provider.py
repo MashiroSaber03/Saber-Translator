@@ -38,8 +38,6 @@ DETERMINISTIC_FAKE_PROVIDER_MANIFEST = ProviderManifest(
 
 @contextmanager
 def registered_deterministic_fake_provider() -> Iterator[ProviderManifest]:
-    """Install the fake in the shared provider registry for one test."""
-
     with temporary_provider_manifest(
         DETERMINISTIC_FAKE_PROVIDER_MANIFEST
     ) as manifest:
@@ -47,8 +45,6 @@ def registered_deterministic_fake_provider() -> Iterator[ProviderManifest]:
 
 
 class DeterministicFakeProvider:
-    """Predictable text and image algorithms for full durable-pipeline tests."""
-
     def __init__(
         self,
         *,

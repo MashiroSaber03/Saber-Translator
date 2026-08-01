@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -15,14 +15,16 @@ import uuid
 from sqlalchemy import Engine, and_, delete, exists, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.translation_constraints import (
     TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
     validate_translation_constraints,
 )
 from src.backend_v2.content.page_style import (
-    PAGE_STYLE_FIELDS,
     resolve_new_page_style,
+    rgb_to_hex,
     validate_page_style,
 )
 from src.backend_v2.rendering.fonts import resolve_font_path
@@ -53,10 +55,7 @@ from src.backend_v2.storage.schema import (
     translation_constraints,
     web_import_drafts,
 )
-from src.backend_v2.storage.seeding import (
-    QUICK_WORKSPACE_BOOK_ID,
-    QUICK_WORKSPACE_CHAPTER_ID,
-)
+from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
 
 
 NONTERMINAL_JOB_STATUSES = (
@@ -148,14 +147,6 @@ class ImportLease:
     expires_at: datetime
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
 def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
     unknown = sorted(set(payload) - _CHAPTER_WORK_STATE_KEYS)
     if unknown:
@@ -235,16 +226,6 @@ def _natural_sort_key(value: object) -> tuple[object, ...]:
         int(part) if part.isdigit() else part.casefold()
         for part in re.split(r"(\d+)", str(value))
     )
-
-
-def _rgb_hex(value: object) -> str:
-    if not isinstance(value, (list, tuple)) or len(value) < 3:
-        return "#000000"
-    red, green, blue = (
-        max(0, min(255, int(part)))
-        for part in value[:3]
-    )
-    return f"#{red:02X}{green:02X}{blue:02X}"
 
 
 class ContentRepository:
@@ -1056,12 +1037,7 @@ class ContentRepository:
         *,
         chapter_id: str,
         page_id: str,
-        base_revision: int,
     ) -> dict[str, object]:
-        # Navigation is an independent last-write-wins preference. The
-        # revision lets clients observe writes, but stale tabs must not turn
-        # ordinary page navigation into a CAS conflict.
-        del base_revision
         with immediate_transaction(self.engine) as connection:
             if connection.execute(
                 select(pages.c.id).where(
@@ -1773,7 +1749,7 @@ class ContentRepository:
         page_id: str,
         base_revision: int,
         mutations: list[dict[str, object]],
-        idempotency_key: str | None = None,
+        idempotency_key: str,
         default_font_id: object = _MISSING,
         page_style_defaults_patch: dict[str, object] | None = None,
         propagate_style_fields: list[str] | None = None,
@@ -1832,10 +1808,10 @@ class ContentRepository:
         }
         for mutation in mutations:
             if not isinstance(mutation, dict):
-                continue
-            fields = mutation.get("fields", mutation.get("payload", {}))
+                raise ValueError("each bubble mutation must be an object")
+            fields = mutation.get("fields", {})
             if not isinstance(fields, dict):
-                continue
+                raise ValueError("mutation fields must be an object")
             conflicts = propagated_targets.intersection(fields)
             if conflicts:
                 raise ValueError(
@@ -1857,23 +1833,22 @@ class ContentRepository:
         scope = f"page-document:{page_id}"
         now = _utcnow()
         with immediate_transaction(self.engine) as connection:
-            if idempotency_key:
-                replay = connection.execute(
-                    select(
-                        idempotency_records.c.request_hash,
-                        idempotency_records.c.response_json,
-                    ).where(
-                        idempotency_records.c.scope == scope,
-                        idempotency_records.c.key == idempotency_key,
-                        idempotency_records.c.expires_at > now,
+            replay = connection.execute(
+                select(
+                    idempotency_records.c.request_hash,
+                    idempotency_records.c.response_json,
+                ).where(
+                    idempotency_records.c.scope == scope,
+                    idempotency_records.c.key == idempotency_key,
+                    idempotency_records.c.expires_at > now,
+                )
+            ).mappings().one_or_none()
+            if replay is not None:
+                if replay["request_hash"] != request_hash:
+                    raise IdempotencyConflict(
+                        "Idempotency-Key was reused for a different page mutation"
                     )
-                ).mappings().one_or_none()
-                if replay is not None:
-                    if replay["request_hash"] != request_hash:
-                        raise IdempotencyConflict(
-                            "Idempotency-Key was reused for a different page mutation"
-                        )
-                    return json.loads(replay["response_json"]), True
+                return json.loads(replay["response_json"]), True
             page = connection.execute(
                 select(
                     pages.c.chapter_id,
@@ -1955,26 +1930,8 @@ class ContentRepository:
                 if not isinstance(mutation, dict):
                     raise ValueError("each bubble mutation must be an object")
                 operation = mutation.get("op")
-                if operation == "update":
-                    operation = "patch"
-                bubble_id = (
-                    mutation.get("bubbleId")
-                    or mutation.get("bubble_id")
-                    or (
-                        mutation.get("clientMutationId")
-                        if operation == "create"
-                        else None
-                    )
-                    or (
-                        mutation.get("client_mutation_id")
-                        if operation == "create"
-                        else None
-                    )
-                )
-                fields = mutation.get(
-                    "fields",
-                    mutation.get("payload", {}),
-                )
+                bubble_id = mutation.get("bubbleId")
+                fields = mutation.get("fields", {})
                 if (
                     operation not in {"create", "patch", "delete", "reset"}
                     or not isinstance(bubble_id, str)
@@ -2081,7 +2038,7 @@ class ContentRepository:
                                 )
                                 automatic = payload.get(automatic_field)
                                 if automatic is not None:
-                                    materialized = _rgb_hex(automatic)
+                                    materialized = rgb_to_hex(automatic)
                             elif field in style_patch:
                                 materialized = current_style[field]
                             if (
@@ -2252,22 +2209,19 @@ class ContentRepository:
                     requested_revision=new_revision,
                 )
             result = self._get_page_document(connection, page_id)
-            if idempotency_key:
-                connection.execute(
-                    insert(idempotency_records).values(
-                        scope=scope,
-                        key=idempotency_key,
-                        request_hash=request_hash,
-                        http_status=200,
-                        response_json=_json(result),
-                        resource_type="page_document",
-                        resource_id=page_id,
-                        expires_at=now + timedelta(hours=24),
-                    )
+            connection.execute(
+                insert(idempotency_records).values(
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    http_status=200,
+                    response_json=_json(result),
+                    resource_type="page_document",
+                    resource_id=page_id,
+                    expires_at=now + timedelta(hours=24),
                 )
-        if idempotency_key:
-            return result, False
-        return result
+            )
+        return result, False
 
     @staticmethod
     def _get_page_document(

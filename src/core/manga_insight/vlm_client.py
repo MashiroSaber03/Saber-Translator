@@ -6,7 +6,7 @@ import asyncio
 import base64
 import io
 import logging
-from typing import Callable, List, Dict, Optional
+from typing import List, Dict, Optional
 
 from PIL import Image
 
@@ -18,21 +18,19 @@ from src.shared.openai_execution import (
     extract_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
-from src.shared.ai_providers import provider_requires_api_key
+from src.shared.ai_providers import (
+    VLM_CAPABILITY,
+    normalize_provider_id,
+    resolve_provider_base_url_for_capability,
+)
 
-from .clients.provider_registry import get_base_url
 from .config_models import (
     VLMConfig,
     PromptsConfig,
-    DEFAULT_BATCH_ANALYSIS_PROMPT
 )
 from .utils.json_parser import parse_llm_json
 
 logger = logging.getLogger("MangaInsight.VLM")
-def _provider_id(value) -> str:
-    if isinstance(value, str):
-        return value.lower()
-    return str(getattr(value, "value", value)).lower()
 
 
 def resize_image_if_needed(image_bytes: bytes, max_size: int) -> bytes:
@@ -78,8 +76,12 @@ class VLMClient:
     def __init__(self, config: VLMConfig, prompts_config: Optional[PromptsConfig] = None):
         self.config = config
         self.prompts_config = prompts_config or PromptsConfig()
-        self.provider = _provider_id(config.provider)
-        self._base_url = get_base_url(self.provider, config.base_url)
+        self.provider = normalize_provider_id(config.provider)
+        self._base_url = resolve_provider_base_url_for_capability(
+            self.provider,
+            VLM_CAPABILITY,
+            config.base_url,
+        ) or ""
         self._timeout = 300.0
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
@@ -112,8 +114,6 @@ class VLMClient:
                 f"视觉模型调用超过总时限（{self._timeout:g} 秒）"
             ) from exc
 
-    def is_configured(self) -> bool:
-        return bool(self.config.model and (self.config.api_key or not provider_requires_api_key(self.provider)))
 
     async def analyze_batch(
         self,
@@ -130,47 +130,11 @@ class VLMClient:
             parser=self._build_batch_analysis_parser(start_page, end_page),
         )
 
-    async def generate_messages(
-        self,
-        messages: List[Dict[str, object]],
-        *,
-        temperature: Optional[float] = None,
-        on_stream_chunk: Optional[Callable[[str], None]] = None,
-    ) -> str:
-        if not self._base_url:
-            raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
-
-        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
-        if temperature is not None:
-            options.request.temperature = temperature
-
-        def _handle_stream_chunk(delta: str, _full_text: str) -> None:
-            if on_stream_chunk and delta:
-                on_stream_chunk(delta)
-
-        result = await self._execute_with_total_timeout(
-            UnifiedChatRequest(
-                provider=self.provider,
-                api_key=self.config.api_key,
-                model=self.config.model,
-                messages=messages,
-                base_url=self.config.base_url or None,
-                capability="vlm",
-                openai_options=options,
-                runtime_options=build_openai_compatible_runtime_options(
-                    timeout=self._timeout,
-                    print_stream_output=options.execution.use_stream,
-                    stream_output_label="角色工坊聊天",
-                    on_stream_chunk=_handle_stream_chunk,
-                ),
-            ),
-            capability="vlm",
-            logger_instance=logger,
-        )
-        return str(result.parsed)
 
     def _build_batch_analysis_prompt(self, start_page: int, end_page: int, page_count: int, context: Dict = None) -> str:
-        base_prompt = self.prompts_config.batch_analysis if self.prompts_config.batch_analysis else DEFAULT_BATCH_ANALYSIS_PROMPT
+        base_prompt = self.prompts_config.batch_analysis.strip()
+        if not base_prompt:
+            raise ValueError("batch analysis prompt is required")
         prompt = base_prompt.replace("{page_count}", str(page_count))
         prompt = prompt.replace("{start_page}", str(start_page))
         prompt = prompt.replace("{end_page}", str(end_page))

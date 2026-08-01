@@ -82,6 +82,9 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
     }
   }))
   imageStore.setCurrentImageIndex(scenario.currentImageIndex ?? (scenario.images.length > 0 ? 0 : -1))
+  if (imageStore.currentImage) {
+    imageStore.updateCurrentImage({ bubbleStates: [] })
+  }
   imageStore.setBatchTranslationInProgress(scenario.isBatchTranslationInProgress ?? false)
 
   let sidebar: SidebarApi | null = null

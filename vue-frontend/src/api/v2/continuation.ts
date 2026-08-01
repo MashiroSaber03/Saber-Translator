@@ -21,7 +21,7 @@ export function getV2Continuation(bookId: string): Promise<V2ContinuationState> 
 
 export function syncV2Continuation(bookId: string): Promise<V2ContinuationProject> {
   return apiClient.post(
-    `${ROOT}/books/${encodeURIComponent(bookId)}/continuation/sync`,
+    `${ROOT}/books/${encodeURIComponent(bookId)}/continuation/sync-analysis`,
     {},
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )

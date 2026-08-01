@@ -26,7 +26,7 @@ class JobEventBroadcaster:
         self,
         repository: JobQueueRepository,
         *,
-        epoch_repository: ProcessEpochRepository | None = None,
+        epoch_repository: ProcessEpochRepository,
         poll_seconds: float = 0.5,
         subscriber_capacity: int = 256,
     ) -> None:
@@ -112,8 +112,6 @@ class JobEventBroadcaster:
                         self._offer_close(subscription)
 
     def _recover_expired_workers(self) -> None:
-        if self.epoch_repository is None:
-            return
         for epoch_id in self.epoch_repository.expired_worker_epochs():
             result = self.epoch_repository.reconcile_dead_worker(epoch_id)
             if result.changed:

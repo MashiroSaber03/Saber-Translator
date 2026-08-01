@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 
 from sqlalchemy import Engine, case, insert, select, update
 
+from src.backend_v2.serialization import canonical_json
 from src.backend_v2.content.translation_constraints import (
     TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
@@ -75,12 +75,7 @@ def seed_system_records(engine: Engine) -> None:
             connection.execute(
                 insert(translation_constraints).values(
                     book_id=quick_book_id,
-                    payload_json=json.dumps(
-                        empty_translation_constraints(),
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
+                    payload_json=canonical_json(empty_translation_constraints()),
                     schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
@@ -108,12 +103,7 @@ def seed_system_records(engine: Engine) -> None:
                 connection.execute(
                     insert(app_settings).values(
                         domain=domain,
-                        payload_json=json.dumps(
-                            payload,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
+                        payload_json=canonical_json(payload),
                         schema_version=default_schema_versions.get(domain, 1),
                     )
                 )

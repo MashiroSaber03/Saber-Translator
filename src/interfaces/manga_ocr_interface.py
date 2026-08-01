@@ -1,12 +1,7 @@
 import manga_ocr
 import os
-import sys
 import logging
 import torch
-from PIL import Image
-
-# 添加项目根目录到Python路径（需要在导入 path_helpers 之前）
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # 导入路径助手
 from src.shared.path_helpers import resource_path
@@ -28,26 +23,15 @@ os.environ['HF_DATASETS_DOWNLOADED_MODULES_PATH'] = model_cache_dir
 
 logger = logging.getLogger("MangaOCRInterface")
 
-# 当独立运行时初始化日志配置
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-else:
-    # 当作为模块导入时不重复配置日志
-    pass
 
 # --- 全局变量存储加载的 OCR 实例 ---
 _manga_ocr_instance = None
 
-# 标记开始预加载过程
-_preloading_started = False
-
-
 def reset_manga_ocr_instance():
     """卸载 MangaOCR 单例，使下一次识别按需重新加载。"""
-    global _manga_ocr_instance, _preloading_started
+    global _manga_ocr_instance
     instance = _manga_ocr_instance
     _manga_ocr_instance = None
-    _preloading_started = False
     if instance is not None:
         model = getattr(instance, "model", None)
         if model is not None and hasattr(model, "to"):
@@ -70,10 +54,7 @@ def get_manga_ocr_instance():
     Returns:
         manga_ocr.MangaOcr or None: OCR 实例或 None (如果失败)。
     """
-    global _manga_ocr_instance, _preloading_started
-    
-    # 标记正在尝试加载，防止重复加载进程
-    _preloading_started = True
+    global _manga_ocr_instance
 
     if _manga_ocr_instance is not None:
         # logger.debug("MangaOCR 实例已存在，直接返回。")
@@ -126,59 +107,6 @@ def get_manga_ocr_instance():
         _manga_ocr_instance = None
         return None
 
-def preload_manga_ocr():
-    """
-    预加载 MangaOCR 模型。当应用启动时调用，避免首次翻译时加载模型带来的延迟。
-    如果已经开始加载，则不再重复加载。
-    """
-    global _preloading_started
-    
-    if _preloading_started:
-        logger.debug("预加载已在进行中，跳过")
-        return
-    
-    import threading
-    
-    def _preload_task():
-        logger.debug("后台预加载 MangaOCR 模型...")
-        try:
-            # 调整torch内存管理，加速加载
-            torch.set_grad_enabled(False)  # 禁用梯度计算
-            # 设置更高的内存效率
-            torch.backends.cudnn.benchmark = True
-            # 部分型号的GPU可以尝试这个选项
-            if torch.cuda.is_available():
-                # 使用混合精度加快计算
-                torch.backends.cuda.matmul.allow_tf32 = True
-        except Exception as e:
-            logger.warning(f"torch调优设置失败：{e}")
-            
-        instance = get_manga_ocr_instance()
-        if instance is not None:
-            logger.info("✅ MangaOCR 模型已加载")
-        else:
-            logger.error("❌ MangaOCR 模型预加载失败。")
-    
-    # 启动后台线程进行预加载，不阻堵主线程
-    preload_thread = threading.Thread(target=_preload_task, daemon=True)
-    # 设置高优先级
-    try:
-        preload_thread.start()
-        # 尝试调整线程优先级(仅适用于Windows系统)
-        if sys.platform == 'win32':
-            import ctypes
-            # 设置高优先级 - Windows API
-            thread_id = ctypes.c_long(preload_thread.ident)
-            try:
-                kernel32 = ctypes.windll.kernel32
-                kernel32.SetThreadPriority(kernel32.GetCurrentThread(), 2)  # THREAD_PRIORITY_ABOVE_NORMAL
-                pass  # 静默处理线程优先级
-            except Exception as e:
-                logger.warning(f"修改线程优先级失败: {e}")
-    except Exception as e:
-        logger.error(f"启动预加载线程失败: {e}")
-        
-    logger.debug("已启动 MangaOCR 预加载线程")
 
 def recognize_japanese_text(image_pil):
     """
@@ -212,44 +140,3 @@ def recognize_japanese_text(image_pil):
     except Exception as e:
         logger.error(f"MangaOCR识别失败: {e}", exc_info=True)
         return ""
-
-# --- 测试代码 ---
-if __name__ == '__main__':
-    print("--- 测试 MangaOCR 接口 ---")
-    # 需要一个包含日文的测试图片路径
-    test_image_path = resource_path('pic/before1.png') # 替换为你的日文测试图片
-    if os.path.exists(test_image_path):
-        print(f"加载测试图片: {test_image_path}")
-        try:
-            img_pil = Image.open(test_image_path)
-            print("开始识别...")
-            recognized_text = recognize_japanese_text(img_pil)
-            print(f"识别完成，结果: '{recognized_text}'")
-
-            # 测试实例复用
-            print("\n再次调用识别 (应复用实例)...")
-            recognize_japanese_text(img_pil)
-
-        except Exception as e:
-            print(f"测试过程中发生错误: {e}")
-    else:
-        print(f"错误：测试图片未找到 {test_image_path}")
-
-    # 测试初始化失败 (模拟模型路径错误)
-    # print("\n--- 测试 MangaOCR 初始化失败 ---")
-    # original_path = resource_path("models/manga_ocr")
-    # try:
-    #     # 临时修改路径使其无效
-    #     manga_ocr.MangaOcr.model_path = "invalid_path" # 这可能不行，取决于库的实现
-    #     # 或者直接调用一个不存在的路径
-    #     _manga_ocr_instance = None # 重置实例
-    #     resource_path_orig = path_helpers.resource_path
-    #     path_helpers.resource_path = lambda x: "invalid_path" if x == "models/manga_ocr" else resource_path_orig(x)
-    #     failed_instance = get_manga_ocr_instance()
-    #     print(f"获取失败的实例: {failed_instance}")
-    #     recognize_japanese_text(Image.new('RGB', (10, 10)))
-    # finally:
-    #     # 恢复路径
-    #     path_helpers.resource_path = resource_path_orig
-    #     _manga_ocr_instance = None # 重置实例以便下次正确加载
-    #     print("路径已恢复")

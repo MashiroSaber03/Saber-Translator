@@ -7,8 +7,19 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import Engine
 
+from src.backend_v2.api.request_helpers import (
+    error_response as _error,
+    integer_value as _integer_value,
+    json_body as _json_body,
+    require_idempotency_key as _require_idempotency_key,
+    required_string as _required_string,
+)
 from src.backend_v2.jobs.repository import JobConflict
-from src.backend_v2.web_import.commands import WebImportCommandService
+from src.backend_v2.web_import.commands import (
+    DraftLocked,
+    WebImportCommandService,
+    _validated_url,
+)
 
 
 def create_web_import_blueprint(
@@ -22,6 +33,10 @@ def create_web_import_blueprint(
         url_prefix="/api/v2/web-import",
     )
     service = WebImportCommandService(data_root=data_root, engine=engine)
+
+    @blueprint.errorhandler(DraftLocked)
+    def locked(error: DraftLocked):
+        return _error("draft_locked", str(error), 423)
 
     @blueprint.errorhandler(JobConflict)
     def conflict(error: JobConflict):
@@ -39,8 +54,6 @@ def create_web_import_blueprint(
     def support_check() -> Response:
         body = _json_body()
         source_url = str(body.get("sourceUrl", "")).strip()
-        from src.backend_v2.web_import.commands import _validated_url
-
         _validated_url(source_url)
         try:
             from gallery_dl import extractor
@@ -66,14 +79,10 @@ def create_web_import_blueprint(
     @blueprint.post("/drafts")
     def create_draft():
         body = _json_body()
-        config = body.get("config", {})
-        if not isinstance(config, dict):
-            raise ValueError("config must be an object")
         result = service.create_draft(
             chapter_id=_required_string(body, "chapterId"),
             source_url=_required_string(body, "sourceUrl"),
             requested_engine=str(body.get("engine", "auto")),
-            config=config,
             idempotency_key=_require_idempotency_key(),
         )
         return jsonify(result), 202
@@ -87,14 +96,23 @@ def create_web_import_blueprint(
         return jsonify(
             service.list_draft_pages(
                 draft_id=draft_id,
-                after_ordinal=int(request.args.get("cursor", "0")),
-                limit=int(request.args.get("limit", "50")),
+                after_ordinal=_integer_value(
+                    request.args.get("cursor", "0"),
+                    "cursor",
+                    minimum=0,
+                ),
+                limit=_integer_value(
+                    request.args.get("limit", "50"),
+                    "limit",
+                    minimum=1,
+                    maximum=200,
+                ),
             )
         )
 
     @blueprint.put("/drafts/<draft_id>/selection")
     def update_selection(draft_id: str) -> Response:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         body = _json_body()
         selected = body.get("selectedPageIds")
         if not isinstance(selected, list) or not all(
@@ -105,7 +123,12 @@ def create_web_import_blueprint(
             service.update_selection(
                 draft_id=draft_id,
                 selected_page_ids=selected,
-                base_revision=int(body.get("baseRevision", 0)),
+                base_revision=_integer_value(
+                    body.get("baseRevision"),
+                    "baseRevision",
+                    minimum=1,
+                ),
+                idempotency_key=idempotency_key,
             )
         )
 
@@ -114,16 +137,23 @@ def create_web_import_blueprint(
         body = _json_body()
         result = service.commit(
             draft_id=draft_id,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_integer_value(
+                body.get("baseRevision"),
+                "baseRevision",
+                minimum=1,
+            ),
             idempotency_key=_require_idempotency_key(),
         )
         return jsonify(result), 202
 
     @blueprint.delete("/drafts/<draft_id>")
     def delete_draft(draft_id: str) -> Response:
-        _require_idempotency_key()
-        service.delete_draft(draft_id)
-        return jsonify({"deleted": True})
+        return jsonify(
+            service.delete_draft(
+                draft_id,
+                idempotency_key=_require_idempotency_key(),
+            )
+        )
 
     @blueprint.get("/drafts/<draft_id>/pages/<page_id>/media")
     def draft_media(draft_id: str, page_id: str):
@@ -142,30 +172,3 @@ def create_web_import_blueprint(
         return response
 
     return blueprint
-
-
-def _required_string(body: dict[str, object], key: str) -> str:
-    value = body.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{key} must be a non-empty string")
-    return value.strip()
-
-
-def _json_body() -> dict[str, object]:
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ValueError("request body must be a JSON object")
-    return body
-
-
-def _require_idempotency_key() -> str:
-    value = request.headers.get("Idempotency-Key", "")
-    if not value or len(value) > 200:
-        raise ValueError(
-            "Idempotency-Key is required and must be at most 200 characters"
-        )
-    return value
-
-
-def _error(code: str, message: str, status: int):
-    return jsonify({"error": {"code": code, "message": message}}), status

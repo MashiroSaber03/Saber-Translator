@@ -10,7 +10,7 @@
 from .data_types import TextLine, TextBlock, DetectionResult
 from .base import BaseTextDetector
 from .registry import (
-    get_detector, detect, detect_to_legacy_format, register_detector, 
+    get_detector, detect, register_detector,
     DETECTOR_CTD, DETECTOR_YOLO, DETECTOR_DEFAULT, DETECTOR_SABER_YOLO
 )
 
@@ -24,7 +24,6 @@ __all__ = [
     # 调度接口
     'get_detector',
     'detect',
-    'detect_to_legacy_format',
     'register_detector',
     # 常量
     'DETECTOR_CTD',

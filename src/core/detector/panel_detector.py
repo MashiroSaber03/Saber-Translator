@@ -48,12 +48,6 @@ class Panel:
     def to_xywh(self) -> Tuple[int, int, int, int]:
         return (self.x, self.y, self.w, self.h)
     
-    def to_xyxy(self) -> Tuple[int, int, int, int]:
-        return (self.x, self.y, self.x + self.w, self.y + self.h)
-    
-    def contains_point(self, px: int, py: int) -> bool:
-        """判断点是否在分镜内"""
-        return self.x <= px <= self.x2 and self.y <= py <= self.y2
 
 
 class PanelDetector:
@@ -172,13 +166,12 @@ class PanelDetector:
         return Panel(x=x, y=y, w=w, h=h)
 
 
-def get_panels_from_array(img: np.ndarray, rtl: bool = True, min_panel_ratio: float = None) -> List[Tuple[int, int, int, int]]:
+def get_panels_from_array(img: np.ndarray, min_panel_ratio: float = None) -> List[Tuple[int, int, int, int]]:
     """
-    从图像数组检测分镜（兼容 manga-image-translator 接口）
+    从图像数组检测分镜。
     
     Args:
         img: BGR 格式的图像
-        rtl: 是否从右到左阅读（暂未使用，用于排序）
         min_panel_ratio: 最小面板比例
         
     Returns:

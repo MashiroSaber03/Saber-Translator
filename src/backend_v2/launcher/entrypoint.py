@@ -92,7 +92,7 @@ def _new_registration(role: str, *, pid: int = 0) -> EpochRegistration:
 def _child_environment(
     data_root: Path,
     role: str,
-    registration: EpochRegistration | None = None,
+    registration: EpochRegistration,
     *,
     log_level: str | None = None,
 ) -> dict[str, str]:
@@ -100,14 +100,13 @@ def _child_environment(
     environment[DATA_ROOT_ENV] = str(data_root)
     if log_level:
         environment[LOG_LEVEL_ENV] = log_level
-    identity = registration or _new_registration(role)
-    if identity.role != role:
+    if registration.role != role:
         raise ValueError("child role and epoch registration role differ")
     if role == "api":
         environment.update(
             {
-                API_EPOCH_ID_ENV: identity.epoch_id,
-                API_EPOCH_TOKEN_ENV: identity.token,
+                API_EPOCH_ID_ENV: registration.epoch_id,
+                API_EPOCH_TOKEN_ENV: registration.token,
             }
         )
         environment.pop(WORKER_EPOCH_ID_ENV, None)
@@ -115,8 +114,8 @@ def _child_environment(
     elif role == "worker":
         environment.update(
             {
-                WORKER_EPOCH_ID_ENV: identity.epoch_id,
-                WORKER_EPOCH_TOKEN_ENV: identity.token,
+                WORKER_EPOCH_ID_ENV: registration.epoch_id,
+                WORKER_EPOCH_TOKEN_ENV: registration.token,
             }
         )
         environment.pop(API_EPOCH_ID_ENV, None)
@@ -419,15 +418,15 @@ def _start_child_with_retries(
 
 
 def run_launcher(args: object) -> int:
-    data_root = ensure_data_root(resolve_data_root(getattr(args, "data_dir", None)))
-    host = str(getattr(args, "host", "0.0.0.0"))
-    port = int(getattr(args, "port", 5000))
+    data_root = ensure_data_root(resolve_data_root(args.data_dir))
+    host = args.host
+    port = args.port
 
-    if getattr(args, "probe", False):
+    if args.probe:
         print(json.dumps(_probe_payload(data_root, host, port), sort_keys=True))
         return 0
 
-    log_level = getattr(args, "log_level", None)
+    log_level = args.log_level
     log_path = configure_backend_logging(
         role="launcher",
         data_root=data_root,
@@ -486,7 +485,7 @@ def run_launcher(args: object) -> int:
                             log_level=log_level,
                         )
 
-                    if not getattr(args, "no_browser", False):
+                    if not args.no_browser:
                         webbrowser.open_new(f"http://127.0.0.1:{port}/")
                         LOGGER.info(
                             "已请求打开浏览器：http://127.0.0.1:%s/",

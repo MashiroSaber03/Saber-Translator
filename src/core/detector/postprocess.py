@@ -5,11 +5,12 @@
 """
 
 import logging
-from typing import List, Tuple
+from typing import List
 import numpy as np
 
-from .data_types import TextBlock, DetectionResult
-from .geometry import box_area, box_intersection_area, is_box_contained, merge_boxes
+from .data_types import TextBlock
+from .geometry import box_area, box_intersection_area, is_box_contained
+from .smart_sort import sort_blocks_by_reading_order
 
 logger = logging.getLogger("DetectorPostprocess")
 
@@ -71,8 +72,6 @@ def merge_overlapping_blocks(blocks: List[TextBlock],
         
         if merge_pairs:
             i, j = merge_pairs[0]
-            merged_xyxy = merge_boxes(blocks[i].xyxy, blocks[j].xyxy)
-            
             # 创建合并后的块
             merged_lines = blocks[i].lines + blocks[j].lines
             merged_block = TextBlock(
@@ -218,13 +217,7 @@ def postprocess_blocks(blocks: List[TextBlock],
     
     # 4. 排序
     if sort_method == 'smart':
-        # 智能排序（需要导入）
-        try:
-            from .smart_sort import sort_blocks_by_reading_order
-            blocks = sort_blocks_by_reading_order(blocks, right_to_left=right_to_left, img=img)
-        except ImportError:
-            logger.warning("smart_sort 模块未找到，降级到面积排序")
-            blocks = sort_blocks_by_area(blocks)
+        blocks = sort_blocks_by_reading_order(blocks, right_to_left=right_to_left, img=img)
     elif sort_method == 'reading':
         blocks = _simple_reading_order_sort(blocks, right_to_left=right_to_left)
     elif sort_method == 'area':
@@ -233,15 +226,3 @@ def postprocess_blocks(blocks: List[TextBlock],
     
     logger.debug(f"后处理完成: {len(blocks)} 个文本块（排序: {sort_method}）")
     return blocks
-
-
-
-def postprocess_result(result: DetectionResult,
-                      image_width: int,
-                      image_height: int,
-                      **kwargs) -> DetectionResult:
-    """后处理检测结果"""
-    result.blocks = postprocess_blocks(
-        result.blocks, image_width, image_height, **kwargs
-    )
-    return result

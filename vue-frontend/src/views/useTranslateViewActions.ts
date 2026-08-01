@@ -7,6 +7,7 @@ import { useTranslateInit } from '@/composables/useTranslateInit'
 import { confirmProductAction, type ProductConfirmAction } from '@/composables/useProductConfirm'
 import type { WorkflowRunRequest } from '@/types/workflow'
 import { clearChapterPages, deletePage, resetQuickWorkspace } from '@/api/v2/content'
+import { flushPageDocument } from '@/services/pageDocumentPersistence'
 
 type TranslateValidationMode = 'normal' | 'hq' | 'proofread'
 
@@ -195,8 +196,26 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     await translateInit.goToNext()
   }
 
-  function toggleEditMode() {
-    isEditMode.value = !isEditMode.value
+  async function toggleEditMode() {
+    if (isEditMode.value) {
+      isEditMode.value = false
+      return
+    }
+    if (!(await translateInit.flushChapterWorkState())) {
+      showToast('章节工作态设置尚未写入后端，无法进入编辑模式', 'error')
+      return
+    }
+    const pageId = imageStore.currentImage?.id
+    try {
+      if (pageId) await flushPageDocument(pageId)
+    } catch (error) {
+      showToast(
+        `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
+        'error',
+      )
+      return
+    }
+    isEditMode.value = true
   }
 
   async function handleRetryFailed() {

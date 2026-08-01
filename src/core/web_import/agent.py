@@ -88,6 +88,7 @@ class MangaScraperAgent:
         self.force_json = agent_config.get('forceJsonOutput', True)
         self.max_retries = agent_config.get('maxRetries', 3)
         self.timeout = agent_config.get('timeout', 120)
+        self.bypass_proxy = bool(config.get('bypassProxy', False))
         
         extraction_config = config.get('extraction', {})
         self.custom_prompt = extraction_config.get('prompt', '')
@@ -108,6 +109,7 @@ class MangaScraperAgent:
             api_key=self.api_key,
             base_url=base_url,
             timeout=self.timeout,
+            bypass_proxy=self.bypass_proxy,
         )
     
     def _get_base_url(self) -> Optional[str]:
@@ -178,7 +180,8 @@ class MangaScraperAgent:
                             tool_name,
                             tool_args,
                             self.firecrawl_api_key,
-                            timeout=self.timeout
+                            timeout=self.timeout,
+                            bypass_proxy=self.bypass_proxy,
                         )
                         
                         result_str = json.dumps(tool_result, ensure_ascii=False)

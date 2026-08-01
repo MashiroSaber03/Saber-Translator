@@ -121,22 +121,23 @@ describe('useTranslateInit', () => {
     mocks.getTranslationBootstrap.mockResolvedValue(
       bootstrap('quick', 'quick-chapter', 'quick_workspace'),
     )
+    const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
     mocks.getPageDocument.mockResolvedValue({
       bubbles: [],
       chapterId: 'quick-chapter',
-      defaultFontId: null,
+      defaultFontId: fontFamily,
       documentRevision: 1,
       pageId: 'page-1',
-      pageStyleDefaults: {},
+      pageStyleDefaults,
       pageStyleSchemaVersion: 1,
       renderedRevision: null,
       sourceRevision: 1,
     })
     mocks.updateLastVisitedPage.mockImplementation(
-      async (chapterId: string, pageId: string, baseRevision: number) => ({
+      async (chapterId: string, pageId: string) => ({
         chapterId,
         lastVisitedPageId: pageId,
-        revision: baseRevision + 1,
+        revision: 1,
       }),
     )
     mocks.updateChapterSettingsMemory.mockImplementation(
@@ -163,6 +164,57 @@ describe('useTranslateInit', () => {
     expect(mocks.getPageDocument).toHaveBeenCalledWith('page-1', expect.any(AbortSignal))
   })
 
+  it('does not finish initialization before the authoritative page style is loaded', async () => {
+    const defaults = createDefaultSettings().textStyle
+    const { fontFamily, ...pageStyleDefaults } = defaults
+    let resolveDocument!: (value: Record<string, unknown>) => void
+    mocks.getPageDocument.mockImplementationOnce(() => new Promise(resolve => {
+      resolveDocument = resolve
+    }))
+
+    const state = useTranslateInit()
+    const initialization = state.initializeApp()
+    await vi.waitFor(() => {
+      expect(mocks.getPageDocument).toHaveBeenCalledTimes(1)
+    })
+
+    const imageStore = useImageStore()
+    expect(state.isInitialized.value).toBe(false)
+    expect(imageStore.currentImage?.bubbleStates).toBeNull()
+
+    resolveDocument({
+      bubbles: [],
+      chapterId: 'quick-chapter',
+      defaultFontId: fontFamily,
+      documentRevision: 4,
+      pageId: 'page-1',
+      pageStyleDefaults: {
+        ...pageStyleDefaults,
+        layoutDirection: 'horizontal',
+        textColor: '#123456',
+        useAutoTextColor: true,
+      },
+      pageStyleSchemaVersion: 1,
+      renderedRevision: null,
+      sourceRevision: 1,
+    })
+    await initialization
+
+    expect(state.isInitialized.value).toBe(true)
+    expect(imageStore.currentImage).toMatchObject({
+      bubbleStates: [],
+      documentRevision: 4,
+      layoutDirection: 'horizontal',
+      textColor: '#123456',
+      useAutoTextColor: true,
+    })
+    expect(useSettingsStore().settings.textStyle).toMatchObject({
+      layoutDirection: 'horizontal',
+      textColor: '#123456',
+      useAutoTextColor: true,
+    })
+  })
+
   it('requests the selected library chapter through the v2 bootstrap', async () => {
     routeState.query = { book: 'book-1', chapter: 'chapter-1' }
     mocks.getTranslationBootstrap.mockResolvedValue(
@@ -181,7 +233,7 @@ describe('useTranslateInit', () => {
     expect(state.currentChapterId.value).toBe('chapter-1')
   })
 
-  it('serializes last-visited page writes with the backend navigation revision', async () => {
+  it('serializes last-write-wins page navigation updates', async () => {
     const payload = bootstrap('quick', 'quick-chapter', 'quick_workspace')
     payload.pages.items.push({
       ...payload.pages.items[0]!,
@@ -206,13 +258,11 @@ describe('useTranslateInit', () => {
       1,
       'quick-chapter',
       'page-2',
-      1,
     )
     expect(mocks.updateLastVisitedPage).toHaveBeenNthCalledWith(
       2,
       'quick-chapter',
       'page-1',
-      2,
     )
   })
 
@@ -301,5 +351,69 @@ describe('useTranslateInit', () => {
     const savedPayload = mocks.updateChapterSettingsMemory.mock.calls.at(-1)?.[1]
     expect(savedPayload).not.toHaveProperty('textStyle')
     expect(JSON.stringify(savedPayload)).not.toContain('apiKey')
+  })
+
+  it('flushes the latest chapter work state without waiting for the debounce window', async () => {
+    const state = useTranslateInit()
+    await state.initializeApp()
+    const settingsStore = useSettingsStore()
+    mocks.updateChapterSettingsMemory.mockClear()
+    settingsStore.settings.sourceLanguage = 'korean'
+
+    expect(await state.flushChapterWorkState()).toBe(true)
+    expect(mocks.updateChapterSettingsMemory).toHaveBeenLastCalledWith(
+      'quick-chapter',
+      expect.objectContaining({ sourceLanguage: 'korean' }),
+      expect.any(Number),
+    )
+  })
+
+  it('persists a value restored while the previous value is still in flight', async () => {
+    const state = useTranslateInit()
+    await state.initializeApp()
+    const settingsStore = useSettingsStore()
+    const originalLanguage = settingsStore.settings.sourceLanguage
+    let resolveFirst!: () => void
+    mocks.updateChapterSettingsMemory.mockReset()
+    mocks.updateChapterSettingsMemory
+      .mockImplementationOnce((
+        chapterId: string,
+        payload: Record<string, unknown>,
+        baseRevision: number,
+      ) => new Promise(resolve => {
+        resolveFirst = () => resolve({
+          chapterId,
+          payload,
+          revision: baseRevision + 1,
+        })
+      }))
+      .mockImplementation(async (
+        chapterId: string,
+        payload: Record<string, unknown>,
+        baseRevision: number,
+      ) => ({
+        chapterId,
+        payload,
+        revision: baseRevision + 1,
+      }))
+
+    settingsStore.settings.sourceLanguage = 'korean'
+    const firstFlush = state.flushChapterWorkState()
+    await vi.waitFor(() => {
+      expect(mocks.updateChapterSettingsMemory).toHaveBeenCalledTimes(1)
+    })
+
+    settingsStore.settings.sourceLanguage = originalLanguage
+    const finalFlush = state.flushChapterWorkState()
+    resolveFirst()
+
+    expect(await firstFlush).toBe(true)
+    expect(await finalFlush).toBe(true)
+    expect(mocks.updateChapterSettingsMemory).toHaveBeenCalledTimes(2)
+    expect(mocks.updateChapterSettingsMemory).toHaveBeenLastCalledWith(
+      'quick-chapter',
+      expect.objectContaining({ sourceLanguage: originalLanguage }),
+      2,
+    )
   })
 })

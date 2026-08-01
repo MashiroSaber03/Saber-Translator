@@ -165,8 +165,6 @@ def get_provider_manifest(provider: Optional[str]) -> ProviderManifest:
     return _PROVIDERS[canonical]
 
 
-def get_all_provider_manifests() -> Dict[str, ProviderManifest]:
-    return dict(_PROVIDERS)
 
 
 def provider_supports_capability(provider: Optional[str], capability: str) -> bool:
@@ -175,10 +173,6 @@ def provider_supports_capability(provider: Optional[str], capability: str) -> bo
     return capability in manifest.capabilities if manifest else False
 
 
-def provider_requires_api_key(provider: Optional[str]) -> bool:
-    canonical = normalize_provider_id(provider)
-    manifest = _PROVIDERS.get(canonical)
-    return manifest.requires_api_key if manifest else True
 
 
 def provider_requires_model(provider: Optional[str]) -> bool:
@@ -212,9 +206,6 @@ def get_provider_default_model(provider: Optional[str], model_type: str) -> str:
     return manifest.default_models.get(_normalize_model_type_name(model_type), "")
 
 
-def get_provider_model_catalog(provider: Optional[str], model_type: str) -> Tuple[str, ...]:
-    manifest = get_provider_manifest(provider)
-    return tuple(manifest.model_catalogs.get(_normalize_model_type_name(model_type), ()))
 
 
 def is_openai_compatible_provider(provider: Optional[str]) -> bool:

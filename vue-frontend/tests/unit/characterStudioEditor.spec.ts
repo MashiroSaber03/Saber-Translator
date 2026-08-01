@@ -27,7 +27,6 @@ function buildDocument(): CharacterStudioDocument {
     origin: {
       type: 'analysis',
       source_character: '上杉风太郎',
-      source_pages: [1, 2, 3],
     },
     status: {
       is_favorite: false,
@@ -41,9 +40,7 @@ function buildDocument(): CharacterStudioDocument {
       updated_at: '2026-05-15T00:00:00',
     },
     avatar: {
-      mode: 'none',
       asset_path: null,
-      source_page: null,
     },
     identity: {
       name: '上杉风太郎',

@@ -2,29 +2,35 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+import hashlib
 import json
 from pathlib import Path
+import shutil
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 import uuid
 
-from sqlalchemy import Engine, delete, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.jobs.repository import (
     JobConflict,
     JobItemSpec,
     JobQueueRepository,
     JobSpec,
-    utcnow,
 )
+from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
+    NONTERMINAL_JOB_STATUSES,
     assets,
     books,
     chapters,
     jobs,
+    idempotency_records,
     web_import_draft_pages,
     web_import_drafts,
 )
@@ -32,23 +38,10 @@ from src.backend_v2.settings.resolver import SettingsResolver
 
 
 WEB_ENGINES = {"auto", "gallery-dl", "ai-agent"}
-NONTERMINAL = {
-    "queued",
-    "running",
-    "pausing",
-    "paused",
-    "cancelling",
-    "interrupted",
-}
-_SECRET_TOKENS = {
-    "apikey",
-    "api_key",
-    "authorization",
-    "cookie",
-    "password",
-    "secret",
-    "token",
-}
+
+
+class DraftLocked(JobConflict):
+    pass
 
 
 class WebImportCommandService:
@@ -65,7 +58,6 @@ class WebImportCommandService:
         chapter_id: str,
         source_url: str,
         requested_engine: str,
-        config: Mapping[str, Any],
         idempotency_key: str,
         resolved_options: Mapping[str, Any] | None = None,
         retry_of_job_id: str | None = None,
@@ -77,12 +69,6 @@ class WebImportCommandService:
         normalized_url = _validated_url(source_url)
         if requested_engine not in WEB_ENGINES:
             raise ValueError("engine must be auto, gallery-dl, or ai-agent")
-        _reject_plaintext_secrets(config)
-        if config:
-            raise ValueError(
-                "web import options are resolved from backend settings; "
-                "browser overrides are not accepted"
-            )
         chapter = self._chapter(chapter_id)
         draft_id = str(uuid.uuid4())
         temp_relative = (
@@ -162,6 +148,7 @@ class WebImportCommandService:
                 else f"web-extract:{chapter_id}"
             ),
             idempotency_key=idempotency_key,
+            response_extra={"draftId": draft_id},
             idempotency_payload={
                 "chapterId": chapter_id,
                 "sourceUrl": normalized_url,
@@ -179,8 +166,7 @@ class WebImportCommandService:
             },
             transaction_initializer=initialize,
         )
-        actual_draft_id = self._job_draft_id(str(result["jobIds"][0]))
-        return {**result, "draftId": actual_draft_id}
+        return result
 
     def get_draft(self, draft_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:
@@ -191,14 +177,20 @@ class WebImportCommandService:
             ).mappings().one_or_none()
             if draft is None:
                 raise LookupError("web import draft not found")
-            counts = list(
-                connection.execute(
-                    select(
-                        web_import_draft_pages.c.selected,
-                        web_import_draft_pages.c.error_json,
-                    ).where(web_import_draft_pages.c.draft_id == draft_id)
-                ).mappings()
-            )
+            counts = connection.execute(
+                select(
+                    func.count().label("candidate_count"),
+                    func.count()
+                    .filter(
+                        web_import_draft_pages.c.selected.is_(True),
+                        web_import_draft_pages.c.error_json.is_(None),
+                    )
+                    .label("selected_count"),
+                    func.count()
+                    .filter(web_import_draft_pages.c.error_json.is_not(None))
+                    .label("failed_count"),
+                ).where(web_import_draft_pages.c.draft_id == draft_id)
+            ).mappings().one()
             job_rows = list(
                 connection.execute(
                     select(jobs.c.id, jobs.c.kind, jobs.c.status).where(
@@ -207,28 +199,22 @@ class WebImportCommandService:
                 ).mappings()
             )
         config = json.loads(draft["config_json"])
-        effective_status = _effective_draft_status(
-            str(draft["status"]),
-            job_rows,
-        )
+        options = config["options"]
+        if not isinstance(options, Mapping):
+            raise ValueError("web import draft settings snapshot is invalid")
         return {
             "id": draft["id"],
             "bookId": draft["book_id"],
             "chapterId": draft["chapter_id"],
-            "status": effective_status,
+            "status": str(draft["status"]),
             "revision": draft["revision"],
             "sourceUrl": config.get("sourceUrl"),
             "requestedEngine": config.get("requestedEngine"),
             "actualEngine": config.get("actualEngine"),
-            "candidateCount": len(counts),
-            "selectedCount": sum(
-                1
-                for row in counts
-                if row["selected"] and row["error_json"] is None
-            ),
-            "failedCount": sum(
-                1 for row in counts if row["error_json"] is not None
-            ),
+            "autoImport": bool(options["autoImport"]),
+            "candidateCount": int(counts["candidate_count"]),
+            "selectedCount": int(counts["selected_count"]),
+            "failedCount": int(counts["failed_count"]),
             "expiresAt": draft["expires_at"].isoformat(),
             "jobs": [dict(row) for row in job_rows],
         }
@@ -298,11 +284,29 @@ class WebImportCommandService:
         draft_id: str,
         selected_page_ids: Sequence[str],
         base_revision: int,
+        idempotency_key: str,
     ) -> dict[str, object]:
         if len(selected_page_ids) != len(set(selected_page_ids)):
             raise ValueError("selectedPageIds must contain unique IDs")
         now = utcnow()
-        with self.engine.begin() as connection:
+        scope = f"PUT:updateWebImportSelection:{draft_id}"
+        request_hash = _request_hash(
+            {
+                "draftId": draft_id,
+                "baseRevision": base_revision,
+                "selectedPageIds": sorted(selected_page_ids),
+            }
+        )
+        with immediate_transaction(self.engine) as connection:
+            replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                now=now,
+            )
+            if replay is not None:
+                return replay
             draft = connection.execute(
                 select(
                     web_import_drafts.c.status,
@@ -358,11 +362,21 @@ class WebImportCommandService:
             )
             if changed.rowcount != 1:
                 raise JobConflict("draft revision changed")
-        return {
-            "draftId": draft_id,
-            "revision": base_revision + 1,
-            "selectedPageIds": list(selected_page_ids),
-        }
+            response = {
+                "draftId": draft_id,
+                "revision": base_revision + 1,
+                "selectedPageIds": list(selected_page_ids),
+            }
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                resource_id=draft_id,
+                now=now,
+            )
+            return response
 
     def commit(
         self,
@@ -370,6 +384,7 @@ class WebImportCommandService:
         draft_id: str,
         base_revision: int,
         idempotency_key: str,
+        selected_only: bool = True,
     ) -> dict[str, object]:
         now = utcnow()
         with self.engine.connect() as connection:
@@ -380,18 +395,27 @@ class WebImportCommandService:
             ).mappings().one_or_none()
             if draft is None or draft["expires_at"] <= now:
                 raise LookupError("web import draft not found or expired")
+            if draft["status"] != "ready":
+                existing = self._existing_root_commit(draft_id)
+                if existing is not None:
+                    return existing
+                raise JobConflict("web import draft is not ready")
             rows = list(
                 connection.execute(
                     select(web_import_draft_pages)
                     .where(
                         web_import_draft_pages.c.draft_id == draft_id,
-                        web_import_draft_pages.c.selected.is_(True),
+                        *(
+                            (web_import_draft_pages.c.selected.is_(True),)
+                            if selected_only
+                            else ()
+                        ),
                         web_import_draft_pages.c.error_json.is_(None),
                     )
                     .order_by(web_import_draft_pages.c.ordinal)
                 ).mappings()
             )
-            chapter = self._chapter(str(draft["chapter_id"]))
+        chapter = self._chapter(str(draft["chapter_id"]))
         if not rows:
             raise ValueError("select at least one successful draft page")
         entries = [
@@ -407,6 +431,7 @@ class WebImportCommandService:
         config = {
             "draftId": draft_id,
             "draftRevision": base_revision,
+            "chapterId": str(draft["chapter_id"]),
             "entries": entries,
             "executionMode": "sequential",
         }
@@ -435,77 +460,115 @@ class WebImportCommandService:
                 raise JobConflict(
                     "draft is no longer ready at the requested revision"
                 )
+            if not selected_only:
+                connection.execute(
+                    update(web_import_draft_pages)
+                    .where(
+                        web_import_draft_pages.c.draft_id == draft_id,
+                        web_import_draft_pages.c.error_json.is_(None),
+                    )
+                    .values(selected=True, updated_at=now)
+                )
 
-        result = self.jobs.create_batch(
-            kind="web_import_commit",
-            display_name=(
-                f"网页入库 {chapter['book_title']} / {chapter['title']}"
-            ),
-            specs=[
-                JobSpec(
-                    kind="web_import_commit",
-                    book_id=str(chapter["book_id"]),
-                    chapter_id=str(draft["chapter_id"]),
-                    web_import_draft_id=draft_id,
-                    config=config,
-                    items=tuple(
-                        [
-                            JobItemSpec(
-                                page_id=None,
-                                step_kinds=("web_import_commit_page",),
-                            )
-                            for _entry in entries
-                        ]
-                        + [
+        try:
+            result = self.jobs.create_batch(
+                kind="web_import_commit",
+                display_name=(
+                    f"网页入库 {chapter['book_title']} / {chapter['title']}"
+                ),
+                specs=[
+                    JobSpec(
+                        kind="web_import_commit",
+                        book_id=str(chapter["book_id"]),
+                        chapter_id=str(draft["chapter_id"]),
+                        web_import_draft_id=draft_id,
+                        config=config,
+                        items=(
+                            *(
+                                JobItemSpec(
+                                    page_id=None,
+                                    step_kinds=("web_import_commit_page",),
+                                )
+                                for _entry in entries
+                            ),
                             JobItemSpec(
                                 page_id=None,
                                 step_kinds=("web_import_commit_finalize",),
-                            )
-                        ]
-                    ),
-                    target_display={
-                        "book": chapter["book_title"],
-                        "chapter": chapter["title"],
-                        "pageCount": len(entries),
-                        "draftId": draft_id,
-                    },
-                )
-            ],
-            idempotency_scope=f"web-import-commit:{draft_id}",
-            idempotency_key=idempotency_key,
-            idempotency_payload={
-                "draftId": draft_id,
-                "draftRevision": base_revision,
-                "draftPageIds": [
-                    entry["draftPageId"] for entry in entries
+                            ),
+                        ),
+                        target_display={
+                            "book": chapter["book_title"],
+                            "chapter": chapter["title"],
+                            "pageCount": len(entries),
+                            "draftId": draft_id,
+                        },
+                    )
                 ],
-            },
-            transaction_hook=hook,
-        )
+                idempotency_scope=f"web-import-commit:{draft_id}",
+                idempotency_key=idempotency_key,
+                idempotency_payload={
+                    "draftId": draft_id,
+                    "draftRevision": base_revision,
+                    "draftPageIds": [
+                        entry["draftPageId"] for entry in entries
+                    ],
+                },
+                transaction_hook=hook,
+            )
+        except JobConflict:
+            existing = self._existing_root_commit(draft_id)
+            if existing is None:
+                raise
+            return existing
         return {**result, "draftId": draft_id}
 
-    def delete_draft(self, draft_id: str) -> None:
-        with self.engine.begin() as connection:
-            if connection.execute(
-                select(jobs.c.id).where(
-                    jobs.c.web_import_draft_id == draft_id,
-                    jobs.c.status.in_(tuple(NONTERMINAL)),
-                )
-            ).scalar_one_or_none() is not None:
-                raise JobConflict("draft is referenced by nonterminal work")
-            removed = connection.execute(
-                delete(web_import_drafts).where(
-                    web_import_drafts.c.id == draft_id
-                )
+    def delete_draft(
+        self,
+        draft_id: str,
+        *,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        now = utcnow()
+        scope = f"DELETE:deleteWebImportDraft:{draft_id}"
+        request_hash = _request_hash({"draftId": draft_id})
+        with immediate_transaction(self.engine) as connection:
+            replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                now=now,
             )
-            if removed.rowcount != 1:
-                raise LookupError("web import draft not found")
+            if replay is not None:
+                response = replay
+            else:
+                if connection.execute(
+                    select(jobs.c.id).where(
+                        jobs.c.web_import_draft_id == draft_id,
+                        jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                    )
+                ).scalar_one_or_none() is not None:
+                    raise DraftLocked("draft is referenced by nonterminal work")
+                removed = connection.execute(
+                    delete(web_import_drafts).where(
+                        web_import_drafts.c.id == draft_id
+                    )
+                )
+                if removed.rowcount != 1:
+                    raise LookupError("web import draft not found")
+                response = {"deleted": True}
+                _record_idempotency(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    response=response,
+                    resource_id=draft_id,
+                    now=now,
+                )
         directory = self.data_root / "temp" / "web-import" / draft_id
-        if directory.is_dir():
-            import shutil
-
-            shutil.rmtree(directory)
-        self.storage.collect_garbage()
+        shutil.rmtree(directory, ignore_errors=True)
+        return response
 
     def media(
         self,
@@ -579,13 +642,93 @@ class WebImportCommandService:
             raise LookupError("chapter not found")
         return row
 
-    def _job_draft_id(self, job_id: str) -> str:
+    def _existing_root_commit(
+        self,
+        draft_id: str,
+    ) -> dict[str, object] | None:
         with self.engine.connect() as connection:
-            value = connection.execute(
-                select(jobs.c.web_import_draft_id).where(jobs.c.id == job_id)
-            ).scalar_one()
-        return str(value)
+            row = connection.execute(
+                select(jobs.c.id, jobs.c.batch_id, jobs.c.status)
+                .where(
+                    jobs.c.web_import_draft_id == draft_id,
+                    jobs.c.kind == "web_import_commit",
+                    jobs.c.retry_of_job_id.is_(None),
+                )
+                .order_by(jobs.c.created_at)
+                .limit(1)
+            ).mappings().one_or_none()
+        if row is None or row["batch_id"] is None:
+            return None
+        return {
+            "batchId": str(row["batch_id"]),
+            "jobIds": [str(row["id"])],
+            "status": str(row["status"]),
+            "draftId": draft_id,
+        }
 
+
+def _request_hash(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_json(dict(payload)).encode("utf-8")).hexdigest()
+
+
+def _idempotency_replay(
+    connection: Connection,
+    *,
+    scope: str,
+    key: str,
+    request_hash: str,
+    now: datetime,
+) -> dict[str, object] | None:
+    if not key or len(key) > 200:
+        raise ValueError("Idempotency-Key is required and must be at most 200 characters")
+    row = connection.execute(
+        select(
+            idempotency_records.c.request_hash,
+            idempotency_records.c.response_json,
+            idempotency_records.c.expires_at,
+        ).where(
+            idempotency_records.c.scope == scope,
+            idempotency_records.c.key == key,
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    if row["expires_at"] <= now:
+        connection.execute(
+            delete(idempotency_records).where(
+                idempotency_records.c.scope == scope,
+                idempotency_records.c.key == key,
+            )
+        )
+        return None
+    if row["request_hash"] != request_hash:
+        raise JobConflict("Idempotency-Key was reused for different web import input")
+    return json.loads(str(row["response_json"]))
+
+
+def _record_idempotency(
+    connection: Connection,
+    *,
+    scope: str,
+    key: str,
+    request_hash: str,
+    response: Mapping[str, object],
+    resource_id: str,
+    now: datetime,
+) -> None:
+    connection.execute(
+        insert(idempotency_records).values(
+            scope=scope,
+            key=key,
+            request_hash=request_hash,
+            http_status=200,
+            response_json=_json(dict(response)),
+            resource_type="web_import_draft",
+            resource_id=resource_id,
+            created_at=now,
+            expires_at=now + timedelta(days=7),
+        )
+    )
 
 def _validated_url(value: str) -> str:
     normalized = value.strip()
@@ -595,59 +738,6 @@ def _validated_url(value: str) -> str:
     if len(normalized) > 8_000:
         raise ValueError("sourceUrl is too long")
     return normalized
-
-
-def _effective_draft_status(
-    stored_status: str,
-    job_rows: list[Mapping[str, Any]],
-) -> str:
-    """Recover stale processing drafts from the durable owning-job state."""
-
-    owning_kind = {
-        "extracting": "web_extract",
-        "committing": "web_import_commit",
-    }.get(stored_status)
-    if owning_kind is None:
-        return stored_status
-    owning_jobs = [
-        row for row in job_rows if str(row["kind"]) == owning_kind
-    ]
-    if not owning_jobs:
-        return "failed"
-    latest_status = str(owning_jobs[-1]["status"])
-    if latest_status == "cancelled":
-        return "cancelled"
-    if latest_status in {"failed", "completed_with_errors"}:
-        return "failed"
-    return stored_status
-
-
-def _reject_plaintext_secrets(value: object, path: str = "config") -> None:
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            normalized = str(key).replace("-", "_").casefold()
-            if (
-                normalized in _SECRET_TOKENS
-                or normalized.endswith("_secret")
-                or normalized.endswith("_token")
-                or normalized.endswith("_key")
-            ) and child not in (None, ""):
-                raise ValueError(
-                    f"{path}.{key} must reference a backend credential version"
-                )
-            _reject_plaintext_secrets(child, f"{path}.{key}")
-    elif isinstance(value, (list, tuple)):
-        for index, child in enumerate(value):
-            _reject_plaintext_secrets(child, f"{path}[{index}]")
-
-
-def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def _image_mime(path: Path) -> str:

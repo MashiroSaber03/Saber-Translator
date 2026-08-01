@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from urllib.request import urlopen
 
 import psutil
@@ -113,6 +114,89 @@ def test_api_probe_loads_only_v2_routes_and_no_worker_modules(tmp_path: Path) ->
     )
 
 
+def test_api_epoch_heartbeat_starts_before_application_initialization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src.backend_v2.api import entrypoint
+    from src.backend_v2.runtime_identity import RuntimeIdentity
+
+    events: list[str] = []
+
+    class FakeEngine:
+        def dispose(self) -> None:
+            events.append("engine_disposed")
+
+    class FakeEpochRepository:
+        def __init__(self, _engine: object) -> None:
+            pass
+
+        def validate(self, **_kwargs: object) -> bool:
+            return True
+
+    class FakeHeartbeat:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def start(self) -> None:
+            events.append("heartbeat_started")
+
+        def stop(self) -> None:
+            events.append("heartbeat_stopped")
+
+    class FakeRuntime:
+        def close(self) -> None:
+            events.append("runtime_closed")
+
+    class FakeUrlMap:
+        @staticmethod
+        def iter_rules() -> list[SimpleNamespace]:
+            return [SimpleNamespace(rule="/api/v2/health")]
+
+    fake_app = SimpleNamespace(
+        url_map=FakeUrlMap(),
+        extensions={"saber_v2_runtime": FakeRuntime()},
+    )
+
+    def create_app(_settings: object) -> object:
+        events.append("app_initialized")
+        assert events[0] == "heartbeat_started"
+        return fake_app
+
+    monkeypatch.setattr(
+        entrypoint.RuntimeIdentity,
+        "for_api",
+        classmethod(
+            lambda _cls, **_kwargs: RuntimeIdentity("api-epoch", "token")
+        ),
+    )
+    monkeypatch.setattr(entrypoint, "ProcessEpochRepository", FakeEpochRepository)
+    monkeypatch.setattr(entrypoint, "EpochHeartbeat", FakeHeartbeat)
+    monkeypatch.setattr(entrypoint, "create_sqlite_engine", lambda _path: FakeEngine())
+    monkeypatch.setattr(entrypoint, "create_api_app", create_app)
+    monkeypatch.setattr(entrypoint, "loaded_forbidden_api_modules", lambda: [])
+
+    result = entrypoint.run_api(
+        SimpleNamespace(
+            data_dir=str(tmp_path / "api-heartbeat"),
+            probe=True,
+            test_mode=False,
+            host="127.0.0.1",
+            port=5000,
+            log_level=None,
+        )
+    )
+
+    assert result == 0
+    assert events == [
+        "heartbeat_started",
+        "app_initialized",
+        "heartbeat_stopped",
+        "runtime_closed",
+        "engine_disposed",
+    ]
+
+
 def test_worker_and_launcher_resolve_the_same_explicit_data_root(tmp_path: Path) -> None:
     worker = _run_probe("worker", tmp_path / "shared")
     launcher = _run_probe("launcher", tmp_path / "shared")
@@ -162,8 +246,20 @@ def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
     os.environ.clear()
     os.environ.update(polluted)
     try:
-        api = _child_environment(tmp_path, "api")
-        worker = _child_environment(tmp_path, "worker")
+        api_registration = EpochRegistration(
+            epoch_id="api-test",
+            token="api-token",
+            role="api",
+            pid=0,
+        )
+        worker_registration = EpochRegistration(
+            epoch_id="worker-test",
+            token="worker-token",
+            role="worker",
+            pid=0,
+        )
+        api = _child_environment(tmp_path, "api", api_registration)
+        worker = _child_environment(tmp_path, "worker", worker_registration)
     finally:
         os.environ.clear()
         os.environ.update(original)
@@ -173,7 +269,7 @@ def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
     assert WORKER_EPOCH_ID_ENV in worker and WORKER_EPOCH_TOKEN_ENV in worker
     assert API_EPOCH_ID_ENV not in worker and API_EPOCH_TOKEN_ENV not in worker
     with pytest.raises(ValueError):
-        _child_environment(tmp_path, "renderer")
+        _child_environment(tmp_path, "renderer", api_registration)
 
 
 def test_launcher_requires_repeated_api_health_failures_before_restart(
