@@ -47,9 +47,6 @@ function installCanvasMocks() {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
     context as unknown as CanvasRenderingContext2D,
   )
-  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => {
-    callback(new Blob(['mask'], { type: 'image/png' }))
-  })
 }
 
 function createBrushSurface() {
@@ -93,13 +90,25 @@ function mountBrush(onBrushComplete = vi.fn()) {
   }
 }
 
-function drawStroke(brush: ReturnType<typeof useBrush>) {
-  brush.toggleBrushMode('repair')
+function drawStroke(
+  brush: ReturnType<typeof useBrush>,
+  mode: 'repair' | 'restore' = 'repair',
+) {
+  brush.toggleBrushMode(mode)
   brush.startBrushPainting(
     new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }),
     createBrushSurface(),
   )
   brush.finishBrushPainting()
+}
+
+function readBlobBytes(blob: Blob): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('读取掩膜失败'))
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer))
+    reader.readAsArrayBuffer(blob)
+  })
 }
 
 describe('useBrush', () => {
@@ -150,6 +159,30 @@ describe('useBrush', () => {
       'operation-1',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+    const mask = mocks.createMaskRepair.mock.calls[0]?.[1] as Blob
+    const bytes = await readBlobBytes(mask)
+    expect(bytes[24]).toBe(8)
+    expect(bytes[25]).toBe(0)
+  })
+
+  it('submits the same grayscale binary mask contract for restore strokes', async () => {
+    const { brush, onBrushComplete } = mountBrush()
+
+    drawStroke(brush, 'restore')
+    await vi.waitFor(() => expect(onBrushComplete).toHaveBeenCalled())
+
+    expect(mocks.createMaskRepair).toHaveBeenCalledWith(
+      'page-1',
+      expect.any(Blob),
+      {
+        baseRevision: 3,
+        method: 'restore_source',
+      },
+    )
+    const mask = mocks.createMaskRepair.mock.calls[0]?.[1] as Blob
+    const bytes = await readBlobBytes(mask)
+    expect(bytes[24]).toBe(8)
+    expect(bytes[25]).toBe(0)
   })
 
   it('reports backend repair failures without completing the stroke', async () => {
@@ -157,8 +190,7 @@ describe('useBrush', () => {
     const { brush, onBrushComplete } = mountBrush()
 
     drawStroke(brush)
-    await flushPromises()
-    await flushPromises()
+    await vi.waitFor(() => expect(mocks.toast).toHaveBeenCalled())
 
     expect(mocks.toast).toHaveBeenCalledWith('画笔修复失败', 'error')
     expect(onBrushComplete).not.toHaveBeenCalled()
@@ -172,7 +204,7 @@ describe('useBrush', () => {
     const { brush, onBrushComplete, wrapper } = mountBrush()
 
     drawStroke(brush)
-    await flushPromises()
+    await vi.waitFor(() => expect(mocks.waitForOperation).toHaveBeenCalled())
     wrapper.unmount()
     resolveOperation()
     await flushPromises()
@@ -187,6 +219,7 @@ describe('useBrush', () => {
     )
 
     expect(source).not.toContain('toDataURL')
+    expect(source).not.toContain('toBlob')
     expect(source).not.toContain('base64')
     expect(source).not.toContain('cleanAssetUrl')
   })

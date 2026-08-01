@@ -798,6 +798,54 @@ def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
         assert repaired.getpixel((30, 30)) == (12, 34, 56)
 
 
+def test_page_repair_mask_requires_and_accepts_the_browser_grayscale_contract(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=OperationRepository(platform["engine"]),
+    )
+    rgba_bytes = BytesIO()
+    with Image.new("RGBA", (64, 64), (255, 255, 255, 255)) as rgba_mask:
+        rgba_mask.save(rgba_bytes, format="PNG")
+
+    with pytest.raises(
+        ValueError,
+        match="single-frame 8-bit grayscale PNG",
+    ):
+        service.create_for_mask(
+            page_id=platform["page_id"],
+            upload=BytesIO(rgba_bytes.getvalue()),
+            base_revision=1,
+            method="restore_source",
+            fill_color=None,
+            idempotency_key="rgba-mask",
+        )
+    with platform["engine"].connect() as connection:
+        assert connection.execute(
+            select(pages.c.document_revision).where(
+                pages.c.id == platform["page_id"]
+            )
+        ).scalar_one() == 1
+
+    grayscale_bytes = BytesIO()
+    with Image.new("L", (64, 64), 255) as grayscale_mask:
+        grayscale_mask.save(grayscale_bytes, format="PNG")
+    accepted, replayed = service.create_for_mask(
+        page_id=platform["page_id"],
+        upload=BytesIO(grayscale_bytes.getvalue()),
+        base_revision=1,
+        method="restore_source",
+        fill_color=None,
+        idempotency_key="grayscale-mask",
+    )
+
+    assert not replayed
+    assert accepted["documentRevision"] == 2
+
+
 def test_lama_page_repair_freezes_and_consumes_disable_resize(
     operation_platform,
     monkeypatch: pytest.MonkeyPatch,

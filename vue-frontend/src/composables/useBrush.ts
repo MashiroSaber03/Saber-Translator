@@ -17,6 +17,7 @@ import {
 } from '@/constants'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { InpaintMethod } from '@/types/bubble'
+import { encodeBinaryMaskPng } from '@/utils/binaryMaskPng'
 import { showToast } from '@/utils/toast'
 
 export type BrushMode = 'repair' | 'restore' | null
@@ -305,25 +306,15 @@ export function useBrush(callbacks?: BrushCallbacks) {
     height: number,
     bounds: BrushBounds,
   ): Promise<Blob> {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('无法创建掩膜画布')
-    context.fillStyle = 'black'
-    context.fillRect(0, 0, width, height)
-    context.fillStyle = 'white'
-    for (const position of bounds.path) {
-      context.beginPath()
-      context.arc(position.x, position.y, bounds.radius, 0, Math.PI * 2)
-      context.fill()
-    }
-    return new Promise((resolve, reject) => {
-      canvas.toBlob(blob => {
-        if (blob) resolve(blob)
-        else reject(new Error('生成修复掩膜失败'))
-      }, 'image/png')
-    })
+    return encodeBinaryMaskPng(
+      width,
+      height,
+      bounds.path.map(position => ({
+        x: position.x,
+        y: position.y,
+        radius: bounds.radius,
+      })),
+    )
   }
 
   onUnmounted(() => {
