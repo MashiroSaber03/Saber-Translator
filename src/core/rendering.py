@@ -737,7 +737,7 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
     return result
 
 
-def render_horizontal_block(content: str, font, font_size: int, 
+def render_horizontal_block(content: str, font,
                            fill, stroke_enabled: bool, stroke_color, stroke_width: int,
                            canvas_image: Image.Image, current_x_col: int, current_y: int,
                            line_width: int, line_height_unit: int = None) -> int:
@@ -755,11 +755,12 @@ def render_horizontal_block(content: str, font, font_size: int,
     - 3个及以上字符：竖排显示但每个字符旋转90度
     
     Args:
-        line_height_unit: 一个"单位"的高度（中文字符高度），默认为 font_size + 1
+        line_height_unit: 一个"单位"的高度（中文字符高度），默认为字体大小 + 1
         
     Returns:
         占用的总高度（整数个单位）
     """
+    font_size = font.size
     if not content or canvas_image is None:
         return font_size
     
@@ -1027,7 +1028,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
     关键特性：
     1. 逐字符调用 CJK_Compatibility_Forms_translate 进行标点转换
     2. 支持单字符旋转（如日文长音符号 ー 需要旋转90度）
-    3. 气泡级别的旋转在 render_all_bubbles 中统一处理
+    3. 气泡级别的旋转在 render_bubbles_unified 中统一处理
 
     Args:
         x: 气泡右边界（第一列贴该边界）
@@ -1423,7 +1424,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
         
         current_x_col -= column_width_approx
 
-# --- 横排文本绘制函数（不含旋转，旋转在 render_all_bubbles 中统一处理） ---
+# --- 横排文本绘制函数（不含旋转，旋转在 render_bubbles_unified 中统一处理） ---
 def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   fill=constants.DEFAULT_TEXT_COLOR,
                                   stroke_enabled=constants.DEFAULT_STROKE_ENABLED,
@@ -1435,7 +1436,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                   text_align=constants.DEFAULT_TEXT_ALIGN):
     """
     在指定位置绘制横排多行文本（不含旋转）。
-    旋转逻辑已移至 render_all_bubbles 函数中统一处理，使用外接圆方案优化性能。
+    旋转逻辑由 render_bubbles_unified 统一处理，使用外接圆方案优化性能。
     
     优化：一次遍历同时完成分行和记录字符宽度，避免重复调用 getbbox()。
     
@@ -1710,6 +1711,7 @@ def render_bubbles_unified(
                     
         except Exception as render_e:
             logger.error(f"渲染气泡 {i} 时出错: {render_e}", exc_info=True)
+            raise
     
     logger.info("[统一渲染] 所有气泡文本渲染完成。")
     return image

@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -11,11 +12,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
+from src.core.config_models import BubbleState
 from src.core.rendering import (
     draw_multiline_text_vertical,
     get_char_ink_offset,
     get_font,
     process_text_for_vertical,
+    render_bubbles_unified,
 )
 
 
@@ -154,6 +157,33 @@ class VerticalPunctuationRenderingTests(unittest.TestCase):
         self.assertEqual(process_text_for_vertical("！！"), "‼")
         self.assertEqual(process_text_for_vertical("??"), "⁇")
         self.assertEqual(process_text_for_vertical("？？"), "⁇")
+
+    def test_vertical_ascii_blocks_render_for_two_and_three_or_more_characters(self) -> None:
+        for font_path in self.FONTS:
+            for text in ("AB", "ABC", "12", "Tik Tok"):
+                with self.subTest(font=font_path, text=text):
+                    left, top, right, bottom = _render_vertical_bbox(text, font_path)
+                    self.assertLess(left, right)
+                    self.assertLess(top, bottom)
+
+    def test_unified_renderer_propagates_a_bubble_render_failure(self) -> None:
+        image = Image.new("RGB", (160, 160), "white")
+        state = BubbleState(
+            translated_text="AB",
+            coords=(20, 20, 120, 140),
+            font_size=32,
+            font_family=self.FONTS[0],
+            text_direction="vertical",
+        )
+        try:
+            with patch(
+                "src.core.rendering.render_horizontal_block",
+                side_effect=RuntimeError("test render failure"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "test render failure"):
+                    render_bubbles_unified(image, [state])
+        finally:
+            image.close()
 
     def test_single_vertical_linear_punctuation_aligns_to_single_cjk_visual_center(self) -> None:
         font_size = 48

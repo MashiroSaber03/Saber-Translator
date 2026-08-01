@@ -73,6 +73,46 @@ class FakeAlgorithms(DeterministicFakeProvider):
     """Compatibility alias for failure-injection tests in this module."""
 
 
+def test_core_translation_render_supports_vertical_ascii_blocks() -> None:
+    source = Image.new("RGB", (160, 180), "white")
+    try:
+        rendered = CoreTranslationAlgorithms().render(
+            source,
+            [
+                {
+                    "translatedText": "AB 12",
+                    "coords": [20, 20, 130, 160],
+                    "fontSize": 32,
+                    "textDirection": "vertical",
+                }
+            ],
+            {},
+        )
+        try:
+            assert rendered.tobytes() != source.tobytes()
+        finally:
+            rendered.close()
+    finally:
+        source.close()
+
+
+def test_core_translation_render_propagates_core_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import rendering
+
+    def fail_render(_image, _states):
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr(rendering, "render_bubbles_unified", fail_render)
+    source = Image.new("RGB", (32, 32), "white")
+    try:
+        with pytest.raises(RuntimeError, match="render failed"):
+            CoreTranslationAlgorithms().render(source, [], {})
+    finally:
+        source.close()
+
+
 class PluginMutationAlgorithms(FakeAlgorithms):
     def __init__(self) -> None:
         super().__init__()

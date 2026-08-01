@@ -846,7 +846,11 @@ class CoreTranslationAlgorithms:
 
         states = [BubbleState.from_dict(payload) for payload in bubble_payloads]
         rendered = clean_image.copy()
-        render_bubbles_unified(rendered, states)
+        try:
+            render_bubbles_unified(rendered, states)
+        except Exception:
+            rendered.close()
+            raise
         return rendered
 
 
