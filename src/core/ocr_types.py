@@ -49,16 +49,10 @@ class OcrResult:
         return cls(
             text=str(data.get("text", "") or ""),
             confidence=_normalize_confidence(data.get("confidence")),
-            confidence_supported=bool(
-                data.get("confidenceSupported", data.get("confidence_supported", False))
-            ),
+            confidence_supported=bool(data.get("confidenceSupported", False)),
             engine=str(data.get("engine", "") or ""),
-            primary_engine=str(
-                data.get("primaryEngine", data.get("primary_engine", data.get("engine", ""))) or ""
-            ),
-            fallback_used=bool(
-                data.get("fallbackUsed", data.get("fallback_used", False))
-            ),
+            primary_engine=str(data.get("primaryEngine", "") or ""),
+            fallback_used=bool(data.get("fallbackUsed", False)),
         )
 
 

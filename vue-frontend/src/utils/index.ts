@@ -75,11 +75,3 @@ export {
   buildVueStaticAssetPath,
   type RouteClassification
 } from './routePath'
-
-export {
-  applyFieldMappings,
-  configFromApi,
-  configToApi,
-  toCamelCase,
-  toSnakeCase
-} from './insightConverters'

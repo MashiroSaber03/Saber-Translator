@@ -100,7 +100,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     activeChatSession,
     activeWorkspaceTab,
     errorMessage,
-    applySession: session => applyChatStatePayload({ session }),
+    applySession: session => applyChatStatePayload({ active_session: session }),
     flushPendingRehydrate: flushPendingChatRehydrate,
   })
   const {
@@ -603,10 +603,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     active_session?: CharacterStudioChatSession
     archived_sessions?: CharacterStudioChatSessionSummary[]
     available_greetings?: CharacterStudioGreetingOption[]
-    session?: CharacterStudioChatSession
     prompt_preview?: string
   }) {
-    const nextSession = payload.active_session || payload.session || null
+    const nextSession = payload.active_session || null
     if (nextSession) {
       if (activeChatSession.value?.session_id !== nextSession.session_id) {
         chatPromptPreview.value = ''
@@ -726,7 +725,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success) {
         throw new Error(response.error || '编辑消息失败')
       }
-      applyChatStatePayload({ session: response.session as CharacterStudioChatSession })
+      applyChatStatePayload({ active_session: response.session as CharacterStudioChatSession })
     } catch (error) {
       throw createActionError(error, '编辑消息失败')
     } finally {
@@ -749,7 +748,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success) {
         throw new Error(response.error || '删除消息失败')
       }
-      applyChatStatePayload({ session: response.session as CharacterStudioChatSession })
+      applyChatStatePayload({ active_session: response.session as CharacterStudioChatSession })
     } catch (error) {
       throw createActionError(error, '删除消息失败')
     } finally {
@@ -772,7 +771,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       if (!response.success) {
         throw new Error(response.error || '总结聊天失败')
       }
-      applyChatStatePayload({ session: response.session as CharacterStudioChatSession })
+      applyChatStatePayload({ active_session: response.session as CharacterStudioChatSession })
     } catch (error) {
       throw createActionError(error, '总结聊天失败')
     } finally {

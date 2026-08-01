@@ -16,8 +16,8 @@ defineEmits<{
   (event: 'toggle', id: string): void
 }>()
 
-const startPage = computed(() => props.arc.page_range?.start || props.arc.start_page || 1)
-const endPage = computed(() => props.arc.page_range?.end || props.arc.end_page || '?')
+const startPage = computed(() => props.arc.page_range.start)
+const endPage = computed(() => props.arc.page_range.end)
 </script>
 
 <template>

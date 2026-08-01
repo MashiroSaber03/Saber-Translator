@@ -28,8 +28,6 @@ def _normalize_overlap_threshold(value) -> float:
     except (TypeError, ValueError):
         return constants.SABER_YOLO_REFINE_OVERLAP_THRESHOLD
 
-    if threshold > 1:
-        threshold = threshold / 100.0
     threshold = max(0.0, min(threshold, 1.0))
     return threshold
 

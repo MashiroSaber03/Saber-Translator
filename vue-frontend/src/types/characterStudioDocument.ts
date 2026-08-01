@@ -63,9 +63,6 @@ export interface CharacterStudioDocument {
     created_at: string
     updated_at: string
   }
-  avatar: {
-    asset_path?: string | null
-  }
   identity: {
     name: string
     aliases: string[]
@@ -88,15 +85,6 @@ export interface CharacterStudioDocument {
   }
   regexScripts: RegexScript[]
   stateTasks: StateTask[]
-  chatPreset: {
-    opening_mode: string
-  }
-  grounding: {
-    timeline_mode: string
-    sample_pages: number[]
-    relationships: Array<Record<string, unknown>>
-    key_moments: Array<Record<string, unknown>>
-  }
   exportArtifacts: Record<string, unknown>
   revision?: number
   avatarUrl?: string | null

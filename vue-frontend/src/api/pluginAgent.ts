@@ -350,7 +350,7 @@ export async function subscribePluginAgentEvents(
         continue
       }
       if (event.type !== 'job_finished' || sawPluginTerminal) continue
-      const status = String(event.payload.status || event.payload.to || '')
+      const status = String(event.payload.status || '')
       const runState = status === 'cancelled' ? 'cancelled' : 'failed'
       if (!['cancelled', 'completed_with_errors', 'failed', 'interrupted'].includes(status)) {
         continue

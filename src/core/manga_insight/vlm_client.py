@@ -211,108 +211,38 @@ class VLMClient:
         try:
             text = self._extract_json_from_text(response_text)
             result = parse_llm_json(text)
-        except OpenAICompatibleBusinessRetryableError as exc:
-            logger.warning(f"批量 JSON 提取失败，第{start_page}-{end_page}页: {exc}")
-            result = {}
-
-        if not result:
-            logger.warning(f"批量 JSON 解析失败，第{start_page}-{end_page}页")
-            page_count = end_page - start_page + 1
-            return {
-                "page_range": {"start": start_page, "end": end_page},
-                "pages": [{
-                    "page_number": start_page + i,
-                    "raw_response": response_text[:2000] if i == 0 else "",
-                    "parse_error": True
-                } for i in range(page_count)],
-                "batch_summary": "",
-                "key_events": [],
-                "continuity_notes": "",
-                "parse_error": True
-            }
-
-        try:
-            if isinstance(result, list):
-                result = {
-                    "page_range": {"start": start_page, "end": end_page},
-                    "pages": result,
-                    "batch_summary": "",
-                    "key_events": [],
-                    "continuity_notes": ""
-                }
-
-            if "page_range" not in result:
-                result["page_range"] = {"start": start_page, "end": end_page}
-
-            if "pages" not in result or not result["pages"]:
-                logger.warning(f"批量分析结果缺少或空的 pages 字段，返回的键: {list(result.keys())}")
-                for key in ["page_analyses", "analysis", "results", "data", "page_list"]:
-                    if key in result and isinstance(result[key], list) and len(result[key]) > 0:
-                        result["pages"] = result[key]
-                        logger.info(f"从 '{key}' 字段提取到 {len(result['pages'])} 个页面")
-                        break
-                else:
-                    if not result.get("pages"):
-                        batch_summary = result.get("batch_summary", "")
-                        if batch_summary:
-                            logger.info(f"使用 batch_summary 为第{start_page}-{end_page}页生成基本页面数据")
-                            result["pages"] = []
-                            for page_num in range(start_page, end_page + 1):
-                                result["pages"].append({
-                                    "page_number": page_num,
-                                    "page_summary": batch_summary if page_num == start_page else f"（见第{start_page}页批次摘要）",
-                                    "from_batch_summary": True
-                                })
-                        else:
-                            result["pages"] = []
-                            logger.warning(f"无法提取页面数据，原始响应前500字符: {response_text[:500]}")
-
-            normalized_pages = []
-            for page in result.get("pages", []):
-                if not isinstance(page, dict):
-                    normalized_pages.append(page)
-                    continue
-                normalized = dict(page)
-                if "page_number" not in normalized and isinstance(normalized.get("page_num"), int):
-                    normalized["page_number"] = normalized["page_num"]
-                normalized_pages.append(normalized)
-            result["pages"] = normalized_pages
-
             expected_page_count = end_page - start_page + 1
-            pages = result.get("pages", [])
+            if not isinstance(result, dict) or set(result) != {"pages"}:
+                raise ValueError("模型结果必须是只包含 pages 的对象")
+
+            pages = result["pages"]
+            if not isinstance(pages, list):
+                raise ValueError("pages 必须是数组")
             if len(pages) != expected_page_count:
-                logger.warning(
-                    f"页面数不匹配: 期望 {expected_page_count}, 实际 {len(pages)} "
-                    f"(第{start_page}-{end_page}页)"
+                raise ValueError(
+                    f"页面数必须为 {expected_page_count}，实际为 {len(pages)}"
                 )
-                result["parse_error"] = True
 
-                if pages:
-                    page_numbers = [
-                        p.get("page_number", p.get("page_num", 0))
-                        for p in pages
-                        if isinstance(p, dict)
-                    ]
-                    if set(page_numbers) == set(range(start_page, end_page + 1)):
-                        result["pages"] = sorted(
-                            pages,
-                            key=lambda x: x.get("page_number", x.get("page_num", 0)) if isinstance(x, dict) else 0,
-                        )
-                    else:
-                        result["pages"] = []
-                        logger.warning(f"无法提取页面数据，原始响应前500字符: {response_text[:500]}")
+            expected_numbers = list(range(start_page, end_page + 1))
+            page_numbers: list[int] = []
+            for index, page in enumerate(pages):
+                if not isinstance(page, dict):
+                    raise ValueError(f"pages[{index}] 必须是对象")
+                page_number = page.get("page_number")
+                if isinstance(page_number, bool) or not isinstance(page_number, int):
+                    raise ValueError(f"pages[{index}].page_number 必须是整数")
+                page_numbers.append(page_number)
+            if page_numbers != expected_numbers:
+                raise ValueError(
+                    f"page_number 必须依次为 {expected_numbers}，实际为 {page_numbers}"
+                )
 
-            return result
-        except Exception as e:
-            logger.warning(f"批量分析结果处理异常: {e}")
-            return result if result else {
-                "page_range": {"start": start_page, "end": end_page},
-                "pages": [],
-                "batch_summary": "",
-                "key_events": [],
-                "continuity_notes": "",
-                "parse_error": True
-            }
+            return {"pages": pages}
+        except (OpenAICompatibleBusinessRetryableError, TypeError, ValueError) as exc:
+            logger.warning(
+                f"批量 JSON 结果无效，第{start_page}-{end_page}页: {exc}"
+            )
+            return {"pages": [], "parse_error": True}
 
     async def test_connection(self) -> bool:
         try:

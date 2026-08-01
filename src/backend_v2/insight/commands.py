@@ -40,9 +40,7 @@ ALLOWED_COMMAND_KEYS = frozenset(
     {
         "bookId",
         "scope",
-        "chapterId",
         "chapterIds",
-        "pageId",
         "pageIds",
         "force",
     }
@@ -317,12 +315,12 @@ def normalize_analysis_command(command: Mapping[str, Any]) -> dict[str, Any]:
     scope = str(command.get("scope", "full"))
     if scope not in ANALYSIS_SCOPES:
         raise ValueError("scope must be full, incremental, chapter, or page")
-    chapter_ids = _ids(command, singular="chapterId", plural="chapterIds")
-    page_ids = _ids(command, singular="pageId", plural="pageIds")
+    chapter_ids = _ids(command, "chapterIds")
+    page_ids = _ids(command, "pageIds")
     if scope == "chapter" and not chapter_ids:
-        raise ValueError("chapter scope requires chapterId or chapterIds")
+        raise ValueError("chapter scope requires chapterIds")
     if scope == "page" and not page_ids:
-        raise ValueError("page scope requires pageId or pageIds")
+        raise ValueError("page scope requires pageIds")
     if scope in {"full", "incremental"} and (chapter_ids or page_ids):
         raise ValueError(f"{scope} scope does not accept chapter/page selectors")
     if scope == "chapter" and page_ids:
@@ -340,23 +338,17 @@ def normalize_analysis_command(command: Mapping[str, Any]) -> dict[str, Any]:
 
 def _ids(
     command: Mapping[str, Any],
-    *,
-    singular: str,
-    plural: str,
+    key: str,
 ) -> list[str]:
-    values: list[object] = []
-    if command.get(singular) is not None:
-        values.append(command[singular])
-    if command.get(plural) is not None:
-        raw = command[plural]
-        if not isinstance(raw, list):
-            raise ValueError(f"{plural} must be a string array")
-        values.extend(raw)
+    raw = command.get(key, [])
+    if not isinstance(raw, list):
+        raise ValueError(f"{key} must be a string array")
+    values = list(raw)
     if not all(isinstance(value, str) and value.strip() for value in values):
-        raise ValueError(f"{singular}/{plural} must contain non-empty strings")
+        raise ValueError(f"{key} must contain non-empty strings")
     normalized = [str(value) for value in values]
     if len(set(normalized)) != len(normalized):
-        raise ValueError(f"{singular}/{plural} must be unique")
+        raise ValueError(f"{key} must be unique")
     return normalized
 
 
@@ -401,9 +393,7 @@ def _validate_provider_section(
     label: str,
 ) -> None:
     section = dict(value) if isinstance(value, Mapping) else {}
-    provider = str(
-        section.get("provider", section.get("model_provider", ""))
-    ).strip()
+    provider = str(section.get("provider", "")).strip()
     if not provider:
         raise ValueError(f"{label} 未选择服务商，请先在分析设置中完成配置")
     manifest = get_provider_manifest(provider)

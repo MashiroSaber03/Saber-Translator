@@ -217,8 +217,8 @@ plugins = Table(
     Column("id", String(UUID_LENGTH), primary_key=True),
     Column("name", String(200), nullable=False),
     Column("state", String(16), nullable=False, server_default="enabled"),
-    Column("author", String(200), nullable=False, server_default=""),
-    Column("description", Text, nullable=False, server_default=""),
+    Column("author", String(200), nullable=False, server_default=text("''")),
+    Column("description", Text, nullable=False, server_default=text("''")),
     Column("default_enabled", Boolean, nullable=False, server_default="0"),
     Column("runtime_enabled", Boolean, nullable=False, server_default="0"),
     Column("config_json", Text, nullable=False, server_default="{}"),
@@ -239,7 +239,7 @@ plugin_versions = Table(
     Column("checksum", String(HASH_LENGTH), nullable=False),
     Column("manifest_json", Text, nullable=False),
     Column("config_schema_json", Text, nullable=False, server_default="{}"),
-    Column("manifest_schema_version", Integer, nullable=False, server_default="1"),
+    Column("manifest_schema_version", Integer, nullable=False, server_default="3"),
     *_timestamps(),
 )
 
@@ -1002,7 +1002,7 @@ studio_messages = Table(
     Column("ordinal", Integer, nullable=False),
     Column("role", String(16), nullable=False),
     Column("content", Text, nullable=False),
-    Column("runtime_log", Text, nullable=False, server_default=""),
+    Column("runtime_log", Text, nullable=False, server_default=text("''")),
     Column("variables_snapshot_json", Text, nullable=False, server_default="{}"),
     Column("generation_meta_json", Text, nullable=False, server_default="{}"),
     *_timestamps(),
@@ -1458,7 +1458,7 @@ note_citations = Table(
         String(UUID_LENGTH),
         ForeignKey("analysis_page_results.id", ondelete="SET NULL"),
     ),
-    Column("excerpt", Text, nullable=False, server_default=""),
+    Column("excerpt", Text, nullable=False, server_default=text("''")),
     Column("score", Float),
 )
 
@@ -1494,7 +1494,7 @@ continuation_scripts = Table(
         nullable=False,
     ),
     Column("revision", Integer, nullable=False, server_default="1"),
-    Column("content", Text, nullable=False, server_default=""),
+    Column("content", Text, nullable=False, server_default=text("''")),
     *_timestamps(),
 )
 

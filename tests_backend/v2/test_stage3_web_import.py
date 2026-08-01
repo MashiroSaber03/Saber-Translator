@@ -46,6 +46,7 @@ from src.backend_v2.web_import.commands import WebImportCommandService
 from src.backend_v2.web_import.worker import WebImportWorkerService
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.worker.maintenance import WorkerMaintenance
+from src.core.web_import.agent import MangaScraperAgent
 
 
 def _png(color: tuple[int, int, int]) -> bytes:
@@ -53,6 +54,42 @@ def _png(color: tuple[int, int, int]) -> bytes:
     with Image.new("RGB", (28, 36), color) as image:
         image.save(output, format="PNG")
     return output.getvalue()
+
+
+def test_web_agent_result_parser_accepts_only_the_current_schema() -> None:
+    parser = object.__new__(MangaScraperAgent)
+    current = parser._parse_result(
+        json.dumps(
+            {
+                "comic_title": "Comic",
+                "chapter_title": "Chapter",
+                "pages": [
+                    {"page_number": 1, "image_url": "https://example.test/1.jpg"}
+                ],
+                "total_pages": 1,
+            }
+        ),
+        "https://example.test/chapter",
+    )
+    assert current.success
+    assert current.pages == [
+        {"pageNumber": 1, "imageUrl": "https://example.test/1.jpg"}
+    ]
+
+    retired = parser._parse_result(
+        json.dumps(
+            {
+                "comicTitle": "Comic",
+                "chapterTitle": "Chapter",
+                "pages": [
+                    {"pageNumber": 1, "imageUrl": "https://example.test/1.jpg"}
+                ],
+                "totalPages": 1,
+            }
+        ),
+        "https://example.test/chapter",
+    )
+    assert not retired.success
 
 
 def _run_job(
@@ -236,6 +273,7 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                     },
                 },
                 base_revision=1,
+                schema_version=1,
             ),
         ),
         credentials_edits=(
@@ -263,6 +301,7 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                     "customBaseUrl": "https://agent.example/v1",
                 },
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="agent",
             ),
             ProviderSettingMutation(
@@ -270,6 +309,7 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                 provider="firecrawl",
                 payload={},
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="firecrawl",
             ),
         ),
@@ -329,6 +369,7 @@ def test_web_extract_auto_import_is_created_by_the_backend(
                 domain="web_import",
                 payload=settings_payload,
                 base_revision=1,
+                schema_version=1,
             ),
         ),
     )

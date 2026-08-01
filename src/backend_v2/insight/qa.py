@@ -520,9 +520,7 @@ class DefaultQARetrievalAlgorithms:
 
         section = _object(config.get("embedding"))
         provider = str(section.get("provider", ""))
-        model = str(
-            section.get("model_name", section.get("modelName", ""))
-        )
+        model = str(section.get("model_name", ""))
         if not provider or not model:
             raise QAConflict("Insight embedding provider/model is not configured")
         async def execute() -> Sequence[Sequence[float]]:
@@ -905,9 +903,7 @@ class DefaultQAApiAlgorithms:
 
         section = _object(config.get("reranker"))
         provider = str(section.get("provider", ""))
-        model = str(
-            section.get("model_name", section.get("modelName", ""))
-        )
+        model = str(section.get("model_name", ""))
         if not provider or not model or not _api_key(section):
             return list(candidates)[:top_k]
         documents = [str(row.get("document", "")) for row in candidates]
@@ -964,9 +960,7 @@ class DefaultQAApiAlgorithms:
         if not section.get("provider"):
             section = _object(config.get("vlm"))
         provider = str(section.get("provider", ""))
-        model = str(
-            section.get("model_name", section.get("modelName", ""))
-        )
+        model = str(section.get("model_name", ""))
         if not provider or not model:
             raise QAConflict("Insight chat provider/model is not configured")
         context = _answer_context(candidates)
@@ -1319,7 +1313,7 @@ def _answer_context(candidates: Sequence[Mapping[str, Any]]) -> str:
 
 
 def _api_key(section: Mapping[str, Any]) -> str:
-    return str(section.get("api_key", section.get("apiKey", "")))
+    return str(section.get("api_key", ""))
 
 
 def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1327,8 +1321,5 @@ def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _base_url(section: Mapping[str, Any]) -> str | None:
-    value = section.get(
-        "custom_base_url",
-        section.get("base_url", section.get("baseUrl")),
-    )
+    value = section.get("custom_base_url")
     return str(value) if value else None

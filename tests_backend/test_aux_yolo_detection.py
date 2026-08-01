@@ -137,7 +137,7 @@ class AuxYoloDetectionTests(unittest.TestCase):
                 aux_yolo_conf_threshold=0.55,
                 aux_yolo_overlap_threshold=0.2,
                 enable_saber_yolo_refine=True,
-                saber_yolo_refine_overlap_threshold=35,
+                saber_yolo_refine_overlap_threshold=0.35,
             )
 
         self.assertIs(result, main_result)

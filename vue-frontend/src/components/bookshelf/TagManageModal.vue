@@ -31,7 +31,7 @@ const editTagColor = ref('')
 
 const tags = computed(() => bookshelfStore.tags)
 
-function tagMetadataItems(tag: { name: string; color?: string; book_count?: number }): ProductChipItem[] {
+function tagMetadataItems(tag: { name: string; color?: string; bookCount?: number }): ProductChipItem[] {
   const tagColor = tag.color || 'var(--color-action-brand)'
 
   return [
@@ -45,7 +45,7 @@ function tagMetadataItems(tag: { name: string; color?: string; book_count?: numb
     },
     {
       id: `count-${tag.name}`,
-      label: `${tag.book_count || 0} 本`,
+      label: `${tag.bookCount || 0} 本`,
       tone: 'neutral',
     },
   ]

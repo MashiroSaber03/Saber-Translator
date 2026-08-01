@@ -10,8 +10,7 @@ export function normalizeChapterData(chapter: ChapterData): ChapterData {
   return {
     ...chapter,
     title: normalizeTextField(chapter.title),
-    imageCount: chapter.imageCount ?? chapter.image_count ?? chapter.page_count ?? 0,
-    hasSession: chapter.hasSession ?? chapter.has_session ?? Boolean(chapter.session_path),
+    imageCount: chapter.imageCount ?? 0,
   }
 }
 
@@ -23,9 +22,9 @@ export function normalizeBookData(book: BookData): BookData {
     title: normalizeTextField(book.title),
     description: normalizeTextField(book.description, ''),
     chapters,
-    chapterCount: book.chapterCount ?? book.chapter_count ?? chapters?.length ?? 0,
-    totalPages: book.totalPages ?? book.total_pages ?? 0,
-    createdAt: normalizeTextField(book.createdAt ?? book.created_at),
-    updatedAt: normalizeTextField(book.updatedAt ?? book.updated_at),
+    chapterCount: book.chapterCount ?? chapters?.length ?? 0,
+    totalPages: book.totalPages ?? 0,
+    createdAt: normalizeTextField(book.createdAt),
+    updatedAt: normalizeTextField(book.updatedAt),
   }
 }

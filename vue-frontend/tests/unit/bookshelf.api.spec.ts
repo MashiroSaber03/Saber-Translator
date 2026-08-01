@@ -92,7 +92,7 @@ describe('bookshelf v2 api contracts', () => {
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/books/book%2Fid%20one/translation-constraints',
     )
-    expect(result.book?.translation_constraints).toEqual({
+    expect(result.book?.translationConstraints).toEqual({
       glossary: constraints.payload.glossary,
       non_translate: constraints.payload.nonTranslate,
     })
@@ -106,7 +106,7 @@ describe('bookshelf v2 api contracts', () => {
     const { getBookDetail, updateBook } = await import('@/api/bookshelf')
     await getBookDetail(book.id)
     await updateBook(book.id, {
-      translation_constraints: {
+      translationConstraints: {
         glossary: constraints.payload.glossary,
         non_translate: constraints.payload.nonTranslate,
       },

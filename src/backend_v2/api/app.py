@@ -302,8 +302,8 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     app.register_blueprint(create_web_blueprint())
 
-    # Unit tests may share a pytest process with legacy suites that deliberately
-    # import Torch and old interfaces. Production roles still enforce the
+    # Unit tests may share a pytest process with suites that import Torch and
+    # model interfaces. Production roles still enforce the
     # process-wide guard; the isolated API probe verifies test-mode import graphs.
     if not settings.identity.test_mode:
         assert_api_import_boundary()

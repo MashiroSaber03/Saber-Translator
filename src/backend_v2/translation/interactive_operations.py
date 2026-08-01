@@ -27,7 +27,7 @@ from src.backend_v2.storage.schema import (
     pages,
 )
 from src.backend_v2.translation.pipeline import (
-    LegacyTranslationAlgorithms,
+    CoreTranslationAlgorithms,
     TranslationAlgorithms,
     TranslationPipelineService,
     _preserve_detected_text,
@@ -48,7 +48,7 @@ class InteractivePageOperationService:
         self.repository = repository
         self.storage = AssetStorageService(data_root, engine)
         self.credentials = SettingsRepository(engine)
-        self.algorithms = algorithms or LegacyTranslationAlgorithms()
+        self.algorithms = algorithms or CoreTranslationAlgorithms()
         self.renders = RenderRequestRepository(engine)
         self.plugin_runtime = plugin_runtime
 

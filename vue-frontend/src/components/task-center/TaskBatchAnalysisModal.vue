@@ -43,7 +43,7 @@ const scopeOptions: UiSelectOption[] = [
   { label: '指定章节', value: 'chapter' },
 ]
 const selectableChapters = computed(() => (
-  chapters.value.filter(chapter => (chapter.page_count || chapter.imageCount || 0) > 0)
+  chapters.value.filter(chapter => (chapter.imageCount || 0) > 0)
 ))
 const canSubmit = computed(() => (
   Boolean(bookId.value)
@@ -183,7 +183,7 @@ async function submit() {
             :key="chapter.id"
             :model-value="selectedChapterIds.has(chapter.id)"
             :label="chapter.title"
-            :description="`${chapter.page_count || chapter.imageCount || 0} 页`"
+            :description="`${chapter.imageCount || 0} 页`"
             @change="selected => toggleChapter(chapter.id, selected)"
           />
         </div>

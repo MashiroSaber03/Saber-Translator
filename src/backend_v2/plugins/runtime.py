@@ -305,10 +305,27 @@ class _PluginLoader:
             version_id = str(row["plugin_version_id"])
             snapshot = _json_object(row["config_json"])
             if snapshot.get("protectOnly") is True:
+                if set(snapshot) != {"pluginId", "protectOnly"}:
+                    raise PluginContractError(
+                        "protect-only plugin snapshot has invalid fields"
+                    )
                 continue
+            if set(snapshot) != {
+                "pluginId",
+                "configRevision",
+                "config",
+                "hooks",
+            }:
+                raise PluginContractError(
+                    "plugin snapshot does not match the current schema"
+                )
             manifest_raw = _json_object(row["manifest_json"])
             manifest = parse_manifest(manifest_raw)
-            config = snapshot.get("config", snapshot)
+            if snapshot["pluginId"] != manifest.plugin_id:
+                raise PluginContractError(
+                    "plugin snapshot identity does not match its version"
+                )
+            config = snapshot["config"]
             if not isinstance(config, Mapping):
                 raise PluginContractError(
                     f"{manifest.plugin_id} snapshot config is invalid"

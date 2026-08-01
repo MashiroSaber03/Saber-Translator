@@ -59,8 +59,8 @@ class PluginLocked(PluginConflict):
     pass
 
 
-def _load(value: str | None, default: object) -> object:
-    return json.loads(value) if value else default
+def _load(value: str) -> object:
+    return json.loads(value)
 
 
 class PluginRegistry:
@@ -229,10 +229,7 @@ class PluginRegistry:
                         )
                     )
                 else:
-                    loaded_config = _load(
-                        str(plugin["config_json"]),
-                        {},
-                    )
+                    loaded_config = _load(str(plugin["config_json"]))
                     if not isinstance(loaded_config, Mapping):
                         raise PluginConflict(
                             "stored plugin config is invalid"
@@ -426,7 +423,7 @@ class PluginRegistry:
                 raise PluginNotFound("plugin not found")
             if int(row["config_revision"]) != base_revision:
                 raise PluginConflict("plugin config revision changed")
-            schema = _load(str(row["config_schema_json"]), {})
+            schema = _load(str(row["config_schema_json"]))
             if not isinstance(schema, Mapping):
                 raise PluginConflict("plugin config schema is invalid")
             normalized = validate_config(schema, config)
@@ -471,7 +468,7 @@ class PluginRegistry:
                         raise PluginContractError(
                             "immutable package checksum mismatch"
                         )
-                    raw_manifest = _load(str(row["manifest_json"]), {})
+                    raw_manifest = _load(str(row["manifest_json"]))
                     if not isinstance(raw_manifest, Mapping):
                         raise PluginContractError(
                             "stored manifest is invalid"
@@ -608,9 +605,17 @@ class PluginRegistry:
 
     @staticmethod
     def _dto(row: Mapping[str, Any]) -> dict[str, Any]:
-        manifest = _load(str(row["manifest_json"]), {})
-        schema = _load(str(row["config_schema_json"]), {})
-        config = _load(str(row["config_json"]), {})
+        raw_manifest = _load(str(row["manifest_json"]))
+        if not isinstance(raw_manifest, Mapping):
+            raise PluginConflict("stored plugin manifest is invalid")
+        manifest = parse_manifest(raw_manifest).to_dict()
+        schema = _load(str(row["config_schema_json"]))
+        if not isinstance(schema, Mapping):
+            raise PluginConflict("stored plugin config schema is invalid")
+        config = _load(str(row["config_json"]))
+        if not isinstance(config, Mapping):
+            raise PluginConflict("stored plugin config is invalid")
+        normalized_config = validate_config(schema, config)
         result = {
             "pluginId": str(row["id"]),
             "displayName": str(row["name"]),
@@ -619,14 +624,14 @@ class PluginRegistry:
             "state": str(row["state"]),
             "defaultEnabled": bool(row["default_enabled"]),
             "runtimeEnabled": bool(row["runtime_enabled"]),
-            "config": config if isinstance(config, dict) else {},
+            "config": normalized_config,
             "configRevision": int(row["config_revision"]),
             "errorMessage": row["error_message"],
             "pluginVersionId": str(row["plugin_version_id"]),
             "packageVersion": str(row["package_version"]),
             "currentRevision": int(row["current_revision"]),
-            "manifest": manifest if isinstance(manifest, dict) else {},
-            "configSchema": schema if isinstance(schema, dict) else {},
+            "manifest": manifest,
+            "configSchema": dict(schema),
         }
         if "package_relative_path" in row:
             result["packageRelativePath"] = str(
@@ -675,7 +680,7 @@ class PluginRegistry:
             raise PluginConflict(
                 "Idempotency-Key was reused for different plugin input"
             )
-        value = _load(str(row["response_json"]), {})
+        value = _load(str(row["response_json"]))
         if not isinstance(value, dict):
             raise PluginConflict("stored idempotency response is invalid")
         return value

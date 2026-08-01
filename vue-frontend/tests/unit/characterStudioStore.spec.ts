@@ -978,7 +978,7 @@ describe('characterStudioStore', () => {
             greeting_id: 'alternate_1',
             label: '备用问候 1',
             content: '备用问候',
-            source: { type: 'alternate_greetings', index: 0 },
+            source: { type: 'alternate_greeting', index: 0 },
           },
         ],
       })

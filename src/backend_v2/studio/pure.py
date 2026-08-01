@@ -1,7 +1,7 @@
 """Dependency-light Character Studio document and runtime functions.
 
-This module is intentionally independent from the legacy Manga Insight package
-so the v2 API import graph remains free of Worker/legacy implementation code.
+This module is independent from Worker-only Manga Insight implementations so
+the API import graph stays dependency-light.
 """
 
 from __future__ import annotations
@@ -70,11 +70,7 @@ def ensure_document_shape(
     base = create_empty_document(book_id)
     result = _deep_merge(base, document)
     result["bookId"] = book_id
-    result.pop("grounding", None)
-    result.pop("chatPreset", None)
-    result.pop("avatar", None)
     origin = _object(result.get("origin"))
-    origin.pop("source_pages", None)
     result["origin"] = origin
     identity = _object(result.get("identity"))
     meta = _object(result.get("meta"))

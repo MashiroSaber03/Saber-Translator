@@ -22,7 +22,7 @@ function arcId(arc: TimelineArc, index: number): string {
 }
 
 function arcStartPage(arc: TimelineArc): number {
-  return arc.page_range?.start || arc.start_page || 1
+  return arc.page_range.start
 }
 
 function isExpanded(id: string): boolean {

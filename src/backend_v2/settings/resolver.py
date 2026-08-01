@@ -13,6 +13,7 @@ from src.backend_v2.content.translation_constraints import (
 )
 from src.backend_v2.settings.validation import (
     validate_book_setting_payload,
+    validate_provider_setting_payload,
     validate_setting_payload,
 )
 from src.backend_v2.storage.schema import (
@@ -44,6 +45,59 @@ def _deep_merge(
     return result
 
 
+def _validated_provider_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    domain = str(row["domain"])
+    provider = str(row["provider"])
+    payload = validate_provider_setting_payload(
+        domain,
+        provider,
+        json.loads(row["payload_json"]),
+        schema_version=int(row["schema_version"]),
+    )
+    return {
+        "payload": payload,
+        "credentialVersionId": row["credential_version_id"],
+        "revision": row["revision"],
+    }
+
+
+def _frozen_openai_options(
+    value: object,
+    *,
+    wire_format: bool,
+) -> dict[str, Any]:
+    options = _object(value)
+    request = _object(options.get("request"))
+    execution = _object(options.get("execution"))
+    if wire_format:
+        return {
+            "request": {
+                "force_json_output": bool(request.get("force_json_output", False)),
+                "temperature": request.get("temperature"),
+                "extra_body": _object(request.get("extra_body")),
+            },
+            "execution": {
+                "use_stream": bool(execution.get("use_stream", False)),
+                "rpm_limit": int(execution.get("rpm_limit", 0)),
+                "transport_retries": int(execution.get("transport_retries", 1)),
+                "business_retries": int(execution.get("business_retries", 0)),
+            },
+        }
+    return {
+        "request": {
+            "force_json_output": bool(request.get("forceJsonOutput", False)),
+            "temperature": request.get("temperature"),
+            "extra_body": _object(request.get("extraBody")),
+        },
+        "execution": {
+            "use_stream": bool(execution.get("useStream", False)),
+            "rpm_limit": int(execution.get("rpmLimit", 0)),
+            "transport_retries": int(execution.get("transportRetries", 1)),
+            "business_retries": int(execution.get("businessRetries", 0)),
+        },
+    }
+
+
 def _provider_section(
     *,
     domain: str,
@@ -55,10 +109,12 @@ def _provider_section(
     payload = _deep_merge(selected, _object(row.get("payload")))
     section = {
         "provider": provider,
-        "model_provider": provider,
         "model_name": payload.get("modelName", ""),
         "custom_base_url": payload.get("customBaseUrl", ""),
-        "openai_options": payload.get("openaiOptions", {}),
+        "openai_options": _frozen_openai_options(
+            payload.get("openaiOptions", {}),
+            wire_format=domain in {"insight_vlm", "insight_chat"},
+        ),
     }
     prompt = payload.get("prompt")
     if prompt is not None:
@@ -174,14 +230,12 @@ class SettingsResolver:
                     provider_settings.c.payload_json,
                     provider_settings.c.credential_version_id,
                     provider_settings.c.revision,
+                    provider_settings.c.schema_version,
                 )
             ).mappings()
             provider_rows = {
-                (str(row["domain"]), str(row["provider"])): {
-                    "payload": json.loads(row["payload_json"]),
-                    "credentialVersionId": row["credential_version_id"],
-                    "revision": row["revision"],
-                }
+                (str(row["domain"]), str(row["provider"])):
+                    _validated_provider_row(row)
                 for row in raw_provider_rows
             }
 
@@ -317,9 +371,9 @@ class SettingsResolver:
             "aux_yolo_conf_threshold": effective["auxYoloConfThreshold"],
             "aux_yolo_overlap_threshold": effective["auxYoloOverlapThreshold"],
             "enable_saber_yolo_refine": bool(effective["enableSaberYoloRefine"]),
-            "saber_yolo_refine_overlap_threshold": effective[
-                "saberYoloRefineOverlapThreshold"
-            ],
+            "saber_yolo_refine_overlap_threshold": (
+                effective["saberYoloRefineOverlapThreshold"] / 100.0
+            ),
             "expand_ratio": box_expand["ratio"],
             "expand_top": box_expand["top"],
             "expand_bottom": box_expand["bottom"],
@@ -493,6 +547,7 @@ class SettingsResolver:
                     provider_settings.c.payload_json,
                     provider_settings.c.credential_version_id,
                     provider_settings.c.revision,
+                    provider_settings.c.schema_version,
                 ).where(
                     provider_settings.c.domain.in_(
                         (
@@ -504,11 +559,8 @@ class SettingsResolver:
                 )
             ).mappings()
             provider_rows = {
-                (str(row["domain"]), str(row["provider"])): {
-                    "payload": json.loads(row["payload_json"]),
-                    "credentialVersionId": row["credential_version_id"],
-                    "revision": row["revision"],
-                }
+                (str(row["domain"]), str(row["provider"])):
+                    _validated_provider_row(row)
                 for row in raw_provider_rows
             }
 
@@ -616,6 +668,7 @@ class SettingsResolver:
                 select(
                     book_settings.c.payload_json,
                     book_settings.c.revision,
+                    book_settings.c.schema_version,
                 ).where(
                     book_settings.c.book_id == book_id,
                     book_settings.c.domain == "insight",
@@ -628,14 +681,12 @@ class SettingsResolver:
                     provider_settings.c.payload_json,
                     provider_settings.c.credential_version_id,
                     provider_settings.c.revision,
+                    provider_settings.c.schema_version,
                 ).where(provider_settings.c.domain.in_(provider_domains))
             ).mappings()
             provider_rows = {
-                (str(row["domain"]), str(row["provider"])): {
-                    "payload": json.loads(row["payload_json"]),
-                    "credentialVersionId": row["credential_version_id"],
-                    "revision": row["revision"],
-                }
+                (str(row["domain"]), str(row["provider"])):
+                    _validated_provider_row(row)
                 for row in raw_provider_rows
             }
             prompt_rows = list(
@@ -661,6 +712,7 @@ class SettingsResolver:
             validate_book_setting_payload(
                 "insight",
                 json.loads(book_row["payload_json"]),
+                schema_version=int(book_row["schema_version"]),
             )
             if book_row
             else {}

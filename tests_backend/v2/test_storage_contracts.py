@@ -4,11 +4,12 @@ from datetime import datetime
 import json
 from pathlib import Path
 import os
-import sqlite3
 import subprocess
 import sys
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import UniqueConstraint, insert, text
 from sqlalchemy.exc import IntegrityError
 
@@ -29,6 +30,7 @@ from src.backend_v2.storage.schema import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FOUNDATION_REVISION = "v2_foundation_20260801"
 
 
 @pytest.fixture()
@@ -557,7 +559,18 @@ def test_only_one_current_job_can_exist(engine) -> None:
             )
 
 
-def test_alembic_head_upgrades_and_downgrades_without_fk_damage(
+def test_formal_migration_tree_contains_only_the_v2_foundation() -> None:
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    scripts = ScriptDirectory.from_config(config)
+    revisions = list(scripts.walk_revisions())
+
+    assert scripts.get_current_head() == FOUNDATION_REVISION
+    assert [(revision.revision, revision.down_revision) for revision in revisions] == [
+        (FOUNDATION_REVISION, None)
+    ]
+
+
+def test_v2_foundation_builds_the_exact_schema_and_downgrades_cleanly(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "migration.sqlite3"
@@ -585,6 +598,17 @@ def test_alembic_head_upgrades_and_downgrades_without_fk_damage(
     engine = create_sqlite_engine(database_path)
     with engine.connect() as connection:
         assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+        assert connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one() == FOUNDATION_REVISION
+        actual_tables = {
+            str(row[0])
+            for row in connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+            if not str(row[0]).startswith("sqlite_")
+        }
+        assert actual_tables == set(metadata.tables) | {"alembic_version"}
         index_sql = connection.execute(
             text(
                 "SELECT sql FROM sqlite_master "
@@ -593,6 +617,16 @@ def test_alembic_head_upgrades_and_downgrades_without_fk_damage(
         ).scalar_one()
         assert "WHERE status IN" in index_sql
     engine.dispose()
+
+    subprocess.run(
+        [*command, "check"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
 
     subprocess.run(
         [*command, "downgrade", "base"],
@@ -604,195 +638,14 @@ def test_alembic_head_upgrades_and_downgrades_without_fk_damage(
         timeout=60,
     )
 
-
-def test_translation_constraint_migration_normalizes_legacy_arrays(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "constraint-migration.sqlite3"
-    environment = os.environ.copy()
-    environment["SABER_V2_DATABASE_URL"] = (
-        f"sqlite+pysqlite:///{database_path.resolve().as_posix()}"
-    )
-    command = [
-        sys.executable,
-        "-m",
-        "alembic",
-        "-c",
-        str(PROJECT_ROOT / "alembic.ini"),
-    ]
-    subprocess.run(
-        [*command, "upgrade", "0012"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    connection = sqlite3.connect(database_path)
-    try:
-        connection.execute(
-            "INSERT INTO books (id, kind, title) VALUES (?, ?, ?)",
-            ("constraint-book", "library", "Constraint Migration"),
-        )
-        connection.execute(
-            "INSERT INTO translation_constraints "
-            "(book_id, payload_json, schema_version) VALUES (?, ?, 1)",
-            (
-                "constraint-book",
-                json.dumps(
-                    {
-                        "glossary": [
-                            {"source": "Saber", "target": "阿尔托莉雅"}
-                        ],
-                        "nonTranslate": ["Excalibur"],
-                    },
-                    ensure_ascii=False,
-                ),
-            ),
-        )
-        connection.commit()
-    finally:
-        connection.close()
-    subprocess.run(
-        [*command, "upgrade", "head"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    connection = sqlite3.connect(database_path)
-    try:
-        payload_json, schema_version = connection.execute(
-            "SELECT payload_json, schema_version FROM translation_constraints "
-            "WHERE book_id = ?",
-            ("constraint-book",),
-        ).fetchone()
-    finally:
-        connection.close()
-    payload = json.loads(payload_json)
-    assert schema_version == 2
-    assert payload["glossary"]["enabled"] is True
-    assert payload["glossary"]["entries"] == [
-        {
-            "source": "Saber",
-            "target": "阿尔托莉雅",
-            "note": "",
-            "matchMode": "text",
-        }
-    ]
-    assert payload["nonTranslate"] == {
-        "enabled": True,
-        "entries": [
-            {
-                "pattern": "Excalibur",
-                "note": "",
-                "matchMode": "text",
-            }
-        ],
-    }
-
-
-def test_studio_document_payload_is_migrated_into_domain_columns(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "studio-migration.sqlite3"
-    environment = os.environ.copy()
-    environment["SABER_V2_DATABASE_URL"] = (
-        f"sqlite+pysqlite:///{database_path.resolve().as_posix()}"
-    )
-    command = [
-        sys.executable,
-        "-m",
-        "alembic",
-        "-c",
-        str(PROJECT_ROOT / "alembic.ini"),
-    ]
-    subprocess.run(
-        [*command, "upgrade", "0006"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    old_payload = {
-        "origin": {
-            "type": "analysis",
-            "source_character": "Saber",
-        },
-        "meta": {"tags": ["主角"]},
-        "status": {
-            "is_favorite": True,
-            "frozen_sections": ["identity"],
-            "last_diagnostics": {"ok": True},
-            "last_validated_at": "2026-07-28T10:00:00Z",
-        },
-        "identity": {
-            "name": "Saber",
-            "aliases": ["阿尔托莉雅"],
-            "description": "骑士王",
-        },
-        "coreMessages": {"first_message": "你好"},
-        "lorebook": {"name": "不列颠", "entries": []},
-        "regexScripts": [{"id": "regex-1"}],
-        "stateTasks": [{"id": "task-1"}],
-    }
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "INSERT INTO books (id, kind, title) VALUES (?, ?, ?)",
-            ("migration-book", "library", "Migration Book"),
-        )
-        connection.execute(
-            "INSERT INTO studio_documents "
-            "(id, book_id, kind, title, revision, generation, "
-            "payload_json, schema_version) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "migration-document",
-                "migration-book",
-                "analysis",
-                "Saber",
-                7,
-                3,
-                json.dumps(old_payload, ensure_ascii=False),
-                1,
-            ),
-        )
-        connection.commit()
-    subprocess.run(
-        [*command, "upgrade", "0007"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        columns = {
-            row["name"]
+    engine = create_sqlite_engine(database_path)
+    with engine.connect() as connection:
+        remaining_tables = {
+            str(row[0])
             for row in connection.execute(
-                "PRAGMA table_info(studio_documents)"
+                text("SELECT name FROM sqlite_master WHERE type='table'")
             )
+            if not str(row[0]).startswith("sqlite_")
         }
-        row = connection.execute(
-            "SELECT * FROM studio_documents WHERE id = ?",
-            ("migration-document",),
-        ).fetchone()
-    assert row is not None
-    assert {"payload_json", "generation", "kind"}.isdisjoint(columns)
-    assert row["origin_type"] == "analysis"
-    assert row["source_character"] == "Saber"
-    assert row["revision"] == 7
-    assert json.loads(row["tags_json"]) == ["主角"]
-    assert json.loads(row["identity_json"]) == {
-        "aliases": ["阿尔托莉雅"],
-        "description": "骑士王",
-    }
-    assert json.loads(row["core_messages_json"])["first_message"] == "你好"
-    assert json.loads(row["last_diagnostics_json"]) == {"ok": True}
+    engine.dispose()
+    assert remaining_tables == {"alembic_version"}

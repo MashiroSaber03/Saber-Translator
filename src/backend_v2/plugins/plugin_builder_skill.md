@@ -10,10 +10,10 @@ Required root files:
 - The Python file and class named by `entrypoint`, for example
   `plugin.py:Plugin`.
 
-The manifest declares `plugin_id`, `display_name`, `package_version`,
-`entrypoint`, `hooks`, `supported_steps`, `supported_modes`, `priority`,
-`failure_policy`, `default_enabled`, optional author/description, and a
-`config_schema`. Supported hooks are before/after variants of `job`,
+The manifest declares every one of these required fields: `plugin_id`,
+`display_name`, `package_version`, `entrypoint`, `hooks`, `supported_steps`,
+`supported_modes`, `priority`, `failure_policy`, `author`, `description`,
+`default_enabled`, and `config_schema`. Supported hooks are before/after variants of `job`,
 `pipeline`, `detect`, `ocr`, `color`, `translate`, `ai_translate`, `inpaint`,
 and `render`.
 
@@ -23,7 +23,7 @@ Manifest contract details:
 - `supported_steps` is an array using only `job`, `pipeline`, `detect`, `ocr`,
   `color`, `translate`, `ai_translate`, `inpaint`, or `render`.
 - `supported_modes` is a non-empty array using only `standard`, `hq`,
-  `proofread`, or `remove_text`. Omit it to support all modes. Never use `*`.
+  `proofread`, or `remove_text`. Never use `*`.
 - `config_schema` is Saber UI field metadata, not JSON Schema. Each top-level
   key is one configurable field. Its `type` must be `text`, `number`,
   `boolean`, or `select`; a `select` field also requires a non-empty `options`

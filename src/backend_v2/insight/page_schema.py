@@ -25,25 +25,22 @@ def normalize_page_analysis(
     source_checksum: str,
     page_number: int,
 ) -> dict[str, Any]:
-    """Return only the canonical v2 fields; legacy detail fields never persist."""
+    """Return only the canonical persisted page-analysis fields."""
 
     page = _extract_page(raw, page_number)
     summary = _bounded_text(
-        page.get("page_summary", page.get("summary")),
+        page.get("page_summary"),
         field="page_summary",
         maximum=MAX_SUMMARY_CHARS,
         required=True,
     )
     continuity = _bounded_text(
-        page.get(
-            "continuity_notes",
-            raw.get("continuity_notes", ""),
-        ),
+        page.get("continuity_notes", ""),
         field="continuity_notes",
         maximum=MAX_CONTINUITY_CHARS,
         required=False,
     )
-    raw_events = page.get("key_events", raw.get("key_events", []))
+    raw_events = page.get("key_events", [])
     if raw_events is None:
         raw_events = []
     if (
@@ -54,12 +51,10 @@ def normalize_page_analysis(
         raise InvalidPageAnalysis("key_events must be an array of at most 100 items")
     events: list[dict[str, str]] = []
     for index, event in enumerate(raw_events):
-        if isinstance(event, str):
-            event = {"summary": event}
         if not isinstance(event, Mapping):
             raise InvalidPageAnalysis(f"key_events[{index}] must be an object")
         event_summary = _bounded_text(
-            event.get("summary", event.get("description", event.get("event"))),
+            event.get("summary"),
             field=f"key_events[{index}].summary",
             maximum=2_000,
             required=True,
@@ -72,7 +67,7 @@ def normalize_page_analysis(
             "importance": importance,
         }
         event_type = _bounded_text(
-            event.get("event_type", event.get("type", "")),
+            event.get("event_type", ""),
             field=f"key_events[{index}].event_type",
             maximum=100,
             required=False,
@@ -81,7 +76,7 @@ def normalize_page_analysis(
             normalized["event_type"] = event_type
         events.append(normalized)
 
-    raw_warnings = page.get("warnings", raw.get("warnings", []))
+    raw_warnings = page.get("warnings", [])
     if raw_warnings is None:
         raw_warnings = []
     if (
@@ -92,8 +87,6 @@ def normalize_page_analysis(
         raise InvalidPageAnalysis("warnings must be an array of at most 100 items")
     warnings: list[dict[str, str]] = []
     for index, warning in enumerate(raw_warnings):
-        if isinstance(warning, str):
-            warning = {"code": "MODEL_WARNING", "message": warning}
         if not isinstance(warning, Mapping):
             raise InvalidPageAnalysis(f"warnings[{index}] must be an object")
         code = _bounded_text(
@@ -129,7 +122,7 @@ def _extract_page(
 ) -> Mapping[str, Any]:
     pages = raw.get("pages")
     if pages is None:
-        return raw
+        raise InvalidPageAnalysis("model result must contain pages")
     if (
         not isinstance(pages, Sequence)
         or isinstance(pages, (str, bytes, bytearray))
@@ -145,9 +138,7 @@ def _extract_page(
         if not isinstance(page, Mapping):
             continue
         try:
-            candidate = int(
-                page.get("page_number", page.get("page_num", -1))
-            )
+            candidate = int(page.get("page_number", -1))
         except (TypeError, ValueError):
             continue
         if candidate == page_number:

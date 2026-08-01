@@ -97,20 +97,11 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
         const activeBookId = bookId.value
         if (!activeBookId) return
 
-        const char = state.characters.value.find(c => c.name === charName)
-        const existingForms = new Set((char?.forms || []).map(form => form.form_id))
-        let nextIndex = 1
-        while (existingForms.has(`form_${nextIndex}`)) {
-            nextIndex += 1
-        }
-        const formId = `form_${nextIndex}`
-
         await runContinuationMutation({
             state,
             failurePrefix: '添加失败',
             successMessage: '形态添加成功',
             run: () => continuationApi.addCharacterForm(activeBookId, charName, {
-                form_id: formId,
                 form_name: formName,
                 description
             }),

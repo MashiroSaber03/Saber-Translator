@@ -1,5 +1,4 @@
 import type { NoteData, NoteType } from '@/types/insight'
-import { toCamelCase } from '@/utils/insightConverters'
 import type { NoteData as ApiNoteData } from '@/api/insight'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,9 +50,8 @@ export function filterValidInsightNotes(values: unknown[]): NoteData[] {
 }
 
 export function mapInsightApiNote(note: ApiNoteData): NoteData {
-  const converted = toCamelCase(note)
-  if (!isInsightNoteData(converted)) {
+  if (!isInsightNoteData(note)) {
     throw new Error('笔记响应格式无效')
   }
-  return converted
+  return { ...note }
 }

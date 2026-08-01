@@ -301,7 +301,7 @@ describe('insight v2 api facade', () => {
   it('maps durable timeline page IDs into renderable page-number groups', async () => {
     getMock
       .mockResolvedValueOnce({
-        content: { overview: '故事概述' },
+        content: { story_summary: '故事概述' },
         mode: 'enhanced',
         events: [{
           eventId: 'event-1',
@@ -311,7 +311,7 @@ describe('insight v2 api facade', () => {
         characters: [{
           name: '主角',
           first_page: 1,
-          key_moments: ['首次登场（第1页）'],
+          key_moments: [{ summary: '首次登场', page: 1 }],
         }],
       })
       .mockResolvedValueOnce({ items: pages, nextCursor: null })
@@ -406,7 +406,7 @@ describe('insight v2 api facade', () => {
       type: 'text',
       title: 'Note',
       content: 'note body',
-      page_num: 2,
+      pageNum: 2,
     })
 
     expect(postMock).toHaveBeenCalledWith(

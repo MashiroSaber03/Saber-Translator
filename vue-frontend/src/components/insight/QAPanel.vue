@@ -329,11 +329,12 @@ function projectRebuildJob(): void {
   if (!job) return
   if (['queued', 'running', 'pausing', 'paused', 'cancelling'].includes(job.status)) {
     const progress = job.progress as Record<string, unknown>
-    const phase = String(progress.phase ?? progress.currentPhase ?? '重建中')
-    const current = Number(
-      progress.completedItems ?? progress.completed ?? progress.current ?? 0,
-    )
-    const total = Number(progress.totalItems ?? progress.total ?? 0)
+    const currentStep = progress.currentStep && typeof progress.currentStep === 'object'
+      ? progress.currentStep as Record<string, unknown>
+      : undefined
+    const phase = String(currentStep?.kind ?? '重建中')
+    const current = Number(progress.completedItems ?? 0)
+    const total = Number(progress.totalItems ?? 0)
     rebuildProgressLabel.value = total > 0 ? `${phase} (${current}/${total})` : phase
     return
   }

@@ -56,7 +56,7 @@ SPECIAL_CHARS = {'‼', '⁉', '⁇', '⁈', '︕', '︖', '︙', '⋮', '⋯'}
 #
 # 设计：竖排保留原字符并在渲染时整体旋转 90°，不再做字符替换。本节只保留若干
 # 字符集合用于旋转判定：
-#   - LEGACY_VERTICAL_CHARS：已是竖排字形的字符（用户历史数据或手动输入），
+#   - VERTICAL_FORM_CHARS：自身已经是竖排字形的字符，
 #     遇到时保持原样、不再二次旋转
 #   - UPRIGHT_IN_VERTICAL：竖排下保持直立的标点（感叹/问/句/逗/冒/分号等）
 #   - EXTRA_VERTICAL_ROTATE_CHARS：Unicode 类别非 P 但应旋转的字符（⋯ ～）
@@ -64,8 +64,8 @@ SPECIAL_CHARS = {'‼', '⁉', '⁇', '⁈', '︕', '︖', '︙', '⋮', '⋯'}
 
 # --- 已是竖排字形的字符集合（用户直接输入时不再二次旋转） ---
 # 涵盖 CJK Compatibility Forms 的竖排变体、组合标点族、以及旋转对称字符。
-# 注：· 仅放在 UPRIGHT_IN_VERTICAL 里，不再重复放进 LEGACY。
-LEGACY_VERTICAL_CHARS = {
+# 注：· 仅放在 UPRIGHT_IN_VERTICAL 里，不在两个集合中重复。
+VERTICAL_FORM_CHARS = {
     # 组合标点族（已是紧凑竖排字形）
     '‼', '⁉', '⁇', '⁈',
     # ASCII 旋转对称字符
@@ -360,7 +360,7 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
         - 竖排：
             * ー 返回 (ー, 90)
             * UPRIGHT_IN_VERTICAL（感叹/问/句/逗/冒/分号等）保持 0°
-            * LEGACY_VERTICAL_CHARS（旧 CJK Compatibility Forms + 组合强调符号）保持 0°
+            * VERTICAL_FORM_CHARS（CJK 竖排字形 + 组合强调符号）保持 0°
             * 其余标点及 EXTRA_VERTICAL_ROTATE_CHARS 返回 (cdpt, 90)
             * 非标点（汉字/假名等）保持 0°
     """
@@ -371,7 +371,7 @@ def CJK_Compatibility_Forms_translate(cdpt: str, direction: int) -> Tuple[str, i
         return cdpt, 90
 
     # 直立：CJK 竖排下这些标点保持原方向，旋转会导致字形躺倒
-    if cdpt in UPRIGHT_IN_VERTICAL or cdpt in LEGACY_VERTICAL_CHARS:
+    if cdpt in UPRIGHT_IN_VERTICAL or cdpt in VERTICAL_FORM_CHARS:
         return cdpt, 0
 
     if is_punctuation(cdpt) or cdpt in EXTRA_VERTICAL_ROTATE_CHARS:

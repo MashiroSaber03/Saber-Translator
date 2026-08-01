@@ -761,20 +761,11 @@ def _provider_config(
     )
     return {
         "provider": section.get("provider", ""),
-        "api_key": section.get("api_key", section.get("apiKey", "")),
-        "model": section.get(
-            "model_name",
-            section.get("modelName", ""),
-        ),
-        "base_url": section.get(
-            "custom_base_url",
-            section.get("base_url"),
-        ),
+        "api_key": section.get("api_key", ""),
+        "model": section.get("model_name", ""),
+        "base_url": section.get("custom_base_url"),
         "openai_options": _object(section.get("openai_options")),
-        "timeout_seconds": section.get(
-            "timeout_seconds",
-            section.get("timeoutSeconds", 120),
-        ),
+        "timeout_seconds": section.get("timeout_seconds", 120),
     }
 
 
@@ -810,11 +801,7 @@ def _build_system_prompt(
 def _normalize_review(generated: Mapping[str, Any]) -> dict[str, Any]:
     nested = generated.get("review")
     source = dict(nested) if isinstance(nested, Mapping) else dict(generated)
-    summary = str(
-        source.get("summary")
-        or source.get("notes")
-        or ""
-    ).strip()
+    summary = str(source.get("summary") or "").strip()
     if not summary:
         raise ValueError("Studio review did not return a summary")
 
@@ -907,16 +894,9 @@ def _apply_generated_section(
             _object(generated.get("lorebook")) or dict(generated)
         )
     elif section == "regex":
-        result["regexScripts"] = list(
-            generated.get(
-                "regexScripts",
-                generated.get("regex_scripts", []),
-            )
-        )
+        result["regexScripts"] = list(generated.get("regexScripts", []))
     elif section == "state-tasks":
-        result["stateTasks"] = list(
-            generated.get("stateTasks", generated.get("state_tasks", []))
-        )
+        result["stateTasks"] = list(generated.get("stateTasks", []))
     elif section in {"translate", "full"}:
         section_keys = {
             "identity": "identity",

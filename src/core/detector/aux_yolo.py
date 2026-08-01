@@ -20,14 +20,12 @@ logger = logging.getLogger("AuxYoloDetection")
 
 
 def normalize_aux_overlap_threshold(value: Optional[float]) -> float:
-    """归一化辅助检测重叠阈值，兼容 0-1 / 0-100 输入。"""
+    """将内部 0-1 重叠阈值限制在有效范围。"""
     try:
         threshold = float(value)
     except (TypeError, ValueError):
         return constants.AUX_YOLO_OVERLAP_THRESHOLD
 
-    if threshold > 1:
-        threshold = threshold / 100.0
     return max(0.0, min(threshold, 1.0))
 
 

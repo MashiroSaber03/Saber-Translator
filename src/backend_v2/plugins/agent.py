@@ -28,6 +28,10 @@ from src.backend_v2.plugins.repository import (
     PluginRegistry,
 )
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
+from src.backend_v2.settings.validation import (
+    validate_provider_setting_payload,
+    validate_setting_payload,
+)
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     app_settings,
@@ -57,17 +61,13 @@ class PluginAgentProviderResolver:
 
     def snapshot(self) -> dict[str, Any]:
         with self.engine.connect() as connection:
-            app_rows = list(connection.execute(
+            app_row = connection.execute(
                 select(
-                    app_settings.c.domain,
                     app_settings.c.payload_json,
                     app_settings.c.revision,
-                ).where(
-                    app_settings.c.domain.in_(
-                        ("plugin_agent", "translation")
-                    )
-                )
-            ).mappings())
+                    app_settings.c.schema_version,
+                ).where(app_settings.c.domain == "translation")
+            ).mappings().one_or_none()
             rows = list(
                 connection.execute(
                     select(
@@ -75,40 +75,21 @@ class PluginAgentProviderResolver:
                         provider_settings.c.payload_json,
                         provider_settings.c.credential_version_id,
                         provider_settings.c.revision,
+                        provider_settings.c.schema_version,
                     ).where(
                         provider_settings.c.domain == "plugin_agent"
                     )
                 ).mappings()
             )
-        app_by_domain = {
-            str(row["domain"]): row for row in app_rows
-        }
-        app_row = app_by_domain.get("plugin_agent")
-        app_payload = _json_object(
-            app_row["payload_json"] if app_row else None
+        if app_row is None:
+            raise ValueError("translation settings are missing")
+        translation_payload = validate_setting_payload(
+            "translation",
+            _json_object(app_row["payload_json"]),
+            schema_version=int(app_row["schema_version"]),
         )
-        if not app_payload:
-            translation_row = app_by_domain.get("translation")
-            translation_payload = _json_object(
-                translation_row["payload_json"]
-                if translation_row
-                else None
-            )
-            selected_payload = translation_payload.get(
-                "pluginAgent",
-                {},
-            )
-            if isinstance(selected_payload, Mapping):
-                app_payload = dict(selected_payload)
-                app_row = translation_row
-        selected = str(
-            app_payload.get(
-                "provider",
-                app_payload.get("selectedProvider", ""),
-            )
-        ).strip()
-        if not selected and len(rows) == 1:
-            selected = str(rows[0]["provider"])
+        app_payload = dict(translation_payload["pluginAgent"])
+        selected = str(app_payload["provider"]).strip()
         row = next(
             (
                 candidate
@@ -121,34 +102,25 @@ class PluginAgentProviderResolver:
             raise ValueError(
                 "Plugin Agent provider settings are not configured"
             )
+        provider_payload = validate_provider_setting_payload(
+            "plugin_agent",
+            selected,
+            _json_object(row["payload_json"]),
+            schema_version=int(row["schema_version"]),
+        )
         payload = {
             **app_payload,
-            **_json_object(row["payload_json"]),
+            **provider_payload,
         }
         result = {
             "provider": selected,
-            "model_name": str(
-                payload.get(
-                    "modelName",
-                    payload.get("model_name", ""),
-                )
-            ),
-            "custom_base_url": str(
-                payload.get(
-                    "customBaseUrl",
-                    payload.get("custom_base_url", ""),
-                )
-            ),
+            "model_name": str(payload.get("modelName", "")),
+            "custom_base_url": str(payload.get("customBaseUrl", "")),
             "openai_options": _normalize_openai_options(
-                payload.get(
-                    "openaiOptions",
-                    payload.get("openai_options", {}),
-                )
+                payload.get("openaiOptions", {})
             ),
             "settingsSnapshot": {
-                "appRevision": (
-                    int(app_row["revision"]) if app_row else 0
-                ),
+                "appRevision": int(app_row["revision"]),
                 "providerRevision": int(row["revision"]),
             },
         }
@@ -177,9 +149,7 @@ class PluginAgentProviderResolver:
                 ) from exc
         return {
             "provider": str(frozen.get("provider", "")),
-            "api_key": str(
-                secret.get("apiKey", secret.get("api_key", ""))
-            ),
+            "api_key": str(secret.get("api_key", "")),
             "model_name": str(frozen.get("model_name", "")),
             "custom_base_url": str(
                 frozen.get("custom_base_url", "")
@@ -492,12 +462,8 @@ class PluginAgentSessionService:
             "mode": "modify",
             "plugin_id": str(plugin["pluginId"]),
             "display_name": str(plugin["displayName"]),
-            "supported_steps": list(
-                manifest.get("supported_steps", [])
-            ),
-            "supported_modes": list(
-                manifest.get("supported_modes", [])
-            ),
+            "supported_steps": list(manifest["supported_steps"]),
+            "supported_modes": list(manifest["supported_modes"]),
             "baseRevision": int(plugin["currentRevision"]),
             "pluginVersionId": str(plugin["pluginVersionId"]),
         }
@@ -664,14 +630,11 @@ class PluginAgentSessionService:
 
 
 def _proposal(value: Mapping[str, Any]) -> PluginTargetProposal:
-    plugin_id = str(value.get("plugin_id", "")).strip()
-    display_name = str(
-        value.get("display_name", plugin_id)
-    ).strip()
-    if not plugin_id or not display_name:
-        raise ValueError(
-            "proposal requires plugin_id and display_name"
-        )
+    plugin_id = _proposal_text(value.get("plugin_id"), "plugin_id")
+    display_name = _proposal_text(
+        value.get("display_name"),
+        "display_name",
+    )
     if not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
         raise ValueError("plugin_id is invalid")
     supported_steps = _proposal_values(
@@ -710,6 +673,12 @@ def _proposal_values(
     return normalized
 
 
+def _proposal_text(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value.strip()
+
+
 def _locked_target(
     target: Mapping[str, Any],
 ) -> LockedPluginTarget:
@@ -718,14 +687,16 @@ def _locked_target(
         plugin_id=str(target["plugin_id"]),
         display_name=str(target["display_name"]),
         plugin_dir=f"worktree://{target['plugin_id']}",
-        supported_steps=[
-            str(value)
-            for value in target.get("supported_steps", [])
-        ],
-        supported_modes=[
-            str(value)
-            for value in target.get("supported_modes", [])
-        ],
+        supported_steps=_proposal_values(
+            target["supported_steps"],
+            field="supported_steps",
+            allowed=frozenset(HOOK_STEPS),
+        ),
+        supported_modes=_proposal_values(
+            target["supported_modes"],
+            field="supported_modes",
+            allowed=PLUGIN_MODES,
+        ),
     )
 
 
@@ -735,33 +706,15 @@ def _normalize_openai_options(value: object) -> dict[str, Any]:
     execution = _json_mapping(raw.get("execution"))
     return {
         "request": {
-            "force_json_output": request.get(
-                "force_json_output",
-                request.get("forceJsonOutput", True),
-            ),
+            "force_json_output": request.get("forceJsonOutput", True),
             "temperature": request.get("temperature"),
-            "extra_body": request.get(
-                "extra_body",
-                request.get("extraBody", {}),
-            ),
+            "extra_body": request.get("extraBody", {}),
         },
         "execution": {
-            "use_stream": execution.get(
-                "use_stream",
-                execution.get("useStream", True),
-            ),
-            "rpm_limit": execution.get(
-                "rpm_limit",
-                execution.get("rpmLimit", 0),
-            ),
-            "transport_retries": execution.get(
-                "transport_retries",
-                execution.get("transportRetries", 1),
-            ),
-            "business_retries": execution.get(
-                "business_retries",
-                execution.get("businessRetries", 0),
-            ),
+            "use_stream": execution.get("useStream", True),
+            "rpm_limit": execution.get("rpmLimit", 0),
+            "transport_retries": execution.get("transportRetries", 1),
+            "business_retries": execution.get("businessRetries", 0),
         },
     }
 

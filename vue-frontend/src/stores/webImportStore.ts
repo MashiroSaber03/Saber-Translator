@@ -204,6 +204,7 @@ export const useWebImportStore = defineStore('webImport', () => {
           provider,
           payload,
           baseRevision: providerRevisions.get(identity) ?? 0,
+          schemaVersion: 1,
         }
         if (Object.keys(nonEmptySecret).length > 0) {
           const clientRef = `credential:${domain}:${provider}`

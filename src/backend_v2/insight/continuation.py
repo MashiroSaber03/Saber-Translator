@@ -1689,25 +1689,25 @@ class DefaultContinuationAlgorithms:
         context: Mapping[str, Any],
         config: Mapping[str, Any],
     ) -> str:
-        from src.backend_v2.insight.derived import LegacyDerivedAlgorithms
+        from src.backend_v2.insight.derived import ProviderDerivedAlgorithms
 
         prompt = (
             "根据已发布漫画分析继续创作一话漫画脚本。"
-            "严格遵守指定页数和方向，输出可供逐页拆解的脚本。\n\n"
+            "严格遵守指定页数和方向，输出 JSON："
+            '{"script":"可供逐页拆解的完整脚本"}。\n\n'
             + _json(context)
         )
-        result = LegacyDerivedAlgorithms._chat_json(
+        result = ProviderDerivedAlgorithms._chat_json(
             prompt,
             config=config,
             prompt_type="book_overview",
         )
-        if isinstance(result, Mapping):
-            return str(
-                result.get("script")
-                or result.get("content")
-                or _json(result)
-            )
-        return str(result)
+        if not isinstance(result, Mapping):
+            raise ValueError("continuation script response is not JSON")
+        script = result.get("script")
+        if not isinstance(script, str) or not script.strip():
+            raise ValueError("continuation script response is missing script")
+        return script.strip()
 
     def generate_page(
         self,
@@ -1717,7 +1717,7 @@ class DefaultContinuationAlgorithms:
         previous: Mapping[str, Any] | None,
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        from src.backend_v2.insight.derived import LegacyDerivedAlgorithms
+        from src.backend_v2.insight.derived import ProviderDerivedAlgorithms
 
         prompt = (
             f"把续写脚本拆成第 {ordinal} 页。输出 JSON："
@@ -1726,7 +1726,7 @@ class DefaultContinuationAlgorithms:
             '"finalPrompt":"..."}。\n\n'
             f"上一页：{_json(previous or {})}\n\n脚本：{script}"
         )
-        result = LegacyDerivedAlgorithms._chat_json(
+        result = ProviderDerivedAlgorithms._chat_json(
             prompt,
             config=config,
             prompt_type="group_summary",
@@ -1734,34 +1734,12 @@ class DefaultContinuationAlgorithms:
         if not isinstance(result, Mapping):
             raise ValueError("continuation page response is not JSON")
         return {
-            "storyText": str(
-                result.get("storyText", result.get("story_text", ""))
-            ),
-            "continuityText": str(
-                result.get(
-                    "continuityText",
-                    result.get("continuity_text", ""),
-                )
-            ),
-            "dialogueText": str(
-                result.get(
-                    "dialogueText",
-                    result.get("dialogue_text", ""),
-                )
-            ),
+            "storyText": str(result.get("storyText", "")),
+            "continuityText": str(result.get("continuityText", "")),
+            "dialogueText": str(result.get("dialogueText", "")),
             "characters": list(result.get("characters", [])),
-            "characterForms": list(
-                result.get(
-                    "characterForms",
-                    result.get("character_forms", []),
-                )
-            ),
-            "finalPrompt": str(
-                result.get(
-                    "finalPrompt",
-                    result.get("final_prompt", ""),
-                )
-            ),
+            "characterForms": list(result.get("characterForms", [])),
+            "finalPrompt": str(result.get("finalPrompt", "")),
             "status": "ready",
         }
 
@@ -1784,15 +1762,9 @@ class DefaultContinuationAlgorithms:
         )
         payload = {
             "provider": section.get("provider", ""),
-            "api_key": section.get("api_key", section.get("apiKey", "")),
-            "model": section.get(
-                "model_name",
-                section.get("modelName", ""),
-            ),
-            "base_url": section.get(
-                "custom_base_url",
-                section.get("base_url"),
-            ),
+            "api_key": section.get("api_key", ""),
+            "model": section.get("model_name", ""),
+            "base_url": section.get("custom_base_url"),
         }
         client = ImageGenClient(ImageGenConfig.from_dict(payload))
 

@@ -156,10 +156,7 @@ def create_studio_blueprint(
                 "identity": {
                     "name": title,
                     "aliases": candidate.get("aliases", []),
-                    "description": candidate.get(
-                        "description",
-                        candidate.get("summary", ""),
-                    ),
+                    "description": candidate.get("description", ""),
                     "personality": candidate.get("personality", ""),
                     "scenario": "",
                 },
@@ -374,11 +371,9 @@ def create_studio_blueprint(
     @blueprint.delete("/chat/sessions/<session_id>")
     def delete_session(session_id: str) -> Response:
         idempotency_key = _idempotency_key()
-        revision = int(
-            request.headers.get(
-                "If-Match",
-                request.args.get("baseRevision", "0"),
-            )
+        revision = _positive_revision(
+            request.headers.get("If-Match"),
+            "If-Match",
         )
         return jsonify(
             repository.delete_session(
@@ -527,9 +522,9 @@ def create_studio_blueprint(
     def import_document(book_id: str):
         idempotency_key = _idempotency_key()
         if request.files:
-            upload = request.files.get("file") or next(
-                iter(request.files.values())
-            )
+            upload = request.files.get("file")
+            if upload is None:
+                raise ValueError("multipart field 'file' is required")
             return (
                 jsonify(
                     io_service.import_document(
@@ -571,6 +566,10 @@ def create_studio_blueprint(
         idempotency_key = _idempotency_key()
         body = _file_or_json_object()
         document = repository.get_document(document_id)
+        base_revision = _positive_revision(
+            request.headers.get("If-Match"),
+            "If-Match",
+        )
         entries = body.get("entries")
         if not isinstance(entries, (list, dict)):
             raise ValueError("worldbook entries must be an array or object")
@@ -583,29 +582,13 @@ def create_studio_blueprint(
         return jsonify(
             repository.update_document(
                 document_id=document_id,
-                base_revision=int(
-                    request.form.get(
-                        "baseRevision",
-                        request.args.get(
-                            "baseRevision",
-                            request.headers.get("If-Match", "0"),
-                        ),
-                    )
-                ),
+                base_revision=base_revision,
                 title=str(document["title"]),
                 document=changed,
                 idempotency_key=idempotency_key,
                 idempotency_request={
                     "documentId": document_id,
-                    "baseRevision": int(
-                        request.form.get(
-                            "baseRevision",
-                            request.args.get(
-                                "baseRevision",
-                                request.headers.get("If-Match", "0"),
-                            ),
-                        )
-                    ),
+                    "baseRevision": base_revision,
                     "worldbook": body,
                 },
                 idempotency_scope=(
@@ -734,9 +717,9 @@ def create_studio_blueprint(
 
 def _file_or_json_object() -> dict[str, Any]:
     if request.files:
-        upload = request.files.get("file") or next(
-            iter(request.files.values())
-        )
+        upload = request.files.get("file")
+        if upload is None:
+            raise ValueError("multipart field 'file' is required")
         payload = json.loads(upload.read().decode("utf-8-sig"))
     else:
         payload = request.get_json(silent=True)
@@ -796,41 +779,24 @@ def _candidate_item(character: Mapping[str, Any]) -> dict[str, Any]:
         for value in raw_aliases
         if isinstance(value, str) and value.strip()
     ]
-    moments = character.get(
-        "keyMoments",
-        character.get("key_moments", []),
-    )
+    moments = character.get("key_moments", [])
     if not isinstance(moments, list):
         moments = []
-    first_page = _positive_page_number(
-        character.get(
-            "firstAppearancePage",
-            character.get(
-                "first_appearance",
-                character.get("first_page"),
-            ),
-        )
-    )
+    first_page = _positive_page_number(character.get("first_page"))
     related_pages: set[int] = set()
-    for field in ("relatedPageNumbers", "related_page_numbers"):
-        values = character.get(field, [])
-        if isinstance(values, list):
-            related_pages.update(
-                page
-                for page in (
-                    _positive_page_number(value) for value in values
-                )
-                if page is not None
+    values = character.get("related_page_numbers", [])
+    if isinstance(values, list):
+        related_pages.update(
+            page
+            for page in (
+                _positive_page_number(value) for value in values
             )
+            if page is not None
+        )
     for moment in moments:
         if not isinstance(moment, Mapping):
             continue
-        page = _positive_page_number(
-            moment.get(
-                "page",
-                moment.get("pageNumber", moment.get("page_number")),
-            )
-        )
+        page = _positive_page_number(moment.get("page"))
         if page is not None:
             related_pages.add(page)
     if first_page is not None:
@@ -840,9 +806,7 @@ def _candidate_item(character: Mapping[str, Any]) -> dict[str, Any]:
         "characterId": str(character.get("characterId", "")),
         "name": name,
         "aliases": aliases,
-        "description": str(
-            character.get("description", character.get("summary", ""))
-        ),
+        "description": str(character.get("description", "")),
         "personality": str(character.get("personality", "")),
         "arc": str(character.get("arc", "")),
         "firstAppearancePage": first_page,

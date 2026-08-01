@@ -435,19 +435,48 @@ class MangaScraperAgent:
             
             # 解析 JSON
             data = json.loads(cleaned)
-            
-            # 提取字段
-            comic_title = data.get('comic_title', '') or data.get('comicTitle', '') or '未知漫画'
-            chapter_title = data.get('chapter_title', '') or data.get('chapterTitle', '') or '未知章节'
-            pages = data.get('pages', [])
-            total_pages = data.get('total_pages', len(pages)) or data.get('totalPages', len(pages))
+
+            required_fields = {
+                'comic_title',
+                'chapter_title',
+                'pages',
+                'total_pages',
+            }
+            if not isinstance(data, dict) or set(data) != required_fields:
+                raise ValueError(
+                    'Agent 结果必须且只能包含 comic_title、chapter_title、'
+                    'pages、total_pages'
+                )
+            comic_title = data['comic_title']
+            chapter_title = data['chapter_title']
+            pages = data['pages']
+            total_pages = data['total_pages']
+            if (
+                not isinstance(comic_title, str)
+                or not isinstance(chapter_title, str)
+                or not isinstance(pages, list)
+                or isinstance(total_pages, bool)
+                or not isinstance(total_pages, int)
+                or total_pages != len(pages)
+            ):
+                raise ValueError('Agent 结果字段类型或 total_pages 不正确')
             
             # 标准化页面格式
             normalized_pages = []
             for i, page in enumerate(pages):
+                if (
+                    not isinstance(page, dict)
+                    or set(page) != {'page_number', 'image_url'}
+                    or isinstance(page['page_number'], bool)
+                    or not isinstance(page['page_number'], int)
+                    or page['page_number'] < 1
+                    or not isinstance(page['image_url'], str)
+                    or not page['image_url'].strip()
+                ):
+                    raise ValueError(f'Agent 第 {i + 1} 个页面字段不正确')
                 normalized_pages.append({
-                    'pageNumber': page.get('page_number', i + 1) or page.get('pageNumber', i + 1),
-                    'imageUrl': page.get('image_url', '') or page.get('imageUrl', '')
+                    'pageNumber': page['page_number'],
+                    'imageUrl': page['image_url'].strip()
                 })
             
             return ExtractResult(

@@ -55,7 +55,7 @@ class SettingMutation:
     domain: str
     payload: dict[str, Any]
     base_revision: int
-    schema_version: int = 1
+    schema_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,9 +64,9 @@ class ProviderSettingMutation:
     provider: str
     payload: dict[str, Any]
     base_revision: int
+    schema_version: int
     credential_version_id: str | None = None
     credential_edit_ref: str | None = None
-    schema_version: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +85,7 @@ class BookSettingMutation:
     domain: str
     payload: dict[str, Any]
     base_revision: int
-    schema_version: int = 1
+    schema_version: int
 
 
 class SettingsRepository:
@@ -309,7 +309,14 @@ class SettingsRepository:
                     "domain": row["domain"],
                     "revision": row["revision"],
                     "schemaVersion": row["schema_version"],
-                    "payload": json.loads(row["payload_json"]),
+                    "payload": validate_setting_payload(
+                        str(row["domain"]),
+                        _require_object(
+                            json.loads(row["payload_json"]),
+                            f"{row['domain']} setting",
+                        ),
+                        schema_version=int(row["schema_version"]),
+                    ),
                 }
                 for row in setting_rows
             ],
@@ -319,7 +326,14 @@ class SettingsRepository:
                     "domain": row["domain"],
                     "revision": row["revision"],
                     "schemaVersion": row["schema_version"],
-                    "payload": json.loads(row["payload_json"]),
+                    "payload": validate_book_setting_payload(
+                        str(row["domain"]),
+                        _require_object(
+                            json.loads(row["payload_json"]),
+                            f"book {row['domain']} setting",
+                        ),
+                        schema_version=int(row["schema_version"]),
+                    ),
                 }
                 for row in book_rows
             ],
@@ -330,7 +344,18 @@ class SettingsRepository:
                     "revision": row["revision"],
                     "schemaVersion": row["schema_version"],
                     "credentialVersionId": row["credential_version_id"],
-                    "payload": json.loads(row["payload_json"]),
+                    "payload": validate_provider_setting_payload(
+                        str(row["domain"]),
+                        str(row["provider"]),
+                        _require_object(
+                            json.loads(row["payload_json"]),
+                            (
+                                f"{row['domain']}/{row['provider']} "
+                                "provider setting"
+                            ),
+                        ),
+                        schema_version=int(row["schema_version"]),
+                    ),
                 }
                 for row in provider_rows
             ],
@@ -401,6 +426,7 @@ class SettingsRepository:
                 mutation.domain,
                 mutation.provider,
                 mutation.payload,
+                schema_version=mutation.schema_version,
             )
         )
         key = and_(
@@ -485,6 +511,7 @@ class SettingsRepository:
                 validate_book_setting_payload(
                     mutation.domain,
                     mutation.payload,
+                    schema_version=mutation.schema_version,
                 )
             ),
             "schema_version": mutation.schema_version,

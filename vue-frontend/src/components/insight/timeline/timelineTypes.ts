@@ -40,9 +40,7 @@ export interface TimelineArc {
   id?: string
   name: string
   description?: string
-  page_range?: TimelinePageRange
-  start_page?: number
-  end_page?: number
+  page_range: TimelinePageRange
   mood?: string
   event_ids?: string[]
 }

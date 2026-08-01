@@ -33,7 +33,7 @@ describe('backend-owned web import diagnostics', () => {
     expect(postMock).toHaveBeenNthCalledWith(
       1,
       '/api/v2/connection-tests/firecrawl',
-      { secret: { apiKey: 'firecrawl-key' } },
+      { secret: { api_key: 'firecrawl-key' } },
     )
     expect(postMock).toHaveBeenNthCalledWith(
       2,
@@ -42,7 +42,7 @@ describe('backend-owned web import diagnostics', () => {
         provider: 'deepseek',
         baseUrl: 'https://agent.example/v1',
         model: 'deepseek-chat',
-        secret: { apiKey: 'agent-key' },
+        secret: { api_key: 'agent-key' },
       },
     )
   })

@@ -27,17 +27,24 @@ export class ApiClientError extends Error implements ApiError {
 function createApiError(error: AxiosError): ApiError {
   const response = error.response
   const data = response?.data as Record<string, unknown> | undefined
-  const structuredError = data?.error && typeof data.error === 'object'
+  const backendError = data?.error && typeof data.error === 'object'
     ? data.error as Record<string, unknown>
     : undefined
+  const backendCode = typeof backendError?.code === 'string'
+    ? backendError.code
+    : undefined
+  const backendMessage = typeof backendError?.message === 'string'
+    ? backendError.message
+    : undefined
+  const backendDetails = backendError?.details
 
   return new ApiClientError({
-    code: (structuredError?.code as string) || (data?.code as string) || (data?.error_code as string) || error.code || 'UNKNOWN_ERROR',
-    message: (structuredError?.message as string) || (data?.error as string) || (data?.message as string) || error.message,
+    code: backendCode || error.code || 'UNKNOWN_ERROR',
+    message: backendMessage || error.message,
     status: response?.status || 500,
-    details: (
-      structuredError?.details ?? data?.details
-    ) as Record<string, unknown> | undefined,
+    details: backendDetails && typeof backendDetails === 'object' && !Array.isArray(backendDetails)
+      ? backendDetails as Record<string, unknown>
+      : undefined,
   })
 }
 

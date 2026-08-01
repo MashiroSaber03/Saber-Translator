@@ -12,10 +12,8 @@ interface ImageGenerationComposable {
 }
 
 function progressPercent(progress: Record<string, unknown>): number {
-    const direct = Number(progress.percent ?? progress.percentage)
-    if (Number.isFinite(direct) && direct >= 0) return Math.min(100, direct)
-    const completed = Number(progress.completed ?? progress.current ?? 0)
-    const total = Number(progress.total ?? 0)
+    const completed = Number(progress.completedItems ?? 0)
+    const total = Number(progress.totalItems ?? 0)
     return total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 5
 }
 

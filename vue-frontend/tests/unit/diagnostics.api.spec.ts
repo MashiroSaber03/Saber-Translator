@@ -43,7 +43,7 @@ describe('v2 diagnostics api', () => {
     expect(postMock).toHaveBeenNthCalledWith(1, '/api/v2/model-catalog', {
       provider: 'openai',
       baseUrl: 'https://api.example.test',
-      secret: { apiKey: 'model-key' },
+      secret: { api_key: 'model-key' },
     })
     expect(postMock).toHaveBeenNthCalledWith(
       2,
@@ -53,7 +53,7 @@ describe('v2 diagnostics api', () => {
         model: 'vision-model',
         baseUrl: 'https://vision.example.test',
         prompt: 'read text',
-        secret: { apiKey: 'vision-key' },
+        secret: { ai_vision_api_key: 'vision-key' },
       },
     )
     expect(postMock).toHaveBeenNthCalledWith(
@@ -69,7 +69,12 @@ describe('v2 diagnostics api', () => {
     expect(postMock).toHaveBeenNthCalledWith(
       4,
       '/api/v2/connection-tests/baidu_ocr',
-      { secret: { apiKey: 'baidu-key', secretKey: 'baidu-secret' } },
+      {
+        secret: {
+          baidu_api_key: 'baidu-key',
+          baidu_secret_key: 'baidu-secret',
+        },
+      },
     )
   })
 })

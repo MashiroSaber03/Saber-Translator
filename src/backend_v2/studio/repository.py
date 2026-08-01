@@ -581,26 +581,14 @@ class StudioRepository:
             normalized_messages.append(
                 {
                     "source_id": str(
-                        raw.get(
-                            "messageId",
-                            raw.get("message_id", ""),
-                        )
+                        raw.get("messageId", "")
                         or ""
                     ),
                     "role": role,
                     "content": str(raw.get("content", "")),
-                    "runtime_log": raw.get(
-                        "runtimeLog",
-                        raw.get("runtime_log", []),
-                    ),
-                    "variables_snapshot": raw.get(
-                        "variablesSnapshot",
-                        raw.get("variables_snapshot", {}),
-                    ),
-                    "generation_meta": raw.get(
-                        "generationMeta",
-                        raw.get("generation_meta", {}),
-                    ),
+                    "runtime_log": raw.get("runtimeLog", []),
+                    "variables_snapshot": raw.get("variablesSnapshot", {}),
+                    "generation_meta": raw.get("generationMeta", {}),
                     "asset_ids": list(asset_ids),
                 }
             )
@@ -636,15 +624,9 @@ class StudioRepository:
                     .where(studio_chat_sessions.c.id == active["id"])
                     .values(archived_at=now, updated_at=now)
                 )
-            summary_blocks = payload.get(
-                "summaryBlocks",
-                payload.get("summary_blocks", []),
-            )
+            summary_blocks = payload.get("summaryBlocks", [])
             variables = payload.get("variables", {})
-            runtime_state = payload.get(
-                "runtimeState",
-                payload.get("_runtime", {}),
-            )
+            runtime_state = payload.get("runtimeState", {})
             connection.execute(
                 insert(studio_chat_sessions).values(
                     id=session_id,
@@ -656,7 +638,7 @@ class StudioRepository:
                         _mapping(
                             payload.get(
                                 "greetingSource",
-                                payload.get("greeting_source", {}),
+                                {},
                             )
                         )
                     ),
@@ -667,10 +649,7 @@ class StudioRepository:
                         else []
                     ),
                     summary_generation=int(
-                        payload.get(
-                            "summaryGeneration",
-                            payload.get("summary_generation", 0),
-                        )
+                        payload.get("summaryGeneration", 0)
                         or 0
                     ),
                     runtime_state_json=_json(_mapping(runtime_state)),
@@ -721,10 +700,7 @@ class StudioRepository:
                         ],
                     )
             source_summary_through_id = str(
-                payload.get(
-                    "summaryThroughMessageId",
-                    payload.get("summary_through_message_id", ""),
-                )
+                payload.get("summaryThroughMessageId", "")
                 or ""
             )
             if source_summary_through_id:

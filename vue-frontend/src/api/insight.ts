@@ -52,13 +52,6 @@ import {
 
 export type { InsightOverviewResponse, InsightTimelineResponse }
 
-export interface PageDialogueData {
-  speaker_name?: string
-  character?: string
-  text?: string
-  translated_text?: string
-}
-
 export interface PageAnalysisData {
   analyzed?: boolean
   analyzed_at?: string
@@ -69,14 +62,12 @@ export interface PageAnalysisData {
     summary: string
   }>
   page_num?: number
-  page_number?: number
   page_summary?: string
   warnings?: Array<{ code: string; message: string }>
 }
 
 export interface PageDataResponse {
   success: boolean
-  page?: PageAnalysisData
   analysis?: PageAnalysisData
   source_url?: string
   error?: string
@@ -113,15 +104,15 @@ export interface NoteData {
   citations?: Array<{ content: string; page: number }>
   comment?: string
   content: string
-  created_at: string
+  createdAt: string
   id: string
-  page_num?: number
+  pageNum?: number
   question?: string
   revision?: number
   tags?: string[]
   title?: string
   type: 'text' | 'qa'
-  updated_at: string
+  updatedAt: string
 }
 
 export interface NoteListResponse {
@@ -235,14 +226,6 @@ export interface ExportAnalysisResponse {
   success: boolean
   task_id?: string
   markdown?: string
-  message?: string
-  error?: string
-}
-
-export interface PreviewAnalysisResponse {
-  success: boolean
-  preview?: unknown
-  persisted?: boolean
   message?: string
   error?: string
 }
@@ -458,6 +441,9 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightStatusRe
     && item.kind === 'insight_analysis'
   ))
   const progress = job?.progress ?? {}
+  const currentStep = progress.currentStep && typeof progress.currentStep === 'object'
+    ? progress.currentStep as Record<string, unknown>
+    : undefined
   return {
     success: true,
     book_id: bookId,
@@ -472,21 +458,13 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightStatusRe
       task_type: 'full_book',
       status: mapJobStatus(job.status) as never,
       progress: {
-        current_phase: String(progress.phase ?? progress.currentPhase ?? ''),
-        current_page: Number(progress.current ?? progress.completed ?? 0),
-        analyzed_pages: Number(progress.completed ?? progress.current ?? 0),
-        total_pages: Number(progress.total ?? book?.pageCount ?? 0),
+        current_phase: String(currentStep?.kind ?? ''),
+        current_page: Number(currentStep?.itemOrdinal ?? progress.completedItems ?? 0),
+        analyzed_pages: Number(progress.completedItems ?? 0),
+        total_pages: Number(progress.totalItems ?? book?.pageCount ?? 0),
       },
       created_at: '',
     } : undefined,
-  }
-}
-
-export async function previewAnalysis(): Promise<PreviewAnalysisResponse> {
-  return {
-    success: false,
-    persisted: false,
-    error: '新版架构不再提供非持久化分析预览，请创建单页分析任务',
   }
 }
 
@@ -564,7 +542,6 @@ export async function getInsightChapters(bookId: string): Promise<InsightChapter
 
 function artifactContent(payload: Record<string, unknown>): string {
   if (typeof payload.content === 'string') return payload.content
-  if (typeof payload.summary === 'string') return payload.summary
   return JSON.stringify(payload, null, 2)
 }
 
@@ -640,7 +617,7 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
       const end = pageNumbers.length ? Math.max(...pageNumbers) : start
       const summary = typeof event.summary === 'string' ? event.summary : ''
       return {
-        id: String(event.eventId ?? event.id ?? `event-${index + 1}`),
+        id: String(event.eventId),
         page_range: { start, end },
         thumbnail_page: start,
         summary,
@@ -654,25 +631,24 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
       : []
     const characters = rawCharacters.map((character, index) => {
       const keyMoments = Array.isArray(character.key_moments)
-        ? character.key_moments.map(value => String(value))
+        ? character.key_moments.filter(
+          (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
+        )
         : []
       const firstAppearance = Math.max(
         1,
-        Number(character.first_page ?? character.first_appearance ?? 1),
+        Number(character.first_page ?? 1),
       )
       return {
         name: String(character.name ?? `角色 ${index + 1}`),
         description: typeof character.description === 'string'
           ? character.description
-          : keyMoments[0] || `首次出现于第 ${firstAppearance} 页`,
+          : String(keyMoments[0]?.summary ?? `首次出现于第 ${firstAppearance} 页`),
         first_appearance: firstAppearance,
-        key_moments: keyMoments.map(summary => {
-          const pageMatch = summary.match(/第\s*(\d+)\s*页/)
-          return {
-            summary,
-            ...(pageMatch ? { page: Number(pageMatch[1]) } : {}),
-          }
-        }),
+        key_moments: keyMoments.map(moment => ({
+          summary: String(moment.summary ?? ''),
+          ...(Number(moment.page) > 0 ? { page: Number(moment.page) } : {}),
+        })),
       }
     })
     const content = (
@@ -691,13 +667,8 @@ export async function getTimeline(bookId: string): Promise<InsightTimelineRespon
         mode: timeline.mode,
         events: rawEvents,
         groups,
-        story_summary: typeof content.overview === 'string'
-          ? content.overview
-          : typeof content.story_summary === 'string'
-            ? content.story_summary
-            : '',
+        story_summary: typeof content.story_summary === 'string' ? content.story_summary : '',
         main_characters: characters,
-        characters,
         stats: {
           total_events: groups.length,
           total_pages: pages.length || lastPage,
@@ -773,7 +744,7 @@ export async function sendChat(
         citations = values.map(value => {
           const citation = value as Record<string, unknown>
           return {
-            page: Number(citation.pageNumber ?? citation.pageNumberSnapshot ?? 0),
+            page: Number(citation.pageNumber ?? 0),
           }
         })
       } else if (message.event === 'done') {
@@ -850,10 +821,10 @@ function mapNote(note: V2InsightNote): NoteData {
       page: citation.pageNumberSnapshot,
       content: citation.excerpt,
     })),
-    page_num: note.citations[0]?.pageNumberSnapshot,
+    pageNum: note.citations[0]?.pageNumberSnapshot,
     revision: note.revision,
-    created_at: note.createdAt,
-    updated_at: note.updatedAt,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
   }
   noteCache.set(mapped.id, mapped)
   noteCitationPageIds.set(
@@ -878,7 +849,7 @@ export async function createNote(
   note: {
     type: 'text' | 'qa'
     content: string
-    page_num?: number
+    pageNum?: number
     title?: string
     tags?: string[]
     question?: string
@@ -888,7 +859,7 @@ export async function createNote(
   },
 ): Promise<NoteDetailResponse> {
   const pages = await pagesForBook(bookId)
-  const citations = (note.citations ?? (note.page_num ? [{ page: note.page_num, content: '' }] : []))
+  const citations = (note.citations ?? (note.pageNum ? [{ page: note.pageNum, content: '' }] : []))
     .map(citation => {
       const page = pages.find(item => item.displayPageNumber === citation.page)
       return page ? { pageId: page.pageId, excerpt: citation.content } : null
@@ -904,8 +875,8 @@ export async function createNote(
     comments: [noteMetadata({
       ...note,
       id: '',
-      created_at: '',
-      updated_at: '',
+      createdAt: '',
+      updatedAt: '',
     })],
   })
   return { success: true, note: mapNote(created) }
@@ -914,7 +885,7 @@ export async function createNote(
 export async function updateNote(
   bookId: string,
   noteId: string,
-  updates: Partial<NoteData> & { page_num?: number },
+  updates: Partial<NoteData>,
 ): Promise<NoteDetailResponse> {
   const current = noteCache.get(noteId)
   if (!current?.revision) return { success: false, error: '笔记版本缺失，请重新加载' }
@@ -957,15 +928,15 @@ function providerWire(row: V2ProviderSettingEntry | undefined, provider: string)
   return {
     provider,
     api_key: '',
-    model: payload.modelName ?? payload.model_name ?? '',
-    base_url: payload.customBaseUrl ?? payload.custom_base_url ?? '',
-    openai_options: payload.openaiOptions ?? payload.openai_options ?? {},
-    image_max_size: payload.imageMaxSize ?? payload.image_max_size,
-    rpm_limit: payload.rpmLimit ?? payload.rpm_limit,
-    top_k: payload.topK ?? payload.top_k,
-    transport_retries: payload.transportRetries ?? payload.transport_retries,
-    business_retries: payload.businessRetries ?? payload.business_retries,
-    timeout_seconds: payload.timeoutSeconds ?? payload.timeout_seconds,
+    model: payload.modelName ?? '',
+    base_url: payload.customBaseUrl ?? '',
+    openai_options: payload.openaiOptions ?? {},
+    image_max_size: payload.imageMaxSize,
+    rpm_limit: payload.rpmLimit,
+    top_k: payload.topK,
+    transport_retries: payload.transportRetries,
+    business_retries: payload.businessRetries,
+    timeout_seconds: payload.timeoutSeconds,
   }
 }
 
@@ -1050,14 +1021,14 @@ export async function getGlobalConfig(): Promise<GlobalConfigResponse> {
       image_gen: section('image_gen', 'imageGen') as unknown as ImageGenConfig,
       analysis: {
         batch: {
-          pages_per_batch: Number(batch.pagesPerBatch ?? batch.pages_per_batch ?? 5),
-          context_batch_count: Number(batch.contextBatchCount ?? batch.context_batch_count ?? 3),
-          architecture_preset: String(batch.architecturePreset ?? batch.architecture_preset ?? 'standard'),
-          custom_layers: ((batch.customLayers ?? batch.custom_layers ?? []) as Array<Record<string, unknown>>)
+          pages_per_batch: Number(batch.pagesPerBatch ?? 5),
+          context_batch_count: Number(batch.contextBatchCount ?? 3),
+          architecture_preset: String(batch.architecturePreset ?? 'standard'),
+          custom_layers: ((batch.customLayers ?? []) as Array<Record<string, unknown>>)
             .map(layer => ({
               name: String(layer.name ?? ''),
-              units_per_group: Number(layer.unitsPerGroup ?? layer.units_per_group ?? 0),
-              align_to_chapter: Boolean(layer.alignToChapter ?? layer.align_to_chapter),
+              units_per_group: Number(layer.unitsPerGroup ?? 0),
+              align_to_chapter: Boolean(layer.alignToChapter),
             })),
         },
       },
@@ -1131,6 +1102,7 @@ export async function saveGlobalConfig(config: AnalysisConfig): Promise<ApiRespo
       provider,
       payload: providerPayload(section),
       baseRevision: existingRow?.revision ?? 0,
+      schemaVersion: 1,
       ...(existingRow?.credentialVersionId
         ? { credentialVersionId: existingRow.credentialVersionId }
         : {}),
@@ -1186,7 +1158,7 @@ function diagnosticRequest(
     model: config.model,
     baseUrl: config.base_url,
     ...(config.api_key
-      ? { secret: { apiKey: config.api_key } }
+      ? { secret: { api_key: config.api_key } }
       : { domain }),
   })
 }
@@ -1216,7 +1188,7 @@ export function fetchModels(
   return fetchV2ModelCatalog({
     provider,
     baseUrl,
-    ...(apiKey ? { secret: { apiKey } } : { domain }),
+    ...(apiKey ? { secret: { api_key: apiKey } } : { domain }),
   })
 }
 

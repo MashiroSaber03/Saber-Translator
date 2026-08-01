@@ -5,8 +5,6 @@ defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<{
   modelValue?: string | number | boolean
-  value?: string | number | boolean
-  checked?: boolean
   type?: string
   placeholder?: string
   disabled?: boolean
@@ -16,8 +14,6 @@ const props = withDefaults(defineProps<{
   variant?: 'default' | 'editor' | 'studio' | 'embedded'
 }>(), {
   modelValue: undefined,
-  value: undefined,
-  checked: undefined,
   type: 'text',
   placeholder: '',
   disabled: false,
@@ -35,7 +31,7 @@ const emit = defineEmits<{
 const attrs = useAttrs()
 const inputRef = ref<HTMLInputElement | null>(null)
 const isComposing = ref(false)
-const inputValue = computed(() => props.modelValue ?? props.value ?? '')
+const inputValue = computed(() => props.modelValue ?? '')
 const textCompositionInputTypes = new Set([
   'text',
   'search',
@@ -87,7 +83,7 @@ defineExpose({ focus })
     class="ui-input"
     :class="[`ui-input--${size}`, `ui-input--${variant}`, { 'ui-input--error': Boolean(error) }]"
     :value="inputValue"
-    :checked="type === 'checkbox' ? checked ?? Boolean(modelValue) : undefined"
+    :checked="type === 'checkbox' ? Boolean(modelValue) : undefined"
     :type="type"
     :placeholder="placeholder"
     :disabled="disabled"

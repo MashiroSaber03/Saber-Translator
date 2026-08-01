@@ -57,7 +57,7 @@ from src.backend_v2.translation.auxiliary import (
     TextImportWorkerService,
 )
 from src.backend_v2.translation.pipeline import (
-    LegacyTranslationAlgorithms,
+    CoreTranslationAlgorithms,
     TranslationPipelineService,
     _restore_non_translate_text,
     _validate_stable_batch_result,
@@ -210,7 +210,7 @@ class ConstraintAwareFakeAlgorithms(FakeAlgorithms):
         return super().translate(texts, config, mode=mode)
 
 
-def test_legacy_color_adapter_accepts_serialized_dictionary_results(
+def test_core_color_adapter_accepts_serialized_dictionary_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.core import color_extractor
@@ -241,7 +241,7 @@ def test_legacy_color_adapter_accepts_serialized_dictionary_results(
     ]
 
     with Image.new("RGB", (32, 32), "white") as image:
-        result = LegacyTranslationAlgorithms().colors(image, payloads)
+        result = CoreTranslationAlgorithms().colors(image, payloads)
 
     assert result == extracted
     assert result is not extracted
@@ -254,7 +254,7 @@ def test_legacy_color_adapter_accepts_serialized_dictionary_results(
     ]
 
 
-def test_legacy_repair_adapter_passes_precise_text_mask(
+def test_core_repair_adapter_passes_precise_text_mask(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.core import inpainting
@@ -270,7 +270,7 @@ def test_legacy_repair_adapter_passes_precise_text_mask(
     precise_mask = Image.new("L", (3, 2), 0)
     precise_mask.putpixel((1, 0), 255)
 
-    repaired = LegacyTranslationAlgorithms().repair(
+    repaired = CoreTranslationAlgorithms().repair(
         image,
         [{"coords": [0, 0, 3, 2], "polygon": []}],
         {"disable_resize": True, "method": "solid"},
@@ -287,7 +287,7 @@ def test_legacy_repair_adapter_passes_precise_text_mask(
     image.close()
 
 
-def test_legacy_translation_adapter_honors_batch_textbox_prompt(
+def test_core_translation_adapter_honors_batch_textbox_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.core import translation
@@ -302,16 +302,16 @@ def test_legacy_translation_adapter_honors_batch_textbox_prompt(
         ]
 
     monkeypatch.setattr(translation, "translate_text_list", fake_translate)
-    result = LegacyTranslationAlgorithms().translate(
+    result = CoreTranslationAlgorithms().translate(
         ["一", "二"],
         {
             "api_key": "secret",
             "custom_base_url": "https://example.test/v1",
             "model_name": "model",
-            "openai_options": {
-                "execution": {},
-                "request": {"forceJsonOutput": True},
-            },
+                "openai_options": {
+                    "execution": {},
+                    "request": {"force_json_output": True},
+                },
             "prompt_content": "primary",
             "provider": "custom",
             "target_language": "zh",
@@ -390,6 +390,7 @@ def translation_platform(tmp_path: Path):
                 provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 payload={"modelName": "fixture-model"},
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="fixture-translation",
             ),
         ),
@@ -590,6 +591,8 @@ def test_translation_plugins_mutate_domain_text_before_persistence(
         "supported_modes": ["standard"],
         "priority": 100,
         "failure_policy": "fail",
+        "author": "tests",
+        "description": "translation domain mutation",
         "default_enabled": True,
         "config_schema": {},
     }
@@ -1477,6 +1480,7 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                     "customBaseUrl": "https://custom.example/v1",
                 },
                 base_revision=0,
+                schema_version=1,
             ),
         ),
     )
@@ -1556,6 +1560,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                     "customBaseUrl": "https://retry.example/v1",
                 },
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="retry-custom",
             ),
         ),
@@ -1636,6 +1641,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                     "translationMode": "batch",
                 },
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="translation",
             ),
         ),
@@ -1746,6 +1752,7 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                     "prompt": "provider hq prompt",
                 },
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="hq",
             ),
             ProviderSettingMutation(
@@ -1758,6 +1765,7 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                     "promptMode": "json",
                 },
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="ocr",
             ),
         ),
@@ -1867,6 +1875,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
                 provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 payload={"modelName": model},
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref=domain,
             )
             for domain, model in (

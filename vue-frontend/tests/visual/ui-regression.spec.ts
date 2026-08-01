@@ -1131,7 +1131,6 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
         imageVersions: [],
         name: '默认',
         payload: {
-          clientFormId: 'default',
           description: '默认形态',
           enabled: true,
         },

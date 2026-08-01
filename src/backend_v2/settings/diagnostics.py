@@ -69,7 +69,14 @@ class ProviderDiagnostics:
             raise ValueError(f"provider does not support model discovery: {provider}")
         secret = self._secret(body, provider=provider)
         manifest = get_provider_manifest(provider)
-        api_key = self._api_key(secret)
+        api_key = self._api_key(
+            secret,
+            field=(
+                "ai_vision_api_key"
+                if self._optional_string(body, "domain") == "ai_vision_ocr"
+                else "api_key"
+            ),
+        )
         if manifest.requires_api_key and not api_key:
             raise ValueError("API key is required")
         base_url = self._optional_string(body, "baseUrl")
@@ -114,8 +121,10 @@ class ProviderDiagnostics:
             return self._test_embedding(body)
         if kind == "reranker":
             return self._test_reranker(body)
-        if kind in {"ai_vision_ocr", "vlm"}:
-            return self._test_vision(body)
+        if kind == "ai_vision_ocr":
+            return self._test_vision(body, api_key_field="ai_vision_api_key")
+        if kind == "vlm":
+            return self._test_vision(body, api_key_field="api_key")
 
         provider = (
             kind
@@ -166,12 +175,17 @@ class ProviderDiagnostics:
             raise RuntimeError(result)
         return f"连接成功：{result}"
 
-    def _test_vision(self, body: Mapping[str, object]) -> str:
+    def _test_vision(
+        self,
+        body: Mapping[str, object],
+        *,
+        api_key_field: str,
+    ) -> str:
         provider = self._provider(body)
         if not provider_supports_capability(provider, VISION_OCR_CAPABILITY):
             raise ValueError(f"provider does not support vision: {provider}")
         secret = self._secret(body, provider=provider)
-        api_key = self._api_key(secret)
+        api_key = self._api_key(secret, field=api_key_field)
         manifest = get_provider_manifest(provider)
         model = self._required_string(body, "model")
         base_url = self._optional_string(body, "baseUrl")
@@ -254,13 +268,12 @@ class ProviderDiagnostics:
 
     def _test_baidu_ocr(self, body: Mapping[str, object]) -> str:
         secret = self._secret(body, provider="baidu")
-        api_key = self._first_secret(secret, "apiKey", "api_key", "baidu_api_key")
-        secret_key = self._first_secret(
+        self._require_secret_fields(
             secret,
-            "secretKey",
-            "secret_key",
-            "baidu_secret_key",
+            {"baidu_api_key", "baidu_secret_key"},
         )
+        api_key = self._secret_string(secret, "baidu_api_key")
+        secret_key = self._secret_string(secret, "baidu_secret_key")
         if not api_key or not secret_key:
             raise ValueError("Baidu OCR API key and secret key are required")
         response = httpx.post(
@@ -280,14 +293,9 @@ class ProviderDiagnostics:
 
     def _test_baidu_translate(self, body: Mapping[str, object]) -> str:
         secret = self._secret(body, provider="baidu_translate")
-        app_id = self._first_secret(secret, "appId", "app_id", "apiKey", "api_key")
-        app_key = self._first_secret(
-            secret,
-            "appKey",
-            "app_key",
-            "secretKey",
-            "secret_key",
-        )
+        self._require_secret_fields(secret, {"app_id", "app_key"})
+        app_id = self._secret_string(secret, "app_id")
+        app_key = self._secret_string(secret, "app_key")
         if not app_id or not app_key:
             raise ValueError("Baidu Translate app ID and app key are required")
         salt = str(secrets.randbelow(32769) + 32768)
@@ -323,14 +331,9 @@ class ProviderDiagnostics:
 
     def _test_youdao_translate(self, body: Mapping[str, object]) -> str:
         secret = self._secret(body, provider="youdao_translate")
-        app_key = self._first_secret(secret, "appKey", "app_key", "apiKey", "api_key")
-        app_secret = self._first_secret(
-            secret,
-            "appSecret",
-            "app_secret",
-            "secretKey",
-            "secret_key",
-        )
+        self._require_secret_fields(secret, {"app_key", "app_secret"})
+        app_key = self._secret_string(secret, "app_key")
+        app_secret = self._secret_string(secret, "app_secret")
         if not app_key or not app_secret:
             raise ValueError("Youdao app key and app secret are required")
         source = "Hello, this is a test."
@@ -433,22 +436,29 @@ class ProviderDiagnostics:
         return {}
 
     @staticmethod
-    def _api_key(secret: Mapping[str, object]) -> str:
-        return ProviderDiagnostics._first_secret(
-            secret,
-            "apiKey",
-            "api_key",
-            "ai_vision_api_key",
-            "token",
-        )
+    def _api_key(
+        secret: Mapping[str, object],
+        *,
+        field: str = "api_key",
+    ) -> str:
+        ProviderDiagnostics._require_secret_fields(secret, {field})
+        return ProviderDiagnostics._secret_string(secret, field)
 
     @staticmethod
-    def _first_secret(secret: Mapping[str, object], *keys: str) -> str:
-        for key in keys:
-            value = secret.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return ""
+    def _require_secret_fields(
+        secret: Mapping[str, object],
+        expected: set[str],
+    ) -> None:
+        if secret and set(secret) != expected:
+            raise ValueError(
+                "diagnostic secret fields must be exactly: "
+                + ", ".join(sorted(expected))
+            )
+
+    @staticmethod
+    def _secret_string(secret: Mapping[str, object], key: str) -> str:
+        value = secret.get(key)
+        return value.strip() if isinstance(value, str) else ""
 
     @staticmethod
     def _provider(body: Mapping[str, object]) -> str:

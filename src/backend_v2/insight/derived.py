@@ -112,8 +112,8 @@ class DerivedAlgorithms(Protocol):
     ) -> Sequence[Sequence[float]]: ...
 
 
-class LegacyDerivedAlgorithms:
-    """Worker-only adapters around the shared chat and embedding transports."""
+class ProviderDerivedAlgorithms:
+    """Current derived-analysis implementation for the Worker."""
 
     def build_layer(
         self,
@@ -176,8 +176,15 @@ class LegacyDerivedAlgorithms:
     ) -> Mapping[str, Any]:
         prompt = (
             "根据以下漫画分析生成增强时间线。输出 JSON："
-            '{"content":{},"events":[{"summary":"...","page_ids":["..."]}],'
-            '"characters":[{"name":"...","first_page":1,"key_moments":[]}]}。'
+            '{"content":{"story_summary":"...","plot_arcs":'
+            '[{"id":"...","name":"...","description":"...",'
+            '"page_range":{"start":1,"end":2},"mood":"...",'
+            '"event_ids":["..."]}],"plot_threads":[]},'
+            '"events":[{"summary":"...","page_ids":["..."]}],'
+            '"characters":[{"name":"...","aliases":[],"description":"...",'
+            '"personality":"...","arc":"...","first_page":1,'
+            '"key_moments":[{"summary":"...","page":1}],'
+            '"related_page_numbers":[1]}]}。'
             "不要把推断写成事实。\n\n"
             + _page_context(pages)
         )
@@ -237,12 +244,9 @@ class LegacyDerivedAlgorithms:
         section = _object(config.get("embedding"))
         payload = {
             "provider": section.get("provider", ""),
-            "api_key": section.get("api_key", section.get("apiKey", "")),
-            "model": section.get("model_name", section.get("modelName", "")),
-            "base_url": section.get(
-                "custom_base_url",
-                section.get("base_url"),
-            ),
+            "api_key": section.get("api_key", ""),
+            "model": section.get("model_name", ""),
+            "base_url": section.get("custom_base_url"),
             "rpm_limit": int(section.get("rpm_limit", 0)),
             "transport_retries": int(section.get("transport_retries", 10)),
             "business_retries": int(section.get("business_retries", 10)),
@@ -273,12 +277,9 @@ class LegacyDerivedAlgorithms:
             section = _object(config.get("vlm"))
         payload = {
             "provider": section.get("provider", ""),
-            "api_key": section.get("api_key", section.get("apiKey", "")),
-            "model": section.get("model_name", section.get("modelName", "")),
-            "base_url": section.get(
-                "custom_base_url",
-                section.get("base_url"),
-            ),
+            "api_key": section.get("api_key", ""),
+            "model": section.get("model_name", ""),
+            "base_url": section.get("custom_base_url"),
             "openai_options": _object(section.get("openai_options")),
         }
         system = str(
@@ -1439,7 +1440,7 @@ class InsightDerivedWorkerService:
         self.jobs = jobs
         self.repository = InsightDerivedRepository(engine)
         self.credentials = SettingsRepository(engine)
-        self.algorithms = algorithms or LegacyDerivedAlgorithms()
+        self.algorithms = algorithms or ProviderDerivedAlgorithms()
         self.vector_store = vector_store or InsightVectorStore(data_root)
 
     def handle(
@@ -1766,9 +1767,7 @@ class InsightDerivedWorkerService:
             ):
                 if not isinstance(event, Mapping):
                     continue
-                text = str(
-                    event.get("summary", event.get("content", ""))
-                ).strip()
+                text = str(event.get("summary", "")).strip()
                 if not text:
                     continue
                 records.append(

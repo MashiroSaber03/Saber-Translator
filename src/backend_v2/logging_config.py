@@ -46,7 +46,7 @@ class SecretSafeFormatter(logging.Formatter):
 
 
 class ColoredSecretSafeFormatter(SecretSafeFormatter):
-    """Apply the legacy level colors to the complete redacted console line."""
+    """Apply level colors to the complete redacted console line."""
 
     _COLORS: Final = {
         logging.DEBUG: colorama.Fore.CYAN,
@@ -119,7 +119,7 @@ def configure_backend_logging(
     # INFO/DEBUG selection so normal terminal output remains readable.
     root.setLevel(logging.DEBUG)
 
-    # Enable ANSI colors on legacy Windows consoles while remaining idempotent
+    # Enable ANSI colors on older Windows consoles while remaining idempotent
     # on modern terminals and non-Windows platforms.
     colorama.just_fix_windows_console()
     console = _mark(logging.StreamHandler(sys.stdout))

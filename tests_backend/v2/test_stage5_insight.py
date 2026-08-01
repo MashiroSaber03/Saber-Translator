@@ -400,7 +400,7 @@ def test_analysis_rejects_incomplete_vlm_settings_before_queue(
             command={
                 "bookId": str(platform["book"]["id"]),
                 "scope": "page",
-                "pageId": platform["page_ids"][0],
+                "pageIds": [platform["page_ids"][0]],
             },
             idempotency_key="missing-vlm-model",
         )
@@ -728,7 +728,7 @@ def test_partial_analysis_retry_creates_isolated_run_and_rebinds_source(
         command={
             "bookId": str(platform["book"]["id"]),
             "scope": "page",
-            "pageId": page_id,
+            "pageIds": [page_id],
         },
         idempotency_key=f"partial-retry-source-{strategy}",
     )
@@ -855,7 +855,7 @@ def test_page_scope_publishes_page_head_without_switching_book_head(
         command={
             "bookId": str(platform["book"]["id"]),
             "scope": "page",
-            "pageId": platform["page_ids"][1],
+            "pageIds": [platform["page_ids"][1]],
         },
         idempotency_key="page-scope-1",
     )
@@ -1232,7 +1232,7 @@ def test_page_analysis_schema_uses_backend_identity_for_single_page() -> None:
             source_checksum="0" * 64,
             page_number=1,
         )
-    with pytest.raises(InvalidPageAnalysis, match="page_summary"):
+    with pytest.raises(InvalidPageAnalysis, match="contain pages"):
         normalize_page_analysis(
             {"page_summary": ""},
             page_id="page",
@@ -1251,6 +1251,22 @@ def test_browser_cannot_supply_provider_or_prompt_configuration() -> None:
                 "bookId": "book",
                 "scope": "full",
                 "vlm": {"apiKey": "must-not-enter-command"},
+            }
+        )
+
+
+@pytest.mark.parametrize("selector", ("chapterId", "pageId"))
+def test_analysis_command_rejects_retired_singular_selectors(
+    selector: str,
+) -> None:
+    from src.backend_v2.insight.commands import normalize_analysis_command
+
+    with pytest.raises(ValueError, match="unknown Insight command fields"):
+        normalize_analysis_command(
+            {
+                "bookId": "book",
+                "scope": "chapter" if selector == "chapterId" else "page",
+                selector: "target",
             }
         )
 
@@ -1708,7 +1724,7 @@ def test_qa_accepts_page_scoped_snapshot_after_vector_rebuild(
             command={
                 "bookId": str(platform["book"]["id"]),
                 "scope": "page",
-                "pageId": page_id,
+                "pageIds": [page_id],
             },
             idempotency_key=f"qa-page-analysis-{index}",
         )
@@ -1811,7 +1827,7 @@ def test_global_qa_reports_incomplete_artifacts_as_conflict(
         command={
             "bookId": str(platform["book"]["id"]),
             "scope": "page",
-            "pageId": platform["page_ids"][0],
+            "pageIds": [platform["page_ids"][0]],
         },
         idempotency_key="qa-global-partial-analysis",
     )

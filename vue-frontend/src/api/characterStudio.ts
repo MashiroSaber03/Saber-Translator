@@ -133,9 +133,6 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
       created_at: raw.createdAt ?? '',
       updated_at: raw.updatedAt ?? '',
     },
-    avatar: {
-      asset_path: raw.avatarUrl,
-    },
     identity: {
       name: String(record(raw.identity).name ?? raw.title),
       aliases: array(record(raw.identity).aliases).map(String),
@@ -160,15 +157,6 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
     },
     regexScripts: array(raw.regexScripts) as CharacterStudioDocument['regexScripts'],
     stateTasks: array(raw.stateTasks) as CharacterStudioDocument['stateTasks'],
-    chatPreset: {
-      opening_mode: String(record(raw.chatPreset).opening_mode ?? 'first_message'),
-    },
-    grounding: {
-      timeline_mode: String(record(raw.grounding).timeline_mode ?? 'enhanced'),
-      sample_pages: array(record(raw.grounding).sample_pages).map(Number).filter(Number.isFinite),
-      relationships: array(record(raw.grounding).relationships) as Array<Record<string, unknown>>,
-      key_moments: array(record(raw.grounding).key_moments) as Array<Record<string, unknown>>,
-    },
     exportArtifacts: record(raw.exportArtifacts),
     revision: raw.revision,
     avatarUrl: raw.avatarUrl,
@@ -177,21 +165,10 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
   }
 }
 
-function rawDocument(documentId: string, fallback?: CharacterStudioDocument): V2StudioDocument {
+function cachedDocument(documentId: string): V2StudioDocument {
   const cached = documentCache.get(documentId)
   if (cached) return cached
-  if (!fallback) throw new Error('角色文档版本缺失，请重新加载')
-  return {
-    ...fallback,
-    avatarAssetId: null,
-    avatarUrl: fallback.avatarUrl ?? null,
-    bookId: fallback.bookId,
-    createdAt: fallback.createdAt ?? null,
-    id: fallback.id,
-    revision: fallback.revision ?? 0,
-    title: fallback.meta.title,
-    updatedAt: fallback.updatedAt ?? null,
-  }
+  throw new Error('角色文档版本缺失，请重新加载')
 }
 
 function mapAttachment(value: Record<string, unknown>): CharacterStudioChatAttachment {
@@ -301,11 +278,11 @@ export async function getCharacterStudioIndex(bookId: string): Promise<Character
       id: item.documentId,
       title: item.title,
       origin: item.kind === 'analysis' || item.kind === 'imported' ? item.kind : 'manual',
-      source_character: item.sourceCharacter ?? null,
+      source_character: item.sourceCharacter,
       updated_at: item.updatedAt,
-      tags: item.tags ?? [],
-      is_favorite: item.isFavorite ?? false,
-      has_avatar: item.hasAvatar ?? Boolean(item.avatarAssetId),
+      tags: item.tags,
+      is_favorite: item.isFavorite,
+      has_avatar: item.hasAvatar,
       sample_pages: [],
     })),
     candidates: candidates.items.map(item => ({
@@ -363,9 +340,11 @@ export async function saveCharacterStudioDocument(
   docId: string,
   payload: CharacterStudioDocument,
 ): Promise<CharacterStudioDocumentResponse> {
-  const current = rawDocument(docId, payload)
+  if (!payload.revision || payload.revision < 1) {
+    throw new Error('角色文档版本缺失，请重新加载')
+  }
   const document = await updateV2StudioDocument(docId, {
-    baseRevision: current.revision,
+    baseRevision: payload.revision,
     title: payload.meta.title,
     document: payload as unknown as Record<string, unknown>,
   })
@@ -387,7 +366,7 @@ export async function generateCharacterStudioSection(
   docId: string,
   section: string,
 ): Promise<CharacterStudioDocumentResponse> {
-  const current = rawDocument(docId)
+  const current = cachedDocument(docId)
   const accepted = await generateV2StudioDocument(docId, current.revision, section)
   await waitForOperation(accepted.operationId)
   return {
@@ -405,7 +384,7 @@ export async function validateCharacterStudioDocument(
   error?: string
   document?: CharacterStudioDocument
 }> {
-  const current = rawDocument(docId)
+  const current = cachedDocument(docId)
   const response = await validateV2StudioDocument(docId, current.revision)
   const diagnostics = record(response.diagnostics)
   const refreshed = await getV2StudioDocument(docId)
@@ -677,7 +656,7 @@ export async function importWorldbookIntoCharacterStudioDocument(
   docId: string,
   file: File,
 ): Promise<CharacterStudioDocumentResponse> {
-  const current = rawDocument(docId)
+  const current = cachedDocument(docId)
   return {
     success: true,
     document: mapDocument(

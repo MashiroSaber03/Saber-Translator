@@ -113,10 +113,7 @@ def create_plugins_blueprint(
         if len(data) > MAX_ARCHIVE_BYTES:
             raise ValueError("plugin archive is too large")
         base_revision = _positive_int(
-            request.form.get(
-                "baseRevision",
-                request.args.get("baseRevision", "0"),
-            ),
+            request.form.get("baseRevision"),
             "baseRevision",
             allow_zero=True,
         )

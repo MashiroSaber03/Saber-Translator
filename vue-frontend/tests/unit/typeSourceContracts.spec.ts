@@ -44,7 +44,6 @@ describe('type source contracts', () => {
     for (const typeName of [
       'ApiResponse',
       'ApiError',
-      'ReRenderResponse',
       'BookData',
       'PluginData',
       'FetchModelsResponse',
@@ -54,7 +53,6 @@ describe('type source contracts', () => {
 
     for (const exportPath of [
       './apiCore',
-      './translationApi',
       './bookshelf',
       './plugin',
       './diagnostics',
@@ -63,7 +61,6 @@ describe('type source contracts', () => {
     }
 
     expect(source('src/types/apiCore.ts')).toContain('export interface ApiResponse')
-    expect(source('src/types/translationApi.ts')).toContain('export interface ReRenderResponse')
     expect(source('src/types/bookshelf.ts')).toContain('export interface BookData')
     expect(source('src/types/plugin.ts')).toContain('export interface PluginData')
     expect(source('src/types/diagnostics.ts')).toContain('export interface FetchModelsResponse')
@@ -259,21 +256,16 @@ describe('type source contracts', () => {
 
     expect(source('src/types/insightStoreTypes.ts')).toContain('export interface StoreInsightConfig')
     expect(source('src/types/insightConfigTypes.ts')).toContain('export interface InsightConfig')
-    expect(source('src/types/insightAnalysisTypes.ts')).toContain('export interface PageAnalysis')
+    expect(source('src/types/insightAnalysisTypes.ts')).toContain('export interface AnalysisTask')
     expect(source('src/types/insightTimelineTypes.ts')).toContain('export interface TimelineData')
     expect(source('src/types/insightNotesQaTypes.ts')).toContain('export interface NoteData')
     expect(source('src/types/insightResponseTypes.ts')).toContain('export interface InsightStatusResponse')
   })
 
-  it('keeps Insight runtime converters out of the type package', () => {
+  it('does not keep generic Insight casing compatibility converters', () => {
     expect(existsSync(resolve(process.cwd(), 'src/types/insight/index.ts'))).toBe(false)
     expect(existsSync(resolve(process.cwd(), 'src/types/insight/converters.ts'))).toBe(false)
-
-    const utility = source('src/utils/insightConverters.ts')
-    expect(utility).toContain('export function toSnakeCase')
-    expect(utility).toContain('export function toCamelCase')
-    expect(utility).toContain('export function configToApi')
-    expect(utility).toContain('export function configFromApi')
+    expect(existsSync(resolve(process.cwd(), 'src/utils/insightConverters.ts'))).toBe(false)
   })
 
   it('keeps the public type barrel free of mechanical export narration', () => {

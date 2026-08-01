@@ -417,7 +417,7 @@ class PluginAgentController:
 
     @staticmethod
     def _build_tool_call_payload(tool_name: str, tool_args: Dict[str, Any], group_id: str) -> Dict[str, Any]:
-        path = str(tool_args.get("path") or tool_args.get("base_path") or "").strip()
+        path = str(tool_args.get("path") or "").strip()
         if tool_name == "write_file":
             summary = f"准备写入文件 {path or '未指定路径'}"
         elif tool_name == "read_file":

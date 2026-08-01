@@ -1004,6 +1004,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/DocumentId"
         - $ref: "#/components/parameters/IdempotencyKey"
+        - name: If-Match
+          in: header
+          required: true
+          description: Current Studio document revision.
+          schema: {type: integer, minimum: 1}
       requestBody:
         required: true
         content:
@@ -3626,7 +3631,7 @@ components:
     SettingMutation:
       type: object
       additionalProperties: false
-      required: [domain, payload, baseRevision]
+      required: [domain, payload, baseRevision, schemaVersion]
       properties:
         domain: {type: string}
         payload: {type: object, additionalProperties: true}
@@ -5237,6 +5242,7 @@ components:
         - currentRevision
         - manifest
         - configSchema
+        - errorMessage
       properties:
         pluginId: {type: string}
         displayName: {type: string}
@@ -6092,13 +6098,11 @@ components:
       properties:
         bookId: {$ref: "#/components/schemas/Uuid"}
         scope: {type: string, enum: [full, incremental, chapter, page]}
-        chapterId: {$ref: "#/components/schemas/Uuid"}
         chapterIds:
           type: array
           minItems: 1
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
-        pageId: {$ref: "#/components/schemas/Uuid"}
         pageIds:
           type: array
           minItems: 1

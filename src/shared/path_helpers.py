@@ -54,44 +54,9 @@ def resource_path(relative_path):
 
 
 def get_font_path(font_path):
-    """
-    获取字体的绝对路径
-    
-    Args:
-        font_path: 字体路径，可能是相对路径也可能是绝对路径
-        
-    Returns:
-        字体的绝对路径
-    """
-    if not font_path:
-        # 如果未提供字体，使用默认字体
-        return resource_path(DEFAULT_FONT_RELATIVE_PATH)
-    
-    builtin_fonts = os.path.join('src', 'backend_v2', 'resources', 'fonts')
-
-    # 兼容旧文档中的展示路径，实际统一解析到 v2 只读字体资源。
-    if font_path.startswith('static/fonts/'):
-        return resource_path(os.path.join(builtin_fonts, os.path.basename(font_path)))
-    elif font_path.startswith('static/'):
-        return resource_path(os.path.join(builtin_fonts, os.path.basename(font_path)))
-    elif font_path.startswith('fonts/'):
-        return resource_path(os.path.join(builtin_fonts, os.path.basename(font_path)))
-    elif os.path.exists(font_path):
-        # 如果路径存在，直接返回
-        return font_path
-    else:
-        # 尝试在当前路径下查找
-        app_dir_path = resource_path(os.path.basename(font_path))
-        if os.path.exists(app_dir_path):
-            return app_dir_path
-            
-        # 尝试在fonts目录下查找
-        fonts_dir_path = resource_path(
-            os.path.join(builtin_fonts, os.path.basename(font_path))
-        )
-        if os.path.exists(fonts_dir_path):
-            return fonts_dir_path
-    
-    # 如果所有尝试都失败，返回默认字体
-    logger.warning(f"未找到字体 {font_path}，使用默认字体")
-    return resource_path(DEFAULT_FONT_RELATIVE_PATH)
+    """Resolve one canonical bundled-relative or uploaded absolute font path."""
+    requested = font_path or DEFAULT_FONT_RELATIVE_PATH
+    resolved = requested if os.path.isabs(requested) else resource_path(requested)
+    if not os.path.isfile(resolved):
+        raise FileNotFoundError(f"字体文件不存在: {requested}")
+    return resolved

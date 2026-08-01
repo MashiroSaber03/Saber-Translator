@@ -2454,7 +2454,7 @@ export interface components {
                 [key: string]: unknown;
             };
             baseRevision: number;
-            schemaVersion?: number;
+            schemaVersion: number;
         };
         BookSettingMutation: components["schemas"]["SettingMutation"] & {
             bookId: components["schemas"]["Uuid"];
@@ -3281,7 +3281,7 @@ export interface components {
                 [key: string]: unknown;
             };
             configRevision: number;
-            errorMessage?: string | null;
+            errorMessage: string | null;
             pluginVersionId: components["schemas"]["Uuid"];
             packageVersion: string;
             currentRevision: number;
@@ -3758,9 +3758,7 @@ export interface components {
             bookId: components["schemas"]["Uuid"];
             /** @enum {string} */
             scope: "full" | "incremental" | "chapter" | "page";
-            chapterId?: components["schemas"]["Uuid"];
             chapterIds?: components["schemas"]["Uuid"][];
-            pageId?: components["schemas"]["Uuid"];
             pageIds?: components["schemas"]["Uuid"][];
             force?: boolean;
         };
@@ -5649,6 +5647,8 @@ export interface operations {
             header: {
                 /** @description Stable key for this normalized command and target scope. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Current Studio document revision. */
+                "If-Match": number;
             };
             path: {
                 document_id: components["parameters"]["DocumentId"];

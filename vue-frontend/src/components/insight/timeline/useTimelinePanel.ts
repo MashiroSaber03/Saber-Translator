@@ -5,9 +5,6 @@ import type { TimelineData } from './timelineTypes'
 import type { InsightTimelineResponse } from '@/types/insight'
 
 type TimelinePayload = Partial<TimelineData> & {
-  summary?: string | { one_sentence?: string }
-  characters?: TimelineData['main_characters']
-  story_arcs?: TimelineData['plot_arcs']
 }
 
 type TimelineApiResponse = InsightTimelineResponse & TimelinePayload
@@ -15,19 +12,18 @@ type TimelineApiResponse = InsightTimelineResponse & TimelinePayload
 function getTimelinePayload(response: TimelineApiResponse): TimelinePayload {
   return response.timeline && typeof response.timeline === 'object'
     ? response.timeline as TimelinePayload
-    : response
+    : {}
 }
 
 function normalizeTimelineResponse(response: TimelineApiResponse): TimelineData {
   const payload = getTimelinePayload(response)
-  const summary = payload.summary
   return {
     mode: payload.mode || 'simple',
     groups: payload.groups || [],
     stats: payload.stats,
-    story_summary: payload.story_summary || (typeof summary === 'object' ? summary.one_sentence : summary) || '',
-    main_characters: payload.main_characters || payload.characters || [],
-    plot_arcs: payload.plot_arcs || payload.story_arcs || [],
+    story_summary: payload.story_summary || '',
+    main_characters: payload.main_characters || [],
+    plot_arcs: payload.plot_arcs || [],
     plot_threads: payload.plot_threads || [],
     events: payload.events || [],
     cached: payload.cached,

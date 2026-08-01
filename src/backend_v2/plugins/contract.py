@@ -33,6 +33,24 @@ PLUGIN_MODES = frozenset(
     {"standard", "hq", "proofread", "remove_text"}
 )
 CONFIG_TYPES = frozenset({"text", "number", "boolean", "select"})
+MANIFEST_FIELDS = frozenset(
+    {
+        "schema_version",
+        "plugin_id",
+        "display_name",
+        "package_version",
+        "entrypoint",
+        "hooks",
+        "supported_steps",
+        "supported_modes",
+        "priority",
+        "failure_policy",
+        "author",
+        "description",
+        "default_enabled",
+        "config_schema",
+    }
+)
 ATOMIC_PAYLOAD_FIELDS = {
     ("detect", "before"): frozenset(
         {"pageId", "sourceAssetId", "detectorConfig"}
@@ -168,61 +186,73 @@ class PluginContext:
 
 
 def parse_manifest(raw: Mapping[str, Any]) -> PluginManifest:
-    schema_version = raw.get("schema_version", raw.get("schemaVersion"))
+    fields = set(raw)
+    missing = MANIFEST_FIELDS - fields
+    unknown = fields - MANIFEST_FIELDS
+    if missing or unknown:
+        raise PluginContractError(
+            "plugin manifest field mismatch: "
+            f"missing={sorted(missing)}, unknown={sorted(unknown)}"
+        )
+    schema_version = raw["schema_version"]
     if schema_version != 3:
         raise PluginContractError("plugin manifest schema_version must be 3")
-    plugin_id = str(raw.get("plugin_id", "")).strip()
+    plugin_id = _required_string(raw["plugin_id"], "plugin_id")
     if not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
         raise PluginContractError("plugin_id is invalid")
-    display_name = str(raw.get("display_name", "")).strip()
+    display_name = _required_string(raw["display_name"], "display_name")
     if not display_name or len(display_name) > 200:
         raise PluginContractError(
             "display_name must contain 1-200 characters"
         )
-    package_version = str(raw.get("package_version", "")).strip()
+    package_version = _required_string(
+        raw["package_version"],
+        "package_version",
+    )
     if not PACKAGE_VERSION_PATTERN.fullmatch(package_version):
         raise PluginContractError("package_version is invalid")
-    entrypoint = str(raw.get("entrypoint", "")).strip()
+    entrypoint = _required_string(raw["entrypoint"], "entrypoint")
     _validate_entrypoint(entrypoint)
-    hooks = _string_tuple(raw.get("hooks"), "hooks")
+    hooks = _string_tuple(raw["hooks"], "hooks")
     if not hooks or any(value not in HOOK_NAMES for value in hooks):
         raise PluginContractError("manifest hooks contain unsupported values")
     if len(set(hooks)) != len(hooks):
         raise PluginContractError("manifest hooks must be unique")
     supported_steps = _string_tuple(
-        raw.get("supported_steps", []),
+        raw["supported_steps"],
         "supported_steps",
     )
-    if not supported_steps:
-        supported_steps = tuple(
-            dict.fromkeys(value.split("_", 1)[1] for value in hooks)
-        )
-    if any(value not in HOOK_STEPS for value in supported_steps):
+    if not supported_steps or any(
+        value not in HOOK_STEPS for value in supported_steps
+    ):
         raise PluginContractError("supported_steps contains invalid values")
     supported_modes = _string_tuple(
-        raw.get("supported_modes", list(PLUGIN_MODES)),
+        raw["supported_modes"],
         "supported_modes",
     )
     if not supported_modes or any(
         value not in PLUGIN_MODES for value in supported_modes
     ):
         raise PluginContractError("supported_modes contains invalid values")
-    priority = raw.get("priority", 100)
+    priority = raw["priority"]
     if isinstance(priority, bool) or not isinstance(priority, int):
         raise PluginContractError("priority must be an integer")
     if not -10_000 <= priority <= 10_000:
         raise PluginContractError("priority is out of range")
-    failure_policy = str(raw.get("failure_policy", "continue")).strip()
+    failure_policy = _required_string(
+        raw["failure_policy"],
+        "failure_policy",
+    )
     if failure_policy not in {"continue", "fail"}:
         raise PluginContractError(
             "failure_policy must be continue or fail"
         )
-    config_schema = raw.get("config_schema", {})
+    config_schema = raw["config_schema"]
     if not isinstance(config_schema, Mapping):
         raise PluginContractError("config_schema must be an object")
     normalized_schema = normalize_config_schema(config_schema)
-    author = str(raw.get("author", "")).strip()
-    description = str(raw.get("description", "")).strip()
+    author = _string(raw["author"], "author")
+    description = _string(raw["description"], "description")
     if len(author) > 200:
         raise PluginContractError("author is too long")
     if len(description) > 20_000:
@@ -239,7 +269,7 @@ def parse_manifest(raw: Mapping[str, Any]) -> PluginManifest:
         failure_policy=failure_policy,
         author=author,
         description=description,
-        default_enabled=bool(raw.get("default_enabled", False)),
+        default_enabled=_boolean(raw["default_enabled"], "default_enabled"),
         config_schema=normalized_schema,
     )
 
@@ -806,9 +836,32 @@ def _assert_no_base64(value: object, *, depth: int = 0) -> None:
 
 
 def _string_tuple(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or not all(isinstance(item, str) for item in value)
+    ):
         raise PluginContractError(f"{field} must be an array")
-    return tuple(str(item).strip() for item in value)
+    return tuple(item.strip() for item in value)
+
+
+def _string(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise PluginContractError(f"{field} must be a string")
+    return value.strip()
+
+
+def _required_string(value: object, field: str) -> str:
+    result = _string(value, field)
+    if not result:
+        raise PluginContractError(f"{field} must not be empty")
+    return result
+
+
+def _boolean(value: object, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise PluginContractError(f"{field} must be boolean")
+    return value
 
 
 def _validate_entrypoint(value: str) -> None:

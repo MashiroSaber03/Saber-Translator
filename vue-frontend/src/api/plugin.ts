@@ -4,39 +4,9 @@ import { newIdempotencyKey } from './v2/content'
 import type { ApiResponse, PluginData } from '@/types'
 import type { components } from './generated/v2'
 
-interface PluginV2 {
-  pluginId: string
-  displayName: string
-  author: string
-  description: string
-  state: 'enabled' | 'disabled' | 'error'
-  defaultEnabled: boolean
-  runtimeEnabled: boolean
-  config: Record<string, unknown>
-  configRevision: number
-  errorMessage?: string | null
-  pluginVersionId: string
-  packageVersion: string
-  currentRevision: number
-  manifest: {
-    supported_steps?: string[]
-    supported_modes?: string[]
-    priority?: number
-    failure_policy?: string
-  }
-  configSchema: Record<string, unknown>
-}
-
-interface PluginListV2 {
-  items: PluginV2[]
-}
-
-interface PluginConfigV2 {
-  pluginId: string
-  schema: Record<string, unknown>
-  value: Record<string, unknown>
-  configRevision: number
-}
+type PluginV2 = components['schemas']['Plugin']
+type PluginListV2 = components['schemas']['PluginList']
+type PluginConfigV2 = components['schemas']['PluginConfig']
 
 type PluginImportResultV2 = components['schemas']['PluginImportResult']
 
@@ -102,9 +72,9 @@ function toPluginData(plugin: PluginV2): PluginData {
     author: plugin.author,
     enabled: plugin.runtimeEnabled,
     default_enabled: plugin.defaultEnabled,
-    has_config: Object.keys(plugin.configSchema || {}).length > 0,
-    supported_steps: plugin.manifest.supported_steps || [],
-    supported_modes: plugin.manifest.supported_modes || [],
+    has_config: Object.keys(plugin.configSchema).length > 0,
+    supported_steps: plugin.manifest.supported_steps,
+    supported_modes: plugin.manifest.supported_modes,
     priority: plugin.manifest.priority,
     failure_policy: plugin.manifest.failure_policy,
     configSchema: normalizeConfigSchema(plugin.configSchema),
@@ -112,7 +82,7 @@ function toPluginData(plugin: PluginV2): PluginData {
     current_revision: plugin.currentRevision,
     config_revision: plugin.configRevision,
     state: plugin.state,
-    error_message: plugin.errorMessage || null,
+    error_message: plugin.errorMessage,
   }
 }
 
@@ -120,7 +90,7 @@ function normalizeConfigSchema(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(schema || {}).map(([key, raw]) => {
+    Object.entries(schema).map(([key, raw]) => {
       if (!raw || typeof raw !== 'object') return [key, raw]
       const field = { ...(raw as Record<string, unknown>) }
       if (field.minimum !== undefined && field.min === undefined) {

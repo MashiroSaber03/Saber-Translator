@@ -66,7 +66,7 @@ describe('TagManageModal', () => {
   it('confirms before deleting a tag and skips deletion when cancelled', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    store.setTags([{ name: '待删标签', color: '#667eea', book_count: 2 }])
+    store.setTags([{ name: '待删标签', color: '#667eea', bookCount: 2 }])
     store.deleteTagApi = vi.fn().mockResolvedValue(true)
     confirmProductActionMock.mockResolvedValueOnce(false)
     await wrapper.vm.$nextTick()
@@ -87,7 +87,7 @@ describe('TagManageModal', () => {
   it('uses product button variants for tag row actions', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    store.setTags([{ name: '可编辑标签', color: '#667eea', book_count: 1 }])
+    store.setTags([{ name: '可编辑标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
 
     const viewButtons = wrapper.findAllComponents(UiButton)
@@ -124,7 +124,7 @@ describe('TagManageModal', () => {
   it('renders tag rows through the shared product record-card shell', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    store.setTags([{ name: '记录标签', color: '#667eea', book_count: 1 }])
+    store.setTags([{ name: '记录标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
 
     const row = wrapper.getComponent(ProductRecordCard)
@@ -137,7 +137,7 @@ describe('TagManageModal', () => {
   it('renders tag row metadata through shared product chips', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    store.setTags([{ name: '元信息标签', color: '#667eea', book_count: 3 }])
+    store.setTags([{ name: '元信息标签', color: '#667eea', bookCount: 3 }])
     await wrapper.vm.$nextTick()
 
     const chipList = wrapper.getComponent(ProductChipList)
@@ -190,7 +190,7 @@ describe('TagManageModal', () => {
     newColorInput.vm.$emit('update:modelValue', '#334455')
     await wrapper.vm.$nextTick()
 
-    store.setTags([{ name: '待编辑标签', color: '#667eea', book_count: 1 }])
+    store.setTags([{ name: '待编辑标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
     await wrapper.get('.tag-manage-modal__row-edit-action').trigger('click')
     await wrapper.vm.$nextTick()
@@ -262,7 +262,7 @@ describe('TagManageModal', () => {
   it('renders the edit-tag form through shared field and action primitives', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    store.setTags([{ name: '待编辑标签', color: '#667eea', book_count: 1 }])
+    store.setTags([{ name: '待编辑标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
 
     await wrapper.get('.tag-manage-modal__row-edit-action').trigger('click')

@@ -531,7 +531,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         request = complete_mock.call_args.args[0]
         self.assertNotIn("max_tokens", request.runtime_options.request_overrides)
 
-    def test_vlm_parse_batch_analysis_accepts_page_analyses_fallback_key(self) -> None:
+    def test_vlm_parse_batch_analysis_accepts_only_current_shape(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
@@ -547,16 +547,16 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         client = VLMClient(config, PromptsConfig())
 
         result = client._parse_batch_analysis(
-            '{"page_analyses":[{"page_number":1,"page_summary":"第一页"},{"page_number":2,"page_summary":"第二页"}],"batch_summary":"总览"}',
+            '{"pages":[{"page_number":1,"page_summary":"第一页"},{"page_number":2,"page_summary":"第二页"}]}',
             1,
             2,
         )
 
         self.assertEqual(len(result["pages"]), 2)
         self.assertEqual(result["pages"][0]["page_number"], 1)
-        self.assertEqual(result["batch_summary"], "总览")
+        self.assertNotIn("parse_error", result)
 
-    def test_vlm_parse_batch_analysis_normalizes_page_num_to_page_number(self) -> None:
+    def test_vlm_parse_batch_analysis_rejects_retired_shapes(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
@@ -571,11 +571,12 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         )
         client = VLMClient(config, PromptsConfig())
 
-        result = client._parse_batch_analysis(
-            '{"pages":[{"page_num":1,"page_summary":"第一页"},{"page_num":2,"page_summary":"第二页"}],"batch_summary":"总览"}',
-            1,
-            2,
+        retired_payloads = (
+            '{"page_analyses":[{"page_number":1},{"page_number":2}]}',
+            '{"pages":[{"page_num":1},{"page_num":2}]}',
+            '[{"page_number":1},{"page_number":2}]',
         )
-
-        self.assertEqual(result["pages"][0]["page_number"], 1)
-        self.assertEqual(result["pages"][1]["page_number"], 2)
+        for payload in retired_payloads:
+            with self.subTest(payload=payload):
+                result = client._parse_batch_analysis(payload, 1, 2)
+                self.assertEqual(result, {"pages": [], "parse_error": True})

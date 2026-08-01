@@ -68,7 +68,7 @@ const currentGreetingId = computed(() => {
     if (hasFirstMessage) return 'first'
   }
   if (
-    (source.type === 'alternate_greeting' || source.type === 'alternate_greetings')
+    source.type === 'alternate_greeting'
     && typeof source.index === 'number'
   ) {
     const greetingId = `alternate-${source.index}`

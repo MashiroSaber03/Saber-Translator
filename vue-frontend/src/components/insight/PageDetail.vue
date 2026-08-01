@@ -77,7 +77,7 @@ async function loadPageDetail(): Promise<void> {
     if (!isCurrentPageDetailRequest(requestId, bookId, pageNum)) return
 
     if (response.success) {
-      pageAnalysis.value = response.analysis ?? response.page ?? null
+      pageAnalysis.value = response.analysis ?? null
       loadedImageUrl.value = response.source_url ?? ''
     } else {
       pageAnalysis.value = null

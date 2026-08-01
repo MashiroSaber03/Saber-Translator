@@ -90,7 +90,6 @@ def seed_system_records(engine: Engine) -> None:
             "text_style_defaults": DEFAULT_TEXT_STYLE,
             "insight": DEFAULT_INSIGHT_SETTINGS,
             "web_import": DEFAULT_WEB_IMPORT_SETTINGS,
-            "plugin_agent": {},
         }
         default_schema_versions = {
             "translation": 3,

@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.plugins.contract import parse_manifest
 from src.backend_v2.storage.schema import (
     plugin_current_versions,
     plugin_versions,
@@ -52,13 +53,13 @@ def enabled_plugin_snapshots(
     )
     snapshots: dict[str, dict[str, Any]] = {}
     for row in rows:
-        manifest = _object(row["manifest_json"])
+        manifest = parse_manifest(_object(row["manifest_json"])).to_dict()
         config = _object(row["config_json"])
         snapshots[str(row["plugin_version_id"])] = {
             "pluginId": str(row["id"]),
             "configRevision": int(row["config_revision"]),
             "config": config,
-            "hooks": manifest.get("hooks", []),
+            "hooks": manifest["hooks"],
         }
     return snapshots
 

@@ -33,5 +33,5 @@ def assert_api_import_boundary() -> None:
     forbidden = loaded_forbidden_api_modules()
     if forbidden:
         raise RuntimeError(
-            "v2 API imported Worker/legacy modules: " + ", ".join(forbidden)
+            "v2 API imported forbidden runtime modules: " + ", ".join(forbidden)
         )

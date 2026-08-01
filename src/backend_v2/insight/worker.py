@@ -32,8 +32,8 @@ class InsightAlgorithms(Protocol):
     ) -> Mapping[str, Any]: ...
 
 
-class LegacyInsightAlgorithms:
-    """Adapter around the shared provider transport; it runs only in Worker."""
+class ProviderInsightAlgorithms:
+    """Current page-analysis provider implementation for the Worker."""
 
     def analyze_page(
         self,
@@ -52,18 +52,9 @@ class LegacyInsightAlgorithms:
         options = _object(vlm_section.get("openai_options"))
         vlm_payload = {
             "provider": vlm_section.get("provider", ""),
-            "api_key": vlm_section.get(
-                "api_key",
-                vlm_section.get("apiKey", ""),
-            ),
-            "model": vlm_section.get(
-                "model_name",
-                vlm_section.get("modelName", ""),
-            ),
-            "base_url": vlm_section.get(
-                "custom_base_url",
-                vlm_section.get("base_url"),
-            ),
+            "api_key": vlm_section.get("api_key", ""),
+            "model": vlm_section.get("model_name", ""),
+            "base_url": vlm_section.get("custom_base_url"),
             "openai_options": options,
             "image_max_size": int(vlm_section.get("image_max_size", 1280)),
         }
@@ -112,7 +103,7 @@ class InsightAnalysisWorkerService:
         self.repository = InsightRepository(engine)
         self.storage = AssetStorageService(data_root, engine)
         self.credentials = SettingsRepository(engine)
-        self.algorithms = algorithms or LegacyInsightAlgorithms()
+        self.algorithms = algorithms or ProviderInsightAlgorithms()
 
     def handle(
         self,

@@ -39,11 +39,8 @@ describe('api download helpers', () => {
     expect(result).toEqual({ blob, filename: 'plugin.zip' })
   })
 
-  it('uses json or text error payloads before fallback messages', async () => {
+  it('uses the v2 error envelope or plain proxy text before fallback messages', async () => {
     const { readApiErrorMessage } = await import('@/api/download')
-
-    const jsonResponse = new Response(JSON.stringify({ error: 'json failed' }), { status: 500 })
-    await expect(readApiErrorMessage(jsonResponse, 'fallback')).resolves.toBe('json failed')
 
     const nestedJsonResponse = new Response(
       JSON.stringify({ error: { code: 'validation_error', message: 'nested json failed' } }),

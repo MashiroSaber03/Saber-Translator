@@ -91,8 +91,6 @@ function toChapter(chapter: V2Chapter): ChapterData {
     title: chapter.title,
     order: Math.max(0, chapter.ordinal - 1),
     imageCount: chapter.pageCount || 0,
-    page_count: chapter.pageCount || 0,
-    hasSession: true,
     ordinal: chapter.ordinal,
     pageOrderRevision: chapter.pageOrderRevision,
     jobStatusSummary: chapter.jobStatusSummary,
@@ -110,7 +108,7 @@ function toBook(
     title: book.title,
     cover: book.coverAssetUrl || undefined,
     tags: rememberTags(book.tags),
-    translation_constraints: constraints,
+    translationConstraints: constraints,
     chapters,
     chapterCount: book.chapterCount ?? chapters?.length ?? 0,
     totalPages: book.pageCount ?? chapters?.reduce(
@@ -130,7 +128,7 @@ function toTag(tag: V2Tag): TagData {
     id: tag.id,
     name: tag.name,
     color: tag.color,
-    book_count: tag.bookCount || 0,
+    bookCount: tag.bookCount || 0,
   }
 }
 
@@ -220,7 +218,7 @@ function bookFormData(
 ): FormData {
   const body = new FormData()
   body.append('title', title)
-  body.append('tag_ids', JSON.stringify(tagIds))
+  body.append('tagIds', JSON.stringify(tagIds))
   if (cover) body.append('cover', cover, cover.name)
   return body
 }
@@ -257,7 +255,7 @@ export async function updateBook(
     description?: string
     cover?: File
     tags?: string[]
-    translation_constraints?: BookTranslationConstraints
+    translationConstraints?: BookTranslationConstraints
   },
 ): Promise<BookDetailResponse> {
   if (
@@ -284,8 +282,8 @@ export async function updateBook(
       )
     }
   }
-  if (data.translation_constraints) {
-    await saveConstraints(bookId, data.translation_constraints)
+  if (data.translationConstraints) {
+    await saveConstraints(bookId, data.translationConstraints)
   }
   return getBookDetail(bookId)
 }

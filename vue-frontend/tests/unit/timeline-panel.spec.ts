@@ -47,38 +47,42 @@ describe('TimelinePanel', () => {
     regenerateTimelineMock.mockReset()
   })
 
-  it('normalizes story_arcs in load and regenerate flows', async () => {
+  it('uses the current timeline payload in load and regenerate flows', async () => {
     const initialTimeline = {
       success: true,
-      mode: 'enhanced',
-      story_arcs: [
-        {
-          id: 'arc-1',
-          name: '开端',
-          description: '开端描述',
-          page_range: { start: 1, end: 3 },
-        },
-      ],
-      characters: [],
-      plot_threads: [],
-      summary: { one_sentence: '初始概要' },
-      stats: { total_events: 1, total_pages: 3, total_arcs: 1, total_characters: 0, total_threads: 0 },
+      timeline: {
+        mode: 'enhanced',
+        plot_arcs: [
+          {
+            id: 'arc-1',
+            name: '开端',
+            description: '开端描述',
+            page_range: { start: 1, end: 3 },
+          },
+        ],
+        main_characters: [],
+        plot_threads: [],
+        story_summary: '初始概要',
+        stats: { total_events: 1, total_pages: 3, total_arcs: 1, total_characters: 0, total_threads: 0 },
+      },
     }
     const regeneratedTimeline = {
       success: true,
-      mode: 'enhanced',
-      story_arcs: [
-        {
-          id: 'arc-2',
-          name: '高潮',
-          description: '高潮描述',
-          page_range: { start: 4, end: 6 },
-        },
-      ],
-      characters: [],
-      plot_threads: [],
-      summary: { one_sentence: '重生概要' },
-      stats: { total_events: 2, total_pages: 6, total_arcs: 1, total_characters: 0, total_threads: 0 },
+      timeline: {
+        mode: 'enhanced',
+        plot_arcs: [
+          {
+            id: 'arc-2',
+            name: '高潮',
+            description: '高潮描述',
+            page_range: { start: 4, end: 6 },
+          },
+        ],
+        main_characters: [],
+        plot_threads: [],
+        story_summary: '重生概要',
+        stats: { total_events: 2, total_pages: 6, total_arcs: 1, total_characters: 0, total_threads: 0 },
+      },
     }
     getTimelineMock.mockResolvedValueOnce(initialTimeline).mockResolvedValue(regeneratedTimeline)
     regenerateTimelineMock.mockResolvedValue(regeneratedTimeline)
@@ -133,18 +137,22 @@ describe('TimelinePanel', () => {
 
     secondTimeline.resolve({
       success: true,
-      mode: 'enhanced',
-      story_arcs: [{ id: 'book-2-arc', name: '当前书时间线', page_range: { start: 2, end: 4 } }],
-      stats: { total_events: 1, total_pages: 4 },
+      timeline: {
+        mode: 'enhanced',
+        plot_arcs: [{ id: 'book-2-arc', name: '当前书时间线', page_range: { start: 2, end: 4 } }],
+        stats: { total_events: 1, total_pages: 4 },
+      },
     })
     await flushPromises()
     expect(wrapper.text()).toContain('当前书时间线')
 
     firstTimeline.resolve({
       success: true,
-      mode: 'enhanced',
-      story_arcs: [{ id: 'book-1-arc', name: '旧书时间线', page_range: { start: 1, end: 3 } }],
-      stats: { total_events: 1, total_pages: 3 },
+      timeline: {
+        mode: 'enhanced',
+        plot_arcs: [{ id: 'book-1-arc', name: '旧书时间线', page_range: { start: 1, end: 3 } }],
+        stats: { total_events: 1, total_pages: 3 },
+      },
     })
     await flushPromises()
 
@@ -179,9 +187,11 @@ describe('TimelinePanel', () => {
     wrapper.unmount()
     pendingTimeline.resolve({
       success: true,
-      mode: 'enhanced',
-      story_arcs: [{ id: 'late-arc', name: '卸载后的时间线', page_range: { start: 1, end: 2 } }],
-      stats: { total_events: 1, total_pages: 2 },
+      timeline: {
+        mode: 'enhanced',
+        plot_arcs: [{ id: 'late-arc', name: '卸载后的时间线', page_range: { start: 1, end: 2 } }],
+        stats: { total_events: 1, total_pages: 2 },
+      },
     })
     await flushPromises()
 
@@ -238,11 +248,13 @@ describe('TimelinePanel', () => {
   it('renders the no-data state through the product empty-state pattern', async () => {
     getTimelineMock.mockResolvedValueOnce({
       success: true,
-      mode: 'enhanced',
-      story_arcs: [],
-      characters: [],
-      plot_threads: [],
-      stats: { total_events: 0, total_pages: 0 },
+      timeline: {
+        mode: 'enhanced',
+        plot_arcs: [],
+        main_characters: [],
+        plot_threads: [],
+        stats: { total_events: 0, total_pages: 0 },
+      },
     })
 
     const pinia = createPinia()

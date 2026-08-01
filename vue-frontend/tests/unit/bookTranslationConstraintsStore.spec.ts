@@ -20,7 +20,7 @@ describe('bookTranslationConstraintsStore', () => {
       success: true,
       book: {
         id: 'book-1',
-        translation_constraints: {
+        translationConstraints: {
           glossary: {
             enabled: true,
             autoExtractEnabled: false,
@@ -86,7 +86,7 @@ describe('bookTranslationConstraintsStore', () => {
       success: true,
       book: {
         id: 'book-1',
-        translation_constraints: {
+        translationConstraints: {
           glossary: {
             enabled: true,
             autoExtractEnabled: true,
@@ -124,7 +124,7 @@ describe('bookTranslationConstraintsStore', () => {
     expect(updateBookMock).toHaveBeenCalledWith(
       'book-1',
       expect.objectContaining({
-        translation_constraints: {
+        translationConstraints: {
           glossary: {
             enabled: true,
             autoExtractEnabled: true,
@@ -173,7 +173,7 @@ describe('bookTranslationConstraintsStore', () => {
       success: true,
       book: {
         id: 'book-1',
-        translation_constraints: {
+        translationConstraints: {
           glossary: {
             enabled: true,
             autoExtractEnabled: true,

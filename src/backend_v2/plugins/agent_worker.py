@@ -106,9 +106,9 @@ class PluginAgentWorkerService:
             on_delete=on_delete,
         )
         session = _session_from_snapshot(
-            session_id=str(config.get("sessionId", "")),
+            session_id=str(config["sessionId"]),
             target=target,
-            messages=config.get("messages"),
+            messages=config["messages"],
             worktree=worktree,
         )
         provider_snapshot = config.get("provider")
@@ -123,7 +123,7 @@ class PluginAgentWorkerService:
             "state",
             {
                 "run_state": "running",
-                "pluginId": target.get("plugin_id"),
+                "pluginId": target["plugin_id"],
             },
         )
         try:
@@ -147,7 +147,7 @@ class PluginAgentWorkerService:
                         )
                     )
                 )
-            locked_plugin_id = str(target.get("plugin_id", ""))
+            locked_plugin_id = str(target["plugin_id"])
             if validation.get("plugin_id") != locked_plugin_id:
                 raise ValueError(
                     "generated manifest plugin_id changed from locked target"
@@ -155,7 +155,7 @@ class PluginAgentWorkerService:
             archive = build_archive(worktree)
             published = self.registry.import_archive(
                 data=archive,
-                base_revision=int(target.get("baseRevision", 0)),
+                base_revision=int(target["baseRevision"]),
                 idempotency_key=f"plugin-agent:{fence.job_id}",
             )
             emit(
@@ -208,19 +208,19 @@ class PluginAgentWorkerService:
         if worktree.exists():
             return
         worktree.parent.mkdir(parents=True, exist_ok=True)
-        mode = str(target.get("mode", ""))
+        mode = str(target["mode"])
         if mode == "create":
             worktree.mkdir()
             return
         if mode != "modify":
             raise ValueError("Plugin Agent target mode is invalid")
-        version_id = str(target.get("pluginVersionId", ""))
+        version_id = str(target["pluginVersionId"])
         with self.engine.connect() as connection:
             relative = connection.execute(
                 select(plugin_versions.c.package_relative_path).where(
                     plugin_versions.c.id == version_id,
                     plugin_versions.c.plugin_id
-                    == str(target.get("plugin_id", "")),
+                    == str(target["plugin_id"]),
                 )
             ).scalar_one_or_none()
         if relative is None:
@@ -246,17 +246,17 @@ def _session_from_snapshot(
     worktree: Path,
 ) -> PluginAgentSession:
     locked = LockedPluginTarget(
-        mode=str(target.get("mode", "")),
-        plugin_id=str(target.get("plugin_id", "")),
-        display_name=str(target.get("display_name", "")),
+        mode=str(target["mode"]),
+        plugin_id=str(target["plugin_id"]),
+        display_name=str(target["display_name"]),
         plugin_dir=str(worktree),
         supported_steps=[
             str(value)
-            for value in target.get("supported_steps", [])
+            for value in target["supported_steps"]
         ],
         supported_modes=[
             str(value)
-            for value in target.get("supported_modes", [])
+            for value in target["supported_modes"]
         ],
     )
     session = PluginAgentSession(
@@ -266,25 +266,31 @@ def _session_from_snapshot(
         selected_plugin_id=locked.plugin_id,
         locked_target=locked,
     )
-    if isinstance(messages, list):
-        for raw in messages:
-            if not isinstance(raw, Mapping):
-                continue
-            role = str(raw.get("role", ""))
-            content = str(raw.get("content", ""))
-            if role not in {"user", "assistant"} or not content:
-                continue
-            session.messages.append(
-                PluginAgentMessage(
-                    id=str(raw.get("id", "")),
-                    role=role,
-                    content=content,
-                    timestamp=str(
-                        raw.get(
-                            "timestamp",
-                            session.created_at,
-                        )
-                    ),
-                )
+    if not isinstance(messages, list):
+        raise ValueError("Plugin Agent messages snapshot must be an array")
+    for raw in messages:
+        if not isinstance(raw, Mapping) or set(raw) != {
+            "id",
+            "role",
+            "content",
+            "timestamp",
+        }:
+            raise ValueError("Plugin Agent message snapshot is invalid")
+        if not all(
+            isinstance(raw[field], str)
+            for field in ("id", "role", "content", "timestamp")
+        ):
+            raise ValueError("Plugin Agent message fields must be strings")
+        role = raw["role"]
+        content = raw["content"]
+        if role not in {"user", "assistant"} or not content:
+            raise ValueError("Plugin Agent message content is invalid")
+        session.messages.append(
+            PluginAgentMessage(
+                id=raw["id"],
+                role=role,
+                content=content,
+                timestamp=raw["timestamp"],
             )
+        )
     return session

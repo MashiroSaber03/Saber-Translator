@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 import pytest
-from alembic import command
 from flask import Flask
 from sqlalchemy import insert, select, text
 
@@ -19,7 +18,6 @@ from src.backend_v2.storage.consistency import ConsistencyChecker
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import (
     DEFAULT_INSIGHT_SETTINGS,
-    DEFAULT_WEB_IMPORT_SETTINGS,
     default_translation_settings,
 )
 from src.backend_v2.storage.epochs import (
@@ -28,12 +26,12 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
-    migrate_database,
+    UnsupportedDataRoot,
+    initialize_database,
     schema_smoke_test,
-    sqlite_backup,
 )
-import src.backend_v2.storage.lifecycle as lifecycle_module
 from src.backend_v2.storage.platform_repositories import (
+    BookSettingMutation,
     CredentialEdit,
     FontRepository,
     ProviderRateLimiter,
@@ -86,15 +84,16 @@ def platform(tmp_path: Path):
         engine.dispose()
 
 
-def test_launcher_migration_seeds_one_persistent_quick_workspace(
+def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
-    first = migrate_database(data_root)
-    assert first.upgraded_to == "0017"
-    assert not first.backup_created
-    assert schema_smoke_test(first.database_path) == "0017"
+    first = initialize_database(data_root)
+    assert first.schema_revision == "v2_foundation_20260801"
+    assert first.created is True
+    assert first.upgraded is False
+    assert schema_smoke_test(first.database_path) == "v2_foundation_20260801"
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:
@@ -108,236 +107,53 @@ def test_launcher_migration_seeds_one_persistent_quick_workspace(
     assert quick_books == [QUICK_WORKSPACE_BOOK_ID]
     assert quick_chapters == [QUICK_WORKSPACE_CHAPTER_ID]
 
-    second = migrate_database(data_root)
-    assert second.backup_created
-    assert not list((data_root / "runtime").glob("pre-migration-*.sqlite3"))
+    second = initialize_database(data_root)
+    assert second.created is False
+    assert second.upgraded is False
+    assert not list((data_root / "runtime").glob("pre-upgrade-*.sqlite3"))
 
 
-def test_0014_migrates_text_style_to_single_authoritative_facts(
+@pytest.mark.parametrize("retired_revision", [None, "0017"])
+def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
+    tmp_path: Path,
+    retired_revision: str | None,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    (data_root / "runtime").mkdir(parents=True)
+    database_path = data_root / "saber.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("CREATE TABLE sentinel(value TEXT NOT NULL)")
+        connection.execute("INSERT INTO sentinel VALUES ('untouched')")
+        if retired_revision is not None:
+            connection.execute(
+                "CREATE TABLE alembic_version(version_num VARCHAR(32) NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO alembic_version VALUES (?)",
+                (retired_revision,),
+            )
+
+    with pytest.raises(UnsupportedDataRoot, match="旧数据不会被读取或迁移"):
+        initialize_database(data_root)
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT value FROM sentinel").fetchall() == [
+            ("untouched",)
+        ]
+    assert not list((data_root / "runtime").glob("pre-upgrade-*.sqlite3"))
+
+
+def test_storage_initialization_rejects_extra_nonformal_tables(
     tmp_path: Path,
 ) -> None:
-    database_path = tmp_path / "legacy.sqlite3"
-    config = lifecycle_module._alembic_config(database_path)
-    command.upgrade(config, "0013")
-    engine = create_sqlite_engine(database_path)
-    seed_system_records(engine)
-    with engine.begin() as connection:
-        translation_payload = json.loads(
-            connection.execute(
-                text(
-                    "SELECT payload_json FROM app_settings "
-                    "WHERE domain = 'translation'"
-                )
-            ).scalar_one()
-        )
-        translation_payload["textStyle"] = {
-            "fontFamily": "00000000-0000-0000-0000-000000000010",
-            "fontSize": 99,
-        }
-        connection.execute(
-            text(
-                "UPDATE app_settings SET payload_json = :payload "
-                "WHERE domain = 'translation'"
-            ),
-            {"payload": json.dumps(translation_payload)},
-        )
-        connection.execute(
-            insert(books).values(id="legacy-book", kind="library", title="Legacy")
-        )
-        connection.execute(
-            insert(chapters).values(
-                id="legacy-chapter",
-                book_id="legacy-book",
-                ordinal=1,
-                title="Legacy",
-            )
-        )
-        connection.execute(
-            insert(pages).values(
-                id="legacy-page",
-                chapter_id="legacy-chapter",
-                ordinal=1,
-                logical_source_path="legacy.png",
-                default_font_id=None,
-                page_style_defaults_json=json.dumps(
-                    {
-                        "fontFamily": "00000000-0000-0000-0000-000000000010",
-                        "fontSize": 42,
-                        "useAutoTextColor": False,
-                    }
-                ),
-            )
-        )
-    engine.dispose()
+    data_root = tmp_path / "data-v2"
+    (data_root / "runtime").mkdir(parents=True)
+    initialized = initialize_database(data_root)
+    with sqlite3.connect(initialized.database_path) as connection:
+        connection.execute("CREATE TABLE retired_payload(value TEXT NOT NULL)")
 
-    command.upgrade(config, "0014")
-    with sqlite3.connect(database_path) as connection:
-        translation = json.loads(
-            connection.execute(
-                "SELECT payload_json FROM app_settings "
-                "WHERE domain = 'translation'"
-            ).fetchone()[0]
-        )
-        default_font_id, page_style_json = connection.execute(
-            "SELECT default_font_id, page_style_defaults_json "
-            "FROM pages WHERE id = 'legacy-page'"
-        ).fetchone()
-    page_style = json.loads(page_style_json)
-    assert "textStyle" not in translation
-    assert default_font_id == "00000000-0000-0000-0000-000000000010"
-    assert "fontFamily" not in page_style
-    assert page_style["fontSize"] == 42
-    assert set(page_style) == {
-        "fontSize",
-        "autoFontSize",
-        "layoutDirection",
-        "textColor",
-        "fillColor",
-        "inpaintMethod",
-        "useAutoTextColor",
-        "strokeEnabled",
-        "strokeColor",
-        "strokeWidth",
-        "lineSpacing",
-        "textAlign",
-    }
-
-
-def test_0015_separates_legacy_ai_review_from_structural_diagnostics(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "legacy-review.sqlite3"
-    config = lifecycle_module._alembic_config(database_path)
-    command.upgrade(config, "0014")
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "INSERT INTO books (id, kind, title) VALUES (?, ?, ?)",
-            ("review-book", "library", "Review"),
-        )
-        connection.execute(
-            "INSERT INTO studio_documents ("
-            "id, book_id, origin_type, title, last_diagnostics_json, "
-            "last_validated_at"
-            ") VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-            (
-                "review-document",
-                "review-book",
-                "manual",
-                "Review",
-                json.dumps(
-                    {
-                        "identity": {"name": "Review"},
-                        "review": {
-                            "notes": "审查完成",
-                            "status": "approved",
-                        },
-                    },
-                    ensure_ascii=False,
-                ),
-            ),
-        )
-
-    command.upgrade(config, "0015")
-    with sqlite3.connect(database_path) as connection:
-        review, diagnostics, validated_at = connection.execute(
-            "SELECT last_review_json, last_diagnostics_json, "
-            "last_validated_at FROM studio_documents "
-            "WHERE id = 'review-document'"
-        ).fetchone()
-    assert json.loads(review) == {
-        "summary": "审查完成",
-        "issues": [],
-        "suggestions": [],
-    }
-    assert diagnostics is None
-    assert validated_at is None
-
-
-def test_0016_replaces_empty_app_settings_with_complete_backend_defaults(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "empty-app-settings.sqlite3"
-    config = lifecycle_module._alembic_config(database_path)
-    command.upgrade(config, "0015")
-    with sqlite3.connect(database_path) as connection:
-        connection.executemany(
-            "INSERT INTO app_settings "
-            "(domain, revision, payload_json, schema_version) "
-            "VALUES (?, 1, '{}', 1)",
-            (("web_import",), ("insight",)),
-        )
-
-    command.upgrade(config, "0016")
-    with sqlite3.connect(database_path) as connection:
-        rows = dict(
-            connection.execute(
-                "SELECT domain, payload_json FROM app_settings "
-                "WHERE domain IN ('web_import', 'insight')"
-            )
-        )
-    assert json.loads(rows["web_import"]) == DEFAULT_WEB_IMPORT_SETTINGS
-    assert json.loads(rows["insight"]) == DEFAULT_INSIGHT_SETTINGS
-
-
-def test_0016_normalizes_saved_browser_settings_without_losing_user_values(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "saved-app-settings.sqlite3"
-    config = lifecycle_module._alembic_config(database_path)
-    command.upgrade(config, "0015")
-    legacy_web_import = deepcopy(DEFAULT_WEB_IMPORT_SETTINGS)
-    legacy_web_import["download"]["concurrency"] = 7
-    legacy_web_import["firecrawl"]["apiKey"] = "browser-only-secret"
-    legacy_web_import["agent"]["apiKey"] = "browser-only-secret"
-    legacy_web_import["advanced"]["customCookie"] = "browser-only-secret"
-    legacy_web_import["advanced"]["customHeaders"] = "browser-only-secret"
-    partial_insight = {
-        "analysis": {
-            "batch": {
-                "pagesPerBatch": 9,
-            }
-        },
-        "vlm": {"provider": "openai"},
-    }
-    with sqlite3.connect(database_path) as connection:
-        connection.executemany(
-            "INSERT INTO app_settings "
-            "(domain, revision, payload_json, schema_version) "
-            "VALUES (?, 1, ?, 1)",
-            (
-                ("web_import", json.dumps(legacy_web_import)),
-                ("insight", json.dumps(partial_insight)),
-            ),
-        )
-
-    command.upgrade(config, "0016")
-    with sqlite3.connect(database_path) as connection:
-        rows = dict(
-            connection.execute(
-                "SELECT domain, payload_json FROM app_settings "
-                "WHERE domain IN ('web_import', 'insight')"
-            )
-        )
-    web_import = json.loads(rows["web_import"])
-    insight = json.loads(rows["insight"])
-    assert web_import["download"]["concurrency"] == 7
-    assert web_import["firecrawl"] == {}
-    assert "apiKey" not in web_import["agent"]
-    assert web_import["advanced"] == {"bypassProxy": False}
-    assert insight["analysis"]["batch"]["pagesPerBatch"] == 9
-    assert insight["analysis"]["batch"]["contextBatchCount"] == 3
-    assert insight["vlm"]["provider"] == "openai"
-    assert insight["chat"] == {"provider": "gemini", "useSameAsVlm": False}
-    assert validate_setting_payload(
-        "web_import",
-        web_import,
-        schema_version=1,
-    ) == web_import
-    assert validate_setting_payload(
-        "insight",
-        insight,
-        schema_version=1,
-    ) == insight
+    with pytest.raises(RuntimeError, match="unexpected=.*retired_payload"):
+        initialize_database(data_root)
 
 
 def test_custom_insight_architecture_requires_at_least_two_layers() -> None:
@@ -349,172 +165,112 @@ def test_custom_insight_architecture_requires_at_least_two_layers() -> None:
         validate_setting_payload("insight", payload, schema_version=1)
 
 
-def test_0017_restores_only_accidentally_materialized_automatic_colors(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("auxYoloConfThreshold", 1.01, "must be from 0 to 1"),
+        ("auxYoloOverlapThreshold", -0.01, "must be from 0 to 1"),
+        (
+            "saberYoloRefineOverlapThreshold",
+            101,
+            "must be from 0 to 100",
+        ),
+    ],
+)
+def test_translation_detection_thresholds_use_one_current_unit(
+    field: str,
+    value: float,
+    message: str,
 ) -> None:
-    database_path = tmp_path / "automatic-color-repair.sqlite3"
-    config = lifecycle_module._alembic_config(database_path)
-    command.upgrade(config, "0016")
-    page_style = {
-        "fontSize": 26,
-        "autoFontSize": True,
-        "layoutDirection": "auto",
-        "textColor": "#123456",
-        "fillColor": "#ABCDEF",
-        "inpaintMethod": "solid",
-        "useAutoTextColor": False,
-        "strokeEnabled": True,
-        "strokeColor": "#FFFFFF",
-        "strokeWidth": 3,
-        "lineSpacing": 1.0,
-        "textAlign": "start",
-    }
-    accidental = {
-        "textColor": "#0A141E",
-        "fillColor": "#F5F6F7",
-        "autoFgColor": [10, 20, 30],
-        "autoBgColor": [245, 246, 247],
-    }
-    manual_override = {
-        "textColor": "#654321",
-        "fillColor": "#FEDCBA",
-        "autoFgColor": [10, 20, 30],
-        "autoBgColor": [245, 246, 247],
-    }
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "INSERT INTO books (id, kind, title) VALUES (?, ?, ?)",
-            ("color-book", "library", "Color"),
-        )
-        connection.execute(
-            "INSERT INTO chapters (id, book_id, ordinal, title) "
-            "VALUES (?, ?, ?, ?)",
-            ("color-chapter", "color-book", 1, "Color"),
-        )
-        connection.execute(
-            "INSERT INTO pages ("
-            "id, chapter_id, ordinal, logical_source_path, "
-            "document_revision, rendered_revision, render_status, "
-            "page_style_defaults_json"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "color-page",
-                "color-chapter",
-                1,
-                "color.png",
-                4,
-                4,
-                "ready",
-                json.dumps(page_style),
-            ),
-        )
-        connection.execute(
-            "INSERT INTO assets ("
-            "id, relative_path, mime_type, checksum, byte_size"
-            ") VALUES (?, ?, ?, ?, ?)",
-            ("translated-asset", "objects/color.png", "image/png", "a" * 64, 1),
-        )
-        connection.execute(
-            "INSERT INTO page_assets (page_id, role, asset_id) "
-            "VALUES (?, 'translated', ?)",
-            ("color-page", "translated-asset"),
-        )
-        connection.executemany(
-            "INSERT INTO bubbles ("
-            "id, page_id, ordinal, payload_json, updated_revision"
-            ") VALUES (?, ?, ?, ?, ?)",
-            (
-                (
-                    "accidental-bubble",
-                    "color-page",
-                    1,
-                    json.dumps(accidental),
-                    4,
-                ),
-                (
-                    "manual-bubble",
-                    "color-page",
-                    2,
-                    json.dumps(manual_override),
-                    4,
-                ),
-            ),
-        )
+    payload = default_translation_settings()
+    payload[field] = value
 
-    command.upgrade(config, "0017")
-    with sqlite3.connect(database_path) as connection:
-        rows = dict(
-            connection.execute(
-                "SELECT id, payload_json FROM bubbles "
-                "WHERE page_id = 'color-page'"
+    with pytest.raises(ValueError, match=message):
+        validate_setting_payload("translation", payload, schema_version=3)
+
+
+def test_settings_load_rejects_noncurrent_persisted_schema_versions(
+    platform,
+) -> None:
+    _data_root, engine = platform
+    repository = SettingsRepository(engine)
+    repository.save_transaction(
+        settings=(
+            SettingMutation(
+                domain="translation",
+                payload=default_translation_settings(),
+                base_revision=0,
+                schema_version=3,
+            ),
+        ),
+        providers=(
+            ProviderSettingMutation(
+                domain="translation",
+                provider="custom",
+                payload={"modelName": "current-model"},
+                base_revision=0,
+                schema_version=1,
+            ),
+        ),
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE app_settings SET schema_version = 2 "
+                "WHERE domain = 'translation'"
             )
         )
-        page = connection.execute(
-            "SELECT document_revision, rendered_revision, render_status "
-            "FROM pages WHERE id = 'color-page'"
-        ).fetchone()
-        render_request = connection.execute(
-            "SELECT requested_revision, status FROM render_requests "
-            "WHERE page_id = 'color-page'"
-        ).fetchone()
-    repaired = json.loads(rows["accidental-bubble"])
-    preserved = json.loads(rows["manual-bubble"])
-    assert repaired["textColor"] == "#123456"
-    assert repaired["fillColor"] == "#ABCDEF"
-    assert repaired["autoFgColor"] == [10, 20, 30]
-    assert repaired["autoBgColor"] == [245, 246, 247]
-    assert preserved["textColor"] == "#654321"
-    assert preserved["fillColor"] == "#FEDCBA"
-    assert page == (5, 4, "stale")
-    assert render_request == (5, "pending")
+    with pytest.raises(ValueError, match="translation settings schema version"):
+        repository.load(domains=("translation",))
 
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE app_settings SET schema_version = 3 "
+                "WHERE domain = 'translation'"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE provider_settings SET schema_version = 2 "
+                "WHERE domain = 'translation' AND provider = 'custom'"
+            )
+        )
+    with pytest.raises(ValueError, match="provider setting schema version"):
+        repository.load(domains=("translation",))
 
-def test_sqlite_backup_api_captures_committed_wal_pages(tmp_path: Path) -> None:
-    source = tmp_path / "source.sqlite3"
-    backup = tmp_path / "backup.sqlite3"
-    writer = sqlite3.connect(source)
-    writer.execute("PRAGMA journal_mode=WAL")
-    writer.execute("PRAGMA wal_autocheckpoint=0")
-    writer.execute("CREATE TABLE facts(value TEXT NOT NULL)")
-    writer.commit()
-    writer.execute("INSERT INTO facts VALUES ('committed-in-wal')")
-    writer.commit()
-
-    sqlite_backup(source, backup)
-    with sqlite3.connect(backup) as copied:
-        assert copied.execute("SELECT value FROM facts").fetchall() == [
-            ("committed-in-wal",)
-        ]
-    writer.close()
-
-
-def test_migration_failure_restores_database_and_keeps_failure_backup(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    data_root = tmp_path / "data-v2"
-    (data_root / "runtime").mkdir(parents=True)
-    migrated = migrate_database(data_root)
-    with sqlite3.connect(migrated.database_path) as connection:
-        connection.execute("CREATE TABLE rollback_probe(value TEXT NOT NULL)")
-        connection.execute("INSERT INTO rollback_probe VALUES ('before-upgrade')")
-        connection.commit()
-
-    def fail_upgrade(_config, _revision) -> None:
-        with sqlite3.connect(migrated.database_path) as connection:
-            connection.execute("DROP TABLE rollback_probe")
-            connection.commit()
-        raise RuntimeError("injected migration failure")
-
-    monkeypatch.setattr(lifecycle_module.command, "upgrade", fail_upgrade)
-    with pytest.raises(RuntimeError, match="injected migration failure"):
-        migrate_database(data_root)
-
-    with sqlite3.connect(migrated.database_path) as connection:
-        assert connection.execute("SELECT value FROM rollback_probe").fetchall() == [
-            ("before-upgrade",)
-        ]
-    assert list((data_root / "runtime").glob("pre-migration-*.sqlite3"))
+    book_id = "current-schema-book"
+    with engine.begin() as connection:
+        connection.execute(
+            insert(books).values(id=book_id, kind="library", title="Book")
+        )
+        connection.execute(
+            text(
+                "UPDATE provider_settings SET schema_version = 1 "
+                "WHERE domain = 'translation' AND provider = 'custom'"
+            )
+        )
+    repository.save_transaction(
+        book_settings_edits=(
+            BookSettingMutation(
+                book_id=book_id,
+                domain="insight",
+                payload=deepcopy(DEFAULT_INSIGHT_SETTINGS),
+                base_revision=0,
+                schema_version=1,
+            ),
+        ),
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE book_settings SET schema_version = 2 "
+                "WHERE book_id = :book_id AND domain = 'insight'"
+            ),
+            {"book_id": book_id},
+        )
+    with pytest.raises(ValueError, match="book setting schema version"):
+        repository.load(domains=("insight",), book_id=book_id)
 
 
 def test_second_launcher_is_rejected_for_the_same_data_root(tmp_path: Path) -> None:
@@ -998,6 +754,7 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 provider="custom",
                 payload={"modelName": "fake-model"},
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="translation-fake",
             ),
         ),
@@ -1051,6 +808,7 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 domain="proofreading",
                 payload={"enabled": True},
                 base_revision=0,
+                schema_version=1,
             ),
         ),
     )
@@ -1062,6 +820,7 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 domain="proofreading",
                 payload={"enabled": True},
                 base_revision=0,
+                schema_version=1,
             ),
         ),
     )
@@ -1135,6 +894,7 @@ def test_insight_provider_accepts_its_snake_case_openai_wire_contract(
                     },
                 },
                 base_revision=0,
+                schema_version=1,
             ),
         ),
     )
@@ -1170,6 +930,7 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
                     "customBaseUrl": "https://example.test/v1",
                 },
                 base_revision=0,
+                schema_version=1,
                 credential_edit_ref="openai-key",
             ),
         ),
@@ -1193,6 +954,14 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
         "models": [{"id": "gpt-test", "name": "gpt-test"}],
     }
     assert captured == {"api_key": "stored-only-on-server"}
+
+    with pytest.raises(ValueError, match="exactly: api_key"):
+        diagnostics.model_catalog(
+            {
+                "provider": "openai",
+                "secret": {"apiKey": "retired-field-name"},
+            }
+        )
 
     monkeypatch.setattr(
         ProviderDiagnostics,
@@ -1255,10 +1024,11 @@ def test_settings_http_transaction_persists_secret_without_returning_it(
             "providerSettings": [{
                 "domain": "translation",
                 "provider": "deepseek",
-                "payload": {"modelName": "deepseek-chat"},
-                "baseRevision": 0,
-                "credentialEditRef": "translation-deepseek",
-            }],
+                    "payload": {"modelName": "deepseek-chat"},
+                    "baseRevision": 0,
+                    "schemaVersion": 1,
+                    "credentialEditRef": "translation-deepseek",
+                }],
             "credentialEdits": [{
                 "domain": "translation",
                 "provider": "deepseek",

@@ -195,7 +195,7 @@ const currentDocumentOrigin = computed(() => {
 })
 
 const avatarUrl = computed(() => {
-  if (!props.bookId || !store.currentDocument?.id || !store.currentDocument.avatar.asset_path) return ''
+  if (!props.bookId || !store.currentDocument?.id || !store.currentDocument.avatarUrl) return ''
   return getCharacterStudioAvatarUrl(props.bookId, store.currentDocument.id)
 })
 

@@ -39,9 +39,14 @@ APP_SETTING_DOMAINS = frozenset(
         "misc",
         "inpainting",
         "rendering",
-        "plugin_agent",
     }
 )
+APP_SETTING_SCHEMA_VERSIONS = {
+    domain: (3 if domain == "translation" else 1)
+    for domain in APP_SETTING_DOMAINS
+}
+PROVIDER_SETTING_SCHEMA_VERSION = 1
+BOOK_SETTING_SCHEMA_VERSION = 1
 PROVIDER_CAPABILITIES = {
     "translation": TRANSLATION_CAPABILITY,
     "hq": HQ_TRANSLATION_CAPABILITY,
@@ -308,7 +313,7 @@ def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
 
 
 def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
-    if schema_version != 3 or payload.get("settingsSchemaVersion") != 3:
+    if payload.get("settingsSchemaVersion") != schema_version:
         raise ValueError("translation settings schema version must be 3")
     _validate_shape(payload, default_translation_settings(), "translation")
     _validate_proofreading_rounds(payload)
@@ -331,6 +336,18 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         "paddleocr_vl",
     }:
         raise ValueError("translation.aiVisionOcr.promptMode is invalid")
+    for key in ("auxYoloConfThreshold", "auxYoloOverlapThreshold"):
+        value = _finite_number(payload[key], f"translation.{key}")
+        if not 0 <= value <= 1:
+            raise ValueError(f"translation.{key} must be from 0 to 1")
+    refine_threshold = _finite_number(
+        payload["saberYoloRefineOverlapThreshold"],
+        "translation.saberYoloRefineOverlapThreshold",
+    )
+    if not 0 <= refine_threshold <= 100:
+        raise ValueError(
+            "translation.saberYoloRefineOverlapThreshold must be from 0 to 100"
+        )
     _require_provider(
         payload["translation"]["provider"],
         TRANSLATION_CAPABILITY,
@@ -553,6 +570,12 @@ def validate_setting_payload(
 ) -> dict[str, Any]:
     if domain not in APP_SETTING_DOMAINS:
         raise ValueError(f"unsupported setting domain: {domain}")
+    expected_schema_version = APP_SETTING_SCHEMA_VERSIONS[domain]
+    if schema_version != expected_schema_version:
+        raise ValueError(
+            f"{domain} settings schema version must be "
+            f"{expected_schema_version}"
+        )
     result = _object(payload, f"{domain} setting")
     _bounded_json(result, f"{domain} setting")
     _reject_secret_fields(result, domain)
@@ -576,7 +599,14 @@ def validate_provider_setting_payload(
     domain: str,
     provider: str,
     payload: object,
+    *,
+    schema_version: int,
 ) -> dict[str, Any]:
+    if schema_version != PROVIDER_SETTING_SCHEMA_VERSION:
+        raise ValueError(
+            "provider setting schema version must be "
+            f"{PROVIDER_SETTING_SCHEMA_VERSION}"
+        )
     result = _object(payload, "provider setting payload")
     _bounded_json(result, "provider setting payload", 256 * 1024)
     _reject_secret_fields(result, f"provider_settings.{domain}.{provider}")
@@ -674,7 +704,14 @@ def validate_credential_secret(
 def validate_book_setting_payload(
     domain: str,
     payload: object,
+    *,
+    schema_version: int,
 ) -> dict[str, Any]:
+    if schema_version != BOOK_SETTING_SCHEMA_VERSION:
+        raise ValueError(
+            "book setting schema version must be "
+            f"{BOOK_SETTING_SCHEMA_VERSION}"
+        )
     if domain != "insight":
         raise ValueError(f"unsupported book setting domain: {domain}")
     result = _object(payload, "book setting payload")

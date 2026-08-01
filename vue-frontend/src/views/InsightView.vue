@@ -220,20 +220,13 @@ function projectActiveInsightJob(): void {
     active.status === 'paused' ? 'paused' : 'running',
   )
   const progress = active.progress as Record<string, unknown>
+  const currentStep = progress.currentStep && typeof progress.currentStep === 'object'
+    ? progress.currentStep as Record<string, unknown>
+    : undefined
   insightStore.updateProgress(
-    Number(
-      progress.completedItems
-      ?? progress.completed
-      ?? progress.current
-      ?? 0,
-    ),
-    Number(
-      progress.totalItems
-      ?? progress.total
-      ?? insightStore.totalPageCount
-      ?? 0,
-    ),
-    String(progress.phase ?? progress.currentPhase ?? ''),
+    Number(progress.completedItems ?? 0),
+    Number(progress.totalItems ?? insightStore.totalPageCount ?? 0),
+    String(currentStep?.kind ?? ''),
   )
 }
 

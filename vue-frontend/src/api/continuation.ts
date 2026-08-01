@@ -152,8 +152,8 @@ export interface AvailableImagesResponse {
 const stateCache = new Map<string, V2ContinuationState>()
 const formsCache = new Map<string, V2ContinuationForm[]>()
 
-function payloadString(payload: Record<string, unknown>, key: string, legacyKey: string): string {
-  return String(payload[key] ?? payload[legacyKey] ?? '')
+function payloadString(payload: Record<string, unknown>, key: string): string {
+  return String(payload[key] ?? '')
 }
 
 function activeImage(page: V2ContinuationPage) {
@@ -172,18 +172,14 @@ function mapPage(page: V2ContinuationPage): PageContent {
   const rawStatus = String(payload.status ?? 'pending')
   return {
     page_number: page.ordinal,
-    continuity_text: payloadString(payload, 'continuityText', 'continuity_text'),
-    story_text: payloadString(payload, 'storyText', 'story_text'),
-    dialogue_text: payloadString(payload, 'dialogueText', 'dialogue_text'),
+    continuity_text: payloadString(payload, 'continuityText'),
+    story_text: payloadString(payload, 'storyText'),
+    dialogue_text: payloadString(payload, 'dialogueText'),
     characters: Array.isArray(payload.characters) ? payload.characters.map(String) : [],
     character_forms: (
-      Array.isArray(payload.characterForms)
-        ? payload.characterForms
-        : Array.isArray(payload.character_forms)
-          ? payload.character_forms
-          : []
+      Array.isArray(payload.characterForms) ? payload.characterForms : []
     ) as CharacterFormSelection[],
-    final_prompt: payloadString(payload, 'finalPrompt', 'final_prompt'),
+    final_prompt: payloadString(payload, 'finalPrompt'),
     image_url: currentImage?.assetUrl ?? '',
     previous_url: oldImage?.assetUrl ?? '',
     status: currentImage
@@ -293,7 +289,7 @@ async function formFor(
   }
   const form = forms.find(item =>
     item.characterId === character.characterId
-    && (item.formId === formId || String(item.payload.clientFormId ?? '') === formId)
+    && item.formId === formId
   )
   if (!form) throw new Error(`角色形态不存在：${formId}`)
   return form
@@ -303,7 +299,7 @@ function mapForm(form: V2ContinuationForm): CharacterForm {
   const adopted = form.imageVersions.find(version => version.adopted)
   const latestGenerated = form.imageVersions[0]
   return {
-    form_id: String(form.payload.clientFormId ?? form.formId),
+    form_id: form.formId,
     form_name: form.name,
     description: String(form.payload.description ?? ''),
     reference_image: adopted?.assetUrl
@@ -327,7 +323,7 @@ function mapCharacter(
     aliases: character.aliases,
     description: String(character.payload.description ?? ''),
     forms: characterForms.map(mapForm),
-    reference_image: String(character.payload.referenceImage ?? reference ?? ''),
+    reference_image: String(reference ?? ''),
     enabled: character.enabled,
   }
 }
@@ -424,14 +420,13 @@ export async function updateCharacterInfo(
 export async function addCharacterForm(
   bookId: string,
   characterName: string,
-  data: { form_id: string; form_name: string; description?: string },
+  data: { form_name: string; description?: string },
 ): Promise<{ success: boolean; form?: CharacterForm; error?: string }> {
   const project = await ensureProject(bookId)
   const character = characterFor(project, characterName)
   const form = await createV2ContinuationForm(character.characterId, {
     name: data.form_name,
     payload: {
-      clientFormId: data.form_id,
       description: data.description ?? '',
       enabled: true,
     },
@@ -506,7 +501,7 @@ export async function uploadFormImage(
 ): Promise<UploadImageResponse> {
   const project = await ensureProject(bookId)
   const form = await formFor(project, characterName, formId)
-  const file = formData.get('file') ?? formData.get('image')
+  const file = formData.get('file')
   if (!(file instanceof File)) return { success: false, error: '请选择参考图片' }
   const updated = await uploadV2ContinuationReference(form.formId, form.revision, file)
   await refreshState(bookId)
@@ -735,7 +730,7 @@ export async function getAvailableImages(
         character_name: project.characters.find(
           character => character.characterId === form.characterId,
         )?.name ?? '',
-        form_id: String(form.payload.clientFormId ?? form.formId),
+        form_id: form.formId,
         form_name: form.name,
         path,
         has_image: true,

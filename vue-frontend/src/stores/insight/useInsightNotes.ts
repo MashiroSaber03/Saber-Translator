@@ -96,7 +96,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       const response = await insightApi.createNote(currentBookId.value, {
         type: note.type,
         content: note.content,
-        page_num: note.pageNum,
+        pageNum: note.pageNum,
         title: note.title,
         tags: note.tags,
         question: note.question,
@@ -129,7 +129,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     try {
       const response = await insightApi.updateNote(currentBookId.value, noteId, {
         content: updates.content,
-        page_num: updates.pageNum,
+        pageNum: updates.pageNum,
         title: updates.title,
         tags: updates.tags,
         question: updates.question,

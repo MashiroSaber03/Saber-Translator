@@ -526,10 +526,7 @@ def create_insight_blueprint(
     def delete_note(note_id: str) -> Response:
         _require_idempotency_key()
         base_revision = int(
-            request.args.get(
-                "baseRevision",
-                request.headers.get("If-Match", "0"),
-            )
+            request.args.get("baseRevision", "0")
         )
         repository.delete_note(
             note_id=note_id,
@@ -818,10 +815,7 @@ def create_insight_blueprint(
 
 
 def _base_revision() -> int:
-    value = request.args.get(
-        "baseRevision",
-        request.headers.get("If-Match", "0"),
-    )
+    value = request.args.get("baseRevision", "0")
     return int(value)
 
 

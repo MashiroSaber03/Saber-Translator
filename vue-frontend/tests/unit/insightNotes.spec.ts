@@ -50,8 +50,8 @@ describe('useInsightNotes', () => {
         id: 'backend-note',
         type: 'text',
         content: 'persist me',
-        created_at: '2026-07-30T00:00:00.000Z',
-        updated_at: '2026-07-30T00:00:00.000Z',
+        createdAt: '2026-07-30T00:00:00.000Z',
+        updatedAt: '2026-07-30T00:00:00.000Z',
       },
     })
     const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
@@ -87,8 +87,8 @@ describe('useInsightNotes', () => {
         id: 'note-stale',
         type: 'text',
         content: 'stale note',
-        created_at: '2026-06-25T00:00:00.000Z',
-        updated_at: '2026-06-25T00:00:00.000Z',
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
       }],
     })
     await pendingLoad
@@ -118,15 +118,15 @@ describe('useInsightNotes', () => {
         id: 'note-1',
         type: 'qa',
         content: 'answer',
-        page_num: 12,
+        pageNum: 12,
         title: '问题记录',
         tags: ['角色'],
         question: '为什么？',
         answer: '因为剧情需要。',
         citations: [{ page: 12, content: '证据' }],
         comment: '保留当前字段',
-        created_at: '2026-06-25T00:00:00.000Z',
-        updated_at: '2026-06-25T00:00:01.000Z',
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:01.000Z',
       }],
     })
 
@@ -193,9 +193,9 @@ describe('useInsightNotes', () => {
       id: 'api-note',
       type: 'qa',
       content: 'mapped note',
-      page_num: 7,
-      created_at: '2026-06-25T00:00:00.000Z',
-      updated_at: '2026-06-25T00:00:01.000Z',
+      pageNum: 7,
+      createdAt: '2026-06-25T00:00:00.000Z',
+      updatedAt: '2026-06-25T00:00:01.000Z',
     })).toEqual({
       id: 'api-note',
       type: 'qa',

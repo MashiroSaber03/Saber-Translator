@@ -48,21 +48,19 @@ describe('bookshelfStore', () => {
     expect(store.error).toBeNull()
   })
 
-  it('normalizes bookshelf wire fields before exposing books to UI owners', () => {
+  it('normalizes current bookshelf fields before exposing books to UI owners', () => {
     const store = useBookshelfStore()
 
     store.setBooks([{
       id: 'book-wire',
       title: 'Wire Book',
-      created_at: '2026-02-01T00:00:00.000Z',
-      updated_at: '2026-02-02T00:00:00.000Z',
+      createdAt: '2026-02-01T00:00:00.000Z',
+      updatedAt: '2026-02-02T00:00:00.000Z',
       chapters: [{
         id: 'chapter-wire',
         title: 'Wire Chapter',
         order: 0,
-        image_count: 3,
-        has_session: true,
-        session_path: 'sessions/chapter-wire',
+        imageCount: 3,
       }],
     } as BookData])
 
@@ -74,8 +72,6 @@ describe('bookshelfStore', () => {
     expect(store.books[0]?.chapters?.[0]).toMatchObject({
       id: 'chapter-wire',
       imageCount: 3,
-      hasSession: true,
-      session_path: 'sessions/chapter-wire',
     })
   })
 
@@ -86,8 +82,8 @@ describe('bookshelfStore', () => {
       id: 'book-malformed-title',
       title: { text: 'Broken Title Shape' },
       description: ['unexpected', 'description'],
-      created_at: 1700000000000,
-      updated_at: { value: '2026-02-02T00:00:00.000Z' },
+      createdAt: 1700000000000,
+      updatedAt: { value: '2026-02-02T00:00:00.000Z' },
     } as unknown as BookData, {
       id: 'book-valid-title',
       title: 'Valid Title',

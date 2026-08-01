@@ -139,6 +139,25 @@ def _plugin_archive(
     return output.getvalue()
 
 
+def _valid_manifest() -> dict[str, object]:
+    return {
+        "schema_version": 3,
+        "plugin_id": "strict_v3",
+        "display_name": "Strict v3",
+        "package_version": "1.0.0",
+        "entrypoint": "plugin.py:Plugin",
+        "hooks": ["after_translate"],
+        "supported_steps": ["translate"],
+        "supported_modes": ["standard"],
+        "priority": 100,
+        "failure_policy": "continue",
+        "author": "tests",
+        "description": "strict current manifest",
+        "default_enabled": False,
+        "config_schema": {},
+    }
+
+
 @pytest.fixture()
 def plugin_platform(tmp_path: Path):
     data_root = tmp_path / "data-v2"
@@ -150,6 +169,39 @@ def plugin_platform(tmp_path: Path):
         yield data_root, engine
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "supported_steps",
+        "supported_modes",
+        "priority",
+        "failure_policy",
+        "author",
+        "description",
+        "default_enabled",
+        "config_schema",
+    ),
+)
+def test_plugin_manifest_does_not_fill_omitted_v3_fields(field: str) -> None:
+    manifest = _valid_manifest()
+    del manifest[field]
+
+    with pytest.raises(PluginContractError, match="field mismatch"):
+        parse_manifest(manifest)
+
+
+def test_plugin_manifest_rejects_unknown_fields_and_type_coercion() -> None:
+    unknown = _valid_manifest()
+    unknown["legacy_mode"] = "standard"
+    with pytest.raises(PluginContractError, match="field mismatch"):
+        parse_manifest(unknown)
+
+    wrong_type = _valid_manifest()
+    wrong_type["supported_steps"] = [123]
+    with pytest.raises(PluginContractError, match="must be an array"):
+        parse_manifest(wrong_type)
 
 
 def test_plugin_versions_are_immutable_and_config_is_revisioned(
@@ -384,6 +436,19 @@ def test_plugin_management_http_api_is_metadata_only(
         )
     )
     client = app.test_client()
+    query_revision = client.post(
+        "/api/v2/plugins/import?baseRevision=0",
+        data={
+            "file": (
+                BytesIO(_plugin_archive(plugin_id="query_revision")),
+                "query_revision.zip",
+            ),
+        },
+        content_type="multipart/form-data",
+        headers={"Idempotency-Key": "query-revision-is-not-the-contract"},
+    )
+    assert query_revision.status_code == 422
+
     installed = client.post(
         "/api/v2/plugins/import",
         data={
@@ -1247,7 +1312,10 @@ def test_plugin_agent_source_validation_rejects_invented_hook_field() -> None:
             "hooks": ["after_translate"],
             "supported_steps": ["translate"],
             "supported_modes": ["standard"],
+            "priority": 100,
             "failure_policy": "continue",
+            "author": "",
+            "description": "",
             "default_enabled": False,
             "config_schema": {},
         }
@@ -1280,7 +1348,10 @@ def test_plugin_agent_source_validation_rejects_wrong_field_container() -> None:
             "hooks": ["after_translate"],
             "supported_steps": ["translate"],
             "supported_modes": ["standard"],
+            "priority": 100,
             "failure_policy": "continue",
+            "author": "",
+            "description": "",
             "default_enabled": False,
             "config_schema": {},
         }
@@ -1315,7 +1386,10 @@ def test_plugin_source_validation_rejects_incompatible_constructor() -> None:
             "hooks": ["after_translate"],
             "supported_steps": ["translate"],
             "supported_modes": ["standard"],
+            "priority": 100,
             "failure_policy": "continue",
+            "author": "",
+            "description": "",
             "default_enabled": False,
             "config_schema": {},
         }
@@ -1375,7 +1449,10 @@ def test_plugin_source_validation_rejects_incompatible_hook_call_shapes(
             "hooks": ["after_translate"],
             "supported_steps": ["translate"],
             "supported_modes": ["standard"],
+            "priority": 100,
             "failure_policy": "continue",
+            "author": "",
+            "description": "",
             "default_enabled": False,
             "config_schema": {},
         }

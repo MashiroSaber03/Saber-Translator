@@ -129,30 +129,15 @@ def _openai_options(value: object):
     ) else {}
     normalized = {
         "request": {
-            "force_json_output": request.get(
-                "force_json_output",
-                request.get("forceJsonOutput", False),
-            ),
+            "force_json_output": request.get("force_json_output", False),
             "temperature": request.get("temperature"),
-            "extra_body": request.get("extra_body", request.get("extraBody", {})),
+            "extra_body": request.get("extra_body", {}),
         },
         "execution": {
-            "use_stream": execution.get(
-                "use_stream",
-                execution.get("useStream", False),
-            ),
-            "rpm_limit": execution.get(
-                "rpm_limit",
-                execution.get("rpmLimit", 0),
-            ),
-            "transport_retries": execution.get(
-                "transport_retries",
-                execution.get("transportRetries", 1),
-            ),
-            "business_retries": execution.get(
-                "business_retries",
-                execution.get("businessRetries", 0),
-            ),
+            "use_stream": execution.get("use_stream", False),
+            "rpm_limit": execution.get("rpm_limit", 0),
+            "transport_retries": execution.get("transport_retries", 1),
+            "business_retries": execution.get("business_retries", 0),
         },
     }
     return OpenAICompatibleOptions.from_dict(normalized)
@@ -427,8 +412,8 @@ def _preserve_detected_text(
     return reconciled
 
 
-class LegacyTranslationAlgorithms:
-    """Direct adapters around existing core functions, without HTTP/Base64."""
+class CoreTranslationAlgorithms:
+    """Worker-side adapters around the current core algorithms."""
 
     def detect(self, image: Image.Image, config: Mapping[str, Any]) -> Mapping[str, Any]:
         from src.core.detection import (
@@ -503,10 +488,8 @@ class LegacyTranslationAlgorithms:
 
         coords = [payload.get("coords", [0, 0, 0, 0]) for payload in bubble_payloads]
         textlines = [payload.get("textlines", []) for payload in bubble_payloads]
-        # ``extract_bubble_colors`` is the legacy boundary that already
-        # serializes ``ColorExtractionResult`` objects into dictionaries.
-        # Copy each mapping so the adapter result is detached from the legacy
-        # result without attempting a second ``to_dict`` conversion.
+        # ``extract_bubble_colors`` already returns serialized dictionaries.
+        # Detach each mapping from the extractor-owned result.
         return [
             dict(result)
             for result in extract_bubble_colors(image, coords, textlines)
@@ -555,9 +538,7 @@ class LegacyTranslationAlgorithms:
             return [dict(entry) for entry in parsed]
 
         request = UnifiedChatRequest(
-            provider=str(
-                config.get("provider", config.get("model_provider", "siliconflow"))
-            ),
+            provider=str(config["provider"]),
             api_key=str(config.get("api_key", "")),
             model=str(config.get("model_name", "")),
             messages=[{"role": "user", "content": rendered_prompt}],
@@ -589,7 +570,7 @@ class LegacyTranslationAlgorithms:
     ) -> Mapping[str, Any]:
         from src.core.translation import translate_single_text, translate_text_list
 
-        provider = config.get("provider", config.get("model_provider", "siliconflow"))
+        provider = config["provider"]
         target_language = str(config.get("target_language", "zh"))
         translation_mode = str(config["translation_mode"])
         if translation_mode not in {"batch", "single"}:
@@ -730,9 +711,7 @@ class LegacyTranslationAlgorithms:
         if prompt:
             messages.append({"role": "system", "content": prompt})
         messages.append({"role": "user", "content": content})
-        provider = str(
-            config.get("provider", config.get("model_provider", ""))
-        )
+        provider = str(config["provider"])
         options = _openai_options(config.get("openai_options"))
         enable_debug_logs = bool(config["enable_debug_logs"])
         if enable_debug_logs:
@@ -873,7 +852,7 @@ class TranslationPipelineService:
         self.jobs = jobs
         self.storage = AssetStorageService(data_root, engine)
         self.credentials = SettingsRepository(engine)
-        self.algorithms = algorithms or LegacyTranslationAlgorithms()
+        self.algorithms = algorithms or CoreTranslationAlgorithms()
         self.plugin_runtime = plugin_runtime
 
     def handler(

@@ -22,6 +22,23 @@ def required_string(body: Mapping[str, object], key: str) -> str:
     return value.strip()
 
 
+def required_integer(
+    body: Mapping[str, object],
+    key: str,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{key} must be at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{key} must be at most {maximum}")
+    return value
+
+
 def integer_value(
     value: object,
     name: str,

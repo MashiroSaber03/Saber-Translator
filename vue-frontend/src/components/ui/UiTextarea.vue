@@ -5,7 +5,6 @@ defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<{
   modelValue?: string
-  value?: string
   placeholder?: string
   rows?: number | string
   disabled?: boolean
@@ -15,7 +14,6 @@ const props = withDefaults(defineProps<{
   variant?: 'default' | 'panel' | 'studio'
 }>(), {
   modelValue: undefined,
-  value: undefined,
   placeholder: '',
   rows: 4,
   disabled: false,
@@ -33,7 +31,7 @@ const emit = defineEmits<{
 const attrs = useAttrs()
 const isComposing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const textareaValue = computed(() => props.modelValue ?? props.value ?? '')
+const textareaValue = computed(() => props.modelValue ?? '')
 
 function handleCompositionStart(event: CompositionEvent) {
   isComposing.value = true

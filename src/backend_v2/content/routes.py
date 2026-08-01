@@ -414,7 +414,9 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
-        logical_path = request.form.get("logicalPath") or upload.filename or ""
+        logical_path = str(request.form.get("logicalPath", "")).strip()
+        if not logical_path:
+            raise ValueError("multipart field 'logicalPath' is required")
         result, replayed = importer.import_page(
             chapter_id=chapter_id,
             logical_path=logical_path,
@@ -538,15 +540,15 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 def _book_body() -> dict[str, object]:
     if request.is_json:
         return _json_body()
-    raw_tags = request.form.get("tag_ids", request.form.get("tagIds", "[]"))
+    raw_tags = request.form.get("tagIds", "[]")
     try:
         tag_ids = json.loads(raw_tags)
     except json.JSONDecodeError as exc:
-        raise ValueError("tag_ids must be a JSON string array") from exc
+        raise ValueError("tagIds must be a JSON string array") from exc
     return {
         "title": request.form.get("title", ""),
         "tagIds": tag_ids,
-        "clearCover": request.form.get("clear_cover", "false"),
+        "clearCover": request.form.get("clearCover", "false"),
     }
 
 

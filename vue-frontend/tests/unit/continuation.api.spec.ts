@@ -34,7 +34,7 @@ const form = {
   formId: 'form-1',
   imageVersions: [],
   name: '战斗形态',
-  payload: { clientFormId: 'form_1', description: 'armor', enabled: true },
+  payload: { description: 'armor', enabled: true },
   referenceAssetId: 'reference-1',
   referenceAssetUrl: '/api/v2/assets/reference-1',
   referenceThumbnailUrl: '/api/v2/assets/reference-thumb-1',
@@ -175,7 +175,7 @@ describe('continuation v2 api facade', () => {
       name: '阿尔托莉雅',
       description: '骑士王',
       forms: [{
-        form_id: 'form_1',
+        form_id: 'form-1',
         reference_image: '/api/v2/assets/reference-1',
       }],
     })
@@ -212,7 +212,7 @@ describe('continuation v2 api facade', () => {
       updateCharacterForm,
     } = await import('@/api/continuation')
 
-    await updateCharacterForm('book/id one', '阿尔托莉雅', 'form_1', {
+    await updateCharacterForm('book/id one', '阿尔托莉雅', 'form-1', {
       form_name: '更新形态',
       description: 'updated',
     })
@@ -224,7 +224,6 @@ describe('continuation v2 api facade', () => {
         baseRevision: 2,
         name: '更新形态',
         payload: {
-          clientFormId: 'form_1',
           description: 'updated',
           enabled: true,
         },

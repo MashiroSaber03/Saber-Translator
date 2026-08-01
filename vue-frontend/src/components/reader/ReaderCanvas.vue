@@ -22,12 +22,8 @@ const emit = defineEmits<{
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
 const streamItems = computed<VirtualPageStreamItem[]>(() => props.images.map((page, index) => {
-  const compatible = page as V2PageSummary & {
-    original?: string
-    translated?: string
-  }
-  const source = page.sourceUrl || compatible.original || ''
-  const translated = page.translatedUrl || compatible.translated || ''
+  const source = page.sourceUrl || ''
+  const translated = page.translatedUrl || ''
   return {
     alt: `第 ${index + 1} 页`,
     badge: props.viewMode === 'translated' && !translated ? '未翻译' : undefined,

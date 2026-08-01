@@ -76,7 +76,7 @@ export function testFirecrawlConnection(
   return runV2ConnectionTest(
     'firecrawl',
     apiKey
-      ? { secret: { apiKey } }
+      ? { secret: { api_key: apiKey } }
       : { domain: 'web_import_firecrawl' },
   )
 }
@@ -92,7 +92,7 @@ export function testAgentConnection(
     baseUrl: customBaseUrl || undefined,
     model: modelName,
     ...(apiKey
-      ? { secret: { apiKey } }
+      ? { secret: { api_key: apiKey } }
       : { domain: 'web_import_agent' }),
   })
 }

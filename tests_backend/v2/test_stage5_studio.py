@@ -182,7 +182,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
         config={
             "chat": {
                 "provider": "test",
-                "modelName": "test-model",
+                "model_name": "test-model",
                 "openai_options": {
                     "execution": {"use_stream": False},
                 },
@@ -274,8 +274,8 @@ def test_studio_chat_uses_vlm_for_image_attachments(monkeypatch) -> None:
     assert captured["messages"][1]["content"][0]["type"] == "image_url"
     assert _provider_config(
         {
-            "chat": {"provider": "text", "modelName": "text-model"},
-            "vlm": {"provider": "vision", "modelName": "vision-model"},
+                "chat": {"provider": "text", "model_name": "text-model"},
+                "vlm": {"provider": "vision", "model_name": "vision-model"},
         },
         prefer_vlm=True,
     )["model"] == "vision-model"
@@ -435,17 +435,17 @@ def test_generate_operation_freezes_analysis_context(
         "dependencyFingerprint": "context-fingerprint",
         "payload": {"summary": "角色在第六页发现碎片"},
     }
-    chat_config = {"provider": "chat-provider", "modelName": "chat-model"}
+    chat_config = {"provider": "chat-provider", "model_name": "chat-model"}
     accepted = repository.create_generate_operation(
         document_id=str(document["id"]),
         base_revision=int(document["revision"]),
         section="identity",
         config={
             "chat": chat_config,
-            "vlm": {"provider": "vlm-provider", "modelName": "vlm-model"},
+            "vlm": {"provider": "vlm-provider", "model_name": "vlm-model"},
             "embedding": {
                 "provider": "unused-provider",
-                "modelName": "unused-model",
+                "model_name": "unused-model",
             },
         },
         analysis_context=context,
@@ -1618,7 +1618,7 @@ def test_candidates_expose_timeline_page_counts_without_dialogue_scan(
                     {
                         "name": "Saber",
                         "aliases": ["阿尔托莉雅"],
-                        "first_appearance": 2,
+                        "first_page": 2,
                         "key_moments": [
                             {"page": 4, "event": "拔剑"},
                             {"page": 9, "event": "决战"},

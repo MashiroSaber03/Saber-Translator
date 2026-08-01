@@ -14,6 +14,7 @@ from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    required_integer as _required_integer,
     required_string as _required_string,
 )
 from src.backend_v2.storage.assets import AssetStorageService
@@ -107,8 +108,8 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                 SettingMutation(
                     domain=_required_string(row, "domain"),
                     payload=_required_object(row, "payload"),
-                    base_revision=int(row.get("baseRevision", 0)),
-                    schema_version=int(row.get("schemaVersion", 1)),
+                    base_revision=_required_integer(row, "baseRevision", minimum=0),
+                    schema_version=_required_integer(row, "schemaVersion", minimum=1),
                 )
                 for row in setting_rows
             ),
@@ -117,8 +118,8 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     book_id=_required_string(row, "bookId"),
                     domain=_required_string(row, "domain"),
                     payload=_required_object(row, "payload"),
-                    base_revision=int(row.get("baseRevision", 0)),
-                    schema_version=int(row.get("schemaVersion", 1)),
+                    base_revision=_required_integer(row, "baseRevision", minimum=0),
+                    schema_version=_required_integer(row, "schemaVersion", minimum=1),
                 )
                 for row in book_setting_rows
             ),
@@ -127,7 +128,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     domain=_required_string(row, "domain"),
                     provider=_required_string(row, "provider"),
                     payload=_required_object(row, "payload"),
-                    base_revision=int(row.get("baseRevision", 0)),
+                    base_revision=_required_integer(row, "baseRevision", minimum=0),
                     credential_version_id=(
                         str(row["credentialVersionId"])
                         if row.get("credentialVersionId") is not None
@@ -138,7 +139,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                         if row.get("credentialEditRef") is not None
                         else None
                     ),
-                    schema_version=int(row.get("schemaVersion", 1)),
+                    schema_version=_required_integer(row, "schemaVersion", minimum=1),
                 )
                 for row in provider_rows
             ),
@@ -147,7 +148,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     domain=_required_string(row, "domain"),
                     provider=_required_string(row, "provider"),
                     secret=_required_object(row, "secret"),
-                    base_revision=int(row.get("baseRevision", 0)),
+                    base_revision=_required_integer(row, "baseRevision", minimum=0),
                     credential_id=(
                         str(row["credentialId"])
                         if row.get("credentialId") is not None
@@ -193,7 +194,8 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                 SettingMutation(
                     domain="workflow_preferences",
                     payload=_required_object(body, "payload"),
-                    base_revision=int(body.get("baseRevision", 0)),
+                    base_revision=_required_integer(body, "baseRevision", minimum=0),
+                    schema_version=1,
                 ),
             )
         )

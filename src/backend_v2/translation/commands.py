@@ -381,9 +381,7 @@ def _validate_ai_provider_section(
     label: str,
 ) -> None:
     section = dict(value) if isinstance(value, Mapping) else {}
-    provider = str(
-        section.get("provider", section.get("model_provider", ""))
-    ).strip()
+    provider = str(section.get("provider", "")).strip()
     if not provider:
         raise ValueError(f"{label}未选择服务商，请先在设置中完成配置")
     manifest = get_provider_manifest(provider)

@@ -1,4 +1,4 @@
-"""Serve the production Vue SPA without importing the legacy Flask app."""
+"""Serve the production Vue SPA."""
 
 from __future__ import annotations
 

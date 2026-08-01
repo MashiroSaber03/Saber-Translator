@@ -38,7 +38,7 @@ from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
 )
-from src.backend_v2.storage.lifecycle import migrate_database
+from src.backend_v2.storage.lifecycle import initialize_database
 from src.backend_v2.storage.single_instance import DataRootLock
 
 
@@ -446,11 +446,12 @@ def run_launcher(args: object) -> int:
     )
     with DataRootLock(data_root):
         LOGGER.info("已取得数据目录单实例锁")
-        migration = migrate_database(data_root)
+        storage = initialize_database(data_root)
         LOGGER.info(
-            "数据库迁移与完整性检查完成：revision=%s，升级前备份=%s",
-            migration.upgraded_to,
-            "是" if migration.backup_created else "否",
+            "数据库初始化与完整性检查完成：revision=%s，新建=%s，升级=%s",
+            storage.schema_revision,
+            "是" if storage.created else "否",
+            "是" if storage.upgraded else "否",
         )
         engine = create_sqlite_engine(database_path_for(data_root))
         repository = ProcessEpochRepository(engine)

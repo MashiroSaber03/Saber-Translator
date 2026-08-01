@@ -430,11 +430,12 @@ export function useTranslateInit() {
         showToast('加载当前页编辑数据失败', 'error')
       }
     } finally {
-      if (pageRequestId !== pageDocumentRequestId) return
-      switchImageFlagTimer = setTimeout(() => {
-        switchImageFlagTimer = null
-        isSwitchingImage.value = false
-      }, 100)
+      if (pageRequestId === pageDocumentRequestId) {
+        switchImageFlagTimer = setTimeout(() => {
+          switchImageFlagTimer = null
+          isSwitchingImage.value = false
+        }, 100)
+      }
     }
   }
 

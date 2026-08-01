@@ -245,11 +245,15 @@ export function importV2StudioWorldbook(
 ): Promise<V2StudioDocument> {
   const form = new FormData()
   form.append('file', file)
-  form.append('baseRevision', String(baseRevision))
   return apiClient.upload(
     `${ROOT}/documents/${encodeURIComponent(documentId)}/worldbook/import`,
     form,
-    { headers: commandHeaders() },
+    {
+      headers: {
+        ...commandHeaders(),
+        'If-Match': String(baseRevision),
+      },
+    },
   )
 }
 

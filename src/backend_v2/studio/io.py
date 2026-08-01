@@ -275,13 +275,7 @@ class StudioIOService:
                 for attachment in attachments:
                     if not isinstance(attachment, Mapping):
                         raise ValueError("each attachment must be an object")
-                    encoded = str(
-                        attachment.get(
-                            "blob_base64",
-                            attachment.get("blobBase64", ""),
-                        )
-                        or ""
-                    )
+                    encoded = str(attachment.get("blob_base64", "") or "")
                     if not encoded:
                         continue
                     try:

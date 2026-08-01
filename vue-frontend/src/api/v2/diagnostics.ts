@@ -42,10 +42,11 @@ export function fetchModels(
   baseUrl?: string,
   domain = 'translation',
 ): Promise<FetchModelsResponse> {
+  const secretField = domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key'
   return fetchV2ModelCatalog({
     provider: normalizeProviderId(provider),
     baseUrl: baseUrl || undefined,
-    ...secretOrDomain(domain, { apiKey }),
+    ...secretOrDomain(domain, { [secretField]: apiKey }),
   })
 }
 
@@ -62,7 +63,10 @@ export function testBaiduOcrConnection(
   secretKey: string,
 ): Promise<DiagnosticConnectionTestResponse> {
   return runV2ConnectionTest('baidu_ocr', {
-    ...secretOrDomain('ocr', { apiKey, secretKey }),
+    ...secretOrDomain('ocr', {
+      baidu_api_key: apiKey,
+      baidu_secret_key: secretKey,
+    }),
   })
 }
 
@@ -78,7 +82,9 @@ export function testAiVisionOcrConnection(
     model: params.modelName,
     baseUrl: params.customBaseUrl || undefined,
     prompt: params.prompt || undefined,
-    ...secretOrDomain(params.domain || 'ai_vision_ocr', { apiKey: params.apiKey }),
+    ...secretOrDomain(params.domain || 'ai_vision_ocr', {
+      ai_vision_api_key: params.apiKey,
+    }),
   })
 }
 
@@ -89,7 +95,7 @@ export function testAiTranslateConnection(
     provider: normalizeProviderId(params.provider),
     model: params.modelName || undefined,
     baseUrl: params.baseUrl || undefined,
-    ...secretOrDomain(params.domain || 'translation', { apiKey: params.apiKey }),
+    ...secretOrDomain(params.domain || 'translation', { api_key: params.apiKey }),
   })
 }
 
@@ -99,7 +105,7 @@ export function testBaiduTranslateConnection(
 ): Promise<DiagnosticConnectionTestResponse> {
   return runV2ConnectionTest('baidu_translate', {
     provider: 'baidu_translate',
-    ...secretOrDomain('translation', { appId, appKey }),
+    ...secretOrDomain('translation', { app_id: appId, app_key: appKey }),
   })
 }
 
@@ -109,6 +115,6 @@ export function testYoudaoTranslateConnection(
 ): Promise<DiagnosticConnectionTestResponse> {
   return runV2ConnectionTest('youdao_translate', {
     provider: 'youdao_translate',
-    ...secretOrDomain('translation', { appKey, appSecret }),
+    ...secretOrDomain('translation', { app_key: appKey, app_secret: appSecret }),
   })
 }

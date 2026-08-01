@@ -80,10 +80,12 @@ describe('apiClient error normalization', () => {
       response: {
         status: 400,
         data: {
-          error_code: 'VALIDATION_FAILED',
-          error: 'AI 生成结果缺少 identity。',
-          details: {
-            section: 'full',
+          error: {
+            code: 'validation_error',
+            message: 'AI 生成结果缺少 identity。',
+            details: {
+              section: 'full',
+            },
           },
         },
       },
@@ -94,7 +96,7 @@ describe('apiClient error normalization', () => {
     expect(error).toBeInstanceOf(ApiClientError)
     expect(error).toMatchObject({
       message: 'AI 生成结果缺少 identity。',
-      code: 'VALIDATION_FAILED',
+      code: 'validation_error',
       status: 400,
       details: {
         section: 'full',

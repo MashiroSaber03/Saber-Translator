@@ -325,6 +325,8 @@ def test_worker_ocr_plugin_mutates_domain_result_before_publish(
         "supported_modes": ["standard"],
         "priority": 100,
         "failure_policy": "fail",
+        "author": "tests",
+        "description": "operation OCR mutation",
         "default_enabled": True,
         "config_schema": {},
     }
