@@ -39,7 +39,6 @@ export function pageSummaryToImage(page: V2PageSummary): ImageDataLoadInput {
     cleanAssetUrl: page.cleanUrl ?? null,
     thumbnailSourceUrl: page.thumbnailSourceUrl,
     translatedAssetUrl: page.translatedUrl ?? null,
-    thumbnailTranslatedUrl: page.thumbnailTranslatedUrl ?? null,
     bubbleStates: null,
     translationStatus: status,
     translationFailed: status === 'failed',

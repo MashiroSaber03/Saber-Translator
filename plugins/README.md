@@ -120,7 +120,7 @@ hook(context, data) -> dict
 | `translate` | `pageId`, `originalTexts`, `translationConfig` | `pageId`, `originalTexts`, `translations`, `textboxTexts` |
 | `ai_translate` | `pageId`, `originalTexts`, `translations` | `pageId`, `originalTexts`, `translations` |
 | `inpaint` | `pageId`, `sourceAssetId`, `inputAssetId`, `textMaskAssetId`, `bubbles`, `method`, `fillColor` | `pageId`, `cleanAssetId`, `documentRevision` |
-| `render` | `pageId`, `inputAssetId`, `bubbles`, `renderConfig` | `pageId`, `translatedAssetId`, `thumbnailAssetId`, `documentRevision` |
+| `render` | `pageId`, `inputAssetId`, `bubbles`, `renderConfig` | `pageId`, `translatedAssetId`, `documentRevision` |
 
 例如译文替换必须读写 `data["translations"]`，不存在
 `translated_text` 之类的单数字段。`originalTexts`、`translations` 和

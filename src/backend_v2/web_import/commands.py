@@ -418,6 +418,8 @@ class WebImportCommandService:
         chapter = self._chapter(str(draft["chapter_id"]))
         if not rows:
             raise ValueError("select at least one successful draft page")
+        if any(row["thumbnail_asset_id"] is None for row in rows):
+            raise RuntimeError("successful draft page has no thumbnail")
         entries = [
             {
                 "draftPageId": row["id"],
@@ -425,6 +427,7 @@ class WebImportCommandService:
                 "sourceUrl": row["source_url"],
                 "relativePath": row["temp_relative_path"],
                 "checksum": row["checksum"],
+                "thumbnailAssetId": row["thumbnail_asset_id"],
             }
             for row in rows
         ]

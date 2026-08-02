@@ -42,7 +42,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       sourceAssetUrl: summary.sourceAssetUrl,
       sourceRevision: summary.sourceRevision,
       thumbnailSourceUrl: summary.thumbnailSourceUrl,
-      thumbnailTranslatedUrl: summary.thumbnailTranslatedUrl,
       translatedAssetUrl: summary.translatedAssetUrl,
       translationFailed: summary.translationFailed,
       translationStatus: summary.translationStatus,

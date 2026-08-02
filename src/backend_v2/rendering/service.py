@@ -44,42 +44,6 @@ def publish_png_asset(
     )
 
 
-def publish_thumbnail_asset(
-    storage: AssetStorageService,
-    image: Image.Image,
-) -> AssetRecord:
-    thumbnail = image.copy()
-    try:
-        if thumbnail.height / max(thumbnail.width, 1) > 4:
-            if thumbnail.width > 320:
-                height = max(1, round(thumbnail.height * 320 / thumbnail.width))
-                resized = thumbnail.resize(
-                    (320, height),
-                    Image.Resampling.LANCZOS,
-                )
-                thumbnail.close()
-                thumbnail = resized
-            if thumbnail.height > 1280:
-                cropped = thumbnail.crop((0, 0, thumbnail.width, 1280))
-                thumbnail.close()
-                thumbnail = cropped
-        else:
-            thumbnail.thumbnail((320, 320), Image.Resampling.LANCZOS)
-        with BytesIO() as output:
-            thumbnail.save(output, format="WEBP", quality=80, method=4)
-            payload = output.getvalue()
-        width, height = thumbnail.size
-    finally:
-        thumbnail.close()
-    return storage.publish_bytes(
-        payload,
-        extension="webp",
-        mime_type="image/webp",
-        width=width,
-        height=height,
-    )
-
-
 class AuthoritativeRenderService:
     def __init__(self, *, data_root: Path, engine: Engine) -> None:
         self.engine = engine
@@ -136,7 +100,6 @@ class AuthoritativeRenderService:
             if states:
                 render_bubbles_unified(rendered, states)
             translated = publish_png_asset(self.storage, rendered)
-            thumbnail = publish_thumbnail_asset(self.storage, rendered)
         finally:
             base.close()
             if "rendered" in locals():
@@ -156,46 +119,34 @@ class AuthoritativeRenderService:
                         updated_revision=fence.rendering_revision,
                     )
                 )
-            self._set_pointer(
+            self._set_translated_pointer(
                 connection,
                 fence=fence,
-                role="translated",
                 asset=translated,
                 source_revision=int(page["source_revision"]),
-                parent_asset_id=None,
-            )
-            self._set_pointer(
-                connection,
-                fence=fence,
-                role="thumbnail_translated",
-                asset=thumbnail,
-                source_revision=int(page["source_revision"]),
-                parent_asset_id=translated.id,
             )
 
         return publish
 
     @staticmethod
-    def _set_pointer(
+    def _set_translated_pointer(
         connection: Connection,
         *,
         fence: RenderFence,
-        role: str,
         asset: AssetRecord,
         source_revision: int,
-        parent_asset_id: str | None,
     ) -> None:
         existing = connection.execute(
             select(page_assets.c.asset_id).where(
                 page_assets.c.page_id == fence.page_id,
-                page_assets.c.role == role,
+                page_assets.c.role == "translated",
             )
         ).scalar_one_or_none()
         values = {
             "asset_id": asset.id,
             "input_source_revision": source_revision,
             "input_document_revision": fence.rendering_revision,
-            "parent_asset_id": parent_asset_id,
+            "parent_asset_id": None,
             "producer_job_step_id": None,
             "producer_operation_id": None,
             "producer_render_request_id": fence.render_request_id,
@@ -204,7 +155,7 @@ class AuthoritativeRenderService:
             connection.execute(
                 insert(page_assets).values(
                     page_id=fence.page_id,
-                    role=role,
+                    role="translated",
                     **values,
                 )
             )
@@ -213,7 +164,7 @@ class AuthoritativeRenderService:
                 update(page_assets)
                 .where(
                     page_assets.c.page_id == fence.page_id,
-                    page_assets.c.role == role,
+                    page_assets.c.role == "translated",
                 )
                 .values(**values)
             )

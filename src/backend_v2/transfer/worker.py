@@ -223,7 +223,7 @@ class TransferWorkerService:
         if not isinstance(entry, dict):
             raise RuntimeError("container entry is invalid")
         raw = self._read_entry(config, entry)
-        source, thumbnail = self.importer.publish_replacement(BytesIO(raw))
+        source, thumbnail = self.importer.publish_standalone_image(BytesIO(raw))
         page_id = str(uuid.uuid4())
         logical_path = normalize_logical_path(str(entry["logicalPath"]))
         now = utcnow()

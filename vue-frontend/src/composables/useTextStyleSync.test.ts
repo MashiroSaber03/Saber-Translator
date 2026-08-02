@@ -65,7 +65,6 @@ describe('useTextStyleSync page defaults', () => {
       thumbnailSourceUrl: '/thumbnail/source',
       cleanUrl: '/clean',
       translatedUrl: '/translated?revision=3',
-      thumbnailTranslatedUrl: '/thumbnail/translated?revision=3',
       width: 1200,
       height: 1800,
     })

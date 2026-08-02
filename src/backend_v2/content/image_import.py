@@ -124,23 +124,6 @@ class ImageImportService:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def publish_replacement(
-        self,
-        upload: BinaryIO,
-    ):
-        temporary = (
-            self.data_root
-            / "temp"
-            / "imports"
-            / f"replacement-{uuid.uuid4().hex}.upload"
-        )
-        temporary.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            self._copy_upload(upload, temporary)
-            return self._publish_temporary(temporary)
-        finally:
-            temporary.unlink(missing_ok=True)
-
     def replace_page_source(
         self,
         *,
@@ -262,7 +245,7 @@ class ImageImportService:
         )
 
     def publish_standalone_image(self, upload: BinaryIO):
-        """Publish one validated image and its generated thumbnail."""
+        """Publish one validated source image and its source thumbnail."""
 
         temporary = (
             self.data_root

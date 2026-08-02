@@ -58,7 +58,6 @@ function readySummary() {
     sourceUrl: '/api/v2/assets/source-1',
     thumbnailSourceUrl: '/api/v2/assets/source-thumb-1',
     translatedUrl: '/api/v2/assets/translated-1',
-    thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
   }
 }
 
@@ -90,7 +89,6 @@ describe('useEditRender backend-first orchestration', () => {
       documentRevision: 4,
       renderedRevision: 4,
       translatedAssetUrl: '/api/v2/assets/translated-1',
-      thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
     })
   })
 

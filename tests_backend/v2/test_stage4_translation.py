@@ -628,7 +628,7 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
                             == step["stepId"]
                         )
                     ).scalars()
-                ) == {"translated", "thumbnail_translated"}
+                ) == {"translated"}
         if step["stepKind"] == "save":
             with platform["engine"].connect() as connection:
                 assert connection.execute(
@@ -662,14 +662,13 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     assert page == (5, 5, "ready")
     assert '"originalText":"こんにちは"' in payload
     assert '"translatedText":"你好"' in payload
-    assert {
+    assert roles == {
         "source",
         "thumbnail_source",
         "text_mask",
         "clean",
         "translated",
-        "thumbnail_translated",
-    }.issubset(roles)
+    }
 
 
 def test_remove_text_uses_the_dedicated_plan_endpoint(
@@ -714,7 +713,7 @@ def test_remove_text_uses_the_dedicated_plan_endpoint(
     assert detail["progress"]["executionMode"] == "parallel"
 
 
-def test_translation_render_closes_image_when_thumbnail_publication_fails(
+def test_translation_render_closes_image_when_asset_publication_fails(
     translation_platform,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -725,24 +724,27 @@ def test_translation_render_closes_image_when_thumbnail_publication_fails(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=None,
-        idempotency_key="thumbnail-publication-failure",
+        idempotency_key="translated-publication-failure",
     )
     algorithms = RenderCloseTrackingAlgorithms()
+    publish_png = pipeline_module.publish_png_asset
 
-    def fail_thumbnail(_storage, _image):
-        raise RuntimeError("thumbnail publication failed")
+    def fail_translated_publication(storage, image, *, mode):
+        if image is algorithms.rendered_image:
+            raise RuntimeError("translated publication failed")
+        return publish_png(storage, image, mode=mode)
 
     monkeypatch.setattr(
         pipeline_module,
-        "publish_thumbnail_asset",
-        fail_thumbnail,
+        "publish_png_asset",
+        fail_translated_publication,
     )
     job_id = _run_translation_job(platform, algorithms)
 
     detail = JobQueueRepository(platform["engine"]).get_job(job_id)
     assert detail["status"] == "completed_with_errors"
     assert detail["items"][0]["error"]["message"] == (
-        "thumbnail publication failed"
+        "translated publication failed"
     )
     assert algorithms.rendered_image is not None
     with pytest.raises(ValueError, match="closed image"):

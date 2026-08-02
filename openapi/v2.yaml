@@ -5846,7 +5846,6 @@ components:
         - thumbnailSourceUrl
         - cleanUrl
         - translatedUrl
-        - thumbnailTranslatedUrl
         - width
         - height
       properties:
@@ -5874,7 +5873,6 @@ components:
         thumbnailSourceUrl: {type: string}
         cleanUrl: {type: [string, "null"]}
         translatedUrl: {type: [string, "null"]}
-        thumbnailTranslatedUrl: {type: [string, "null"]}
         width: {type: [integer, "null"], minimum: 1}
         height: {type: [integer, "null"], minimum: 1}
     PageRenderStatus:
@@ -5886,7 +5884,6 @@ components:
         - renderedRevision
         - renderStatus
         - translatedUrl
-        - thumbnailTranslatedUrl
       properties:
         pageId: {$ref: "#/components/schemas/Uuid"}
         documentRevision: {type: integer, minimum: 1}
@@ -5902,7 +5899,6 @@ components:
             - awaiting_repair
             - repair_failed
         translatedUrl: {type: [string, "null"]}
-        thumbnailTranslatedUrl: {type: [string, "null"]}
     PageList:
       type: object
       additionalProperties: false

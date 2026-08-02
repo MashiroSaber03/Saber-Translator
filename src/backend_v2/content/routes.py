@@ -323,7 +323,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 "renderedRevision": page["renderedRevision"],
                 "renderStatus": page["renderStatus"],
                 "translatedUrl": page["translatedUrl"],
-                "thumbnailTranslatedUrl": page["thumbnailTranslatedUrl"],
             }
         )
 

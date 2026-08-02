@@ -455,8 +455,17 @@ class WebImportWorkerService:
             raise ValueError("draft source file expired or is missing")
         if _sha256_file(source_path) != entry["checksum"]:
             raise ValueError("draft source checksum changed")
+        thumbnail = self.storage.get_record(str(entry["thumbnailAssetId"]))
+        if (
+            thumbnail is None
+            or thumbnail.mime_type != "image/webp"
+            or not self.storage.resolve_relative_path(
+                thumbnail.relative_path
+            ).is_file()
+        ):
+            raise ValueError("draft thumbnail expired or is missing")
         with source_path.open("rb") as source:
-            source_asset, thumbnail = self.importer.publish_replacement(source)
+            source_asset = self.importer.publish_standalone_source(source)
         page_id = str(uuid.uuid4())
         chapter_id = str(config["chapterId"])
         logical_path = normalize_logical_path(str(entry["logicalPath"]))
@@ -568,6 +577,8 @@ class WebImportWorkerService:
             if not isinstance(raw_entry, Mapping):
                 raise RuntimeError("web import commit entry is invalid")
             entry = dict(raw_entry)
+            if not isinstance(entry.get("thumbnailAssetId"), str):
+                raise RuntimeError("web import commit thumbnail is invalid")
             source_path = self.storage.resolve_relative_path(
                 str(entry["relativePath"])
             )

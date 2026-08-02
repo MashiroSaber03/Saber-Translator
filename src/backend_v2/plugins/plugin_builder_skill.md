@@ -88,8 +88,7 @@ Atomic hook data uses these exact fields:
   `textMaskAssetId`, `bubbles`, `method`, `fillColor`; after has `pageId`,
   `cleanAssetId`, `documentRevision`.
 - `render`: before has `pageId`, `inputAssetId`, `bubbles`, `renderConfig`;
-  after has `pageId`, `translatedAssetId`, `thumbnailAssetId`, and
-  `documentRevision`.
+  after has `pageId`, `translatedAssetId`, and `documentRevision`.
 
 Preserve required fields and array lengths. For translation replacement, read
 and return `data["translations"]`; do not invent fields such as

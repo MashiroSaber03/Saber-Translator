@@ -103,7 +103,6 @@ PAGE_ASSET_ROLES = (
     "thumbnail_source",
     "clean",
     "translated",
-    "thumbnail_translated",
     "text_mask",
 )
 PROMPT_TYPES = (
@@ -1929,8 +1928,8 @@ page_assets = Table(
         name="single_producer",
     ),
     CheckConstraint(
-        "(role IN ('thumbnail_source','thumbnail_translated') AND parent_asset_id IS NOT NULL) OR "
-        "(role NOT IN ('thumbnail_source','thumbnail_translated'))",
+        "(role = 'thumbnail_source' AND parent_asset_id IS NOT NULL) OR "
+        "role != 'thumbnail_source'",
         name="thumbnail_parent_required",
     ),
 )

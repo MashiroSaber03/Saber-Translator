@@ -101,7 +101,6 @@ ATOMIC_PAYLOAD_FIELDS = {
         {
             "pageId",
             "translatedAssetId",
-            "thumbnailAssetId",
             "documentRevision",
         }
     ),
@@ -113,7 +112,6 @@ ATOMIC_FIELD_KINDS = {
     "textMaskAssetId": "nullable_text",
     "cleanAssetId": "text",
     "translatedAssetId": "text",
-    "thumbnailAssetId": "text",
     "detectorConfig": "object",
     "ocrConfig": "object",
     "translationConfig": "object",
@@ -434,7 +432,6 @@ def validate_atomic_hook_data(
             _require_mapping(data, "renderConfig")
         else:
             _require_text(data, "translatedAssetId")
-            _require_text(data, "thumbnailAssetId")
     return data
 
 

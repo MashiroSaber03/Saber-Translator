@@ -170,7 +170,6 @@ export function useTextStyleSync() {
       if (index >= 0) {
         imageStore.updateImageByIndex(index, {
           renderedRevision: summary.renderedRevision ?? undefined,
-          thumbnailTranslatedUrl: summary.thumbnailTranslatedUrl,
           translatedAssetUrl: summary.translatedUrl,
           translationStatus: 'completed',
         })

@@ -288,7 +288,7 @@ pending → running → completed | failed | cancelled
 - 页面所有写操作携带 `base_revision`，以 `pages.document_revision` 做整页 CAS。
 - 单泡 OCR、颜色、编辑 PATCH 都按稳定 bubble_id 定位，但提交时仍验证整页 revision；冲突统一返回 409，不自动合并。
 - 单页检测整体替换本页 bubbles 并发布 text_mask，只有发起 revision 仍为最新时才能提交。
-- clean、translated 和 thumbnail 的发布同样受 revision 保护；repair mask 是 operation 的不可变输入而不是可发布的页面 current role。来自 job 的发布额外验证 job attempt_id/lease_token，来自 operation 的发布验证 operation attempt_id/lease_token、active 状态、目标与 base_revision，来自 render_request 的发布验证请求仍是该页最新 revision。
+- clean 和 translated 的发布同样受 revision 保护；source 与 thumbnail_source 只由导入/replace-source 事务成组发布。repair mask 是 operation 的不可变输入而不是可发布的页面 current role。来自 job 的发布额外验证 job attempt_id/lease_token，来自 operation 的发布验证 operation attempt_id/lease_token、active 状态、目标与 base_revision，来自 render_request 的发布验证请求仍是该页最新 revision。
 - operation/render_request 创建和领取时都复查 `chapter_write_intents` 与 `chapter_write_locks`。队首章节写 job 先在一个短事务中为全部目标章节原子建立 `chapter_write_intents`；任一目标已有锁、有效导入租约或其他 job 的意图则本次不建立。意图建立后 job 仍为 queued、记录 `blocked_reason=draining_immediate_writes`，但新建页面文档写入、replace-source、页面写 operation、由新业务写入产生的 render_request 和普通图片 import lease 一律返回 `423 chapter_write_pending`，从而禁止持续新写入让 job 永久饥饿。
 - 意图建立前已经 active 的写 operation，以及已经 pending/running 的 render_request，可以继续领取、完成并发布其既定 revision；完成该旧 operation 所必需的后续 render_request 也允许在同一 operation 发布事务中创建或推进。除此之外不得在意图后扩展新的业务写链。Worker 保持该 job 为不可跳过的队首，等待这些意图前链路全部终态。
 - 排空后，Worker 在一个 `BEGIN IMMEDIATE` 事务中再次验证全部意图仍归当前 `job_id + worker_epoch_id + intent_set_id + 各章节 intent_generation + lease_token`、没有残余旧写链且没有导入租约，再为全部目标章节创建 `chapter_write_locks`、删除对应意图、创建新 job attempt/lease，并把 job 从 queued 原子转为 running；任一步失败整体回滚，不得出现意图已删但锁尚未建立的可写窗口。queued 取消、领取放弃或旧 Worker epoch 恢复会以 fencing 条件删除意图而保留/终结相应 job，旧执行器无权删除新 generation 的意图。
@@ -551,7 +551,7 @@ WHERE studio_session_id IS NOT NULL
 **CHECK 与 producer 约束**：
 
 - `page_assets.producer_job_step_id`、`producer_operation_id`、`producer_render_request_id` 三列至多一个非空；source、手工封面等无 producer 的合法资产允许三者全空。
-- `thumbnail_source/thumbnail_translated.parent_asset_id` 必填，其他 role 是否允许 parent 由 role CHECK 固化。
+- `thumbnail_source.parent_asset_id` 必填并指向对应 source，其他 role 是否允许 parent 由 role CHECK 固化。
 - job/operation 的 executor_role、目标 FK 和 kind 组合必须合法；payload JSON 不能改变 executor 或声明任意目标。
 - 页序和队列排序字段在事务提交后的正式状态均为正整数、无重复；临时重排值只允许存在于同一个未提交事务中。
 
@@ -594,7 +594,7 @@ SQLite 不支持可延迟 UNIQUE，章节、页面和任务排序禁止逐行直
 - 宽度、高度、文件大小和 checksum。
 - 创建时间和可空 `gc_marked_at`；被标记资产不再允许新建业务关联，也不再由媒体 API 对外服务。
 
-`assets` 不保存 `owner_type/owner_id`，也不承担业务多态外键。页面 source/thumbnail/clean/translated/text_mask 固定使用 `page_assets` 当前指针表，不再保留“关联表或 nullable 列二选一”；role 为数据库 CHECK/应用枚举，指针切换与页面 revision/任务 fencing 在同一事务中完成。编辑器提交的 repair mask 是不可变的 `operation_asset_inputs`，不是页面 current role；封面、字体、聊天附件、续写版本和任务产物分别使用各自关联表。数据库外键可以真实约束所有业务引用。
+`assets` 不保存 `owner_type/owner_id`，也不承担业务多态外键。页面 source/thumbnail_source/clean/translated/text_mask 固定使用 `page_assets` 当前指针表，不再保留“关联表或 nullable 列二选一”；role 为数据库 CHECK/应用枚举，指针切换与页面 revision/任务 fencing 在同一事务中完成。编辑器提交的 repair mask 是不可变的 `operation_asset_inputs`，不是页面 current role；封面、字体、聊天附件、续写版本和任务产物分别使用各自关联表。数据库外键可以真实约束所有业务引用。
 
 任务输入 asset 在 §7.4.1 规定的绑定时点写入 `job_asset_inputs`；operation 输入在创建事务中写入 `operation_asset_inputs`。这些行在 job 非终态或 operation active 期间保护输入文件不被 GC；任务/operation 终态且其结果不再需要原输入重放时释放输入引用，避免任务历史长期钉住大量旧译图。步骤恢复输出使用 `job_step_asset_outputs`，可下载/调试产物使用 `job_artifacts` 或 `operation_artifacts`，不与输入引用混用，也禁止只把 asset_id 埋在 JSON。
 
@@ -602,14 +602,13 @@ SQLite 不支持可延迟 UNIQUE，章节、页面和任务排序禁止逐行直
 
 - `source`：不可变原图。
 - `thumbnail_source`：原图缩略图。
-- `thumbnail_translated`：译图缩略图（translated 资产存在时生成并随其更新，§11.2）。
 - `clean`：修复后的无文字图。
 - `translated`：最终翻译图。
 - `text_mask`：检测精确掩膜（需要持久化）。
 - repair mask：不作为 `page_assets` current role；单泡由后端根据当前 bubble polygon/coords 生成，笔刷由浏览器上传单次动作的二值 mask，均以 `operation_asset_inputs` 冻结到 `page_repair`。
 - 调试文件不属于单值 page role；多份 debug 输出进入带 TTL 的任务/operation 产物关联，可选 page_id FK 只用于定位，由 §5.5 统一清理。
 
-`source` 与 `thumbnail_source` 在页面创建事务中一次写入。之后只能由显式 replace-source 领域命令成组替换为新的不可变资产：命令验证章节写入意图/写锁与 `base_source_revision`，原子推进 `pages.source_revision` 和 `document_revision`，把检测状态重置为 `unprocessed`，清空已不再与新图可靠对齐的 bubbles，并解除 clean、translated、thumbnail_translated、text_mask 当前指针。旧 source 与旧派生资产是否回收只由显式引用与 GC 决定；已绑定它们的 job/operation 可以按 §7.4.1 继续读取，但只有通过当前 source/document revision 发布保护的结果才能成为页面当前指针。replace-source 同时按新 checksum 使页面 Insight 结果及其上游派生物进入 stale，`page_id`、页序和引用身份保持不变。
+`source` 与 `thumbnail_source` 在页面创建事务中一次写入。之后只能由显式 replace-source 领域命令成组替换为新的不可变资产：命令验证章节写入意图/写锁与 `base_source_revision`，原子推进 `pages.source_revision` 和 `document_revision`，把检测状态重置为 `unprocessed`，清空已不再与新图可靠对齐的 bubbles，并解除 clean、translated、text_mask 当前指针。旧 source 与旧派生资产是否回收只由显式引用与 GC 决定；已绑定它们的 job/operation 可以按 §7.4.1 继续读取，但只有通过当前 source/document revision 发布保护的结果才能成为页面当前指针。replace-source 同时按新 checksum 使页面 Insight 结果及其上游派生物进入 stale，`page_id`、页序和引用身份保持不变。
 
 这里的不可变性约束针对 asset 文件，不针对页面的“当前 source 关联”。任何代码都不得就地覆盖现有 asset 路径；源图变化必须生成新 asset、新缩略图并通过上述事务切换指针。
 
@@ -624,7 +623,6 @@ SQLite 不支持可延迟 UNIQUE，章节、页面和任务排序禁止逐行直
 | text_mask | source asset、input_source_revision、检测 fingerprint | 当前 source_revision 未变化；来自 job/operation 时额外验证 attempt fencing |
 | clean | source 或 parent clean、text_mask 或 repair mask、input_source_revision、input_document_revision | 当前 source/document revision 均匹配；来自 job/`page_repair` 时验证 fencing；编辑器 repair 只能从创建时冻结的 parent clean（无则 source）派生，不得就地覆盖 |
 | translated | clean 或 source、input_source_revision、input_document_revision | 当前 document_revision 等于渲染输入 revision；旧渲染永不覆盖新文档 |
-| thumbnail_translated | parent_asset_id=translated、相同 input revisions | 与对应 translated 同事务发布 |
 
 业务代码不得通过“最新创建时间”猜测当前资产，也不得在 page_assets 之外另存 current translated/clean 路径。页面状态若能从文档 revision、当前资产指针和最近 job item 推导，就在查询层派生；只允许为热查询维护带明确更新事务和可重建规则的物化计数，禁止再产生第二事实源。
 
@@ -1142,19 +1140,19 @@ Context 至少包含：
 
 ### 11.2 缩略图规范
 
-- 在页面首次入库时由后端生成。
+- 由后端在原图导入流程中生成一次；网页导入在候选草稿阶段生成，正式提交时直接复用。
 - WebP 格式。
 - 常规图片：最长边 320px，保持原始宽高比。
 - **长条图特判**：高宽比 > 4 的图片（webtoon 长条漫）改为宽度上限 320px、高度从顶部裁剪至上限 1280px——避免"最长边 320"把长条图压成十几像素宽的不可辨认缩略图。
 - 默认质量 80。
 - 不放大小图片。
-- 缩略图覆盖 source 与 translated 两种资产，分别落为 `thumbnail_source` 与 `thumbnail_translated` 两条独立资产（§5.4，列表场景需区分原图/译图预览）。
-- 根据原图 checksum 和缩略图规格确定是否需要重新生成；任何路径发布新 translated 资产后同步生成新的 thumbnail_translated。
+- 每个 source 只对应一张 `thumbnail_source`；普通图片、容器导入和显式替换 source 时生成，网页导入则把同一源文件已经生成的草稿缩略图直接绑定为正式 `thumbnail_source`。
+- 翻译、编辑、修复和重新渲染只发布 translated，不生成译图缩略图，也不重复处理 `thumbnail_source`。
 - 图片资产只保留“原尺寸资产 + 单规格缩略图”两级：不生成中档 preview、多档缩略图、瓦片或多分辨率金字塔。
 
 ### 11.3 原图与缩略图使用边界
 
-以下批量陈列场景只请求 `thumbnail_source` 或 `thumbnail_translated`：
+以下批量陈列场景统一只请求 `thumbnail_source`：
 
 - 翻译页右侧页面列表。
 - 指定翻译页码弹窗。
@@ -1387,8 +1385,8 @@ Context 至少包含：
 - ZIP/CBZ/MOBI 解包的路径穿越、符号链接、异常条目数、异常解压体积和压缩比均被拒绝且 temp 可清理。
 - 普通图片一次只解码当前上传页，容器/网页导入逐页解码；受支持解码器能够正常读取的长条漫可正常导入，损坏图片和缩略图失败只形成该页结构化错误且不发布半成品。
 - 页面列表响应不包含 Base64。
-- 缩略图场景只请求 thumbnail_source/thumbnail_translated 资产。
-- 每个 source/translated 只对应一张单规格缩略图，不存在 preview 或其他中档展示资产。
+- 缩略图场景只请求 thumbnail_source 资产。
+- 每个 source 只对应一张单规格缩略图；translated 不生成缩略图，不存在 preview 或其他中档展示资产。
 - 翻译和编辑页面只加载当前页及有限预取页。
 - 阅读器只加载视口附近页面。
 - 浏览器内存不随章节原图总量线性增长。
@@ -1415,9 +1413,9 @@ Context 至少包含：
 - **API 进程运行时 `torch` 不在 `sys.modules`**（grep/运行时断言），且不持有 ChromaDB 连接。
 - API 进程不加载插件业务代码；Worker 才能加载 torch、Chroma 和插件包。
 - API 崩溃后由 Launcher 确认旧 epoch 失效，再让 pending/running 的可重做 render_request 按新 API epoch 领取；只有最新 document_revision 发布。模拟旧 API executor 迟到时，epoch + attempt + lease 任一不符均不能写资产指针或终态。
-- 连续输入且相邻变化间隔小于 150ms 时只提交一次尾随 PATCH；每次 PATCH 成功后 render_request 立即可执行。若渲染中继续编辑，旧 revision 可以完成计算但不得产生 current translated/thumbnail 指针，随后立即处理最新 requested_revision。
+- 连续输入且相邻变化间隔小于 150ms 时只提交一次尾随 PATCH；每次 PATCH 成功后 render_request 立即可执行。若渲染中继续编辑，旧 revision 可以完成计算但不得产生 current translated 指针，随后立即处理最新 requested_revision。
 - 在尾随计时尚余任意时间时触发失焦/应用/应用并下一张，PATCH 必须立即发送且原计时器不再重复提交；同页在途 PATCH 与后续 delta 严格串行。
-- “应用并下一张”只在目标 document_revision 的 translated/thumbnail 已发布后跳转；普通切页只等待 PATCH 成功，渲染在离开页面后继续。
+- “应用并下一张”只在目标 document_revision 的 translated 已发布后跳转；普通切页只等待 PATCH 成功，渲染在离开页面后继续。
 - API 保存型远程 operation 由固定大小 executor 执行，不因请求量无限创建线程；Launcher 确认旧 API epoch 失效后，pending operation 可由新 epoch 领取，旧 epoch running operation 明确失败且迟到写回被 fencing 拒绝。
 - Worker 本地模型/API 纯 CPU operation 租约过期后仅在 base_revision 仍有效时以新 attempt 重做；旧 attempt 迟到结果和终态写入均被拒绝，revision 已变化时 operation 明确失败而不覆盖新状态。
 - 意图建立后，意图前已经 active 的 operation/render_request 及其必需的后续 render 可以完成；新页面 PATCH、replace-source、页面写 operation、普通图片 import lease 和无既有 operation 来源的新 render_request 均返回 423。queued 取消与旧 Worker epoch 恢复释放意图，旧 generation 的清理/回调不能删除新 Worker 建立的意图。
@@ -1513,7 +1511,7 @@ Context 至少包含：
 - 规范化 `logical_source_path`；它只承载原文件名/文件夹树/导出名称，绝不等于 objects 路径。source 尺寸、MIME、checksum 和物理路径通过 source asset 读取，不在 pages 重复保存。
 - `source_revision`：初始为 1；显式 replace-source 成功后递增，用于源图替换 CAS、任务输入绑定和派生结果失效。
 - 当前处理状态、手动标注状态和最后任务结果。
-- 当前 source、thumbnail_source、thumbnail_translated、clean、translated 与 **text_mask（检测精确掩膜）**资产指针。编辑器 repair mask 不作为页面 current 指针：每次单泡/笔刷修复都把规范化后的不可变 mask 绑定到对应 `page_repair` operation。
+- 当前 source、thumbnail_source、clean、translated 与 **text_mask（检测精确掩膜）**资产指针。编辑器 repair mask 不作为页面 current 指针：每次单泡/笔刷修复都把规范化后的不可变 mask 绑定到对应 `page_repair` operation。
 - `document_revision`、`rendered_revision`、`render_status`。
 - `detection_state`、`default_font_id`、`page_style_defaults` 和 `page_warnings` JSON；字体外键不埋入 style JSON。
 
@@ -1647,7 +1645,7 @@ GET    /api/v2/operations/{operation_id}
 
 上传 mask 必须是与当前 source 尺寸完全一致的单帧 8-bit 灰度二值 PNG，只允许 0（不处理）与 255（本次处理区域），禁止服务器插值缩放；浏览器每次提交的是本次笔刷动作的 repair mask，不上传 clean/translated，也不维护需要在后端解释的三态协议。无论来源是哪一种，Controller 都必须先生成/验证不可变 mask asset，再创建同一种 `page_repair` operation，冻结 current source、current clean（不存在则以 source 为 parent）、mask、method、fill_color、input revisions 与新 `repair_revision`。创建事务验证 base_revision、章节锁和同页 active operation，把 document_revision 只推进一次并设置 `render_status=awaiting_repair`；operation active 期间同页新的 document mutation/repair 返回 `409 operation_active`。
 
-RepairService 的统一语义是“在冻结的 parent clean 上只处理 mask=255 的像素”：solid 填入 fill_color，LaMA/LiteLaMA 对同一 mask 推理，restore_source 从冻结 source 拷回对应像素。成功时以 operation fencing 发布新的 immutable clean，再为同一 repair_revision upsert render_request；render executor随后读取该 clean 与该 revision 的完整 bubbles，生成 translated/thumbnail。失败时保留旧 clean/translated，页面置为 `render_status=repair_failed` 并允许基于同一冻结输入重试。repair mask 只由 `operation_asset_inputs` 保活，终态历史和 GC 按 §5.5 处理，不成为页面第二事实源。
+RepairService 的统一语义是“在冻结的 parent clean 上只处理 mask=255 的像素”：solid 填入 fill_color，LaMA/LiteLaMA 对同一 mask 推理，restore_source 从冻结 source 拷回对应像素。成功时以 operation fencing 发布新的 immutable clean，再为同一 repair_revision upsert render_request；render executor 随后读取该 clean 与该 revision 的完整 bubbles，生成 translated。失败时保留旧 clean/translated，页面置为 `render_status=repair_failed` 并允许基于同一冻结输入重试。repair mask 只由 `operation_asset_inputs` 保活，终态历史和 GC 按 §5.5 处理，不成为页面第二事实源。
 
 所有创建型和破坏性命令要求 `Idempotency-Key` 并严格执行 §5.3 提交协议；相同 scope/key/request_hash 重放原状态码与结果摘要，同键不同请求返回 `409 idempotency_conflict`。revision 冲突返回 `409 revision_conflict`；非法状态转换返回 `409 invalid_*_transition`；章节存在 `chapter_write_intent` 返回 `423 chapter_write_pending`，存在 `chapter_write_lock` 返回 `423 chapter_locked`；同目标已有 active operation 返回 `409 operation_active`；输入校验错误返回 `422 validation_error`；后台 operation 返回 `202`。所有图片接口返回资产 URL，不返回 Base64。OpenAPI 3 与生成的前端类型是唯一契约，handler 不得另行接受未在 schema 中声明的 kind 或字段。
 
@@ -1690,10 +1688,10 @@ PDF/MOBI/AZW/AZW3/CBZ：
 - 保留 `auto / gallery-dl / ai-agent` 三种引擎选择、URL 的 Gallery-DL 支持探测与自动回退；`POST /api/v2/web-import/support-checks` 是无副作用、断线即取消的短请求，实际请求引擎和最终采用引擎都写入 draft。
 - 保留 Firecrawl 与 AI Agent 配置、模型拉取/连接测试、提取 prompt 与最大迭代数、下载并发/超时/重试/延迟/Referer、自定义 Cookie/Headers/代理绕过、图片旋转/压缩/尺寸/格式转换、Agent 日志显示和自动导入开关。secret 进入 credentials，其他业务配置进入 `web_import`/`web_import_agent` 设置域；extract job 创建时冻结配置与凭据版本。
 - `POST /api/v2/web-import/drafts` 在一个事务中创建草稿和 `web_extract` job；该任务只写 draft，不取得章节写锁。
-- 后端草稿保存源 URL、请求/实际引擎、冻结配置、候选页、临时缩略图、选择状态、结构化 Agent 日志、下载进度、状态和错误；每个候选有稳定 `draft_page_id`，选择提交按 ID 而不是浏览器数组下标。浏览器重连后可恢复，候选原图和缩略图只经受 draft 归属与 TTL 校验的媒体端点流式提供，不进入正式 `/assets`、不返回 Base64。
+- 后端草稿保存源 URL、请求/实际引擎、冻结配置、候选页、临时缩略图、选择状态、结构化 Agent 日志、下载进度、状态和错误；每个候选有稳定 `draft_page_id`，选择提交按 ID 而不是浏览器数组下标。浏览器重连后可恢复；草稿期的候选原图和缩略图只经受 draft 归属与 TTL 校验的媒体端点流式提供，不经正式 `/assets` 对外、不返回 Base64；选中页提交后，同一缩略图资产转由页面 `thumbnail_source` 指针长期保活。
 - `web_extract` 按冻结的下载并发上限流式写入每个候选的 draft 临时文件，逐张校验并生成临时缩略图；并发下载缓冲必须有界，不把全部候选原图同时保存在内存。单张失败记录到 draft page，不丢弃其他成功候选。
 - translation bootstrap 返回当前章节未过期 active draft 摘要；草稿详情、候选页游标分页和 selection PUT 分开加载，避免恢复千页草稿时一次返回全部候选与日志。
-- 用户确认选择后，`POST /api/v2/web-import/drafts/{id}/commit` 以草稿状态 CAS 冻结当时选中的有序 `draft_page_id` 集合并创建唯一 `web_import_commit` job，直接写入目标章节，不把原图回传浏览器；该 job 到达队首后按 §7.9 建立章节写入意图并原子升级写锁。自动提交与人工提交竞争时只有一个能把草稿从 ready 推进到 committing，另一方返回已创建的 commit job，不得重复导入。
+- 用户确认选择后，`POST /api/v2/web-import/drafts/{id}/commit` 以草稿状态 CAS 冻结当时选中的有序 `draft_page_id`、源文件引用、checksum 和缩略图资产，创建唯一 `web_import_commit` job并直接写入目标章节，不把原图回传浏览器；提交逐页复核源文件 checksum 后发布 source，并把已经生成的同规格草稿缩略图直接绑定为该页 `thumbnail_source`，禁止再次解码、缩放和编码一份正式缩略图。该 job 到达队首后按 §7.9 建立章节写入意图并原子升级写锁。自动提交与人工提交竞争时只有一个能把草稿从 ready 推进到 committing，另一方返回已创建的 commit job，不得重复导入。
 - 这里的“唯一”指同一 draft 只创建一个根 commit；`completed_with_errors/failed` 的“重试失败项”通过 jobs retry API 创建关联 `web_import_commit`，只冻结未成功的 draft_page_id。draft 已过期或文件缺失时禁止重试原输入并提示重新提取。
 - 开启“自动导入”时，`web_extract` 成功后由后端按当时冻结的默认全选范围自动创建 `web_import_commit`；该行为不依赖浏览器仍在线。关闭时继续保留全选/清空/逐页选择和手动确认。
 - 草稿 `expires_at` 按最后活动时间滚动为 24 小时；提取完成进入 ready、有效 selection 更新和 commit 状态变化都会刷新活动时间。被非终态任务引用时即使超过 expires_at 也延后清理，任务终态后再按最后活动时间判断，避免长时间提取刚结束草稿就被立即删除。
@@ -1729,7 +1727,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 #### 16.3.4 页面范围选择
 
 - UI 继续支持全选、清空、失败页、未翻译页、已翻译页、手动标注页、手动点击，以及**文件夹树导航**（按文件夹层级浏览、面包屑、按文件夹计数与选择——保留现状能力）。
-- 缩略图只使用 thumbnail_source/thumbnail_translated 资产并采用虚拟列表。
+- 缩略图只使用 thumbnail_source 资产并采用虚拟列表。
 - 内部选择使用 `page_id`；页码只用于显示。
 - 前端可提交 `all/status/ids` 选择器，后端在任务创建事务中解析为有序 job items。
 - “全部页面”任务创建后导入的新页不会自动加入。
@@ -1865,7 +1863,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 - 选择 `fontSize` 时同时应用 `autoFontSize`：来源为固定字号时，把来源 `fontSize` 写入目标页默认和全部 bubbles；来源为自动时，把目标页设为自动并重新计算每泡具体字号，但保留各目标页原有 `fontSize` 作为以后关闭自动时的手动回退值。
 - 选择 `layoutDirection` 时按本节自动方向规则应用；选择 `fontFamily` 时冻结和写入稳定 font_id。
 - 选择 `textColor` 或 `fillColor` 任一项时同时应用来源页的 `useAutoTextColor` 模式，但只修改用户勾选的实际颜色字段，未勾选字段保持目标页/泡原值。来源为手动模式时，把来源页对应手动颜色写入目标默认和 bubbles；来源为自动模式时消费每个目标 bubble 自己的自动颜色备份，备份缺失按当前有效值回退，并保留目标页原有手动颜色默认值供以后关闭自动后继续编辑。无论手动还是自动，应用 fillColor 都只改变以后 repair 使用的参数，不发起隐式颜色或 repair operation。
-- 每个 job item 先在一个事务中更新该页被选中的默认字段和全部相关 bubbles，`document_revision` 只增加一次并保存 `style_applied_revision` 检查点；只有所选字段实际改变了 §16.2.4 的文字层字段时，才由持锁的 Worker 在该 item 的后续 render 步骤读取这次新 revision并以 job attempt/lease fencing 发布 translated/thumbnail，**不创建 API render_request**。只选择 fillColor 的 item 不重做 clean、也不重渲染文字；无 bubble 页只更新默认，没有 current translated 或没有非空 translatedText 的页面不做无意义渲染。文档已提交但 Worker 渲染失败时该页 item 失败、旧译图继续可读；同一任务继续时若检查点仍匹配当前 revision，只重做 render，不再次应用样式或重复推进 revision。
+- 每个 job item 先在一个事务中更新该页被选中的默认字段和全部相关 bubbles，`document_revision` 只增加一次并保存 `style_applied_revision` 检查点；只有所选字段实际改变了 §16.2.4 的文字层字段时，才由持锁的 Worker 在该 item 的后续 render 步骤读取这次新 revision 并以 job attempt/lease fencing 发布 translated，**不创建 API render_request**。只选择 fillColor 的 item 不重做 clean、也不重渲染文字；无 bubble 页只更新默认，没有 current translated 或没有非空 translatedText 的页面不做无意义渲染。文档已提交但 Worker 渲染失败时该页 item 失败、旧译图继续可读；同一任务继续时若检查点仍匹配当前 revision，只重做 render，不再次应用样式或重复推进 revision。
 - 不创建执行前快照或“还原此次应用”；需要修正时再次提交新的 style_apply job。
 - 每页独立持久化，失败页可重试，浏览器关闭不影响任务。`style_apply` 的失败项关联重试沿用原任务冻结的 selected_fields、值和 font_id，只把 page_id 范围缩小到失败页；不得套用通用“读取当前来源页样式重建快照”的默认重试口径。
 
@@ -1977,14 +1975,14 @@ ZIP、CBZ、PDF：
 
 数据流：
 
-左侧栏与编辑器共享 §16.3.11 的 per-page 串行 CAS coordinator、`PATCH .../document`、document_revision、render_request 和章节写入意图/锁状态，但不共享业务语义：编辑器修改选中 bubble_id 的物化覆盖值；左侧栏修改页默认并由后端按字段闭集传播到全页。编辑器不得因为页级 `inpaintMethod` 或自动模式标志变化而自行覆盖单泡修复方式/自动备份；从一个入口切到另一个入口前必须先 flush 当前入口的待确认 delta。权威文字渲染的输入永远是“目标 revision 的 current clean（无则 source）+ 该页完整有序 bubbles”，输出永远是整页 translated/thumbnail；不存在可发布的“只渲染一个 bubble 位图”旁路。
+左侧栏与编辑器共享 §16.3.11 的 per-page 串行 CAS coordinator、`PATCH .../document`、document_revision、render_request 和章节写入意图/锁状态，但不共享业务语义：编辑器修改选中 bubble_id 的物化覆盖值；左侧栏修改页默认并由后端按字段闭集传播到全页。编辑器不得因为页级 `inpaintMethod` 或自动模式标志变化而自行覆盖单泡修复方式/自动备份；从一个入口切到另一个入口前必须先 flush 当前入口的待确认 delta。权威文字渲染的输入永远是“目标 revision 的 current clean（无则 source）+ 该页完整有序 bubbles”，输出永远是整页 translated；不存在可发布的“只渲染一个 bubble 位图”旁路。
 
 1. 拖拽、框线、文字和样式反馈立即在浏览器覆盖层显示，不等待网络或整图渲染。
 2. 前端为当前页维护一个串行 Bubble 变更缓冲：同一 bubble 在 150ms 内的文字、几何和样式字段变化尾随合并，计时重新开始；不同 revision 的 PATCH 不并发发送，必须先等待在途 PATCH 返回新的 document_revision，再以它作为下一次 base_revision。
 3. 常规字段输入停止 150ms 后按稳定 bubble_id 提交 PATCH；新增、删除、重置和批量应用样式等离散命令直接触发 flush。输入框失焦、显式“应用”、“应用并下一张”、普通切页、受控路由离开和收到章节锁事件时也调用同一个 `flushBubbleChanges()`：取消计时器，等待在途 PATCH，立即提交尚未确认的最新 delta，不再等待剩余 150ms。SPA 导航守卫必须等待 flush；浏览器进程崩溃或被强杀无法保证最后一个尚未发出的 150ms 窗口，但所有已收到 PATCH 成功响应的编辑都已在后端持久化。
 4. Bubble PATCH 数据库事务完成文档 CAS、更新 bubble、推进 `pages.document_revision`；符合 §16.2.4 渲染资格时才 upsert 该页唯一 render_request 的 requested_revision 为新 revision。事务提交后该请求立即可被 API render executor 领取，不设置第二层后端防抖或安静窗口。
 5. render executor 领取时记录 rendering_revision，从最新 bubbles 与 clean 资产聚合整页。运行中又收到 PATCH 时只覆盖 requested_revision，不为每次键盘输入追加请求行，也不并发渲染同一页。
-6. 只有 `rendering_revision == requested_revision == pages.document_revision` 时才发布新的 translated 与 thumbnail_translated 资产并更新 completed/rendered revision；否则本次结果不发布，该行回到 pending 并立即渲染最新 requested_revision。
+6. 只有 `rendering_revision == requested_revision == pages.document_revision` 时才发布新的 translated 资产并更新 completed/rendered revision；否则本次结果不发布，该行回到 pending 并立即渲染最新 requested_revision。
 7. 失焦和普通切页只以 PATCH 成功作为编辑已保存的确认，不阻塞等待整图；显式“应用”和“应用并下一张”为保持现有交互语义，在 flush 成功后继续等待该 document_revision 发布或明确渲染失败，“应用并下一张”成功后才跳转。等待期间即使浏览器崩溃，后端 render_request 仍继续。
 8. PATCH 成功但渲染失败时 Bubble 修改仍已保存，旧译图继续可读，页面显示“译图待重新渲染”；待请求可重试。PATCH/409/423 失败则显式操作保持当前页并提示，不能伪装成已应用。
 9. API 崩溃后，Launcher 确认旧 API epoch 失效并把其 running render_request 置回 pending；新 API 以新 epoch/attempt/lease 重做，旧 executor 即使迟到也不能发布。纯渲染是确定性、幂等操作。
@@ -2036,7 +2034,7 @@ ZIP、CBZ、PDF：
 
 - Pinia 不保存任何整章 Base64。
 - 页面列表默认分页 50，最大 200；缩略图虚拟化。
-- 缩略图（thumbnail_source/thumbnail_translated）遵循 §11.2 单一规格：常规图最长边 320px；长条图宽度上限 320px、顶部裁剪高度上限 1280px；WebP quality 80。
+- 原图缩略图 thumbnail_source 遵循 §11.2 单一规格：常规图最长边 320px；长条图宽度上限 320px、顶部裁剪高度上限 1280px；WebP quality 80。
 - 当前页文档缓存三页，主图预取前后各一页。
 - 主图只加载当前页及前后各一页原图；切页后取消窗口外请求并释放对应图片、Canvas 与 Blob 引用。
 - Worker 只在步骤执行期间加载所需资产，使用小型有界解码缓存，不让流水线队列持有全部原图。
@@ -2047,7 +2045,7 @@ ZIP、CBZ、PDF：
 - 外部 AI 的 RPM 限速由 SQLite shared limiter 在 API 与 Worker 间统一控制。
 - SQLite 使用 WAL、短事务、foreign keys 和 busy timeout。
 - 任务事件先落库再推送，前端断线不丢进度。
-- 编辑渲染派生资产只保留当前版本和受任务引用版本，旧译图与缩略图由 GC 清理。
+- 编辑渲染派生资产只保留当前译图和受任务引用的旧译图，其余旧译图由 GC 清理；编辑渲染不产生缩略图。
 
 #### 16.4.2 异常规则
 
@@ -2112,7 +2110,7 @@ ZIP、CBZ、PDF：
 - container manifest 与 web commit 的 draft_page_id 集合在首次/创建检查点后不漂移；interrupted 继续不重复已入库页面，排队期间章节新增页面后导入结果仍按运行时尾部连续追加。
 - 自动/人工 web commit 竞争只生成一个根任务；24 小时内失败项重试只提交未成功输入，临时源/draft 过期后原输入重试明确不可用而不产生空任务。
 - 自然排序、文件夹层级和 PDF/MOBI/AZW/AZW3 页序与当前行为一致；CBZ 按归档内相对路径自然排序。跨批次导入同一相对路径时后端确定性改名且两页都保留，文件夹树与 ZIP/CBZ 导出不会静默覆盖同名项。
-- 所有缩略图场景只请求 thumbnail_source/thumbnail_translated。
+- 所有缩略图场景只请求 thumbnail_source。
 - 首次进入章节不批量下载 source、clean 或 translated。
 - 浏览器内存不随章节总原图大小线性增长。
 
@@ -2120,7 +2118,7 @@ ZIP、CBZ、PDF：
 
 - 拖拽和文字覆盖层反馈即时；Bubble 修改使用 150ms 前端尾随 PATCH 合并，符合渲染资格的 PATCH 成功后 render_request 立即可执行，不存在第二层后端防抖。
 - 同页 PATCH 串行发送；在途 PATCH 期间继续修改会合并进下一次 PATCH，并使用前一次确认后的 document_revision，不因请求乱序制造自身 409。
-- 渲染期间继续修改只覆盖同页 requested_revision；旧 rendering_revision 即使完成也不产生 current translated/thumbnail，随后只渲染最新 revision。
+- 渲染期间继续修改只覆盖同页 requested_revision；旧 rendering_revision 即使完成也不产生 current translated，随后只渲染最新 revision。
 - 失焦、应用、应用并下一张、普通切页和受控路由离开会立即 flush 未确认修改；应用/应用并下一张等待目标 revision 渲染完成，普通切页不等待渲染但后端继续。浏览器被强杀时至多可能丢失尚未发出的尾随窗口，不影响已确认文档和后台任务。
 - 切页、卸载和 revision 变化时迟到响应不能覆盖新页面。
 - 文档提交成功但渲染失败时编辑内容不丢失。
@@ -2130,7 +2128,7 @@ ZIP、CBZ、PDF：
 - repair 成功必须先发布新 clean，再为相同 repair_revision 排入整页文字 render_request；失败保留旧 clean/translated，重试不丢失 mask 和参数。
 - 非二值、尺寸不等于 source、动画/多帧或无法解码的 mask 原子返回 422，不能创建 operation、推进 revision 或留下孤儿正式资产。
 - page_repair pending/running 时浏览器刷新或关闭不影响执行；solid/restore_source 经 API epoch 恢复可幂等重做，LaMA/LiteLaMA 经 Worker attempt/lease 恢复，任一旧 attempt 都不能发布 clean。
-- repair 等待期间旧 render_request 不能使用旧 clean 发布到 repair_revision；只有新 clean 成功成为 current 后才能生成该 revision 的 translated/thumbnail。
+- repair 等待期间旧 render_request 不能使用旧 clean 发布到 repair_revision；只有新 clean 成功成为 current 后才能生成该 revision 的 translated。
 - 翻译任务运行中发起单泡 OCR，不抢占当前模型调用；当前原子重步骤完成后进入即时请求优先通道，等待时间可以包含此前已领取的 operation/transient request，行为与 §7.2 一致。
 - “应用并下一页”在失败时不切页。
 - 退出编辑不再依赖保存开关，但会提交最后一个待发送 PATCH。
@@ -3688,7 +3686,7 @@ GET    /api/v2/jobs/events                          （全局 SSE）
 进入页面并行两个请求：
 
 - `GET /api/v2/books/{book_id}`（复用 §19 详情接口）：取书名与章节列表（标题 + ordinal），前端据此计算上/下一章。
-- `GET /api/v2/chapters/{chapter_id}/pages?all=1`（复用 §12.1 接口的全量元数据模式）：**一次性返回全章页面元数据**——`page_id`、`ordinal`、原图 `width/height`、`source_asset_url`、`translated_asset_url|null`、`thumbnail_source_url`、`thumbnail_translated_url|null`。缩略图字段只供共享此接口的翻译页列表按需取用；阅读器不请求缩略图。千页章节的 JSON 仍只是数百 KB 量级；一次取全使滚动条总高度立即稳定、End 键可直达真实底部。图片二进制仍只按视口窗口懒加载。
+- `GET /api/v2/chapters/{chapter_id}/pages?all=1`（复用 §12.1 接口的全量元数据模式）：**一次性返回全章页面元数据**——`page_id`、`ordinal`、原图 `width/height`、`source_asset_url`、`translated_asset_url|null`、`thumbnail_source_url`。缩略图字段只供共享此接口的翻译页列表按需取用；阅读器不请求缩略图。千页章节的 JSON 仍只是数百 KB 量级；一次取全使滚动条总高度立即稳定、End 键可直达真实底部。图片二进制仍只按视口窗口懒加载。
 
 图片经统一 `GET /api/v2/assets/{asset_id}` 访问：流式响应 + ETag/Last-Modified/Cache-Control 条件请求（§12.1 规范）。阅读器是缓存命中的主要受益场景：模式切换与重进章节命中 304 或浏览器本地缓存。
 

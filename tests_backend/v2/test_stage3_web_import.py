@@ -36,7 +36,9 @@ from src.backend_v2.storage.schema import (
     job_credential_snapshots,
     jobs,
     metadata,
+    page_assets,
     pages,
+    web_import_draft_pages,
     web_import_drafts,
 )
 from src.backend_v2.storage.seeding import seed_system_records
@@ -177,6 +179,12 @@ def test_web_extract_draft_selection_and_commit_survive_the_browser(
         after_ordinal=0,
         limit=50,
     )["items"]
+    with engine.connect() as connection:
+        draft_thumbnail_id = connection.execute(
+            select(web_import_draft_pages.c.thumbnail_asset_id).where(
+                web_import_draft_pages.c.id == candidates[1]["id"]
+            )
+        ).scalar_one()
     selection = commands.update_selection(
         draft_id=str(accepted["draftId"]),
         selected_page_ids=[str(candidates[1]["id"])],
@@ -205,11 +213,25 @@ def test_web_extract_draft_selection_and_commit_survive_the_browser(
                 .order_by(pages.c.ordinal)
             ).scalars()
         )
+        page_thumbnail_id = connection.execute(
+            select(page_assets.c.asset_id)
+            .join(pages, pages.c.id == page_assets.c.page_id)
+            .where(
+                pages.c.chapter_id == chapter["id"],
+                page_assets.c.role == "thumbnail_source",
+            )
+        ).scalar_one()
     assert imported == ["20.png"]
+    assert page_thumbnail_id == draft_thumbnail_id
     assert commands.delete_draft(
         str(accepted["draftId"]),
         idempotency_key="delete-web-draft-1",
     ) == {"deleted": True}
+    retained_thumbnail = worker.storage.get_record(str(page_thumbnail_id))
+    assert retained_thumbnail is not None
+    assert worker.storage.resolve_relative_path(
+        retained_thumbnail.relative_path
+    ).is_file()
     assert commands.delete_draft(
         str(accepted["draftId"]),
         idempotency_key="delete-web-draft-1",

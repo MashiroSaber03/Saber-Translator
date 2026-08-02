@@ -194,7 +194,6 @@ describe('useTranslationPipeline', () => {
       thumbnailSourceUrl: '/api/v2/assets/thumb-1',
       cleanUrl: '/api/v2/assets/clean-1',
       translatedUrl: '/api/v2/assets/translated-1',
-      thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
     })
 
     await useTranslation().translateAllImages()
@@ -216,7 +215,6 @@ describe('useTranslationPipeline', () => {
       )
     })
     expect(imageStore.images[0]).toMatchObject({
-      thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
       translationStatus: 'completed',
     })
     expect(imageStore.images[1]?.translationStatus).toBe('processing')
@@ -253,7 +251,6 @@ describe('useTranslationPipeline', () => {
         thumbnailSourceUrl: '/api/v2/assets/thumb-1',
         cleanUrl: '/api/v2/assets/clean-1',
         translatedUrl: '/api/v2/assets/translated-1',
-        thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
       }],
     })
     const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
@@ -374,7 +371,6 @@ describe('useTranslationPipeline', () => {
           thumbnailSourceUrl: '/api/v2/assets/thumb-1',
           cleanUrl: null,
           translatedUrl: null,
-          thumbnailTranslatedUrl: null,
         },
         {
           id: 'page-2',
@@ -392,7 +388,6 @@ describe('useTranslationPipeline', () => {
           thumbnailSourceUrl: '/api/v2/assets/thumb-2',
           cleanUrl: null,
           translatedUrl: null,
-          thumbnailTranslatedUrl: null,
         },
       ],
     })

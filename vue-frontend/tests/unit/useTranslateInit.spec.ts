@@ -103,7 +103,6 @@ function bootstrap(
         sourceRevision: 1,
         sourceUrl: '/api/v2/assets/source-1',
         thumbnailSourceUrl: '/api/v2/assets/thumb-1',
-        thumbnailTranslatedUrl: null,
         translatedUrl: null,
         width: 1200,
       }],

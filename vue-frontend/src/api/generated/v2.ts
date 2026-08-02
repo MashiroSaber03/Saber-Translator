@@ -3583,7 +3583,6 @@ export interface components {
             thumbnailSourceUrl: string;
             cleanUrl: string | null;
             translatedUrl: string | null;
-            thumbnailTranslatedUrl: string | null;
             width: number | null;
             height: number | null;
         };
@@ -3594,7 +3593,6 @@ export interface components {
             /** @enum {string} */
             renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             translatedUrl: string | null;
-            thumbnailTranslatedUrl: string | null;
         };
         PageList: {
             items: components["schemas"]["PageSummary"][];

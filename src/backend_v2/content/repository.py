@@ -1597,7 +1597,6 @@ class ContentRepository:
                     "sourceUrl": f"/api/v2/assets/{source.id}",
                     "thumbnailSourceUrl": f"/api/v2/assets/{thumbnail.id}",
                     "translatedUrl": None,
-                    "thumbnailTranslatedUrl": None,
                 },
                 "pageOrderRevision": chapter + 1,
             }
@@ -2193,9 +2192,7 @@ class ContentRepository:
                     update(page_assets)
                     .where(
                         page_assets.c.page_id == page_id,
-                        page_assets.c.role.in_(
-                            ("translated", "thumbnail_translated")
-                        ),
+                        page_assets.c.role == "translated",
                         page_assets.c.input_document_revision == base_revision,
                     )
                     .values(input_document_revision=new_revision)
@@ -2321,7 +2318,6 @@ class ContentRepository:
                 "thumbnail_source",
                 "clean",
                 "translated",
-                "thumbnail_translated",
             )
         }
         statement = select(
@@ -2365,7 +2361,6 @@ class ContentRepository:
             "thumbnailSourceUrl": url("thumbnail_source"),
             "cleanUrl": url("clean"),
             "translatedUrl": url("translated"),
-            "thumbnailTranslatedUrl": url("thumbnail_translated"),
         }
 
     def create_import_lease(self, chapter_id: str) -> ImportLease:

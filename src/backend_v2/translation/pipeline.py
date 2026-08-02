@@ -26,10 +26,7 @@ from src.backend_v2.content.translation_constraints import (
     with_glossary_delta,
 )
 from src.backend_v2.jobs.repository import AttemptFence, JobConflict, JobQueueRepository
-from src.backend_v2.rendering.service import (
-    publish_png_asset,
-    publish_thumbnail_asset,
-)
+from src.backend_v2.rendering.service import publish_png_asset
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
@@ -2096,7 +2093,6 @@ class TranslationPipelineService:
             clean.close()
         try:
             translated = publish_png_asset(self.storage, rendered, mode="RGB")
-            thumbnail = publish_thumbnail_asset(self.storage, rendered)
         finally:
             rendered.close()
         after = self._atomic_hook(
@@ -2107,12 +2103,10 @@ class TranslationPipelineService:
             data={
                 "pageId": page_id,
                 "translatedAssetId": translated.id,
-                "thumbnailAssetId": thumbnail.id,
                 "documentRevision": snapshot.document_revision,
             },
         )
         translated = self._asset_record(str(after["translatedAssetId"]))
-        thumbnail = self._asset_record(str(after["thumbnailAssetId"]))
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
@@ -2133,24 +2127,15 @@ class TranslationPipelineService:
                     )
                 )
             connection.execute(
-                insert(job_step_asset_outputs),
-                [
-                    {
-                        "job_step_id": str(step["stepId"]),
-                        "role": "translated",
-                        "asset_id": translated.id,
-                    },
-                    {
-                        "job_step_id": str(step["stepId"]),
-                        "role": "thumbnail_translated",
-                        "asset_id": thumbnail.id,
-                    },
-                ],
+                insert(job_step_asset_outputs).values(
+                    job_step_id=str(step["stepId"]),
+                    role="translated",
+                    asset_id=translated.id,
+                )
             )
 
         checkpoint = {
             "translatedAssetId": translated.id,
-            "thumbnailAssetId": thumbnail.id,
             "documentRevision": snapshot.document_revision,
         }
         self.jobs.complete_step(
@@ -2201,9 +2186,7 @@ class TranslationPipelineService:
                         job_items.c.job_id == fence.job_id,
                         job_steps.c.kind == "render",
                         job_steps.c.status == "completed",
-                        job_step_asset_outputs.c.role.in_(
-                            ("translated", "thumbnail_translated")
-                        ),
+                        job_step_asset_outputs.c.role == "translated",
                     )
                 ).mappings()
             )
@@ -2220,9 +2203,9 @@ class TranslationPipelineService:
             for row in rows
         }
         translated = records.get("translated")
-        thumbnail = records.get("thumbnail_translated")
-        if translated is None or thumbnail is None:
+        if translated is None:
             raise JobConflict("save step has no complete render asset checkpoint")
+
         def publish(connection: Connection) -> None:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
@@ -2235,16 +2218,6 @@ class TranslationPipelineService:
                 source_revision=snapshot.source_revision,
                 document_revision=snapshot.document_revision,
                 step_id=str(step["stepId"]),
-            )
-            self._publish_pointer(
-                connection,
-                page_id=page_id,
-                role="thumbnail_translated",
-                asset=thumbnail,
-                source_revision=snapshot.source_revision,
-                document_revision=snapshot.document_revision,
-                step_id=str(step["stepId"]),
-                parent_asset_id=translated.id,
             )
             connection.execute(
                 update(pages)
@@ -2260,7 +2233,6 @@ class TranslationPipelineService:
 
         checkpoint = {
             "translatedAssetId": translated.id,
-            "thumbnailAssetId": thumbnail.id,
             "documentRevision": snapshot.document_revision,
         }
         self.jobs.complete_step(
@@ -2625,7 +2597,6 @@ class TranslationPipelineService:
         source_revision: int,
         document_revision: int,
         step_id: str,
-        parent_asset_id: str | None = None,
     ) -> None:
         existing = connection.execute(
             select(page_assets.c.asset_id).where(
@@ -2637,7 +2608,7 @@ class TranslationPipelineService:
             "asset_id": asset.id,
             "input_source_revision": source_revision,
             "input_document_revision": document_revision,
-            "parent_asset_id": parent_asset_id,
+            "parent_asset_id": None,
             "producer_job_step_id": step_id,
             "producer_operation_id": None,
             "producer_render_request_id": None,

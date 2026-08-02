@@ -807,9 +807,7 @@ class StyleApplyWorkerService:
                         update(page_assets)
                         .where(
                             page_assets.c.page_id == page_id,
-                            page_assets.c.role.in_(
-                                ("translated", "thumbnail_translated")
-                            ),
+                            page_assets.c.role == "translated",
                             page_assets.c.input_document_revision
                             == base_revision,
                         )

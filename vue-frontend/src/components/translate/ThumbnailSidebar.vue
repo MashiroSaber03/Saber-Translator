@@ -111,7 +111,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   const statusType = getStatusType(image)
   return {
     id: index,
-    src: image.thumbnailSourceUrl ?? '',
+    src: image.thumbnailSourceUrl,
     alt: image.fileName,
     label: String(index + 1),
     selected: index === currentIndex.value,

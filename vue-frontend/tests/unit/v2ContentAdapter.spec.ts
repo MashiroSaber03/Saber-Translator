@@ -18,7 +18,6 @@ function pageSummary(overrides: Partial<V2PageSummary> = {}): V2PageSummary {
     thumbnailSourceUrl: '/thumbnail/source',
     cleanUrl: null,
     translatedUrl: null,
-    thumbnailTranslatedUrl: null,
     width: null,
     height: null,
     ...overrides,

@@ -357,7 +357,6 @@ function createDemoV2Pages(pageCount: number) {
   thumbnailSourceUrl: `/api/v2/assets/demo-source-thumb-${ordinal}`,
   cleanUrl: `/api/v2/assets/demo-clean-${ordinal}`,
   translatedUrl: `/api/v2/assets/demo-rendered-${ordinal}`,
-  thumbnailTranslatedUrl: `/api/v2/assets/demo-rendered-thumb-${ordinal}`,
   width: 900,
   height: 1280,
     }

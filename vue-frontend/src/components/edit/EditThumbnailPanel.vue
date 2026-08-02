@@ -24,16 +24,12 @@
           @click="emit('switch-to-image', item.index)"
         >
           <img
-            v-if="thumbnailUrl(item.image)"
             class="edit-thumbnails-panel__image"
-            :src="thumbnailUrl(item.image)"
+            :src="item.image.thumbnailSourceUrl"
             :alt="`图片 ${item.index + 1}`"
             loading="lazy"
             decoding="async"
           >
-          <span v-else class="edit-thumbnails-panel__fallback" aria-hidden="true">
-            {{ item.index + 1 }}
-          </span>
           <span class="edit-thumbnails-panel__label">{{ item.index + 1 }}</span>
         </UiButton>
       </div>
@@ -73,10 +69,6 @@ const visibleItems = computed(() => {
     .slice(start, end)
     .map((image, offset) => ({ image, index: start + offset }))
 })
-
-function thumbnailUrl(image: ImageData): string {
-  return image.thumbnailTranslatedUrl || image.thumbnailSourceUrl || ''
-}
 
 function updateWindow(): void {
   const viewport = viewportRef.value
@@ -147,21 +139,11 @@ watch(
   box-shadow: 0 0 0 2px var(--color-focus-brand-subtle);
 }
 
-.edit-thumbnails-panel__image,
-.edit-thumbnails-panel__fallback {
+.edit-thumbnails-panel__image {
   width: 100%;
   height: 100%;
-}
-
-.edit-thumbnails-panel__image {
   display: block;
   object-fit: cover;
-}
-
-.edit-thumbnails-panel__fallback {
-  display: grid;
-  place-items: center;
-  color: var(--color-text-muted);
 }
 
 .edit-thumbnails-panel__label {

@@ -18,7 +18,6 @@ const images: ImageData[] = [
     sourceAssetUrl: '/api/v2/assets/page2',
     translatedAssetUrl: '/api/v2/assets/page2-translated',
     thumbnailSourceUrl: '/api/v2/assets/page-2-source-thumb',
-    thumbnailTranslatedUrl: '/api/v2/assets/page-2-translated-thumb',
   },
 ]
 
@@ -43,7 +42,7 @@ describe('EditThumbnailPanel', () => {
     const renderedImages = wrapper.findAll('img')
     expect(renderedImages.map(image => image.attributes('src'))).toEqual([
       '/api/v2/assets/page-1-thumb',
-      '/api/v2/assets/page-2-translated-thumb',
+      '/api/v2/assets/page-2-source-thumb',
     ])
     for (const image of renderedImages) {
       expect(image.attributes('loading')).toBe('lazy')
