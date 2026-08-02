@@ -78,7 +78,12 @@ def _recognize_manga_textlines(
     if not textlines:
         return []
 
-    img_np = np.array(image.convert('RGB'))
+    converted = image.convert('RGB')
+    try:
+        img_np = np.array(converted)
+    finally:
+        if converted is not image:
+            converted.close()
     results: List[OcrTextlineResult] = []
 
     for line_info in textlines:
@@ -101,7 +106,8 @@ def _recognize_manga_textlines(
 
         try:
             region = _get_mangaocr_region(img_np, line_info)
-            text = recognize_japanese_text(Image.fromarray(region))
+            with Image.fromarray(region) as region_image:
+                text = recognize_japanese_text(region_image)
         except Exception:
             text = ""
 
@@ -219,25 +225,25 @@ def recognize_manga_48_hybrid(
         if not textlines:
             # 无文本行时退化为整块 48px or Manga 识别，但仍保持当前组合语义。
             x1, y1, x2, y2 = bubble_coords_item
-            bubble_image = image.crop((x1, y1, x2, y2))
-            if primary_engine == constants.OCR_ENGINE_48PX:
-                bubble_results = ocr48_handler.recognize_text_with_details(
-                    bubble_image,
-                    [(0, 0, bubble_image.width, bubble_image.height)],
-                    None,
-                    primary_engine=primary_engine,
-                    fallback_used=False,
-                )
-                hybrid_results.append(bubble_results[0] if bubble_results else create_ocr_result("", primary_engine, confidence=0.0, confidence_supported=True, primary_engine=primary_engine))
-            else:
-                text = recognize_japanese_text(bubble_image)
-                hybrid_results.append(
-                    create_ocr_result(
-                        text,
-                        primary_engine,
+            with image.crop((x1, y1, x2, y2)) as bubble_image:
+                if primary_engine == constants.OCR_ENGINE_48PX:
+                    bubble_results = ocr48_handler.recognize_text_with_details(
+                        bubble_image,
+                        [(0, 0, bubble_image.width, bubble_image.height)],
+                        None,
                         primary_engine=primary_engine,
+                        fallback_used=False,
                     )
-                )
+                    hybrid_results.append(bubble_results[0] if bubble_results else create_ocr_result("", primary_engine, confidence=0.0, confidence_supported=True, primary_engine=primary_engine))
+                else:
+                    text = recognize_japanese_text(bubble_image)
+                    hybrid_results.append(
+                        create_ocr_result(
+                            text,
+                            primary_engine,
+                            primary_engine=primary_engine,
+                        )
+                    )
             continue
 
         span = bubble_line_spans.get(bubble_index)

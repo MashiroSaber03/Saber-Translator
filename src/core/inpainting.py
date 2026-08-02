@@ -126,12 +126,15 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
         logger.debug("无气泡坐标，跳过修复")
         return image_pil.copy(), None # 返回原图副本和无干净背景
 
+    if method not in {"solid", "lama"}:
+        raise ValueError(f"不支持的修复方法: {method}")
+
+    converted_image = image_pil.convert('RGB')
     try:
-        img_np = np.array(image_pil.convert('RGB'))
-        image_size = img_np.shape
-    except Exception as e:
-         logger.error(f"无法将输入图像转换为 NumPy 数组: {e}", exc_info=True)
-         return image_pil.copy(), None
+        image_size = np.array(converted_image).shape
+    finally:
+        if converted_image is not image_pil:
+            converted_image.close()
 
     # 1. 创建掩码 (黑色为修复区)
     if precise_mask is not None:
@@ -229,95 +232,85 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
         logger.debug(f"最终掩膜修复区域: {final_repair_count}px ({final_repair_count * 100 / bubble_mask_np.size:.2f}%)")
     
     bubble_mask_pil = Image.fromarray(bubble_mask_np)
-
     result_img = image_pil.copy()
     clean_background = None
     inpainting_successful = False
+    try:
+        if method == 'lama' and is_lama_available():
+            logger.debug(f"使用 LAMA 修复 (模型: {lama_model})")
+            try:
+                repaired_img = clean_image_with_lama(
+                    image_pil,
+                    bubble_mask_pil,
+                    lama_model=lama_model,
+                    disable_resize=disable_resize,
+                )
+                if repaired_img is not None:
+                    result_img.close()
+                    result_img = repaired_img
+                    clean_background = result_img.copy()
+                    setattr(result_img, '_lama_inpainted', True)
+                    inpainting_successful = True
+                    logger.debug("LAMA 修复成功")
+                else:
+                    logger.error("LAMA 修复执行失败，未返回结果。将回退。")
+            except Exception:
+                # 架构方案明确规定 LaMA/LiteLaMA 失败后，在同一 operation
+                # 内使用冻结的 fill_color 回退到纯色填充。
+                logger.exception("LAMA 修复过程中出错，回退到纯色填充")
 
-    # 2. 根据方法进行处理
-    if method == 'lama' and is_lama_available():
-        logger.debug(f"使用 LAMA 修复 (模型: {lama_model})")
-        try:
-            # 直接传递掩码，不需要在这里反转，因为clean_image_with_lama已经处理掩码反转
-            repaired_img = clean_image_with_lama(image_pil, bubble_mask_pil, lama_model=lama_model, disable_resize=disable_resize)
-            if repaired_img:
-                result_img = repaired_img
-                clean_background = result_img.copy()
-                setattr(result_img, '_lama_inpainted', True)
-                inpainting_successful = True
-                logger.debug("LAMA 修复成功")
-            else:
-                logger.error("LAMA 修复执行失败，未返回结果。将回退。")
-        except Exception as e:
-             logger.error(f"LAMA 修复过程中出错: {e}", exc_info=True)
-             logger.debug("LAMA 出错，回退到纯色填充")
-
-    # 修复 Bug #3: 只在以下情况执行纯色填充：
-    # 1. 用户明确选择了 solid 方法
-    # 2. 用户选择了 lama 方法但 LAMA 修复失败（回退到纯色填充）
-    should_do_solid_fill = (method == 'solid') or (method == 'lama' and not inpainting_successful)
-    
-    if should_do_solid_fill:
-        use_precise = precise_mask is not None
-        logger.debug(f"纯色填充: {fill_color}")
-        # 确保在 result_img 上绘制（可能是原图副本，也可能是修复失败后的图）
-        try:
+        should_do_solid_fill = method == 'solid' or not inpainting_successful
+        if should_do_solid_fill:
+            use_precise = precise_mask is not None
+            logger.debug(f"纯色填充: {fill_color}")
             if use_precise:
-                # 使用精确掩膜进行纯色填充
-                # bubble_mask_np 中黑色(0)表示需要填充的区域
-                result_np = np.array(result_img.convert('RGB'))
-                
-                # 解析填充颜色
+                converted_result = result_img.convert('RGB')
+                try:
+                    result_np = np.array(converted_result)
+                finally:
+                    if converted_result is not result_img:
+                        converted_result.close()
+
                 if isinstance(fill_color, str):
                     if fill_color.startswith('#'):
-                        # 十六进制颜色
                         r = int(fill_color[1:3], 16)
                         g = int(fill_color[3:5], 16)
                         b = int(fill_color[5:7], 16)
                     else:
-                        # 默认白色
                         r, g, b = 255, 255, 255
                 else:
                     r, g, b = fill_color if len(fill_color) >= 3 else (255, 255, 255)
-                
-                # 在掩膜为黑色（需要修复）的地方填充颜色
-                fill_mask = bubble_mask_np < 128  # 黑色区域为 True
+
+                fill_mask = bubble_mask_np < 128
                 result_np[fill_mask] = [r, g, b]
-                
-                result_img = Image.fromarray(result_np)
+                replacement = Image.fromarray(result_np)
+                result_img.close()
+                result_img = replacement
                 logger.debug("精确掩膜填充完成")
             else:
-                # 使用坐标/多边形填充（原有逻辑）
                 draw = ImageDraw.Draw(result_img)
                 for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-                    if x1 < x2 and y1 < y2: # 检查坐标有效性
-                        # 如果有多边形数据，使用多边形填充
-                        if bubble_polygons and i < len(bubble_polygons):
-                            polygon = bubble_polygons[i]
-                            if polygon and len(polygon) >= 3:
-                                # 将多边形坐标转换为 PIL 需要的格式 [(x1, y1), (x2, y2), ...]
-                                pts = [(int(p[0]), int(p[1])) for p in polygon]
-                                draw.polygon(pts, fill=fill_color)
-                            else:
-                                # 多边形无效，回退到矩形
-                                draw.rectangle(((x1, y1), (x2, y2)), fill=fill_color)
-                        else:
-                            # 没有多边形数据，使用矩形
-                            draw.rectangle(((x1, y1), (x2, y2)), fill=fill_color)
-                    else:
-                        logger.warning(f"跳过无效坐标进行纯色填充: ({x1},{y1},{x2},{y2})")
-            # 对于纯色填充，也生成一个"干净"背景的副本
+                    if x1 >= x2 or y1 >= y2:
+                        logger.warning(
+                            f"跳过无效坐标进行纯色填充: ({x1},{y1},{x2},{y2})"
+                        )
+                        continue
+                    if bubble_polygons and i < len(bubble_polygons):
+                        polygon = bubble_polygons[i]
+                        if polygon and len(polygon) >= 3:
+                            pts = [(int(p[0]), int(p[1])) for p in polygon]
+                            draw.polygon(pts, fill=fill_color)
+                            continue
+                    draw.rectangle(((x1, y1), (x2, y2)), fill=fill_color)
+
             clean_background = result_img.copy()
             logger.debug("纯色填充完成")
-        except Exception as draw_e:
-             logger.error(f"纯色填充时出错: {draw_e}", exc_info=True)
-             # 如果绘制失败，至少返回原始图像副本
-             result_img = image_pil.copy()
-             clean_background = None
 
-
-    if clean_background:
-        setattr(result_img, '_clean_background', clean_background)
-        setattr(result_img, '_clean_image', clean_background)
-
-    return result_img, clean_background
+        return result_img, clean_background
+    except Exception:
+        result_img.close()
+        if clean_background is not None:
+            clean_background.close()
+        raise
+    finally:
+        bubble_mask_pil.close()

@@ -112,6 +112,50 @@ class ColorExtractorDeviceSelectionTests(unittest.TestCase):
             ],
         )
 
+    def test_extract_bubble_colors_raises_when_model_initialization_fails(self):
+        fake_extractor = FakeColorExtractor()
+        fake_extractor.initialize = mock.Mock(return_value=False)
+        image = Image.new("RGB", (8, 8), color="white")
+
+        with mock.patch.object(
+            color_extractor,
+            "get_color_extractor",
+            return_value=fake_extractor,
+        ), self.assertRaisesRegex(RuntimeError, "48px OCR 初始化失败"):
+            color_extractor.extract_bubble_colors(
+                image,
+                [(0, 0, 4, 4)],
+                device="cpu",
+            )
+
+    def test_color_extractor_propagates_inference_failure(self):
+        extractor = color_extractor.ColorExtractor()
+        handler = mock.Mock()
+        handler.initialized = True
+        handler.model = object()
+        handler.extract_colors_for_bubbles.side_effect = RuntimeError("inference failed")
+        extractor._ocr_handler = handler
+        extractor._initialized = True
+        extractor._device = "cpu"
+        image = Image.new("RGB", (8, 8), color="white")
+
+        with self.assertRaisesRegex(RuntimeError, "inference failed"):
+            extractor.extract_colors(image, [(0, 0, 4, 4)])
+
+    def test_color_extractor_rejects_incomplete_results(self):
+        extractor = color_extractor.ColorExtractor()
+        handler = mock.Mock()
+        handler.initialized = True
+        handler.model = object()
+        handler.extract_colors_for_bubbles.return_value = []
+        extractor._ocr_handler = handler
+        extractor._initialized = True
+        extractor._device = "cpu"
+        image = Image.new("RGB", (8, 8), color="white")
+
+        with self.assertRaisesRegex(RuntimeError, "颜色提取结果数量不匹配"):
+            extractor.extract_colors(image, [(0, 0, 4, 4)])
+
 
 if __name__ == "__main__":
     unittest.main()

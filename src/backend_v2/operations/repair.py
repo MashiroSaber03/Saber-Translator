@@ -256,6 +256,7 @@ class PageRepairService:
             self._open_asset(str(before["inputAssetId"]), "RGB")
         )
         mask = self._open_asset(str(before["textMaskAssetId"]), "L")
+        warning: dict[str, str] | None = None
         try:
             if method == "solid":
                 repaired = parent.copy()
@@ -264,8 +265,10 @@ class PageRepairService:
                     repaired.size,
                     str(before.get("fillColor") or "#FFFFFF"),
                 )
-                repaired.paste(fill, mask=mask)
-                fill.close()
+                try:
+                    repaired.paste(fill, mask=mask)
+                finally:
+                    fill.close()
             elif method == "restore_source":
                 repaired = parent.copy()
                 repaired.paste(source, mask=mask)
@@ -282,7 +285,6 @@ class PageRepairService:
                     lama_model=method,
                     disable_resize=bool(request["disableResize"]),
                 )
-                warning = None
                 if not bool(getattr(repaired, "_lama_inpainted", False)):
                     warning = {
                         "code": "lama_fallback_to_solid",
@@ -292,8 +294,10 @@ class PageRepairService:
                     clean_background.close()
             else:
                 raise RuntimeError(f"unsupported repair method: {method}")
-            record = self._publish_png(repaired)
-            repaired.close()
+            try:
+                record = self._publish_png(repaired)
+            finally:
+                repaired.close()
         finally:
             source.close()
             parent.close()
@@ -377,9 +381,9 @@ class PageRepairService:
 
     @staticmethod
     def _mask_payload(mask: Image.Image) -> bytes:
-        output = BytesIO()
-        mask.save(output, format="PNG")
-        return output.getvalue()
+        with BytesIO() as output:
+            mask.save(output, format="PNG")
+            return output.getvalue()
 
     def _publish_mask_payload(
         self,
@@ -397,15 +401,15 @@ class PageRepairService:
         )
 
     def _publish_png(self, image: Image.Image) -> AssetRecord:
-        output = BytesIO()
-        image.save(output, format="PNG")
-        return self.storage.publish_bytes(
-            output.getvalue(),
-            extension="png",
-            mime_type="image/png",
-            width=image.width,
-            height=image.height,
-        )
+        with BytesIO() as output:
+            image.save(output, format="PNG")
+            return self.storage.publish_bytes(
+                output.getvalue(),
+                extension="png",
+                mime_type="image/png",
+                width=image.width,
+                height=image.height,
+            )
 
     def _asset_record(self, asset_id: str) -> AssetRecord:
         record = self.storage.get_record(asset_id)

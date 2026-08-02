@@ -1,8 +1,12 @@
 import { computed, ref, watch } from 'vue'
 
-import { createChapterTranslationJob } from '@/api/v2/translation'
+import {
+  createChapterRemoveTextJob,
+  createChapterTranslationJob,
+} from '@/api/v2/translation'
 import {
   getPageDocument,
+  getPageSummary,
   listChapterPages,
   type V2TranslationBootstrap,
 } from '@/api/v2/content'
@@ -253,40 +257,15 @@ export function restoreTranslationFromBootstrap(
   })
 }
 
-async function refreshCurrentChapter(
+async function refreshOpenPageDocument(
+  pageId: string,
   imageStore: ReturnType<typeof useImageStore>,
   bubbleStore: ReturnType<typeof useBubbleStore>,
   settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
-  const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
-  if (!chapterId) return
-  const currentPageId = imageStore.currentImage?.id
-  if (currentPageId) await flushPageDocument(currentPageId)
-  const result = await listChapterPages(chapterId, { all: true })
-  const summaries = new Map(result.items.map(page => [page.id, page]))
-  for (const [index, image] of imageStore.images.entries()) {
-    const summary = summaries.get(image.id)
-    if (!summary) continue
-    const mapped = pageSummaryToImage(summary)
-    imageStore.updateImageByIndex(index, {
-      chapterId: mapped.chapterId,
-      cleanAssetUrl: mapped.cleanAssetUrl,
-      documentRevision: mapped.documentRevision,
-      height: mapped.height,
-      renderedRevision: mapped.renderedRevision,
-      sourceAssetUrl: mapped.sourceAssetUrl,
-      sourceRevision: mapped.sourceRevision,
-      thumbnailSourceUrl: mapped.thumbnailSourceUrl,
-      thumbnailTranslatedUrl: mapped.thumbnailTranslatedUrl,
-      translatedAssetUrl: mapped.translatedAssetUrl,
-      translationFailed: mapped.translationFailed,
-      translationStatus: mapped.translationStatus,
-      width: mapped.width,
-    })
-  }
-  if (!currentPageId || imageStore.currentImage?.id !== currentPageId) return
-  const document = await getPageDocument(currentPageId)
-  if (imageStore.currentImage?.id !== currentPageId) return
+  if (imageStore.currentImage?.id !== pageId) return
+  const document = await getPageDocument(pageId)
+  if (imageStore.currentImage?.id !== pageId) return
   const bubbles = registerPageDocument(document)
   const pageTextStyle = parseCompleteTextStyleSettings({
     ...document.pageStyleDefaults,
@@ -303,6 +282,61 @@ async function refreshCurrentChapter(
   settingsStore.updateTextStyle(pageTextStyle)
   bubbleStore.setBubbles(bubbles, true)
   bubbleStore.saveAsInitial()
+}
+
+async function refreshCompletedPage(
+  pageId: string,
+  imageStore: ReturnType<typeof useImageStore>,
+  bubbleStore: ReturnType<typeof useBubbleStore>,
+  settingsStore: ReturnType<typeof useSettingsStore>,
+): Promise<void> {
+  if (!imageStore.images.some(image => image.id === pageId)) return
+  const summary = await getPageSummary(pageId)
+  const pageIndex = imageStore.images.findIndex(image => image.id === pageId)
+  const existing = imageStore.images[pageIndex]
+  if (pageIndex < 0 || !existing) return
+  const mapped = pageSummaryToImage(summary)
+  imageStore.updateImageByIndex(pageIndex, {
+    ...mapped,
+    bubbleStates: existing.bubbleStates,
+    errorMessage: mapped.translationFailed ? existing.errorMessage : undefined,
+  })
+  await refreshOpenPageDocument(pageId, imageStore, bubbleStore, settingsStore)
+}
+
+async function refreshCurrentChapter(
+  imageStore: ReturnType<typeof useImageStore>,
+  bubbleStore: ReturnType<typeof useBubbleStore>,
+  settingsStore: ReturnType<typeof useSettingsStore>,
+): Promise<void> {
+  const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
+  if (!chapterId) return
+  const currentPageId = imageStore.currentImage?.id
+  if (currentPageId) await flushPageDocument(currentPageId)
+  const result = await listChapterPages(chapterId, { all: true })
+  const existingImages = new Map(imageStore.images.map(image => [image.id, image]))
+  imageStore.setImages(result.items.map((summary) => {
+    const mapped = pageSummaryToImage(summary)
+    const existing = existingImages.get(mapped.id)
+    if (!existing) return mapped
+    return {
+      ...existing,
+      ...mapped,
+      bubbleStates: existing.bubbleStates,
+      errorMessage: mapped.translationFailed ? existing.errorMessage : undefined,
+    }
+  }))
+  if (currentPageId) {
+    const currentIndex = imageStore.images.findIndex(image => image.id === currentPageId)
+    if (currentIndex >= 0) imageStore.setCurrentImageIndex(currentIndex)
+  }
+  if (!currentPageId) return
+  await refreshOpenPageDocument(
+    currentPageId,
+    imageStore,
+    bubbleStore,
+    settingsStore,
+  )
 }
 
 export interface TranslationPipelineOptions {
@@ -333,6 +367,21 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
           eventProgress as Record<string, unknown>,
           event.type === 'page_completed' ? '后端正在处理后续页面' : '后端正在处理',
         )
+      }
+      if (event.type === 'page_completed') {
+        const pageId = event.payload.pageId
+        if (typeof pageId === 'string') {
+          void refreshCompletedPage(
+            pageId,
+            imageStore,
+            bubbleStore,
+            settingsStore,
+          ).catch((error) => {
+            toast.error(
+              `刷新已完成页面失败：${error instanceof Error ? error.message : '未知错误'}`,
+            )
+          })
+        }
       }
       if (!['job_finished', 'job_failed', 'job_cancelled'].includes(event.type)) return
 
@@ -433,13 +482,18 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     const pageIds = pages.map(page => page!.id)
     try {
       await prepareJobCreation(pageIds)
-      const batch = await createChapterTranslationJob(chapterId, pageIds, {
-        executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
-        mode: mode === 'removeText' ? 'remove_text' : mode,
-        ...(pageOptions.reuseExistingBubbles === undefined
-          ? {}
-          : { reuseExistingBubbles: pageOptions.reuseExistingBubbles }),
-      })
+      const executionMode = settingsStore.settings.parallel.enabled
+        ? 'parallel'
+        : 'sequential'
+      const batch = mode === 'removeText'
+        ? await createChapterRemoveTextJob(chapterId, pageIds, executionMode)
+        : await createChapterTranslationJob(chapterId, pageIds, {
+            executionMode,
+            mode,
+            ...(pageOptions.reuseExistingBubbles === undefined
+              ? {}
+              : { reuseExistingBubbles: pageOptions.reuseExistingBubbles }),
+          })
       const jobId = batch.jobIds[0]
       if (!jobId) throw new Error('后端没有返回任务')
       activeJobId.value = jobId

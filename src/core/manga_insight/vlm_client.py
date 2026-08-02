@@ -233,6 +233,9 @@ class VLMClient:
                 if isinstance(page_number, bool) or not isinstance(page_number, int):
                     raise ValueError(f"pages[{index}].page_number 必须是整数")
                 page_numbers.append(page_number)
+            if expected_page_count == 1:
+                pages[0] = {**pages[0], "page_number": start_page}
+                return {"pages": pages}
             if page_numbers != expected_numbers:
                 raise ValueError(
                     f"page_number 必须依次为 {expected_numbers}，实际为 {page_numbers}"

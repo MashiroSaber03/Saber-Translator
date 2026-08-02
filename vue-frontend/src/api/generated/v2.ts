@@ -1215,7 +1215,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/job-batches/translation": {
+    "/translation-batches": {
         parameters: {
             query?: never;
             header?: never;
@@ -1225,6 +1225,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["createTranslationJobBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chapters/{chapter_id}/remove-text-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createChapterRemoveTextJob"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1379,7 +1395,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pages/{page_id}/replace-source": {
+    "/pages/{page_id}/source": {
         parameters: {
             query?: never;
             header?: never;
@@ -1387,8 +1403,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
-        post: operations["replacePageSource"];
+        put: operations["replacePageSource"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1441,6 +1457,57 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["updatePageDocument"];
+        trace?: never;
+    };
+    "/pages/{page_id}/bubbles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPageBubble"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{page_id}/bubbles/{bubble_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+                bubble_id: components["parameters"]["BubbleId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deletePageBubble"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePageBubble"];
+        trace?: never;
+    };
+    "/pages/{page_id}/render-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPageRenderStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/assets/{asset_id}": {
@@ -1639,7 +1706,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/web-import/drafts/{draft_id}/pages/{page_id}/media": {
+    "/web-import/drafts/{draft_id}/media/{draft_page_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2802,6 +2869,11 @@ export interface components {
             config: components["schemas"]["TranslationJobConfig"];
             pageIds?: components["schemas"]["Uuid"][];
         };
+        ChapterRemoveTextJobCommand: {
+            /** @enum {string} */
+            executionMode?: "sequential" | "parallel";
+            pageIds?: components["schemas"]["Uuid"][];
+        };
         TranslationJobBatchCommand: {
             chapterIds: components["schemas"]["Uuid"][];
             config: components["schemas"]["TranslationJobConfig"];
@@ -2954,6 +3026,12 @@ export interface components {
         PageDocumentMutationResponse: {
             document: components["schemas"]["PageDocument"];
             mutationResults: components["schemas"]["BubbleMutationResult"][];
+        };
+        SingleBubbleMutationCommand: {
+            baseRevision: number;
+            fields: {
+                [key: string]: unknown;
+            };
         };
         BubbleRepairCommand: {
             /** @constant */
@@ -3509,6 +3587,15 @@ export interface components {
             width: number | null;
             height: number | null;
         };
+        PageRenderStatus: {
+            pageId: components["schemas"]["Uuid"];
+            documentRevision: number;
+            renderedRevision: number | null;
+            /** @enum {string} */
+            renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
+            translatedUrl: string | null;
+            thumbnailTranslatedUrl: string | null;
+        };
         PageList: {
             items: components["schemas"]["PageSummary"][];
             nextCursor: number | null;
@@ -3576,6 +3663,13 @@ export interface components {
             /** Format: binary */
             file: string;
             baseSourceRevision: number;
+        };
+        ReplacePageSourceResult: {
+            pageId: components["schemas"]["Uuid"];
+            sourceRevision: number;
+            documentRevision: number;
+            sourceUrl: string;
+            thumbnailSourceUrl: string;
         };
         QuickWorkspaceContext: {
             bookId: components["schemas"]["Uuid"];
@@ -3718,9 +3812,7 @@ export interface components {
             bookId: components["schemas"]["Uuid"] | null;
             kind: components["schemas"]["JobKind"];
             status: components["schemas"]["JobStatus"];
-            progress: {
-                [key: string]: unknown;
-            };
+            progress: components["schemas"]["JobProgress"];
         };
         InsightBootstrap: {
             books: components["schemas"]["InsightBookSummary"][];
@@ -4214,6 +4306,7 @@ export interface components {
     };
     parameters: {
         PageId: components["schemas"]["Uuid"];
+        BubbleId: components["schemas"]["Uuid"];
         OperationId: components["schemas"]["Uuid"];
         JobId: components["schemas"]["Uuid"];
         BatchId: components["schemas"]["Uuid"];
@@ -4225,6 +4318,7 @@ export interface components {
         LeaseId: components["schemas"]["Uuid"];
         AssetId: components["schemas"]["Uuid"];
         DraftId: components["schemas"]["Uuid"];
+        DraftPageId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
         NoteId: components["schemas"]["Uuid"];
         ProjectId: components["schemas"]["Uuid"];
@@ -6730,6 +6824,38 @@ export interface operations {
             422: components["responses"]["ValidationError"];
         };
     };
+    createChapterRemoveTextJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                chapter_id: components["parameters"]["ChapterId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterRemoveTextJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Remove-text job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
     createChapterDetectJob: {
         parameters: {
             query?: never;
@@ -7109,7 +7235,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageImportResult"];
+                    "application/json": components["schemas"]["ReplacePageSourceResult"];
                 };
             };
             404: components["responses"]["NotFound"];
@@ -7229,6 +7355,130 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             423: components["responses"]["Locked"];
+        };
+    };
+    createPageBubble: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleBubbleMutationCommand"];
+            };
+        };
+        responses: {
+            /** @description Bubble created and the aggregate page document returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    deletePageBubble: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+                bubble_id: components["parameters"]["BubbleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Bubble deleted and the aggregate page document returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    updatePageBubble: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+                bubble_id: components["parameters"]["BubbleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleBubbleMutationCommand"];
+            };
+        };
+        responses: {
+            /** @description Bubble updated and the aggregate page document returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    getPageRenderStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current page render revision and immutable translated assets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageRenderStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     getImmutableAsset: {
@@ -7655,7 +7905,7 @@ export interface operations {
             header?: never;
             path: {
                 draft_id: components["parameters"]["DraftId"];
-                page_id: components["parameters"]["PageId"];
+                draft_page_id: components["parameters"]["DraftPageId"];
             };
             cookie?: never;
         };

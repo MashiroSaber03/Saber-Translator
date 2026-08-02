@@ -376,8 +376,6 @@ async function removeTag(tagName: string) {
 
     if (success) {
       showToast('标签已移除', 'success')
-      await bookshelfStore.loadBooks()
-      await bookshelfStore.loadTags()
     } else {
       showToast('移除标签失败', 'error')
     }
@@ -401,7 +399,6 @@ async function quickAddTagToBook(tagName: string) {
   try {
     if (!allTags.value.some(t => t.name === tagName)) {
       await createTag(tagName)
-      await bookshelfStore.loadTags()
     }
 
     const currentTags = currentBook.value.tags || []
@@ -413,8 +410,6 @@ async function quickAddTagToBook(tagName: string) {
 
     if (success) {
       showToast('标签已添加', 'success')
-      await bookshelfStore.loadBooks()
-      await bookshelfStore.loadTags()
     } else {
       showToast('添加标签失败', 'error')
     }

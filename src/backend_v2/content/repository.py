@@ -1348,7 +1348,7 @@ class ContentRepository:
         idempotency_scope: str,
         idempotency_key: str,
         request_hash: str,
-    ) -> dict[str, object] | tuple[dict[str, object], bool]:
+    ) -> tuple[dict[str, object], bool]:
         now = _utcnow()
         with immediate_transaction(self.engine) as connection:
             replay = connection.execute(

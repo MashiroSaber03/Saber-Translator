@@ -197,7 +197,9 @@ async function handlePromptsFileImport(files: File[]): Promise<void> {
           savedPromptsLibrary.value.push(promptItem)
         }
       }
-      await insightApi.importPromptsLibrary(savedPromptsLibrary.value)
+      savedPromptsLibrary.value = await insightApi.importPromptsLibrary(
+        savedPromptsLibrary.value
+      )
     }
 
     emit('showMessage', '提示词导入成功', 'success')
@@ -249,6 +251,7 @@ watch(() => props.syncRequestId, () => {
 async function initialize(): Promise<void> {
   await loadDefaultPrompts()
   await loadPromptsLibrary()
+  refreshDraftFromStore()
 }
 
 onMounted(initialize)

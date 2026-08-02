@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import uuid
 
 from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import Engine
@@ -284,7 +285,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         repository.delete_page(page_id)
         return jsonify({"deleted": True})
 
-    @blueprint.post("/pages/<page_id>/replace-source")
+    @blueprint.put("/pages/<page_id>/source")
     def replace_page_source(page_id: str) -> Response:
         idempotency_key = _require_idempotency_key()
         _validate_multipart_fields(
@@ -311,6 +312,20 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.get("/pages/<page_id>/document")
     def get_page_document(page_id: str) -> Response:
         return jsonify(repository.get_page_document(page_id))
+
+    @blueprint.get("/pages/<page_id>/render-status")
+    def get_page_render_status(page_id: str) -> Response:
+        page = repository.get_page_summary(page_id)
+        return jsonify(
+            {
+                "pageId": page["id"],
+                "documentRevision": page["documentRevision"],
+                "renderedRevision": page["renderedRevision"],
+                "renderStatus": page["renderStatus"],
+                "translatedUrl": page["translatedUrl"],
+                "thumbnailTranslatedUrl": page["thumbnailTranslatedUrl"],
+            }
+        )
 
     @blueprint.patch("/chapters/<chapter_id>/settings-memory")
     def update_chapter_settings_memory(chapter_id: str) -> Response:
@@ -395,6 +410,68 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             "true" if replayed else "false"
         )
         return response
+
+    def mutate_single_bubble(
+        *,
+        page_id: str,
+        operation: str,
+        bubble_id: str | None = None,
+    ) -> Response:
+        idempotency_key = _require_idempotency_key()
+        body = _json_body(
+            allowed_keys=(
+                {"baseRevision"}
+                if operation == "delete"
+                else {"baseRevision", "fields"}
+            )
+        )
+        fields = body.get("fields", {})
+        if not isinstance(fields, dict):
+            raise ValueError("fields must be an object")
+        correlation_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"{page_id}:{operation}:{bubble_id or ''}:{idempotency_key}",
+            )
+        )
+        mutation: dict[str, object] = {
+            "op": operation,
+            "clientMutationId": correlation_id,
+            "fields": fields,
+        }
+        if bubble_id is not None:
+            mutation["bubbleId"] = bubble_id
+        result, replayed = repository.mutate_page_document(
+            page_id=page_id,
+            base_revision=int(body.get("baseRevision", 0)),
+            mutations=[mutation],
+            idempotency_key=idempotency_key,
+        )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = (
+            "true" if replayed else "false"
+        )
+        return response
+
+    @blueprint.post("/pages/<page_id>/bubbles")
+    def create_page_bubble(page_id: str) -> Response:
+        return mutate_single_bubble(page_id=page_id, operation="create")
+
+    @blueprint.patch("/pages/<page_id>/bubbles/<bubble_id>")
+    def patch_page_bubble(page_id: str, bubble_id: str) -> Response:
+        return mutate_single_bubble(
+            page_id=page_id,
+            operation="patch",
+            bubble_id=bubble_id,
+        )
+
+    @blueprint.delete("/pages/<page_id>/bubbles/<bubble_id>")
+    def delete_page_bubble(page_id: str, bubble_id: str) -> Response:
+        return mutate_single_bubble(
+            page_id=page_id,
+            operation="delete",
+            bubble_id=bubble_id,
+        )
 
     @blueprint.post("/chapters/<chapter_id>/import-leases")
     def create_import_lease(chapter_id: str) -> tuple[Response, int]:

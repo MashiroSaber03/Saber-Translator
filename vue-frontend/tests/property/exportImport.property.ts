@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   toast: {
     error: vi.fn(),
     info: vi.fn(),
+    removeToast: vi.fn(),
     success: vi.fn(),
     warning: vi.fn(),
   },
@@ -65,6 +66,7 @@ describe('backend-owned export/import contracts', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     mocks.getChapterTextExportUrl.mockReturnValue('/api/v2/chapters/chapter-1/text-export')
+    mocks.toast.info.mockReturnValue(101)
     mocks.jobList.mockResolvedValue({ items: [], queueRevision: 1 })
   })
 
@@ -169,6 +171,7 @@ describe('backend-owned export/import contracts', () => {
     expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
       '/api/v2/assets/asset-export?download=1&filename=chapter-export.cbz',
     )
+    expect(mocks.toast.removeToast).toHaveBeenCalledWith(101)
   })
 
   it('contains no browser-side payload generation or legacy download sessions', () => {

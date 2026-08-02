@@ -322,6 +322,6 @@ def get_bubble_detection_result_with_auto_directions(
         return result
 
     
-    except Exception as e:
-        logger.error(f"自动排版检测出错: {e}", exc_info=True)
-        return result
+    except Exception:
+        logger.exception("自动排版检测出错")
+        raise

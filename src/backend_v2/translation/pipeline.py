@@ -817,7 +817,7 @@ class CoreTranslationAlgorithms:
 
         coords = [payload.get("coords", [0, 0, 0, 0]) for payload in bubble_payloads]
         polygons = [payload.get("polygon", []) for payload in bubble_payloads]
-        repaired, _ = inpaint_bubbles(
+        repaired, clean_background = inpaint_bubbles(
             image,
             coords,
             method=str(config.get("method", "solid")),
@@ -833,6 +833,8 @@ class CoreTranslationAlgorithms:
             lama_model=str(config.get("lama_model", "lama_mpe")),
             disable_resize=bool(config["disable_resize"]),
         )
+        if clean_background is not None:
+            clean_background.close()
         return repaired
 
     def render(
@@ -1303,8 +1305,10 @@ class TranslationPipelineService:
         mask_record: AssetRecord | None = None
         mask = result.get("raw_mask")
         if isinstance(mask, Image.Image):
-            mask_record = publish_png_asset(self.storage, mask, mode="L")
-            mask.close()
+            try:
+                mask_record = publish_png_asset(self.storage, mask, mode="L")
+            finally:
+                mask.close()
         elif mask is not None:
             mask_image = Image.fromarray(mask)
             try:
@@ -1957,8 +1961,10 @@ class TranslationPipelineService:
             image.close()
             if precise_mask is not None:
                 precise_mask.close()
-        record = publish_png_asset(self.storage, repaired, mode="RGB")
-        repaired.close()
+        try:
+            record = publish_png_asset(self.storage, repaired, mode="RGB")
+        finally:
+            repaired.close()
         after = self._atomic_hook(
             fence,
             phase="after",
@@ -2088,9 +2094,11 @@ class TranslationPipelineService:
             )
         finally:
             clean.close()
-        translated = publish_png_asset(self.storage, rendered, mode="RGB")
-        thumbnail = publish_thumbnail_asset(self.storage, rendered)
-        rendered.close()
+        try:
+            translated = publish_png_asset(self.storage, rendered, mode="RGB")
+            thumbnail = publish_thumbnail_asset(self.storage, rendered)
+        finally:
+            rendered.close()
         after = self._atomic_hook(
             fence,
             phase="after",

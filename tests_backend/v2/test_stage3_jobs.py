@@ -188,6 +188,53 @@ def test_chapter_write_intent_drains_then_atomically_upgrades_and_releases(
         ).scalar_one_or_none() is None
 
 
+def test_page_completed_event_identifies_the_published_page(job_platform) -> None:
+    engine, repository, _book, chapter, worker_epoch_id = job_platform
+    from src.backend_v2.storage.schema import pages
+
+    page_id = str(uuid.uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            insert(pages).values(
+                id=page_id,
+                chapter_id=chapter["id"],
+                ordinal=1,
+                logical_source_path="1.png",
+            )
+        )
+    batch = repository.create_batch(
+        kind="translation",
+        display_name="translation batch",
+        specs=[
+            JobSpec(
+                kind="translation",
+                config={"mode": "test"},
+                chapter_id=str(chapter["id"]),
+                items=(
+                    JobItemSpec(page_id=page_id, step_kinds=("save",)),
+                ),
+            )
+        ],
+    )
+    job_id = str(batch["jobIds"][0])
+
+    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is None
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    repository.complete_step(
+        fence,
+        step_id=str(step["stepId"]),
+        checkpoint={"published": True},
+    )
+
+    events = repository.events_after(job_id=job_id)
+    completed = [event for event in events if event["type"] == "page_completed"]
+    assert len(completed) == 1
+    assert completed[0]["payload"]["pageId"] == page_id
+
+
 def test_write_intent_waits_for_preexisting_operation(job_platform) -> None:
     engine, repository, _book, chapter, worker_epoch_id = job_platform
     page_id = str(uuid.uuid4())

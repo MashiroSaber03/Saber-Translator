@@ -7,6 +7,7 @@ import {
   describeJobTarget,
   groupJobsByBatch,
   poolProgress,
+  progressCounts,
   progressPercent,
 } from '@/stores/taskCenterProjection'
 
@@ -48,6 +49,42 @@ describe('task center projection', () => {
       },
     }))).toBe(80)
     expect(progressPercent(job({ progress: {} }))).toBe(0)
+  })
+
+  it('counts only page items for Insight analysis jobs', () => {
+    const running = job({
+      kind: 'insight_analysis',
+      target: { book: 'Book', pageCount: 18 },
+      progress: {
+        totalItems: 19,
+        completedItems: 6,
+        failedItems: 1,
+        pools: [
+          {
+            kind: 'insight_analyze_page',
+            total: 18,
+            completed: 5,
+            failed: 1,
+            skipped: 0,
+          },
+          {
+            kind: 'insight_publish_run',
+            total: 1,
+            completed: 0,
+            failed: 0,
+            skipped: 0,
+          },
+        ],
+      },
+    })
+    const queued = job({
+      kind: 'insight_analysis',
+      target: { book: 'Book', pageCount: 4 },
+      progress: { totalItems: 5, completedItems: 0 },
+    })
+
+    expect(progressCounts(running)).toEqual({ completed: 6, total: 18 })
+    expect(progressCounts(queued)).toEqual({ completed: 0, total: 4 })
   })
 
   it('aggregates batch progress and status distribution from backend snapshots', () => {

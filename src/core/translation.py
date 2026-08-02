@@ -36,9 +36,8 @@ _chat_transport = OpenAICompatibleChatTransport()
 _sync_executor = OpenAICompatibleSyncExecutor(_chat_transport)
 
 # --- 自定义异常 ---
-class TranslationParseException(Exception):
+class TranslationParseException(OpenAICompatibleBusinessRetryableError):
     """批量翻译响应解析失败异常，触发重试"""
-    pass
 
 def _build_text_chat_messages(prompt_content: str, text: str) -> list:
     messages = []
@@ -112,17 +111,15 @@ def _parse_batch_translation_response(
     )
 
     if len(translations) != len(texts):
-        logger.warning("翻译数量不匹配: 期望 %s, 实际 %s", len(texts), len(translations))
-        if len(translations) < len(texts):
-            translations.extend(["【翻译失败】请检查终端中的错误日志"] * (len(texts) - len(translations)))
-        else:
-            translations = translations[: len(texts)]
+        raise OpenAICompatibleBusinessRetryableError(
+            f"翻译数量不匹配: 期望 {len(texts)}, 实际 {len(translations)}"
+        )
 
     empty_count = sum(1 for src, trans in zip(texts, translations) if src.strip() and not trans.strip())
     if empty_count > 0:
         raise OpenAICompatibleBusinessRetryableError(f"检测到 {empty_count} 个空翻译")
 
-    return [trans if trans else "【翻译失败】请检查终端中的错误日志" for trans in translations]
+    return translations
 
 def translate_single_text(
     text,
@@ -150,7 +147,7 @@ def translate_single_text(
         prompt_content (str, optional): 自定义提示词。如果为 None，使用默认提示词。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
     Returns:
-        str: 翻译后的文本，如果失败则返回 "翻译失败: [原因]"。
+        str: 翻译后的文本。
     """
     if not text or not text.strip():
         return ""
@@ -217,7 +214,8 @@ def translate_single_text(
         )
         translated_text = result.parsed
     else:
-        translated_text = "【翻译失败】请检查终端中的错误日志"
+        translated_text = None
+        last_error = None
         total_attempts = business_retries + 1
         for attempt in range(total_attempts):
             try:
@@ -257,14 +255,20 @@ def translate_single_text(
                 else:
                     raise ValueError(f"不支持的翻译服务提供商: {canonical_provider}")
 
+                translated_text = str(translated_text or "").strip()
+                if not translated_text:
+                    raise OpenAICompatibleBusinessRetryableError(
+                        "翻译服务返回空结果"
+                    )
                 break
             except Exception as e:
+                last_error = e
                 error_message = str(e)
                 logger.error(
                     f"翻译失败（尝试 {attempt + 1}/{total_attempts}，服务商: {canonical_provider}）: {error_message}",
                     exc_info=True,
                 )
-                translated_text = "【翻译失败】请检查终端中的错误日志"
+                translated_text = None
                 if hasattr(e, 'response') and e.response is not None:
                     try:
                         error_detail = e.response.json()
@@ -277,11 +281,12 @@ def translate_single_text(
                 if attempt < business_retries:
                     time.sleep(1)
 
-    # 记录翻译结果
-    if translated_text == "【翻译失败】请检查终端中的错误日志":
-        logger.warning(f"最终翻译失败: '{text}' -> '{translated_text}'")
-    else:
-        logger.info(f"最终翻译成功: '{text[:30]}...' -> '{translated_text[:30]}...'")
+        if translated_text is None:
+            if last_error is None:
+                raise RuntimeError("翻译失败且未提供错误原因")
+            raise last_error
+
+    logger.info(f"最终翻译成功: '{text[:30]}...' -> '{translated_text[:30]}...'")
         
     return translated_text
 
@@ -366,6 +371,14 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list:
     
     # 2. 删除多余的空行
     cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text).strip()
+
+    # 部分模型会把示例中的 <|n|> 简化为 <n>。只在行首接受这一种
+    # 无歧义变体，并立即规范化，后续仍沿用同一套数量与空值校验。
+    cleaned_text = re.sub(
+        r'(?m)^(\s*)<(\d+)>',
+        lambda match: f"{match.group(1)}<|{match.group(2)}|>",
+        cleaned_text,
+    )
     
     # 3. 仅保留 <|1|> 到 <|max|> 范围内的行，删除前后的解释性文字
     lines = cleaned_text.splitlines()
@@ -554,6 +567,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
     canonical_provider = normalize_provider_id(model_provider)
 
     if canonical_provider == 'sakura':
+        last_error = None
         for attempt in range(business_retries + 1):
             try:
                 response_text = run_local_chat_completion(
@@ -569,21 +583,24 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                 )
                 logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
                 return translations
-            except (TranslationParseException, OpenAICompatibleBusinessRetryableError) as error:
+            except OpenAICompatibleBusinessRetryableError as error:
+                last_error = error
                 logger.error("[尝试 %s/%s] 批量翻译解析失败: %s", attempt + 1, business_retries + 1, error)
                 if attempt < business_retries:
                     time.sleep(1)
                     continue
                 break
             except Exception as error:
+                last_error = error
                 logger.error("[尝试 %s/%s] 批量翻译失败: %s", attempt + 1, business_retries + 1, error, exc_info=True)
                 if attempt < business_retries:
                     time.sleep(1)
                     continue
                 break
 
-        logger.error("批量翻译所有重试都失败，返回 [翻译失败] 标记")
-        return ['【翻译失败】请检查终端中的错误日志'] * len(texts)
+        if last_error is None:
+            raise RuntimeError("批量翻译失败且未提供错误原因")
+        raise last_error
 
     if not is_openai_compatible_provider(canonical_provider):
         raise ValueError(f"不支持批量翻译的服务商: {canonical_provider}")
@@ -647,7 +664,7 @@ def translate_text_list(
         prompt_content (str, optional): 自定义提示词，可覆盖默认提示词。
         custom_base_url (str, optional): 用户自定义的 OpenAI 兼容 API 的 Base URL。
     Returns:
-        list: 包含翻译后文本的列表，顺序与输入列表一致。失败的项包含错误信息。
+        list: 包含翻译后文本的列表，顺序与输入列表一致。
     """
     if not texts:
         return []
@@ -726,11 +743,16 @@ def translate_text_list(
             # 如果有多个批次，在批次之间稍微等待
             if len(batches) > 1 and batch_idx < len(batches) - 1:
                 time.sleep(0.5)
+
+        if len(all_translations) != len(non_empty_indices):
+            raise RuntimeError(
+                "批量翻译结果数量不匹配: "
+                f"expected={len(non_empty_indices)}, actual={len(all_translations)}"
+            )
         
         # 将翻译结果写回最终列表
         for i, trans in enumerate(all_translations):
-            if i < len(non_empty_indices):
-                final_translations[non_empty_indices[i]] = trans
+            final_translations[non_empty_indices[i]] = trans
         
     else:
         # 非 LLM 提供商 (如百度翻译、有道翻译)，使用原有的逐个翻译逻辑

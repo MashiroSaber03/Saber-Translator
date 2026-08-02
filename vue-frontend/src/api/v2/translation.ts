@@ -23,13 +23,26 @@ export async function createChapterTranslationJob(
   )
 }
 
+export async function createChapterRemoveTextJob(
+  chapterId: string,
+  pageIds: string[],
+  executionMode: 'sequential' | 'parallel',
+): Promise<V2TranslationBatchAccepted> {
+  assertBackendActionAllowed()
+  return apiClient.post<V2TranslationBatchAccepted>(
+    `/api/v2/chapters/${encodeURIComponent(chapterId)}/remove-text-jobs`,
+    { executionMode, pageIds },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
 export function createTranslationBatch(
   chapterIds: string[],
   config: TranslationJobConfig = { mode: 'standard' },
 ): Promise<V2MultiChapterTranslationBatchAccepted> {
   assertBackendActionAllowed()
   return apiClient.post<V2MultiChapterTranslationBatchAccepted>(
-    '/api/v2/job-batches/translation',
+    '/api/v2/translation-batches',
     { chapterIds, config },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )

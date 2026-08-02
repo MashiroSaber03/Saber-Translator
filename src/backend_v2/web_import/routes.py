@@ -159,11 +159,11 @@ def create_web_import_blueprint(
             )
         )
 
-    @blueprint.get("/drafts/<draft_id>/pages/<page_id>/media")
-    def draft_media(draft_id: str, page_id: str):
+    @blueprint.get("/drafts/<draft_id>/media/<draft_page_id>")
+    def draft_media(draft_id: str, draft_page_id: str):
         path, mime = service.media(
             draft_id=draft_id,
-            page_id=page_id,
+            page_id=draft_page_id,
             variant=request.args.get("variant", ""),
         )
         response = send_file(

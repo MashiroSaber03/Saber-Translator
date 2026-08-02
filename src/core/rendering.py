@@ -405,6 +405,15 @@ def get_vertical_center_adjusted_y(char: str, font: ImageFont.FreeTypeFont,
         return current_y_char
 
 
+def _close_images(*images: Optional[Image.Image]) -> None:
+    seen: set[int] = set()
+    for image in images:
+        if image is None or id(image) in seen:
+            continue
+        seen.add(id(image))
+        image.close()
+
+
 def render_combined_upright_symbol(symbol: str, font: ImageFont.FreeTypeFont,
                                    fill, stroke_enabled: bool, stroke_color,
                                    stroke_width, canvas_image: Optional[Image.Image],
@@ -445,47 +454,53 @@ def render_combined_upright_symbol(symbol: str, font: ImageFont.FreeTypeFont,
     temp_w = total_width + padding * 2
     temp_h = content_height + padding * 2
     temp_img = Image.new('RGBA', (temp_w, temp_h), (0, 0, 0, 0))
-    temp_draw = ImageDraw.Draw(temp_img)
+    cropped = None
+    resized = None
+    try:
+        temp_draw = ImageDraw.Draw(temp_img)
 
-    text_params = {'font': font, 'fill': fill}
-    if stroke_enabled:
-        text_params['stroke_width'] = int(stroke_width)
-        text_params['stroke_fill'] = stroke_color
+        text_params = {'font': font, 'fill': fill}
+        if stroke_enabled:
+            text_params['stroke_width'] = int(stroke_width)
+            text_params['stroke_fill'] = stroke_color
 
-    pen_x = padding
-    draw_y = padding - reference_top
-    for char, _bbox, char_width in char_bboxes:
-        temp_draw.text((pen_x, draw_y), char, **text_params)
-        pen_x += char_width + spacing
+        pen_x = padding
+        draw_y = padding - reference_top
+        for char, _bbox, char_width in char_bboxes:
+            temp_draw.text((pen_x, draw_y), char, **text_params)
+            pen_x += char_width + spacing
 
-    temp_arr = np.array(temp_img)
-    alpha = temp_arr[:, :, 3]
-    non_zero = np.where(alpha > 10)
-    if len(non_zero[0]) == 0:
-        return line_height_unit
+        temp_arr = np.array(temp_img)
+        alpha = temp_arr[:, :, 3]
+        non_zero = np.where(alpha > 10)
+        if len(non_zero[0]) == 0:
+            return line_height_unit
 
-    min_y, max_y = non_zero[0].min(), non_zero[0].max()
-    min_x, max_x = non_zero[1].min(), non_zero[1].max()
-    cropped = temp_img.crop((min_x, min_y, max_x + 1, max_y + 1))
+        min_y, max_y = non_zero[0].min(), non_zero[0].max()
+        min_x, max_x = non_zero[1].min(), non_zero[1].max()
+        cropped = temp_img.crop((min_x, min_y, max_x + 1, max_y + 1))
 
-    scale_x = min(1.0, line_width / max(1, cropped.width))
-    scale_y = min(1.0, line_height_unit / max(1, cropped.height))
-    if scale_x < 1.0 or scale_y < 1.0:
-        resized = cropped.resize(
-            (
-                max(1, int(round(cropped.width * scale_x))),
-                max(1, int(round(cropped.height * scale_y))),
-            ),
-            resample=Image.Resampling.BICUBIC,
+        scale_x = min(1.0, line_width / max(1, cropped.width))
+        scale_y = min(1.0, line_height_unit / max(1, cropped.height))
+        if scale_x < 1.0 or scale_y < 1.0:
+            resized = cropped.resize(
+                (
+                    max(1, int(round(cropped.width * scale_x))),
+                    max(1, int(round(cropped.height * scale_y))),
+                ),
+                resample=Image.Resampling.BICUBIC,
+            )
+        else:
+            resized = cropped
+
+        paste_x = int(
+            (current_x_col - line_width) + (line_width - resized.width) / 2.0
         )
-    else:
-        resized = cropped
-
-    paste_x = int((current_x_col - line_width) + (line_width - resized.width) / 2.0)
-    paste_y = int(current_y + reference_top * scale_y)
-    _paste_with_alpha(canvas_image, resized, paste_x, paste_y)
-
-    return line_height_unit
+        paste_y = int(current_y + reference_top * scale_y)
+        _paste_with_alpha(canvas_image, resized, paste_x, paste_y)
+        return line_height_unit
+    finally:
+        _close_images(resized, cropped, temp_img)
 
 
 def auto_add_horizontal_tags(text: str) -> str:
@@ -594,54 +609,34 @@ def process_text_for_vertical(text: str) -> str:
 
 def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, font_size=constants.DEFAULT_FONT_SIZE):
     """
-    加载字体文件，带缓存。
+    加载当前 v2 文档已经解析出的字体文件，带缓存。
 
     Args:
         font_family_relative_path (str): 字体的相对路径 (相对于项目根目录)。
         font_size (int): 字体大小。
 
     Returns:
-        ImageFont.FreeTypeFont or ImageFont.ImageFont: 加载的字体对象，失败则返回默认字体。
+        ImageFont.FreeTypeFont: 加载的字体对象。
+
+    Raises:
+        ValueError: 字号不是正整数。
+        FileNotFoundError: 字体文件不存在。
+        OSError: 字体文件无法被 Pillow 读取。
     """
-    # 确保 font_size 是整数
     try:
         font_size = int(font_size)
-        if font_size <= 0:
-             font_size = constants.DEFAULT_FONT_SIZE # 防止无效字号
-    except (ValueError, TypeError):
-         font_size = constants.DEFAULT_FONT_SIZE
+    except (ValueError, TypeError) as exc:
+        raise ValueError("font_size must be a positive integer") from exc
+    if font_size <= 0:
+        raise ValueError("font_size must be a positive integer")
 
     cache_key = (font_family_relative_path, font_size)
     if cache_key in _font_cache:
         return _font_cache[cache_key]
 
-    font = None
-    try:
-        # 使用 get_font_path 统一处理字体路径，支持多种路径格式（包括自定义字体）
-        font_path_abs = get_font_path(font_family_relative_path)
-        if os.path.exists(font_path_abs):
-            font = ImageFont.truetype(font_path_abs, font_size, encoding="utf-8")
-            logger.info(f"成功加载字体: {font_path_abs} (大小: {font_size})")
-        else:
-            logger.warning(f"字体文件未找到: {font_path_abs} (相对路径: {font_family_relative_path})")
-            raise FileNotFoundError()
-
-    except Exception as e:
-        logger.error(f"加载字体 {font_family_relative_path} (大小: {font_size}) 失败: {e}，尝试默认字体。")
-        try:
-            # 默认字体也使用 get_font_path 处理
-            default_font_path_abs = get_font_path(constants.DEFAULT_FONT_RELATIVE_PATH)
-            if os.path.exists(default_font_path_abs):
-                 font = ImageFont.truetype(default_font_path_abs, font_size, encoding="utf-8")
-                 logger.info(f"成功加载默认字体: {default_font_path_abs} (大小: {font_size})")
-            else:
-                 logger.error(f"默认字体文件也未找到: {default_font_path_abs}")
-                 font = ImageFont.load_default()
-                 logger.warning("使用 Pillow 默认字体。")
-        except Exception as e_default:
-            logger.error(f"加载默认字体时出错: {e_default}", exc_info=True)
-            font = ImageFont.load_default()
-            logger.warning("使用 Pillow 默认字体。")
+    font_path_abs = get_font_path(font_family_relative_path)
+    font = ImageFont.truetype(font_path_abs, font_size, encoding="utf-8")
+    logger.info(f"成功加载字体: {font_path_abs} (大小: {font_size})")
 
     _font_cache[cache_key] = font
     return font
@@ -776,100 +771,82 @@ def render_horizontal_block(content: str, font,
     h_height = font_size * 3
     
     temp_img = Image.new('RGBA', (h_width, h_height), (0, 0, 0, 0))
-    temp_draw = ImageDraw.Draw(temp_img)
-    
-    # 横排渲染每个字符
-    pen_x = font_size // 2
-    pen_y = font_size
-    
-    text_params = {"font": font, "fill": fill}
-    if stroke_enabled:
-        text_params["stroke_width"] = int(stroke_width)
-        text_params["stroke_fill"] = stroke_color
-    
-    for char in content:
-        # 横排模式，使用方向 0
-        cdpt, _ = CJK_Compatibility_Forms_translate(char, 0)
-        bbox = font.getbbox(cdpt)
-        char_width = bbox[2] - bbox[0]
-        
-        temp_draw.text((pen_x, pen_y), cdpt, **text_params)
-        pen_x += char_width
-    
-    # 获取实际渲染区域
-    temp_arr = np.array(temp_img)
-    alpha = temp_arr[:, :, 3]
-    non_zero = np.where(alpha > 0)
-    
-    if len(non_zero[0]) == 0:
-        return line_height_unit  # 返回一个单位
-    
-    min_y, max_y = non_zero[0].min(), non_zero[0].max()
-    min_x, max_x = non_zero[1].min(), non_zero[1].max()
-    
-    # 裁剪有效区域
-    cropped = temp_img.crop((min_x, min_y, max_x + 1, max_y + 1))
-    
-    # 根据字符数决定是否旋转
-    if len(content) >= 3:
-        # 3个及以上字符：旋转90度（顺时针）
-        rotated = cropped.rotate(-90, expand=True, resample=Image.Resampling.BICUBIC)
-        
-        # 旋转后重新获取墨水边界（旋转可能会引入空白边缘）
-        rotated_arr = np.array(rotated)
-        rotated_alpha = rotated_arr[:, :, 3]
-        rot_non_zero = np.where(rotated_alpha > 10)  # 阈值稍高以忽略抗锯齿产生的半透明像素
-        
-        if len(rot_non_zero[0]) > 0:
-            rot_min_y, rot_max_y = rot_non_zero[0].min(), rot_non_zero[0].max()
-            rot_min_x, rot_max_x = rot_non_zero[1].min(), rot_non_zero[1].max()
-            final_block = rotated.crop((rot_min_x, rot_min_y, rot_max_x + 1, rot_max_y + 1))
-        else:
-            final_block = rotated
-    else:
-        # 2个字符：直接横排显示
-        final_block = cropped
-    
-    block_width, block_height = final_block.size
-    
-    # ===== 单位系统计算 =====
-    # 计算需要多少个"单位"才能容纳这个英文块
-    units_needed = math.ceil(block_height / line_height_unit)
-    units_needed = max(1, units_needed)  # 至少1个单位
-    
-    # 分配的总空间
-    allocated_height = units_needed * line_height_unit
-    
-    # ===== 基于中文字符墨水中心的垂直居中 =====
-    # 获取参考中文字符的墨水偏移
-    _, ref_ink_offset_y = get_char_ink_offset('我', font)
-    
-    # 中文字符的墨水中心位置（相对于单元格顶部）
-    # 对于一个单元格，中文的墨水中心 = 单元格高度/2 + 墨水偏移
-    cjk_ink_center_in_unit = line_height_unit / 2 + ref_ink_offset_y
-    
-    # 对于分配的 N 个单位空间，计算"视觉中心"
-    # 视觉中心 = 中间单位的墨水中心位置
-    # 例如：3个单位，中间是第2个单位(索引1)，其墨水中心在 1*unit + cjk_ink_center_in_unit
-    mid_unit_index = (units_needed - 1) / 2  # 0.5, 1, 1.5, 2, ...
-    visual_center = mid_unit_index * line_height_unit + cjk_ink_center_in_unit
-    
-    # 英文块的墨水中心（相对于块顶部）
-    block_ink_center = block_height / 2
-    
-    # 让英文块墨水中心对齐到视觉中心
-    vertical_offset = visual_center - block_ink_center
-    
-    # 水平居中
-    paste_x = int(current_x_col - line_width + (line_width - block_width) / 2)
-    # 垂直位置
-    paste_y = int(current_y + vertical_offset)
-    
-    # 使用正确的透明度混合
-    _paste_with_alpha(canvas_image, final_block, paste_x, paste_y)
+    cropped = None
+    rotated = None
+    final_block = None
+    try:
+        temp_draw = ImageDraw.Draw(temp_img)
 
-    # 返回分配的空间高度（整数个单位），确保后续文本位置正确
-    return allocated_height
+        # 横排渲染每个字符
+        pen_x = font_size // 2
+        pen_y = font_size
+
+        text_params = {"font": font, "fill": fill}
+        if stroke_enabled:
+            text_params["stroke_width"] = int(stroke_width)
+            text_params["stroke_fill"] = stroke_color
+
+        for char in content:
+            cdpt, _ = CJK_Compatibility_Forms_translate(char, 0)
+            bbox = font.getbbox(cdpt)
+            char_width = bbox[2] - bbox[0]
+            temp_draw.text((pen_x, pen_y), cdpt, **text_params)
+            pen_x += char_width
+
+        temp_arr = np.array(temp_img)
+        alpha = temp_arr[:, :, 3]
+        non_zero = np.where(alpha > 0)
+        if len(non_zero[0]) == 0:
+            raise RuntimeError("横排文字块没有生成任何可见像素")
+
+        min_y, max_y = non_zero[0].min(), non_zero[0].max()
+        min_x, max_x = non_zero[1].min(), non_zero[1].max()
+        cropped = temp_img.crop((min_x, min_y, max_x + 1, max_y + 1))
+
+        if len(content) >= 3:
+            rotated = cropped.rotate(
+                -90,
+                expand=True,
+                resample=Image.Resampling.BICUBIC,
+            )
+            rotated_arr = np.array(rotated)
+            rotated_alpha = rotated_arr[:, :, 3]
+            rot_non_zero = np.where(rotated_alpha > 10)
+            if len(rot_non_zero[0]) > 0:
+                rot_min_y, rot_max_y = (
+                    rot_non_zero[0].min(),
+                    rot_non_zero[0].max(),
+                )
+                rot_min_x, rot_max_x = (
+                    rot_non_zero[1].min(),
+                    rot_non_zero[1].max(),
+                )
+                final_block = rotated.crop(
+                    (rot_min_x, rot_min_y, rot_max_x + 1, rot_max_y + 1)
+                )
+            else:
+                final_block = rotated
+        else:
+            final_block = cropped
+
+        block_width, block_height = final_block.size
+        units_needed = max(1, math.ceil(block_height / line_height_unit))
+        allocated_height = units_needed * line_height_unit
+        _, ref_ink_offset_y = get_char_ink_offset('我', font)
+        cjk_ink_center_in_unit = line_height_unit / 2 + ref_ink_offset_y
+        mid_unit_index = (units_needed - 1) / 2
+        visual_center = (
+            mid_unit_index * line_height_unit + cjk_ink_center_in_unit
+        )
+        vertical_offset = visual_center - block_height / 2
+        paste_x = int(
+            current_x_col - line_width + (line_width - block_width) / 2
+        )
+        paste_y = int(current_y + vertical_offset)
+        _paste_with_alpha(canvas_image, final_block, paste_x, paste_y)
+        return allocated_height
+    finally:
+        _close_images(final_block, rotated, cropped, temp_img)
 
 
 def render_ellipsis_block(content: str, font,
@@ -900,10 +877,7 @@ def render_ellipsis_block(content: str, font,
     allocated_height = len(content) * line_height_unit
 
     # 1) 测量横向整串的墨水 bbox
-    try:
-        full_bbox = font.getbbox(content)
-    except Exception:
-        return allocated_height
+    full_bbox = font.getbbox(content)
     content_w = max(1, full_bbox[2] - full_bbox[0])
     content_h = max(1, full_bbox[3] - full_bbox[1])
 
@@ -912,70 +886,70 @@ def render_ellipsis_block(content: str, font,
     temp_w = content_w + padding * 2
     temp_h = content_h + padding * 2
     temp_img = Image.new('RGBA', (temp_w, temp_h), (0, 0, 0, 0))
-    temp_draw = ImageDraw.Draw(temp_img)
-
-    # 3) 绘制横向串；把 bbox 的左上角对齐到 (padding, padding)
-    text_params = {'font': font, 'fill': fill}
-    if stroke_enabled:
-        text_params['stroke_width'] = int(stroke_width)
-        text_params['stroke_fill'] = stroke_color
-    draw_x = padding - full_bbox[0]
-    draw_y = padding - full_bbox[1]
+    rotated = None
+    cropped = None
     try:
+        temp_draw = ImageDraw.Draw(temp_img)
+
+        # 3) 绘制横向串；把 bbox 的左上角对齐到 (padding, padding)
+        text_params = {'font': font, 'fill': fill}
+        if stroke_enabled:
+            text_params['stroke_width'] = int(stroke_width)
+            text_params['stroke_fill'] = stroke_color
+        draw_x = padding - full_bbox[0]
+        draw_y = padding - full_bbox[1]
         temp_draw.text((draw_x, draw_y), content, **text_params)
-    except Exception as e:
-        logger.warning(f"省略号块绘制失败: {e}")
-        return allocated_height
 
-    # 4) 整体旋转 90° 顺时针
-    rotated = temp_img.rotate(-90, expand=True, resample=Image.Resampling.BICUBIC)
+        # 4) 整体旋转 90° 顺时针
+        rotated = temp_img.rotate(
+            -90,
+            expand=True,
+            resample=Image.Resampling.BICUBIC,
+        )
 
-    # 5) 按 alpha 裁剪到实际墨迹
-    try:
-        rotated_arr = np.array(rotated)
-        alpha = rotated_arr[:, :, 3]
-        non_zero = np.where(alpha > 10)
-        if len(non_zero[0]) > 0:
-            min_y, max_y = non_zero[0].min(), non_zero[0].max()
-            min_x, max_x = non_zero[1].min(), non_zero[1].max()
-            cropped = rotated.crop((min_x, min_y, max_x + 1, max_y + 1))
-        else:
+        # 5) 按 alpha 裁剪到实际墨迹；裁剪失败时保留完整旋转图。
+        try:
+            rotated_arr = np.array(rotated)
+            alpha = rotated_arr[:, :, 3]
+            non_zero = np.where(alpha > 10)
+            if len(non_zero[0]) > 0:
+                min_y, max_y = non_zero[0].min(), non_zero[0].max()
+                min_x, max_x = non_zero[1].min(), non_zero[1].max()
+                cropped = rotated.crop(
+                    (min_x, min_y, max_x + 1, max_y + 1)
+                )
+            else:
+                cropped = rotated
+        except Exception:
             cropped = rotated
-    except Exception:
-        cropped = rotated
 
-    actual_w, actual_h = cropped.size
-
-    # 6) 水平居中到列宽，垂直对齐到中文正文的视觉中心
-    # 与 render_horizontal_block 保持一致：不要按几何中心贴回，而是对齐到
-    # “分配的 N 个单元格中间位置的中文墨水中心”。否则对于 U+2026 这类本身
-    # 紧贴基线的字形，整体旋转后虽然几何上居中，但视觉上会明显偏上。
-    _, ref_ink_offset_y = get_char_ink_offset('我', font)
-    cjk_ink_center_in_unit = line_height_unit / 2 + ref_ink_offset_y
-    units_needed = max(1, len(content))
-    mid_unit_index = (units_needed - 1) / 2
-    visual_center = mid_unit_index * line_height_unit + cjk_ink_center_in_unit
-
-    paste_x = int((current_x_col - line_width) + (line_width - actual_w) / 2.0)
-    paste_y = int(current_y + visual_center - actual_h / 2.0)
-
-    _paste_with_alpha(canvas_image, cropped, paste_x, paste_y)
-
-    return allocated_height
+        actual_w, actual_h = cropped.size
+        _, ref_ink_offset_y = get_char_ink_offset('我', font)
+        cjk_ink_center_in_unit = line_height_unit / 2 + ref_ink_offset_y
+        units_needed = max(1, len(content))
+        mid_unit_index = (units_needed - 1) / 2
+        visual_center = (
+            mid_unit_index * line_height_unit + cjk_ink_center_in_unit
+        )
+        paste_x = int(
+            (current_x_col - line_width) + (line_width - actual_w) / 2.0
+        )
+        paste_y = int(current_y + visual_center - actual_h / 2.0)
+        _paste_with_alpha(canvas_image, cropped, paste_x, paste_y)
+        return allocated_height
+    finally:
+        _close_images(cropped, rotated, temp_img)
 
 
 def _paste_with_alpha(canvas: Image.Image, overlay: Image.Image, x: int, y: int):
     """
     将带透明通道的图像正确粘贴到画布上
     """
+    converted = overlay if overlay.mode == 'RGBA' else overlay.convert('RGBA')
     try:
-        # 确保 overlay 是 RGBA
-        if overlay.mode != 'RGBA':
-            overlay = overlay.convert('RGBA')
-        
         # 获取画布尺寸
         canvas_w, canvas_h = canvas.size
-        overlay_w, overlay_h = overlay.size
+        overlay_w, overlay_h = converted.size
         
         # 边界检查
         if x >= canvas_w or y >= canvas_h or x + overlay_w <= 0 or y + overlay_h <= 0:
@@ -994,21 +968,35 @@ def _paste_with_alpha(canvas: Image.Image, overlay: Image.Image, x: int, y: int)
             return
         
         # 裁剪 overlay 到有效区域
-        cropped_overlay = overlay.crop((src_x1, src_y1, src_x2, src_y2))
-        
-        if canvas.mode == 'RGBA':
-            # RGBA 画布：使用 alpha_composite
-            # 先提取目标区域
-            target_region = canvas.crop((dst_x, dst_y, dst_x + cropped_overlay.width, dst_y + cropped_overlay.height))
-            # 合成
-            composited = Image.alpha_composite(target_region, cropped_overlay)
-            # 粘贴回去
-            canvas.paste(composited, (dst_x, dst_y))
-        else:
-            # RGB 画布：使用 overlay 的 alpha 作为遮罩
-            canvas.paste(cropped_overlay, (dst_x, dst_y), cropped_overlay)
-    except Exception as e:
-        logger.warning(f"粘贴带透明度图像失败: {e}")
+        cropped_overlay = converted.crop((src_x1, src_y1, src_x2, src_y2))
+        try:
+            if canvas.mode == 'RGBA':
+                target_region = canvas.crop(
+                    (
+                        dst_x,
+                        dst_y,
+                        dst_x + cropped_overlay.width,
+                        dst_y + cropped_overlay.height,
+                    )
+                )
+                try:
+                    composited = Image.alpha_composite(
+                        target_region,
+                        cropped_overlay,
+                    )
+                    try:
+                        canvas.paste(composited, (dst_x, dst_y))
+                    finally:
+                        composited.close()
+                finally:
+                    target_region.close()
+            else:
+                canvas.paste(cropped_overlay, (dst_x, dst_y), cropped_overlay)
+        finally:
+            cropped_overlay.close()
+    finally:
+        if converted is not overlay:
+            converted.close()
 
 # --- 竖排文本绘制函数（支持单字符旋转）---
 def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
@@ -1337,62 +1325,96 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                         temp_size = diagonal + padding * 2
                         temp_size = int(temp_size)
                         
-                        temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
-                        temp_draw = ImageDraw.Draw(temp_img)
-                        
-                        # 在临时画布中心绘制字符
-                        temp_x = (temp_size - char_width) // 2
-                        temp_y = (temp_size - char_height) // 2
-                        
-                        temp_text_params = {
-                            "font": current_font,
-                            "fill": fill
-                        }
-                        if stroke_enabled:
-                            temp_text_params["stroke_width"] = int(stroke_width)
-                            temp_text_params["stroke_fill"] = stroke_color
-                        
-                        temp_draw.text((temp_x, temp_y), converted_char, **temp_text_params)
-                        
-                        # 旋转图像
-                        rotated_img = temp_img.rotate(-rot_degree, resample=Image.Resampling.BICUBIC, expand=False)
-                        
-                        # 裁剪掉多余的透明区域，只保留实际墨水部分
-                        rotated_arr = np.array(rotated_img)
-                        alpha_channel = rotated_arr[:, :, 3]
-                        non_zero = np.where(alpha_channel > 10)  # 阈值10以忽略抗锯齿产生的半透明像素
-                        
-                        if len(non_zero[0]) > 0:
-                            min_y, max_y = non_zero[0].min(), non_zero[0].max()
-                            min_x, max_x = non_zero[1].min(), non_zero[1].max()
-                            # 裁剪到实际内容区域
-                            cropped_rotated = rotated_img.crop((min_x, min_y, max_x + 1, max_y + 1))
-                        else:
-                            # 如果没有找到非透明像素，使用原始旋转图像
-                            cropped_rotated = rotated_img
-                        
-                        actual_width, actual_height = cropped_rotated.size
-                        
-                        # 计算粘贴位置（基于实际裁剪后的尺寸）
-                        # 水平居中：在列宽内居中
-                        paste_x = int((current_x_col - line_width) + (line_width - actual_width) / 2.0)
-                        
-                        # 垂直位置：与普通字符对齐（基于line_height_approx单位）
-                        # 使用字符的墨水中心对齐
-                        paste_y = int(current_y_char + (line_height_approx - actual_height) / 2.0)
-                        
+                        temp_img = Image.new(
+                            'RGBA',
+                            (temp_size, temp_size),
+                            (0, 0, 0, 0),
+                        )
+                        rotated_img = None
+                        cropped_rotated = None
+                        rgb_rotated = None
                         try:
-                            if canvas_image.mode == 'RGBA':
-                                canvas_image.paste(cropped_rotated, (paste_x, paste_y), cropped_rotated)
+                            temp_draw = ImageDraw.Draw(temp_img)
+                            temp_x = (temp_size - char_width) // 2
+                            temp_y = (temp_size - char_height) // 2
+                            temp_text_params = {
+                                "font": current_font,
+                                "fill": fill,
+                            }
+                            if stroke_enabled:
+                                temp_text_params["stroke_width"] = int(
+                                    stroke_width
+                                )
+                                temp_text_params["stroke_fill"] = stroke_color
+
+                            temp_draw.text(
+                                (temp_x, temp_y),
+                                converted_char,
+                                **temp_text_params,
+                            )
+                            rotated_img = temp_img.rotate(
+                                -rot_degree,
+                                resample=Image.Resampling.BICUBIC,
+                                expand=False,
+                            )
+                            rotated_arr = np.array(rotated_img)
+                            alpha_channel = rotated_arr[:, :, 3]
+                            non_zero = np.where(alpha_channel > 10)
+                            if len(non_zero[0]) > 0:
+                                min_y, max_y = (
+                                    non_zero[0].min(),
+                                    non_zero[0].max(),
+                                )
+                                min_x, max_x = (
+                                    non_zero[1].min(),
+                                    non_zero[1].max(),
+                                )
+                                cropped_rotated = rotated_img.crop(
+                                    (min_x, min_y, max_x + 1, max_y + 1)
+                                )
                             else:
-                                # 如果主画布不是 RGBA，需要使用 alpha 通道作为 mask
-                                rgb_rotated = cropped_rotated.convert('RGB')
-                                canvas_image.paste(rgb_rotated, (paste_x, paste_y), cropped_rotated)
-                        except Exception as e:
-                            logger.warning(f"旋转字符粘贴失败: {e}，回退到直接绘制")
-                            # 回退：直接绘制（不旋转）
-                            text_x_char = current_x_col - char_width
-                            draw.text((text_x_char, current_y_char), converted_char, **text_draw_params)
+                                cropped_rotated = rotated_img
+
+                            actual_width, actual_height = cropped_rotated.size
+                            paste_x = int(
+                                (current_x_col - line_width)
+                                + (line_width - actual_width) / 2.0
+                            )
+                            paste_y = int(
+                                current_y_char
+                                + (line_height_approx - actual_height) / 2.0
+                            )
+                            try:
+                                if canvas_image.mode == 'RGBA':
+                                    canvas_image.paste(
+                                        cropped_rotated,
+                                        (paste_x, paste_y),
+                                        cropped_rotated,
+                                    )
+                                else:
+                                    rgb_rotated = cropped_rotated.convert('RGB')
+                                    canvas_image.paste(
+                                        rgb_rotated,
+                                        (paste_x, paste_y),
+                                        cropped_rotated,
+                                    )
+                            except Exception as e:
+                                logger.warning(
+                                    f"旋转字符粘贴失败: {e}，回退到直接绘制"
+                                )
+                                text_x_char = current_x_col - char_width
+                                draw.text(
+                                    (text_x_char, current_y_char),
+                                    converted_char,
+                                    **text_draw_params,
+                                )
+                        finally:
+                            _close_images(
+                                rgb_rotated,
+                                cropped_rotated,
+                                rotated_img,
+                                temp_img,
+                            )
                     else:
                         # ===== 常规绘制（不需要旋转） =====
                         # ===== 水平居中计算 =====
@@ -1615,8 +1637,9 @@ def render_bubbles_unified(
         # 加载字体
         font = get_font(state.font_family, current_font_size)
         if font is None:
-            logger.error(f"气泡 {i}: 无法加载字体 {state.font_family}，跳过渲染。")
-            continue
+            raise RuntimeError(
+                f"气泡 {i}: 无法加载字体 {state.font_family}"
+            )
         
         # 计算绘制参数
         offset_x = state.position_offset.get('x', 0)
@@ -1631,53 +1654,59 @@ def render_bubbles_unified(
                 padding = max(10, int(state.stroke_width * 2) if state.stroke_enabled else 0)
                 temp_size = diagonal + padding * 2
                 
-                temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
-                temp_draw = ImageDraw.Draw(temp_img)
-                
-                temp_offset_x = (temp_size - bubble_width) // 2
-                temp_offset_y = (temp_size - bubble_height) // 2
-                
-                if state.text_direction == 'vertical':
-                    temp_vertical_x = temp_offset_x + bubble_width
-                    draw_multiline_text_vertical(
-                        temp_draw, text, font,
-                        temp_vertical_x, temp_offset_y, max_text_height,
-                        fill=state.text_color,
-                        stroke_enabled=state.stroke_enabled,
-                        stroke_color=state.stroke_color,
-                        stroke_width=state.stroke_width,
-                        font_family_path=state.font_family,
-                        line_spacing=state.line_spacing,
-                        text_align=state.text_align
-                    )
-                else:
-                    draw_multiline_text_horizontal(
-                        temp_draw, text, font,
-                        temp_offset_x, temp_offset_y, max_text_width,
-                        fill=state.text_color,
-                        stroke_enabled=state.stroke_enabled,
-                        stroke_color=state.stroke_color,
-                        stroke_width=state.stroke_width,
-                        bubble_width=max_text_width,
-                        font_family_path=state.font_family,
-                        line_spacing=state.line_spacing,
-                        text_align=state.text_align
-                    )
-                
-                temp_center = temp_size // 2
-                rotated_img = temp_img.rotate(
-                    -state.rotation_angle,
-                    resample=Image.Resampling.BICUBIC,
-                    center=(temp_center, temp_center),
-                    expand=False
+                temp_img = Image.new(
+                    'RGBA',
+                    (temp_size, temp_size),
+                    (0, 0, 0, 0),
                 )
-                
-                bubble_center_x = (x1 + x2) // 2
-                bubble_center_y = (y1 + y2) // 2
-                paste_x = bubble_center_x - temp_center + offset_x
-                paste_y = bubble_center_y - temp_center + offset_y
-                
-                image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                rotated_img = None
+                try:
+                    temp_draw = ImageDraw.Draw(temp_img)
+                    temp_offset_x = (temp_size - bubble_width) // 2
+                    temp_offset_y = (temp_size - bubble_height) // 2
+
+                    if state.text_direction == 'vertical':
+                        temp_vertical_x = temp_offset_x + bubble_width
+                        draw_multiline_text_vertical(
+                            temp_draw, text, font,
+                            temp_vertical_x, temp_offset_y, max_text_height,
+                            fill=state.text_color,
+                            stroke_enabled=state.stroke_enabled,
+                            stroke_color=state.stroke_color,
+                            stroke_width=state.stroke_width,
+                            font_family_path=state.font_family,
+                            line_spacing=state.line_spacing,
+                            text_align=state.text_align
+                        )
+                    else:
+                        draw_multiline_text_horizontal(
+                            temp_draw, text, font,
+                            temp_offset_x, temp_offset_y, max_text_width,
+                            fill=state.text_color,
+                            stroke_enabled=state.stroke_enabled,
+                            stroke_color=state.stroke_color,
+                            stroke_width=state.stroke_width,
+                            bubble_width=max_text_width,
+                            font_family_path=state.font_family,
+                            line_spacing=state.line_spacing,
+                            text_align=state.text_align
+                        )
+
+                    temp_center = temp_size // 2
+                    rotated_img = temp_img.rotate(
+                        -state.rotation_angle,
+                        resample=Image.Resampling.BICUBIC,
+                        center=(temp_center, temp_center),
+                        expand=False
+                    )
+
+                    bubble_center_x = (x1 + x2) // 2
+                    bubble_center_y = (y1 + y2) // 2
+                    paste_x = bubble_center_x - temp_center + offset_x
+                    paste_y = bubble_center_y - temp_center + offset_y
+                    image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                finally:
+                    _close_images(rotated_img, temp_img)
                 
             else:
                 # === 无旋转：直接绘制 ===

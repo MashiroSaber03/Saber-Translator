@@ -110,7 +110,6 @@ async function processFiles(files: File[]) {
         `已创建 ${containers.length} 个后端解析任务，可安全关闭页面`,
         'success',
       )
-      emit('uploadComplete', 0)
     }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : '处理文件失败，请重试'

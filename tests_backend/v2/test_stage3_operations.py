@@ -947,3 +947,41 @@ def test_failed_page_repair_sets_explicit_page_state(operation_platform) -> None
                 pages.c.id == platform["page_id"]
             )
         ).scalar_one() == "repair_failed"
+
+
+def test_page_repair_closes_result_when_asset_publication_fails(
+    operation_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    service.create_for_bubble(
+        page_id=platform["page_id"],
+        bubble_id=platform["bubble_id"],
+        base_revision=1,
+        idempotency_key="repair-publication-failure",
+    )
+    claimed = repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("page_repair",),
+    )
+    assert claimed is not None
+    fence, operation = claimed
+    captured: dict[str, Image.Image] = {}
+
+    def fail_publication(image: Image.Image):
+        captured["image"] = image
+        raise RuntimeError("asset publication failed")
+
+    monkeypatch.setattr(service, "_publish_png", fail_publication)
+    with pytest.raises(RuntimeError, match="asset publication failed"):
+        service.handle(fence, operation)
+
+    with pytest.raises(ValueError, match="closed image"):
+        captured["image"].getpixel((0, 0))

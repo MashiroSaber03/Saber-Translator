@@ -6,6 +6,7 @@ import type {
   TimelineData,
 } from '@/types/insight'
 import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'
+import { projectInsightPageProgress } from '@/utils/insightJobProgress'
 import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
 import { ApiClientError } from '@/api/client'
@@ -350,7 +351,7 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightAnalysis
   const job = bootstrap.activeJobs.find(
     item => item.bookId === bookId && item.kind === 'insight_analysis'
   )
-  const progress = job?.progress ?? {}
+  const pageProgress = job ? projectInsightPageProgress(job.progress) : undefined
   return {
     fullyAnalyzed: Boolean(book && book.pageCount > 0 && book.analyzedPageCount >= book.pageCount),
     analyzedPagesCount: book?.analyzedPageCount ?? 0,
@@ -359,8 +360,8 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightAnalysis
           jobId: job.jobId,
           status: mapJobStatus(job.status),
           progress: {
-            analyzedPages: Number(progress.completedItems ?? 0),
-            totalPages: Number(progress.totalItems ?? book?.pageCount ?? 0),
+            analyzedPages: pageProgress?.current ?? 0,
+            totalPages: pageProgress?.total ?? 0,
           },
         }
       : undefined,
@@ -1068,7 +1069,9 @@ export async function deletePromptFromLibrary(promptId: string): Promise<void> {
   promptCache = promptCache.filter(prompt => prompt.id !== promptId)
 }
 
-export async function importPromptsLibrary(library: SavedPromptItem[]): Promise<void> {
+export async function importPromptsLibrary(
+  library: SavedPromptItem[]
+): Promise<SavedPromptItem[]> {
   const current = await listV2Prompts()
   promptCache = current
   for (const prompt of library) {
@@ -1082,6 +1085,9 @@ export async function importPromptsLibrary(library: SavedPromptItem[]): Promise<
     }
   }
   promptCache = await listV2Prompts()
+  return promptCache
+    .filter(prompt => !prompt.isFactoryDefault)
+    .map(savedPrompt)
 }
 
 export async function exportAnalysis(bookId: string): Promise<string> {

@@ -175,12 +175,15 @@ class DefaultStudioAlgorithms:
         on_chunk: Callable[[str, str], None] | None = None,
     ) -> str:
         remote_messages: list[dict[str, Any]] = []
+        system_parts = [system] if system else []
         has_image_attachments = False
-        if system:
-            remote_messages.append({"role": "system", "content": system})
         for raw in messages:
             role = str(raw.get("role", "assistant"))
             content = str(raw.get("content", ""))
+            if role == "system":
+                if content:
+                    system_parts.append(content)
+                continue
             attachments = raw.get("attachmentDataUrls", [])
             if role == "user" and isinstance(attachments, list) and attachments:
                 has_image_attachments = True
@@ -196,6 +199,11 @@ class DefaultStudioAlgorithms:
                 remote_messages.append({"role": role, "content": parts})
             else:
                 remote_messages.append({"role": role, "content": content})
+        if system_parts:
+            remote_messages.insert(
+                0,
+                {"role": "system", "content": "\n\n".join(system_parts)},
+            )
         return self._complete(
             remote_messages,
             config=config,

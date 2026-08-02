@@ -52,14 +52,6 @@ function formatText(text: string): string {
   return wrapText((text || '').trim())
 }
 
-function isTranslationError(text: string): boolean {
-  const normalizedText = text || ''
-  return (
-    normalizedText.includes('【翻译失败】') ||
-    normalizedText.includes('[翻译失败]') ||
-    normalizedText.includes('翻译失败')
-  )
-}
 </script>
 
 <template>
@@ -93,10 +85,7 @@ function isTranslationError(text: string): boolean {
         role="listitem"
       >
         <p class="detected-text-panel__original">{{ formatText(item.original) }}</p>
-        <p
-          class="detected-text-panel__translated"
-          :class="{ 'detected-text-panel__translated--error': isTranslationError(item.translated) }"
-        >
+        <p class="detected-text-panel__translated">
           {{ formatText(item.translated) }}
         </p>
       </article>
@@ -109,7 +98,6 @@ function isTranslationError(text: string): boolean {
   /* owner tokens: detected-text-panel */
   --detected-text-panel-divider: var(--color-border-muted);
   --detected-text-panel-translated-text: var(--color-action-primary);
-  --detected-text-panel-error-text: var(--color-status-error);
 
   display: flex;
   flex-direction: column;
@@ -165,10 +153,6 @@ function isTranslationError(text: string): boolean {
 
 .detected-text-panel__translated {
   color: var(--detected-text-panel-translated-text);
-}
-
-.detected-text-panel__translated--error {
-  color: var(--detected-text-panel-error-text);
 }
 
 .detected-text-panel__empty {

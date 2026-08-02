@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import assets
+from src.backend_v2.timestamps import utcnow
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,15 @@ class AssetMediaService:
             return None
         path = self.storage.resolve_relative_path(str(row["relative_path"]))
         if not path.is_file():
+            with self.engine.begin() as connection:
+                connection.execute(
+                    update(assets)
+                    .where(
+                        assets.c.id == asset_id,
+                        assets.c.integrity_status == "ok",
+                    )
+                    .values(integrity_status="missing", updated_at=utcnow())
+                )
             return None
         return MediaAsset(
             path=path,

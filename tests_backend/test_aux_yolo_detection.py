@@ -148,6 +148,16 @@ class AuxYoloDetectionTests(unittest.TestCase):
         self.assertEqual(detect_mock.call_args.kwargs["aux_yolo_conf_threshold"], 0.55)
         self.assertEqual(detect_mock.call_args.kwargs["aux_yolo_overlap_threshold"], 0.2)
 
+    def test_auto_direction_detection_propagates_main_detector_failure(self) -> None:
+        with mock.patch.object(
+            detection_module,
+            "_detect_with_optional_saber_refinement",
+            side_effect=RuntimeError("detector failed"),
+        ), self.assertRaisesRegex(RuntimeError, "detector failed"):
+            detection_module.get_bubble_detection_result_with_auto_directions(
+                self.image
+            )
+
     def test_large_image_detection_runs_aux_on_empty_patch_result(self) -> None:
         line = make_line(10, 10, 40, 40)
         fake_detector = mock.Mock()
@@ -178,6 +188,42 @@ class AuxYoloDetectionTests(unittest.TestCase):
 
         self.assertEqual(len(result.raw_lines), 1)
         self.assertEqual(result.raw_lines[0].xyxy, line.xyxy)
+
+    def test_large_image_detection_propagates_mask_merge_failure(self) -> None:
+        line = make_line(10, 10, 40, 40)
+        fake_detector = mock.Mock()
+        fake_detector.requires_merge = False
+        fake_detector.detector_id = "default"
+        fake_detector._detect_raw.return_value = (
+            [line],
+            np.zeros((64, 64), dtype=np.uint8),
+        )
+        wrapper = LargeImageDetectorWrapper(detector=fake_detector, target_size=1536)
+        context = mock.Mock()
+        context.is_rearranged = True
+
+        with mock.patch(
+            "src.core.large_image_detection.slice_image_for_detection",
+            return_value=([np.zeros((64, 64, 3), dtype=np.uint8)], context),
+        ), mock.patch(
+            "src.core.large_image_detection.transform_textlines_to_original",
+            return_value=[line],
+        ), mock.patch(
+            "src.core.large_image_detection.merge_masks_from_patches",
+            side_effect=RuntimeError("mask merge failed"),
+        ), self.assertRaisesRegex(RuntimeError, "mask merge failed"):
+            wrapper._detect_with_slicing(
+                np.zeros((120, 120, 3), dtype=np.uint8),
+                120,
+                120,
+                merge_lines=False,
+                edge_ratio_threshold=0.0,
+                expand_ratio=0.0,
+                expand_top=0.0,
+                expand_bottom=0.0,
+                expand_left=0.0,
+                expand_right=0.0,
+            )
 
 
 if __name__ == "__main__":

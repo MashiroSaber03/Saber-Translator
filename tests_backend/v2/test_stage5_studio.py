@@ -281,6 +281,45 @@ def test_studio_chat_uses_vlm_for_image_attachments(monkeypatch) -> None:
     )["model"] == "vision-model"
 
 
+def test_studio_chat_merges_session_system_messages(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def complete(
+        messages,
+        *,
+        config,
+        temperature,
+        force_json,
+        on_chunk,
+        prefer_vlm=False,
+    ):
+        captured["messages"] = messages
+        return "ok"
+
+    monkeypatch.setattr(
+        DefaultStudioAlgorithms,
+        "_complete",
+        staticmethod(complete),
+    )
+
+    result = DefaultStudioAlgorithms().chat(
+        messages=[
+            {"role": "system", "content": "导入会话上下文"},
+            {"role": "user", "content": "继续对话"},
+        ],
+        system="角色系统提示",
+        config={},
+    )
+
+    assert result == "ok"
+    assert [
+        message["role"] for message in captured["messages"]
+    ] == ["system", "user"]
+    assert captured["messages"][0]["content"] == (
+        "角色系统提示\n\n导入会话上下文"
+    )
+
+
 @pytest.fixture()
 def studio_platform(tmp_path: Path):
     engine = create_sqlite_engine(tmp_path / "studio.sqlite3")

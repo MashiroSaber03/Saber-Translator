@@ -76,6 +76,7 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/default-enabled")
     def default_enabled(plugin_id: str) -> Response:
+        _idempotency_key()
         body = _json_body(allowed_keys={"enabled"})
         return jsonify(
             registry.set_default_enabled(
@@ -90,6 +91,7 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/config")
     def update_config(plugin_id: str) -> Response:
+        _idempotency_key()
         body = _json_body(allowed_keys={"baseRevision", "config"})
         config = body.get("config")
         if not isinstance(config, dict):
@@ -140,6 +142,7 @@ def create_plugins_blueprint(
 
     @blueprint.delete("/<plugin_id>")
     def delete_plugin(plugin_id: str) -> Response:
+        _idempotency_key()
         return jsonify(
             registry.delete_plugin(
                 plugin_id=plugin_id,

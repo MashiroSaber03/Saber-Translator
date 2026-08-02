@@ -1721,7 +1721,7 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
-  /job-batches/translation:
+  /translation-batches:
     post:
       tags: [jobs]
       operationId: createTranslationJobBatch
@@ -1738,6 +1738,27 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/TranslationBatchAccepted"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/{chapter_id}/remove-text-jobs:
+    post:
+      tags: [jobs]
+      operationId: createChapterRemoveTextJob
+      parameters:
+        - $ref: "#/components/parameters/ChapterId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChapterRemoveTextJobCommand"}
+      responses:
+        "202":
+          description: Remove-text job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /chapters/{chapter_id}/detect-jobs:
@@ -1978,8 +1999,8 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
-  /pages/{page_id}/replace-source:
-    post:
+  /pages/{page_id}/source:
+    put:
       tags: [content]
       operationId: replacePageSource
       parameters:
@@ -1995,7 +2016,7 @@ paths:
           description: New immutable source and thumbnail were published.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/PageImportResult"}
+              schema: {$ref: "#/components/schemas/ReplacePageSourceResult"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
@@ -2074,6 +2095,85 @@ paths:
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /pages/{page_id}/bubbles:
+    post:
+      tags: [pages]
+      operationId: createPageBubble
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SingleBubbleMutationCommand"}
+      responses:
+        "200":
+          description: Bubble created and the aggregate page document returned.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageDocumentMutationResponse"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /pages/{page_id}/bubbles/{bubble_id}:
+    parameters:
+      - $ref: "#/components/parameters/PageId"
+      - $ref: "#/components/parameters/BubbleId"
+    patch:
+      tags: [pages]
+      operationId: updatePageBubble
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SingleBubbleMutationCommand"}
+      responses:
+        "200":
+          description: Bubble updated and the aggregate page document returned.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageDocumentMutationResponse"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [pages]
+      operationId: deletePageBubble
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RevisionCommand"}
+      responses:
+        "200":
+          description: Bubble deleted and the aggregate page document returned.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageDocumentMutationResponse"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /pages/{page_id}/render-status:
+    get:
+      tags: [pages]
+      operationId: getPageRenderStatus
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+      responses:
+        "200":
+          description: Current page render revision and immutable translated assets.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageRenderStatus"}
+        "404": {$ref: "#/components/responses/NotFound"}
   /assets/{asset_id}:
     get:
       tags: [content]
@@ -2349,13 +2449,13 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
-  /web-import/drafts/{draft_id}/pages/{page_id}/media:
+  /web-import/drafts/{draft_id}/media/{draft_page_id}:
     get:
       tags: [web-import]
       operationId: getWebImportDraftPageMedia
       parameters:
         - $ref: "#/components/parameters/DraftId"
-        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/DraftPageId"
       responses:
         "200":
           description: Streamed draft image bytes.
@@ -3429,6 +3529,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    BubbleId:
+      name: bubble_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
     OperationId:
       name: operation_id
       in: path
@@ -3491,6 +3597,12 @@ components:
         $ref: "#/components/schemas/Uuid"
     DraftId:
       name: draft_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    DraftPageId:
+      name: draft_page_id
       in: path
       required: true
       schema:
@@ -4397,6 +4509,18 @@ components:
           minItems: 1
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
+    ChapterRemoveTextJobCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        executionMode:
+          type: string
+          enum: [sequential, parallel]
+        pageIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
     TranslationJobBatchCommand:
       type: object
       additionalProperties: false
@@ -4758,6 +4882,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BubbleMutationResult"
+    SingleBubbleMutationCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, fields]
+      properties:
+        baseRevision:
+          type: integer
+          minimum: 1
+        fields:
+          type: object
+          additionalProperties: true
     BubbleRepairCommand:
       type: object
       additionalProperties: false
@@ -5742,6 +5877,32 @@ components:
         thumbnailTranslatedUrl: {type: [string, "null"]}
         width: {type: [integer, "null"], minimum: 1}
         height: {type: [integer, "null"], minimum: 1}
+    PageRenderStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - pageId
+        - documentRevision
+        - renderedRevision
+        - renderStatus
+        - translatedUrl
+        - thumbnailTranslatedUrl
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        documentRevision: {type: integer, minimum: 1}
+        renderedRevision: {type: [integer, "null"], minimum: 1}
+        renderStatus:
+          type: string
+          enum:
+            - not_rendered
+            - ready
+            - stale
+            - rendering
+            - render_failed
+            - awaiting_repair
+            - repair_failed
+        translatedUrl: {type: [string, "null"]}
+        thumbnailTranslatedUrl: {type: [string, "null"]}
     PageList:
       type: object
       additionalProperties: false
@@ -5866,6 +6027,21 @@ components:
       properties:
         file: {type: string, format: binary}
         baseSourceRevision: {type: integer, minimum: 1}
+    ReplacePageSourceResult:
+      type: object
+      additionalProperties: false
+      required:
+        - pageId
+        - sourceRevision
+        - documentRevision
+        - sourceUrl
+        - thumbnailSourceUrl
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        sourceRevision: {type: integer, minimum: 2}
+        documentRevision: {type: integer, minimum: 2}
+        sourceUrl: {type: string}
+        thumbnailSourceUrl: {type: string}
     QuickWorkspaceContext:
       type: object
       additionalProperties: false
@@ -6121,7 +6297,7 @@ components:
             - type: "null"
         kind: {$ref: "#/components/schemas/JobKind"}
         status: {$ref: "#/components/schemas/JobStatus"}
-        progress: {type: object, additionalProperties: true}
+        progress: {$ref: "#/components/schemas/JobProgress"}
     InsightBootstrap:
       type: object
       additionalProperties: false

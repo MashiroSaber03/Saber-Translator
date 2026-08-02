@@ -556,6 +556,36 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["pages"][0]["page_number"], 1)
         self.assertNotIn("parse_error", result)
 
+    def test_vlm_single_page_uses_backend_page_number(self) -> None:
+        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        client = VLMClient(
+            VLMConfig(
+                provider="custom",
+                api_key="test-key",
+                model="vlm-model",
+                base_url="https://example.com/v1",
+            ),
+            PromptsConfig(),
+        )
+
+        result = client._parse_batch_analysis(
+            '{"pages":[{"page_number":108,"page_summary":"单页摘要"}]}',
+            14,
+            14,
+        )
+
+        self.assertEqual(result["pages"][0]["page_number"], 14)
+        self.assertNotIn("parse_error", result)
+
+        wrong_batch = client._parse_batch_analysis(
+            '{"pages":[{"page_number":108},{"page_number":109}]}',
+            14,
+            15,
+        )
+        self.assertEqual(wrong_batch, {"pages": [], "parse_error": True})
+
     def test_vlm_parse_batch_analysis_rejects_retired_shapes(self) -> None:
         from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient

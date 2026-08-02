@@ -172,31 +172,35 @@ class ColorExtractor:
         Returns:
             List[ColorExtractionResult]: 每个气泡的颜色提取结果
         """
-        if not self._initialized or self._ocr_handler is None:
-            logger.warning("颜色提取器未初始化，返回空结果")
-            return [ColorExtractionResult() for _ in bubble_coords]
-        
         if not bubble_coords:
             return []
+
+        if not self.is_initialized:
+            raise RuntimeError("48px OCR 未初始化，无法提取颜色")
         
         try:
             # 调用 48px OCR 的颜色提取方法
             raw_results = self._ocr_handler.extract_colors_for_bubbles(
                 image, bubble_coords, textlines_per_bubble
             )
-            
-            # 根据参数过滤结果
-            results = []
-            for raw in raw_results:
-                fg = raw.fg_color if extract_fg else None
-                bg = raw.bg_color if extract_bg else None
-                results.append(ColorExtractionResult(fg, bg, raw.confidence))
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"颜色提取失败: {e}", exc_info=True)
-            return [ColorExtractionResult() for _ in bubble_coords]
+        except Exception:
+            logger.exception("颜色提取失败")
+            raise
+
+        if len(raw_results) != len(bubble_coords):
+            raise RuntimeError(
+                "颜色提取结果数量不匹配: "
+                f"expected={len(bubble_coords)}, actual={len(raw_results)}"
+            )
+
+        # 根据参数过滤结果
+        results = []
+        for raw in raw_results:
+            fg = raw.fg_color if extract_fg else None
+            bg = raw.bg_color if extract_bg else None
+            results.append(ColorExtractionResult(fg, bg, raw.confidence))
+
+        return results
     
 
 
@@ -240,13 +244,17 @@ def extract_bubble_colors(
             ...
         ]
     """
+    if not bubble_coords:
+        return []
+
     extractor = get_color_extractor()
     resolved_device = _resolve_preferred_device(device)
 
     if not extractor.is_initialized or extractor._device != resolved_device:
         if not extractor.initialize(resolved_device):
-            logger.error("颜色提取器初始化失败")
-            return [{'fg_color': None, 'bg_color': None, 'confidence': 0.0} for _ in bubble_coords]
+            raise RuntimeError(
+                f"48px OCR 初始化失败，无法提取颜色: device={resolved_device}"
+            )
     
     results = extractor.extract_colors(image, bubble_coords, textlines_per_bubble)
     return [r.to_dict() for r in results]

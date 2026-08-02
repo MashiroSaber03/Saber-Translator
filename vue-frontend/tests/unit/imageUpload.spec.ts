@@ -82,6 +82,7 @@ describe('ImageUpload', () => {
       '已创建 1 个后端解析任务，可安全关闭页面',
       'success',
     )
+    expect(wrapper.emitted('uploadComplete')).toBeUndefined()
   })
 
   it('renders backend upload errors through the product status banner', async () => {

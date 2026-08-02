@@ -175,6 +175,7 @@ export function useExportImport() {
     isDownloading.value = true
     downloadProgress.value = 2
     downloadProgressText.value = '正在创建后端导出任务'
+    let queuedToastId: number | null = null
     try {
       const accepted = await createChapterExportJob(
         chapterId,
@@ -183,7 +184,7 @@ export function useExportImport() {
       )
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回导出任务')
-      toast.info('导出任务已进入后端队列，可安全关闭页面', 0)
+      queuedToastId = toast.info('导出任务已进入后端队列，可安全关闭页面', 0)
       const job = await waitForExport(jobId)
       const artifact = job.artifacts[0]
       if (!artifact) throw new Error('导出任务未生成可下载文件')
@@ -202,6 +203,7 @@ export function useExportImport() {
         toast.error(`下载失败：${error instanceof Error ? error.message : String(error)}`)
       }
     } finally {
+      if (queuedToastId !== null) toast.removeToast(queuedToastId)
       isDownloading.value = false
       resetDownloadProgressLater()
     }

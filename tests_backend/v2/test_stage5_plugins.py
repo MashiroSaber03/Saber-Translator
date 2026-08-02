@@ -61,6 +61,11 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.core.plugin_agent.controller import PluginAgentController
+from src.core.plugin_agent.models import (
+    LockedPluginTarget,
+    PluginAgentMessage,
+    PluginAgentSession,
+)
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
 )
@@ -491,6 +496,7 @@ def test_plugin_management_http_api_is_metadata_only(
             "baseRevision": 1,
             "config": {"prefix": "http", "strict": True},
         },
+        headers={"Idempotency-Key": "http-plugin-config"},
     )
     assert config.status_code == 200
     assert config.get_json()["configRevision"] == 2
@@ -1498,6 +1504,60 @@ def test_plugin_agent_invalid_execution_action_is_business_retryable(
             force_json_output=False,
             require_action=True,
         )
+
+
+def test_plugin_agent_planning_uses_one_leading_system_message() -> None:
+    session = PluginAgentSession(
+        session_id="planning-system-message",
+        mode="create",
+        messages=[
+            PluginAgentMessage(
+                id="user-1",
+                role="user",
+                content="创建一个插件",
+            )
+        ],
+    )
+
+    messages = PluginAgentController()._build_chat_messages(
+        session,
+        "planning instructions",
+        "plugin skill",
+    )
+
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert "planning instructions" in messages[0]["content"]
+    assert "plugin skill" in messages[0]["content"]
+
+
+def test_plugin_agent_execution_uses_one_leading_system_message() -> None:
+    session = PluginAgentSession(
+        session_id="execution-system-message",
+        mode="create",
+        locked_target=LockedPluginTarget(
+            mode="create",
+            plugin_id="system_message_test",
+            display_name="System Message Test",
+            plugin_dir="system_message_test",
+        ),
+        messages=[
+            PluginAgentMessage(
+                id="user-1",
+                role="user",
+                content="开始执行",
+            )
+        ],
+    )
+
+    messages = PluginAgentController()._build_execution_messages(
+        session,
+        "execution instructions",
+        "plugin skill",
+    )
+
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert "execution instructions" in messages[0]["content"]
+    assert "plugin skill" in messages[0]["content"]
 
 
 def test_plugin_agent_http_rejects_browser_supplied_provider_secret(

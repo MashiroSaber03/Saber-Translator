@@ -257,14 +257,14 @@ class WebImportCommandService:
                         else None
                     ),
                     "sourceMediaUrl": (
-                        f"/api/v2/web-import/drafts/{draft_id}/pages/"
-                        f"{row['id']}/media?variant=source"
+                        f"/api/v2/web-import/drafts/{draft_id}/media/"
+                        f"{row['id']}?variant=source"
                         if row["temp_relative_path"] and not row["error_json"]
                         else None
                     ),
                     "thumbnailUrl": (
-                        f"/api/v2/web-import/drafts/{draft_id}/pages/"
-                        f"{row['id']}/media?variant=thumbnail"
+                        f"/api/v2/web-import/drafts/{draft_id}/media/"
+                        f"{row['id']}?variant=thumbnail"
                         if row["thumbnail_asset_id"] and not row["error_json"]
                         else None
                     ),

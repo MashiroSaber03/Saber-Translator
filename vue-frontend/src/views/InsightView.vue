@@ -29,6 +29,7 @@ import CharacterStudioEntryPanel from '@/components/insight/CharacterStudioEntry
 import * as insightApi from '@/api/insight'
 import { getBookDetail } from '@/api/bookshelf'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
+import { projectInsightPageProgress } from '@/utils/insightJobProgress'
 import type { BookData, ChapterData, ChapterInfo } from '@/types'
 
 const route = useRoute()
@@ -203,14 +204,11 @@ function projectActiveInsightJob(): void {
   insightStore.setAnalysisStatus(
     active.status === 'paused' ? 'paused' : 'running',
   )
-  const progress = active.progress as Record<string, unknown>
-  const currentStep = progress.currentStep && typeof progress.currentStep === 'object'
-    ? progress.currentStep as Record<string, unknown>
-    : undefined
+  const progress = projectInsightPageProgress(active.progress)
   insightStore.updateProgress(
-    Number(progress.completedItems ?? 0),
-    Number(progress.totalItems ?? insightStore.totalPageCount ?? 0),
-    String(currentStep?.kind ?? ''),
+    progress.current,
+    progress.total,
+    progress.currentStepKind,
   )
 }
 

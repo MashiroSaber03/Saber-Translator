@@ -14,8 +14,10 @@ import { createDefaultSettings } from '@/stores/settings/defaults'
 import { addTestImage } from '../helpers/imageFixtures'
 
 const mocks = vi.hoisted(() => ({
+  createChapterRemoveTextJob: vi.fn(),
   createChapterTranslationJob: vi.fn(),
   getPageDocument: vi.fn(),
+  getPageSummary: vi.fn(),
   jobsList: vi.fn(),
   jobsRetryFailed: vi.fn(),
   listChapterPages: vi.fn(),
@@ -27,11 +29,13 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/v2/translation', () => ({
+  createChapterRemoveTextJob: mocks.createChapterRemoveTextJob,
   createChapterTranslationJob: mocks.createChapterTranslationJob,
 }))
 
 vi.mock('@/api/v2/content', () => ({
   getPageDocument: mocks.getPageDocument,
+  getPageSummary: mocks.getPageSummary,
   listChapterPages: mocks.listChapterPages,
 }))
 
@@ -51,6 +55,11 @@ describe('useTranslationPipeline', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mocks.createChapterRemoveTextJob.mockResolvedValue({
+      batchId: 'remove-batch-1',
+      jobIds: ['remove-job-1'],
+      status: 'queued',
+    })
     mocks.createChapterTranslationJob.mockResolvedValue({
       batchId: 'batch-1',
       jobIds: ['job-1'],
@@ -118,6 +127,26 @@ describe('useTranslationPipeline', () => {
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
   })
 
+  it('uses the dedicated backend remove-text job endpoint', async () => {
+    const imageStore = useImageStore()
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.parallel.enabled = true
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+
+    const result = await useTranslation().removeTextOnly()
+
+    expect(result).toBe(true)
+    expect(mocks.createChapterRemoveTextJob).toHaveBeenCalledWith(
+      'chapter-1',
+      ['page-1'],
+      'parallel',
+    )
+    expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+  })
+
   it('rejects pages that are not owned by one backend chapter', async () => {
     const imageStore = useImageStore()
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
@@ -133,6 +162,68 @@ describe('useTranslationPipeline', () => {
 
     expect(result).toBe(false)
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+  })
+
+  it('refreshes a completed page immediately without reloading the chapter', async () => {
+    const imageStore = useImageStore()
+    const taskCenterStore = useTaskCenterStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 1,
+      id: 'page-1',
+    })
+    addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
+      chapterId: 'chapter-1',
+      documentRevision: 1,
+      id: 'page-2',
+    })
+    imageStore.setCurrentImageIndex(0)
+    mocks.getPageSummary.mockResolvedValue({
+      id: 'page-1',
+      chapterId: 'chapter-1',
+      ordinal: 1,
+      logicalSourcePath: '001.png',
+      width: 100,
+      height: 200,
+      sourceRevision: 1,
+      documentRevision: 2,
+      renderedRevision: 2,
+      renderStatus: 'ready',
+      detectionState: 'completed',
+      sourceUrl: '/api/v2/assets/source-1',
+      thumbnailSourceUrl: '/api/v2/assets/thumb-1',
+      cleanUrl: '/api/v2/assets/clean-1',
+      translatedUrl: '/api/v2/assets/translated-1',
+      thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
+    })
+
+    await useTranslation().translateAllImages()
+    taskCenterStore.latestEvent = {
+      eventId: 998,
+      jobId: 'job-1',
+      type: 'page_completed',
+      payload: {
+        pageId: 'page-1',
+        progress: { totalItems: 2, completedItems: 1 },
+      },
+      createdAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(imageStore.images[0]?.translatedAssetUrl).toBe(
+        '/api/v2/assets/translated-1',
+      )
+    })
+    expect(imageStore.images[0]).toMatchObject({
+      thumbnailTranslatedUrl: '/api/v2/assets/translated-thumb-1',
+      translationStatus: 'completed',
+    })
+    expect(imageStore.images[1]?.translationStatus).toBe('processing')
+    expect(mocks.getPageSummary).toHaveBeenCalledOnce()
+    expect(mocks.getPageSummary).toHaveBeenCalledWith('page-1')
+    expect(mocks.listChapterPages).not.toHaveBeenCalled()
+    expect(mocks.getPageDocument).toHaveBeenCalledWith('page-1')
   })
 
   it('rehydrates the current page document when a durable job finishes', async () => {
@@ -257,6 +348,94 @@ describe('useTranslationPipeline', () => {
     expect(mocks.getPageDocument).not.toHaveBeenCalled()
   })
 
+  it('reconciles newly imported pages when a backend container job finishes', async () => {
+    const imageStore = useImageStore()
+    const taskCenterStore = useTaskCenterStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+    imageStore.setCurrentImageIndex(0)
+    mocks.listChapterPages.mockResolvedValue({
+      items: [
+        {
+          id: 'page-1',
+          chapterId: 'chapter-1',
+          ordinal: 1,
+          logicalSourcePath: '001.png',
+          width: 100,
+          height: 200,
+          sourceRevision: 1,
+          documentRevision: 1,
+          renderedRevision: null,
+          renderStatus: 'pending',
+          detectionState: 'pending',
+          sourceUrl: '/api/v2/assets/source-1',
+          thumbnailSourceUrl: '/api/v2/assets/thumb-1',
+          cleanUrl: null,
+          translatedUrl: null,
+          thumbnailTranslatedUrl: null,
+        },
+        {
+          id: 'page-2',
+          chapterId: 'chapter-1',
+          ordinal: 2,
+          logicalSourcePath: '002.png',
+          width: 120,
+          height: 220,
+          sourceRevision: 1,
+          documentRevision: 0,
+          renderedRevision: null,
+          renderStatus: 'pending',
+          detectionState: 'pending',
+          sourceUrl: '/api/v2/assets/source-2',
+          thumbnailSourceUrl: '/api/v2/assets/thumb-2',
+          cleanUrl: null,
+          translatedUrl: null,
+          thumbnailTranslatedUrl: null,
+        },
+      ],
+    })
+    taskCenterStore.history = [{
+      jobId: 'container-job',
+      batchId: 'container-batch',
+      batchDisplayName: 'Container import',
+      kind: 'container_import',
+      retryOfJobId: null,
+      retryMode: null,
+      status: 'completed',
+      queueRank: null,
+      bookId: 'book-1',
+      chapterId: 'chapter-1',
+      pageId: null,
+      blockedReason: null,
+      blockedByJobId: null,
+      progress: { totalItems: 2, completedItems: 2 },
+      target: { pageCount: 2 },
+      createdAt: null,
+      startedAt: null,
+      finishedAt: null,
+    }]
+
+    useTranslation()
+    taskCenterStore.latestEvent = {
+      eventId: 1001,
+      jobId: 'container-job',
+      type: 'job_finished',
+      payload: {},
+      createdAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    await vi.waitFor(() => expect(imageStore.images).toHaveLength(2))
+    expect(imageStore.images[1]).toMatchObject({
+      id: 'page-2',
+      fileName: '002.png',
+      sourceAssetUrl: '/api/v2/assets/source-2',
+    })
+    expect(imageStore.currentImage?.id).toBe('page-1')
+  })
+
   it('reconciles a tracked job from durable queue and history snapshots', async () => {
     const imageStore = useImageStore()
     const taskCenterStore = useTaskCenterStore()
@@ -378,6 +557,7 @@ describe('useTranslationPipeline', () => {
     )
 
     expect(source).toContain('createChapterTranslationJob')
+    expect(source).toContain('createChapterRemoveTextJob')
     expect(source).not.toContain('usePipeline')
     expect(source).not.toContain('executeRender')
     expect(source).not.toContain('sessionStore')

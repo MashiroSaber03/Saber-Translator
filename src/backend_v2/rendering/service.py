@@ -29,13 +29,14 @@ def publish_png_asset(
 ) -> AssetRecord:
     converted = image if mode is None or image.mode == mode else image.convert(mode)
     try:
-        output = BytesIO()
-        converted.save(output, format="PNG")
+        with BytesIO() as output:
+            converted.save(output, format="PNG")
+            payload = output.getvalue()
     finally:
         if converted is not image:
             converted.close()
     return storage.publish_bytes(
-        output.getvalue(),
+        payload,
         extension="png",
         mime_type="image/png",
         width=image.width,
@@ -64,13 +65,14 @@ def publish_thumbnail_asset(
                 thumbnail = cropped
         else:
             thumbnail.thumbnail((320, 320), Image.Resampling.LANCZOS)
-        output = BytesIO()
-        thumbnail.save(output, format="WEBP", quality=80, method=4)
+        with BytesIO() as output:
+            thumbnail.save(output, format="WEBP", quality=80, method=4)
+            payload = output.getvalue()
         width, height = thumbnail.size
     finally:
         thumbnail.close()
     return storage.publish_bytes(
-        output.getvalue(),
+        payload,
         extension="webp",
         mime_type="image/webp",
         width=width,

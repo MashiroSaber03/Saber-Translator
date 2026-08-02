@@ -390,8 +390,10 @@ class InteractivePageOperationService:
         mask_record: AssetRecord | None = None
         raw_mask = detected.get("raw_mask")
         if isinstance(raw_mask, Image.Image):
-            mask_record = publish_png_asset(self.storage, raw_mask, mode="L")
-            raw_mask.close()
+            try:
+                mask_record = publish_png_asset(self.storage, raw_mask, mode="L")
+            finally:
+                raw_mask.close()
         elif raw_mask is not None:
             mask_image = Image.fromarray(raw_mask)
             try:

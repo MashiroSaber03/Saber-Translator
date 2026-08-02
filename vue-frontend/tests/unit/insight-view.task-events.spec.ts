@@ -108,7 +108,30 @@ function insightJob(overrides: Partial<V2Job> = {}): V2Job {
       failedItems: 0,
       skippedItems: 0,
       cancelledItems: 0,
-      pools: [],
+      pools: [
+        {
+          kind: 'insight_analyze_page',
+          total: 4,
+          completed: 2,
+          failed: 1,
+          skipped: 1,
+          waiting: 0,
+          processing: 0,
+          lockWaiting: false,
+          current: [],
+        },
+        {
+          kind: 'insight_publish_run',
+          total: 1,
+          completed: 0,
+          failed: 0,
+          skipped: 0,
+          waiting: 1,
+          processing: 0,
+          lockWaiting: false,
+          current: [],
+        },
+      ],
     },
     target: {},
     createdAt: null,
@@ -186,6 +209,7 @@ describe('InsightView task event projection', () => {
     expect(insightStore.analysisStatus).toBe('running')
     expect(insightStore.currentTaskId).toBe('analysis-job-1')
     expect(insightStore.progress.current).toBe(4)
+    expect(insightStore.progress.total).toBe(4)
 
     taskCenterStore.latestEvent = {
       eventId: 101,

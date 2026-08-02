@@ -10,6 +10,7 @@ const {
   savePromptToLibraryMock,
   getDefaultPromptsMock,
   getPromptsLibraryMock,
+  importPromptsLibraryMock,
   confirmProductActionMock,
   requestProductTextInputMock,
 } = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const {
   savePromptToLibraryMock: vi.fn(),
   getDefaultPromptsMock: vi.fn(),
   getPromptsLibraryMock: vi.fn(),
+  importPromptsLibraryMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
   requestProductTextInputMock: vi.fn(),
 }))
@@ -32,7 +34,7 @@ vi.mock('@/api/insight', async importOriginal => {
     deletePromptFromLibrary: deletePromptFromLibraryMock,
     getDefaultPrompts: getDefaultPromptsMock,
     getPromptsLibrary: getPromptsLibraryMock,
-    importPromptsLibrary: vi.fn(),
+    importPromptsLibrary: importPromptsLibraryMock,
     savePromptToLibrary: savePromptToLibraryMock,
   }
 })
@@ -128,6 +130,7 @@ describe('Insight card-like controls', () => {
     savePromptToLibraryMock.mockReset()
     getDefaultPromptsMock.mockReset()
     getPromptsLibraryMock.mockReset()
+    importPromptsLibraryMock.mockReset()
     confirmProductActionMock.mockReset()
     requestProductTextInputMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
@@ -147,6 +150,7 @@ describe('Insight card-like controls', () => {
         created_at: '2026-05-21T10:00:00Z',
       },
     ])
+    importPromptsLibraryMock.mockImplementation(async library => library)
     savePromptToLibraryMock.mockImplementation(async prompt => ({
       ...prompt,
       id: 'saved-prompt',
@@ -285,11 +289,53 @@ describe('Insight card-like controls', () => {
 
     const promptTypeSelect = wrapper.getComponent(UiSelect)
     expect(promptTypeSelect.props('modelValue')).toBe('batch_analysis')
+    expect(wrapper.get('textarea').element.value).toBe('默认提示词')
     expect(promptTypeSelect.props('options')).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ value: 'qa_response', label: expect.stringContaining('问答') }),
       ])
     )
+  })
+
+  it('uses backend prompt ids after importing the library', async () => {
+    importPromptsLibraryMock.mockResolvedValue([
+      {
+        id: 'server-prompt-id',
+        name: '导入提示词',
+        type: 'qa_response',
+        content: '只依据漫画内容回答',
+        created_at: '',
+      },
+    ])
+    const wrapper = mount(PromptsSettingsTab, {
+      global: {
+        plugins: [createPinia()],
+      },
+    })
+    await flushPromises()
+
+    const file = {
+      text: vi.fn().mockResolvedValue(JSON.stringify({
+        library: [
+          {
+            id: 'client-file-id',
+            name: '导入提示词',
+            type: 'qa_response',
+            content: '只依据漫画内容回答',
+            created_at: '2026-08-02T00:00:00Z',
+          },
+        ],
+      })),
+    } as unknown as File
+    wrapper.getComponent(UiFileInput).vm.$emit('files-change', [file])
+    await flushPromises()
+
+    const deleteButton = wrapper.get('[aria-label="删除提示词：导入提示词"]')
+    await deleteButton.trigger('click')
+    await flushPromises()
+
+    expect(importPromptsLibraryMock).toHaveBeenCalledOnce()
+    expect(deletePromptFromLibraryMock).toHaveBeenCalledWith('server-prompt-id')
   })
 
   it('uses shared product primitives for prompt settings layout and saved prompts', async () => {

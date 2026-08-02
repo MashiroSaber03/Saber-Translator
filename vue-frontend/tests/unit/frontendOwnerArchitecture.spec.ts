@@ -39,6 +39,7 @@ describe('frontend state owner architecture', () => {
 
     expect(translation).toContain("from '@/api/v2/translation'")
     expect(translation).toContain('createChapterTranslationJob')
+    expect(translation).toContain('createChapterRemoveTextJob')
     expect(translation).not.toContain('usePipeline')
     expect(translation).not.toContain('sessionStore')
     expect(translation).not.toContain('base64')

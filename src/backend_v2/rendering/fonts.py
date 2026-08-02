@@ -30,10 +30,14 @@ def resolve_font_path(
         .where(fonts.c.id == font_id)
     ).mappings().one_or_none()
     if row is None:
-        return constants.DEFAULT_FONT_RELATIVE_PATH
-    if row["kind"] == "uploaded" and row["relative_path"]:
+        raise LookupError("font not found")
+    if row["kind"] == "uploaded":
+        if not row["relative_path"]:
+            raise RuntimeError("uploaded font asset is missing")
         return str(storage.resolve_relative_path(str(row["relative_path"])))
-    return constants.DEFAULT_FONT_RELATIVE_PATH
+    if row["kind"] == "builtin" and row["builtin_key"] == "default":
+        return constants.DEFAULT_FONT_RELATIVE_PATH
+    raise RuntimeError("unsupported builtin font")
 
 
 def materialize_render_payloads(

@@ -1,4 +1,5 @@
 import type { V2Job } from '@/api/v2/jobs'
+import { projectInsightPageProgress } from '@/utils/insightJobProgress'
 
 export interface JobBatchProjection {
   key: string
@@ -89,6 +90,22 @@ export function progressCounts(job: V2Job): JobProgressCounts {
     + finiteCount(progress.skippedItems)
     + finiteCount(progress.cancelledItems)
   )
+  if (job.kind === 'insight_analysis') {
+    const pageProgress = projectInsightPageProgress(job.progress)
+    if (pageProgress.total > 0) {
+      return {
+        completed: pageProgress.current,
+        total: pageProgress.total,
+      }
+    }
+    const pageCount = targetPageCount(job)
+    if (pageCount > 0) {
+      return {
+        completed: Math.min(completed, pageCount),
+        total: pageCount,
+      }
+    }
+  }
   return {
     completed: Math.min(completed, total),
     total,

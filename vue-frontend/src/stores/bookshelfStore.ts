@@ -20,6 +20,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const sortBy = ref<BookSortBy>('updatedAt')
   const sortOrder = ref<SortOrder>('desc')
   const currentBookId = ref<string | null>(null)
+  const currentBookDetail = ref<BookData | null>(null)
   const batchMode = ref(false)
   const selectedBookIds = ref<Set<string>>(new Set())
   const isLoading = ref(false)
@@ -27,6 +28,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   const currentBook = computed(() => {
     if (!currentBookId.value) return null
+    if (currentBookDetail.value?.id === currentBookId.value) {
+      return currentBookDetail.value
+    }
     return books.value.find(book => book.id === currentBookId.value) || null
   })
   const searchQuery = computed(() => searchKeyword.value)
@@ -36,29 +40,43 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   function setBooks(bookList: BookData[]): void {
     books.value = bookList
-  }
-
-  function addBook(book: BookData): void {
-    books.value.unshift(book)
+    const detail = currentBookDetail.value
+    if (!detail) return
+    const summary = bookList.find(book => book.id === detail.id)
+    if (!summary) return
+    currentBookDetail.value = {
+      ...detail,
+      ...summary,
+      chapters: summary.chapters ?? detail.chapters,
+      translationConstraints:
+        summary.translationConstraints ?? detail.translationConstraints,
+    }
   }
 
   function upsertBook(book: BookData): void {
     const index = books.value.findIndex(item => item.id === book.id)
     if (index >= 0) {
       books.value[index] = book
-      return
+    } else {
+      books.value.unshift(book)
     }
-    books.value.unshift(book)
+    if (currentBookId.value === book.id) {
+      currentBookDetail.value = book
+    }
+  }
+
+  function eachBookProjection(
+    bookId: string,
+    update: (book: BookData) => void,
+  ): void {
+    const listBook = books.value.find(book => book.id === bookId)
+    if (listBook) update(listBook)
+    const detail = currentBookDetail.value
+    if (detail?.id === bookId && detail !== listBook) update(detail)
   }
 
   function updateBook(bookId: string, updates: Partial<BookData>): void {
-    const index = books.value.findIndex(book => book.id === bookId)
-    if (index >= 0) {
-      const book = books.value[index]
-      if (book) {
-        books.value[index] = { ...book, ...updates }
-      }
-    }
+    eachBookProjection(bookId, book => Object.assign(book, updates))
   }
 
   function deleteBook(bookId: string): void {
@@ -67,6 +85,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       books.value.splice(index, 1)
       if (currentBookId.value === bookId) {
         currentBookId.value = null
+        currentBookDetail.value = null
       }
       if (selectedBookIds.value.delete(bookId)) {
         selectedBookIds.value = new Set(selectedBookIds.value)
@@ -80,6 +99,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     selectedBookIds.value = new Set([...selectedBookIds.value].filter(bookId => !ids.has(bookId)))
     if (currentBookId.value && ids.has(currentBookId.value)) {
       currentBookId.value = null
+      currentBookDetail.value = null
     }
   }
 
@@ -88,66 +108,57 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   function addChapter(bookId: string, chapter: ChapterData): void {
-    const book = books.value.find(item => item.id === bookId)
-    if (book) {
+    eachBookProjection(bookId, (book) => {
       book.chapters ??= []
       book.chapters.push(chapter)
       book.chapterCount = book.chapters.length
-    }
+    })
   }
 
   function updateChapter(bookId: string, chapterId: string, updates: Partial<ChapterData>): void {
-    const book = books.value.find(item => item.id === bookId)
-    const index = book?.chapters?.findIndex(item => item.id === chapterId) ?? -1
-    if (book?.chapters && index >= 0) {
-      const chapter = book.chapters[index]
-      if (chapter) {
-        book.chapters[index] = { ...chapter, ...updates }
+    eachBookProjection(bookId, (book) => {
+      const index = book.chapters?.findIndex(item => item.id === chapterId) ?? -1
+      if (book.chapters && index >= 0) {
+        const chapter = book.chapters[index]
+        if (chapter) {
+          book.chapters[index] = { ...chapter, ...updates }
+        }
       }
-    }
+    })
   }
 
   function deleteChapter(bookId: string, chapterId: string): void {
-    const book = books.value.find(item => item.id === bookId)
-    const index = book?.chapters?.findIndex(chapter => chapter.id === chapterId) ?? -1
-    if (book?.chapters && index >= 0) {
-      book.chapters.splice(index, 1)
-      book.chapterCount = book.chapters.length
-    }
+    eachBookProjection(bookId, (book) => {
+      const index = book.chapters?.findIndex(chapter => chapter.id === chapterId) ?? -1
+      if (book.chapters && index >= 0) {
+        book.chapters.splice(index, 1)
+        book.chapterCount = book.chapters.length
+      }
+    })
   }
 
   function reorderChapters(bookId: string, chapterIds: string[]): void {
-    const book = books.value.find(item => item.id === bookId)
-    if (!book?.chapters) {
-      return
-    }
-
-    const reordered: ChapterData[] = []
-    const orderedIds = new Set<string>()
-    for (const chapterId of chapterIds) {
-      if (orderedIds.has(chapterId)) {
-        continue
+    eachBookProjection(bookId, (book) => {
+      if (!book.chapters) return
+      const reordered: ChapterData[] = []
+      const orderedIds = new Set<string>()
+      for (const chapterId of chapterIds) {
+        if (orderedIds.has(chapterId)) continue
+        const chapter = book.chapters.find(item => item.id === chapterId)
+        if (chapter) {
+          orderedIds.add(chapterId)
+          reordered.push(chapter)
+        }
       }
-      const chapter = book.chapters.find(item => item.id === chapterId)
-      if (chapter) {
-        orderedIds.add(chapterId)
-        reordered.push(chapter)
+      for (const chapter of book.chapters) {
+        if (!orderedIds.has(chapter.id)) reordered.push(chapter)
       }
-    }
-
-    for (const chapter of book.chapters) {
-      if (!orderedIds.has(chapter.id)) {
-        reordered.push(chapter)
+      for (let index = 0; index < reordered.length; index += 1) {
+        const chapter = reordered[index]
+        if (chapter) chapter.order = index
       }
-    }
-
-    for (let index = 0; index < reordered.length; index += 1) {
-      const chapter = reordered[index]
-      if (chapter) {
-        chapter.order = index
-      }
-    }
-    book.chapters = reordered
+      book.chapters = reordered
+    })
   }
 
   function setTags(tagList: TagData[]): void {
@@ -165,39 +176,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       const selectedIndex = selectedTagNames.value.indexOf(tagName)
       if (selectedIndex >= 0) {
         selectedTagNames.value.splice(selectedIndex, 1)
-      }
-    }
-  }
-
-  function addTagToBook(bookId: string, tagName: string): void {
-    const book = books.value.find(item => item.id === bookId)
-    if (!book) return
-
-    const currentTags = book.tags ?? []
-    if (!currentTags.includes(tagName)) {
-      book.tags = [...currentTags, tagName]
-    }
-  }
-
-  function removeTagFromBook(bookId: string, tagName: string): void {
-    const book = books.value.find(item => item.id === bookId)
-    if (!book?.tags) return
-
-    book.tags = book.tags.filter(item => item !== tagName)
-  }
-
-  function batchAddTags(bookIds: string[], tagNames: string[]): void {
-    for (const bookId of bookIds) {
-      for (const tagName of tagNames) {
-        addTagToBook(bookId, tagName)
-      }
-    }
-  }
-
-  function batchRemoveTags(bookIds: string[], tagNames: string[]): void {
-    for (const bookId of bookIds) {
-      for (const tagName of tagNames) {
-        removeTagFromBook(bookId, tagName)
       }
     }
   }
@@ -256,6 +234,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   function setCurrentBook(bookId: string | null): void {
     currentBookId.value = bookId
+    currentBookDetail.value = bookId
+      ? books.value.find(book => book.id === bookId) || null
+      : null
   }
 
   function setSearchQuery(query: string): void {
@@ -311,7 +292,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   ): Promise<BookData | null> {
     try {
       const book = await bookshelfApi.createBook(title, cover, tags)
-      addBook(book)
+      await Promise.all([
+        loadBooks(),
+        tags !== undefined ? loadTags() : Promise.resolve(),
+      ])
       return book
     } catch {
       return null
@@ -322,6 +306,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     try {
       const book = await bookshelfApi.updateBook(bookId, data)
       updateBook(bookId, book)
+      await Promise.all([
+        loadBooks(),
+        data.tags !== undefined ? loadTags() : Promise.resolve(),
+      ])
       return true
     } catch {
       return false
@@ -348,9 +336,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     action: 'add' | 'remove',
   ): Promise<number> {
     const result = await bookshelfApi.batchUpdateBookTags(bookIds, tagNames, action)
-    if (action === 'add') batchAddTags(bookIds, tagNames)
-    else batchRemoveTags(bookIds, tagNames)
-    await loadBooks()
+    await Promise.all([loadBooks(), loadTags()])
     return result.updated
   }
 
@@ -368,6 +354,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     try {
       await bookshelfApi.deleteTag(tagName)
       deleteTag(tagName)
+      await loadBooks()
       return true
     } catch {
       return false
@@ -431,6 +418,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     sortBy.value = 'updatedAt'
     sortOrder.value = 'desc'
     currentBookId.value = null
+    currentBookDetail.value = null
     isLoading.value = false
     error.value = null
   }

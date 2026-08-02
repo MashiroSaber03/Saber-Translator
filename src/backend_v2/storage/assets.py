@@ -77,15 +77,16 @@ class AssetStorageService:
     ) -> AssetRecord:
         from io import BytesIO
 
-        return self.publish_stream(
-            BytesIO(payload),
-            extension=extension,
-            mime_type=mime_type,
-            width=width,
-            height=height,
-            bind=bind,
-            failpoint=failpoint,
-        )
+        with BytesIO(payload) as source:
+            return self.publish_stream(
+                source,
+                extension=extension,
+                mime_type=mime_type,
+                width=width,
+                height=height,
+                bind=bind,
+                failpoint=failpoint,
+            )
 
     def get_record(self, asset_id: str) -> AssetRecord | None:
         with self.engine.connect() as connection:

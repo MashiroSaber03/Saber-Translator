@@ -174,7 +174,7 @@ class ImageImportService:
                     separators=(",", ":"),
                 ).encode("utf-8")
             ).hexdigest()
-            scope = f"POST:replacePageSource:{page_id}"
+            scope = f"PUT:replacePageSource:{page_id}"
             replay = self.repository.replay_idempotency(
                 scope=scope,
                 key=idempotency_key,
@@ -211,23 +211,30 @@ class ImageImportService:
                 with Image.open(temporary) as decoded:
                     decoded.seek(0)
                     oriented = ImageOps.exif_transpose(decoded)
-                    oriented.load()
-                    cover = oriented.copy()
+                    try:
+                        oriented.load()
+                        cover = oriented.copy()
+                    finally:
+                        if oriented is not decoded:
+                            oriented.close()
+                try:
                     cover.thumbnail((640, 640), Image.Resampling.LANCZOS)
                     if cover.mode not in ("RGB", "RGBA"):
-                        cover = cover.convert("RGBA")
-                    output = BytesIO()
-                    cover.save(output, format="WEBP", quality=85, method=4)
+                        converted = cover.convert("RGBA")
+                        cover.close()
+                        cover = converted
                     width, height = cover.size
+                    with BytesIO() as output:
+                        cover.save(output, format="WEBP", quality=85, method=4)
+                        payload = output.getvalue()
+                finally:
                     cover.close()
-                    if oriented is not decoded:
-                        oriented.close()
             except (UnidentifiedImageError, OSError) as exc:
                 raise UnsupportedImage(
                     "uploaded cover is not a decodable image"
                 ) from exc
             return self.storage.publish_bytes(
-                output.getvalue(),
+                payload,
                 extension="webp",
                 mime_type="image/webp",
                 width=width,
@@ -287,15 +294,7 @@ class ImageImportService:
         temporary.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._copy_upload(upload, temporary)
-            (
-                extension,
-                mime_type,
-                width,
-                height,
-                _thumbnail_width,
-                _thumbnail_height,
-                _thumbnail,
-            ) = self._decode_and_thumbnail(temporary)
+            extension, mime_type, width, height = self._decode_metadata(temporary)
             with temporary.open("rb") as source_stream:
                 return self.storage.publish_stream(
                     source_stream,
@@ -353,6 +352,32 @@ class ImageImportService:
         return digest.hexdigest(), byte_size
 
     @staticmethod
+    def _decode_metadata(path: Path) -> tuple[str, str, int, int]:
+        try:
+            with Image.open(path) as probe:
+                image_format = (probe.format or "").upper()
+                if image_format not in FORMAT_DETAILS:
+                    raise UnsupportedImage(
+                        f"unsupported image format: {image_format or 'unknown'}"
+                    )
+                probe.verify()
+            with Image.open(path) as decoded:
+                decoded.seek(0)
+                oriented = ImageOps.exif_transpose(decoded)
+                try:
+                    oriented.load()
+                    width, height = oriented.size
+                finally:
+                    if oriented is not decoded:
+                        oriented.close()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise UnsupportedImage(
+                "uploaded file is not a decodable supported image"
+            ) from exc
+        extension, mime_type = FORMAT_DETAILS[image_format]
+        return extension, mime_type, width, height
+
+    @staticmethod
     def _decode_and_thumbnail(
         path: Path,
     ) -> tuple[str, str, int, int, int, int, bytes]:
@@ -368,36 +393,47 @@ class ImageImportService:
             with Image.open(path) as decoded:
                 decoded.seek(0)
                 oriented = ImageOps.exif_transpose(decoded)
-                oriented.load()
-                width, height = oriented.size
-                thumbnail_image = oriented.copy()
+                try:
+                    oriented.load()
+                    width, height = oriented.size
+                    thumbnail_image = oriented.copy()
+                finally:
+                    if oriented is not decoded:
+                        oriented.close()
+            try:
                 if height / max(width, 1) > 4:
                     if thumbnail_image.width > 320:
                         target_height = max(
                             1,
                             round(thumbnail_image.height * 320 / thumbnail_image.width),
                         )
-                        thumbnail_image = thumbnail_image.resize(
+                        resized = thumbnail_image.resize(
                             (320, target_height),
                             Image.Resampling.LANCZOS,
                         )
+                        thumbnail_image.close()
+                        thumbnail_image = resized
                     if thumbnail_image.height > 1280:
-                        thumbnail_image = thumbnail_image.crop(
+                        cropped = thumbnail_image.crop(
                             (0, 0, thumbnail_image.width, 1280)
                         )
+                        thumbnail_image.close()
+                        thumbnail_image = cropped
                 else:
                     thumbnail_image.thumbnail(
                         (320, 320),
                         Image.Resampling.LANCZOS,
                     )
                 if thumbnail_image.mode not in ("RGB", "RGBA"):
-                    thumbnail_image = thumbnail_image.convert("RGBA")
+                    converted = thumbnail_image.convert("RGBA")
+                    thumbnail_image.close()
+                    thumbnail_image = converted
                 thumbnail_width, thumbnail_height = thumbnail_image.size
-                output = BytesIO()
-                thumbnail_image.save(output, format="WEBP", quality=80, method=4)
+                with BytesIO() as output:
+                    thumbnail_image.save(output, format="WEBP", quality=80, method=4)
+                    thumbnail = output.getvalue()
+            finally:
                 thumbnail_image.close()
-                if oriented is not decoded:
-                    oriented.close()
         except (UnidentifiedImageError, OSError) as exc:
             raise UnsupportedImage("uploaded file is not a decodable supported image") from exc
         extension, mime_type = FORMAT_DETAILS[image_format]
@@ -408,5 +444,5 @@ class ImageImportService:
             height,
             thumbnail_width,
             thumbnail_height,
-            output.getvalue(),
+            thumbnail,
         )

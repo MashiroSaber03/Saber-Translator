@@ -173,10 +173,7 @@ class LargeImageDetectorWrapper:
         # 3. 合并掩码
         final_mask = None
         if all_masks:
-            try:
-                final_mask = merge_masks_from_patches(all_masks, context)
-            except Exception as e:
-                logger.warning(f"掩码合并失败: {e}")
+            final_mask = merge_masks_from_patches(all_masks, context)
         
         # 4. 处理文本行
         if not all_textlines:

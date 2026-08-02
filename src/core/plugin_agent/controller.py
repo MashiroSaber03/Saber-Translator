@@ -323,10 +323,13 @@ class PluginAgentController:
         skill_markdown: str,
     ) -> List[Dict[str, Any]]:
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
             {
                 "role": "system",
-                "content": "以下是项目内置的插件开发 skill，请始终以它为准：\n\n" + skill_markdown,
+                "content": (
+                    system_prompt
+                    + "\n\n以下是项目内置的插件开发 skill，请始终以它为准：\n\n"
+                    + skill_markdown
+                ),
             },
         ]
         for item in session.messages[-8:]:
@@ -378,10 +381,13 @@ class PluginAgentController:
         skill_markdown: str,
     ) -> List[Dict[str, Any]]:
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
             {
                 "role": "system",
-                "content": "以下是项目内置的插件开发 skill，请严格遵守：\n\n" + skill_markdown,
+                "content": (
+                    system_prompt
+                    + "\n\n以下是项目内置的插件开发 skill，请严格遵守：\n\n"
+                    + skill_markdown
+                ),
             },
         ]
         for item in session.messages[-10:]:

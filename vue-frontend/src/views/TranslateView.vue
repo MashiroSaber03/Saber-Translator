@@ -251,7 +251,7 @@ function openSettings() {
 
 function handleSettingsSave(payload?: { textDefaultsChanged?: boolean }) {
   if (payload?.textDefaultsChanged) {
-    showToast('已修改默认值，将在下次启动时生效', 'success')
+    showToast('默认值已保存，仅用于之后导入或新建的页面', 'success')
     return
   }
   showToast('设置已保存', 'success')

@@ -786,6 +786,7 @@ class JobRetryService:
             ]
             + [JobItemSpec(page_id=None, step_kinds=final_steps)]
         )
+        retry_page_count = len(item_specs) - 1
         display = _json_object(source.get("target_display_json"))
         spec = JobSpec(
             kind="insight_analysis",
@@ -795,8 +796,9 @@ class JobRetryService:
             chapter_id=_optional_text(source.get("chapter_id")),
             target_display={
                 **display,
+                "pageCount": retry_page_count,
                 "retryOfJobId": source_id,
-                "retryItemCount": len(item_specs),
+                "retryItemCount": retry_page_count,
             },
             credential_snapshots=(
                 original_credentials if strategy == "original" else None

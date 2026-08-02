@@ -87,9 +87,26 @@ def _render_vertical_bbox(text: str, font_path: str, font_size: int = 48, start_
 
 class VerticalPunctuationRenderingTests(unittest.TestCase):
     FONTS = (
-        os.path.join("src", "app", "static", "fonts", "msyh.ttc"),
-        os.path.join("src", "app", "static", "fonts", "Arial_Unicode.ttf"),
+        os.path.join("src", "backend_v2", "resources", "fonts", "msyh.ttc"),
+        os.path.join(
+            "src",
+            "backend_v2",
+            "resources",
+            "fonts",
+            "Arial_Unicode.ttf",
+        ),
     )
+
+    def test_missing_font_is_not_silently_replaced(self) -> None:
+        missing = os.path.join(
+            "src",
+            "backend_v2",
+            "resources",
+            "fonts",
+            "missing-font.ttf",
+        )
+        with self.assertRaises(FileNotFoundError):
+            get_font(missing, 32)
 
     def test_vertical_question_and_exclamation_marks_do_not_jump_far_above_direct_draw_position(self) -> None:
         for font_path in self.FONTS:
@@ -181,6 +198,22 @@ class VerticalPunctuationRenderingTests(unittest.TestCase):
                 side_effect=RuntimeError("test render failure"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "test render failure"):
+                    render_bubbles_unified(image, [state])
+        finally:
+            image.close()
+
+    def test_unified_renderer_rejects_a_missing_font(self) -> None:
+        image = Image.new("RGB", (160, 160), "white")
+        state = BubbleState(
+            translated_text="文字",
+            coords=(20, 20, 120, 140),
+            font_size=32,
+            font_family=self.FONTS[0],
+            text_direction="vertical",
+        )
+        try:
+            with patch("src.core.rendering.get_font", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "无法加载字体"):
                     render_bubbles_unified(image, [state])
         finally:
             image.close()

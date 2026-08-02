@@ -699,11 +699,12 @@ def test_full_analysis_failed_item_retry_refreshes_settings_and_republishes(
     assert config["runId"] == retried["runId"]
     assert retried["runId"] != accepted["runId"]
     assert config["analysis"]["pagesPerBatch"] == 7
-    assert (
-        JobQueueRepository(platform["engine"])
-        .get_job(retry_job_id)["counts"]["total"]
-        == 2
+    retry_detail = JobQueueRepository(platform["engine"]).get_job(
+        retry_job_id
     )
+    assert retry_detail["counts"]["total"] == 2
+    assert retry_detail["target"]["pageCount"] == 1
+    assert retry_detail["target"]["retryItemCount"] == 1
     assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
 
     run = InsightRepository(platform["engine"]).get_run(

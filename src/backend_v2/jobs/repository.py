@@ -2803,6 +2803,11 @@ class JobQueueRepository:
                 event_type=event_type,
                 payload={
                     "itemId": item_id,
+                    "pageId": (
+                        str(step["page_id"])
+                        if step["page_id"] is not None
+                        else None
+                    ),
                     "stepId": step_id,
                     "status": status,
                     "progress": snapshot,

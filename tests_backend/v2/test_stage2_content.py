@@ -21,7 +21,10 @@ from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
 )
 from src.backend_v2.runtime_identity import RuntimeIdentity
-from src.backend_v2.rendering.fonts import materialize_render_payloads
+from src.backend_v2.rendering.fonts import (
+    materialize_render_payloads,
+    resolve_font_path,
+)
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
@@ -73,6 +76,15 @@ def _image_bytes(
     with Image.new("RGB", size, color) as image:
         image.save(output, format=image_format)
     return output.getvalue()
+
+
+def test_font_resolution_rejects_an_unknown_v2_font(content_platform) -> None:
+    _data_root, engine, _repository, storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    with engine.connect() as connection:
+        with pytest.raises(LookupError, match="font not found"):
+            resolve_font_path(connection, storage, str(uuid.uuid4()))
 
 
 def _import(
@@ -829,6 +841,45 @@ def test_media_api_streams_immutable_asset_and_honors_conditional_get(
     )
 
 
+def test_media_api_marks_missing_object_as_failed_integrity(
+    content_platform,
+) -> None:
+    data_root, engine, repository, storage, importer, _book, chapter = content_platform
+    result, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((20, 20)),
+        logical_path="missing.png",
+        key="missing-media",
+    )
+    asset_id = result["page"]["thumbnailSourceUrl"].rsplit("/", 1)[-1]
+    record = storage.get_record(asset_id)
+    assert record is not None
+    storage.resolve_relative_path(record.relative_path).unlink()
+
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    response = app.test_client().get(result["page"]["thumbnailSourceUrl"])
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "asset_missing"
+    with engine.connect() as connection:
+        status = connection.execute(
+            select(assets.c.integrity_status).where(assets.c.id == asset_id)
+        ).scalar_one()
+    assert status == "missing"
+
+
 def test_page_document_uses_stable_bubble_ids_and_revision_cas(
     content_platform,
 ) -> None:
@@ -1010,6 +1061,103 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
     unchanged = repository.get_page_document(page_id)
     assert unchanged["documentRevision"] == 3
     assert unchanged["bubbles"][0]["payload"]["translatedText"] == "编辑写入"
+
+
+def test_plan_page_source_bubble_and_render_status_routes(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, importer, _book, chapter = (
+        content_platform
+    )
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((80, 120)),
+        logical_path="plan-routes.png",
+        key="plan-routes",
+    )
+    page_id = str(imported["page"]["id"])
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-plan-page-routes",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    try:
+        replaced = client.put(
+            f"/api/v2/pages/{page_id}/source",
+            headers={"Idempotency-Key": "plan-source-replace"},
+            data={
+                "baseSourceRevision": "1",
+                "file": (BytesIO(_image_bytes((96, 144))), "replacement.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert replaced.status_code == 200
+        assert "/api/v2/pages/<page_id>/replace-source" not in {
+            rule.rule for rule in app.url_map.iter_rules()
+        }
+
+        base_revision = replaced.get_json()["documentRevision"]
+        created = client.post(
+            f"/api/v2/pages/{page_id}/bubbles",
+            headers={"Idempotency-Key": "plan-bubble-create"},
+            json={
+                "baseRevision": base_revision,
+                "fields": {
+                    "translatedText": "后端气泡",
+                    "coords": [5, 6, 50, 60],
+                    "fontSize": 20,
+                },
+            },
+        )
+        assert created.status_code == 200
+        created_payload = created.get_json()
+        bubble_id = created_payload["mutationResults"][0]["bubbleId"]
+
+        render_status = client.get(
+            f"/api/v2/pages/{page_id}/render-status"
+        )
+        assert render_status.status_code == 200
+        assert render_status.get_json()["pageId"] == page_id
+        assert render_status.get_json()["documentRevision"] == (
+            created_payload["document"]["documentRevision"]
+        )
+
+        patched = client.patch(
+            f"/api/v2/pages/{page_id}/bubbles/{bubble_id}",
+            headers={"Idempotency-Key": "plan-bubble-patch"},
+            json={
+                "baseRevision": created_payload["document"]["documentRevision"],
+                "fields": {"translatedText": "修改后"},
+            },
+        )
+        assert patched.status_code == 200
+        patched_payload = patched.get_json()
+        assert patched_payload["document"]["bubbles"][0]["payload"][
+            "translatedText"
+        ] == "修改后"
+
+        deleted = client.delete(
+            f"/api/v2/pages/{page_id}/bubbles/{bubble_id}",
+            headers={"Idempotency-Key": "plan-bubble-delete"},
+            json={
+                "baseRevision": patched_payload["document"][
+                    "documentRevision"
+                ]
+            },
+        )
+        assert deleted.status_code == 200
+        assert deleted.get_json()["document"]["bubbles"] == []
+    finally:
+        app.extensions["saber_v2_runtime"].close()
 
 
 def test_page_document_command_is_idempotent_and_propagates_style(

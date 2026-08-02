@@ -26,6 +26,15 @@ from src.core.ocr_types import OcrResult, create_ocr_result
 from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize_manga_48_hybrid
 
 logger = logging.getLogger("CoreOCR")
+
+
+def _rgb_array(image: Image.Image) -> np.ndarray:
+    converted = image.convert("RGB")
+    try:
+        return np.array(converted)
+    finally:
+        if converted is not image:
+            converted.close()
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # 在解析JSON响应时增加安全提取方法
@@ -77,7 +86,7 @@ def _recognize_with_baidu_ocr_results(
             fallback_used=fallback_used,
         )
 
-    img_np = np.array(image_pil.convert('RGB'))
+    img_np = _rgb_array(image_pil)
     results: List[OcrResult] = []
     baidu_language = baidu_ocr_language
 
@@ -93,10 +102,9 @@ def _recognize_with_baidu_ocr_results(
     for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
         try:
             bubble_img_np = img_np[y1:y2, x1:x2]
-            bubble_img_pil = Image.fromarray(bubble_img_np)
-            buffer = io.BytesIO()
-            bubble_img_pil.save(buffer, format="PNG")
-            image_bytes = buffer.getvalue()
+            with Image.fromarray(bubble_img_np) as bubble_img_pil, io.BytesIO() as buffer:
+                bubble_img_pil.save(buffer, format="PNG")
+                image_bytes = buffer.getvalue()
             text_results = recognize_text_with_baidu_ocr(
                 image_bytes,
                 language=baidu_language,
@@ -191,15 +199,15 @@ def _recognize_with_manga_ocr_results(
             fallback_used=fallback_used,
         )
 
-    img_np = np.array(image_pil.convert('RGB'))
+    img_np = _rgb_array(image_pil)
     results: List[OcrResult] = []
     logger.info(f"开始使用 MangaOCR 逐个识别 {len(bubble_coords)} 个气泡...")
 
     for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
         try:
             bubble_img_np = img_np[y1:y2, x1:x2]
-            bubble_img_pil = Image.fromarray(bubble_img_np)
-            text = recognize_japanese_text(bubble_img_pil)
+            with Image.fromarray(bubble_img_np) as bubble_img_pil:
+                text = recognize_japanese_text(bubble_img_pil)
             results.append(
                 create_ocr_result(
                     text,
@@ -365,7 +373,7 @@ def _recognize_with_ai_vision_results(
             fallback_used=fallback_used,
         )
 
-    img_np = np.array(image_pil.convert('RGB'))
+    img_np = _rgb_array(image_pil)
     results: List[OcrResult] = []
     current_prompt = (ai_vision_ocr_prompt or "").strip()
     normalized_prompt_mode = (ai_vision_prompt_mode or 'normal').strip().lower()
@@ -411,24 +419,32 @@ def _recognize_with_ai_vision_results(
         try:
             bubble_img_np = img_np[y1:y2, x1:x2]
             bubble_img_pil = Image.fromarray(bubble_img_np)
-            orig_w, orig_h = bubble_img_pil.size
-            if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
-                scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
-                new_w = int(orig_w * scale)
-                new_h = int(orig_h * scale)
-                bubble_img_pil = bubble_img_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            try:
+                orig_w, orig_h = bubble_img_pil.size
+                if ai_vision_min_image_size > 0 and (orig_w < ai_vision_min_image_size or orig_h < ai_vision_min_image_size):
+                    scale = max(ai_vision_min_image_size / orig_w, ai_vision_min_image_size / orig_h)
+                    new_w = int(orig_w * scale)
+                    new_h = int(orig_h * scale)
+                    resized = bubble_img_pil.resize(
+                        (new_w, new_h),
+                        Image.Resampling.LANCZOS,
+                    )
+                    bubble_img_pil.close()
+                    bubble_img_pil = resized
 
-            extracted_text_final = call_ai_vision_ocr_service(
-                bubble_img_pil,
-                provider=ai_vision_provider,
-                api_key=ai_vision_api_key,
-                model_name=ai_vision_model_name,
-                prompt=current_prompt,
-                prompt_mode=normalized_prompt_mode,
-                custom_base_url=custom_ai_vision_base_url,
-                openai_options=effective_options,
-                credential_version_id=credential_version_id,
-            )
+                extracted_text_final = call_ai_vision_ocr_service(
+                    bubble_img_pil,
+                    provider=ai_vision_provider,
+                    api_key=ai_vision_api_key,
+                    model_name=ai_vision_model_name,
+                    prompt=current_prompt,
+                    prompt_mode=normalized_prompt_mode,
+                    custom_base_url=custom_ai_vision_base_url,
+                    openai_options=effective_options,
+                    credential_version_id=credential_version_id,
+                )
+            finally:
+                bubble_img_pil.close()
 
             results.append(
                 create_ocr_result(

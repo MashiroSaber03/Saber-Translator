@@ -12,6 +12,7 @@ from PIL import Image
 import pytest
 from sqlalchemy import event, select, update
 
+from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobConflict, JobQueueRepository
@@ -19,6 +20,7 @@ from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.plugins.repository import PluginRegistry
 from src.backend_v2.plugins.runtime import PluginJobRuntime
+from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     ProviderSettingMutation,
@@ -134,6 +136,31 @@ class InvalidTranslationCountAlgorithms(FakeAlgorithms):
             "textbox": [],
             "mode": mode,
         }
+
+
+class RenderCloseTrackingAlgorithms(FakeAlgorithms):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rendered_image: Image.Image | None = None
+
+    def render(self, image, payloads, config):
+        self.rendered_image = super().render(image, payloads, config)
+        return self.rendered_image
+
+
+class RepairCloseTrackingAlgorithms(FakeAlgorithms):
+    def __init__(self) -> None:
+        super().__init__()
+        self.repaired_image: Image.Image | None = None
+
+    def repair(self, image, bubbles, config, *, precise_mask=None):
+        self.repaired_image = super().repair(
+            image,
+            bubbles,
+            config,
+            precise_mask=precise_mask,
+        )
+        return self.repaired_image
 
 
 class TranslationShapeRuntime:
@@ -324,6 +351,35 @@ def test_core_repair_adapter_passes_precise_text_mask(
     assert captured["disable_resize"] is True
     repaired.close()
     precise_mask.close()
+    image.close()
+
+
+def test_core_repair_adapter_closes_secondary_background(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import inpainting
+
+    class TrackingBackground:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    background = TrackingBackground()
+
+    def fake_inpaint(image, _coords, **_kwargs):
+        return image.copy(), background
+
+    monkeypatch.setattr(inpainting, "inpaint_bubbles", fake_inpaint)
+    image = Image.new("RGB", (3, 2), "white")
+    repaired = CoreTranslationAlgorithms().repair(
+        image,
+        [{"coords": [0, 0, 3, 2], "polygon": []}],
+        {"disable_resize": True, "method": "solid"},
+    )
+
+    assert background.closed is True
+    repaired.close()
     image.close()
 
 
@@ -614,6 +670,121 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
         "translated",
         "thumbnail_translated",
     }.issubset(roles)
+
+
+def test_remove_text_uses_the_dedicated_plan_endpoint(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=platform["data_root"],
+            identity=RuntimeIdentity(
+                epoch_id="test-remove-text-route",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=platform["engine"],
+        )
+    )
+    try:
+        response = app.test_client().post(
+            f"/api/v2/chapters/{platform['chapter']['id']}/remove-text-jobs",
+            headers={"Idempotency-Key": "dedicated-remove-text-route"},
+            json={
+                "executionMode": "parallel",
+                "pageIds": [platform["page_id"]],
+            },
+        )
+        retired_shape = app.test_client().post(
+            f"/api/v2/chapters/{platform['chapter']['id']}/remove-text-jobs",
+            headers={"Idempotency-Key": "remove-text-retired-shape"},
+            json={"mode": "remove_text", "pageIds": [platform["page_id"]]},
+        )
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 202
+    assert retired_shape.status_code == 422
+    detail = JobQueueRepository(platform["engine"]).get_job(
+        response.get_json()["jobIds"][0]
+    )
+    assert detail["kind"] == "remove_text"
+    assert detail["configSummary"]["mode"] == "remove_text"
+    assert detail["progress"]["executionMode"] == "parallel"
+
+
+def test_translation_render_closes_image_when_thumbnail_publication_fails(
+    translation_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.backend_v2.translation import pipeline as pipeline_module
+
+    platform = translation_platform
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="thumbnail-publication-failure",
+    )
+    algorithms = RenderCloseTrackingAlgorithms()
+
+    def fail_thumbnail(_storage, _image):
+        raise RuntimeError("thumbnail publication failed")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "publish_thumbnail_asset",
+        fail_thumbnail,
+    )
+    job_id = _run_translation_job(platform, algorithms)
+
+    detail = JobQueueRepository(platform["engine"]).get_job(job_id)
+    assert detail["status"] == "completed_with_errors"
+    assert detail["items"][0]["error"]["message"] == (
+        "thumbnail publication failed"
+    )
+    assert algorithms.rendered_image is not None
+    with pytest.raises(ValueError, match="closed image"):
+        algorithms.rendered_image.getpixel((0, 0))
+
+
+def test_translation_repair_closes_image_when_asset_publication_fails(
+    translation_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.backend_v2.translation import pipeline as pipeline_module
+
+    platform = translation_platform
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=None,
+        idempotency_key="repair-publication-failure",
+    )
+    algorithms = RepairCloseTrackingAlgorithms()
+    publish_png = pipeline_module.publish_png_asset
+
+    def fail_repaired_publication(storage, image, *, mode):
+        if image is algorithms.repaired_image:
+            raise RuntimeError("repair publication failed")
+        return publish_png(storage, image, mode=mode)
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "publish_png_asset",
+        fail_repaired_publication,
+    )
+    job_id = _run_translation_job(platform, algorithms)
+
+    detail = JobQueueRepository(platform["engine"]).get_job(job_id)
+    assert detail["status"] == "completed_with_errors"
+    assert detail["items"][0]["error"]["message"] == (
+        "repair publication failed"
+    )
+    assert algorithms.repaired_image is not None
+    with pytest.raises(ValueError, match="closed image"):
+        algorithms.repaired_image.getpixel((0, 0))
 
 
 def test_translation_plugins_mutate_domain_text_before_persistence(
