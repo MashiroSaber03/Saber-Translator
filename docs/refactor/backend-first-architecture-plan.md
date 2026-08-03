@@ -71,7 +71,7 @@
 | 设置与凭据 | 全局设置按 domain JSON 存储，Insight 单书覆盖使用独立 book_settings；凭据使用不可变 credential_versions；每个设置弹窗的设置、Provider 记忆和凭据编辑在一次后端事务中原子保存 |
 | 插件 | v3 钩子全部在 Worker 执行；插件包使用不可变 plugin_versions，任务冻结并引用具体包版本；API 只读 manifest/config schema，不加载插件业务代码 |
 | 资产 | 文件以不可变 asset_id 对象存储；SQLite 保存元数据和明确关联，不使用语义文件名、多态 owner 字段或内容去重 |
-| 图片加载 | 每张 source/translated 只配一张缩略图；列表只加载缩略图，主图只按当前页或视口窗口懒加载原图，离开窗口即释放；不增加中档 preview 或瓦片 |
+| 图片加载 | 每个 source 只配一张 `thumbnail_source`；translated 不生成缩略图；列表只加载原图缩略图，主图只按当前页或视口窗口懒加载 source 或 translated，离开窗口即释放；不增加中档 preview 或瓦片 |
 | 页面文档 | `pages.document_revision + bubbles` 独立行；font_id 等需外键保护的引用规范化成列，其余 BubbleState 使用单泡 payload，删除平行镜像数组和整页 JSON 双事实 |
 | API 契约 | OpenAPI 3 为正式契约并生成前端 TypeScript 类型；业务端点负责创建任务，通用 jobs API 只做管理 |
 | 部署与安全 | 本地单实例、单数据空间、局域网完全开放且免认证；明确接受同一局域网内其他设备可直接访问 API 的信任模型，不增加账号、令牌、配对或 Origin/同源写保护；上传受限，凭据不回显、不写日志 |
@@ -1277,7 +1277,7 @@ Context 至少包含：
 ### 阶段 2：内容垂直链路
 
 - 实现 books/chapters/pages/bubbles/tags/constraints 与 revision CAS。
-- 实现 source/translated 双缩略图和统一媒体服务。
+- 实现 source 的单规格 `thumbnail_source` 和统一媒体服务；translated 不生成缩略图。
 - 实现普通图片幂等逐页上传、owner-token 租约。
 - 实现快速工作区 reset/promote、书架 CRUD 和阅读器窗口化。
 - 实现 `VirtualThumbnailList`、`VirtualPageStream`。
@@ -4083,7 +4083,7 @@ GET    /api/v2/jobs/events
 - 局域网默认绑定 `0.0.0.0` 并完全开放；不提供账号、鉴权、访问令牌、配对、租户和公网部署方案。
 - 不提供用户备份/恢复、回收站、通用编辑历史、撤销/重做或任务回滚。
 - 不给普通图片导入增加可恢复上传会话；只做逐页幂等与 60 秒 owner-token 租约。
-- 不生成中档 preview 或多档缩略图；source/translated 各一张符合 §11.2 单一规格的 WebP 缩略图（常规图最长边 320px，长条图使用顶部裁剪特判）。
+- 不生成中档 preview、多档缩略图或译图缩略图；每个 source 只生成一张符合 §11.2 单一规格的 `thumbnail_source` WebP（常规图最长边 320px，长条图使用顶部裁剪特判），translated 仅按当前页或视口窗口懒加载原图。
 - 不开发瓦片、多分辨率金字塔或浏览器侧全局图片内存调度器；图片导入只执行 §11.1 的逐页解码、同步缩略图和普通解码失败处理。
 - 不新增任务中心独立路由或常驻悬浮胶囊。
 - 阅读器不做阅读进度持久化、单页/双页翻页模式、下一章预取与无缝跨章滚动、阅读中任务状态实时更新。
