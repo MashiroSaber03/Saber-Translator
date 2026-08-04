@@ -52,7 +52,7 @@ const isReanalyzeTaskRunning = computed(() => {
   return (
     pendingReanalyzePage.value !== null &&
     pendingReanalyzePage.value === selectedPageNum.value &&
-    insightStore.analysisStatus === 'running'
+    insightStore.isAnalyzing
   )
 })
 
@@ -124,7 +124,7 @@ async function reanalyzePage(): Promise<void> {
     )
     insightStore.setCurrentTaskId(submission.jobId)
     pendingReanalyzePage.value = selectedPageNum.value
-    insightStore.setAnalysisStatus('running')
+    insightStore.setAnalysisStatus('queued')
   } catch (error) {
     const message = (error as { message?: string })?.message
     errorMessage.value = message || '重新分析失败'

@@ -50,39 +50,39 @@
       />
 
       <div v-if="contentReady" class="settings-modal__tab-content">
-        <div v-show="activeTab === 'ocr'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('ocr')" v-show="activeTab === 'ocr'" class="settings-modal__tab-pane">
           <OcrSettings />
         </div>
 
-        <div v-show="activeTab === 'translate'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('translate')" v-show="activeTab === 'translate'" class="settings-modal__tab-pane">
           <TranslationSettings />
         </div>
 
-        <div v-show="activeTab === 'detection'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('detection')" v-show="activeTab === 'detection'" class="settings-modal__tab-pane">
           <DetectionSettings />
         </div>
 
-        <div v-show="activeTab === 'hq'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('hq')" v-show="activeTab === 'hq'" class="settings-modal__tab-pane">
           <HqTranslationSettings />
         </div>
 
-        <div v-show="activeTab === 'proofreading'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('proofreading')" v-show="activeTab === 'proofreading'" class="settings-modal__tab-pane">
           <ProofreadingSettings />
         </div>
 
-        <div v-show="activeTab === 'prompt-library'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('prompt-library')" v-show="activeTab === 'prompt-library'" class="settings-modal__tab-pane">
           <PromptLibrary />
         </div>
 
-        <div v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('plugins')" v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
           <PluginManager />
         </div>
 
-        <div v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('text-defaults')" v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
           <TextStyleDefaultsSettings :is-open="isOpen" />
         </div>
 
-        <div v-show="activeTab === 'more'" class="settings-modal__tab-pane">
+        <div v-if="hasVisitedTab('more')" v-show="activeTab === 'more'" class="settings-modal__tab-pane">
           <MoreSettings />
         </div>
       </div>
@@ -162,6 +162,7 @@ type SettingsTabId =
   | 'more'
 
 const activeTab = ref<SettingsTabId>('ocr')
+const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
 let settingsSnapshot: TranslationSettingsModel | null = null
 let textStyleDefaultsSnapshot: TextStyleSettings | null = null
@@ -188,7 +189,12 @@ function isSettingsTabId(value: string): value is SettingsTabId {
 function setActiveTab(tabId: string): void {
   if (isSettingsTabId(tabId)) {
     activeTab.value = tabId
+    visitedTabs.value = new Set([...visitedTabs.value, tabId])
   }
+}
+
+function hasVisitedTab(tabId: SettingsTabId): boolean {
+  return visitedTabs.value.has(tabId)
 }
 
 watch(
@@ -197,10 +203,11 @@ watch(
     isOpen.value = newVal
     if (newVal) {
       if (props.initialTab && isSettingsTabId(props.initialTab)) {
-        activeTab.value = props.initialTab
+        setActiveTab(props.initialTab)
       }
     } else {
       activeTab.value = 'ocr'
+      visitedTabs.value = new Set(['ocr'])
     }
   }
 )
@@ -214,6 +221,11 @@ watch(isOpen, (newVal) => {
 async function handleOpen() {
   const requestId = ++openRequestId
   contentReady.value = false
+  const openingTab = props.initialTab && isSettingsTabId(props.initialTab)
+    ? props.initialTab
+    : activeTab.value
+  activeTab.value = openingTab
+  visitedTabs.value = new Set([openingTab])
   await settingsStore.loadFromBackend()
   if (requestId !== openRequestId || !isOpen.value) return
   settingsSnapshot = deepClone(settingsStore.settings)
@@ -221,7 +233,7 @@ async function handleOpen() {
   providerSnapshot = deepClone(settingsStore.providerConfigs)
   contentReady.value = true
   if (props.initialTab && isSettingsTabId(props.initialTab)) {
-    activeTab.value = props.initialTab
+    setActiveTab(props.initialTab)
   }
 }
 
@@ -242,6 +254,7 @@ function handleClose() {
   textStyleDefaultsSnapshot = null
   providerSnapshot = null
   contentReady.value = false
+  visitedTabs.value = new Set(['ocr'])
   isOpen.value = false
   emit('update:modelValue', false)
 }

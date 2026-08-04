@@ -131,10 +131,7 @@ async function loadBook(bookId: string): Promise<void> {
     if (!isCurrentBookLoad(loadId, bookId)) return
     setLoadedBookDetail(book)
 
-    await loadAnalysisStatus(bookId)
-    if (!isCurrentBookLoad(loadId, bookId)) return
-
-    if (insightStore.chapters.length === 0) {
+    const loadChapters = async (): Promise<void> => {
       try {
         const chapters = await insightApi.getInsightChapters(bookId)
         if (!isCurrentBookLoad(loadId, bookId)) return
@@ -148,11 +145,15 @@ async function loadBook(bookId: string): Promise<void> {
           })))
         }
       } catch {
-        // 章节补充接口不可用时保留书籍详情中的章节状态。
+        // 分析章节摘要不可用时保留书籍详情中的章节结构。
       }
     }
 
-    await insightStore.loadNotesFromAPI()
+    await Promise.all([
+      loadAnalysisStatus(bookId),
+      loadChapters(),
+      insightStore.loadNotesFromAPI(),
+    ])
     if (!isCurrentBookLoad(loadId, bookId)) return
 
     router.replace({ query: { book: bookId } })
@@ -197,13 +198,10 @@ function projectActiveInsightJob(): void {
   const active = taskCenterStore.queue.find(job => (
     job.bookId === bookId
     && job.kind === 'insight_analysis'
-    && job.status !== 'interrupted'
   ))
   if (!active) return
   insightStore.setCurrentTaskId(active.jobId)
-  insightStore.setAnalysisStatus(
-    active.status === 'paused' ? 'paused' : 'running',
-  )
+  insightStore.setAnalysisStatus(active.status)
   const progress = projectInsightPageProgress(active.progress)
   insightStore.updateProgress(
     progress.current,
@@ -322,9 +320,11 @@ watch(
       return
     }
     const terminalStatus = event.type === 'job_finished'
-      ? 'completed'
+      ? relatedJob.status === 'completed_with_errors'
+        ? 'completed_with_errors'
+        : 'completed'
       : event.type === 'job_cancelled'
-        ? 'idle'
+        ? 'cancelled'
         : 'failed'
     await loadAnalysisStatus()
     if (!isInsightViewMounted) return

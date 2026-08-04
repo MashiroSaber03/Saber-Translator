@@ -9,6 +9,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping
+import uuid
 
 from sqlalchemy import Engine, select, update
 
@@ -40,6 +41,7 @@ class StudioIOService:
         self.engine = engine
         self.repository = repository
         self.limits = limits
+        self.data_root = data_root
         self.storage = AssetStorageService(data_root, engine)
         self.images = ImageImportService(
             data_root=data_root,
@@ -54,49 +56,59 @@ class StudioIOService:
         *,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        payload = self._read_limited(upload)
-        request_identity = _binary_request_identity(payload)
-        scope = "POST:uploadStudioAsset"
-        replay = self.repository.replay_short_command(
-            scope=scope,
-            key=idempotency_key,
-            request=request_identity,
+        temporary = (
+            self.data_root
+            / "temp"
+            / "imports"
+            / f"studio-{uuid.uuid4().hex}.upload"
         )
-        if replay is not None:
-            return replay
-        result: dict[str, Any] = {}
-
-        def bind(connection, asset_id: str) -> None:
-            row = connection.execute(
-                select(assets).where(assets.c.id == asset_id)
-            ).mappings().one()
-            response, replayed = (
-                self.repository.execute_bound_short_command(
-                    connection,
-                    scope=scope,
-                    key=idempotency_key,
-                    request=request_identity,
-                    http_status=201,
-                    resource_type="asset",
-                    mutation=lambda: (
-                        _asset_row_dto(row),
-                        asset_id,
-                    ),
-                )
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            checksum, byte_size = self._spool_image(upload, temporary)
+            request_identity = {
+                "checksum": checksum,
+                "byteSize": byte_size,
+            }
+            scope = "POST:uploadStudioAsset"
+            replay = self.repository.replay_short_command(
+                scope=scope,
+                key=idempotency_key,
+                request=request_identity,
             )
-            if replayed:
-                connection.execute(
-                    update(assets)
-                    .where(assets.c.id == asset_id)
-                    .values(gc_marked_at=utcnow())
-                )
-            result.update(response)
+            if replay is not None:
+                return replay
+            result: dict[str, Any] = {}
 
-        self.images.publish_standalone_source(
-            BytesIO(payload),
-            bind=bind,
-        )
-        return result
+            def bind(connection, asset_id: str) -> None:
+                row = connection.execute(
+                    select(assets).where(assets.c.id == asset_id)
+                ).mappings().one()
+                response, replayed = (
+                    self.repository.execute_bound_short_command(
+                        connection,
+                        scope=scope,
+                        key=idempotency_key,
+                        request=request_identity,
+                        http_status=201,
+                        resource_type="asset",
+                        mutation=lambda: (
+                            _asset_row_dto(row),
+                            asset_id,
+                        ),
+                    )
+                )
+                if replayed:
+                    connection.execute(
+                        update(assets)
+                        .where(assets.c.id == asset_id)
+                        .values(gc_marked_at=utcnow())
+                    )
+                result.update(response)
+
+            self.images.publish_standalone_path(temporary, bind=bind)
+            return result
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def import_document(
         self,
@@ -106,7 +118,7 @@ class StudioIOService:
         filename: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        payload = self._read_limited(upload)
+        payload = self._read_all(upload)
         request_identity = {
             "bookId": book_id,
             "filename": filename,
@@ -284,10 +296,6 @@ class StudioIOService:
                         raise ValueError(
                             "attachment base64 is invalid"
                         ) from exc
-                    if len(binary) > self.limits.max_image_bytes:
-                        raise ValueError(
-                            "attachment exceeds the configured single-file byte limit"
-                        )
                     asset_id = self.images.publish_standalone_source(
                         BytesIO(binary)
                     ).id
@@ -325,20 +333,31 @@ class StudioIOService:
                 .values(gc_marked_at=utcnow())
             )
 
-    def _read_limited(self, upload: BinaryIO) -> bytes:
+    def _read_all(self, upload: BinaryIO) -> bytes:
         output = bytearray()
         while True:
             chunk = upload.read(self.limits.stream_chunk_bytes)
             if not chunk:
                 break
             output.extend(chunk)
-            if len(output) > self.limits.max_image_bytes:
-                raise ValueError(
-                    "file exceeds the configured single-file byte limit"
-                )
         if not output:
             raise ValueError("uploaded file is empty")
         return bytes(output)
+
+    def _spool_image(self, upload: BinaryIO, destination: Path) -> tuple[str, int]:
+        digest = hashlib.sha256()
+        byte_size = 0
+        with destination.open("xb") as output:
+            while True:
+                chunk = upload.read(self.limits.stream_chunk_bytes)
+                if not chunk:
+                    break
+                byte_size += len(chunk)
+                digest.update(chunk)
+                output.write(chunk)
+        if byte_size == 0:
+            raise ValueError("uploaded file is empty")
+        return digest.hexdigest(), byte_size
 
 
 def _asset_row_dto(row: Mapping[str, Any]) -> dict[str, Any]:

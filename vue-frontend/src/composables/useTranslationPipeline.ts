@@ -451,11 +451,10 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     ) {
       throw new Error('章节工作态设置写入后端失败，未创建任务')
     }
-    await Promise.all(
-      pageIds
-        .filter(hasPendingPageDocument)
-        .map(pageId => flushPageDocument(pageId)),
-    )
+    for (const pageId of pageIds) {
+      if (!hasPendingPageDocument(pageId)) continue
+      await flushPageDocument(pageId)
+    }
   }
 
   async function translatePages(

@@ -9,7 +9,7 @@ import {
   commitWebImportDraft,
   createWebImportDraft,
   getWebImportDraft,
-  listAllWebImportDraftPages,
+  listWebImportDraftPages,
   testAgentConnection,
   testFirecrawlConnection,
   updateWebImportSelection,
@@ -52,8 +52,17 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const testingAgent = ref(false)
   const activeDraftId = ref<string | null>(null)
   const activeDraftRevision = ref(0)
+  const isLoadingMorePages = ref(false)
+  const hasMorePages = ref(false)
   const draftPageIdsByNumber = new Map<number, string>()
+  const selectionOverrides = new Map<string, boolean>()
   const activeDraftJobIds = new Set<string>()
+  let selectAllOverride: boolean | null = null
+  let selectionDirty = false
+  let nextDraftPageCursor: number | null = 0
+  let loadedSuccessfulPageCount = 0
+  let readyDraftLoadedId: string | null = null
+  let readyDraftSnapshot: Awaited<ReturnType<typeof getWebImportDraft>> | null = null
   let draftSyncGeneration = 0
   let draftSyncTimer: ReturnType<typeof setTimeout> | null = null
   let agentLogCursor = 0
@@ -144,9 +153,22 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   })
 
   const isAllSelected = computed(() => {
-    if (!extractResult.value?.pages) return false
-    return selectedCount.value === extractResult.value.pages.length
+    if (!extractResult.value || extractResult.value.totalPages === 0) return false
+    return selectedCount.value === extractResult.value.totalPages
   })
+
+  function resetDraftPaging(): void {
+    draftPageIdsByNumber.clear()
+    selectionOverrides.clear()
+    selectAllOverride = null
+    selectionDirty = false
+    nextDraftPageCursor = 0
+    loadedSuccessfulPageCount = 0
+    readyDraftLoadedId = null
+    readyDraftSnapshot = null
+    hasMorePages.value = false
+    isLoadingMorePages.value = false
+  }
 
   let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
   let focusInputTimeout: ReturnType<typeof setTimeout> | null = null
@@ -215,7 +237,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     urlInput.value = ''
     activeDraftId.value = null
     activeDraftRevision.value = 0
-    draftPageIdsByNumber.clear()
+    resetDraftPaging()
     activeDraftJobIds.clear()
     agentLogCursor = 0
     agentLogJobId = null
@@ -288,6 +310,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
 
     webImportStore.resetState()
+    resetDraftPaging()
     webImportStore.setUrl(url)
     webImportStore.setStatus('extracting')
 
@@ -318,11 +341,43 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   function togglePage(pageNumber: number) {
+    const pageId = draftPageIdsByNumber.get(pageNumber)
+    if (!pageId) return
+    const selected = !selectedPages.value.has(pageNumber)
     webImportStore.togglePageSelection(pageNumber)
+    selectionOverrides.set(pageId, selected)
+    selectionDirty = true
   }
 
   function toggleAll() {
-    webImportStore.toggleSelectAll()
+    const selected = !isAllSelected.value
+    selectAllOverride = selected
+    selectionOverrides.clear()
+    selectionDirty = true
+    webImportStore.setAllPageSelection(selected)
+  }
+
+  async function collectSelectedDraftPageIds(
+    draftId: string,
+    generation: number,
+  ): Promise<string[]> {
+    const selectedIds: string[] = []
+    let cursor = 0
+    do {
+      const page = await listWebImportDraftPages(draftId, { cursor, limit: 200 })
+      if (!isCurrentDraft(draftId, generation)) {
+        throw new Error('网页导入草稿已切换')
+      }
+      for (const candidate of page.items) {
+        if (candidate.error) continue
+        const selected = selectionOverrides.get(candidate.id)
+          ?? selectAllOverride
+          ?? candidate.selected
+        if (selected) selectedIds.push(candidate.id)
+      }
+      cursor = page.nextCursor ?? 0
+    } while (cursor > 0)
+    return selectedIds
   }
 
   async function handleImport() {
@@ -340,15 +395,18 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
 
     try {
       if (!activeDraftId.value) throw new Error('网页导入草稿不存在')
-      const selectedIds = [...selectedPages.value]
-        .map(pageNumber => draftPageIdsByNumber.get(pageNumber))
-        .filter((value): value is string => Boolean(value))
-      const selection = await updateWebImportSelection(
-        activeDraftId.value,
-        activeDraftRevision.value,
-        selectedIds
-      )
-      activeDraftRevision.value = selection.revision
+      if (selectionDirty) {
+        const selectedIds = await collectSelectedDraftPageIds(
+          activeDraftId.value,
+          draftSyncGeneration,
+        )
+        const selection = await updateWebImportSelection(
+          activeDraftId.value,
+          activeDraftRevision.value,
+          selectedIds,
+        )
+        activeDraftRevision.value = selection.revision
+      }
       const accepted = await commitWebImportDraft(activeDraftId.value, activeDraftRevision.value)
       if (!accepted.jobIds.length) {
         throw new Error('后端没有返回网页导入任务')
@@ -398,6 +456,73 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     return generation === draftSyncGeneration && activeDraftId.value === draftId
   }
 
+  async function loadNextDraftPageBatch(
+    draft: Awaited<ReturnType<typeof getWebImportDraft>>,
+    generation: number,
+    reset = false,
+  ): Promise<void> {
+    if (isLoadingMorePages.value) return
+    const cursor = reset ? 0 : nextDraftPageCursor
+    if (cursor === null) return
+    isLoadingMorePages.value = true
+    try {
+      const response = await listWebImportDraftPages(draft.id, {
+        cursor,
+        limit: 100,
+      })
+      if (!isCurrentDraft(draft.id, generation)) return
+      if (reset) {
+        draftPageIdsByNumber.clear()
+        loadedSuccessfulPageCount = 0
+      }
+      const pages: NonNullable<typeof extractResult.value>['pages'] = []
+      const loadedSelected: number[] = []
+      for (const candidate of response.items) {
+        if (candidate.error) continue
+        const pageNumber = ++loadedSuccessfulPageCount
+        draftPageIdsByNumber.set(pageNumber, candidate.id)
+        const selected = selectionOverrides.get(candidate.id)
+          ?? selectAllOverride
+          ?? candidate.selected
+        if (selected) loadedSelected.push(pageNumber)
+        pages.push({
+          pageNumber,
+          imageUrl: candidate.thumbnailUrl || candidate.sourceMediaUrl || '',
+        })
+      }
+      const totalPages = Math.max(0, draft.candidateCount - draft.failedCount)
+      if (reset) {
+        webImportStore.setPagedExtractResult(
+          {
+            success: true,
+            comicTitle: '',
+            chapterTitle: '',
+            pages,
+            totalPages,
+            sourceUrl: draft.sourceUrl,
+            engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
+          },
+          loadedSelected,
+          draft.selectedCount,
+        )
+      } else {
+        webImportStore.appendExtractResultPages(pages, loadedSelected)
+      }
+      nextDraftPageCursor = response.nextCursor ?? null
+      hasMorePages.value = nextDraftPageCursor !== null
+      readyDraftLoadedId = draft.id
+      readyDraftSnapshot = draft
+    } finally {
+      isLoadingMorePages.value = false
+    }
+  }
+
+  async function loadMoreDraftPages(): Promise<void> {
+    const draft = readyDraftSnapshot
+    if (!draft || readyDraftLoadedId !== activeDraftId.value) return
+    await loadNextDraftPageBatch(draft, draftSyncGeneration)
+  }
+
   async function syncDraft(draftId: string, generation: number): Promise<void> {
     const draft = await getWebImportDraft(draftId)
     if (!isCurrentDraft(draftId, generation)) return
@@ -428,25 +553,13 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
     if (draft.status !== 'ready') return
 
-    const pages = await listAllWebImportDraftPages(draftId)
-    if (!isCurrentDraft(draftId, generation)) return
-    draftPageIdsByNumber.clear()
-    const successful = pages.filter(page => !page.error)
-    successful.forEach((page, index) => {
-      draftPageIdsByNumber.set(index + 1, page.id)
-    })
-    webImportStore.setExtractResult({
-      success: true,
-      comicTitle: '',
-      chapterTitle: '',
-      pages: successful.map((page, index) => ({
-        pageNumber: index + 1,
-        imageUrl: page.thumbnailUrl || page.sourceMediaUrl || '',
-      })),
-      totalPages: successful.length,
-      sourceUrl: draft.sourceUrl,
-      engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
-    })
+    if (readyDraftLoadedId !== draftId) {
+      resetDraftPaging()
+      await loadNextDraftPageBatch(draft, generation, true)
+      if (!isCurrentDraft(draftId, generation)) return
+    } else {
+      readyDraftSnapshot = draft
+    }
     if (!draft.autoImport) {
       webImportStore.setStatus('extracted')
       return
@@ -501,6 +614,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       })
       const draft = bootstrap.activeWebImportDraft
       if (!draft) return
+      resetDraftPaging()
       activeDraftId.value = draft.id
       draftSyncGeneration += 1
       activeDraftJobIds.clear()
@@ -642,6 +756,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     testingFirecrawl,
     testingAgent,
     isFetchingModels,
+    isLoadingMorePages,
+    hasMorePages,
     modelList,
     isVisible,
     status,
@@ -670,6 +786,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     togglePage,
     toggleAll,
     handleImport,
+    loadMoreDraftPages,
     showCustomUrl,
     handleTestFirecrawl,
     handleTestAgent,

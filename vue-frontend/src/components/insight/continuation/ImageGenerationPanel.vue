@@ -211,7 +211,13 @@
       :character-forms="availableCharacterForms"
       :initial-selection="batchInitialReferenceTokens"
       :book-id="bookId"
+      :has-older-original-images="hasOlderOriginalImages"
+      :loading-older-original-images="loadingOlderOriginalImages"
+      :has-more-character-forms="hasMoreCharacterForms"
+      :loading-more-character-forms="loadingMoreCharacterForms"
       @confirm="handleSelectorConfirm"
+      @load-older-originals="loadOlderOriginalImages"
+      @load-more-character-forms="loadMoreCharacterFormImages"
     />
   </div>
 </template>
@@ -232,7 +238,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
-import { getAvailableImages } from '@/api/continuation'
+import { getAvailableImages, loadMoreAvailableCharacterForms } from '@/api/continuation'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
 
@@ -262,6 +268,11 @@ const selectorVisible = ref(false)
 const availableOriginalImages = ref<MangaImageInfo[]>([])
 const availableContinuationImages = ref<MangaImageInfo[]>([])
 const availableCharacterForms = ref<CharacterFormInfo[]>([])
+const originalCursor = ref(0)
+const hasOlderOriginalImages = ref(false)
+const loadingOlderOriginalImages = ref(false)
+const hasMoreCharacterForms = ref(false)
+const loadingMoreCharacterForms = ref(false)
 const boundedProgress = computed(() => Math.min(100, Math.max(0, Number(props.progress) || 0)))
 let imageRequestSeq = 0
 let isMounted = true
@@ -287,6 +298,7 @@ function getStatusText(status: string): string {
     'pending': '待生成',
     'generating': '生成中',
     'generated': '已生成',
+    'stale': '需重新生成',
     'failed': '失败'
   }
   return map[status] || status
@@ -297,6 +309,7 @@ function getStatusTone(status: string): ProductChipItem['tone'] {
     pending: 'warning',
     generating: 'primary',
     generated: 'success',
+    stale: 'warning',
     failed: 'danger',
   }
 
@@ -379,15 +392,60 @@ async function openBatchReferenceSelector() {
     availableOriginalImages.value = response.original_images
     availableContinuationImages.value = response.continuation_images
     availableCharacterForms.value = response.character_forms
+    originalCursor.value = response.original_cursor ?? 0
+    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
+    hasMoreCharacterForms.value = Boolean(response.has_more_character_forms)
   } catch {
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []
     availableContinuationImages.value = []
     availableCharacterForms.value = []
+    originalCursor.value = 0
+    hasOlderOriginalImages.value = false
+    hasMoreCharacterForms.value = false
     state.showMessage('加载可用参考图失败', 'error')
   }
 
   selectorVisible.value = true
+}
+
+async function loadMoreCharacterFormImages(): Promise<void> {
+  const bookId = props.bookId
+  if (!bookId || !hasMoreCharacterForms.value || loadingMoreCharacterForms.value) return
+  loadingMoreCharacterForms.value = true
+  const requestId = imageRequestSeq
+  try {
+    const response = await loadMoreAvailableCharacterForms(bookId)
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
+    availableCharacterForms.value = response.character_forms
+    hasMoreCharacterForms.value = response.has_more_character_forms
+  } catch {
+    if (isMounted && requestId === imageRequestSeq && props.bookId === bookId) {
+      state.showMessage('加载更多角色参考图失败', 'error')
+    }
+  } finally {
+    if (isMounted && requestId === imageRequestSeq) loadingMoreCharacterForms.value = false
+  }
+}
+
+async function loadOlderOriginalImages(): Promise<void> {
+  const bookId = props.bookId
+  if (!bookId || !hasOlderOriginalImages.value || loadingOlderOriginalImages.value) return
+  loadingOlderOriginalImages.value = true
+  const requestId = imageRequestSeq
+  try {
+    const response = await getAvailableImages(bookId, Math.max(0, originalCursor.value - 100))
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
+    const known = new Set(availableOriginalImages.value.map(image => image.token))
+    availableOriginalImages.value = [
+      ...response.original_images.filter(image => !known.has(image.token)),
+      ...availableOriginalImages.value,
+    ]
+    originalCursor.value = response.original_cursor ?? 0
+    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
+  } finally {
+    if (isMounted && requestId === imageRequestSeq) loadingOlderOriginalImages.value = false
+  }
 }
 
 function handleSelectorConfirm(tokens: string[]) {
@@ -423,6 +481,11 @@ watch(() => props.bookId, () => {
   availableOriginalImages.value = []
   availableContinuationImages.value = []
   availableCharacterForms.value = []
+  originalCursor.value = 0
+  hasOlderOriginalImages.value = false
+  loadingOlderOriginalImages.value = false
+  hasMoreCharacterForms.value = false
+  loadingMoreCharacterForms.value = false
 })
 
 watch(() => props.pages.length, (pageCount) => {

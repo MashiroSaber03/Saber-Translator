@@ -9,7 +9,7 @@ import json
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, delete, func, insert, or_, select, update
+from sqlalchemy import Engine, case, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json as _json
@@ -862,30 +862,192 @@ class InsightRepository:
             "qa": {"available": False, "reason": "select_book"},
         }
 
-    def list_chapters(self, book_id: str) -> dict[str, Any]:
-        page_rows = self._book_page_rows(book_id)
-        chapter_rows: dict[str, dict[str, Any]] = {}
-        for row in page_rows:
-            chapter_id = str(row["chapter_id"])
-            chapter = chapter_rows.setdefault(
-                chapter_id,
-                {
-                    "chapterId": chapter_id,
-                    "title": str(row["chapter_title"]),
-                    "ordinal": int(row["chapter_ordinal"]),
-                    "pageCount": 0,
-                    "analysisCounts": {
-                        "ready": 0,
-                        "stale": 0,
-                        "running": 0,
-                        "failed": 0,
-                        "not_analyzed": 0,
-                    },
-                },
+    def list_overview_templates(self, book_id: str) -> dict[str, Any]:
+        """List active overview templates in one query.
+
+        The overview panel only needs presence information for its selector;
+        fetching every possible artifact separately turns an empty book into a
+        burst of expected 404 responses.
+        """
+        with self.engine.connect() as connection:
+            self._assert_book(connection, book_id)
+            templates = list(
+                connection.execute(
+                    select(analysis_artifacts.c.template)
+                    .where(
+                        analysis_artifacts.c.book_id == book_id,
+                        analysis_artifacts.c.kind == "overview",
+                        analysis_artifacts.c.is_active.is_(True),
+                    )
+                    .order_by(analysis_artifacts.c.template)
+                ).scalars()
             )
-            chapter["pageCount"] += 1
-            chapter["analysisCounts"][self._state_for_row(row)] += 1
-        return {"items": list(chapter_rows.values())}
+        return {"items": [str(template) for template in templates]}
+
+    def list_recent_page_analyses(
+        self,
+        *,
+        book_id: str,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        if limit < 1 or limit > 20:
+            raise ValueError("limit must be between 1 and 20")
+        numbered_pages = self._numbered_book_pages_statement(book_id).subquery(
+            "insight_recent_numbered_pages"
+        )
+        with self.engine.connect() as connection:
+            self._assert_book(connection, book_id)
+            rows = list(
+                connection.execute(
+                    select(
+                        analysis_heads.c.page_id,
+                        numbered_pages.c.page_number,
+                        analysis_page_results.c.payload_json,
+                        analysis_page_results.c.created_at,
+                    )
+                    .join(
+                        analysis_page_results,
+                        analysis_page_results.c.id
+                        == analysis_heads.c.active_result_id,
+                    )
+                    .join(
+                        numbered_pages,
+                        numbered_pages.c.page_id == analysis_heads.c.page_id,
+                    )
+                    .where(
+                        analysis_heads.c.book_id == book_id,
+                        analysis_heads.c.page_id.is_not(None),
+                    )
+                    .order_by(
+                        analysis_page_results.c.created_at.desc(),
+                        numbered_pages.c.page_number.desc(),
+                    )
+                    .limit(limit)
+                ).mappings()
+            )
+        items = []
+        for row in rows:
+            payload = _load(row["payload_json"], {})
+            summary = (
+                payload.get("page_summary")
+                if isinstance(payload, Mapping)
+                else None
+            )
+            items.append(
+                {
+                    "pageId": str(row["page_id"]),
+                    "displayPageNumber": int(row["page_number"]),
+                    "summary": summary if isinstance(summary, str) else None,
+                    "generatedAt": _iso(row["created_at"]),
+                }
+            )
+        return {"items": items}
+
+    def list_chapters(self, book_id: str) -> dict[str, Any]:
+        page_rows = self._book_page_statement(book_id).subquery(
+            "insight_chapter_page_rows"
+        )
+        analysis_state = case(
+            (
+                page_rows.c.latest_job_status.in_(
+                    NONTERMINAL_JOB_STATUSES
+                )
+                & (page_rows.c.latest_target_status == "pending"),
+                "running",
+            ),
+            (
+                page_rows.c.latest_target_status.in_(
+                    ("failed", "conflict")
+                )
+                & or_(
+                    page_rows.c.latest_job_status.is_(None),
+                    ~page_rows.c.latest_job_status.in_(
+                        NONTERMINAL_JOB_STATUSES
+                    ),
+                ),
+                "failed",
+            ),
+            (page_rows.c.active_result_id.is_(None), "not_analyzed"),
+            (
+                or_(
+                    page_rows.c.analysis_source_checksum.is_(None),
+                    page_rows.c.analysis_source_checksum
+                    != page_rows.c.source_checksum,
+                ),
+                "stale",
+            ),
+            (
+                page_rows.c.book_run_id.is_not(None)
+                & or_(
+                    page_rows.c.page_run_id.is_(None),
+                    page_rows.c.page_run_id != page_rows.c.book_run_id,
+                ),
+                "stale",
+            ),
+            else_="ready",
+        ).label("analysis_state")
+        state_rows = select(
+            page_rows.c.chapter_id,
+            analysis_state,
+        ).subquery("insight_chapter_states")
+        states = (
+            "ready",
+            "stale",
+            "running",
+            "failed",
+            "not_analyzed",
+        )
+        with self.engine.connect() as connection:
+            self._assert_book(connection, book_id)
+            rows = list(
+                connection.execute(
+                    select(
+                        chapters.c.id,
+                        chapters.c.title,
+                        chapters.c.ordinal,
+                        func.count(state_rows.c.analysis_state).label(
+                            "page_count"
+                        ),
+                        *(
+                            func.sum(
+                                case(
+                                    (
+                                        state_rows.c.analysis_state == state,
+                                        1,
+                                    ),
+                                    else_=0,
+                                )
+                            ).label(state)
+                            for state in states
+                        ),
+                    )
+                    .outerjoin(
+                        state_rows,
+                        state_rows.c.chapter_id == chapters.c.id,
+                    )
+                    .where(chapters.c.book_id == book_id)
+                    .group_by(
+                        chapters.c.id,
+                        chapters.c.title,
+                        chapters.c.ordinal,
+                    )
+                    .order_by(chapters.c.ordinal)
+                ).mappings()
+            )
+        return {
+            "items": [
+                {
+                    "chapterId": str(row["id"]),
+                    "title": str(row["title"]),
+                    "ordinal": int(row["ordinal"]),
+                    "pageCount": int(row["page_count"]),
+                    "analysisCounts": {
+                        state: int(row[state] or 0) for state in states
+                    },
+                }
+                for row in rows
+            ]
+        }
 
     def list_pages(
         self,
@@ -1252,18 +1414,6 @@ class InsightRepository:
                 if exists_row is None:
                     raise InsightNotFound("note not found")
                 raise InsightConflict("note revision changed")
-
-    def _book_page_rows(self, book_id: str) -> list[dict[str, Any]]:
-        with self.engine.connect() as connection:
-            self._assert_book(connection, book_id)
-            return list(
-                connection.execute(
-                    self._book_page_statement(book_id).order_by(
-                        chapters.c.ordinal,
-                        pages.c.ordinal,
-                    )
-                ).mappings()
-            )
 
     @staticmethod
     def _numbered_book_pages_statement(book_id: str):

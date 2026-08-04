@@ -8,22 +8,19 @@ import { useInsightStore } from '@/stores/insightStore'
 
 const {
   reanalyzeChapterMock,
-  getThumbnailUrlMock,
-  getAnalyzedPagesMock,
+  getInsightPagesPageMock,
   showToastMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   reanalyzeChapterMock: vi.fn(),
-  getThumbnailUrlMock: vi.fn((bookId: string, pageNum: number) => `/thumb/${bookId}/${pageNum}`),
-  getAnalyzedPagesMock: vi.fn(),
+  getInsightPagesPageMock: vi.fn(),
   showToastMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   reanalyzeChapter: reanalyzeChapterMock,
-  getThumbnailUrl: getThumbnailUrlMock,
-  getAnalyzedPages: getAnalyzedPagesMock,
+  getInsightPagesPage: getInsightPagesPageMock,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -51,6 +48,22 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function pageSummary(
+  pageNumber: number,
+  options: { analyzed?: boolean; bookId?: string; chapterId?: string } = {},
+) {
+  const bookId = options.bookId ?? 'book-1'
+  return {
+    activeAnalysisId: options.analyzed ? `analysis-${pageNumber}` : null,
+    analysisState: options.analyzed ? 'ready' : 'not_analyzed',
+    chapterId: options.chapterId ?? 'ch-1',
+    displayPageNumber: pageNumber,
+    pageId: `${bookId}-page-${pageNumber}`,
+    sourceAssetId: `${bookId}-asset-${pageNumber}`,
+    thumbnailUrl: `/thumb/${bookId}/${pageNumber}`,
+  }
+}
+
 describe('PagesTree', () => {
   let confirmSpy: ReturnType<typeof vi.spyOn>
 
@@ -69,8 +82,10 @@ describe('PagesTree', () => {
     reanalyzeChapterMock.mockResolvedValue({
       jobId: 'task-chapter-1',
     })
-    getThumbnailUrlMock.mockClear()
-    getAnalyzedPagesMock.mockReset().mockResolvedValue([])
+    getInsightPagesPageMock.mockReset().mockResolvedValue({
+      items: [pageSummary(1), pageSummary(2)],
+      nextCursor: null,
+    })
     showToastMock.mockReset()
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
@@ -117,7 +132,7 @@ describe('PagesTree', () => {
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(reanalyzeChapterMock).toHaveBeenCalledWith('book-1', 'ch-1')
     expect(store.currentTaskId).toBe('task-chapter-1')
-    expect(store.analysisStatus).toBe('running')
+    expect(store.analysisStatus).toBe('queued')
     expect(showToastMock).toHaveBeenCalledWith('章节分析已启动', 'success')
   })
 
@@ -233,6 +248,12 @@ describe('PagesTree', () => {
     emptyTreeStore.currentBookId = 'book-1'
     emptyTreeStore.setBookTotalPages(101)
     emptyTreeStore.setChapters([])
+    getInsightPagesPageMock.mockResolvedValueOnce({
+      items: Array.from({ length: 100 }, (_, index) =>
+        pageSummary(index + 1, { chapterId: '' })
+      ),
+      nextCursor: 100,
+    })
 
     const emptyTreeWrapper = mount(PagesTree, {
       global: {
@@ -241,8 +262,8 @@ describe('PagesTree', () => {
     })
     await flushPromises()
 
-    expect(emptyTreeWrapper.getComponent(VirtualThumbnailGrid).props('items')).toHaveLength(101)
-    expect(emptyTreeWrapper.find('.btn-load-more').exists()).toBe(false)
+    expect(emptyTreeWrapper.getComponent(VirtualThumbnailGrid).props('items')).toHaveLength(100)
+    expect(emptyTreeWrapper.find('.pages-tree-panel__load-more').exists()).toBe(true)
   })
 
   it('uses product chips for page counts and chapter analysis state', async () => {
@@ -253,7 +274,10 @@ describe('PagesTree', () => {
     store.currentBookId = 'book-1'
     store.setBookTotalPages(2)
     store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
-    getAnalyzedPagesMock.mockResolvedValueOnce([1, 2])
+    getInsightPagesPageMock.mockResolvedValueOnce({
+      items: [pageSummary(1, { analyzed: true }), pageSummary(2, { analyzed: true })],
+      nextCursor: null,
+    })
 
     const wrapper = mount(PagesTree, {
       global: {
@@ -400,7 +424,7 @@ describe('PagesTree', () => {
     expect(styleBlock).not.toMatch(/\.tree-/)
   })
 
-  it('ignores stale analyzed page marker responses after switching books', async () => {
+  it('ignores stale page-summary responses after switching books', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -409,12 +433,12 @@ describe('PagesTree', () => {
     store.setBookTotalPages(2)
     store.setChapters([])
 
-    const book1Markers = deferred<number[]>()
-    const book2Markers = deferred<number[]>()
-    getAnalyzedPagesMock
+    const book1Pages = deferred<{ items: ReturnType<typeof pageSummary>[]; nextCursor: null }>()
+    const book2Pages = deferred<{ items: ReturnType<typeof pageSummary>[]; nextCursor: null }>()
+    getInsightPagesPageMock
       .mockReset()
-      .mockReturnValueOnce(book1Markers.promise)
-      .mockReturnValueOnce(book2Markers.promise)
+      .mockReturnValueOnce(book1Pages.promise)
+      .mockReturnValueOnce(book2Pages.promise)
 
     const wrapper = mount(PagesTree, {
       global: {
@@ -422,20 +446,38 @@ describe('PagesTree', () => {
       },
     })
     await nextTick()
-    expect(getAnalyzedPagesMock).toHaveBeenCalledWith('book-1')
+    expect(getInsightPagesPageMock).toHaveBeenCalledWith('book-1', {
+      cursor: 0,
+      limit: 100,
+    })
 
     store.currentBookId = 'book-2'
     await nextTick()
-    expect(getAnalyzedPagesMock).toHaveBeenCalledWith('book-2')
+    expect(getInsightPagesPageMock).toHaveBeenCalledWith('book-2', {
+      cursor: 0,
+      limit: 100,
+    })
 
-    book2Markers.resolve([2])
+    book2Pages.resolve({
+      items: [
+        pageSummary(1, { bookId: 'book-2', chapterId: '' }),
+        pageSummary(2, { analyzed: true, bookId: 'book-2', chapterId: '' }),
+      ],
+      nextCursor: null,
+    })
     await flushPromises()
 
     const pageItemsAfterBook2 = wrapper.getComponent(VirtualThumbnailGrid).props('items')
     expect(pageItemsAfterBook2[0]).toMatchObject({ id: 1, marked: false })
     expect(pageItemsAfterBook2[1]).toMatchObject({ id: 2, marked: true })
 
-    book1Markers.resolve([1])
+    book1Pages.resolve({
+      items: [
+        pageSummary(1, { analyzed: true, bookId: 'book-1', chapterId: '' }),
+        pageSummary(2, { bookId: 'book-1', chapterId: '' }),
+      ],
+      nextCursor: null,
+    })
     await flushPromises()
 
     const pageItemsAfterStaleBook1 = wrapper.getComponent(VirtualThumbnailGrid).props('items')
@@ -452,6 +494,12 @@ describe('PagesTree', () => {
     store.setChapters([
       { id: 'ch-large', title: '大章节', startPage: 1, endPage: 1000, analyzed: false },
     ])
+    getInsightPagesPageMock.mockResolvedValueOnce({
+      items: Array.from({ length: 100 }, (_, index) =>
+        pageSummary(index + 1, { chapterId: 'ch-large' })
+      ),
+      nextCursor: 100,
+    })
 
     const wrapper = mount(PagesTree, {
       global: { plugins: [pinia] },
@@ -459,7 +507,8 @@ describe('PagesTree', () => {
     await flushPromises()
 
     const grid = wrapper.getComponent(VirtualThumbnailGrid)
-    expect(grid.props('items')).toHaveLength(1000)
+    expect(grid.props('items')).toHaveLength(100)
     expect(grid.findAll('[data-product-thumbnail-id]').length).toBeLessThanOrEqual(8)
+    expect(wrapper.find('.pages-tree-panel__load-more').exists()).toBe(true)
   })
 })

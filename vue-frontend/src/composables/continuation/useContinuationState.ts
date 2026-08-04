@@ -17,6 +17,8 @@ export interface ContinuationState {
     continuationDirection: Ref<string>
 
     characters: Ref<CharacterProfile[]>
+    hasMoreCharacterForms: Readonly<Ref<boolean>>
+    isLoadingMoreCharacterForms: Readonly<Ref<boolean>>
     chapterScript: Ref<ChapterScript | null>
     pages: Ref<PageContent[]>
     imageRefreshKey: Ref<number>
@@ -24,6 +26,7 @@ export interface ContinuationState {
     isGeneratingPages: Ref<boolean>
 
     initializeData: () => Promise<void>
+    loadMoreCharacterForms: () => Promise<void>
     syncAnalysisData: (source?: 'auto' | 'manual') => Promise<void>
     resetState: () => void
     showMessage: (message: string, type: 'success' | 'error' | 'info') => void
@@ -49,18 +52,24 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const continuationDirection = ref('')
 
     const characters = ref<CharacterProfile[]>([])
+    const hasMoreCharacterForms = ref(false)
+    const isLoadingMoreCharacterForms = ref(false)
     const chapterScript = ref<ChapterScript | null>(null)
     const pages = ref<PageContent[]>([])
     const isGeneratingPages = ref(false)
     const imageRefreshKey = ref(Date.now())
     let initializeRequestId = 0
     let syncRequestId = 0
+    let formPageRequestId = 0
     let isMounted = true
 
     function resetLoadedContinuationData(): void {
         isDataReady.value = false
         isSyncingAnalysis.value = false
         characters.value = []
+        hasMoreCharacterForms.value = false
+        isLoadingMoreCharacterForms.value = false
+        formPageRequestId += 1
         chapterScript.value = null
         pages.value = []
         pageCount.value = 10
@@ -113,6 +122,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                 return false
             }
             characters.value = charactersResult
+            hasMoreCharacterForms.value = continuationApi.hasMoreCharacterForms(activeBookId)
             imageRefreshKey.value = Date.now()
             return true
         } catch (error) {
@@ -121,6 +131,33 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                 setMessageState(`加载角色失败：${message}`, 'error', persistentError)
             }
             return false
+        }
+    }
+
+    async function loadMoreCharacterForms(): Promise<void> {
+        const activeBookId = bookId.value
+        if (!activeBookId || !hasMoreCharacterForms.value || isLoadingMoreCharacterForms.value) {
+            return
+        }
+        const requestId = ++formPageRequestId
+        isLoadingMoreCharacterForms.value = true
+        try {
+            const charactersResult = await continuationApi.loadMoreCharacterForms(activeBookId)
+            if (!isMounted || requestId !== formPageRequestId || bookId.value !== activeBookId) {
+                return
+            }
+            characters.value = charactersResult
+            hasMoreCharacterForms.value = continuationApi.hasMoreCharacterForms(activeBookId)
+            imageRefreshKey.value = Date.now()
+        } catch (error) {
+            if (isMounted && requestId === formPageRequestId && bookId.value === activeBookId) {
+                const message = error instanceof Error ? error.message : '网络错误'
+                showMessage(`加载更多角色形态失败：${message}`, 'error')
+            }
+        } finally {
+            if (isMounted && requestId === formPageRequestId) {
+                isLoadingMoreCharacterForms.value = false
+            }
         }
     }
 
@@ -263,6 +300,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             isMounted = false
             initializeRequestId += 1
             syncRequestId += 1
+            formPageRequestId += 1
             clearMessageTimer()
         })
     }
@@ -282,6 +320,8 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         continuationDirection,
 
         characters,
+        hasMoreCharacterForms: readonly(hasMoreCharacterForms),
+        isLoadingMoreCharacterForms: readonly(isLoadingMoreCharacterForms),
         chapterScript,
         pages,
         imageRefreshKey,
@@ -289,6 +329,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         isGeneratingPages,
 
         initializeData,
+        loadMoreCharacterForms,
         syncAnalysisData,
         resetState,
         showMessage,

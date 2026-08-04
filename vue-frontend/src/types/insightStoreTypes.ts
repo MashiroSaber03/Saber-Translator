@@ -1,6 +1,18 @@
 import type { OpenAICompatibleOptions } from './settings'
 
-export type AnalysisStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'error'
+export type AnalysisStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'pausing'
+  | 'paused'
+  | 'cancelling'
+  | 'interrupted'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'failed'
+  | 'cancelled'
+  | 'error'
 
 export type AnalysisMode = 'full' | 'chapter' | 'page' | 'chapters' | 'incremental' | 'reanalyze'
 

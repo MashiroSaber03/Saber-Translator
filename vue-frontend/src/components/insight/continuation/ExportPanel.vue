@@ -23,7 +23,7 @@
         variant="primary"
         class="continuation-export-panel__download-action"
         block
-        :disabled="isExporting"
+        :disabled="isExporting || generatedCount <= 0"
         size="lg"
         @click="handleExport"
       >
@@ -84,8 +84,8 @@ function handleFormatSelect(formatId: string): void {
 }
 
 async function handleExport() {
-  if (!props.bookId || state.pages.value.length === 0) {
-    state.showMessage('没有可导出的页面', 'error')
+  if (!props.bookId || props.generatedCount <= 0) {
+    state.showMessage('没有已生成的图片可导出', 'error')
     return
   }
 

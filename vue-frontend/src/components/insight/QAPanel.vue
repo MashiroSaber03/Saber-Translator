@@ -37,6 +37,13 @@ let chatRequestSequence = 0
 let qaStatusRequestSequence = 0
 let isQAPanelMounted = true
 let handledTerminalRebuildTaskId = ''
+let streamRenderFrame: number | null = null
+let pendingStreamRender: {
+  requestId: number
+  bookId: string
+  messageId: string
+  content: string
+} | null = null
 
 const qaHistory = computed(() => insightStore.qaHistory)
 const isStreaming = computed(() => insightStore.isStreaming)
@@ -113,8 +120,9 @@ async function sendQuestion(): Promise<void> {
   scrollToBottom()
 
   const loadingText = qaMode.value === 'global' ? '正在分析全文...' : '思考中...'
+  const loadingMessageId = (Date.now() + 1).toString()
   insightStore.addQAMessage({
-    id: (Date.now() + 1).toString(),
+    id: loadingMessageId,
     role: 'assistant',
     content: loadingText,
     timestamp: new Date().toISOString(),
@@ -131,6 +139,12 @@ async function sendQuestion(): Promise<void> {
       top_k: topK.value,
       threshold: threshold.value,
       use_global_context: qaMode.value === 'global',
+      on_chunk: content => queueStreamRender({
+        requestId,
+        bookId,
+        messageId: loadingMessageId,
+        content,
+      }),
     })
 
     if (!isCurrentChatRequest(requestId, bookId)) return
@@ -165,6 +179,27 @@ async function sendQuestion(): Promise<void> {
       insightStore.setStreaming(false)
     }
   }
+}
+
+function queueStreamRender(update: NonNullable<typeof pendingStreamRender>): void {
+  pendingStreamRender = update
+  if (streamRenderFrame !== null) return
+  // Coalesce token-sized SSE chunks so Markdown rendering and scrolling update
+  // at most once per frame instead of once per provider token.
+  streamRenderFrame = requestAnimationFrame(() => {
+    streamRenderFrame = null
+    const pending = pendingStreamRender
+    pendingStreamRender = null
+    if (!pending || !isCurrentChatRequest(pending.requestId, pending.bookId)) return
+    insightStore.updateQAMessage(pending.messageId, { content: pending.content })
+    scrollToBottom()
+  })
+}
+
+function clearPendingStreamRender(): void {
+  if (streamRenderFrame !== null) cancelAnimationFrame(streamRenderFrame)
+  streamRenderFrame = null
+  pendingStreamRender = null
 }
 
 function isCurrentChatRequest(requestId: number, bookId: string): boolean {
@@ -359,6 +394,7 @@ onUnmounted(() => {
   isQAPanelMounted = false
   chatRequestSequence += 1
   qaStatusRequestSequence += 1
+  clearPendingStreamRender()
   insightStore.removeLoadingMessages()
   insightStore.setStreaming(false)
 })

@@ -5,20 +5,24 @@ import { ref } from 'vue'
 
 const {
   createNoteMock,
+  getNoteDetailMock,
   getNotesMock,
 } = vi.hoisted(() => ({
   createNoteMock: vi.fn(),
+  getNoteDetailMock: vi.fn(),
   getNotesMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   getNotes: getNotesMock,
+  getNoteDetail: getNoteDetailMock,
   createNote: createNoteMock,
 }))
 
 describe('useInsightNotes', () => {
   beforeEach(() => {
     createNoteMock.mockReset()
+    getNoteDetailMock.mockReset()
     getNotesMock.mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -66,7 +70,10 @@ describe('useInsightNotes', () => {
   })
 
   it('ignores stale note loads after the selected book changes', async () => {
-    let resolveBookOne!: (value: Array<Record<string, unknown>>) => void
+    let resolveBookOne!: (value: {
+      items: Array<Record<string, unknown>>
+      nextCursor: string | null
+    }) => void
     getNotesMock.mockImplementationOnce(() => new Promise((resolve) => {
       resolveBookOne = resolve
     }))
@@ -78,13 +85,13 @@ describe('useInsightNotes', () => {
     currentBookId.value = 'book-2'
     notesState.clearNotes()
 
-    resolveBookOne([{
+    resolveBookOne({ items: [{
         id: 'note-stale',
         type: 'text',
         content: 'stale note',
         createdAt: '2026-06-25T00:00:00.000Z',
         updatedAt: '2026-06-25T00:00:00.000Z',
-      }])
+      }], nextCursor: null })
     await pendingLoad
 
     expect(notesState.notes.value).toEqual([])
@@ -103,7 +110,7 @@ describe('useInsightNotes', () => {
   })
 
   it('maps API note payloads through a typed current-schema mapper', async () => {
-    getNotesMock.mockResolvedValueOnce([{
+    getNotesMock.mockResolvedValueOnce({ items: [{
         id: 'note-1',
         type: 'qa',
         content: 'answer',
@@ -116,7 +123,7 @@ describe('useInsightNotes', () => {
         comment: '保留当前字段',
         createdAt: '2026-06-25T00:00:00.000Z',
         updatedAt: '2026-06-25T00:00:01.000Z',
-      }])
+      }], nextCursor: null })
 
     const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
     const notesState = useInsightNotes({ currentBookId: ref('book-1') })
@@ -147,6 +154,84 @@ describe('useInsightNotes', () => {
     expect(source).not.toContain('as unknown as NoteData')
     expect(source).not.toContain('使用转换器自动')
     expect(source).not.toContain('/**')
+  })
+
+  it('ignores stale note detail after the selected book changes', async () => {
+    let resolveDetail!: (value: Record<string, unknown>) => void
+    getNotesMock.mockResolvedValueOnce({
+      items: [{
+        id: 'note-1',
+        type: 'text',
+        content: '',
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
+      }],
+      nextCursor: null,
+    })
+    getNoteDetailMock.mockImplementationOnce(() => new Promise(resolve => {
+      resolveDetail = resolve
+    }))
+    const currentBookId = ref('book-1')
+    const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
+    const notesState = useInsightNotes({ currentBookId })
+    await notesState.loadNotes()
+
+    const pendingDetail = notesState.loadNoteDetail('note-1')
+    currentBookId.value = 'book-2'
+    notesState.clearNotes()
+    resolveDetail({
+      id: 'note-1',
+      type: 'text',
+      content: 'stale detail',
+      createdAt: '2026-06-25T00:00:00.000Z',
+      updatedAt: '2026-06-25T00:00:01.000Z',
+    })
+
+    await expect(pendingDetail).resolves.toBeNull()
+    expect(notesState.notes.value).toEqual([])
+  })
+
+  it('appends subsequent note pages without duplicating existing notes', async () => {
+    getNotesMock
+      .mockResolvedValueOnce({
+        items: [{
+          id: 'note-1',
+          type: 'text',
+          content: 'first',
+          createdAt: '2026-06-25T00:00:00.000Z',
+          updatedAt: '2026-06-25T00:00:00.000Z',
+        }],
+        nextCursor: 'cursor-1',
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'note-1',
+            type: 'text',
+            content: 'first',
+            createdAt: '2026-06-25T00:00:00.000Z',
+            updatedAt: '2026-06-25T00:00:00.000Z',
+          },
+          {
+            id: 'note-2',
+            type: 'text',
+            content: 'second',
+            createdAt: '2026-06-25T00:00:01.000Z',
+            updatedAt: '2026-06-25T00:00:01.000Z',
+          },
+        ],
+        nextCursor: null,
+      })
+
+    const { useInsightNotes } = await import('@/stores/insight/useInsightNotes')
+    const notesState = useInsightNotes({ currentBookId: ref('book-1') })
+
+    await notesState.loadNotes()
+    await notesState.loadMoreNotes()
+
+    expect(getNotesMock).toHaveBeenNthCalledWith(2, 'book-1', undefined, 'cursor-1')
+    expect(notesState.notes.value.map(note => note.id)).toEqual(['note-1', 'note-2'])
+    expect(notesState.nextCursor.value).toBeNull()
   })
 
   it('keeps note payload validation in a focused model helper', async () => {

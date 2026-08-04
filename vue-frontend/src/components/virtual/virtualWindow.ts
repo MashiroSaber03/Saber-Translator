@@ -5,6 +5,29 @@ export interface VirtualWindow {
   totalSize: number
 }
 
+export function variableItemOffsets(itemSizes: readonly number[]): number[] {
+  const offsets = new Array<number>(itemSizes.length + 1)
+  offsets[0] = 0
+  for (let index = 0; index < itemSizes.length; index += 1) {
+    offsets[index + 1] = offsets[index]! + Math.max(1, itemSizes[index]!)
+  }
+  return offsets
+}
+
+function firstMatchingIndex(
+  length: number,
+  matches: (index: number) => boolean,
+): number {
+  let lower = 0
+  let upper = length
+  while (lower < upper) {
+    const middle = lower + Math.floor((upper - lower) / 2)
+    if (matches(middle)) upper = middle
+    else lower = middle + 1
+  }
+  return lower
+}
+
 export function fixedVirtualWindow(
   itemCount: number,
   itemSize: number,
@@ -34,12 +57,11 @@ export function variableVirtualWindow(
   scrollOffset: number,
   viewportSize: number,
   overscanPixels: number,
+  cachedOffsets?: readonly number[],
 ): VirtualWindow {
-  const offsets = new Array<number>(itemSizes.length + 1)
-  offsets[0] = 0
-  for (let index = 0; index < itemSizes.length; index += 1) {
-    offsets[index + 1] = offsets[index]! + Math.max(1, itemSizes[index]!)
-  }
+  const offsets = cachedOffsets?.length === itemSizes.length + 1
+    ? cachedOffsets
+    : variableItemOffsets(itemSizes)
   const totalSize = offsets[offsets.length - 1] ?? 0
   const lowerBound = Math.max(0, scrollOffset - overscanPixels)
   const upperBound = Math.min(
@@ -47,14 +69,14 @@ export function variableVirtualWindow(
     Math.max(0, scrollOffset) + Math.max(0, viewportSize) + overscanPixels,
   )
 
-  let start = 0
-  while (start < itemSizes.length && offsets[start + 1]! < lowerBound) {
-    start += 1
-  }
-  let end = start
-  while (end < itemSizes.length && offsets[end]! <= upperBound) {
-    end += 1
-  }
+  const start = firstMatchingIndex(
+    itemSizes.length,
+    index => offsets[index + 1]! >= lowerBound,
+  )
+  const end = firstMatchingIndex(
+    itemSizes.length,
+    index => offsets[index]! > upperBound,
+  )
   return {
     start,
     end,

@@ -13,6 +13,8 @@ const { prepareContinuationMock, getCharactersMock, syncContinuationAnalysisMock
 vi.mock('@/api/continuation', () => ({
   prepareContinuation: prepareContinuationMock,
   getCharacters: getCharactersMock,
+  hasMoreCharacterForms: vi.fn().mockReturnValue(false),
+  loadMoreCharacterForms: vi.fn().mockResolvedValue([]),
   syncContinuationAnalysis: syncContinuationAnalysisMock,
 }))
 

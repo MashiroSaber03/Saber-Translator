@@ -14,14 +14,21 @@ import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
+import type { V2InsightPageSummary } from '@/api/v2/insight'
 import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 
 const insightStore = useInsightStore()
 
 const expandedChapters = ref<Set<string>>(new Set())
-const pageAnalyzedMap = ref<Map<number, boolean>>(new Map())
-let analyzedPagesRequestSequence = 0
+interface PageListState {
+  items: V2InsightPageSummary[]
+  loading: boolean
+  nextCursor: number | null
+}
+const GLOBAL_PAGE_LIST = '__all__'
+const pageLists = ref<Map<string, PageListState>>(new Map())
+let pageListGeneration = 0
 let isPagesTreeMounted = true
 
 const chapters = computed(() => insightStore.chapters)
@@ -39,6 +46,7 @@ function toggleChapter(chapterId: string): void {
     expandedChapters.value.delete(chapterId)
   } else {
     expandedChapters.value.add(chapterId)
+    void loadPageList(chapterId)
   }
 }
 
@@ -50,54 +58,82 @@ function selectPage(pageNum: number): void {
   insightStore.selectPage(pageNum)
 }
 
-function isPageAnalyzed(pageNum: number): boolean {
-  return pageAnalyzedMap.value.get(pageNum) || false
-}
-
 function isPageSelected(pageNum: number): boolean {
   return insightStore.selectedPageNum === pageNum
 }
 
-function getPageRange(startPage: number, endPage: number): number[] {
-  const pages: number[] = []
-  for (let i = startPage; i <= endPage; i++) {
-    pages.push(i)
+function pageListKey(chapterId?: string): string {
+  return chapterId || GLOBAL_PAGE_LIST
+}
+
+function pageList(chapterId?: string): PageListState {
+  return pageLists.value.get(pageListKey(chapterId)) ?? {
+    items: [],
+    loading: false,
+    nextCursor: 0,
   }
-  return pages
 }
 
-function getThumbnailUrl(pageNum: number): string {
-  if (!insightStore.currentBookId) return ''
-  return insightApi.getThumbnailUrl(insightStore.currentBookId, pageNum)
-}
-
-function createPageThumbnailItems(startPage: number, endPage: number): ProductThumbnailGridItem[] {
-  return getPageRange(startPage, endPage).map(pageNum => ({
-    id: pageNum,
-    src: getThumbnailUrl(pageNum),
-    alt: `第${pageNum}页`,
-    label: `第 ${pageNum} 页`,
-    selected: isPageSelected(pageNum),
-    marked: isPageAnalyzed(pageNum),
+function createPageThumbnailItems(chapterId?: string): ProductThumbnailGridItem[] {
+  return pageList(chapterId).items.map(page => ({
+    id: page.displayPageNumber,
+    src: page.thumbnailUrl ?? '',
+    alt: `第${page.displayPageNumber}页`,
+    label: `第 ${page.displayPageNumber} 页`,
+    selected: isPageSelected(page.displayPageNumber),
+    marked: page.analysisState !== 'not_analyzed',
   }))
+}
+
+async function loadPageList(chapterId?: string, reset = false): Promise<void> {
+  const bookId = insightStore.currentBookId
+  const key = pageListKey(chapterId)
+  const current = pageList(chapterId)
+  if (!bookId || current.loading || (!reset && current.nextCursor === null)) return
+  const generation = pageListGeneration
+  const nextState: PageListState = {
+    items: reset ? [] : current.items,
+    loading: true,
+    nextCursor: reset ? 0 : current.nextCursor,
+  }
+  pageLists.value = new Map(pageLists.value).set(key, nextState)
+  try {
+    const response = await insightApi.getInsightPagesPage(bookId, {
+      ...(chapterId ? { chapterId } : {}),
+      cursor: nextState.nextCursor ?? 0,
+      limit: 100,
+    })
+    if (
+      !isPagesTreeMounted
+      || generation !== pageListGeneration
+      || insightStore.currentBookId !== bookId
+    ) return
+    const known = new Set(nextState.items.map(page => page.pageId))
+    pageLists.value = new Map(pageLists.value).set(key, {
+      items: [...nextState.items, ...response.items.filter(page => !known.has(page.pageId))],
+      loading: false,
+      nextCursor: response.nextCursor,
+    })
+  } catch {
+    if (generation !== pageListGeneration || insightStore.currentBookId !== bookId) return
+    pageLists.value = new Map(pageLists.value).set(key, { ...nextState, loading: false })
+    showToast('加载页面列表失败', 'error')
+  }
 }
 
 function selectThumbnailPage(pageId: string | number): void {
   selectPage(Number(pageId))
 }
 
-function isChapterAnalyzed(chapter: { startPage: number; endPage: number }): boolean {
-  const pageCount = chapter.endPage - chapter.startPage + 1
-  let analyzedCount = 0
-  for (let p = chapter.startPage; p <= chapter.endPage; p++) {
-    if (pageAnalyzedMap.value.get(p)) {
-      analyzedCount++
-    }
+function isChapterAnalyzed(chapter: { id: string; analyzed?: boolean }): boolean {
+  const state = pageLists.value.get(chapter.id)
+  if (state && state.nextCursor === null && state.items.length > 0) {
+    return state.items.every(page => page.analysisState !== 'not_analyzed')
   }
-  return analyzedCount === pageCount
+  return Boolean(chapter.analyzed)
 }
 
-function chapterStateChips(chapter: { id: string; startPage: number; endPage: number }): ProductChipItem[] {
+function chapterStateChips(chapter: { id: string; startPage: number; endPage: number; analyzed?: boolean }): ProductChipItem[] {
   const analyzed = isChapterAnalyzed(chapter)
 
   return [
@@ -128,72 +164,59 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
   try {
     const submission = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
     insightStore.setCurrentTaskId(submission.jobId)
-    insightStore.setAnalysisStatus('running')
+    insightStore.setAnalysisStatus('queued')
     showToast('章节分析已启动', 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '重新分析失败', 'error')
   }
 }
 
-async function loadAnalyzedPages(bookId = insightStore.currentBookId): Promise<void> {
-  const requestId = ++analyzedPagesRequestSequence
-  if (!bookId) {
-    pageAnalyzedMap.value = new Map()
-    return
+async function loadInitialPageList(): Promise<void> {
+  if (!insightStore.currentBookId) return
+  if (chapters.value.length > 0 && chapters.value[0]) {
+    expandedChapters.value.add(chapters.value[0].id)
+    await loadPageList(chapters.value[0].id)
+  } else if (totalPages.value > 0) {
+    await loadPageList()
   }
-
-  try {
-    const analyzedPages = await insightApi.getAnalyzedPages(bookId)
-    if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
-
-    const nextMap = new Map<number, boolean>()
-    analyzedPages.forEach(pageNumber => {
-      nextMap.set(pageNumber, true)
-    })
-    pageAnalyzedMap.value = nextMap
-  } catch {
-    if (!isCurrentAnalyzedPagesRequest(requestId, bookId)) return
-    showToast('加载页面分析状态失败', 'error')
-  }
-}
-
-function isCurrentAnalyzedPagesRequest(requestId: number, bookId: string): boolean {
-  return (
-    isPagesTreeMounted &&
-    requestId === analyzedPagesRequestSequence &&
-    insightStore.currentBookId === bookId
-  )
 }
 
 onMounted(async () => {
-  await loadAnalyzedPages()
-
-  if (chapters.value.length > 0 && chapters.value[0]) {
-    expandedChapters.value.add(chapters.value[0].id)
-  }
+  await loadInitialPageList()
 })
 
 watch(
   () => insightStore.analyzedPageCount,
   async (newCount, previousCount) => {
     if (newCount !== previousCount && newCount > 0) {
-      pageAnalyzedMap.value.clear()
-      await loadAnalyzedPages()
+      const loadedKeys = [...pageLists.value.keys()]
+      for (const key of loadedKeys) {
+        await loadPageList(key === GLOBAL_PAGE_LIST ? undefined : key, true)
+      }
     }
   }
 )
 
 watch(
   () => insightStore.currentBookId,
-  async (bookId) => {
-    pageAnalyzedMap.value = new Map()
-    await loadAnalyzedPages(bookId || '')
+  async () => {
+    pageListGeneration += 1
+    pageLists.value = new Map()
+    expandedChapters.value = new Set()
+    await loadInitialPageList()
+  }
+)
+
+watch(
+  () => chapters.value.map(chapter => chapter.id).join('\u0000'),
+  async () => {
+    if (pageLists.value.size === 0) await loadInitialPageList()
   }
 )
 
 onUnmounted(() => {
   isPagesTreeMounted = false
-  analyzedPagesRequestSequence += 1
+  pageListGeneration += 1
 })
 </script>
 
@@ -231,9 +254,19 @@ onUnmounted(() => {
           aria-label="所有页面导航"
           :columns="4"
           :active-id="insightStore.selectedPageNum"
-          :items="createPageThumbnailItems(1, totalPages)"
+          :items="createPageThumbnailItems()"
           @select="selectThumbnailPage"
         />
+        <UiButton
+          v-if="totalPages > 0 && pageList().nextCursor !== null"
+          class="pages-tree-panel__load-more"
+          variant="secondary"
+          size="sm"
+          :disabled="pageList().loading"
+          @click="loadPageList()"
+        >
+          {{ pageList().loading ? '加载中...' : '加载更多页面' }}
+        </UiButton>
       </template>
 
       <template v-else>
@@ -288,9 +321,19 @@ onUnmounted(() => {
             :aria-label="`${chapter.title}页面导航`"
             :columns="4"
             :active-id="insightStore.selectedPageNum"
-            :items="createPageThumbnailItems(chapter.startPage, chapter.endPage)"
+            :items="createPageThumbnailItems(chapter.id)"
             @select="selectThumbnailPage"
           />
+          <UiButton
+            v-if="isChapterExpanded(chapter.id) && pageList(chapter.id).nextCursor !== null"
+            class="pages-tree-panel__load-more"
+            variant="secondary"
+            size="sm"
+            :disabled="pageList(chapter.id).loading"
+            @click="loadPageList(chapter.id)"
+          >
+            {{ pageList(chapter.id).loading ? '加载中...' : '加载更多页面' }}
+          </UiButton>
         </ProductRecordCard>
       </template>
     </div>

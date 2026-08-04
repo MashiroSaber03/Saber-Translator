@@ -16,12 +16,15 @@ export type NewInsightNoteInput = Omit<
 export function useInsightNotes(options: UseInsightNotesOptions) {
   const { currentBookId } = options
   let notesLoadRequestId = 0
+  let noteDetailRequestId = 0
 
   const notes = ref<NoteData[]>([])
 
   const noteTypeFilter = ref<NoteType | 'all'>('all')
 
   const isLoading = ref(false)
+  const isLoadingMore = ref(false)
+  const nextCursor = ref<string | null>(null)
 
   const error = ref<string | null>(null)
 
@@ -50,7 +53,8 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     try {
       const loadedNotes = await insightApi.getNotes(requestedBookId)
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
-      notes.value = loadedNotes.map(mapInsightApiNote)
+      notes.value = loadedNotes.items.map(mapInsightApiNote)
+      nextCursor.value = loadedNotes.nextCursor
     } catch (e) {
       if (!isActiveNotesLoad(requestId, requestedBookId)) return
       error.value = e instanceof Error ? e.message : '加载笔记失败'
@@ -58,6 +62,56 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
       if (requestId === notesLoadRequestId) {
         isLoading.value = false
       }
+    }
+  }
+
+  async function loadMoreNotes(): Promise<void> {
+    const requestedBookId = currentBookId.value
+    const cursor = nextCursor.value
+    const requestId = notesLoadRequestId
+    if (!requestedBookId || !cursor || isLoadingMore.value) return
+    isLoadingMore.value = true
+    error.value = null
+    try {
+      const loadedNotes = await insightApi.getNotes(requestedBookId, undefined, cursor)
+      if (!isActiveNotesLoad(requestId, requestedBookId)) return
+      const known = new Set(notes.value.map(note => note.id))
+      notes.value.push(
+        ...loadedNotes.items.map(mapInsightApiNote).filter(note => !known.has(note.id))
+      )
+      nextCursor.value = loadedNotes.nextCursor
+    } catch (e) {
+      if (isActiveNotesLoad(requestId, requestedBookId)) {
+        error.value = e instanceof Error ? e.message : '加载更多笔记失败'
+      }
+    } finally {
+      if (isActiveNotesLoad(requestId, requestedBookId)) isLoadingMore.value = false
+    }
+  }
+
+  async function loadNoteDetail(noteId: string): Promise<NoteData | null> {
+    const requestedBookId = currentBookId.value
+    const listRequestId = notesLoadRequestId
+    const requestId = ++noteDetailRequestId
+    if (!requestedBookId) return null
+    try {
+      const detail = mapInsightApiNote(await insightApi.getNoteDetail(noteId))
+      if (
+        requestId !== noteDetailRequestId
+        || listRequestId !== notesLoadRequestId
+        || currentBookId.value !== requestedBookId
+      ) return null
+      const index = notes.value.findIndex(note => note.id === noteId)
+      if (index >= 0) notes.value[index] = detail
+      return detail
+    } catch (e) {
+      if (
+        requestId !== noteDetailRequestId
+        || listRequestId !== notesLoadRequestId
+        || currentBookId.value !== requestedBookId
+      ) return null
+      error.value = e instanceof Error ? e.message : '加载笔记详情失败'
+      return null
     }
   }
 
@@ -159,7 +213,10 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
   function clearNotes(): void {
     notesLoadRequestId += 1
+    noteDetailRequestId += 1
     notes.value = []
+    nextCursor.value = null
+    isLoadingMore.value = false
   }
 
   return {
@@ -167,8 +224,12 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     noteTypeFilter,
     filteredNotes,
     isLoading,
+    isLoadingMore,
+    nextCursor,
     error,
     loadNotes,
+    loadMoreNotes,
+    loadNoteDetail,
     addNote,
     updateNote,
     deleteNote,

@@ -35,6 +35,15 @@ export interface InsightConfigStateSnapshot {
   providerConfigs: ProviderConfigsCache
 }
 
+const ACTIVE_ANALYSIS_STATUSES = new Set<AnalysisStatus>([
+  'queued',
+  'running',
+  'pausing',
+  'paused',
+  'cancelling',
+  'interrupted',
+])
+
 export const useInsightStore = defineStore('insight', () => {
   const currentBookId = ref<string | null>(null)
   const currentTaskId = ref<string | null>(null)
@@ -42,7 +51,6 @@ export const useInsightStore = defineStore('insight', () => {
   const progress = ref<AnalysisProgress>({ current: 0, total: 0, status: 'idle' })
   const bookTotalPages = ref(0)
   const analyzedPagesCount = ref(0)
-  const incrementalAnalysis = ref(true)
   const chapters = ref<ChapterInfo[]>([])
   const selectedPageNum = ref<number | null>(null)
   const isLoading = ref(false)
@@ -95,7 +103,7 @@ export const useInsightStore = defineStore('insight', () => {
   const configManager = useInsightConfigManager(providerConfigs)
 
   const progressPercent = computed(() => progress.value.total === 0 ? 0 : Math.round((progress.value.current / progress.value.total) * 100))
-  const isAnalyzing = computed(() => analysisStatus.value === 'running')
+  const isAnalyzing = computed(() => ACTIVE_ANALYSIS_STATUSES.has(analysisStatus.value))
   const analyzedPageCount = computed(() => analyzedPagesCount.value)
   const totalPageCount = computed(() => bookTotalPages.value)
 
@@ -106,7 +114,6 @@ export const useInsightStore = defineStore('insight', () => {
       if (previousBookId !== bookId) {
         notesComposable.clearNotes()
       }
-      notesComposable.loadNotes()
     } else {
       notesComposable.clearNotes()
     }
@@ -114,7 +121,6 @@ export const useInsightStore = defineStore('insight', () => {
   function setAnalysisStatus(status: AnalysisStatus): void { analysisStatus.value = status; progress.value.status = status }
   function setCurrentTaskId(taskId: string | null): void { currentTaskId.value = taskId }
   function updateProgress(current: number, total: number, message?: string): void { progress.value = { current, total, status: analysisStatus.value, message } }
-  function setIncrementalAnalysis(incremental: boolean): void { incrementalAnalysis.value = incremental }
   function setBookTotalPages(totalPages: number): void { bookTotalPages.value = totalPages }
   function setAnalyzedPagesCount(count: number): void { analyzedPagesCount.value = count }
   function setChapters(chapterList: ChapterInfo[]): void { chapters.value = chapterList }
@@ -122,6 +128,10 @@ export const useInsightStore = defineStore('insight', () => {
   function triggerDataRefresh(): void { dataRefreshKey.value = Date.now() }
 
   function addQAMessage(message: QAMessage): void { qaComposable.qaHistory.value.push(message) }
+  function updateQAMessage(messageId: string, updates: Partial<QAMessage>): void {
+    const message = qaComposable.qaHistory.value.find(item => item.id === messageId)
+    if (message) Object.assign(message, updates)
+  }
   function clearQAHistory(): void { qaComposable.clearHistory() }
   function removeLoadingMessages(): void { qaComposable.qaHistory.value = qaComposable.qaHistory.value.filter(m => !m.isLoading) }
   function setStreaming(streaming: boolean): void { qaComposable.setStreaming(streaming) }
@@ -136,6 +146,10 @@ export const useInsightStore = defineStore('insight', () => {
   async function deleteNote(noteId: string): Promise<void> { await notesComposable.deleteNote(noteId) }
   function setNoteTypeFilter(type: NoteType | 'all'): void { notesComposable.setNoteTypeFilter(type) }
   async function loadNotesFromAPI(): Promise<void> { await notesComposable.loadNotes() }
+  async function loadMoreNotes(): Promise<void> { await notesComposable.loadMoreNotes() }
+  function loadNoteDetail(noteId: string): Promise<NoteData | null> {
+    return notesComposable.loadNoteDetail(noteId)
+  }
 
   function setLoading(loading: boolean): void { isLoading.value = loading }
   function setError(message: string | null): void { error.value = message }
@@ -250,13 +264,13 @@ export const useInsightStore = defineStore('insight', () => {
     configManager.imageGenManager.save(config.value.imageGen.provider, config.value.imageGen)
   }
 
-  function reset(): void { currentBookId.value = null; analysisStatus.value = 'idle'; progress.value = { current: 0, total: 0, status: 'idle' }; incrementalAnalysis.value = true; chapters.value = []; qaComposable.clearHistory(); notesComposable.clearNotes(); selectedPageNum.value = null; notesComposable.setNoteTypeFilter('all'); isLoading.value = false; qaComposable.setStreaming(false); error.value = null }
+  function reset(): void { currentBookId.value = null; analysisStatus.value = 'idle'; progress.value = { current: 0, total: 0, status: 'idle' }; chapters.value = []; qaComposable.clearHistory(); notesComposable.clearNotes(); selectedPageNum.value = null; notesComposable.setNoteTypeFilter('all'); isLoading.value = false; qaComposable.setStreaming(false); error.value = null }
 
   return {
-    currentBookId, currentTaskId, analysisStatus, progress, incrementalAnalysis, chapters, qaHistory: qaComposable.qaHistory, notes: notesComposable.notes, selectedPageNum, noteTypeFilter: notesComposable.noteTypeFilter, isLoading, isStreaming: qaComposable.isStreaming, error, config,
-    progressPercent, isAnalyzing, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes,
-    setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setIncrementalAnalysis, setBookTotalPages, setAnalyzedPagesCount, setChapters, selectPage, dataRefreshKey, triggerDataRefresh,
-    addQAMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, setLoading, setError,
+    currentBookId, currentTaskId, analysisStatus, progress, chapters, qaHistory: qaComposable.qaHistory, notes: notesComposable.notes, selectedPageNum, noteTypeFilter: notesComposable.noteTypeFilter, isLoading, isStreaming: qaComposable.isStreaming, error, config,
+    progressPercent, isAnalyzing, analyzedPageCount, totalPageCount, filteredNotes: notesComposable.filteredNotes, notesNextCursor: notesComposable.nextCursor, notesLoadingMore: notesComposable.isLoadingMore,
+    setCurrentBook, setCurrentTaskId, setAnalysisStatus, updateProgress, setBookTotalPages, setAnalyzedPagesCount, setChapters, selectPage, dataRefreshKey, triggerDataRefresh,
+    addQAMessage, updateQAMessage, clearQAHistory, removeLoadingMessages, setStreaming, setCurrentPage, addNote, updateNote, deleteNote, setNoteTypeFilter, loadNotesFromAPI, loadMoreNotes, loadNoteDetail, setLoading, setError,
     updateVlmConfig, updateLlmConfig, updateEmbeddingConfig, updateRerankerConfig, updateImageGenConfig, updateBatchConfig, updatePrompts, getConfigForApi, setConfigFromApi, snapshotConfigState, restoreConfigState,
     switchVlmProviderDraft, switchLlmProviderDraft, switchEmbeddingProviderDraft, switchRerankerProviderDraft, switchImageGenProviderDraft,
     reset

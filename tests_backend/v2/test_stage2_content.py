@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
-from src.backend_v2.content.image_import import ImageImportService
+from src.backend_v2.content.image_import import ImageImportService, ImportSafetyLimits
 from src.backend_v2.content.repository import (
     ContentConflict,
     ContentLocked,
@@ -76,6 +76,15 @@ def _image_bytes(
     with Image.new("RGB", size, color) as image:
         image.save(output, format=image_format)
     return output.getvalue()
+
+
+def test_large_image_policy_has_no_byte_or_pixel_dimension_gate() -> None:
+    limits = ImportSafetyLimits()
+
+    assert Image.MAX_IMAGE_PIXELS is None
+    assert not hasattr(limits, "max_image_bytes")
+    assert not hasattr(limits, "max_container_bytes")
+    assert not hasattr(limits, "max_expanded_bytes")
 
 
 def test_font_resolution_rejects_an_unknown_v2_font(content_platform) -> None:

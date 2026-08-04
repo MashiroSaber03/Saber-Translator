@@ -1651,6 +1651,88 @@ def test_multi_chapter_batch_creates_eligible_jobs_and_reports_skips(
     ]
 
 
+def test_book_batch_resolves_chapters_in_requested_book_order(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    content = ContentRepository(platform["engine"])
+    second_book = content.create_book(title="Second requested book")
+    second_chapter = content.create_chapter(
+        book_id=str(second_book["id"]),
+        title="Second book chapter",
+    )
+    importer = ImageImportService(
+        data_root=platform["data_root"],
+        repository=content,
+        storage=AssetStorageService(platform["data_root"], platform["engine"]),
+    )
+    payload = BytesIO()
+    with Image.new("RGB", (64, 64), (240, 240, 240)) as image:
+        image.save(payload, format="PNG")
+    lease = content.create_import_lease(str(second_chapter["id"]))
+    try:
+        importer.import_page(
+            chapter_id=str(second_chapter["id"]),
+            logical_path="second.png",
+            upload=BytesIO(payload.getvalue()),
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+            idempotency_key="second-book-page",
+        )
+    finally:
+        content.release_import_lease(
+            chapter_id=str(second_chapter["id"]),
+            lease_id=lease.id,
+            owner_token=lease.owner_token,
+        )
+
+    commands = TranslationJobCommandService(platform["engine"])
+    accepted = commands.create_batch(
+        book_ids=[str(second_book["id"]), str(platform["book"]["id"])],
+        config={"mode": "standard"},
+        idempotency_key="book-batch",
+    )
+
+    with platform["engine"].connect() as connection:
+        created_chapters = [
+            str(value)
+            for value in connection.execute(
+                select(jobs.c.chapter_id)
+                .where(jobs.c.batch_id == accepted["batchId"])
+                .order_by(jobs.c.queue_rank)
+            ).scalars()
+        ]
+    assert created_chapters == [
+        str(second_chapter["id"]),
+        str(platform["chapter"]["id"]),
+    ]
+
+
+def test_book_batch_idempotency_replays_before_resolving_mutable_books(
+    translation_platform,
+    monkeypatch,
+) -> None:
+    platform = translation_platform
+    commands = TranslationJobCommandService(platform["engine"])
+    command = {
+        "book_ids": [str(platform["book"]["id"])],
+        "config": {"mode": "standard"},
+        "idempotency_key": "book-batch-replay",
+    }
+    accepted = commands.create_batch(**command)
+
+    def unexpected_resolution(_book_ids):
+        raise AssertionError("idempotent replay re-resolved mutable book state")
+
+    monkeypatch.setattr(
+        commands,
+        "_resolve_book_chapter_ids",
+        unexpected_resolution,
+    )
+
+    assert commands.create_batch(**command) == accepted
+
+
 def test_translation_command_rejects_browser_supplied_provider_config() -> None:
     with pytest.raises(ValueError, match="unknown translation config fields"):
         normalize_translation_command(

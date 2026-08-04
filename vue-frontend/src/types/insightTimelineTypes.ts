@@ -65,4 +65,6 @@ export interface TimelineData {
   plot_arcs?: TimelineArc[]
   plot_threads?: PlotThread[]
   cached?: boolean
+  next_event_cursor?: number | null
+  next_character_cursor?: string | null
 }

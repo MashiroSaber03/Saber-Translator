@@ -72,14 +72,7 @@ function handlePageShow(event: PageTransitionEvent) {
   }
 }
 
-onMounted(async () => {
-  window.addEventListener('pageshow', handlePageShow)
-
-  await Promise.all([
-    bookshelfStore.loadBooks(),
-    bookshelfStore.loadTags(),
-  ])
-
+async function loadServerInfo(): Promise<void> {
   try {
     const response = await getV2ServerInfo()
     if (response.lanUrl) {
@@ -88,7 +81,16 @@ onMounted(async () => {
   } catch {
     lanUrl.value = '获取失败'
   }
+}
 
+onMounted(async () => {
+  window.addEventListener('pageshow', handlePageShow)
+
+  await Promise.all([
+    bookshelfStore.loadBooks(),
+    bookshelfStore.loadTags(),
+    loadServerInfo(),
+  ])
 })
 
 onUnmounted(() => {
@@ -145,13 +147,7 @@ async function translateSelectedBooks() {
   if (!bookIds.length || batchBusy.value) return
   batchBusy.value = true
   try {
-    const details = await Promise.all(bookIds.map(bookId => getBookDetail(bookId)))
-    const chapterIds = details.flatMap(book => book.chapters?.map(chapter => chapter.id) || [])
-    if (!chapterIds.length) {
-      showToast('选中的书籍没有可翻译章节', 'warning')
-      return
-    }
-    const result = await createTranslationBatch(chapterIds, { mode: 'standard' })
+    const result = await createTranslationBatch({ bookIds }, { mode: 'standard' })
     await Promise.all([taskCenterStore.refresh(), bookshelfStore.loadBooks()])
     showToast(
       result.skipped.length

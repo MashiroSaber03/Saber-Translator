@@ -247,6 +247,7 @@ describe('SettingsModal', () => {
 
     const wrapper = mount(SettingsModal, {
       props: {
+        initialTab: 'translate',
         modelValue: true,
       },
     })

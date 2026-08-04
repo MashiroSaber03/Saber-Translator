@@ -91,6 +91,9 @@ function createState() {
     ]),
     getCharacterImageUrl: vi.fn().mockReturnValue(''),
     getFormImageUrl: vi.fn().mockReturnValue(''),
+    hasMoreCharacterForms: ref(false),
+    isLoadingMoreCharacterForms: ref(false),
+    loadMoreCharacterForms: vi.fn().mockResolvedValue(undefined),
     showMessage: vi.fn(),
   }
 }
@@ -172,6 +175,37 @@ describe('CharacterManagementPanel', () => {
       { id: 'forms', label: '2 个形态', tone: 'primary' },
       { id: 'disabled', label: '禁用', tone: 'warning' },
     ])
+  })
+
+  it('loads the next character-form page only when requested', async () => {
+    const state = createState()
+    state.hasMoreCharacterForms.value = true
+    const wrapper = mount(CharacterManagementPanel, {
+      props: {
+        bookId: 'book-1',
+        characterManagement: {},
+        state,
+      },
+      global: {
+        stubs: {
+          CharacterDetailPanel: characterDetailPanelStub,
+          AddCharacterDialog: true,
+          EditCharacterDialog: true,
+          AddFormDialog: true,
+          EditFormDialog: true,
+          OrthographicDialog: true,
+        },
+      },
+    })
+
+    const button = wrapper.get('.character-management-panel__load-more-forms')
+    expect(button.text()).toContain('加载更多角色形态')
+    expect(state.loadMoreCharacterForms).not.toHaveBeenCalled()
+
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(state.loadMoreCharacterForms).toHaveBeenCalledTimes(1)
   })
 
   it('uses the product section header contract for the character archive heading', () => {

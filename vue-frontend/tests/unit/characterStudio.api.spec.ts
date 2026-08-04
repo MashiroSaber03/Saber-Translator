@@ -203,6 +203,28 @@ describe('character studio v2 api', () => {
     })
   })
 
+  it('bounds full document cache entries with least-recently-used eviction', async () => {
+    getMock.mockImplementation((url: string) => {
+      const match = url.match(/\/documents\/doc-(\d+)$/)
+      if (!match) throw new Error(`Unexpected GET ${url}`)
+      const index = Number(match[1])
+      return Promise.resolve({
+        ...document,
+        avatarUrl: `/api/v2/assets/avatar-${index}`,
+        id: `doc-${index}`,
+      })
+    })
+    const { getCharacterStudioAvatarUrl, getCharacterStudioDocument } =
+      await import('@/api/characterStudio')
+
+    for (let index = 0; index < 25; index += 1) {
+      await getCharacterStudioDocument(`doc-${index}`)
+    }
+
+    expect(getCharacterStudioAvatarUrl('doc-0')).toBe('')
+    expect(getCharacterStudioAvatarUrl('doc-24')).toBe('/api/v2/assets/avatar-24')
+  })
+
   it('exports documents and chat sessions through v2 download routes', async () => {
     const blob = new Blob(['data'], { type: 'application/json' })
     const fetchMock = vi.fn().mockResolvedValue({

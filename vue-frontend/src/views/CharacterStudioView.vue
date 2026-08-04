@@ -216,16 +216,17 @@ async function hydrateWorkspace(nextBookId: string) {
   const requestId = ++hydrateRequestId
   const requestedDocId = props.docId
   try {
-    if (!bookshelfStore.books.length) {
-      await bookshelfStore.loadBooks()
-      if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
-    }
+    await Promise.all([
+      bookshelfStore.books.length
+        ? Promise.resolve()
+        : bookshelfStore.loadBooks(),
+      store.loadWorkspace(nextBookId),
+    ])
+    if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
     if (!bookshelfStore.getBookById(nextBookId)) {
       await bookshelfStore.loadBookDetail(nextBookId)
       if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
     }
-    await store.loadWorkspace(nextBookId)
-    if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
 
     if (requestedDocId) {
       const openedRequested = await runAction(() => store.openDocument(requestedDocId))

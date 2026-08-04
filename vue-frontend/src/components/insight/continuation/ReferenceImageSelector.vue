@@ -50,22 +50,47 @@
         </UiIconButton>
       </div>
 
-      <div v-if="mode === 'image' && characterForms.length > 0" class="reference-image-selector__character-section">
+      <div
+        v-if="mode === 'image' && (characterForms.length > 0 || hasMoreCharacterForms)"
+        class="reference-image-selector__character-section"
+      >
         <div class="reference-image-selector__section-label">
           <span>角色档案</span>
           <span class="reference-image-selector__section-hint">（自动添加，不计入选择数量）</span>
         </div>
         <ProductThumbnailGrid
+          v-if="characterForms.length > 0"
           class="reference-image-selector__character-thumbnail-grid"
           aria-label="角色档案参考图"
           :items="characterThumbnailItems"
         />
+        <UiButton
+          v-if="hasMoreCharacterForms"
+          class="reference-image-selector__load-more-forms"
+          variant="secondary"
+          size="sm"
+          block
+          :disabled="loadingMoreCharacterForms"
+          @click="$emit('load-more-character-forms')"
+        >
+          {{ loadingMoreCharacterForms ? '加载中...' : '加载更多角色参考图' }}
+        </UiButton>
       </div>
 
       <div class="reference-image-selector__manga-section">
         <div class="reference-image-selector__section-label">
           <span>漫画图片</span>
         </div>
+        <UiButton
+          v-if="hasOlderOriginalImages"
+          class="reference-image-selector__load-older"
+          variant="secondary"
+          size="sm"
+          :disabled="loadingOlderOriginalImages"
+          @click="$emit('load-older-originals')"
+        >
+          {{ loadingOlderOriginalImages ? '加载中...' : '加载更早的原作页面' }}
+        </UiButton>
         <VirtualThumbnailGrid
           ref="thumbnailsGrid"
           class="reference-image-selector__scroll reference-image-selector__thumbnail-grid"
@@ -102,12 +127,18 @@ const props = defineProps<{
   characterForms: CharacterFormInfo[]
   initialSelection: string[]
   bookId: string
+  hasOlderOriginalImages?: boolean
+  loadingOlderOriginalImages?: boolean
+  hasMoreCharacterForms?: boolean
+  loadingMoreCharacterForms?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
   'confirm': [selectedTokens: string[]]
   'cancel': []
+  'load-older-originals': []
+  'load-more-character-forms': []
 }>()
 
 const selectedTokens = ref<string[]>([])
@@ -394,6 +425,12 @@ function handleCancel(): void {
   padding-right: 4px;
 }
 
+.reference-image-selector__load-older {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
 .reference-image-selector__thumbnail-grid {
   --product-thumbnail-grid-min-size: 110px;
   --product-thumbnail-grid-aspect-ratio: 55 / 77;
@@ -406,6 +443,10 @@ function handleCancel(): void {
   --product-thumbnail-grid-aspect-ratio: 5 / 7;
 
   gap: 10px;
+}
+
+.reference-image-selector__load-more-forms {
+  margin-top: 10px;
 }
 
 @media (--breakpoint-lg-down) {

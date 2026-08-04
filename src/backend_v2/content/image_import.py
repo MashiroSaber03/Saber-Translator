@@ -25,13 +25,16 @@ FORMAT_DETAILS: dict[str, tuple[str, str]] = {
     "TIFF": ("tiff", "image/tiff"),
 }
 
+# Source artwork is intentionally not rejected by pixel dimensions.  All
+# upload paths spool bytes to disk before decoding, so Pillow's process-wide
+# decompression-bomb threshold would only reintroduce an undocumented size
+# gate that conflicts with the product's large-manga workflow.
+Image.MAX_IMAGE_PIXELS = None
+
 
 @dataclass(frozen=True, slots=True)
 class ImportSafetyLimits:
-    max_image_bytes: int = 128 * 1024 * 1024
-    max_container_bytes: int = 1024 * 1024 * 1024
     max_archive_entries: int = 10_000
-    max_expanded_bytes: int = 4 * 1024 * 1024 * 1024
     max_compression_ratio: float = 1000.0
     max_container_pages: int = 10_000
     max_html_bytes: int = 16 * 1024 * 1024
@@ -277,18 +280,28 @@ class ImageImportService:
         temporary.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._copy_upload(upload, temporary)
-            extension, mime_type, width, height = self._decode_metadata(temporary)
-            with temporary.open("rb") as source_stream:
-                return self.storage.publish_stream(
-                    source_stream,
-                    extension=extension,
-                    mime_type=mime_type,
-                    width=width,
-                    height=height,
-                    bind=bind,
-                )
+            return self.publish_standalone_path(temporary, bind=bind)
         finally:
             temporary.unlink(missing_ok=True)
+
+    def publish_standalone_path(
+        self,
+        path: Path,
+        *,
+        bind: Callable[[object, str], None] | None = None,
+    ):
+        """Validate and publish an already-spooled image without another RAM copy."""
+
+        extension, mime_type, width, height = self._decode_metadata(path)
+        with path.open("rb") as source_stream:
+            return self.storage.publish_stream(
+                source_stream,
+                extension=extension,
+                mime_type=mime_type,
+                width=width,
+                height=height,
+                bind=bind,
+            )
 
     def _publish_temporary(self, temporary: Path):
         (
@@ -326,8 +339,6 @@ class ImageImportService:
                 if not chunk:
                     break
                 byte_size += len(chunk)
-                if byte_size > self.limits.max_image_bytes:
-                    raise ValueError("image exceeds the configured single-file byte limit")
                 digest.update(chunk)
                 output.write(chunk)
         if byte_size == 0:

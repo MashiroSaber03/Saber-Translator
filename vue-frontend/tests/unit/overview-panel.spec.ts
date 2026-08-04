@@ -11,17 +11,17 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 
-const { regenerateOverviewMock, getGeneratedTemplatesMock, getAnalysisStatusMock, getOverviewMock } = vi.hoisted(() => ({
+const { regenerateOverviewMock, getGeneratedTemplatesMock, getRecentAnalyzedPagesMock, getOverviewMock } = vi.hoisted(() => ({
   regenerateOverviewMock: vi.fn(),
   getGeneratedTemplatesMock: vi.fn(),
-  getAnalysisStatusMock: vi.fn(),
+  getRecentAnalyzedPagesMock: vi.fn(),
   getOverviewMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   regenerateOverview: regenerateOverviewMock,
   getGeneratedTemplates: getGeneratedTemplatesMock,
-  getAnalysisStatus: getAnalysisStatusMock,
+  getRecentAnalyzedPages: getRecentAnalyzedPagesMock,
   getOverview: getOverviewMock,
 }))
 
@@ -50,10 +50,9 @@ describe('OverviewPanel', () => {
     store.dataRefreshKey = 0
 
     getGeneratedTemplatesMock.mockReset().mockResolvedValue(['story_summary'])
-    getAnalysisStatusMock.mockReset().mockResolvedValue({
-      fullyAnalyzed: false,
-      analyzedPagesCount: 5,
-    })
+    getRecentAnalyzedPagesMock.mockReset().mockResolvedValue([
+      { page_num: 2, summary: '第 2 页' },
+    ])
     getOverviewMock.mockReset().mockResolvedValue('缓存中的故事概要')
     regenerateOverviewMock.mockReset().mockResolvedValue({
       kind: 'queued',
@@ -260,6 +259,7 @@ describe('OverviewPanel', () => {
     store.setAnalyzedPagesCount(0)
 
     getGeneratedTemplatesMock.mockResolvedValueOnce([])
+    getRecentAnalyzedPagesMock.mockResolvedValueOnce([])
 
     const emptyWrapper = mount(OverviewPanel, {
       global: {

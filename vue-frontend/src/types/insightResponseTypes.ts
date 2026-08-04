@@ -1,8 +1,12 @@
 export type InsightTaskStatus =
-  | 'pending'
+  | 'queued'
   | 'running'
+  | 'pausing'
   | 'paused'
+  | 'cancelling'
+  | 'interrupted'
   | 'completed'
+  | 'completed_with_errors'
   | 'cancelled'
   | 'failed'
 

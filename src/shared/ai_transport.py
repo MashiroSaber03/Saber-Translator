@@ -769,12 +769,18 @@ class AsyncOpenAICompatibleTransport:
             try:
                 if before_request is not None:
                     await before_request()
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    headers=_build_auth_headers(api_key, base_url),
-                    json=body,
-                )
+                try:
+                    async with asyncio.timeout(timeout):
+                        response = await client.request(
+                            method=method,
+                            url=url,
+                            headers=_build_auth_headers(api_key, base_url),
+                            json=body,
+                        )
+                except TimeoutError as exc:
+                    raise httpx.ReadTimeout(
+                        f"AI request attempt exceeded {timeout:g} seconds"
+                    ) from exc
 
                 if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                     wait_time = _calculate_backoff(attempt, response)
@@ -836,49 +842,60 @@ class AsyncOpenAICompatibleTransport:
             try:
                 if before_request is not None:
                     await before_request()
-                async with client.stream(
-                    "POST",
-                    url,
-                    headers=_build_auth_headers(request.api_key, base_url),
-                    json=body,
-                ) as response:
-                    if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
-                        wait_time = _calculate_backoff(attempt, response)
-                        logger.warning(
-                            "Async stream transport received %s, retrying in %.1fs (%s/%s)",
-                            response.status_code,
-                            wait_time,
-                            attempt + 1,
-                            max_retries,
-                        )
-                        await asyncio.sleep(wait_time)
-                        continue
-                    if response.status_code != 200:
-                        error_bytes = await response.aread()
-                        error_text = error_bytes.decode("utf-8", errors="ignore")[:500]
-                        raise ValueError(f"API 错误 {response.status_code}: {error_text}")
+                try:
+                    # httpx's timeout is an inactivity timeout. Bound the
+                    # complete attempt as well so keep-alive/empty SSE frames
+                    # cannot consume the caller's entire logical deadline and
+                    # suppress configured transport retries.
+                    async with asyncio.timeout(invocation.timeout):
+                        async with client.stream(
+                            "POST",
+                            url,
+                            headers=_build_auth_headers(request.api_key, base_url),
+                            json=body,
+                        ) as response:
+                            if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
+                                wait_time = _calculate_backoff(attempt, response)
+                                logger.warning(
+                                    "Async stream transport received %s, retrying in %.1fs (%s/%s)",
+                                    response.status_code,
+                                    wait_time,
+                                    attempt + 1,
+                                    max_retries,
+                                )
+                                await asyncio.sleep(wait_time)
+                                continue
+                            if response.status_code != 200:
+                                error_bytes = await response.aread()
+                                error_text = error_bytes.decode("utf-8", errors="ignore")[:500]
+                                raise ValueError(f"API 错误 {response.status_code}: {error_text}")
 
-                    if invocation.runtime_options.print_stream_output:
-                        label = invocation.runtime_options.stream_output_label or request.model
-                        print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
-
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        chunk = _extract_stream_chunk(data)
-                        if chunk:
-                            full_text += chunk
-                            if invocation.runtime_options.on_stream_chunk:
-                                invocation.runtime_options.on_stream_chunk(chunk, full_text)
                             if invocation.runtime_options.print_stream_output:
-                                print(chunk, end="", flush=True)
+                                label = invocation.runtime_options.stream_output_label or request.model
+                                print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
+
+                            async for line in response.aiter_lines():
+                                if not line.startswith("data: "):
+                                    continue
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    data = json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    continue
+                                chunk = _extract_stream_chunk(data)
+                                if chunk:
+                                    full_text += chunk
+                                    if invocation.runtime_options.on_stream_chunk:
+                                        invocation.runtime_options.on_stream_chunk(chunk, full_text)
+                                    if invocation.runtime_options.print_stream_output:
+                                        print(chunk, end="", flush=True)
+                except TimeoutError as exc:
+                    raise httpx.ReadTimeout(
+                        "AI stream attempt exceeded "
+                        f"{invocation.timeout:g} seconds"
+                    ) from exc
 
                 if invocation.runtime_options.print_stream_output:
                     label = invocation.runtime_options.stream_output_label or request.model

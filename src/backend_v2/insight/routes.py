@@ -116,6 +116,15 @@ def create_insight_blueprint(
             )
         )
 
+    @blueprint.get("/books/<book_id>/recent-page-analyses")
+    def recent_page_analyses(book_id: str) -> Response:
+        return jsonify(
+            repository.list_recent_page_analyses(
+                book_id=book_id,
+                limit=int(request.args.get("limit", "5")),
+            )
+        )
+
     @blueprint.get("/pages/<page_id>")
     def page_detail(page_id: str) -> Response:
         return jsonify(
@@ -144,6 +153,13 @@ def create_insight_blueprint(
             idempotency_key=_require_idempotency_key(),
         )
         return jsonify(result), 202
+
+    @blueprint.get("/artifacts/overviews")
+    def list_overviews() -> Response:
+        book_id = request.args.get("bookId", "")
+        if not book_id:
+            raise ValueError("bookId is required")
+        return jsonify(repository.list_overview_templates(book_id))
 
     @blueprint.get("/artifacts/overviews/<template>")
     def get_overview(template: str) -> Response:
@@ -330,11 +346,15 @@ def create_insight_blueprint(
                 )
                 config: Mapping[str, Any] = {}
                 if candidates:
+                    should_rerank = (
+                        bool(handle.options["useReranker"])
+                        and len(candidates) > 1
+                    )
                     config = qa_commands.materialize_api_config(
                         handle.config,
-                        include_reranker=bool(handle.options["useReranker"]),
+                        include_reranker=should_rerank,
                     )
-                    if bool(handle.options["useReranker"]):
+                    if should_rerank:
                         candidates = [
                             dict(value)
                             for value in qa_api.rerank(

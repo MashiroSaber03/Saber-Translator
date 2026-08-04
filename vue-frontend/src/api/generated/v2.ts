@@ -1770,6 +1770,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/insight/books/{book_id}/recent-page-analyses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRecentInsightPageAnalyses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/insight/pages/{page_id}": {
         parameters: {
             query?: never;
@@ -1812,6 +1828,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["createInsightAnalysisJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/insight/artifacts/overviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listInsightOverviewTemplates"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2875,9 +2907,10 @@ export interface components {
             pageIds?: components["schemas"]["Uuid"][];
         };
         TranslationJobBatchCommand: {
-            chapterIds: components["schemas"]["Uuid"][];
+            chapterIds?: components["schemas"]["Uuid"][];
+            bookIds?: components["schemas"]["Uuid"][];
             config: components["schemas"]["TranslationJobConfig"];
-        };
+        } & (unknown | unknown);
         StyleApplyJobCommand: {
             sourcePageId: components["schemas"]["Uuid"];
             sourceDocumentRevision: number;
@@ -3820,6 +3853,9 @@ export interface components {
                 reason: string | null;
             };
         };
+        InsightOverviewTemplateList: {
+            items: string[];
+        };
         InsightChapter: {
             chapterId: components["schemas"]["Uuid"];
             title: string;
@@ -3928,7 +3964,7 @@ export interface components {
             bookId: components["schemas"]["Uuid"];
             runId: components["schemas"]["Uuid"] | null;
             /** @enum {string} */
-            mode: "enhanced" | "simple";
+            mode: "enhanced" | "compressed" | "simple";
             status: string;
             content: {
                 [key: string]: unknown;
@@ -3937,13 +3973,29 @@ export interface components {
             characters: components["schemas"]["InsightTimelineCharacter"][];
             eventPage: components["schemas"]["IntegerCursorPage"];
             characterPage: components["schemas"]["StringCursorPage"];
+            pageCount: number;
+            pageThumbnails: {
+                [key: string]: string;
+            };
             dependencyFingerprint: string;
         };
         IntegerCursorPage: {
             nextCursor: number | null;
+            totalCount?: number;
+        };
+        InsightRecentPageAnalysis: {
+            pageId: components["schemas"]["Uuid"];
+            displayPageNumber: number;
+            summary: string | null;
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        InsightRecentPageAnalysisList: {
+            items: components["schemas"]["InsightRecentPageAnalysis"][];
         };
         StringCursorPage: {
             nextCursor: string | null;
+            totalCount?: number;
         };
         InsightQaStatus: {
             available: boolean;
@@ -4082,7 +4134,7 @@ export interface components {
         ContinuationProject: {
             projectId: components["schemas"]["Uuid"];
             bookId: components["schemas"]["Uuid"];
-            sourceRunId: components["schemas"]["Uuid"];
+            sourceRunId: components["schemas"]["Uuid"] | null;
             revision: number;
             config: components["schemas"]["ContinuationProjectConfig"];
             script: components["schemas"]["ContinuationScript"] | null;
@@ -7993,6 +8045,32 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listRecentInsightPageAnalyses: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                book_id: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Most recently generated active page analyses. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightRecentPageAnalysisList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
     getInsightPage: {
         parameters: {
             query?: {
@@ -8068,6 +8146,30 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    listInsightOverviewTemplates: {
+        parameters: {
+            query: {
+                bookId: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active overview template names. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightOverviewTemplateList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
         };
     };

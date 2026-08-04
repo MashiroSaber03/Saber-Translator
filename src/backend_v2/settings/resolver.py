@@ -811,7 +811,6 @@ class SettingsResolver:
             },
             **sections,
             "prompts": frozen_prompts,
-            "maxSourceBytes": 100 * 1024 * 1024,
             "settingsSnapshot": {
                 "appRevision": int(app_row["revision"]),
                 "bookRevision": int(book_row["revision"]) if book_row else 0,

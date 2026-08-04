@@ -69,10 +69,6 @@ class TransferCommandService:
                     if not chunk:
                         break
                     byte_size += len(chunk)
-                    if byte_size > self.limits.max_container_bytes:
-                        raise ValueError(
-                            "container exceeds the configured byte limit"
-                        )
                     digest.update(chunk)
                     output.write(chunk)
             if byte_size == 0:

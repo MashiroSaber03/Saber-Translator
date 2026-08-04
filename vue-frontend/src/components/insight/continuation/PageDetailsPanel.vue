@@ -155,6 +155,7 @@ function getStatusText(status: string): string {
     'pending': '待处理',
     'generating': '生成中',
     'generated': '已生成',
+    'stale': '需重新生成',
     'failed': '失败'
   }
   return map[status] || status
@@ -165,6 +166,7 @@ function getStatusTone(status: string): ProductChipItem['tone'] {
     pending: 'warning',
     generating: 'primary',
     generated: 'success',
+    stale: 'warning',
     failed: 'danger',
   }
   return map[status] || 'neutral'

@@ -17,6 +17,10 @@ from sqlalchemy import Engine, delete, exists, func, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.insight.derived import (
+    AnalysisInputSnapshot,
+    InsightDerivedRepository,
+)
 from src.backend_v2.insight.repository import (
     InsightConflict,
     InsightNotFound,
@@ -37,7 +41,6 @@ from src.backend_v2.storage.schema import (
     analysis_artifacts,
     analysis_heads,
     analysis_page_results,
-    analysis_runs,
     assets,
     continuation_character_forms,
     continuation_characters,
@@ -75,95 +78,87 @@ def _load(value: str | None, default: object) -> object:
 class ContinuationRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
+        self.derived = InsightDerivedRepository(engine)
 
     def bootstrap(self, *, book_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
-            active_run = connection.execute(
-                select(
-                    analysis_heads.c.active_run_id,
-                    analysis_runs.c.status,
-                )
-                .join(
-                    analysis_runs,
-                    analysis_runs.c.id == analysis_heads.c.active_run_id,
-                )
-                .where(
-                    analysis_heads.c.book_id == book_id,
-                    analysis_heads.c.page_id.is_(None),
-                )
-            ).mappings().one_or_none()
-            prerequisites = set(
-                connection.execute(
-                    select(
-                        analysis_artifacts.c.kind,
-                        analysis_artifacts.c.template,
-                    ).where(
-                        analysis_artifacts.c.book_id == book_id,
-                        analysis_artifacts.c.is_active.is_(True),
-                        analysis_artifacts.c.status.in_(("ready", "degraded")),
-                    )
-                )
-            )
-            timeline = connection.execute(
-                select(
-                    timeline_versions.c.id,
-                    timeline_versions.c.status,
-                    timeline_versions.c.run_id,
-                ).where(
-                    timeline_versions.c.book_id == book_id,
-                    timeline_versions.c.is_active.is_(True),
-                )
-            ).mappings().one_or_none()
             project = connection.execute(
                 select(continuation_projects).where(
                     continuation_projects.c.book_id == book_id
                 )
             ).mappings().one_or_none()
             if project is None:
-                return {
-                    "bookId": book_id,
-                    "ready": bool(
-                        active_run
-                        and ("overview", "story_summary") in prerequisites
-                        and ("compressed_context", "default") in prerequisites
-                        and timeline
-                    ),
-                    "activeRunId": (
-                        str(active_run["active_run_id"])
-                        if active_run
-                        else None
-                    ),
-                    "missing": _missing_prerequisites(
-                        active_run=active_run,
-                        prerequisites=prerequisites,
-                        timeline=timeline,
-                    ),
-                    "project": None,
-                }
+                checked_snapshot = self._snapshot_or_none(book_id=book_id)
+                active_run_id = (
+                    checked_snapshot.source_run_id
+                    if checked_snapshot is not None
+                    else None
+                )
+                active_only = True
+                allow_stale = False
+            else:
+                checked_snapshot = self._project_snapshot_or_none(
+                    book_id=book_id,
+                    project=project,
+                )
+                active_run_id = connection.execute(
+                    select(analysis_heads.c.active_run_id).where(
+                        analysis_heads.c.book_id == book_id,
+                        analysis_heads.c.page_id.is_(None),
+                    )
+                ).scalar_one_or_none()
+                active_only = False
+                allow_stale = True
+            prerequisites, timeline = self._snapshot_prerequisites(
+                connection,
+                book_id=book_id,
+                fingerprint=(
+                    checked_snapshot.fingerprint if checked_snapshot else None
+                ),
+                active_only=active_only,
+                allow_stale=allow_stale,
+            )
+            missing = _missing_prerequisites(
+                analysis_ready=checked_snapshot is not None,
+                prerequisites=prerequisites,
+                timeline=timeline,
+            )
             return {
                 "bookId": book_id,
-                "ready": True,
-                "activeRunId": (
-                    str(active_run["active_run_id"])
-                    if active_run
+                "ready": not missing,
+                "activeRunId": active_run_id,
+                "missing": missing,
+                "project": (
+                    self._project_dto(connection, project)
+                    if project is not None
                     else None
                 ),
-                "missing": _missing_prerequisites(
-                    active_run=active_run,
-                    prerequisites=prerequisites,
-                    timeline=timeline,
-                ),
-                "project": self._project_dto(connection, project),
             }
 
     def sync_latest(self, *, book_id: str) -> dict[str, Any]:
-        state = self.bootstrap(book_id=book_id)
-        if state["missing"]:
+        snapshot = self._snapshot_or_none(book_id=book_id)
+        with self.engine.connect() as connection:
+            prerequisites, timeline = self._snapshot_prerequisites(
+                connection,
+                book_id=book_id,
+                fingerprint=snapshot.fingerprint if snapshot else None,
+                active_only=True,
+                allow_stale=False,
+            )
+        missing = _missing_prerequisites(
+            analysis_ready=snapshot is not None,
+            prerequisites=prerequisites,
+            timeline=timeline,
+        )
+        if missing:
             raise InsightConflict(
                 "continuation prerequisites are missing: "
-                + ", ".join(state["missing"])
+                + ", ".join(missing)
             )
-        run_id = str(state["activeRunId"])
+        assert snapshot is not None
+        assert timeline is not None
+        run_id = snapshot.source_run_id
+        analysis_inputs = _snapshot_inputs(snapshot)
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             project = connection.execute(
@@ -184,6 +179,8 @@ class ContinuationRepository:
                                 "pageCount": 15,
                                 "styleReferencePages": 3,
                                 "direction": "",
+                                "analysisInputs": analysis_inputs,
+                                "analysisInputFingerprint": snapshot.fingerprint,
                             }
                         ),
                         created_at=now,
@@ -192,22 +189,33 @@ class ContinuationRepository:
                 )
             else:
                 project_id = str(project["id"])
-                if str(project["source_run_id"] or "") != run_id:
+                project_payload = _mapping(
+                    _load(project["payload_json"], {})
+                )
+                snapshot_changed = (
+                    project["source_run_id"] != run_id
+                    or project_payload.get("analysisInputs") != analysis_inputs
+                    or project_payload.get("analysisInputFingerprint")
+                    != snapshot.fingerprint
+                )
+                if snapshot_changed:
+                    project_payload.update(
+                        {
+                            "analysisInputs": analysis_inputs,
+                            "analysisInputFingerprint": snapshot.fingerprint,
+                        }
+                    )
                     connection.execute(
                         update(continuation_projects)
                         .where(continuation_projects.c.id == project_id)
                         .values(
                             source_run_id=run_id,
+                            payload_json=_json(project_payload),
                             revision=int(project["revision"]) + 1,
                             updated_at=now,
                         )
                     )
-            timeline_id = connection.execute(
-                select(timeline_versions.c.id).where(
-                    timeline_versions.c.book_id == book_id,
-                    timeline_versions.c.is_active.is_(True),
-                )
-            ).scalar_one()
+            timeline_id = str(timeline["id"])
             existing_names = set(
                 connection.execute(
                     select(continuation_characters.c.name).where(
@@ -272,6 +280,16 @@ class ContinuationRepository:
         }
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            current = connection.execute(
+                select(continuation_projects.c.payload_json).where(
+                    continuation_projects.c.id == project_id
+                )
+            ).scalar_one_or_none()
+            if current is not None:
+                current_payload = _mapping(_load(current, {}))
+                for key in ("analysisInputs", "analysisInputFingerprint"):
+                    if key in current_payload:
+                        normalized[key] = current_payload[key]
             changed = connection.execute(
                 update(continuation_projects)
                 .where(
@@ -416,7 +434,8 @@ class ContinuationRepository:
                         continuation_pages.c.payload_json,
                         "$.staleReason",
                         "script_changed",
-                    )
+                    ),
+                    revision=continuation_pages.c.revision + 1,
                 )
             )
         return {
@@ -852,6 +871,110 @@ class ContinuationRepository:
             raise InsightNotFound("continuation project not found")
         return row
 
+    def _snapshot_or_none(
+        self,
+        *,
+        book_id: str,
+    ) -> AnalysisInputSnapshot | None:
+        try:
+            return self.derived.snapshot(book_id=book_id)
+        except (InsightConflict, InsightNotFound):
+            return None
+
+    def _project_snapshot_or_none(
+        self,
+        *,
+        book_id: str,
+        project: Mapping[str, Any],
+    ) -> AnalysisInputSnapshot | None:
+        payload = _mapping(_load(project["payload_json"], {}))
+        frozen_inputs = payload.get("analysisInputs")
+        expected_fingerprint = str(
+            payload.get("analysisInputFingerprint", "")
+        )
+        if isinstance(frozen_inputs, list) and expected_fingerprint:
+            try:
+                snapshot = self.derived.snapshot(
+                    book_id=book_id,
+                    frozen_inputs=[
+                        value
+                        for value in frozen_inputs
+                        if isinstance(value, Mapping)
+                    ],
+                )
+            except (
+                InsightConflict,
+                InsightNotFound,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                return None
+            return (
+                snapshot
+                if snapshot.fingerprint == expected_fingerprint
+                else None
+            )
+        run_id = project.get("source_run_id")
+        if not run_id:
+            return None
+        try:
+            return self.derived.snapshot_for_run(run_id=str(run_id))
+        except (InsightConflict, InsightNotFound):
+            return None
+
+    @staticmethod
+    def _snapshot_prerequisites(
+        connection: Connection,
+        *,
+        book_id: str,
+        fingerprint: str | None,
+        active_only: bool,
+        allow_stale: bool,
+    ) -> tuple[set[tuple[str, str]], Mapping[str, Any] | None]:
+        if not fingerprint:
+            return set(), None
+        statuses = ("ready", "degraded", "stale") if allow_stale else (
+            "ready",
+            "degraded",
+        )
+        artifact_conditions = [
+            analysis_artifacts.c.book_id == book_id,
+            analysis_artifacts.c.dependency_fingerprint == fingerprint,
+            analysis_artifacts.c.status.in_(statuses),
+        ]
+        timeline_conditions = [
+            timeline_versions.c.book_id == book_id,
+            timeline_versions.c.dependency_fingerprint == fingerprint,
+            timeline_versions.c.status.in_(statuses),
+        ]
+        if active_only:
+            artifact_conditions.append(
+                analysis_artifacts.c.is_active.is_(True)
+            )
+            timeline_conditions.append(
+                timeline_versions.c.is_active.is_(True)
+            )
+        prerequisites = set(
+            connection.execute(
+                select(
+                    analysis_artifacts.c.kind,
+                    analysis_artifacts.c.template,
+                ).where(*artifact_conditions)
+            )
+        )
+        timeline = connection.execute(
+            select(
+                timeline_versions.c.id,
+                timeline_versions.c.status,
+                timeline_versions.c.run_id,
+            )
+            .where(*timeline_conditions)
+            .order_by(timeline_versions.c.updated_at.desc())
+            .limit(1)
+        ).mappings().one_or_none()
+        return prerequisites, timeline
+
     @staticmethod
     def _require_project(
         connection: Connection,
@@ -1066,12 +1189,13 @@ class ContinuationRepository:
                     str(pointer["reference_asset_id"]),
                     str(pointer["thumbnail_asset_id"]),
                 )
+        project_payload = _mapping(_load(row["payload_json"], {}))
         return {
             "projectId": str(row["id"]),
             "bookId": str(row["book_id"]),
             "sourceRunId": row["source_run_id"],
             "revision": int(row["revision"]),
-            "config": _load(row["payload_json"], {}),
+            "config": _public_project_config(project_payload),
             "script": (
                 {
                     "scriptId": str(script["id"]),
@@ -1132,6 +1256,18 @@ class ContinuationRepository:
                     updated_at=now,
                 )
             )
+            connection.execute(
+                update(continuation_pages)
+                .where(continuation_pages.c.project_id == project_id)
+                .values(
+                    payload_json=func.json_set(
+                        continuation_pages.c.payload_json,
+                        "$.staleReason",
+                        "script_changed",
+                    ),
+                    revision=continuation_pages.c.revision + 1,
+                )
+            )
             return 1
         if int(row["revision"]) != base_revision:
             raise JobConflict(
@@ -1147,6 +1283,18 @@ class ContinuationRepository:
                 revision=base_revision + 1,
                 content=content,
                 updated_at=now,
+            )
+        )
+        connection.execute(
+            update(continuation_pages)
+            .where(continuation_pages.c.project_id == project_id)
+            .values(
+                payload_json=func.json_set(
+                    continuation_pages.c.payload_json,
+                    "$.staleReason",
+                    "script_changed",
+                ),
+                revision=continuation_pages.c.revision + 1,
             )
         )
         return base_revision + 1
@@ -1214,7 +1362,11 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
-                    analysis_run_id=str(project["source_run_id"]),
+                    analysis_run_id=(
+                        str(project["source_run_id"])
+                        if project["source_run_id"]
+                        else None
+                    ),
                     continuation_project_id=str(project["id"]),
                     config=config,
                     items=(
@@ -1312,7 +1464,11 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
-                    analysis_run_id=str(project["source_run_id"]),
+                    analysis_run_id=(
+                        str(project["source_run_id"])
+                        if project["source_run_id"]
+                        else None
+                    ),
                     continuation_project_id=str(project["id"]),
                     config=config,
                     items=tuple(
@@ -1438,7 +1594,11 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
-                    analysis_run_id=str(project["source_run_id"]),
+                    analysis_run_id=(
+                        str(project["source_run_id"])
+                        if project["source_run_id"]
+                        else None
+                    ),
                     continuation_project_id=str(project["id"]),
                     config=config,
                     items=tuple(
@@ -1522,7 +1682,11 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
-                    analysis_run_id=str(project["source_run_id"]),
+                    analysis_run_id=(
+                        str(project["source_run_id"])
+                        if project["source_run_id"]
+                        else None
+                    ),
                     continuation_project_id=str(project["id"]),
                     config=config,
                     items=(
@@ -1610,7 +1774,11 @@ class ContinuationCommandService:
                 JobSpec(
                     kind="continuation",
                     book_id=book_id,
-                    analysis_run_id=str(project["source_run_id"]),
+                    analysis_run_id=(
+                        str(project["source_run_id"])
+                        if project["source_run_id"]
+                        else None
+                    ),
                     continuation_project_id=str(project["id"]),
                     config=config,
                     items=(
@@ -1645,12 +1813,18 @@ class ContinuationCommandService:
             book_id=book_id,
             command={"scope": "full", "force": False},
         )
+        project_payload = _mapping(_load(project["payload_json"], {}))
         config.update(
             {
                 "bookId": book_id,
                 "sourceRunId": project["source_run_id"],
                 "projectRevision": int(project["revision"]),
-                "projectConfig": _load(project["payload_json"], {}),
+                "projectConfig": _public_project_config(project_payload),
+                "analysisInputs": project_payload.get("analysisInputs", []),
+                "analysisInputFingerprint": project_payload.get(
+                    "analysisInputFingerprint",
+                    "",
+                ),
             }
         )
         return config
@@ -2400,16 +2574,64 @@ class ContinuationWorkerService:
         return temporary
 
     def _script_context(self, config: Mapping[str, Any]) -> dict[str, Any]:
-        run_id = str(config["sourceRunId"])
+        frozen_inputs = config.get("analysisInputs", [])
+        result_ids = [
+            str(value.get("resultId", ""))
+            for value in frozen_inputs
+            if isinstance(value, Mapping)
+        ]
+        fingerprint = str(config.get("analysisInputFingerprint", ""))
+        run_id = config.get("sourceRunId")
         with self.engine.connect() as connection:
-            pages_payload = [
-                _load(value, {})
-                for value in connection.execute(
-                    select(analysis_page_results.c.payload_json)
-                    .where(analysis_page_results.c.run_id == run_id)
-                    .order_by(analysis_page_results.c.page_number_snapshot)
-                ).scalars()
+            if result_ids:
+                selected = {
+                    str(row["id"]): _load(row["payload_json"], {})
+                    for row in connection.execute(
+                        select(
+                            analysis_page_results.c.id,
+                            analysis_page_results.c.payload_json,
+                        ).where(
+                            analysis_page_results.c.id.in_(tuple(result_ids))
+                        )
+                    ).mappings()
+                }
+                if set(selected) != set(result_ids):
+                    raise JobConflict(
+                        "frozen continuation analysis input is missing"
+                    )
+                pages_payload = [
+                    selected[result_id] for result_id in result_ids
+                ]
+            elif run_id:
+                pages_payload = [
+                    _load(value, {})
+                    for value in connection.execute(
+                        select(analysis_page_results.c.payload_json)
+                        .where(analysis_page_results.c.run_id == str(run_id))
+                        .order_by(
+                            analysis_page_results.c.page_number_snapshot
+                        )
+                    ).scalars()
+                ]
+            else:
+                raise JobConflict("continuation analysis snapshot is missing")
+            artifact_conditions = [
+                analysis_artifacts.c.status.in_(
+                    ("ready", "degraded", "stale")
+                )
             ]
+            if fingerprint:
+                artifact_conditions.extend(
+                    [
+                        analysis_artifacts.c.book_id == str(config["bookId"]),
+                        analysis_artifacts.c.dependency_fingerprint
+                        == fingerprint,
+                    ]
+                )
+            else:
+                artifact_conditions.append(
+                    analysis_artifacts.c.run_id == str(run_id)
+                )
             artifacts = {
                 f"{kind}:{template}": _load(payload, {})
                 for kind, template, payload in connection.execute(
@@ -2417,10 +2639,7 @@ class ContinuationWorkerService:
                         analysis_artifacts.c.kind,
                         analysis_artifacts.c.template,
                         analysis_artifacts.c.payload_json,
-                    ).where(
-                        analysis_artifacts.c.run_id == run_id,
-                        analysis_artifacts.c.status.in_(("ready", "degraded")),
-                    )
+                    ).where(*artifact_conditions)
                     .order_by(analysis_artifacts.c.revision)
                 )
             }
@@ -2461,23 +2680,47 @@ def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
 
 def _missing_prerequisites(
     *,
-    active_run: Mapping[str, Any] | None,
+    analysis_ready: bool,
     prerequisites: set[tuple[str, str]],
     timeline: Mapping[str, Any] | None,
 ) -> list[str]:
     missing: list[str] = []
-    if active_run is None:
+    if not analysis_ready:
         missing.append("analysis")
     if ("overview", "story_summary") not in prerequisites:
         missing.append("story_summary")
     if ("compressed_context", "default") not in prerequisites:
         missing.append("compressed_context")
-    if timeline is None or str(timeline["status"]) not in {
-        "ready",
-        "degraded",
-    }:
+    if timeline is None:
         missing.append("timeline")
     return missing
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _public_project_config(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "pageCount": max(1, min(100, int(payload.get("pageCount", 15)))),
+        "styleReferencePages": max(
+            1,
+            min(20, int(payload.get("styleReferencePages", 3))),
+        ),
+        "direction": str(payload.get("direction", "")),
+    }
+
+
+def _snapshot_inputs(snapshot: AnalysisInputSnapshot) -> list[dict[str, Any]]:
+    return [
+        {
+            "resultId": page["resultId"],
+            "pageId": page["pageId"],
+            "pageNumber": page["pageNumber"],
+            "currentSourceChecksum": page["currentSourceChecksum"],
+        }
+        for page in snapshot.pages
+    ]
 
 
 def _page_dto(

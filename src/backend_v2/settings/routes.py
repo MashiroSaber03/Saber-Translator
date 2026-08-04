@@ -344,9 +344,9 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
-        payload = upload.stream.read(32 * 1024 * 1024 + 1)
-        if not payload or len(payload) > 32 * 1024 * 1024:
-            raise ValueError("font is empty or exceeds 32 MiB")
+        payload = upload.stream.read()
+        if not payload:
+            raise ValueError("font is empty")
         try:
             font = TTFont(BytesIO(payload), lazy=True)
             font.close()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -11,6 +12,7 @@ import uuid
 
 import pytest
 from sqlalchemy import insert, select, update
+from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.events import JobEventBroadcaster
@@ -637,6 +639,45 @@ def test_job_attempt_heartbeat_exception_cannot_silently_lose_its_lease() -> Non
         heartbeat.stop()
 
 
+def test_job_attempt_heartbeat_retries_sqlite_busy_without_fencing() -> None:
+    class BusyThenRenewRepository:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def renew_attempt(self, fence):
+            self.calls += 1
+            if self.calls == 1:
+                raise SqlAlchemyOperationalError(
+                    "UPDATE jobs",
+                    (),
+                    sqlite3.OperationalError("database is locked"),
+                )
+            return fence
+
+    repository = BusyThenRenewRepository()
+    heartbeat = AttemptHeartbeat(
+        repository,  # type: ignore[arg-type]
+        AttemptFence(
+            job_id="00000000-0000-0000-0000-000000000001",
+            attempt_id="00000000-0000-0000-0000-000000000002",
+            lease_token="lease",
+            worker_epoch_id="00000000-0000-0000-0000-000000000003",
+            lease_expires_at=utcnow() + timedelta(seconds=10),
+        ),
+        interval_seconds=0.01,
+    )
+
+    heartbeat.start()
+    try:
+        deadline = time.monotonic() + 1
+        while repository.calls < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert repository.calls >= 2
+        assert not heartbeat.fenced.is_set()
+    finally:
+        heartbeat.stop()
+
+
 def test_failed_item_retry_creates_related_replacement_from_durable_facts(
     job_platform,
 ) -> None:
@@ -1040,6 +1081,152 @@ def test_parallel_worker_uses_serial_stage_pools_with_cross_stage_overlap(
     assert repository.get_job(job_id)["status"] == "completed"
     assert max_active == {"detect": 1, "ocr": 1}
     assert cross_stage_overlap.is_set()
+
+
+def test_parallel_worker_quiesces_completed_pool_during_long_tail(
+    job_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    page_count = 4
+    created = repository.create_batch(
+        kind="translation",
+        display_name="parallel long tail",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=tuple(
+                    JobItemSpec(page_id=None, step_kinds=("detect", "translate"))
+                    for _index in range(page_count)
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    state_lock = threading.Lock()
+    next_step_calls = {"detect": 0, "translate": 0}
+    detected = 0
+    all_detected = threading.Event()
+    translate_started = threading.Event()
+    release_translate = threading.Event()
+    original_next_step = repository.next_step
+
+    def counted_next_step(fence, *, allowed_kinds=None):
+        kind = str(allowed_kinds[0])
+        with state_lock:
+            next_step_calls[kind] += 1
+        return original_next_step(fence, allowed_kinds=allowed_kinds)
+
+    monkeypatch.setattr(repository, "next_step", counted_next_step)
+
+    def handler(_fence, step):
+        nonlocal detected
+        kind = str(step["stepKind"])
+        if kind == "detect":
+            with state_lock:
+                detected += 1
+                if detected == page_count:
+                    all_detected.set()
+            return {"done": kind}
+        translate_started.set()
+        assert release_translate.wait(3)
+        return {"done": kind}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler, "translate": handler},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        assert translate_started.wait(2)
+        assert all_detected.wait(2)
+        time.sleep(0.15)
+        with state_lock:
+            calls_after_quiescence = next_step_calls["detect"]
+        time.sleep(0.3)
+        with state_lock:
+            calls_after_long_tail = next_step_calls["detect"]
+        assert calls_after_long_tail == calls_after_quiescence
+        assert calls_after_long_tail <= page_count + 1
+
+        release_translate.set()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+    finally:
+        release_translate.set()
+        stop.set()
+        thread.join(timeout=2)
+
+
+def test_parallel_worker_retries_sqlite_busy_during_stage_admission(
+    job_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="parallel busy retry",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=(JobItemSpec(page_id=None, step_kinds=("detect",)),),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    original_next_step = repository.next_step
+    admission_calls = 0
+
+    def busy_once(fence, *, allowed_kinds=None):
+        nonlocal admission_calls
+        admission_calls += 1
+        if admission_calls == 1:
+            raise SqlAlchemyOperationalError(
+                "BEGIN IMMEDIATE",
+                (),
+                sqlite3.OperationalError("database is locked"),
+            )
+        return original_next_step(fence, allowed_kinds=allowed_kinds)
+
+    monkeypatch.setattr(repository, "next_step", busy_once)
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": lambda _fence, _step: {"done": True}},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+        assert admission_calls == 2
+    finally:
+        stop.set()
+        thread.join(timeout=2)
 
 
 def test_parallel_worker_enforces_frozen_deep_learning_concurrency(

@@ -21,6 +21,9 @@ const emit = defineEmits<{
 
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
+const pageIndexById = computed(() => new Map(
+  props.images.map((page, index) => [page.id, index]),
+))
 const streamItems = computed<VirtualPageStreamItem[]>(() => props.images.map((page, index) => {
   const source = page.sourceUrl || ''
   const translated = page.translatedUrl || ''
@@ -40,8 +43,8 @@ const streamItems = computed<VirtualPageStreamItem[]>(() => props.images.map((pa
 function handleVisibleChange(ids: string[]): void {
   if (ids.length === 0) return
   const visibleIndexes = ids
-    .map(id => props.images.findIndex(page => page.id === id))
-    .filter(index => index >= 0)
+    .map(id => pageIndexById.value.get(id))
+    .filter((index): index is number => index !== undefined)
   if (visibleIndexes.length === 0) return
   emit('pageChange', Math.min(...visibleIndexes) + 1)
 }

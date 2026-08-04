@@ -6,6 +6,7 @@ import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductSelectableImageGrid from '@/components/product/ProductSelectableImageGrid.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import type { ExtractResult, WebImportState } from '@/types/webImport'
@@ -16,6 +17,8 @@ const props = defineProps<{
   error: string | null
   extractResult: ExtractResult | null
   isAllSelected: boolean
+  hasMorePages?: boolean
+  isLoadingMorePages?: boolean
   selectedCount: number
   selectedPages: Set<number>
   status: WebImportState['status']
@@ -24,6 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'toggleAll'): void
   (event: 'togglePage', pageNum: number): void
+  (event: 'loadMore'): void
 }>()
 
 const imageItems = computed(() => {
@@ -105,6 +109,22 @@ function handleToggleImage(id: string | number): void {
         aria-label="网页导入图片选择"
         @toggle="handleToggleImage"
       />
+      <ProductActionRow
+        v-if="hasMorePages"
+        class="web-import-results-grid__load-more"
+        aria-label="加载更多网页导入候选"
+        justify="center"
+      >
+        <UiButton
+          variant="secondary"
+          size="sm"
+          :disabled="isLoadingMorePages"
+          :loading="isLoadingMorePages"
+          @click="emit('loadMore')"
+        >
+          {{ isLoadingMorePages ? '加载中...' : '加载更多' }}
+        </UiButton>
+      </ProductActionRow>
     </div>
 
     <div v-if="status === 'downloading'" class="web-import-results-grid__progress-section">
@@ -136,6 +156,10 @@ function handleToggleImage(id: string | number): void {
 .web-import-results-grid__selected-count {
   color: var(--color-text-supporting);
   font-size: 13px;
+}
+
+.web-import-results-grid__load-more {
+  margin-top: 12px;
 }
 
 .web-import-results-grid__progress-section {

@@ -128,17 +128,31 @@ class TranslationJobCommandService:
     def create_batch(
         self,
         *,
-        chapter_ids: Sequence[str],
+        chapter_ids: Sequence[str] | None = None,
+        book_ids: Sequence[str] | None = None,
         config: Mapping[str, Any],
         idempotency_key: str,
     ) -> dict[str, object]:
-        if not chapter_ids or len(set(chapter_ids)) != len(chapter_ids):
-            raise ValueError("chapterIds must contain unique chapter IDs")
+        if (chapter_ids is None) == (book_ids is None):
+            raise ValueError("provide exactly one of chapterIds or bookIds")
+        requested_field: str
+        requested_ids: list[str]
+        if book_ids is not None:
+            requested_field = "bookIds"
+            requested_ids = list(book_ids)
+        else:
+            requested_field = "chapterIds"
+            requested_ids = list(chapter_ids or ())
+        if not requested_ids or len(set(requested_ids)) != len(requested_ids):
+            raise ValueError(
+                f"{requested_field} must contain unique "
+                f"{'book' if requested_field == 'bookIds' else 'chapter'} IDs"
+            )
         command = normalize_translation_command(config)
         mode = str(command["mode"])
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         idempotency_payload = {
-            "chapterIds": list(chapter_ids),
+            requested_field: requested_ids,
             "config": command,
         }
         replay = self.jobs.idempotency_replay(
@@ -148,6 +162,10 @@ class TranslationJobCommandService:
         )
         if replay is not None:
             return replay
+        if book_ids is not None:
+            chapter_ids = self._resolve_book_chapter_ids(requested_ids)
+        else:
+            chapter_ids = requested_ids
         specs: list[JobSpec] = []
         skipped: list[dict[str, str]] = []
         with self.engine.connect() as connection:
@@ -208,6 +226,39 @@ class TranslationJobCommandService:
             idempotency_key=idempotency_key,
             idempotency_payload=idempotency_payload,
         )
+
+    def _resolve_book_chapter_ids(self, book_ids: Sequence[str]) -> list[str]:
+        if not book_ids or len(set(book_ids)) != len(book_ids):
+            raise ValueError("bookIds must contain unique book IDs")
+        requested_order = {book_id: index for index, book_id in enumerate(book_ids)}
+        with self.engine.connect() as connection:
+            existing = {
+                str(value)
+                for value in connection.execute(
+                    select(books.c.id).where(
+                        books.c.id.in_(book_ids),
+                        books.c.kind == "library",
+                    )
+                ).scalars()
+            }
+            if existing != set(book_ids):
+                raise ValueError("bookIds must all identify library books")
+            rows = list(
+                connection.execute(
+                    select(chapters.c.id, chapters.c.book_id, chapters.c.ordinal)
+                    .where(chapters.c.book_id.in_(book_ids))
+                ).mappings()
+            )
+        rows.sort(
+            key=lambda row: (
+                requested_order[str(row["book_id"])],
+                int(row["ordinal"]),
+            )
+        )
+        resolved = [str(row["id"]) for row in rows]
+        if not resolved:
+            raise ValueError("selected books contain no chapters")
+        return resolved
 
     def _translation_spec(
         self,

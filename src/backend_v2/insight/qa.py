@@ -960,7 +960,7 @@ class DefaultQAApiAlgorithms:
         cancelled: threading.Event,
     ) -> Iterator[str]:
         from src.shared.ai_transport import (
-            OpenAICompatibleChatTransport,
+            AsyncOpenAICompatibleTransport,
             UnifiedChatRequest,
         )
         from src.shared.openai_execution import (
@@ -1042,12 +1042,22 @@ class DefaultQAApiAlgorithms:
             ),
         )
 
+        async def complete() -> None:
+            async def check_connection() -> None:
+                before_request()
+
+            await AsyncOpenAICompatibleTransport().complete(
+                request,
+                before_request=check_connection,
+            )
+
         def run() -> None:
             try:
-                OpenAICompatibleChatTransport().complete(
-                    request,
-                    before_request=before_request,
-                )
+                # The async transport applies a wall-clock limit to the whole
+                # streaming attempt, including provider keep-alive frames.  QA
+                # still runs it in this producer thread so Flask can forward
+                # chunks and heartbeats without blocking the request iterator.
+                asyncio.run(complete())
             except ConnectionClosed:
                 pass
             except BaseException as exc:

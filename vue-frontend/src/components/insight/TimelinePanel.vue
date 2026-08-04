@@ -17,10 +17,13 @@ const {
   expandedGroupIds,
   getThumbnailUrl,
   hasTimelineData,
+  hasMoreTimeline,
   isEnhancedData,
   isLoading,
+  isLoadingMore,
   isRegenerating,
   mainCharacters,
+  loadMoreTimeline,
   pendingMessage,
   plotArcs,
   plotThreads,
@@ -135,6 +138,17 @@ const {
           </h4>
           <PlotThreadsList :threads="plotThreads" />
         </div>
+
+        <UiButton
+          v-if="hasMoreTimeline"
+          class="timeline-panel__load-more"
+          variant="secondary"
+          size="sm"
+          :disabled="isLoadingMore"
+          @click="loadMoreTimeline"
+        >
+          {{ isLoadingMore ? '加载中...' : '加载更多时间线内容' }}
+        </UiButton>
       </template>
     </div>
   </div>
@@ -188,5 +202,9 @@ const {
   color: var(--insight-text-primary);
   font-weight: 600;
   font-size: 16px;
+}
+
+.timeline-panel__load-more {
+  width: 100%;
 }
 </style>

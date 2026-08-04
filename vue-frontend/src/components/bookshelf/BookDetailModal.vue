@@ -119,7 +119,7 @@ async function translateSelectedChapters() {
   const chapterIds = [...selectedChapterIds.value]
   if (!chapterIds.length) return
   try {
-    const result = await createTranslationBatch(chapterIds, { mode: 'standard' })
+    const result = await createTranslationBatch({ chapterIds }, { mode: 'standard' })
     selectedChapterIds.value = new Set()
     await taskCenterStore.refresh()
     await refreshBookDetail()

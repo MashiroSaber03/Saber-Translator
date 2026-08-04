@@ -89,7 +89,10 @@
       :character-forms="[]"
       :initial-selection="selectedReferenceTokens"
       :book-id="bookId"
+      :has-older-original-images="hasOlderOriginalImages"
+      :loading-older-original-images="loadingOlderOriginalImages"
       @confirm="handleSelectorConfirm"
+      @load-older-originals="loadOlderOriginalImages"
     />
   </div>
 </template>
@@ -127,6 +130,9 @@ const refCount = ref(5)
 const selectorVisible = ref(false)
 const selectedReferenceTokens = ref<string[]>([])
 const availableOriginalImages = ref<MangaImageInfo[]>([])
+const originalCursor = ref(0)
+const hasOlderOriginalImages = ref(false)
+const loadingOlderOriginalImages = ref(false)
 let imageRequestSeq = 0
 let isMounted = true
 
@@ -154,9 +160,31 @@ async function loadAvailableImages(bookId = props.bookId) {
     const response = await getAvailableImages(bookId)
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = response.original_images
+    originalCursor.value = response.original_cursor ?? 0
+    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
   } catch {
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []
+  }
+}
+
+async function loadOlderOriginalImages(): Promise<void> {
+  const bookId = props.bookId
+  if (!bookId || !hasOlderOriginalImages.value || loadingOlderOriginalImages.value) return
+  loadingOlderOriginalImages.value = true
+  const requestId = ++imageRequestSeq
+  try {
+    const response = await getAvailableImages(bookId, Math.max(0, originalCursor.value - 100))
+    if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
+    const known = new Set(availableOriginalImages.value.map(image => image.token))
+    availableOriginalImages.value = [
+      ...response.original_images.filter(image => !known.has(image.token)),
+      ...availableOriginalImages.value,
+    ]
+    originalCursor.value = response.original_cursor ?? 0
+    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
+  } finally {
+    if (isMounted && requestId === imageRequestSeq) loadingOlderOriginalImages.value = false
   }
 }
 
@@ -203,6 +231,11 @@ watch(() => props.bookId, (newBookId) => {
     invalidateAvailableImages()
     refCount.value = 5
     availableOriginalImages.value = []
+    originalCursor.value = 0
+    hasOlderOriginalImages.value = false
+    originalCursor.value = 0
+    hasOlderOriginalImages.value = false
+    loadingOlderOriginalImages.value = false
     selectedReferenceTokens.value = []
     selectorVisible.value = false
   }

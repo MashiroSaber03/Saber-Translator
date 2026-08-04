@@ -34,19 +34,17 @@ export function getWebImportDraft(draftId: string): Promise<WebImportDraft> {
   return apiClient.get(`${ROOT}/drafts/${encodeURIComponent(draftId)}`)
 }
 
-export async function listAllWebImportDraftPages(
+export function listWebImportDraftPages(
   draftId: string,
-): Promise<WebImportDraftPage[]> {
-  const pages: WebImportDraftPage[] = []
-  let cursor = 0
-  do {
-    const result = await apiClient.get<WebImportDraftPageList>(
-      `${ROOT}/drafts/${encodeURIComponent(draftId)}/pages?cursor=${cursor}&limit=200`,
-    )
-    pages.push(...result.items)
-    cursor = result.nextCursor ?? 0
-  } while (cursor > 0)
-  return pages
+  options: { cursor?: number; limit?: number } = {},
+): Promise<WebImportDraftPageList> {
+  const query = new URLSearchParams({
+    cursor: String(options.cursor ?? 0),
+    limit: String(options.limit ?? 100),
+  })
+  return apiClient.get(
+    `${ROOT}/drafts/${encodeURIComponent(draftId)}/pages?${query.toString()}`,
+  )
 }
 
 export function updateWebImportSelection(

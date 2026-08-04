@@ -70,6 +70,17 @@
       />
     </div>
 
+    <UiButton
+      v-if="state.hasMoreCharacterForms.value"
+      class="character-management-panel__load-more-forms"
+      variant="secondary"
+      block
+      :disabled="state.isLoadingMoreCharacterForms.value"
+      @click="state.loadMoreCharacterForms"
+    >
+      {{ state.isLoadingMoreCharacterForms.value ? '加载中...' : '加载更多角色形态' }}
+    </UiButton>
+
     <AddCharacterDialog
       v-if="showAddCharDialog"
       @close="showAddCharDialog = false"
@@ -384,6 +395,10 @@ function closeOrthoDialog() {
   max-height: 400px;
   overflow-y: auto;
   padding: 4px;
+}
+
+.character-management-panel__load-more-forms {
+  margin-top: 14px;
 }
 
 @container continuation-character-management (max-width: 640px) {

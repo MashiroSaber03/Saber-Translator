@@ -53,17 +53,27 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/translation-batches")
     def create_translation_batch():
-        body = _json_body(allowed_keys={"chapterIds", "config"})
+        body = _json_body(allowed_keys={"bookIds", "chapterIds", "config"})
         chapter_ids = body.get("chapterIds")
+        book_ids = body.get("bookIds")
         config = body.get("config", {})
-        if not isinstance(chapter_ids, list) or not all(
-            isinstance(chapter_id, str) for chapter_id in chapter_ids
+        if (chapter_ids is None) == (book_ids is None):
+            raise ValueError("provide exactly one of chapterIds or bookIds")
+        if chapter_ids is not None and (
+            not isinstance(chapter_ids, list)
+            or not all(isinstance(chapter_id, str) for chapter_id in chapter_ids)
         ):
             raise ValueError("chapterIds must be a string array")
+        if book_ids is not None and (
+            not isinstance(book_ids, list)
+            or not all(isinstance(book_id, str) for book_id in book_ids)
+        ):
+            raise ValueError("bookIds must be a string array")
         if not isinstance(config, dict):
             raise ValueError("config must be an object")
         result = service.create_batch(
             chapter_ids=chapter_ids,
+            book_ids=book_ids,
             config=config,
             idempotency_key=_require_idempotency_key(),
         )
@@ -161,9 +171,9 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
-        payload = upload.stream.read(32 * 1024 * 1024 + 1)
-        if not payload or len(payload) > 32 * 1024 * 1024:
-            raise ValueError("text import is empty or exceeds 32 MiB")
+        payload = upload.stream.read()
+        if not payload:
+            raise ValueError("text import is empty")
         try:
             document = json.loads(payload)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:

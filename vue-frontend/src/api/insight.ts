@@ -18,15 +18,18 @@ import {
   deleteInsightNote,
   getInsightBootstrap,
   getInsightOverview,
+  getInsightNote,
   getInsightPage,
   getInsightQaStatus,
   getInsightTimeline,
   insightCurrentExportUrl,
   insightPageExportUrl,
   insightQaUrl,
-  listAllInsightNotes,
-  listAllInsightPages,
+  listInsightNotes,
+  listInsightOverviewTemplates,
+  listInsightPages,
   listInsightChapters,
+  listRecentInsightPageAnalyses,
   rebuildInsightOverview,
   rebuildInsightCompressedContext,
   rebuildInsightTimeline,
@@ -272,34 +275,114 @@ const OVERVIEW_TEMPLATES = [
 let settingsDocument: V2SettingsDocument | null = null
 let promptCache: V2Prompt[] = []
 let credentialSummaries: V2CredentialSummary[] = []
-const pageCache = new Map<string, V2InsightPageSummary[]>()
+const PAGE_CACHE_LIMIT = 300
+const NOTE_CACHE_LIMIT = 500
+const pageCache = new Map<string, Map<string, V2InsightPageSummary>>()
+const timelineThumbnailCache = new Map<number, string>()
 const noteCache = new Map<string, NoteData>()
 const noteCitationPageIds = new Map<string, Map<number, string>>()
 
-async function pagesForBook(bookId: string, force = false): Promise<V2InsightPageSummary[]> {
-  if (!force && pageCache.has(bookId)) return pageCache.get(bookId)!
-  const pages = await listAllInsightPages(bookId)
-  pageCache.set(bookId, pages)
-  return pages
+async function boundedMap<T, R>(
+  items: readonly T[],
+  mapper: (item: T, index: number) => Promise<R>,
+  concurrency = 4,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(items[index] as T, index)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  )
+  return results
+}
+
+let cachedPageBookId: string | null = null
+let cachedTimelineThumbnailBookId: string | null = null
+
+function rememberPages(bookId: string, pages: V2InsightPageSummary[]): void {
+  if (cachedPageBookId !== bookId) {
+    pageCache.clear()
+    cachedPageBookId = bookId
+  }
+  const byId = pageCache.get(bookId) ?? new Map<string, V2InsightPageSummary>()
+  pages.forEach(page => {
+    byId.delete(page.pageId)
+    byId.set(page.pageId, page)
+  })
+  while (byId.size > PAGE_CACHE_LIMIT) {
+    const oldestId = byId.keys().next().value
+    if (!oldestId) break
+    byId.delete(oldestId)
+  }
+  pageCache.set(bookId, byId)
+}
+
+function rememberTimelineThumbnails(bookId: string, thumbnails: Record<string, string>): void {
+  if (cachedTimelineThumbnailBookId !== bookId) {
+    timelineThumbnailCache.clear()
+    cachedTimelineThumbnailBookId = bookId
+  }
+  Object.entries(thumbnails).forEach(([pageNumber, url]) => {
+    const parsed = Number(pageNumber)
+    if (Number.isInteger(parsed) && parsed > 0 && url) {
+      timelineThumbnailCache.delete(parsed)
+      timelineThumbnailCache.set(parsed, url)
+    }
+  })
+  while (timelineThumbnailCache.size > PAGE_CACHE_LIMIT) {
+    const oldestPage = timelineThumbnailCache.keys().next().value
+    if (oldestPage === undefined) break
+    timelineThumbnailCache.delete(oldestPage)
+  }
+}
+
+function cachedPageForNumber(
+  bookId: string,
+  pageNum: number,
+): V2InsightPageSummary | undefined {
+  for (const page of pageCache.get(bookId)?.values() ?? []) {
+    if (page.displayPageNumber === pageNum) return page
+  }
+  return undefined
+}
+
+export async function getInsightPagesPage(
+  bookId: string,
+  options: { chapterId?: string; cursor?: number; limit?: number } = {}
+): Promise<{ items: V2InsightPageSummary[]; nextCursor: number | null }> {
+  const response = await listInsightPages(bookId, options)
+  rememberPages(bookId, response.items)
+  return response
 }
 
 async function pageForNumber(
   bookId: string,
   pageNum: number
 ): Promise<V2InsightPageSummary | undefined> {
-  return (await pagesForBook(bookId)).find(page => page.displayPageNumber === pageNum)
+  const cached = cachedPageForNumber(bookId, pageNum)
+  if (cached) return cached
+  if (!Number.isInteger(pageNum) || pageNum < 1) return undefined
+  const response = await getInsightPagesPage(bookId, { cursor: pageNum - 1, limit: 1 })
+  return response.items.find(page => page.displayPageNumber === pageNum)
 }
 
 function mapJobStatus(status: string): InsightTaskStatus {
-  if (status === 'queued') return 'pending'
-  if (status === 'pausing' || status === 'cancelling') return 'running'
-  if (status === 'completed_with_errors') return 'completed'
-  if (status === 'interrupted') return 'failed'
   if (
-    status === 'pending' ||
+    status === 'queued' ||
     status === 'running' ||
+    status === 'pausing' ||
     status === 'paused' ||
+    status === 'cancelling' ||
+    status === 'interrupted' ||
     status === 'completed' ||
+    status === 'completed_with_errors' ||
     status === 'cancelled' ||
     status === 'failed'
   ) {
@@ -316,9 +399,11 @@ export async function startAnalysis(
   const scope = mode === 'chapters' ? 'chapter' : mode === 'pages' ? 'page' : mode
   let pageIds: string[] | undefined
   if (scope === 'page') {
-    const pages = await pagesForBook(bookId)
-    const requested = new Set(options.pages ?? [])
-    pageIds = pages.filter(page => requested.has(page.displayPageNumber)).map(page => page.pageId)
+    const pages = await boundedMap(
+      options.pages ?? [],
+      page => pageForNumber(bookId, page),
+    )
+    pageIds = pages.flatMap(page => page ? [page.pageId] : [])
   }
   const accepted = await createInsightAnalysisJob({
     bookId,
@@ -339,6 +424,10 @@ export async function pauseAnalysis(taskId: string): Promise<void> {
 
 export async function resumeAnalysis(taskId: string): Promise<void> {
   await jobsApi.resume(taskId)
+}
+
+export async function continueAnalysis(taskId: string): Promise<void> {
+  await jobsApi.continue(taskId)
 }
 
 export async function cancelAnalysis(taskId: string): Promise<void> {
@@ -400,19 +489,16 @@ export async function getPageData(bookId: string, pageNum: number): Promise<Page
   }
 }
 
-export async function getAnalyzedPages(bookId: string): Promise<number[]> {
-  const pages = await pagesForBook(bookId, true)
-  return pages
-    .filter(page => page.analysisState !== 'not_analyzed')
-    .map(page => page.displayPageNumber)
-}
-
 export function getThumbnailUrl(bookId: string, pageNum: number): string {
-  return pageCache.get(bookId)?.find(page => page.displayPageNumber === pageNum)?.thumbnailUrl ?? ''
+  const page = cachedPageForNumber(bookId, pageNum)
+  if (page?.thumbnailUrl) return page.thumbnailUrl
+  return cachedTimelineThumbnailBookId === bookId
+    ? timelineThumbnailCache.get(pageNum) ?? ''
+    : ''
 }
 
 export async function getInsightChapters(bookId: string): Promise<InsightChapter[]> {
-  const [chapters] = await Promise.all([listInsightChapters(bookId), pagesForBook(bookId, true)])
+  const chapters = await listInsightChapters(bookId)
   let offset = 0
   return chapters.items.map(chapter => {
     const startPage = offset + 1
@@ -463,29 +549,39 @@ export async function regenerateOverview(
 }
 
 export async function getGeneratedTemplates(bookId: string): Promise<OverviewTemplateType[]> {
-  const results = await Promise.all(
-    OVERVIEW_TEMPLATES.map(async template => {
-      const response = await getOverview(bookId, template)
-      return response !== null ? template : null
-    })
-  )
-  return results.filter((value): value is OverviewTemplateType => value !== null)
+  const response = await listInsightOverviewTemplates(bookId)
+  const available = new Set(response.items)
+  return OVERVIEW_TEMPLATES.filter(template => available.has(template))
 }
 
-export async function getTimeline(bookId: string): Promise<TimelineData | null> {
+export async function getRecentAnalyzedPages(bookId: string): Promise<Array<{
+  page_num: number
+  summary?: string
+  analyzed_at?: string
+}>> {
+  const response = await listRecentInsightPageAnalyses(bookId, 5)
+  return response.items.map(item => ({
+    page_num: item.displayPageNumber,
+    ...(item.summary ? { summary: item.summary } : {}),
+    ...(item.generatedAt ? { analyzed_at: item.generatedAt } : {}),
+  }))
+}
+
+export async function getTimeline(
+  bookId: string,
+  options: { eventCursor?: number; characterCursor?: string } = {}
+): Promise<TimelineData | null> {
   try {
-    const timeline = await getInsightTimeline(bookId)
-    const pages = await pagesForBook(bookId)
-    const pageNumbersById = new Map(pages.map(page => [page.pageId, page.displayPageNumber]))
+    const timeline = await getInsightTimeline(bookId, options)
+    rememberTimelineThumbnails(bookId, timeline.pageThumbnails ?? {})
     const rawEvents = Array.isArray(timeline.events)
       ? timeline.events.filter(value => Boolean(value) && typeof value === 'object')
       : []
     const groups = rawEvents.map((event, index) => {
-      const pageNumbers = (Array.isArray(event.page_ids) ? event.page_ids : []).flatMap(value => {
-        const pageNumber = pageNumbersById.get(String(value))
-        return pageNumber ? [pageNumber] : []
-      })
-      const fallbackPage = Math.min(index + 1, Math.max(pages.length, 1))
+      const pageNumbers = (Array.isArray(event.page_numbers) ? event.page_numbers : [])
+        .map(Number)
+        .filter(value => Number.isInteger(value) && value > 0)
+      const fallbackPage = Math.max(1, index + 1)
       const start = pageNumbers.length ? Math.min(...pageNumbers) : fallbackPage
       const end = pageNumbers.length ? Math.max(...pageNumbers) : start
       const summary = typeof event.summary === 'string' ? event.summary : ''
@@ -532,10 +628,12 @@ export async function getTimeline(bookId: string): Promise<TimelineData | null> 
       story_summary: typeof content.story_summary === 'string' ? content.story_summary : '',
       main_characters: characters,
       stats: {
-        total_events: groups.length,
-        total_pages: pages.length || lastPage,
-        total_characters: characters.length,
+        total_events: timeline.eventPage.totalCount ?? groups.length,
+        total_pages: timeline.pageCount ?? lastPage,
+        total_characters: timeline.characterPage.totalCount ?? characters.length,
       },
+      next_event_cursor: timeline.eventPage.nextCursor,
+      next_character_cursor: timeline.characterPage.nextCursor,
     } as TimelineData
   } catch (error) {
     if (isNotFound(error)) return null
@@ -558,6 +656,7 @@ export async function sendChat(
     top_k?: number
     threshold?: number
     use_global_context?: boolean
+    on_chunk?: (content: string) => void
   } = {}
 ): Promise<ChatResult> {
   assertBackendActionAllowed()
@@ -588,6 +687,7 @@ export async function sendChat(
     onMessage(message) {
       if (message.event === 'chunk') {
         answer += String(message.data.text ?? '')
+        options.on_chunk?.(answer)
       } else if (message.event === 'context') {
         mode = String(message.data.mode ?? mode)
         const values = Array.isArray(message.data.citations) ? message.data.citations : []
@@ -662,6 +762,7 @@ function mapNote(note: V2InsightNote): NoteData {
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   }
+  noteCache.delete(mapped.id)
   noteCache.set(mapped.id, mapped)
   noteCitationPageIds.set(
     mapped.id,
@@ -672,12 +773,42 @@ function mapNote(note: V2InsightNote): NoteData {
       })
     )
   )
+  while (noteCache.size > NOTE_CACHE_LIMIT) {
+    const oldestId = noteCache.keys().next().value
+    if (!oldestId) break
+    noteCache.delete(oldestId)
+    noteCitationPageIds.delete(oldestId)
+  }
   return mapped
 }
 
-export async function getNotes(bookId: string, type?: 'text' | 'qa'): Promise<NoteData[]> {
-  const notes = await listAllInsightNotes(bookId, type)
-  return notes.map(mapNote)
+export async function getNotes(
+  bookId: string,
+  type?: 'text' | 'qa',
+  cursor?: string
+): Promise<{ items: NoteData[]; nextCursor: string | null }> {
+  const response = await listInsightNotes(bookId, { cursor, kind: type, limit: 50 })
+  return {
+    items: response.items.map(mapNote),
+    nextCursor: response.nextCursor,
+  }
+}
+
+export async function getNoteDetail(noteId: string): Promise<NoteData> {
+  return mapNote(await getInsightNote(noteId))
+}
+
+async function resolvePageCitations(
+  bookId: string,
+  citations: Array<{ page: number; content: string }>
+): Promise<Array<{ pageId: string; excerpt: string }>> {
+  const resolved = await boundedMap(citations, async citation => {
+    const page = await pageForNumber(bookId, citation.page)
+    return page ? { pageId: page.pageId, excerpt: citation.content } : null
+  })
+  return resolved.filter(
+    (value): value is { pageId: string; excerpt: string } => value !== null
+  )
 }
 
 export async function createNote(
@@ -694,13 +825,10 @@ export async function createNote(
     comment?: string
   }
 ): Promise<NoteData> {
-  const pages = await pagesForBook(bookId)
-  const citations = (note.citations ?? (note.pageNum ? [{ page: note.pageNum, content: '' }] : []))
-    .map(citation => {
-      const page = pages.find(item => item.displayPageNumber === citation.page)
-      return page ? { pageId: page.pageId, excerpt: citation.content } : null
-    })
-    .filter((value): value is { pageId: string; excerpt: string } => value !== null)
+  const citations = await resolvePageCitations(
+    bookId,
+    note.citations ?? (note.pageNum ? [{ page: note.pageNum, content: '' }] : [])
+  )
   const created = await createInsightNote({
     bookId,
     title: note.title?.trim() || (note.type === 'qa' ? note.question?.trim() : '') || '未命名笔记',
@@ -730,12 +858,11 @@ export async function updateNote(
   const merged = { ...current, ...updates }
   const knownPageIds = noteCitationPageIds.get(noteId) ?? new Map<number, string>()
   const requestedCitations = merged.citations ?? []
-  const requiresPageLookup = requestedCitations.some(value => !knownPageIds.has(value.page))
-  if (requiresPageLookup) {
-    for (const page of await pagesForBook(bookId)) {
-      knownPageIds.set(page.displayPageNumber, page.pageId)
-    }
-  }
+  const unresolved = requestedCitations.filter(value => !knownPageIds.has(value.page))
+  await boundedMap(unresolved, async value => {
+    const page = await pageForNumber(bookId, value.page)
+    if (page) knownPageIds.set(value.page, page.pageId)
+  })
   const citations = requestedCitations.flatMap(value => {
     const pageId = knownPageIds.get(value.page)
     return pageId ? [{ pageId, excerpt: value.content }] : []
@@ -1032,7 +1159,7 @@ export function fetchModels(
 }
 
 export async function getDefaultPrompts(): Promise<Record<PromptType, string>> {
-  const prompts = await listV2Prompts()
+  const prompts = promptCache.length > 0 ? promptCache : await listV2Prompts()
   promptCache = prompts
   return Object.fromEntries(
     prompts.filter(prompt => prompt.isFactoryDefault).map(prompt => [prompt.type, prompt.content])
@@ -1050,7 +1177,7 @@ function savedPrompt(prompt: V2Prompt): SavedPromptItem {
 }
 
 export async function getPromptsLibrary(): Promise<SavedPromptItem[]> {
-  const prompts = await listV2Prompts()
+  const prompts = promptCache.length > 0 ? promptCache : await listV2Prompts()
   promptCache = prompts
   return prompts.filter(prompt => !prompt.isFactoryDefault).map(savedPrompt)
 }

@@ -8,7 +8,7 @@ import {
   watch,
 } from 'vue'
 
-import { variableVirtualWindow } from './virtualWindow'
+import { variableItemOffsets, variableVirtualWindow } from './virtualWindow'
 
 export interface VirtualPageStreamItem {
   alt: string
@@ -48,11 +48,13 @@ const itemSizes = computed(() => props.items.map(item => {
     : usableWidth
   return Math.max(1, renderedHeight) + props.gap
 }))
+const itemOffsets = computed(() => variableItemOffsets(itemSizes.value))
 const windowState = computed(() => variableVirtualWindow(
   itemSizes.value,
   scrollTop.value,
   viewportHeight.value,
   viewportHeight.value * props.overscanScreens,
+  itemOffsets.value,
 ))
 const renderedItems = computed(() => props.items.slice(
   windowState.value.start,

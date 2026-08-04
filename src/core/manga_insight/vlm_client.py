@@ -82,7 +82,10 @@ class VLMClient:
             VLM_CAPABILITY,
             config.base_url,
         ) or ""
-        self._timeout = 300.0
+        # Keep one transport attempt shorter than the complete logical call so
+        # a stalled stream still leaves time for the configured retry layers.
+        self._timeout = 120.0
+        self._total_timeout = 300.0
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
@@ -107,11 +110,11 @@ class VLMClient:
         try:
             return await asyncio.wait_for(
                 self._executor.execute(*args, **kwargs),
-                timeout=self._timeout,
+                timeout=self._total_timeout,
             )
         except TimeoutError as exc:
             raise TimeoutError(
-                f"视觉模型调用超过总时限（{self._timeout:g} 秒）"
+                f"视觉模型调用超过总时限（{self._total_timeout:g} 秒）"
             ) from exc
 
 

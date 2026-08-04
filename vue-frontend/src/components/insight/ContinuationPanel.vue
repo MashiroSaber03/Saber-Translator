@@ -36,7 +36,7 @@
         @select="navigateToStep"
       />
       <div class="continuation-panel__step-content">
-        <div v-show="state.currentStep.value === 0" class="continuation-panel__step-panel">
+        <div v-if="state.currentStep.value === 0" class="continuation-panel__step-panel">
           <ProductSectionHeader title="续写设置" icon-name="file-text" />
           <UiFormGrid>
             <UiField
@@ -98,7 +98,7 @@
             </UiButton>
           </ProductActionRow>
         </div>
-        <div v-show="state.currentStep.value === 1" class="continuation-panel__step-panel">
+        <div v-else-if="state.currentStep.value === 1" class="continuation-panel__step-panel">
           <ScriptGenerationPanel
             :script="state.chapterScript.value"
             :is-generating="isGeneratingScript"
@@ -120,7 +120,7 @@
             </UiButton>
           </ProductActionRow>
         </div>
-        <div v-show="state.currentStep.value === 2" class="continuation-panel__step-panel">
+        <div v-else-if="state.currentStep.value === 2" class="continuation-panel__step-panel">
           <PageDetailsPanel
             :pages="state.pages.value"
             :is-generating="state.isGeneratingPages.value"
@@ -139,7 +139,7 @@
             </UiButton>
           </ProductActionRow>
         </div>
-        <div v-show="state.currentStep.value === 3" class="continuation-panel__step-panel">
+        <div v-else class="continuation-panel__step-panel">
           <ImageGenerationPanel
             :pages="state.pages.value"
             :is-generating="imageGen.isGenerating.value"
@@ -213,32 +213,69 @@ const isGeneratingScript = ref(false)
 const isSavingScript = ref(false)
 const scriptDirty = ref(false)
 const lastSavedScriptText = ref('')
-let promptSaveTimer: ReturnType<typeof setTimeout> | null = null
-let storySaveTimer: ReturnType<typeof setTimeout> | null = null
+interface PendingPageAutosave {
+  bookId: string
+  pages: PageContent[]
+  errorLabel: string
+}
 
-function clearPromptSaveTimer() {
-  if (promptSaveTimer) {
-    clearTimeout(promptSaveTimer)
-    promptSaveTimer = null
+let pageAutosaveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingPageAutosave: PendingPageAutosave | null = null
+let pageSaveChain: Promise<void> = Promise.resolve()
+
+function clearPageAutosaveTimer() {
+  if (pageAutosaveTimer) {
+    clearTimeout(pageAutosaveTimer)
+    pageAutosaveTimer = null
   }
 }
 
-function clearStorySaveTimer() {
-  if (storySaveTimer) {
-    clearTimeout(storySaveTimer)
-    storySaveTimer = null
-  }
+function discardPendingPageAutosave() {
+  clearPageAutosaveTimer()
+  pendingPageAutosave = null
 }
 
-function clearPendingAutosaves() {
-  clearPromptSaveTimer()
-  clearStorySaveTimer()
+function enqueuePageSave(
+  request: PendingPageAutosave,
+  reportError: boolean,
+): Promise<void> {
+  const operation = pageSaveChain.then(() =>
+    continuationApi.savePages(request.bookId, request.pages),
+  )
+  pageSaveChain = operation.catch(error => {
+    if (reportError) {
+      state.showMessage(
+        `${request.errorLabel}: ${error instanceof Error ? error.message : '网络错误'}`,
+        'error',
+      )
+    }
+  })
+  return operation
+}
+
+function flushPendingPageAutosave(reportError = true): Promise<void> {
+  const pending = pendingPageAutosave
+  discardPendingPageAutosave()
+  return pending ? enqueuePageSave(pending, reportError) : pageSaveChain
+}
+
+function schedulePageAutosave(errorLabel: string) {
+  const activeBookId = insightStore.currentBookId
+  if (!activeBookId || state.pages.value.length === 0) return
+  pendingPageAutosave = {
+    bookId: activeBookId,
+    pages: state.pages.value,
+    errorLabel,
+  }
+  clearPageAutosaveTimer()
+  pageAutosaveTimer = setTimeout(() => {
+    void flushPendingPageAutosave()
+  }, 600)
 }
 
 function resetLocalWorkflowState() {
   isGeneratingScript.value = false
   isSavingScript.value = false
-  clearStorySaveTimer()
 }
 const canProceedToScript = computed(() => {
   return state.isDataReady.value && state.characters.value.length > 0
@@ -249,7 +286,9 @@ const canProceedToPages = computed(() => {
 const canProceedToImages = computed(() => {
   return (
     state.pages.value.length > 0 &&
-    state.pages.value.every(p => p.status !== 'failed' && hasUsableStoryContent(p))
+    state.pages.value.every(
+      p => p.status !== 'failed' && p.status !== 'stale' && hasUsableStoryContent(p),
+    )
   )
 })
 const generatedPagesCount = computed(() => {
@@ -346,7 +385,7 @@ async function handleGenerateScript(payload: {
 async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
   if (!insightStore.currentBookId || !state.chapterScript.value) return false
   isSavingScript.value = true
-  const shouldInvalidatePages = scriptDirty.value && state.pages.value.length > 0
+  const shouldMarkPagesStale = scriptDirty.value && state.pages.value.length > 0
   try {
     const savedScript = await continuationApi.saveScript(
       insightStore.currentBookId,
@@ -355,10 +394,12 @@ async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
     state.chapterScript.value = savedScript
     lastSavedScriptText.value = savedScript.script_text
     scriptDirty.value = false
-    if (shouldInvalidatePages) {
-      state.pages.value = []
-      await persistPages([])
-      state.showMessage('脚本已更新，已有页面剧情已清空，请重新生成。', 'info')
+    if (shouldMarkPagesStale) {
+      state.pages.value = state.pages.value.map(page => ({
+        ...page,
+        status: 'stale',
+      }))
+      state.showMessage('脚本已更新，已有页面剧情已保留并标记为需要重新生成。', 'info')
       return true
     }
     if (showSuccessMessage) {
@@ -376,8 +417,16 @@ async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
   }
 }
 async function persistPages(pages = state.pages.value): Promise<void> {
-  if (!insightStore.currentBookId) return
-  await continuationApi.savePages(insightStore.currentBookId, pages)
+  const activeBookId = insightStore.currentBookId
+  if (!activeBookId) return
+  await enqueuePageSave(
+    {
+      bookId: activeBookId,
+      pages,
+      errorLabel: '页面数据保存失败',
+    },
+    false,
+  )
 }
 function handleScriptUpdate(scriptText: string) {
   if (!state.chapterScript.value) return
@@ -400,20 +449,7 @@ function handleStoryContentChange(
   if (!page) return
   applyPageStoryEdit(page, field, value)
 
-  if (storySaveTimer) {
-    clearTimeout(storySaveTimer)
-  }
-  storySaveTimer = setTimeout(async () => {
-    if (!insightStore.currentBookId || state.pages.value.length === 0) return
-    try {
-      await persistPages()
-    } catch (error) {
-      state.showMessage(
-        '页面剧情保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
-        'error'
-      )
-    }
-  }, 600)
+  schedulePageAutosave('页面剧情保存失败')
 }
 function handleResetScript() {
   if (!state.chapterScript.value) return
@@ -445,6 +481,7 @@ async function handleGeneratePageDetails() {
 async function handleSavePageChanges() {
   if (!insightStore.currentBookId || state.pages.value.length === 0) return
   try {
+    discardPendingPageAutosave()
     await persistPages()
     state.showMessage('页面数据保存成功', 'success')
   } catch (error) {
@@ -453,10 +490,14 @@ async function handleSavePageChanges() {
 }
 async function handleBatchGenerate(initialStyleReferenceTokens: string[] | null) {
   if (!insightStore.currentBookId) return
+  discardPendingPageAutosave()
+  await pageSaveChain
   await imageGen.batchGenerateImages(state.pages.value, initialStyleReferenceTokens || undefined)
 }
 async function handleRegenerateImage(pageNumber: number) {
   if (!insightStore.currentBookId) return
+  discardPendingPageAutosave()
+  await pageSaveChain
   await imageGen.regeneratePageImage(pageNumber)
 }
 async function handleUsePrevious(pageNumber: number) {
@@ -476,20 +517,7 @@ async function handlePromptChange(pageNumber: number, prompt: string) {
   if (!page) return
   page.final_prompt = prompt
 
-  if (promptSaveTimer) {
-    clearTimeout(promptSaveTimer)
-  }
-  promptSaveTimer = setTimeout(async () => {
-    if (!insightStore.currentBookId || state.pages.value.length === 0) return
-    try {
-      await persistPages()
-    } catch (error) {
-      state.showMessage(
-        '提示词保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
-        'error'
-      )
-    }
-  }, 600)
+  schedulePageAutosave('提示词保存失败')
 }
 async function handleManualSync() {
   await state.syncAnalysisData('manual')
@@ -497,7 +525,8 @@ async function handleManualSync() {
 async function clearAndRestart() {
   if (!insightStore.currentBookId) return
   try {
-    clearPendingAutosaves()
+    discardPendingPageAutosave()
+    await pageSaveChain
     await continuationApi.clearContinuationData(insightStore.currentBookId)
     state.resetState()
     resetLocalWorkflowState()
@@ -539,7 +568,7 @@ async function goToStep(step: number) {
 watch(
   () => insightStore.currentBookId,
   newBookId => {
-    clearPendingAutosaves()
+    void flushPendingPageAutosave(false)
     resetLocalWorkflowState()
     if (newBookId) {
       state.initializeData()
@@ -570,7 +599,7 @@ watch(
   { immediate: true }
 )
 onBeforeUnmount(() => {
-  clearPendingAutosaves()
+  void flushPendingPageAutosave(false)
 })
 </script>
 

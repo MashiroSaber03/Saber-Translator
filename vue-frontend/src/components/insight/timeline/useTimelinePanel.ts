@@ -14,12 +14,15 @@ function normalizeTimeline(data: TimelineData): TimelineData {
     plot_threads: data.plot_threads || [],
     events: data.events || [],
     cached: data.cached,
+    next_event_cursor: data.next_event_cursor,
+    next_character_cursor: data.next_character_cursor,
   }
 }
 
 export function useTimelinePanel() {
   const insightStore = useInsightStore()
   const isLoading = ref(false)
+  const isLoadingMore = ref(false)
   const isRegenerating = ref(false)
   const timelineData = ref<TimelineData | null>(null)
   const expandedGroups = ref<Set<string>>(new Set())
@@ -44,6 +47,10 @@ export function useTimelinePanel() {
   const plotThreads = computed(() => timelineData.value?.plot_threads || [])
   const storySummary = computed(() => timelineData.value?.story_summary || '')
   const expandedGroupIds = computed(() => Array.from(expandedGroups.value))
+  const hasMoreTimeline = computed(() => Boolean(
+    timelineData.value?.next_event_cursor != null
+    || timelineData.value?.next_character_cursor != null
+  ))
 
   const isEnhancedData = computed(() => {
     return timelineData.value?.mode === 'enhanced'
@@ -108,6 +115,48 @@ export function useTimelinePanel() {
     }
   }
 
+  async function loadMoreTimeline(): Promise<void> {
+    const bookId = insightStore.currentBookId
+    const current = timelineData.value
+    if (!bookId || !current || !hasMoreTimeline.value || isLoadingMore.value) return
+    const requestId = dataRequestId
+    isLoadingMore.value = true
+    errorMessage.value = ''
+    try {
+      const next = await insightApi.getTimeline(bookId, {
+        eventCursor: current.next_event_cursor ?? current.stats?.total_events ?? 0,
+        characterCursor: current.next_character_cursor
+          ?? current.main_characters?.at(-1)?.name,
+      })
+      if (!next || !isMounted || dataRequestId !== requestId || insightStore.currentBookId !== bookId) {
+        return
+      }
+      const knownGroups = new Set(current.groups?.map(group => group.id))
+      const knownCharacters = new Set(current.main_characters?.map(character => character.name))
+      timelineData.value = normalizeTimeline({
+        ...current,
+        groups: [
+          ...(current.groups ?? []),
+          ...(next.groups ?? []).filter(group => !knownGroups.has(group.id)),
+        ],
+        events: [...(current.events ?? []), ...(next.events ?? [])],
+        main_characters: [
+          ...(current.main_characters ?? []),
+          ...(next.main_characters ?? []).filter(character => !knownCharacters.has(character.name)),
+        ],
+        stats: next.stats ?? current.stats,
+        next_event_cursor: next.next_event_cursor,
+        next_character_cursor: next.next_character_cursor,
+      })
+    } catch (error) {
+      if (isMounted && dataRequestId === requestId) {
+        errorMessage.value = error instanceof Error ? error.message : '加载更多时间线失败'
+      }
+    } finally {
+      if (isMounted && dataRequestId === requestId) isLoadingMore.value = false
+    }
+  }
+
   function getThumbnailUrl(pageNum: number): string {
     if (!insightStore.currentBookId) return ''
     return insightApi.getThumbnailUrl(insightStore.currentBookId, pageNum)
@@ -145,6 +194,7 @@ export function useTimelinePanel() {
       expandedGroups.value = new Set()
       isLoading.value = false
       isRegenerating.value = false
+      isLoadingMore.value = false
       pendingMessage.value = ''
     }
   })
@@ -169,8 +219,11 @@ export function useTimelinePanel() {
     hasTimelineData,
     isEnhancedData,
     isLoading,
+    isLoadingMore,
     isRegenerating,
     loadTimeline,
+    loadMoreTimeline,
+    hasMoreTimeline,
     mainCharacters,
     plotArcs,
     plotThreads,

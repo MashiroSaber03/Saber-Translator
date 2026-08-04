@@ -221,6 +221,20 @@ describe('InsightSettingsModal', () => {
 
     await flushPromises()
 
+    for (const label of [
+      'LLM 对话',
+      '批量分析',
+      '向量模型',
+      '重排序',
+      '生图模型',
+      '提示词',
+    ]) {
+      const tab = wrapper.findAll('[role="tab"]').find(item => item.text().includes(label))
+      expect(tab).toBeTruthy()
+      await tab!.trigger('click')
+      await flushPromises()
+    }
+
     const saveButton = wrapper.findAll('button').find(button => button.text() === '保存')
     expect(saveButton).toBeTruthy()
 

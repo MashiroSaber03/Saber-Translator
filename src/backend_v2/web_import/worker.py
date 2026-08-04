@@ -304,7 +304,6 @@ class WebImportWorkerService:
             target,
             options["imagePreprocess"],
             downloaded_checksum,
-            max_image_bytes=self.limits.max_image_bytes,
         )
         thumbnail = self.importer.publish_draft_thumbnail(target)
         now = utcnow()
@@ -845,10 +844,6 @@ class WebImportWorkerService:
                                 self.limits.stream_chunk_bytes
                             ):
                                 byte_size += len(chunk)
-                                if byte_size > self.limits.max_image_bytes:
-                                    raise ValueError(
-                                        "candidate exceeds the single-file byte limit"
-                                    )
                                 digest.update(chunk)
                                 output.write(chunk)
                 if byte_size == 0:
@@ -902,8 +897,6 @@ class WebImportWorkerService:
         path: Path,
         settings_value: object,
         source_checksum: str,
-        *,
-        max_image_bytes: int = ImportSafetyLimits().max_image_bytes,
     ) -> str:
         if not isinstance(settings_value, Mapping):
             raise ValueError("web import image preprocessing settings are missing")
@@ -1002,10 +995,6 @@ class WebImportWorkerService:
                             output.close()
                 finally:
                     image.close()
-            if temporary.stat().st_size > max_image_bytes:
-                raise ValueError(
-                    "preprocessed image exceeds the single-file byte limit"
-                )
             temporary.replace(path)
         except (UnidentifiedImageError, OSError) as exc:
             raise ValueError("candidate is not a decodable image") from exc

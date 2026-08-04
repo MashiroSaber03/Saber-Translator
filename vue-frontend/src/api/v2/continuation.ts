@@ -51,17 +51,19 @@ export function setV2ContinuationReferences(
   )
 }
 
-export async function listAllV2ContinuationForms(projectId: string): Promise<V2ContinuationForm[]> {
-  const items: V2ContinuationForm[] = []
-  let cursor = 0
-  do {
-    const response = await apiClient.get<V2ContinuationFormList>(`${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/forms`, {
-      params: { cursor, limit: 200 },
-    })
-    items.push(...response.items)
-    cursor = response.nextCursor ?? 0
-  } while (cursor > 0)
-  return items
+export function listV2ContinuationForms(
+  projectId: string,
+  options: { cursor?: number; limit?: number } = {},
+): Promise<V2ContinuationFormList> {
+  return apiClient.get(
+    `${ROOT}/continuation/projects/${encodeURIComponent(projectId)}/forms`,
+    {
+      params: {
+        cursor: options.cursor ?? 0,
+        limit: options.limit ?? 100,
+      },
+    },
+  )
 }
 
 export function createV2ContinuationCharacter(

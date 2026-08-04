@@ -117,9 +117,7 @@ class ReadOnlyPluginRepository:
 
 
 class PluginAssetAccess:
-    """Bounded asset facade; binary data never travels inside hook payloads."""
-
-    MAX_READ_BYTES = 64 * 1024 * 1024
+    """Asset facade; binary data never travels inside hook payloads."""
 
     def __init__(
         self,
@@ -149,13 +147,10 @@ class PluginAssetAccess:
             row = connection.execute(
                 select(
                     assets.c.relative_path,
-                    assets.c.byte_size,
                 ).where(assets.c.id == asset_id)
             ).mappings().one_or_none()
         if row is None:
             raise LookupError("asset not found")
-        if int(row["byte_size"]) > self.MAX_READ_BYTES:
-            raise ValueError("plugin asset read exceeds 64 MiB")
         return self.storage.resolve_relative_path(
             str(row["relative_path"])
         ).read_bytes()
@@ -478,6 +473,11 @@ class PluginJobRuntime:
         self.loader.release_cached_instances()
         with self._stage_lock:
             self._stage_cache.clear()
+
+    def release_job_state(self, job_id: str) -> None:
+        """Drop attempt-local stage state after a worker attempt ends."""
+        with self._stage_lock:
+            self._stage_cache.pop(job_id, None)
 
     def before_job(
         self,

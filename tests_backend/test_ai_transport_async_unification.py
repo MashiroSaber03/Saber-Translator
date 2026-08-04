@@ -1,7 +1,9 @@
+import asyncio
 import unittest
 from unittest import mock
 
 from src.shared.openai_options import (
+    OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
 )
@@ -61,6 +63,75 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call["json"]["temperature"], 0.35)
         self.assertEqual(call["json"]["response_format"], {"type": "json_object"})
         self.assertEqual(call["json"]["seed"], 222)
+
+    async def test_async_stream_attempt_wall_clock_timeout_leaves_room_for_retry(self) -> None:
+        from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
+
+        class FakeStreamResponse:
+            status_code = 200
+
+            def __init__(self, *, stalled: bool):
+                self.stalled = stalled
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def aiter_lines(self):
+                if self.stalled:
+                    while True:
+                        await asyncio.sleep(0.001)
+                        yield ": keep-alive"
+                yield 'data: {"choices":[{"delta":{"content":"重试成功"}}]}'
+                yield "data: [DONE]"
+
+        class FakeAsyncClient:
+            def __init__(self, *, stalled: bool):
+                self.stalled = stalled
+
+            def stream(self, *_args, **_kwargs):
+                return FakeStreamResponse(stalled=self.stalled)
+
+            async def aclose(self):
+                return None
+
+        clients = [
+            FakeAsyncClient(stalled=True),
+            FakeAsyncClient(stalled=False),
+        ]
+        request = UnifiedChatRequest(
+            provider="custom",
+            api_key="test-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hello"}],
+            base_url="https://example.com/v1",
+            openai_options=OpenAICompatibleOptions(
+                execution=OpenAICompatibleExecutionOptions(
+                    use_stream=True,
+                    transport_retries=1,
+                ),
+            ),
+            runtime_options=build_openai_compatible_runtime_options(
+                timeout=0.01,
+            ),
+        )
+
+        with (
+            mock.patch(
+                "src.shared.ai_transport.httpx.AsyncClient",
+                side_effect=clients,
+            ) as client_factory,
+            mock.patch(
+                "src.shared.ai_transport._calculate_backoff",
+                return_value=0,
+            ),
+        ):
+            content = await AsyncOpenAICompatibleTransport().complete(request)
+
+        self.assertEqual(content, "重试成功")
+        self.assertEqual(client_factory.call_count, 2)
 
     async def test_async_transport_supports_embedding_requests(self) -> None:
         from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedEmbeddingRequest

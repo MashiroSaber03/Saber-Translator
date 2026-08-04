@@ -42,7 +42,7 @@ watch(
         @click="$emit('showPage', thumbnailPage)"
       >
         <img
-          v-if="!thumbnailFailed"
+          v-if="thumbnailUrl && !thumbnailFailed"
           class="timeline-event-card-shell__thumbnail"
           :src="thumbnailUrl"
           :alt="`第${thumbnailPage}页`"

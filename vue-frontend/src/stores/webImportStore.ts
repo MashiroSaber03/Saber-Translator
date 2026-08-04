@@ -86,6 +86,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   const logs = ref<AgentLog[]>([])
   const extractResult = ref<ExtractResult | null>(null)
   const selectedPages = ref<Set<number>>(new Set())
+  const selectedPageCount = ref(0)
   const downloadProgress = ref({ current: 0, total: 0 })
   const error = ref<string | null>(null)
   const modalVisible = ref(false)
@@ -95,7 +96,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   const isExtracting = computed(() => status.value === 'extracting')
   const isDownloading = computed(() => status.value === 'downloading')
   const isProcessing = computed(() => isExtracting.value || isDownloading.value)
-  const selectedCount = computed(() => selectedPages.value.size)
+  const selectedCount = computed(() => selectedPageCount.value)
   const hasUnsavedSettings = computed(() => {
     return (
       serializeWebImportSettingsValue(settings.value) !== serializeWebImportSettingsValue(draftSettings.value) ||
@@ -377,6 +378,7 @@ export const useWebImportStore = defineStore('webImport', () => {
     logs.value = []
     extractResult.value = null
     selectedPages.value = new Set()
+    selectedPageCount.value = 0
     downloadProgress.value = { current: 0, total: 0 }
     error.value = null
   }
@@ -390,40 +392,66 @@ export const useWebImportStore = defineStore('webImport', () => {
   }
 
   function setExtractResult(result: ExtractResult): void {
-    if (extractResult.value && extractResult.value.pages.length > 0) {
-      extractResult.value.comicTitle = result.comicTitle
-      extractResult.value.chapterTitle = result.chapterTitle
-      extractResult.value.totalPages = result.totalPages
-      extractResult.value.sourceUrl = result.sourceUrl
-      extractResult.value.referer = result.referer
-      extractResult.value.engine = result.engine
-      extractResult.value.success = result.success
-      extractResult.value.error = result.error
-    } else {
-      extractResult.value = result
-      if (result.success && result.pages) {
-        selectedPages.value = new Set(result.pages.map((p) => p.pageNumber))
-      }
-    }
+    extractResult.value = result
+    selectedPages.value = new Set(
+      result.success ? result.pages.map(page => page.pageNumber) : [],
+    )
+    selectedPageCount.value = selectedPages.value.size
   }
 
-  function togglePageSelection(pageNumber: number): void {
-    if (selectedPages.value.has(pageNumber)) {
-      selectedPages.value.delete(pageNumber)
-    } else {
+  function setPagedExtractResult(
+    result: ExtractResult,
+    loadedSelectedPages: Iterable<number>,
+    totalSelectedCount: number,
+  ): void {
+    extractResult.value = result
+    selectedPages.value = new Set(loadedSelectedPages)
+    selectedPageCount.value = Math.max(
+      0,
+      Math.min(result.totalPages, totalSelectedCount),
+    )
+  }
+
+  function appendExtractResultPages(
+    pages: ExtractResult['pages'],
+    loadedSelectedPages: Iterable<number>,
+  ): void {
+    if (!extractResult.value) return
+    const known = new Set(extractResult.value.pages.map(page => page.pageNumber))
+    extractResult.value.pages.push(...pages.filter(page => !known.has(page.pageNumber)))
+    for (const pageNumber of loadedSelectedPages) {
       selectedPages.value.add(pageNumber)
     }
     selectedPages.value = new Set(selectedPages.value)
   }
 
-  function toggleSelectAll(): void {
-    if (!extractResult.value?.pages) return
-
-    if (selectedPages.value.size === extractResult.value.pages.length) {
-      selectedPages.value = new Set()
+  function togglePageSelection(pageNumber: number): void {
+    if (selectedPages.value.has(pageNumber)) {
+      selectedPages.value.delete(pageNumber)
+      selectedPageCount.value = Math.max(0, selectedPageCount.value - 1)
     } else {
-      selectedPages.value = new Set(extractResult.value.pages.map((p) => p.pageNumber))
+      selectedPages.value.add(pageNumber)
+      selectedPageCount.value = Math.min(
+        extractResult.value?.totalPages ?? selectedPageCount.value + 1,
+        selectedPageCount.value + 1,
+      )
     }
+    selectedPages.value = new Set(selectedPages.value)
+  }
+
+  function setAllPageSelection(selected: boolean): void {
+    if (!extractResult.value?.pages) return
+    if (selected) {
+      selectedPages.value = new Set(extractResult.value.pages.map((p) => p.pageNumber))
+      selectedPageCount.value = extractResult.value.totalPages
+    } else {
+      selectedPages.value = new Set()
+      selectedPageCount.value = 0
+    }
+  }
+
+  function toggleSelectAll(): void {
+    setAllPageSelection(selectedPageCount.value !== extractResult.value?.totalPages)
   }
 
   function setStatus(newStatus: WebImportState['status']): void {
@@ -474,8 +502,11 @@ export const useWebImportStore = defineStore('webImport', () => {
     setUrl,
     addLog,
     setExtractResult,
+    setPagedExtractResult,
+    appendExtractResultPages,
     togglePageSelection,
     toggleSelectAll,
+    setAllPageSelection,
     setStatus,
     setError,
     updateDownloadProgress,

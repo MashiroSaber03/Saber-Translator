@@ -2509,6 +2509,23 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/InsightPageList"}
         "404": {$ref: "#/components/responses/NotFound"}
+  /insight/books/{book_id}/recent-page-analyses:
+    get:
+      tags: [insight]
+      operationId: listRecentInsightPageAnalyses
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 20, default: 5}
+      responses:
+        "200":
+          description: Most recently generated active page analyses.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightRecentPageAnalysisList"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /insight/pages/{page_id}:
     get:
       tags: [insight]
@@ -2557,6 +2574,23 @@ paths:
               schema: {$ref: "#/components/schemas/InsightAnalysisJobAccepted"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /insight/artifacts/overviews:
+    get:
+      tags: [insight]
+      operationId: listInsightOverviewTemplates
+      parameters:
+        - name: bookId
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: Active overview template names.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InsightOverviewTemplateList"}
+        "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /insight/artifacts/overviews/{template}:
     parameters:
@@ -4524,9 +4558,17 @@ components:
     TranslationJobBatchCommand:
       type: object
       additionalProperties: false
-      required: [chapterIds, config]
+      required: [config]
+      oneOf:
+        - required: [chapterIds]
+        - required: [bookIds]
       properties:
         chapterIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        bookIds:
           type: array
           minItems: 1
           uniqueItems: true
@@ -6312,6 +6354,14 @@ components:
           properties:
             available: {type: boolean}
             reason: {type: [string, "null"]}
+    InsightOverviewTemplateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {type: string, minLength: 1}
     InsightChapter:
       type: object
       additionalProperties: false
@@ -6524,6 +6574,8 @@ components:
         - characters
         - eventPage
         - characterPage
+        - pageCount
+        - pageThumbnails
         - dependencyFingerprint
       properties:
         timelineVersionId: {$ref: "#/components/schemas/Uuid"}
@@ -6532,7 +6584,7 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
-        mode: {type: string, enum: [enhanced, simple]}
+        mode: {type: string, enum: [enhanced, compressed, simple]}
         status: {type: string}
         content: {type: object, additionalProperties: true}
         events:
@@ -6545,6 +6597,10 @@ components:
           $ref: "#/components/schemas/IntegerCursorPage"
         characterPage:
           $ref: "#/components/schemas/StringCursorPage"
+        pageCount: {type: integer, minimum: 0}
+        pageThumbnails:
+          type: object
+          additionalProperties: {type: string}
         dependencyFingerprint: {type: string}
     IntegerCursorPage:
       type: object
@@ -6552,12 +6608,31 @@ components:
       required: [nextCursor]
       properties:
         nextCursor: {type: [integer, "null"], minimum: 1}
+        totalCount: {type: integer, minimum: 0}
+    InsightRecentPageAnalysis:
+      type: object
+      additionalProperties: false
+      required: [pageId, displayPageNumber, summary, generatedAt]
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        displayPageNumber: {type: integer, minimum: 1}
+        summary: {type: [string, "null"]}
+        generatedAt: {type: string, format: date-time}
+    InsightRecentPageAnalysisList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/InsightRecentPageAnalysis"}
     StringCursorPage:
       type: object
       additionalProperties: false
       required: [nextCursor]
       properties:
         nextCursor: {type: [string, "null"]}
+        totalCount: {type: integer, minimum: 0}
     InsightQaStatus:
       type: object
       additionalProperties: false
@@ -6818,7 +6893,10 @@ components:
       properties:
         projectId: {$ref: "#/components/schemas/Uuid"}
         bookId: {$ref: "#/components/schemas/Uuid"}
-        sourceRunId: {$ref: "#/components/schemas/Uuid"}
+        sourceRunId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
         revision: {type: integer, minimum: 1}
         config: {$ref: "#/components/schemas/ContinuationProjectConfig"}
         script:

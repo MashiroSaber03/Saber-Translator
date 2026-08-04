@@ -107,6 +107,17 @@ function installGetResponses() {
     if (url.includes('/continuation/projects/project-1/forms')) {
       return Promise.resolve({ items: [form], nextCursor: null })
     }
+    if (url.endsWith('/chapters')) {
+      return Promise.resolve({
+        items: [{
+          chapterId: 'chapter-1',
+          ordinal: 1,
+          pageCount: 7,
+          title: '第1章',
+        }],
+        nextCursor: null,
+      })
+    }
     if (url.endsWith('/pages') && config?.params?.cursor === 0) {
       return Promise.resolve({
         items: [
@@ -178,7 +189,115 @@ describe('continuation v2 api facade', () => {
     })
   })
 
-  it('lists all original pages through thumbnail summaries without loading originals', async () => {
+  it('preserves an existing image while exposing script-invalidated pages as stale', async () => {
+    const staleState = {
+      ...state,
+      project: {
+        ...project,
+        pages: project.pages.map(page => ({
+          ...page,
+          payload: { ...page.payload, staleReason: 'script_changed' },
+          revision: page.revision + 1,
+        })),
+      },
+    }
+    getMock
+      .mockResolvedValueOnce(staleState)
+      .mockResolvedValueOnce({ items: [form], nextCursor: null })
+    const { prepareContinuation } = await import('@/api/continuation')
+
+    const prepared = await prepareContinuation('book/id one')
+
+    expect(prepared.saved_data.pages).toEqual([
+      expect.objectContaining({
+        image_url: '/api/v2/assets/generated-1',
+        page_number: 1,
+        status: 'stale',
+        story_text: 'story',
+      }),
+    ])
+  })
+
+  it('loads character forms one cursor page at a time', async () => {
+    const secondForm = {
+      ...form,
+      formId: 'form-2',
+      name: '礼服形态',
+      referenceAssetId: null,
+      referenceAssetUrl: null,
+      referenceThumbnailUrl: null,
+    }
+    getMock.mockImplementation((url: string, config?: { params?: { cursor?: number } }) => {
+      if (url.endsWith('/continuation')) return Promise.resolve(state)
+      if (url.includes('/continuation/projects/project-1/forms')) {
+        return config?.params?.cursor === 100
+          ? Promise.resolve({ items: [secondForm], nextCursor: null })
+          : Promise.resolve({ items: [form], nextCursor: 100 })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const { getCharacters, hasMoreCharacterForms, loadMoreCharacterForms } =
+      await import('@/api/continuation')
+
+    const firstPage = await getCharacters('book/id one')
+
+    expect(firstPage[0]?.forms.map(item => item.form_id)).toEqual(['form-1'])
+    expect(hasMoreCharacterForms('book/id one')).toBe(true)
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/insight/continuation/projects/project-1/forms',
+      { params: { cursor: 0, limit: 100 } },
+    )
+    expect(getMock).not.toHaveBeenCalledWith(
+      '/api/v2/insight/continuation/projects/project-1/forms',
+      { params: { cursor: 100, limit: 100 } },
+    )
+
+    const secondPage = await loadMoreCharacterForms('book/id one')
+
+    expect(secondPage[0]?.forms.map(item => item.form_id)).toEqual(['form-1', 'form-2'])
+    expect(hasMoreCharacterForms('book/id one')).toBe(false)
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/insight/continuation/projects/project-1/forms',
+      { params: { cursor: 100, limit: 100 } },
+    )
+  })
+
+  it('bounds cached continuation projects and their form pages', async () => {
+    getMock.mockImplementation((url: string) => {
+      const stateMatch = url.match(/\/books\/book-(\d+)\/continuation$/)
+      if (stateMatch) {
+        const index = Number(stateMatch[1])
+        return Promise.resolve({
+          ...state,
+          bookId: `book-${index}`,
+          project: {
+            ...project,
+            bookId: `book-${index}`,
+            projectId: `project-${index}`,
+          },
+        })
+      }
+      const formsMatch = url.match(/\/projects\/project-(\d+)\/forms$/)
+      if (formsMatch) {
+        const index = Number(formsMatch[1])
+        return Promise.resolve({
+          items: [{ ...form, formId: `form-${index}` }],
+          nextCursor: 100,
+        })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const { getCharacters, hasMoreCharacterForms } = await import('@/api/continuation')
+
+    for (let index = 0; index < 5; index += 1) {
+      await getCharacters(`book-${index}`)
+    }
+
+    expect(hasMoreCharacterForms('book-0')).toBe(false)
+    expect(hasMoreCharacterForms('book-4')).toBe(true)
+  })
+
+  it('loads a bounded original-page summary window without loading originals', async () => {
     const { getAvailableImages } = await import('@/api/continuation')
 
     await expect(getAvailableImages('book/id one')).resolves.toMatchObject({
@@ -190,8 +309,13 @@ describe('continuation v2 api facade', () => {
           has_image: true,
         },
       ],
-      total_original_pages: 1,
+      total_original_pages: 7,
+      original_cursor: 0,
+      has_older_original_images: false,
     })
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/insight/books/book%2Fid%20one/chapters',
+    )
     expect(getMock).toHaveBeenCalledWith('/api/v2/insight/books/book%2Fid%20one/pages', {
       params: { cursor: 0, limit: 100 },
     })

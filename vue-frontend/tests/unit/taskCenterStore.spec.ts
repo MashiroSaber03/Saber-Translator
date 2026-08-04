@@ -28,8 +28,16 @@ class FakeEventSource {
     FakeEventSource.latest = this
   }
 
-  addEventListener() {}
+  listeners = new Map<string, (event: MessageEvent<string>) => void>()
+
+  addEventListener(type: string, listener: EventListener) {
+    this.listeners.set(type, listener as (event: MessageEvent<string>) => void)
+  }
   close() {}
+
+  emit(type: string, payload: object) {
+    this.listeners.get(type)?.({ data: JSON.stringify(payload) } as MessageEvent<string>)
+  }
 }
 
 function makeJob(overrides: Partial<V2Job> & Pick<V2Job, 'jobId' | 'status'>): V2Job {
@@ -88,6 +96,42 @@ describe('taskCenterStore snapshot reconciliation', () => {
 
     await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
     expect(store.connected).toBe(true)
+  })
+
+  it('coalesces event bursts and never overlaps durable snapshot requests', async () => {
+    vi.useFakeTimers()
+    let release: (() => void) | undefined
+    const pending = new Promise<void>(resolve => { release = resolve })
+    let activeRequests = 0
+    let peakRequests = 0
+    mocks.list.mockImplementation(async () => {
+      activeRequests += 1
+      peakRequests = Math.max(peakRequests, activeRequests)
+      await pending
+      activeRequests -= 1
+      return { items: [], queueRevision: 1 }
+    })
+    const store = useTaskCenterStore()
+    const initializing = store.initialize()
+    release?.()
+    await initializing
+    mocks.list.mockClear()
+
+    for (let index = 1; index <= 20; index += 1) {
+      FakeEventSource.latest?.emit('page_completed', {
+        eventId: index,
+        eventType: 'page_completed',
+        jobId: 'job-1',
+        payload: {},
+      })
+    }
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.runAllTimersAsync()
+
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(peakRequests).toBeLessThanOrEqual(2)
+    store.disconnect()
+    vi.useRealTimers()
   })
 
   it('counts paused work as active and interrupted work only as needing attention', async () => {

@@ -49,13 +49,15 @@ function openNoteModal(): void {
   showNoteModal.value = true
 }
 
-function openEditModal(note: NoteData): void {
-  editingNote.value = note
-  newNoteTitle.value = note.title || ''
-  newNoteContent.value = note.content
-  newNoteType.value = note.type
-  newNotePageNum.value = note.pageNum || null
-  newNoteTags.value = (note.tags || []).join(', ')
+async function openEditModal(note: NoteData): Promise<void> {
+  const detail = await insightStore.loadNoteDetail(note.id)
+  if (!detail) return
+  editingNote.value = detail
+  newNoteTitle.value = detail.title || ''
+  newNoteContent.value = detail.content
+  newNoteType.value = detail.type
+  newNotePageNum.value = detail.pageNum || null
+  newNoteTags.value = (detail.tags || []).join(', ')
   showNoteModal.value = true
 }
 
@@ -126,6 +128,17 @@ function goToPage(pageNum: number): void {
     />
 
     <UiButton
+      v-if="insightStore.notesNextCursor"
+      variant="secondary"
+      size="sm"
+      class="notes-panel__load-more"
+      :disabled="insightStore.notesLoadingMore"
+      @click="insightStore.loadMoreNotes"
+    >
+      {{ insightStore.notesLoadingMore ? '加载中...' : '加载更多笔记' }}
+    </UiButton>
+
+    <UiButton
       variant="secondary"
       size="sm"
       class="notes-panel__add-button"
@@ -162,5 +175,11 @@ function goToPage(pageNum: number): void {
 .notes-panel__add-button {
   flex: 0 0 auto;
   width: 100%;
+}
+
+.notes-panel__load-more {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-bottom: 8px;
 }
 </style>

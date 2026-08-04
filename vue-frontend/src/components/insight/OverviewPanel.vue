@@ -243,27 +243,9 @@ async function loadRecentAnalyzedPages(bookId = insightStore.currentBookId): Pro
   if (!bookId) return
 
   try {
-    await insightApi.getAnalysisStatus(bookId)
+    const recentPages = await insightApi.getRecentAnalyzedPages(bookId)
     if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
-
-    if (insightStore.analyzedPageCount > 0) {
-      const totalPages = insightStore.totalPageCount
-      const analyzedCount = insightStore.analyzedPageCount
-      const recentPages: Array<{ page_num: number; summary?: string }> = []
-
-      const startPage = Math.max(1, analyzedCount - 4)
-      for (let i = 0; i < Math.min(5, analyzedCount); i++) {
-        const pageNum = startPage + i
-        if (pageNum <= totalPages) {
-          recentPages.push({
-            page_num: pageNum,
-            summary: `第 ${pageNum} 页`
-          })
-        }
-      }
-
-      recentAnalyzedPages.value = recentPages.reverse()
-    }
+    recentAnalyzedPages.value = recentPages
   } catch {
     if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
     recentAnalyzedPages.value = []
@@ -284,10 +266,10 @@ async function refreshOverviewForCurrentBook(): Promise<void> {
   generatedTemplates.value = []
   recentAnalyzedPages.value = []
 
-  const templates = await loadGeneratedTemplates(bookId)
-  if (!isCurrentBookRequest(refreshId, overviewRefreshSequence, bookId)) return
-
-  await loadRecentAnalyzedPages(bookId)
+  const [templates] = await Promise.all([
+    loadGeneratedTemplates(bookId),
+    loadRecentAnalyzedPages(bookId),
+  ])
   if (!isCurrentBookRequest(refreshId, overviewRefreshSequence, bookId)) return
 
   if (templates.includes(currentTemplate.value)) {

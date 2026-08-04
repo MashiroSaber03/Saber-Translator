@@ -150,7 +150,7 @@ describe('PageDetail', () => {
 
     expect(reanalyzePageMock).toHaveBeenCalledWith('book-1', 3)
     expect(setTaskSpy).toHaveBeenCalledWith('task-123')
-    expect(setStatusSpy).toHaveBeenCalledWith('running')
+    expect(setStatusSpy).toHaveBeenCalledWith('queued')
 
     // 不应在启动后立即当作同步完成并刷新详情
     expect(getPageDataMock).toHaveBeenCalledTimes(1)

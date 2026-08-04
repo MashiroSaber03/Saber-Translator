@@ -77,6 +77,51 @@ describe('QAPanel Markdown rendering', () => {
     expect(answerHtml).not.toContain('<script')
   })
 
+  it('projects coalesced SSE chunks before the final answer arrives', async () => {
+    const finalResponse = deferred<{
+      answer: string
+      citations: never[]
+      mode: 'precise'
+      suggestedQuestions: never[]
+    }>()
+    sendChatMock.mockImplementationOnce((
+      _bookId: string,
+      _question: string,
+      options: { on_chunk: (content: string) => void },
+    ) => {
+      options.on_chunk('正在流式返回的片段')
+      return finalResponse.promise
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    const wrapper = mount(QAPanel, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    const composer = wrapper.getComponent(ProductComposer)
+    await composer.get('textarea').setValue('流式回答测试')
+    await composer.get('button').trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 25))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('正在流式返回的片段')
+    expect(store.isStreaming).toBe(true)
+
+    finalResponse.resolve({
+      answer: '最终回答',
+      citations: [],
+      mode: 'precise',
+      suggestedQuestions: [],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('最终回答')
+    expect(store.isStreaming).toBe(false)
+  })
+
   it('renders messages through the product scroll stack contract', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/qa/QAMessageList.vue'),

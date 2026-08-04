@@ -32,7 +32,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
 )
 from src.backend_v2.timestamps import utcnow
-from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
     chapter_write_locks,
@@ -222,8 +222,7 @@ class TransferWorkerService:
         entry = entries[entry_index]
         if not isinstance(entry, dict):
             raise RuntimeError("container entry is invalid")
-        raw = self._read_entry(config, entry)
-        source, thumbnail = self.importer.publish_standalone_image(BytesIO(raw))
+        source, thumbnail = self._publish_entry(config, entry)
         page_id = str(uuid.uuid4())
         logical_path = normalize_logical_path(str(entry["logicalPath"]))
         now = utcnow()
@@ -438,7 +437,6 @@ class TransferWorkerService:
             infos = archive.infolist()
             if len(infos) > self.limits.max_archive_entries:
                 raise ValueError("archive contains too many entries")
-            total_size = 0
             seen_members: set[str] = set()
             for info in infos:
                 pure = PurePosixPath(info.filename.replace("\\", "/"))
@@ -457,11 +455,6 @@ class TransferWorkerService:
                 ):
                     raise ValueError(
                         "archive contains an unsafe path or special file"
-                    )
-                total_size += info.file_size
-                if total_size > self.limits.max_expanded_bytes:
-                    raise ValueError(
-                        "archive exceeds the configured expanded-byte limit"
                     )
                 if (
                     info.file_size > 0
@@ -501,7 +494,6 @@ class TransferWorkerService:
         try:
             root = Path(extracted_path)
             resolved_root = root.resolve()
-            total_size = 0
             for source in sorted(root.rglob("*")):
                 if source.is_symlink():
                     raise ValueError("MOBI extraction contains a symbolic link")
@@ -516,11 +508,6 @@ class TransferWorkerService:
                     ) from exc
                 relative = source.relative_to(root)
                 byte_size = source.stat().st_size
-                total_size += byte_size
-                if total_size > self.limits.max_expanded_bytes:
-                    raise ValueError(
-                        "MOBI exceeds the configured expanded-byte limit"
-                    )
                 if len(entries) >= self.limits.max_container_pages:
                     raise ValueError("container contains too many pages")
                 target = destination / relative
@@ -544,41 +531,29 @@ class TransferWorkerService:
         entries.sort(key=lambda entry: _natural_path_key(entry["logicalPath"]))
         return entries
 
-    def _read_entry(
+    def _publish_entry(
         self,
         config: Mapping[str, Any],
         entry: Mapping[str, Any],
-    ) -> bytes:
+    ) -> tuple[AssetRecord, AssetRecord]:
         kind = str(entry["kind"])
         container = self._data_path(str(config["containerRelativePath"]))
         if kind == "zip":
             with zipfile.ZipFile(container) as archive:
-                info = archive.getinfo(str(entry["member"]))
-                if info.file_size > self.limits.max_image_bytes:
-                    raise ValueError("image exceeds the single-file byte limit")
-                with archive.open(info) as source:
-                    raw = source.read(self.limits.max_image_bytes + 1)
-        elif kind == "pdf":
+                with archive.open(str(entry["member"])) as source:
+                    return self.importer.publish_standalone_image(source)
+        if kind == "pdf":
             import fitz
 
             with fitz.open(container) as document:
                 page = document.load_page(int(entry["pageIndex"]))
                 raw = page.get_pixmap(alpha=False).tobytes("png")
-        elif kind == "file":
-            raw = self._read_bounded(
-                self._data_path(str(entry["relativePath"]))
-            )
-        else:
-            raise RuntimeError("unknown container entry kind")
-        if not raw or len(raw) > self.limits.max_image_bytes:
-            raise ValueError("image is empty or exceeds the single-file byte limit")
-        return raw
-
-    def _read_bounded(self, path: Path) -> bytes:
-        if path.stat().st_size > self.limits.max_image_bytes:
-            raise ValueError("image exceeds the single-file byte limit")
-        with path.open("rb") as source:
-            return source.read(self.limits.max_image_bytes + 1)
+            return self.importer.publish_standalone_image(BytesIO(raw))
+        if kind == "file":
+            path = self._data_path(str(entry["relativePath"]))
+            with path.open("rb") as source:
+                return self.importer.publish_standalone_image(source)
+        raise RuntimeError("unknown container entry kind")
 
     def _bound_export_paths(
         self,

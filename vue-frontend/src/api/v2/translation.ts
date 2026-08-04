@@ -37,13 +37,13 @@ export async function createChapterRemoveTextJob(
 }
 
 export function createTranslationBatch(
-  chapterIds: string[],
+  target: { bookIds: string[] } | { chapterIds: string[] },
   config: TranslationJobConfig = { mode: 'standard' },
 ): Promise<V2MultiChapterTranslationBatchAccepted> {
   assertBackendActionAllowed()
   return apiClient.post<V2MultiChapterTranslationBatchAccepted>(
     '/api/v2/translation-batches',
-    { chapterIds, config },
+    { ...target, config },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

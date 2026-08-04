@@ -80,7 +80,9 @@ describe('insight v2 api', () => {
   })
 
   it('resolves display page numbers to stable IDs and controls durable jobs', async () => {
-    getMock.mockResolvedValueOnce({ items: pages, nextCursor: null })
+    getMock
+      .mockResolvedValueOnce({ items: [pages[0]], nextCursor: 1 })
+      .mockResolvedValueOnce({ items: [pages[1]], nextCursor: null })
     postMock
       .mockResolvedValueOnce(accepted('job-1'))
       .mockResolvedValue({})
@@ -101,9 +103,15 @@ describe('insight v2 api', () => {
     await cancelAnalysis('job-1')
 
     expect(result).toEqual({ jobId: 'job-1', runId: 'run-1' })
-    expect(getMock).toHaveBeenCalledWith(
+    expect(getMock).toHaveBeenNthCalledWith(
+      1,
       '/api/v2/insight/books/book%2Fid%20one/pages',
-      { params: { cursor: 0, limit: 100 } },
+      { params: { cursor: 0, limit: 1 } },
+    )
+    expect(getMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v2/insight/books/book%2Fid%20one/pages',
+      { params: { cursor: 1, limit: 1 } },
     )
     expect(postMock).toHaveBeenNthCalledWith(
       1,
@@ -213,6 +221,7 @@ describe('insight v2 api', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
     const { sendChat } = await import('@/api/insight')
+    const streamed: string[] = []
 
     const result = await sendChat('book/id one', '发生了什么？', {
       use_parent_child: true,
@@ -220,6 +229,7 @@ describe('insight v2 api', () => {
       use_reranker: true,
       top_k: 5,
       threshold: 0,
+      on_chunk: content => streamed.push(content),
     })
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit
@@ -233,6 +243,7 @@ describe('insight v2 api', () => {
       threshold: 0,
     })
     expect(result).toMatchObject({ answer: '回答', citations: [{ page: 2 }] })
+    expect(streamed).toEqual(['回答'])
   })
 
   it('loads an existing overview without creating a duplicate rebuild job', async () => {
@@ -253,6 +264,46 @@ describe('insight v2 api', () => {
 
     expect(result).toEqual({ kind: 'cached', content: 'cached overview' })
     expect(postMock).not.toHaveBeenCalled()
+  })
+
+  it('loads generated overview template names with one backend request', async () => {
+    getMock.mockResolvedValueOnce({
+      items: ['story_summary', 'no_spoiler', 'custom_template'],
+    })
+    const { getGeneratedTemplates } = await import('@/api/insight')
+
+    const templates = await getGeneratedTemplates('book/id one')
+
+    expect(templates).toEqual(['no_spoiler', 'story_summary'])
+    expect(getMock).toHaveBeenCalledTimes(1)
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/insight/artifacts/overviews',
+      { params: { bookId: 'book/id one' } },
+    )
+  })
+
+  it('loads real recent page analyses from one bounded backend query', async () => {
+    getMock.mockResolvedValueOnce({
+      items: [{
+        pageId: 'page-13',
+        displayPageNumber: 13,
+        summary: '真实最近页面摘要',
+        generatedAt: '2026-08-04T06:00:00Z',
+      }],
+    })
+    const { getRecentAnalyzedPages } = await import('@/api/insight')
+
+    const pages = await getRecentAnalyzedPages('book/id one')
+
+    expect(pages).toEqual([{
+      page_num: 13,
+      summary: '真实最近页面摘要',
+      analyzed_at: '2026-08-04T06:00:00Z',
+    }])
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/v2/insight/books/book%2Fid%20one/recent-page-analyses',
+      { params: { limit: 5 } },
+    )
   })
 
   it('does not project derived jobs as active page-analysis tasks', async () => {
@@ -283,23 +334,26 @@ describe('insight v2 api', () => {
   })
 
   it('maps durable timeline page IDs into renderable page-number groups', async () => {
-    getMock
-      .mockResolvedValueOnce({
-        content: { story_summary: '故事概述' },
-        mode: 'enhanced',
-        events: [{
-          eventId: 'event-1',
-          page_ids: ['page-1', 'page-2'],
-          summary: '关键事件',
-        }],
-        characters: [{
-          name: '主角',
-          first_page: 1,
-          key_moments: [{ summary: '首次登场', page: 1 }],
-        }],
-      })
-      .mockResolvedValueOnce({ items: pages, nextCursor: null })
-    const { getTimeline } = await import('@/api/insight')
+    getMock.mockResolvedValueOnce({
+      content: { story_summary: '故事概述' },
+      mode: 'enhanced',
+      events: [{
+        eventId: 'event-1',
+        page_ids: ['page-1', 'page-2'],
+        page_numbers: [1, 2],
+        summary: '关键事件',
+      }],
+      characters: [{
+        name: '主角',
+        first_page: 1,
+        key_moments: [{ summary: '首次登场', page: 1 }],
+      }],
+      eventPage: { nextCursor: null, totalCount: 1 },
+      characterPage: { nextCursor: null, totalCount: 1 },
+      pageCount: 2,
+      pageThumbnails: { '1': '/api/v2/assets/thumb-1' },
+    })
+    const { getThumbnailUrl, getTimeline } = await import('@/api/insight')
 
     const result = await getTimeline('book/id one')
     expect(result).toMatchObject({
@@ -319,12 +373,11 @@ describe('insight v2 api', () => {
         total_characters: 1,
       },
     })
+    expect(getThumbnailUrl('book/id one', 1)).toBe('/api/v2/assets/thumb-1')
   })
 
-  it('loads complete notes in one page and updates citations with stable page IDs', async () => {
-    getMock
-      .mockResolvedValueOnce({ items: [note], nextCursor: null })
-      .mockResolvedValueOnce({ items: pages, nextCursor: null })
+  it('loads note summaries by page and reuses stable citation IDs', async () => {
+    getMock.mockResolvedValueOnce({ items: [note], nextCursor: null })
     patchMock.mockResolvedValueOnce({
       ...note,
       revision: 8,
@@ -346,7 +399,7 @@ describe('insight v2 api', () => {
     })
     await deleteNote('note/id one')
 
-    expect(loaded[0]).toMatchObject({
+    expect(loaded.items[0]).toMatchObject({
       id: 'note/id one',
       content: 'note body',
       revision: 7,
@@ -354,11 +407,11 @@ describe('insight v2 api', () => {
     expect(getMock).toHaveBeenNthCalledWith(1, '/api/v2/insight/notes', {
       params: {
         bookId: 'book/id one',
-        limit: 200,
-        detail: 1,
+        limit: 50,
         kind: 'text',
       },
     })
+    expect(getMock).toHaveBeenCalledTimes(1)
     expect(patchMock).toHaveBeenCalledWith(
       '/api/v2/insight/notes/note%2Fid%20one',
       expect.objectContaining({
@@ -380,7 +433,7 @@ describe('insight v2 api', () => {
   })
 
   it('creates backend-valid note metadata comments with stable page citations', async () => {
-    getMock.mockResolvedValueOnce({ items: pages, nextCursor: null })
+    getMock.mockResolvedValueOnce({ items: [pages[1]], nextCursor: null })
     postMock.mockResolvedValueOnce(note)
     const { createNote } = await import('@/api/insight')
 

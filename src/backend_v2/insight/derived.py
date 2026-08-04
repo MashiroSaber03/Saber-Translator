@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 import uuid
 
 from sqlalchemy import Engine, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.repository import (
     InsightConflict,
@@ -47,6 +48,7 @@ from src.backend_v2.storage.schema import (
     timeline_events,
     timeline_versions,
     vector_generations,
+    jobs,
 )
 
 
@@ -61,6 +63,83 @@ def _load(value: str | None, default: object) -> object:
 
 def _object(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _safe_timeline_error(error: object) -> str:
+    return redact_sensitive_text(error)[:1000]
+
+
+def _normalized_timeline_result(
+    result: object,
+    *,
+    mode: str,
+    fallback_reason: str | None,
+) -> dict[str, Any]:
+    if not isinstance(result, Mapping):
+        raise ValueError("timeline response must be an object")
+    events = result.get("events")
+    characters = result.get("characters")
+    if not isinstance(events, list) or not events:
+        raise ValueError("timeline response must contain at least one event")
+    if not isinstance(characters, list):
+        raise ValueError("timeline response is missing characters")
+    content = _object(result.get("content"))
+    content.update(
+        {
+            "requested_mode": "enhanced",
+            "actual_mode": mode,
+            "fallback_reason": fallback_reason,
+            "degraded": mode != "enhanced",
+        }
+    )
+    return {
+        "mode": mode,
+        "content": content,
+        "events": events,
+        "characters": characters,
+    }
+
+
+def _timeline_thumbnail_page_numbers(
+    *,
+    content: Mapping[str, Any],
+    events: Sequence[Mapping[str, Any]],
+    characters: Sequence[Mapping[str, Any]],
+) -> set[int]:
+    numbers: set[int] = set()
+
+    def add(value: object) -> None:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return
+        if parsed > 0:
+            numbers.add(parsed)
+
+    for event in events:
+        page_numbers = event.get("page_numbers", [])
+        for value in page_numbers if isinstance(page_numbers, list) else []:
+            add(value)
+    for character in characters:
+        add(character.get("first_page"))
+        related_pages = character.get("related_page_numbers", [])
+        for value in related_pages if isinstance(related_pages, list) else []:
+            add(value)
+        key_moments = character.get("key_moments", [])
+        for moment in key_moments if isinstance(key_moments, list) else []:
+            if isinstance(moment, Mapping):
+                add(moment.get("page"))
+    plot_arcs = content.get("plot_arcs", [])
+    for arc in plot_arcs if isinstance(plot_arcs, list) else []:
+        if isinstance(arc, Mapping):
+            page_range = _object(arc.get("page_range"))
+            add(page_range.get("start"))
+    plot_threads = content.get("plot_threads", [])
+    for thread in plot_threads if isinstance(plot_threads, list) else []:
+        if isinstance(thread, Mapping):
+            add(thread.get("introduced_at"))
+            add(thread.get("resolved_at"))
+    return numbers
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +253,7 @@ class ProviderDerivedAlgorithms:
         *,
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        prompt = (
+        enhanced_prompt = (
             "根据以下漫画分析生成增强时间线。输出 JSON："
             '{"content":{"story_summary":"...","plot_arcs":'
             '[{"id":"...","name":"...","description":"...",'
@@ -188,49 +267,115 @@ class ProviderDerivedAlgorithms:
             "不要把推断写成事实。\n\n"
             + _page_context(pages)
         )
+        enhanced_error: Exception | None = None
         try:
             result = self._chat_json(
-                prompt,
+                enhanced_prompt,
                 config=config,
                 prompt_type="book_overview",
             )
-            if not isinstance(result, Mapping):
-                raise ValueError("timeline response must be an object")
-            events = result.get("events")
-            characters = result.get("characters")
-            if not isinstance(events, list) or not isinstance(characters, list):
-                raise ValueError("timeline response is missing events/characters")
-            return {
-                "mode": "enhanced",
-                "content": _object(result.get("content")),
-                "events": events,
-                "characters": characters,
-            }
+            return _normalized_timeline_result(
+                result,
+                mode="enhanced",
+                fallback_reason=None,
+            )
         except Exception as exc:
-            events = []
-            for page in pages:
-                payload = _object(page.get("analysis"))
-                for event in payload.get("key_events", []):
-                    if isinstance(event, Mapping):
-                        events.append(
-                            {
-                                "summary": str(event.get("summary", "")),
-                                "importance": str(
-                                    event.get("importance", "normal")
-                                ),
-                                "page_ids": [str(page["pageId"])],
-                                "page_numbers": [int(page["pageNumber"])],
-                            }
+            enhanced_error = exc
+
+        compressed_payloads = [
+            _object(_object(page.get("analysis")).get("compressed_context"))
+            for page in pages
+            if _object(_object(page.get("analysis")).get("compressed_context"))
+        ]
+        compressed_error: Exception | None = None
+        if compressed_payloads:
+            compressed_prompt = (
+                "根据以下压缩上下文生成漫画时间线。输出 JSON，必须包含 "
+                "content、events 和 characters；事件使用 page_ids 或 page_numbers "
+                "关联来源页面。不要补写上下文中不存在的事实。\n\n"
+                + "\n\n".join(_json(value) for value in compressed_payloads)
+            )
+            try:
+                result = self._chat_json(
+                    compressed_prompt,
+                    config=config,
+                    prompt_type="book_overview",
+                )
+                return _normalized_timeline_result(
+                    result,
+                    mode="compressed",
+                    fallback_reason=_safe_timeline_error(enhanced_error),
+                )
+            except Exception as exc:
+                compressed_error = exc
+
+        events = []
+        story_summary = ""
+        for page in pages:
+            payload = _object(page.get("analysis"))
+            compressed_context = _object(payload.get("compressed_context"))
+            if compressed_context and not story_summary:
+                story_summary = str(
+                    compressed_context.get("story_summary")
+                    or compressed_context.get("summary")
+                    or compressed_context.get("content")
+                    or ""
+                )
+            for event in payload.get("key_events", []):
+                if isinstance(event, Mapping):
+                    page_ids = [
+                        str(value)
+                        for value in page.get(
+                            "pageIds",
+                            [page.get("pageId", "")],
                         )
-            return {
-                "mode": "simple",
-                "content": {
-                    "degradedReason": str(exc),
-                    "source": "page_key_events",
-                },
-                "events": events,
-                "characters": [],
-            }
+                        if value
+                    ]
+                    page_numbers = [
+                        int(value)
+                        for value in page.get(
+                            "pageNumbers",
+                            [page.get("pageNumber", 0)],
+                        )
+                        if int(value) > 0
+                    ]
+                    events.append(
+                        {
+                            "summary": str(event.get("summary", "")),
+                            "importance": str(
+                                event.get("importance", "normal")
+                            ),
+                            "page_ids": page_ids,
+                            "page_numbers": page_numbers,
+                        }
+                    )
+        if not events:
+            reasons = [f"enhanced: {_safe_timeline_error(enhanced_error)}"]
+            if compressed_error is not None:
+                reasons.append(
+                    f"compressed: {_safe_timeline_error(compressed_error)}"
+                )
+            raise InsightConflict(
+                "timeline generation failed in every mode; " + "; ".join(reasons)
+            )
+        fallback_reason = _safe_timeline_error(enhanced_error)
+        if compressed_error is not None:
+            fallback_reason += (
+                f"; compressed: {_safe_timeline_error(compressed_error)}"
+            )
+        return {
+            "mode": "simple",
+            "content": {
+                "story_summary": story_summary,
+                "requested_mode": "enhanced",
+                "actual_mode": "simple",
+                "fallback_reason": fallback_reason,
+                "degraded": True,
+                "source": "page_key_events",
+            },
+            "events": events,
+            "characters": [],
+        }
 
     def embed_documents(
         self,
@@ -343,10 +488,31 @@ class InsightVectorStore:
         event_records: Sequence[Mapping[str, Any]],
         event_embeddings: Sequence[Sequence[float]],
     ) -> None:
-        if len(page_records) != len(page_embeddings):
-            raise InsightConflict("page embedding result count mismatch")
-        if len(event_records) != len(event_embeddings):
-            raise InsightConflict("event embedding result count mismatch")
+        self.publish_batches(
+            book_id=book_id,
+            generation=generation,
+            page_batches=((page_records, page_embeddings),) if page_records else (),
+            event_batches=((event_records, event_embeddings),) if event_records else (),
+        )
+
+    def publish_batches(
+        self,
+        *,
+        book_id: str,
+        generation: int,
+        page_batches: Iterable[
+            tuple[Sequence[Mapping[str, Any]], Sequence[Sequence[float]]]
+        ],
+        event_batches: Iterable[
+            tuple[Sequence[Mapping[str, Any]], Sequence[Sequence[float]]]
+        ],
+        resume: bool = False,
+        initial_page_count: int = 0,
+        initial_event_count: int = 0,
+        expected_page_count: int | None = None,
+        expected_event_count: int | None = None,
+        on_batch: Callable[[str, int], bool] | None = None,
+    ) -> dict[str, object]:
         try:
             import chromadb
             from chromadb.config import Settings
@@ -358,34 +524,83 @@ class InsightVectorStore:
             settings=Settings(anonymized_telemetry=False),
         )
         page_name, event_name = self.names(book_id, generation)
-        for name in (page_name, event_name):
-            try:
-                client.delete_collection(name)
-            except Exception:
-                pass
-        pages_collection = client.create_collection(
-            page_name,
-            metadata={"hnsw:space": "cosine"},
-        )
-        events_collection = client.create_collection(
-            event_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        if resume:
+            pages_collection = client.get_or_create_collection(
+                page_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+            events_collection = client.get_or_create_collection(
+                event_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+        else:
+            for name in (page_name, event_name):
+                try:
+                    client.delete_collection(name)
+                except Exception:
+                    pass
+            pages_collection = client.create_collection(
+                page_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+            events_collection = client.create_collection(
+                event_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+        page_count = initial_page_count
+        event_count = initial_event_count
         try:
-            if page_records:
-                pages_collection.add(
+            for page_records, page_embeddings in page_batches:
+                if len(page_records) != len(page_embeddings):
+                    raise InsightConflict("page embedding result count mismatch")
+                pages_collection.upsert(
                     ids=[str(row["id"]) for row in page_records],
                     embeddings=[list(value) for value in page_embeddings],
                     documents=[str(row["document"]) for row in page_records],
                     metadatas=[dict(row["metadata"]) for row in page_records],
                 )
-            if event_records:
-                events_collection.add(
+                page_count += len(page_records)
+                if on_batch is not None and not on_batch("pages", page_count):
+                    return {
+                        "completed": False,
+                        "pageCount": page_count,
+                        "eventCount": event_count,
+                    }
+            for event_records, event_embeddings in event_batches:
+                if len(event_records) != len(event_embeddings):
+                    raise InsightConflict("event embedding result count mismatch")
+                events_collection.upsert(
                     ids=[str(row["id"]) for row in event_records],
                     embeddings=[list(value) for value in event_embeddings],
                     documents=[str(row["document"]) for row in event_records],
                     metadatas=[dict(row["metadata"]) for row in event_records],
                 )
+                event_count += len(event_records)
+                if on_batch is not None and not on_batch("events", event_count):
+                    return {
+                        "completed": False,
+                        "pageCount": page_count,
+                        "eventCount": event_count,
+                    }
+            if (
+                expected_page_count is not None
+                and pages_collection.count() != expected_page_count
+            ):
+                raise InsightConflict("page vector coverage is incomplete")
+            if (
+                expected_event_count is not None
+                and events_collection.count() != expected_event_count
+            ):
+                raise InsightConflict("event vector coverage is incomplete")
+            return {
+                "completed": True,
+                "pageCount": page_count,
+                "eventCount": event_count,
+            }
+        except AttemptFenced:
+            # A newer attempt owns publication. Keep the last fenced checkpoint;
+            # the replacement attempt will idempotently upsert from that offset.
+            raise
         except Exception:
             for name in (page_name, event_name):
                 try:
@@ -892,6 +1107,144 @@ class InsightDerivedRepository:
             )
         return result
 
+    def summary_inputs(
+        self,
+        frozen: AnalysisInputSnapshot,
+    ) -> tuple[dict[str, Any], ...]:
+        """Use the highest complete summary layer, with compact pages as fallback."""
+
+        fallback = tuple(
+            {
+                "resultId": str(page["resultId"]),
+                "pageId": str(page["pageId"]),
+                "pageIds": [str(page["pageId"])],
+                "pageNumber": int(page["pageNumber"]),
+                "pageNumbers": [int(page["pageNumber"])],
+                "analysis": {
+                    key: value
+                    for key, value in _object(page.get("analysis")).items()
+                    if key
+                    in {
+                        "page_summary",
+                        "key_events",
+                        "continuity_notes",
+                        "warnings",
+                    }
+                },
+            }
+            for page in frozen.pages
+        )
+        if not frozen.source_run_id:
+            return fallback
+        with self.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    select(analysis_layer_results)
+                    .where(
+                        analysis_layer_results.c.run_id
+                        == frozen.source_run_id,
+                        analysis_layer_results.c.status.in_(
+                            ("staging", "published")
+                        ),
+                    )
+                    .order_by(
+                        analysis_layer_results.c.layer_index.desc(),
+                        analysis_layer_results.c.unit_index,
+                    )
+                ).mappings()
+            )
+            covered_rows = list(
+                connection.execute(
+                    select(analysis_layer_result_pages).where(
+                        analysis_layer_result_pages.c.layer_result_id.in_(
+                            tuple(str(row["id"]) for row in rows)
+                        )
+                    )
+                ).mappings()
+            ) if rows else []
+        covered_by_result: dict[str, list[Mapping[str, Any]]] = {}
+        for page in covered_rows:
+            covered_by_result.setdefault(
+                str(page["layer_result_id"]), []
+            ).append(page)
+        by_layer: dict[int, list[Mapping[str, Any]]] = {}
+        for row in rows:
+            by_layer.setdefault(int(row["layer_index"]), []).append(row)
+        expected = {str(page["pageId"]) for page in frozen.pages}
+        for layer_index in sorted(by_layer, reverse=True):
+            layer_rows = by_layer[layer_index]
+            covered = {
+                str(page["page_id_snapshot"])
+                for row in layer_rows
+                for page in covered_by_result.get(str(row["id"]), ())
+            }
+            if covered != expected:
+                continue
+            inputs: list[dict[str, Any]] = []
+            for row in layer_rows:
+                pages_for_result = sorted(
+                    covered_by_result.get(str(row["id"]), ()),
+                    key=lambda page: int(page["ordinal"]),
+                )
+                page_ids = [
+                    str(page["page_id_snapshot"])
+                    for page in pages_for_result
+                ]
+                page_numbers = [
+                    int(page["page_number_snapshot"])
+                    for page in pages_for_result
+                ]
+                inputs.append(
+                    {
+                        "resultId": str(row["id"]),
+                        "pageId": page_ids[0],
+                        "pageIds": page_ids,
+                        "pageNumber": page_numbers[0],
+                        "pageNumbers": page_numbers,
+                        "analysis": _load(row["content_json"], {}),
+                    }
+                )
+            return tuple(inputs)
+        return fallback
+
+    def compressed_context_input(
+        self,
+        frozen: AnalysisInputSnapshot,
+    ) -> dict[str, Any] | None:
+        with self.engine.connect() as connection:
+            statement = select(analysis_artifacts).where(
+                analysis_artifacts.c.book_id == frozen.book_id,
+                analysis_artifacts.c.kind == "compressed_context",
+                analysis_artifacts.c.template == "default",
+            )
+            if frozen.source_run_id:
+                staged = connection.execute(
+                    statement.where(
+                        analysis_artifacts.c.run_id == frozen.source_run_id,
+                        analysis_artifacts.c.status.in_(
+                            ("building", "ready", "degraded", "stale")
+                        ),
+                    ).order_by(analysis_artifacts.c.revision.desc())
+                ).mappings().first()
+            else:
+                staged = None
+            row = staged or connection.execute(
+                statement.where(analysis_artifacts.c.is_active.is_(True))
+                .order_by(analysis_artifacts.c.revision.desc())
+            ).mappings().first()
+        if row is None:
+            return None
+        return {
+            "resultId": str(row["id"]),
+            "pageId": str(frozen.pages[0]["pageId"]),
+            "pageIds": [str(page["pageId"]) for page in frozen.pages],
+            "pageNumber": int(frozen.pages[0]["pageNumber"]),
+            "pageNumbers": [int(page["pageNumber"]) for page in frozen.pages],
+            "analysis": {
+                "compressed_context": _load(row["payload_json"], {}),
+            },
+        }
+
     @staticmethod
     def publish_layer(
         connection: Connection,
@@ -1063,6 +1416,82 @@ class InsightDerivedRepository:
                 ).scalar_one()
             )
 
+    def checkpoint_vector_generation(
+        self,
+        *,
+        connection: Connection,
+        frozen: AnalysisInputSnapshot,
+        generation: int,
+        page_count: int,
+        event_count: int,
+    ) -> dict[str, Any]:
+        if generation < 1 or page_count < 0 or event_count < 0:
+            raise InsightConflict("vector generation checkpoint is invalid")
+        row = connection.execute(
+            select(vector_generations).where(
+                vector_generations.c.book_id == frozen.book_id,
+                vector_generations.c.generation == generation,
+            )
+        ).mappings().one_or_none()
+        now = utcnow()
+        if row is None:
+            generation_id = str(uuid.uuid4())
+            connection.execute(
+                insert(vector_generations).values(
+                    id=generation_id,
+                    book_id=frozen.book_id,
+                    run_id=frozen.source_run_id,
+                    generation=generation,
+                    status="building",
+                    dependency_fingerprint=frozen.fingerprint,
+                    page_count=page_count,
+                    event_count=event_count,
+                    is_active=False,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        else:
+            if (
+                row["run_id"] != frozen.source_run_id
+                or row["dependency_fingerprint"] != frozen.fingerprint
+                or bool(row["is_active"])
+                or row["status"] != "building"
+                or page_count < int(row["page_count"])
+                or event_count < int(row["event_count"])
+            ):
+                raise InsightConflict("vector generation checkpoint conflicts")
+            generation_id = str(row["id"])
+            connection.execute(
+                update(vector_generations)
+                .where(vector_generations.c.id == generation_id)
+                .values(
+                    page_count=page_count,
+                    event_count=event_count,
+                    updated_at=now,
+                )
+            )
+        return {
+            "vectorGenerationId": generation_id,
+            "generation": generation,
+            "status": "building",
+            "pageCount": page_count,
+            "eventCount": event_count,
+        }
+
+    def fail_vector_generation(self, *, book_id: str, generation: int) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(vector_generations)
+                .where(
+                    vector_generations.c.book_id == book_id,
+                    vector_generations.c.generation == generation,
+                    vector_generations.c.status == "building",
+                    vector_generations.c.is_active.is_(False),
+                )
+                .values(status="failed", updated_at=utcnow())
+            )
+
     def publish_vector_generation(
         self,
         *,
@@ -1077,7 +1506,6 @@ class InsightDerivedRepository:
         if activate:
             current = self._snapshot(connection, book_id=frozen.book_id)
             status = _publication_status(frozen, current)
-        generation_id = str(uuid.uuid4())
         now = utcnow()
         should_activate = activate and status in {"ready", "degraded"}
         if should_activate:
@@ -1089,21 +1517,49 @@ class InsightDerivedRepository:
                 )
                 .values(is_active=False, updated_at=now)
             )
-        connection.execute(
-            insert(vector_generations).values(
-                id=generation_id,
-                book_id=frozen.book_id,
-                run_id=frozen.source_run_id,
-                generation=generation,
-                status=status,
-                dependency_fingerprint=frozen.fingerprint,
-                page_count=page_count,
-                event_count=event_count,
-                is_active=should_activate,
-                created_at=now,
-                updated_at=now,
+        existing = connection.execute(
+            select(vector_generations).where(
+                vector_generations.c.book_id == frozen.book_id,
+                vector_generations.c.generation == generation,
             )
-        )
+        ).mappings().one_or_none()
+        if existing is None:
+            generation_id = str(uuid.uuid4())
+            connection.execute(
+                insert(vector_generations).values(
+                    id=generation_id,
+                    book_id=frozen.book_id,
+                    run_id=frozen.source_run_id,
+                    generation=generation,
+                    status=status,
+                    dependency_fingerprint=frozen.fingerprint,
+                    page_count=page_count,
+                    event_count=event_count,
+                    is_active=should_activate,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        else:
+            if (
+                existing["run_id"] != frozen.source_run_id
+                or existing["dependency_fingerprint"] != frozen.fingerprint
+                or bool(existing["is_active"])
+                or existing["status"] != "building"
+            ):
+                raise InsightConflict("vector generation publication conflicts")
+            generation_id = str(existing["id"])
+            connection.execute(
+                update(vector_generations)
+                .where(vector_generations.c.id == generation_id)
+                .values(
+                    status=status,
+                    page_count=page_count,
+                    event_count=event_count,
+                    is_active=should_activate,
+                    updated_at=now,
+                )
+            )
         return {
             "vectorGenerationId": generation_id,
             "generation": generation,
@@ -1199,32 +1655,143 @@ class InsightDerivedRepository:
                     ).limit(character_limit + 1)
                 )
             )
-        has_more_events = len(event_rows) > event_limit
-        selected_events = event_rows[:event_limit]
-        has_more_characters = len(character_rows) > character_limit
-        selected_characters = character_rows[:character_limit]
+            event_count = int(
+                connection.execute(
+                    select(func.count(timeline_events.c.id)).where(
+                        timeline_events.c.timeline_version_id == row["id"]
+                    )
+                ).scalar_one()
+            )
+            character_count = int(
+                connection.execute(
+                    select(func.count(timeline_characters.c.id)).where(
+                        timeline_characters.c.timeline_version_id == row["id"]
+                    )
+                ).scalar_one()
+            )
+            page_count = int(
+                connection.execute(
+                    select(func.count(pages.c.id))
+                    .join(chapters, chapters.c.id == pages.c.chapter_id)
+                    .where(chapters.c.book_id == book_id)
+                ).scalar_one()
+            )
+            has_more_events = len(event_rows) > event_limit
+            selected_events = event_rows[:event_limit]
+            has_more_characters = len(character_rows) > character_limit
+            selected_characters = character_rows[:character_limit]
+            content_payload = _object(_load(row["content_json"], {}))
+            event_payloads = [
+                {
+                    "eventId": str(event_id),
+                    **_object(_load(value, {})),
+                }
+                for event_id, _ordinal, value in selected_events
+            ]
+            character_payloads = [
+                {
+                    "characterId": str(character_id),
+                    **_object(_load(value, {})),
+                }
+                for character_id, _name, value in selected_characters
+            ]
+            referenced_page_ids = {
+                str(page_id)
+                for payload in event_payloads
+                for page_id in (
+                    payload.get("page_ids", [])
+                    if isinstance(payload.get("page_ids"), list)
+                    else []
+                )
+                if page_id
+            }
+            referenced_page_numbers = _timeline_thumbnail_page_numbers(
+                content=content_payload,
+                events=event_payloads,
+                characters=character_payloads,
+            )
+            page_numbers_by_id: dict[str, int] = {}
+            page_thumbnails: dict[str, str] = {}
+            if referenced_page_ids or referenced_page_numbers:
+                thumbnail_pointer = page_assets.alias(
+                    "timeline_thumbnail_pointer"
+                )
+                numbered_pages = (
+                    select(
+                        pages.c.id.label("page_id"),
+                        func.row_number()
+                        .over(order_by=(chapters.c.ordinal, pages.c.ordinal))
+                        .label("page_number"),
+                        thumbnail_pointer.c.asset_id.label(
+                            "thumbnail_asset_id"
+                        ),
+                    )
+                    .join(chapters, chapters.c.id == pages.c.chapter_id)
+                    .outerjoin(
+                        thumbnail_pointer,
+                        (
+                            thumbnail_pointer.c.page_id == pages.c.id
+                        )
+                        & (
+                            thumbnail_pointer.c.role == "thumbnail_source"
+                        ),
+                    )
+                    .where(chapters.c.book_id == book_id)
+                    .subquery()
+                )
+                page_filter = (
+                    numbered_pages.c.page_id.in_(referenced_page_ids)
+                    if referenced_page_ids
+                    else numbered_pages.c.page_number.in_(
+                        referenced_page_numbers
+                    )
+                )
+                if referenced_page_ids and referenced_page_numbers:
+                    page_filter = page_filter | numbered_pages.c.page_number.in_(
+                        referenced_page_numbers
+                    )
+                page_rows = list(
+                    connection.execute(
+                        select(
+                            numbered_pages.c.page_id,
+                            numbered_pages.c.page_number,
+                            numbered_pages.c.thumbnail_asset_id,
+                        ).where(page_filter)
+                    ).mappings()
+                )
+                page_numbers_by_id = {
+                    str(page["page_id"]): int(page["page_number"])
+                    for page in page_rows
+                }
+                page_thumbnails = {
+                    str(int(page["page_number"])): (
+                        f"/api/v2/assets/{page['thumbnail_asset_id']}"
+                    )
+                    for page in page_rows
+                    if page["thumbnail_asset_id"]
+                }
+            for payload in event_payloads:
+                if not isinstance(payload.get("page_numbers"), list):
+                    payload["page_numbers"] = [
+                        page_numbers_by_id[str(page_id)]
+                        for page_id in (
+                            payload.get("page_ids", [])
+                            if isinstance(payload.get("page_ids"), list)
+                            else []
+                        )
+                        if str(page_id) in page_numbers_by_id
+                    ]
         return {
             "timelineVersionId": str(row["id"]),
             "bookId": str(row["book_id"]),
             "runId": row["run_id"],
             "mode": str(row["mode"]),
             "status": str(row["status"]),
-            "content": _load(row["content_json"], {}),
-            "events": [
-                {
-                    "eventId": str(event_id),
-                    **_object(_load(value, {})),
-                }
-                for event_id, _ordinal, value in selected_events
-            ],
-            "characters": [
-                {
-                    "characterId": str(character_id),
-                    **_object(_load(value, {})),
-                }
-                for character_id, _name, value in selected_characters
-            ],
+            "content": content_payload,
+            "events": event_payloads,
+            "characters": character_payloads,
             "eventPage": {
+                "totalCount": event_count,
                 "nextCursor": (
                     int(selected_events[-1][1])
                     if has_more_events and selected_events
@@ -1232,12 +1799,15 @@ class InsightDerivedRepository:
                 )
             },
             "characterPage": {
+                "totalCount": character_count,
                 "nextCursor": (
                     str(selected_characters[-1][1])
                     if has_more_characters and selected_characters
                     else None
                 )
             },
+            "pageCount": page_count,
+            "pageThumbnails": page_thumbnails,
             "dependencyFingerprint": str(row["dependency_fingerprint"]),
         }
 
@@ -1569,8 +2139,9 @@ class InsightDerivedWorkerService:
                     "insight_stage_overview_no_spoiler": "no_spoiler",
                     "insight_stage_overview_story_summary": "story_summary",
                 }.get(kind, str(config.get("template", "default")))
+                summary_inputs = self.repository.summary_inputs(frozen)
                 payload = self.algorithms.build_overview(
-                    frozen.pages,
+                    summary_inputs,
                     template=template,
                     config=config,
                 )
@@ -1591,8 +2162,9 @@ class InsightDerivedWorkerService:
                 "insight_build_compressed_context",
                 "insight_stage_compressed_context",
             }:
+                summary_inputs = self.repository.summary_inputs(frozen)
                 payload = self.algorithms.build_compressed_context(
-                    frozen.pages,
+                    summary_inputs,
                     config=config,
                 )
                 checkpoint = {}
@@ -1612,8 +2184,12 @@ class InsightDerivedWorkerService:
                 "insight_build_timeline",
                 "insight_stage_timeline",
             }:
+                timeline_inputs = list(self.repository.summary_inputs(frozen))
+                compressed_input = self.repository.compressed_context_input(frozen)
+                if compressed_input is not None:
+                    timeline_inputs.append(compressed_input)
                 timeline = self.algorithms.build_timeline(
-                    frozen.pages,
+                    timeline_inputs,
                     config=config,
                 )
                 checkpoint = {}
@@ -1632,22 +2208,58 @@ class InsightDerivedWorkerService:
                 "insight_stage_vectors",
             }:
                 vector_build = self._build_vectors(
+                    fence=fence,
+                    step=step,
                     frozen=frozen,
                     config=config,
                 )
-                checkpoint = {}
+                checkpoint = {
+                    key: value
+                    for key, value in vector_build.items()
+                    if not key.startswith("__")
+                }
+                if vector_build.get("__control_drained__"):
+                    return {
+                        **checkpoint,
+                        "__already_published__": True,
+                        "__control_drained__": True,
+                    }
 
                 def publish(connection: Connection) -> None:
-                    checkpoint.update(
-                        self.repository.publish_vector_generation(
+                    job_status = connection.execute(
+                        select(jobs.c.status).where(jobs.c.id == fence.job_id)
+                    ).scalar_one()
+                    if str(job_status) == "running":
+                        checkpoint.update(
+                            self.repository.publish_vector_generation(
+                                connection=connection,
+                                frozen=frozen,
+                                generation=int(vector_build["generation"]),
+                                page_count=int(vector_build["pageCount"]),
+                                event_count=int(vector_build["eventCount"]),
+                                activate=not full_stage,
+                            )
+                        )
+                    else:
+                        self.repository.checkpoint_vector_generation(
                             connection=connection,
                             frozen=frozen,
                             generation=int(vector_build["generation"]),
                             page_count=int(vector_build["pageCount"]),
                             event_count=int(vector_build["eventCount"]),
-                            activate=not full_stage,
                         )
-                    )
+                completed = self.jobs.complete_step(
+                    fence,
+                    step_id=str(step["stepId"]),
+                    checkpoint=checkpoint,
+                    publisher=publish,
+                    defer_on_control=True,
+                )
+                return {
+                    **checkpoint,
+                    "__already_published__": True,
+                    **({"__control_drained__": True} if not completed else {}),
+                }
             else:
                 raise JobConflict(f"unsupported derived step: {kind}")
             self.jobs.complete_step(
@@ -1663,6 +2275,8 @@ class InsightDerivedWorkerService:
     def _build_vectors(
         self,
         *,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
         frozen: AnalysisInputSnapshot,
         config: Mapping[str, Any],
     ) -> dict[str, Any]:
@@ -1685,30 +2299,117 @@ class InsightDerivedWorkerService:
                     }
                 )
         event_records.extend(self._layer_zero_event_records(frozen))
-        documents = [
-            str(row["document"])
-            for row in (*page_records, *event_records)
-        ]
-        embeddings = list(
-            self.algorithms.embed_documents(documents, config=config)
+        previous = _object(step.get("checkpoint"))
+        generation = int(
+            previous.get("generation")
+            or self.repository.next_vector_generation(frozen.book_id)
         )
-        if len(embeddings) != len(documents):
-            raise InsightConflict("embedding result count mismatch")
-        split = len(page_records)
-        generation = self.repository.next_vector_generation(frozen.book_id)
-        self.vector_store.publish(
-            book_id=frozen.book_id,
-            generation=generation,
-            page_records=page_records,
-            page_embeddings=embeddings[:split],
-            event_records=event_records,
-            event_embeddings=embeddings[split:],
-        )
-        return {
+        page_count = int(previous.get("pageCount", 0))
+        event_count = int(previous.get("eventCount", 0))
+        if (
+            generation < 1
+            or page_count < 0
+            or event_count < 0
+            or page_count > len(page_records)
+            or event_count > len(event_records)
+        ):
+            raise InsightConflict("vector checkpoint is invalid")
+        checkpoint: dict[str, Any] = {
             "generation": generation,
-            "pageCount": len(page_records),
-            "eventCount": len(event_records),
+            "pageCount": page_count,
+            "eventCount": event_count,
+            "pageTotal": len(page_records),
+            "eventTotal": len(event_records),
         }
+
+        def checkpoint_batch(kind: str, count: int) -> bool:
+            if kind == "pages":
+                checkpoint["pageCount"] = count
+            else:
+                checkpoint["eventCount"] = count
+            total = len(page_records) + len(event_records)
+            completed = int(checkpoint["pageCount"]) + int(
+                checkpoint["eventCount"]
+            )
+            checkpoint["coverage"] = 1.0 if total == 0 else completed / total
+
+            def publish_partial(connection: Connection) -> None:
+                self.repository.checkpoint_vector_generation(
+                    connection=connection,
+                    frozen=frozen,
+                    generation=generation,
+                    page_count=int(checkpoint["pageCount"]),
+                    event_count=int(checkpoint["eventCount"]),
+                )
+
+            status = self.jobs.checkpoint_step(
+                fence,
+                step_id=str(step["stepId"]),
+                checkpoint=checkpoint,
+                publisher=publish_partial,
+            )
+            return status == "running"
+
+        try:
+            result = self.vector_store.publish_batches(
+                book_id=frozen.book_id,
+                generation=generation,
+                page_batches=self._embedding_batches(
+                    page_records[page_count:],
+                    config=config,
+                ),
+                event_batches=self._embedding_batches(
+                    event_records[event_count:],
+                    config=config,
+                ),
+                resume=bool(previous.get("generation")),
+                initial_page_count=page_count,
+                initial_event_count=event_count,
+                expected_page_count=len(page_records),
+                expected_event_count=len(event_records),
+                on_batch=checkpoint_batch,
+            )
+        except AttemptFenced:
+            raise
+        except Exception:
+            self.repository.fail_vector_generation(
+                book_id=frozen.book_id,
+                generation=generation,
+            )
+            raise
+        if isinstance(result, Mapping):
+            checkpoint["pageCount"] = int(result.get("pageCount", page_count))
+            checkpoint["eventCount"] = int(result.get("eventCount", event_count))
+            if not bool(result.get("completed")):
+                return {**checkpoint, "__control_drained__": True}
+        else:
+            # Lightweight test stores may consume the generators without
+            # returning counters; a successful return still means full coverage.
+            checkpoint["pageCount"] = len(page_records)
+            checkpoint["eventCount"] = len(event_records)
+        checkpoint["coverage"] = 1.0
+        return {
+            **checkpoint,
+        }
+
+    def _embedding_batches(
+        self,
+        records: Sequence[Mapping[str, Any]],
+        *,
+        config: Mapping[str, Any],
+        batch_size: int = 64,
+    ) -> Iterable[
+        tuple[Sequence[Mapping[str, Any]], Sequence[Sequence[float]]]
+    ]:
+        for offset in range(0, len(records), batch_size):
+            batch = records[offset : offset + batch_size]
+            documents = [str(row["document"]) for row in batch]
+            embeddings = list(
+                self.algorithms.embed_documents(documents, config=config)
+            )
+            if len(embeddings) != len(batch):
+                raise InsightConflict("embedding result count mismatch")
+            yield batch, embeddings
 
     def _layer_zero_event_records(
         self,
@@ -1867,8 +2568,26 @@ def _layer_prompt_type(
 def _page_context(pages: Sequence[Mapping[str, Any]]) -> str:
     return "\n\n".join(
         (
-            f"第 {page['pageNumber']} 页（page_id={page['pageId']}）\n"
+            _page_context_label(page)
+            + "\n"
             + _json(page.get("analysis", {}))
         )
         for page in pages
     )
+
+
+def _page_context_label(page: Mapping[str, Any]) -> str:
+    page_ids = [str(value) for value in page.get("pageIds", ()) if value]
+    page_numbers = [int(value) for value in page.get("pageNumbers", ())]
+    if not page_ids and page.get("pageId"):
+        page_ids = [str(page["pageId"])]
+    if not page_numbers and page.get("pageNumber"):
+        page_numbers = [int(page["pageNumber"])]
+    if not page_numbers:
+        return "全书汇总"
+    page_range = (
+        str(page_numbers[0])
+        if len(page_numbers) == 1
+        else f"{page_numbers[0]}-{page_numbers[-1]}"
+    )
+    return f"第 {page_range} 页（page_ids={_json(page_ids)}）"

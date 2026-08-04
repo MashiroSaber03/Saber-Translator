@@ -43,4 +43,19 @@ describe('resolveAnalysisStatus', () => {
 
     expect(status).toBe('idle')
   })
+
+  it.each(['queued', 'pausing', 'cancelling', 'interrupted', 'completed_with_errors'] as const)(
+    'preserves the backend %s state instead of projecting a fake lifecycle state',
+    taskStatus => {
+      const status = resolveAnalysisStatus(createStatusSnapshot({
+        currentTask: {
+          jobId: 'job-1',
+          status: taskStatus,
+          progress: { analyzedPages: 1, totalPages: 2 },
+        },
+      }))
+
+      expect(status).toBe(taskStatus)
+    },
+  )
 })

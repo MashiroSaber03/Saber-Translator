@@ -15,11 +15,27 @@ function createStore(): ReturnType<typeof useInsightStore> {
 
 const analysisStatusArbitrary = fc.constantFrom<AnalysisStatus>(
   'idle',
+  'queued',
   'running',
+  'pausing',
   'paused',
+  'cancelling',
+  'interrupted',
   'completed',
+  'completed_with_errors',
   'failed',
+  'cancelled',
+  'error',
 )
+
+const activeStatuses = new Set<AnalysisStatus>([
+  'queued',
+  'running',
+  'pausing',
+  'paused',
+  'cancelling',
+  'interrupted',
+])
 
 const progressArbitrary: fc.Arbitrary<ProgressPair> = fc
   .record({
@@ -70,7 +86,7 @@ describe('insight progress properties', () => {
         const lastStatus = statusSequence[statusSequence.length - 1] as AnalysisStatus
         expect(store.analysisStatus).toBe(lastStatus)
         expect(store.progress.status).toBe(lastStatus)
-        expect(store.isAnalyzing).toBe(lastStatus === 'running')
+        expect(store.isAnalyzing).toBe(activeStatuses.has(lastStatus))
       }),
     )
   })
@@ -88,7 +104,7 @@ describe('insight progress properties', () => {
         const lastAction = pauseSequence[pauseSequence.length - 1]
         const expectedStatus: AnalysisStatus = lastAction ? 'paused' : 'running'
         expect(store.analysisStatus).toBe(expectedStatus)
-        expect(store.isAnalyzing).toBe(expectedStatus === 'running')
+        expect(store.isAnalyzing).toBe(true)
       }),
     )
   })

@@ -378,6 +378,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.temperature, 0.2)
         self.assertFalse(request.use_stream)
         self.assertEqual(request.response_format, {"type": "json_object"})
+        self.assertEqual(request.runtime_options.timeout, 120.0)
         self.assertEqual(request.messages[0]["role"], "user")
         self.assertEqual(request.messages[0]["content"][-1], {"type": "text", "text": "分析这页漫画"})
 
@@ -499,7 +500,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             new=mock.AsyncMock(side_effect=never_finishes),
         ):
             client = VLMClient(config, PromptsConfig())
-            client._timeout = 0.01
+            client._total_timeout = 0.01
             with self.assertRaisesRegex(
                 TimeoutError,
                 "视觉模型调用超过总时限（0.01 秒）",

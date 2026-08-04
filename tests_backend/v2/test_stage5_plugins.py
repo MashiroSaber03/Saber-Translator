@@ -911,6 +911,7 @@ def test_worker_plugin_lifecycle_is_job_once_and_pipeline_once_per_page(
     assert [stage["hook"] for stage in stages].count("after_job") == 1
     assert [stage["hook"] for stage in stages].count("before_pipeline") == 2
     assert [stage["hook"] for stage in stages].count("after_pipeline") == 2
+    assert created["jobIds"][0] not in runtime._stage_cache
     first_after = next(
         stage
         for stage in stages

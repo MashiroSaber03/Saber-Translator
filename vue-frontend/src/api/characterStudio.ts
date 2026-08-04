@@ -51,6 +51,29 @@ const documentCache = new Map<string, V2StudioDocument>()
 const chatStateCache = new Map<string, V2StudioChatState>()
 const candidateCache = new Map<string, V2StudioCandidate[]>()
 const sessionCache = new Map<string, V2StudioSession>()
+const DOCUMENT_CACHE_LIMIT = 24
+const CHAT_STATE_CACHE_LIMIT = 8
+const CANDIDATE_CACHE_LIMIT = 16
+const SESSION_CACHE_LIMIT = 12
+
+function cacheValue<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): V {
+  cache.delete(key)
+  cache.set(key, value)
+  while (cache.size > limit) {
+    const oldestKey = cache.keys().next().value as K | undefined
+    if (oldestKey === undefined) break
+    cache.delete(oldestKey)
+  }
+  return value
+}
+
+function cachedValue<K, V>(cache: Map<K, V>, key: K): V | undefined {
+  const value = cache.get(key)
+  if (value === undefined) return undefined
+  cache.delete(key)
+  cache.set(key, value)
+  return value
+}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -100,7 +123,7 @@ function mapDiagnostics(value: unknown): ExportDiagnostic | null {
 }
 
 function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
-  documentCache.set(raw.id, raw)
+  cacheValue(documentCache, raw.id, raw, DOCUMENT_CACHE_LIMIT)
   const origin = record(raw.origin)
   const status = record(raw.status)
   const meta = record(raw.meta)
@@ -158,7 +181,7 @@ function mapDocument(raw: V2StudioDocument): CharacterStudioDocument {
 }
 
 function cachedDocument(documentId: string): V2StudioDocument {
-  const cached = documentCache.get(documentId)
+  const cached = cachedValue(documentCache, documentId)
   if (cached) return cached
   throw new Error('角色文档版本缺失，请重新加载')
 }
@@ -189,7 +212,7 @@ function mapMessage(value: Record<string, unknown>): CharacterStudioChatMessage 
 }
 
 function mapSession(raw: V2StudioSession): CharacterStudioChatSession {
-  sessionCache.set(raw.sessionId, raw)
+  cacheValue(sessionCache, raw.sessionId, raw, SESSION_CACHE_LIMIT)
   return {
     session_id: raw.sessionId,
     doc_id: raw.documentId,
@@ -226,7 +249,7 @@ function mapSessionSummary(value: Record<string, unknown>): CharacterStudioChatS
 }
 
 function mapChatState(raw: V2StudioChatState): CharacterStudioChatState {
-  chatStateCache.set(raw.documentId, raw)
+  cacheValue(chatStateCache, raw.documentId, raw, CHAT_STATE_CACHE_LIMIT)
   return {
     doc_id: raw.documentId,
     active_session: raw.activeSession ? mapSession(raw.activeSession) : undefined,
@@ -248,7 +271,7 @@ async function refreshedChatState(documentId: string): Promise<CharacterStudioCh
 }
 
 function cachedSession(sessionId: string): V2StudioSession {
-  const cached = sessionCache.get(sessionId)
+  const cached = cachedValue(sessionCache, sessionId)
   if (cached) return cached
   throw new Error('聊天会话版本缺失，请重新加载')
 }
@@ -258,7 +281,7 @@ export async function getCharacterStudioIndex(bookId: string): Promise<Character
     getV2StudioIndex(bookId),
     getV2StudioCandidates(bookId),
   ])
-  candidateCache.set(bookId, candidates.items)
+  cacheValue(candidateCache, bookId, candidates.items, CANDIDATE_CACHE_LIMIT)
   return {
     book_id: bookId,
     documents: index.documents.map(item => ({
@@ -289,7 +312,9 @@ export async function createCharacterStudioDocument(
   bookId: string,
   payload?: { candidate_name?: string; title?: string }
 ): Promise<CharacterStudioDocument> {
-  const candidate = candidateCache.get(bookId)?.find(item => item.name === payload?.candidate_name)
+  const candidate = cachedValue(candidateCache, bookId)?.find(
+    item => item.name === payload?.candidate_name
+  )
   const document = await createV2StudioDocument(bookId, {
     title: payload?.title ?? candidate?.name ?? '新角色',
     ...(candidate ? { candidate } : {}),
@@ -320,6 +345,9 @@ export async function deleteCharacterStudioDocument(docId: string): Promise<void
   await deleteV2StudioDocument(docId)
   documentCache.delete(docId)
   chatStateCache.delete(docId)
+  for (const [sessionId, cached] of sessionCache) {
+    if (cached.documentId === docId) sessionCache.delete(sessionId)
+  }
 }
 
 export async function generateCharacterStudioSection(
@@ -386,7 +414,7 @@ export async function createCharacterStudioChatSession(
   docId: string,
   greetingId?: string
 ): Promise<CharacterStudioChatState> {
-  const state = chatStateCache.get(docId) ?? (await getV2StudioChatState(docId))
+  const state = cachedValue(chatStateCache, docId) ?? (await getV2StudioChatState(docId))
   await createV2StudioSession(docId, {
     baseIndexRevision: state.indexRevision,
     ...(greetingId ? { greetingId } : {}),
@@ -398,7 +426,7 @@ export async function switchCharacterStudioChatSession(
   docId: string,
   sessionId: string
 ): Promise<CharacterStudioChatState> {
-  const state = chatStateCache.get(docId) ?? (await getV2StudioChatState(docId))
+  const state = cachedValue(chatStateCache, docId) ?? (await getV2StudioChatState(docId))
   await activateV2StudioSession(sessionId, state.indexRevision)
   return refreshedChatState(docId)
 }
@@ -410,7 +438,7 @@ export async function deleteCharacterStudioChatSession(
 ): Promise<CharacterStudioChatState> {
   const current =
     revision ??
-    sessionCache.get(sessionId)?.revision ??
+    cachedValue(sessionCache, sessionId)?.revision ??
     (await getV2StudioSession(sessionId)).revision
   await deleteV2StudioSession(sessionId, current)
   sessionCache.delete(sessionId)
@@ -468,7 +496,7 @@ export async function importCharacterStudioChatSession(
   docId: string,
   file: File
 ): Promise<CharacterStudioChatState> {
-  const state = chatStateCache.get(docId) ?? (await getV2StudioChatState(docId))
+  const state = cachedValue(chatStateCache, docId) ?? (await getV2StudioChatState(docId))
   await importV2StudioSession(docId, state.indexRevision, file)
   return refreshedChatState(docId)
 }
@@ -541,7 +569,11 @@ export async function streamCharacterStudioChatMessage(payload: {
   signal?: AbortSignal
 }): Promise<void> {
   const session = cachedSession(payload.sessionId)
-  const assets = await Promise.all((payload.attachments ?? []).map(uploadV2StudioAsset))
+  const assets = []
+  for (const attachment of payload.attachments ?? []) {
+    payload.signal?.throwIfAborted()
+    assets.push(await uploadV2StudioAsset(attachment))
+  }
   const accepted = await sendV2StudioMessage(payload.sessionId, {
     baseSessionRevision: session.revision,
     content: payload.content,
@@ -606,7 +638,7 @@ export function downloadCharacterStudioWorldbook(
 }
 
 export function getCharacterStudioAvatarUrl(docId: string): string {
-  return documentCache.get(docId)?.avatarUrl ?? ''
+  return cachedValue(documentCache, docId)?.avatarUrl ?? ''
 }
 
 export function getCharacterStudioChatAttachmentUrl(assetPath: string): string {

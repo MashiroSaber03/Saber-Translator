@@ -79,6 +79,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const bookFilter = ref('')
   let eventSource: EventSource | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let refreshPromise: Promise<void> | null = null
+  let eventRefreshInFlight = false
+  let eventRefreshDirty = false
   const eventListeners = new Set<TaskCenterEventListener>()
 
   const activeCount = computed(
@@ -105,28 +108,38 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   )
   const historyBatches = computed(() => groupJobsByBatch(filteredHistory.value))
 
-  async function refresh(): Promise<void> {
+  function refresh(): Promise<void> {
+    if (refreshPromise) return refreshPromise
     loading.value = true
-    try {
-      const [queueResult, historyResult] = await Promise.all([
-        jobsApi.list('queue'),
-        jobsApi.list('history'),
-      ])
+    refreshPromise = Promise.all([
+      jobsApi.list('queue'),
+      jobsApi.list('history'),
+    ]).then(([queueResult, historyResult]) => {
       queue.value = queueResult.items
       history.value = historyResult.items
       queueRevision.value = queueResult.queueRevision
       workerOnline.value = queueResult.workerOnline !== false
-    } finally {
+    }).finally(() => {
       loading.value = false
-    }
+      refreshPromise = null
+    })
+    return refreshPromise
   }
 
   function scheduleRefresh(): void {
-    if (refreshTimer) return
-    refreshTimer = setTimeout(() => {
+    eventRefreshDirty = true
+    if (refreshTimer || eventRefreshInFlight) return
+    refreshTimer = setTimeout(async () => {
       refreshTimer = null
-      void refresh()
-    }, 100)
+      eventRefreshInFlight = true
+      eventRefreshDirty = false
+      try {
+        await refresh()
+      } finally {
+        eventRefreshInFlight = false
+        if (eventRefreshDirty) scheduleRefresh()
+      }
+    }, 250)
   }
 
   function receiveEvent(event: MessageEvent<string>): void {
@@ -164,6 +177,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   function disconnect(): void {
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = null
+    eventRefreshDirty = false
     eventSource?.close()
     eventSource = null
     connected.value = false
@@ -236,6 +250,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
 
   async function runCommand<T>(command: () => Promise<T>): Promise<T> {
     const result = await command()
+    if (refreshPromise) await refreshPromise
     await refresh()
     return result
   }

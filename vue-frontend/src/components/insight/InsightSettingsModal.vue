@@ -37,6 +37,7 @@ const insightStore = useInsightStore()
 type InsightSettingsTabId = 'vlm' | 'llm' | 'batch' | 'embedding' | 'reranker' | 'imagegen' | 'prompts'
 
 const activeSettingsTab = ref<InsightSettingsTabId>('vlm')
+const visitedSettingsTabs = ref<Set<InsightSettingsTabId>>(new Set(['vlm']))
 const isSaving = ref(false)
 const isLoadingConfig = ref(true)
 const backendConfigReady = ref(false)
@@ -104,6 +105,7 @@ function isInsightSettingsTabId(value: string): value is InsightSettingsTabId {
 
 function switchSettingsTab(tab: InsightSettingsTabId): void {
   activeSettingsTab.value = tab
+  visitedSettingsTabs.value = new Set([...visitedSettingsTabs.value, tab])
   testMessage.value = ''
   testMessageType.value = ''
 }
@@ -122,6 +124,10 @@ function close(): void {
     initialConfigState = null
   }
   emit('close')
+}
+
+function hasVisitedSettingsTab(tab: InsightSettingsTabId): boolean {
+  return visitedSettingsTabs.value.has(tab)
 }
 
 function closeAfterCommit(): void {
@@ -273,6 +279,7 @@ onBeforeUnmount(() => {
       />
 
       <VlmSettingsTab
+        v-if="hasVisitedSettingsTab('vlm')"
         v-show="activeSettingsTab === 'vlm'"
         :sync-request-id="syncRequestId"
         @update:config="vlmDraft = $event"
@@ -280,6 +287,7 @@ onBeforeUnmount(() => {
       />
 
       <LlmSettingsTab
+        v-if="hasVisitedSettingsTab('llm')"
         v-show="activeSettingsTab === 'llm'"
         :sync-request-id="syncRequestId"
         @update:config="llmDraft = $event"
@@ -287,12 +295,14 @@ onBeforeUnmount(() => {
       />
 
       <BatchSettingsTab
+        v-if="hasVisitedSettingsTab('batch')"
         v-show="activeSettingsTab === 'batch'"
         :sync-request-id="syncRequestId"
         @update:config="batchDraft = $event"
       />
 
       <EmbeddingSettingsTab
+        v-if="hasVisitedSettingsTab('embedding')"
         v-show="activeSettingsTab === 'embedding'"
         :sync-request-id="syncRequestId"
         @update:config="embeddingDraft = $event"
@@ -300,6 +310,7 @@ onBeforeUnmount(() => {
       />
 
       <RerankerSettingsTab
+        v-if="hasVisitedSettingsTab('reranker')"
         v-show="activeSettingsTab === 'reranker'"
         :sync-request-id="syncRequestId"
         @update:config="rerankerDraft = $event"
@@ -307,6 +318,7 @@ onBeforeUnmount(() => {
       />
 
       <PromptsSettingsTab
+        v-if="hasVisitedSettingsTab('prompts')"
         v-show="activeSettingsTab === 'prompts'"
         :sync-request-id="syncRequestId"
         @update:prompts="promptsDraft = $event"
@@ -314,6 +326,7 @@ onBeforeUnmount(() => {
       />
 
       <ImageGenSettingsTab
+        v-if="hasVisitedSettingsTab('imagegen')"
         v-show="activeSettingsTab === 'imagegen'"
         :sync-request-id="syncRequestId"
         @update:config="imageGenDraft = $event"

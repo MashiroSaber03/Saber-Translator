@@ -146,14 +146,6 @@ class InsightAnalysisWorkerService:
             path = self.storage.resolve_relative_path(
                 str(bound["relative_path"])
             )
-            maximum = int(config.get("maxSourceBytes", 100 * 1024 * 1024))
-            if maximum < 1:
-                raise JobConflict("invalid Insight per-file byte limit")
-            byte_size = path.stat().st_size
-            if byte_size > maximum:
-                raise JobConflict(
-                    f"page source exceeds the {maximum}-byte file limit"
-                )
             image_bytes = path.read_bytes()
             digest = hashlib.sha256(image_bytes).hexdigest()
             if digest != str(target["source_checksum"]):

@@ -107,6 +107,46 @@ describe('insight v2 settings ownership', () => {
     expect(getMock).toHaveBeenCalledWith('/api/v2/prompts', { params: {} })
   })
 
+  it('reuses the prompt catalog already refreshed with the settings modal', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/api/v2/settings') return Promise.resolve(settingsDocument)
+      if (url === '/api/v2/prompts') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'factory-batch',
+              name: '默认批次分析',
+              content: '默认内容',
+              type: 'batch_analysis',
+              revision: 1,
+              isFactoryDefault: true,
+            },
+            {
+              id: 'saved-batch',
+              name: '自定义批次分析',
+              content: '自定义内容',
+              type: 'batch_analysis',
+              revision: 1,
+              isFactoryDefault: false,
+            },
+          ],
+        })
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const { getDefaultPrompts, getGlobalConfig, getPromptsLibrary } = await import('@/api/insight')
+
+    await getGlobalConfig()
+    const defaults = await getDefaultPrompts()
+    const library = await getPromptsLibrary()
+
+    expect(defaults.batch_analysis).toBe('默认内容')
+    expect(library).toEqual([
+      expect.objectContaining({ id: 'saved-batch', name: '自定义批次分析' }),
+    ])
+    expect(getMock.mock.calls.filter(([url]) => url === '/api/v2/prompts')).toHaveLength(1)
+  })
+
   it('rejects an incomplete backend Insight fact instead of applying browser defaults', async () => {
     getMock.mockImplementation((url: string) => {
       if (url === '/api/v2/settings') {

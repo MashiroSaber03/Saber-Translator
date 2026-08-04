@@ -36,13 +36,16 @@ const {
   hasAgentCredential,
   hasFirecrawlCredential,
   hasUnsavedSettings,
+  hasMorePages,
   isAllSelected,
   isFetchingModels,
+  isLoadingMorePages,
   isProcessing,
   isSavingSettings,
   isVisible,
   logs,
   logsExpanded,
+  loadMoreDraftPages,
   modelList,
   modelListOptions,
   providerRequiresApiKey,
@@ -139,11 +142,14 @@ const {
         :error="error"
         :extract-result="extractResult"
         :is-all-selected="isAllSelected"
+        :has-more-pages="hasMorePages"
+        :is-loading-more-pages="isLoadingMorePages"
         :selected-count="selectedCount"
         :selected-pages="selectedPages"
         :status="status"
         @toggle-all="toggleAll"
         @toggle-page="togglePage"
+        @load-more="loadMoreDraftPages"
       />
     </div>
 

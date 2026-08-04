@@ -227,7 +227,7 @@ describe('InsightView task event projection', () => {
     expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 
-  it('does not present a recoverable interrupted job as actively running', async () => {
+  it('keeps a recoverable interrupted job available for the distinct continue command', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -265,8 +265,8 @@ describe('InsightView task event projection', () => {
     taskCenterStore.queue = [insightJob({ status: 'interrupted' })]
     await nextTick()
 
-    expect(insightStore.analysisStatus).toBe('failed')
-    expect(insightStore.currentTaskId).toBeNull()
+    expect(insightStore.analysisStatus).toBe('interrupted')
+    expect(insightStore.currentTaskId).toBe('analysis-job-1')
   })
 
   it('refreshes derived Insight facts when a backend rebuild finishes', async () => {

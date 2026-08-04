@@ -9,9 +9,10 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
-const { startAnalysisMock, cancelAnalysisMock, confirmProductActionMock } = vi.hoisted(() => ({
+const { startAnalysisMock, cancelAnalysisMock, continueAnalysisMock, confirmProductActionMock } = vi.hoisted(() => ({
   startAnalysisMock: vi.fn(),
   cancelAnalysisMock: vi.fn(),
+  continueAnalysisMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
 
@@ -19,6 +20,7 @@ vi.mock('@/api/insight', () => ({
   startAnalysis: startAnalysisMock,
   pauseAnalysis: vi.fn(),
   resumeAnalysis: vi.fn(),
+  continueAnalysis: continueAnalysisMock,
   cancelAnalysis: cancelAnalysisMock,
   exportAnalysis: vi.fn(),
 }))
@@ -37,7 +39,6 @@ describe('AnalysisProgress', () => {
     store.currentBookId = 'book-1'
     store.setCurrentTaskId(null)
     store.setAnalysisStatus('idle')
-    store.setIncrementalAnalysis(true)
     store.setBookTotalPages(20)
     store.setChapters([])
     store.setAnalyzedPagesCount(0)
@@ -45,12 +46,14 @@ describe('AnalysisProgress', () => {
 
     startAnalysisMock.mockReset()
     cancelAnalysisMock.mockReset()
+    continueAnalysisMock.mockReset()
     confirmProductActionMock.mockReset()
     startAnalysisMock.mockRejectedValue({
       status: 409,
       message: '书籍 book-1 已有运行中的任务',
     })
     cancelAnalysisMock.mockResolvedValue(undefined)
+    continueAnalysisMock.mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValue(true)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
@@ -65,7 +68,6 @@ describe('AnalysisProgress', () => {
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setAnalysisStatus('idle')
-    store.setIncrementalAnalysis(true)
     store.setBookTotalPages(20)
     store.setChapters([])
 
@@ -95,19 +97,18 @@ describe('AnalysisProgress', () => {
     expect(wrapper.text()).not.toContain('书籍 book-1 已有运行中的任务')
   })
 
-  it('shows full rerun description and sends full mode when incremental is off', async () => {
+  it('offers four explicit scopes and sends full mode when selected', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setAnalysisStatus('idle')
-    store.setIncrementalAnalysis(false)
     store.setBookTotalPages(20)
     store.setChapters([])
 
     startAnalysisMock.mockResolvedValue({
       success: true,
-      task_id: 'task-full',
+      jobId: 'task-full',
     })
 
     const wrapper = mount(AnalysisProgress, {
@@ -119,10 +120,13 @@ describe('AnalysisProgress', () => {
     const analysisModeSelect = wrapper.getComponent(UiSelect)
     expect(analysisModeSelect.props('options')).toEqual([
       expect.objectContaining({ value: 'full' }),
+      expect.objectContaining({ value: 'incremental' }),
       expect.objectContaining({ value: 'chapter' }),
       expect.objectContaining({ value: 'page' }),
     ])
-    expect(wrapper.text()).toContain('全量重跑整本书（会清理旧结果）')
+    analysisModeSelect.vm.$emit('change', 'full')
+    await flushPromises()
+    expect(wrapper.text()).toContain('完成发布前旧结果持续可读')
 
     await wrapper.get('button[aria-label="开始分析"]').trigger('click')
     await flushPromises()
@@ -163,13 +167,12 @@ describe('AnalysisProgress', () => {
     const store = useInsightStore()
     store.currentBookId = 'book-1'
     store.setAnalysisStatus('failed')
-    store.setIncrementalAnalysis(false)
     store.setBookTotalPages(20)
     store.setChapters([])
 
     startAnalysisMock.mockResolvedValue({
       success: true,
-      task_id: 'task-retry',
+      jobId: 'task-retry',
     })
 
     const wrapper = mount(AnalysisProgress, {
@@ -213,8 +216,28 @@ describe('AnalysisProgress', () => {
     })
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(cancelAnalysisMock).toHaveBeenCalledWith('task-1')
-    expect(store.analysisStatus).toBe('idle')
-    expect(wrapper.find('.progress-bar-slim').exists()).toBe(false)
+    expect(store.analysisStatus).toBe('cancelling')
+    expect(store.currentTaskId).toBe('task-1')
+    expect(wrapper.text()).toContain('取消中')
+  })
+
+  it('uses the distinct continue command for an interrupted job', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setCurrentTaskId('task-interrupted')
+    store.setAnalysisStatus('interrupted')
+
+    const wrapper = mount(AnalysisProgress, {
+      global: { plugins: [pinia] },
+    })
+
+    await wrapper.get('button[aria-label="继续中断任务"]').trigger('click')
+    await flushPromises()
+
+    expect(continueAnalysisMock).toHaveBeenCalledWith('task-interrupted')
+    expect(store.analysisStatus).toBe('queued')
   })
 
   it('keeps analysis owner colors on semantic tokens instead of raw values', () => {

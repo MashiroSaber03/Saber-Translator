@@ -5,6 +5,7 @@ import gc
 import json
 from pathlib import Path
 import sys
+import threading
 from typing import Any, Mapping
 import uuid
 import zipfile
@@ -27,6 +28,7 @@ from src.backend_v2.insight.derived import (
     InsightDerivedRepository,
     InsightDerivedWorkerService,
     InsightVectorStore,
+    ProviderDerivedAlgorithms,
 )
 from src.backend_v2.insight.exports import (
     InsightExportCommandService,
@@ -37,6 +39,7 @@ from src.backend_v2.insight.page_schema import (
     normalize_page_analysis,
 )
 from src.backend_v2.insight.qa import (
+    DefaultQAApiAlgorithms,
     DefaultQARetrievalAlgorithms,
     InsightQACommandService,
     InsightQAWorkerService,
@@ -69,6 +72,7 @@ from src.backend_v2.storage.schema import (
     app_settings,
     assets,
     continuation_form_image_versions,
+    continuation_projects,
     job_asset_inputs,
     jobs,
     metadata,
@@ -167,8 +171,71 @@ class FakeVectorStore:
     def __init__(self) -> None:
         self.publications: list[dict[str, Any]] = []
 
-    def publish(self, **kwargs) -> None:
-        self.publications.append(kwargs)
+    def publish_batches(self, **kwargs) -> None:
+        page_batches = list(kwargs.pop("page_batches"))
+        event_batches = list(kwargs.pop("event_batches"))
+        self.publications.append(
+            {
+                **kwargs,
+                "page_records": [row for records, _ in page_batches for row in records],
+                "event_records": [row for records, _ in event_batches for row in records],
+            }
+        )
+
+
+class CheckpointingFakeVectorStore:
+    def __init__(
+        self,
+        *,
+        queue: JobQueueRepository,
+        job_id: str,
+        control: str | None = None,
+    ) -> None:
+        self.queue = queue
+        self.job_id = job_id
+        self.control = control
+        self.calls: list[dict[str, object]] = []
+
+    def publish_batches(self, **kwargs) -> dict[str, object]:
+        callback = kwargs["on_batch"]
+        page_count = int(kwargs["initial_page_count"])
+        event_count = int(kwargs["initial_event_count"])
+        self.calls.append(
+            {
+                "resume": bool(kwargs["resume"]),
+                "initialPageCount": page_count,
+                "initialEventCount": event_count,
+            }
+        )
+        control_sent = False
+        for kind, batches in (
+            ("pages", kwargs["page_batches"]),
+            ("events", kwargs["event_batches"]),
+        ):
+            for records, _embeddings in batches:
+                if kind == "pages":
+                    page_count += len(records)
+                    count = page_count
+                else:
+                    event_count += len(records)
+                    count = event_count
+                if self.control and not control_sent:
+                    control_sent = True
+                    if self.control == "pause":
+                        self.queue.request_pause(self.job_id)
+                    else:
+                        self.queue.request_cancel(self.job_id)
+                if not callback(kind, count):
+                    return {
+                        "completed": False,
+                        "pageCount": page_count,
+                        "eventCount": event_count,
+                    }
+        return {
+            "completed": True,
+            "pageCount": page_count,
+            "eventCount": event_count,
+        }
 
 
 class FakeContinuationAlgorithms:
@@ -205,7 +272,11 @@ class FakeQARetrievalAlgorithms:
 
 
 class FakeQAApiAlgorithms:
+    def __init__(self) -> None:
+        self.rerank_calls = 0
+
     def rerank(self, *, question, candidates, top_k, config):
+        self.rerank_calls += 1
         return list(candidates)[:top_k]
 
     def stream_answer(
@@ -377,6 +448,66 @@ def _run_job(platform, algorithms: FakeInsightAlgorithms) -> str:
     final = queue.finish_if_complete(fence)
     assert final is not None
     return final
+
+
+def test_chapter_summaries_aggregate_in_sql_and_keep_empty_chapters(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    empty_chapter = ContentRepository(platform["engine"]).create_chapter(
+        book_id=str(platform["book"]["id"]),
+        title="Empty Chapter",
+    )
+    repository = InsightRepository(platform["engine"])
+
+    initial = repository.list_chapters(str(platform["book"]["id"]))["items"]
+    assert initial == [
+        {
+            "chapterId": str(platform["chapter"]["id"]),
+            "title": "Chapter",
+            "ordinal": 1,
+            "pageCount": 2,
+            "analysisCounts": {
+                "ready": 0,
+                "stale": 0,
+                "running": 0,
+                "failed": 0,
+                "not_analyzed": 2,
+            },
+        },
+        {
+            "chapterId": str(empty_chapter["id"]),
+            "title": "Empty Chapter",
+            "ordinal": 2,
+            "pageCount": 0,
+            "analysisCounts": {
+                "ready": 0,
+                "stale": 0,
+                "running": 0,
+                "failed": 0,
+                "not_analyzed": 0,
+            },
+        },
+    ]
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "page",
+            "pageIds": [platform["page_ids"][0]],
+        },
+        idempotency_key="chapter-summary-page-analysis",
+    )
+    _run_job(platform, FakeInsightAlgorithms())
+
+    updated = repository.list_chapters(str(platform["book"]["id"]))["items"]
+    assert updated[0]["analysisCounts"] == {
+        "ready": 1,
+        "stale": 0,
+        "running": 0,
+        "failed": 0,
+        "not_analyzed": 1,
+    }
 
 
 def test_analysis_rejects_incomplete_vlm_settings_before_queue(
@@ -1060,7 +1191,21 @@ def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
     )
     assert overview is not None
     assert overview["status"] == "ready"
-    assert overview["payload"]["content"] == "2 pages"
+    assert overview["payload"]["content"] == "1 pages"
+    assert InsightRepository(platform["engine"]).list_overview_templates(
+        str(platform["book"]["id"])
+    ) == {"items": ["no_spoiler", "story_summary"]}
+    recent_pages = InsightRepository(
+        platform["engine"]
+    ).list_recent_page_analyses(
+        book_id=str(platform["book"]["id"]),
+        limit=5,
+    )
+    assert len(recent_pages["items"]) == 2
+    assert {
+        item["displayPageNumber"] for item in recent_pages["items"]
+    } == {1, 2}
+    assert all(item["summary"] for item in recent_pages["items"])
 
     commands.create_job(
         book_id=str(platform["book"]["id"]),
@@ -1079,6 +1224,7 @@ def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
     assert timeline["mode"] == "enhanced"
     assert timeline["events"][0]["summary"] == "event"
     assert timeline["characters"][0]["name"] == "Saber"
+    assert timeline["pageThumbnails"]["1"].startswith("/api/v2/assets/")
 
     global_status = repository.qa_status(
         book_id=str(platform["book"]["id"]),
@@ -1144,6 +1290,211 @@ def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
     status = repository.qa_status(book_id=str(platform["book"]["id"]))
     assert status["available"]
     assert status["coverage"] == {"pages": 2, "events": 2}
+
+
+def test_vector_cancel_keeps_partial_generation_without_switching_active(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": str(platform["book"]["id"]), "scope": "full"},
+        idempotency_key="vector-cancel-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    accepted = InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=str(platform["book"]["id"]),
+        kind="vector",
+        template="default",
+        idempotency_key="vector-cancel-safe-point",
+    )
+    job_id = str(accepted["jobIds"][0])
+    queue = JobQueueRepository(platform["engine"])
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    if fence is None:
+        fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    step = queue.next_step(fence)
+    assert step is not None
+    service = InsightDerivedWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+        algorithms=FakeDerivedAlgorithms(),
+        vector_store=CheckpointingFakeVectorStore(
+            queue=queue,
+            job_id=job_id,
+            control="cancel",
+        ),
+    )
+
+    result = service.handle(fence, step)
+
+    assert result["__control_drained__"]
+    queue.acknowledge_drain(
+        fence,
+        pool_id="main",
+        worker_slot=0,
+        last_step_id=str(step["stepId"]),
+    )
+    assert queue.finalize_drain(fence, expected_slots={("main", 0)}) == "cancelled"
+    detail = queue.get_job(job_id)
+    checkpoint = detail["items"][0]["steps"][0]["checkpoint"]
+    assert checkpoint["pageCount"] == 2
+    assert checkpoint["eventCount"] == 0
+    assert 0 < checkpoint["coverage"] < 1
+    with platform["engine"].connect() as connection:
+        generations = list(
+            connection.execute(
+                select(vector_generations)
+                .where(vector_generations.c.book_id == platform["book"]["id"])
+                .order_by(vector_generations.c.generation)
+            ).mappings()
+        )
+    assert len(generations) == 2
+    assert generations[0]["is_active"]
+    assert not generations[1]["is_active"]
+    assert generations[1]["status"] == "building"
+    assert generations[1]["page_count"] == 2
+
+
+def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": str(platform["book"]["id"]), "scope": "full"},
+        idempotency_key="vector-pause-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    accepted = InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=str(platform["book"]["id"]),
+        kind="vector",
+        template="default",
+        idempotency_key="vector-pause-safe-point",
+    )
+    job_id = str(accepted["jobIds"][0])
+    queue = JobQueueRepository(platform["engine"])
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    if fence is None:
+        fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    step = queue.next_step(fence)
+    assert step is not None
+    pausing_store = CheckpointingFakeVectorStore(
+        queue=queue,
+        job_id=job_id,
+        control="pause",
+    )
+    service = InsightDerivedWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+        algorithms=FakeDerivedAlgorithms(),
+        vector_store=pausing_store,
+    )
+    assert service.handle(fence, step)["__control_drained__"]
+    queue.acknowledge_drain(
+        fence,
+        pool_id="main",
+        worker_slot=0,
+        last_step_id=str(step["stepId"]),
+    )
+    assert queue.finalize_drain(fence, expected_slots={("main", 0)}) == "paused"
+
+    queue.resume(job_id)
+    resumed_fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    if resumed_fence is None:
+        resumed_fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert resumed_fence is not None
+    resumed_step = queue.next_step(resumed_fence)
+    assert resumed_step is not None
+    assert resumed_step["checkpoint"]["pageCount"] == 2
+    resumed_store = CheckpointingFakeVectorStore(
+        queue=queue,
+        job_id=job_id,
+    )
+    resumed_service = InsightDerivedWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+        algorithms=FakeDerivedAlgorithms(),
+        vector_store=resumed_store,
+    )
+
+    completed = resumed_service.handle(resumed_fence, resumed_step)
+
+    assert "__control_drained__" not in completed
+    assert queue.finish_if_complete(resumed_fence) == "completed"
+    assert resumed_store.calls == [
+        {
+            "resume": True,
+            "initialPageCount": 2,
+            "initialEventCount": 0,
+        }
+    ]
+    with platform["engine"].connect() as connection:
+        active = connection.execute(
+            select(vector_generations).where(
+                vector_generations.c.book_id == platform["book"]["id"],
+                vector_generations.c.is_active.is_(True),
+            )
+        ).mappings().one()
+    assert active["generation"] == 2
+    assert active["status"] == "ready"
+    assert active["page_count"] == 2
+    assert active["event_count"] == 2
+
+
+def test_provider_timeline_falls_back_through_compressed_context(
+    monkeypatch,
+) -> None:
+    algorithms = ProviderDerivedAlgorithms()
+    calls = iter(
+        [
+            ValueError("enhanced output was invalid"),
+            {
+                "content": {"story_summary": "压缩时间线"},
+                "events": [{"summary": "事件", "page_numbers": [1]}],
+                "characters": [],
+            },
+        ]
+    )
+
+    def fake_chat_json(*_args, **_kwargs):
+        result = next(calls)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(algorithms, "_chat_json", fake_chat_json)
+    result = algorithms.build_timeline(
+        [
+            {
+                "pageId": "page-1",
+                "pageNumber": 1,
+                "analysis": {"key_events": [{"summary": "事件"}]},
+            },
+            {
+                "pageId": "page-1",
+                "pageIds": ["page-1"],
+                "pageNumber": 1,
+                "pageNumbers": [1],
+                "analysis": {
+                    "compressed_context": {"content": "压缩上下文"},
+                },
+            },
+        ],
+        config={},
+    )
+
+    assert result["mode"] == "compressed"
+    assert result["content"] == {
+        "story_summary": "压缩时间线",
+        "requested_mode": "enhanced",
+        "actual_mode": "compressed",
+        "fallback_reason": "enhanced output was invalid",
+        "degraded": True,
+    }
 
 
 def test_vector_store_reports_and_removes_only_unowned_collections(
@@ -1404,6 +1755,42 @@ def test_continuation_script_and_page_loops_are_worker_owned(
         "第 1 页剧情",
         "第 2 页剧情",
     ]
+    original_page_revisions = [
+        int(page["revision"]) for page in restored["pages"]
+    ]
+    commands.create_script_job(
+        book_id=str(platform["book"]["id"]),
+        idempotency_key="continuation-script-regenerate",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+    script_refreshed = repository.bootstrap(
+        book_id=str(platform["book"]["id"])
+    )["project"]
+    assert [
+        page["payload"]["storyText"] for page in script_refreshed["pages"]
+    ] == ["第 1 页剧情", "第 2 页剧情"]
+    assert [
+        page["payload"]["staleReason"]
+        for page in script_refreshed["pages"]
+    ] == ["script_changed", "script_changed"]
+    assert [
+        int(page["revision"]) for page in script_refreshed["pages"]
+    ] == [revision + 1 for revision in original_page_revisions]
+
+    commands.create_pages_job(
+        book_id=str(platform["book"]["id"]),
+        ordinals=None,
+        idempotency_key="continuation-pages-after-script",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
     commands.create_images_job(
         book_id=str(platform["book"]["id"]),
         ordinals=None,
@@ -1427,6 +1814,128 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     assert queue.finish_if_complete(fence) == "completed"
     detail = queue.get_job(str(exported["jobIds"][0]))
     assert detail["artifacts"][0]["kind"] == "continuation_export"
+
+    before_manual_edit = repository.bootstrap(
+        book_id=str(platform["book"]["id"])
+    )["project"]
+    repository.update_script(
+        project_id=str(before_manual_edit["projectId"]),
+        base_revision=int(before_manual_edit["script"]["revision"]),
+        content="手工改写后的脚本",
+    )
+    after_manual_edit = repository.bootstrap(
+        book_id=str(platform["book"]["id"])
+    )["project"]
+    assert [
+        page["payload"]["storyText"] for page in after_manual_edit["pages"]
+    ] == ["第 1 页剧情", "第 2 页剧情"]
+    assert all(
+        page["payload"]["staleReason"] == "script_changed"
+        for page in after_manual_edit["pages"]
+    )
+    assert [page["revision"] for page in after_manual_edit["pages"]] == [
+        int(page["revision"]) + 1 for page in before_manual_edit["pages"]
+    ]
+
+
+def test_continuation_freezes_a_composed_page_analysis_snapshot(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    book_id = str(platform["book"]["id"])
+    for index, page_id in enumerate(platform["page_ids"], start=1):
+        InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+            command={
+                "bookId": book_id,
+                "scope": "page",
+                "pageIds": [page_id],
+            },
+            idempotency_key=f"continuation-page-analysis-{index}",
+        )
+        assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    derived = InsightDerivedCommandService(platform["engine"])
+    for kind, template in (
+        ("overview", "story_summary"),
+        ("compressed_context", "default"),
+        ("timeline", "default"),
+    ):
+        derived.create_job(
+            book_id=book_id,
+            kind=kind,
+            template=template,
+            idempotency_key=f"continuation-page-{kind}-{template}",
+        )
+        assert (
+            _run_derived_job(
+                platform,
+                algorithms=FakeDerivedAlgorithms(),
+            )
+            == "completed"
+        )
+
+    snapshot = InsightDerivedRepository(platform["engine"]).snapshot(
+        book_id=book_id
+    )
+    assert snapshot.source_run_id is None
+    repository = ContinuationRepository(platform["engine"])
+    state = repository.bootstrap(book_id=book_id)
+    assert state["ready"]
+    assert state["missing"] == []
+    assert state["activeRunId"] is None
+
+    project = repository.sync_latest(book_id=book_id)
+    assert project["sourceRunId"] is None
+    assert project["config"] == {
+        "pageCount": 15,
+        "styleReferencePages": 3,
+        "direction": "",
+    }
+    with platform["engine"].connect() as connection:
+        stored_payload = json.loads(
+            connection.execute(
+                select(continuation_projects.c.payload_json).where(
+                    continuation_projects.c.id == project["projectId"]
+                )
+            ).scalar_one()
+        )
+    assert stored_payload["analysisInputFingerprint"] == snapshot.fingerprint
+    assert [
+        value["resultId"] for value in stored_payload["analysisInputs"]
+    ] == list(snapshot.result_ids)
+
+    accepted = ContinuationCommandService(
+        platform["engine"]
+    ).create_script_job(
+        book_id=book_id,
+        idempotency_key="continuation-page-script",
+    )
+    with platform["engine"].connect() as connection:
+        job = connection.execute(
+            select(jobs).where(jobs.c.id == accepted["jobIds"][0])
+        ).mappings().one()
+    assert job["analysis_run_id"] is None
+
+    queue = JobQueueRepository(platform["engine"])
+    algorithms = FakeContinuationAlgorithms()
+    worker = ContinuationWorkerService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        jobs=queue,
+        algorithms=algorithms,
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        assert worker.handle(fence, step)["__already_published__"]
+    assert queue.finish_if_complete(fence) == "completed"
+    assert len(algorithms.script_contexts[0]["pages"]) == len(
+        platform["page_ids"]
+    )
+    assert {
+        "overview:story_summary",
+        "compressed_context:default",
+    }.issubset(algorithms.script_contexts[0]["artifacts"])
 
 
 def test_continuation_character_forms_and_sheet_are_versioned(
@@ -1851,6 +2360,43 @@ def test_global_qa_reports_incomplete_artifacts_as_conflict(
         )
 
 
+def test_qa_answer_stream_reuses_wall_clock_async_transport(monkeypatch) -> None:
+    seen_requests: list[Any] = []
+
+    class FakeAsyncTransport:
+        async def complete(self, request, **_kwargs) -> str:
+            seen_requests.append(request)
+            callback = request.runtime_options.on_stream_chunk
+            assert callback is not None
+            callback("第一段", "第一段")
+            callback("第二段", "第一段第二段")
+            return "第一段第二段"
+
+    monkeypatch.setattr(
+        "src.shared.ai_transport.AsyncOpenAICompatibleTransport",
+        FakeAsyncTransport,
+    )
+    chunks = list(
+        DefaultQAApiAlgorithms().stream_answer(
+            question="发生了什么？",
+            candidates=[{"document": "漫画资料", "pageNumber": 1}],
+            config={
+                "chat": {
+                    "provider": "custom",
+                    "model_name": "test-model",
+                    "api_key": "test-key",
+                    "base_url": "https://example.com/v1",
+                    "timeout_seconds": 0.01,
+                }
+            },
+            cancelled=threading.Event(),
+        )
+    )
+
+    assert chunks == ["第一段", "第二段"]
+    assert len(seen_requests) == 1
+
+
 def test_qa_http_response_streams_without_creating_job_history(
     insight_platform,
 ) -> None:
@@ -1865,12 +2411,13 @@ def test_qa_http_response_streams_without_creating_job_history(
     assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
     with platform["engine"].connect() as connection:
         jobs_before = len(list(connection.execute(select(jobs.c.id)).scalars()))
+    qa_algorithms = FakeQAApiAlgorithms()
     app = Flask("qa-test")
     app.register_blueprint(
         create_insight_blueprint(
             engine=platform["engine"],
             data_root=platform["data_root"],
-            qa_algorithms=FakeQAApiAlgorithms(),
+            qa_algorithms=qa_algorithms,
         )
     )
     client = app.test_client()
@@ -1902,6 +2449,7 @@ def test_qa_http_response_streams_without_creating_job_history(
     assert "event: chunk" in payload
     assert "答案" in payload
     assert "event: done" in payload
+    assert qa_algorithms.rerank_calls == 0
     with platform["engine"].connect() as connection:
         assert len(
             list(connection.execute(select(jobs.c.id)).scalars())

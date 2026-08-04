@@ -163,7 +163,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
     app = Flask("saber_translator_v2", static_folder=None)
     app.config.update(
         JSON_SORT_KEYS=False,
-        MAX_CONTENT_LENGTH=1024 * 1024 * 1024,
         SABER_V2_DATA_ROOT=str(settings.data_root),
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
     )

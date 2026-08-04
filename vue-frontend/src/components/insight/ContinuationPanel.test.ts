@@ -98,6 +98,8 @@ function createStateStub(currentStep = 0) {
         enabled: true,
       },
     ]),
+    hasMoreCharacterForms: ref(false),
+    isLoadingMoreCharacterForms: ref(false),
     chapterScript: ref(null),
     pages: ref([]),
     imageRefreshKey: ref(Date.now()),
@@ -105,6 +107,7 @@ function createStateStub(currentStep = 0) {
     isSyncingAnalysis: ref(false),
     lastAnalysisSyncAt: ref(''),
     initializeData: vi.fn().mockResolvedValue(undefined),
+    loadMoreCharacterForms: vi.fn().mockResolvedValue(undefined),
     syncAnalysisData: vi.fn().mockResolvedValue(undefined),
     resetState: vi.fn().mockResolvedValue(undefined),
     showMessage: vi.fn(),
@@ -303,7 +306,7 @@ describe('ContinuationPanel', () => {
     expect(stepButtons[3]?.attributes('disabled')).toBeDefined()
   })
 
-  it('renders workflow navigation arrows through shared icons', () => {
+  it('renders only the active workflow panel and its shared navigation icons', async () => {
     const wrapper = mount(ContinuationPanel, {
       global: {
         stubs: {
@@ -316,20 +319,26 @@ describe('ContinuationPanel', () => {
       },
     })
 
-    const nextButtons = wrapper.findAll('button').filter(button => button.text().includes('下一步'))
-    const previousButtons = wrapper
-      .findAll('button')
-      .filter(button => button.text().includes('上一步'))
+    for (const step of [0, 1, 2, 3]) {
+      mocks.state.currentStep.value = step
+      await nextTick()
+      const nextButtons = wrapper
+        .findAll('button')
+        .filter(button => button.text().includes('下一步'))
+      const previousButtons = wrapper
+        .findAll('button')
+        .filter(button => button.text().includes('上一步'))
 
-    expect(nextButtons).toHaveLength(3)
-    expect(previousButtons).toHaveLength(3)
-    for (const button of nextButtons) {
-      expect(button.text()).not.toContain('→')
-      expect(button.findComponent(UiIcon).props('name')).toBe('chevron-right')
-    }
-    for (const button of previousButtons) {
-      expect(button.text()).not.toContain('←')
-      expect(button.findComponent(UiIcon).props('name')).toBe('chevron-left')
+      expect(nextButtons).toHaveLength(step < 3 ? 1 : 0)
+      expect(previousButtons).toHaveLength(step > 0 ? 1 : 0)
+      if (nextButtons[0]) {
+        expect(nextButtons[0].text()).not.toContain('→')
+        expect(nextButtons[0].findComponent(UiIcon).props('name')).toBe('chevron-right')
+      }
+      if (previousButtons[0]) {
+        expect(previousButtons[0].text()).not.toContain('←')
+        expect(previousButtons[0].findComponent(UiIcon).props('name')).toBe('chevron-left')
+      }
     }
   })
 
@@ -380,7 +389,7 @@ describe('ContinuationPanel', () => {
     expect(wrapper.find('.continuation-panel__field').exists()).toBe(false)
   })
 
-  it('renders step actions through the shared product action row', () => {
+  it('renders only the active step actions through the shared product action row', async () => {
     const wrapper = mount(ContinuationPanel, {
       global: {
         stubs: {
@@ -393,11 +402,16 @@ describe('ContinuationPanel', () => {
       },
     })
 
-    const actionRows = wrapper.findAllComponents(ProductActionRow)
-    expect(actionRows).toHaveLength(4)
+    let actionRows = wrapper.findAllComponents(ProductActionRow)
+    expect(actionRows).toHaveLength(1)
     expect(actionRows[0]?.props('justify')).toBe('between')
     expect(actionRows[0]?.props('divider')).toBe(true)
-    expect(actionRows[3]?.props('justify')).toBe('start')
+
+    mocks.state.currentStep.value = 3
+    await nextTick()
+    actionRows = wrapper.findAllComponents(ProductActionRow)
+    expect(actionRows).toHaveLength(1)
+    expect(actionRows[0]?.props('justify')).toBe('start')
     expect(wrapper.find('.actions').exists()).toBe(false)
   })
 
@@ -544,7 +558,7 @@ describe('ContinuationPanel', () => {
     expect(mocks.state.syncAnalysisData).toHaveBeenCalledWith('auto')
   })
 
-  it('clears pending story autosave when the panel unmounts', async () => {
+  it('flushes pending story autosave when the panel unmounts', async () => {
     vi.useFakeTimers()
     mocks.state = createStateStub(2)
     mocks.state.pages.value = [
@@ -577,9 +591,11 @@ describe('ContinuationPanel', () => {
 
       await wrapper.find('.trigger-story-change').trigger('click')
       wrapper.unmount()
-      await vi.advanceTimersByTimeAsync(600)
+      await Promise.resolve()
 
-      expect(mocks.savePages).not.toHaveBeenCalled()
+      expect(mocks.savePages).toHaveBeenCalledWith('book-1', [
+        expect.objectContaining({ story_text: '新剧情' }),
+      ])
     } finally {
       vi.useRealTimers()
     }
@@ -618,6 +634,8 @@ describe('ContinuationPanel', () => {
       })
 
       await wrapper.find('.trigger-story-change').trigger('click')
+      mocks.state.currentStep.value = 0
+      await nextTick()
       await getButtonByText(wrapper, '清除数据重新开始').trigger('click')
       await vi.advanceTimersByTimeAsync(600)
 

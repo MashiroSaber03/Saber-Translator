@@ -111,8 +111,11 @@ function createContinuationState(overrides: Partial<ContinuationState> = {}): Co
     pages: ref([createContinuationPage()]),
     imageRefreshKey: ref(0),
     isGeneratingPages: ref(false),
+    hasMoreCharacterForms: ref(false),
+    isLoadingMoreCharacterForms: ref(false),
     initializeData: vi.fn(),
     syncAnalysisData: vi.fn(),
+    loadMoreCharacterForms: vi.fn(),
     resetState: vi.fn(),
     showMessage: vi.fn(),
     getCharacterImageUrl: vi.fn((characterName: string) => characterName),
@@ -568,6 +571,22 @@ describe('Insight card-like controls', () => {
     await wrapper.vm.$nextTick()
 
     expect(formatGrid.props('modelValue')).toBe('pdf')
+  })
+
+  it('disables continuation export until at least one image exists', () => {
+    const wrapper = mount(ExportPanel, {
+      props: {
+        bookId: 'book-1',
+        generatedCount: 0,
+        state: createContinuationState(),
+      },
+    })
+
+    expect(
+      wrapper
+        .get('.continuation-export-panel__download-action')
+        .attributes('disabled'),
+    ).toBeDefined()
   })
 
   it('does not cap the export step to a fixed narrow column', () => {

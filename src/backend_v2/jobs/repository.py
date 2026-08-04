@@ -1626,7 +1626,14 @@ class JobQueueRepository:
                 now=now,
             )
 
-    def active_step_counts(self, fence: AttemptFence) -> tuple[int, int]:
+    def active_step_counts(
+        self,
+        fence: AttemptFence,
+        *,
+        step_kind: str | None = None,
+    ) -> tuple[int, int]:
+        """Return pending/running counts, optionally scoped to one stage pool."""
+
         now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
@@ -1635,15 +1642,20 @@ class JobQueueRepository:
                 now,
                 allowed_statuses=("running", "pausing", "cancelling"),
             )
-            rows = list(connection.execute(
-                select(job_steps.c.status, func.count())
-                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
-                .where(
-                    job_items.c.job_id == fence.job_id,
-                    job_steps.c.status.in_(("pending", "running")),
+            conditions = [
+                job_items.c.job_id == fence.job_id,
+                job_steps.c.status.in_(("pending", "running")),
+            ]
+            if step_kind is not None:
+                conditions.append(job_steps.c.kind == step_kind)
+            rows = list(
+                connection.execute(
+                    select(job_steps.c.status, func.count())
+                    .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                    .where(*conditions)
+                    .group_by(job_steps.c.status)
                 )
-                .group_by(job_steps.c.status)
-            ))
+            )
         counts = {str(status): int(count) for status, count in rows}
         return counts.get("pending", 0), counts.get("running", 0)
 
@@ -1806,6 +1818,7 @@ class JobQueueRepository:
                     job_steps.c.id.label("step_id"),
                     job_steps.c.kind.label("step_kind"),
                     job_steps.c.ordinal.label("step_ordinal"),
+                    job_steps.c.checkpoint_json,
                     job_items.c.id.label("item_id"),
                     job_items.c.ordinal.label("item_ordinal"),
                     job_items.c.page_id,
@@ -1892,6 +1905,7 @@ class JobQueueRepository:
                 "stepId": row["step_id"],
                 "stepOrdinal": row["step_ordinal"],
                 "stepKind": row["step_kind"],
+                "checkpoint": _load_json(row["checkpoint_json"], {}),
                 "isFirstStep": bool(row["is_first_step"]),
                 "isLastStep": bool(row["is_last_step"]),
             }
@@ -2082,12 +2096,18 @@ class JobQueueRepository:
         *,
         step_kind: str,
     ) -> int | None:
-        """Return the earliest currently claimable round for a batch step."""
+        """Return the earliest currently claimable round for one stage pool.
+
+        This is a read-only admission preflight.  The subsequent claim still
+        revalidates every condition inside ``BEGIN IMMEDIATE``.
+        """
 
         now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
             prior_step = job_steps.alias("ready_prior_step")
+            proofread_barrier_step = job_steps.alias("ready_proofread_barrier_step")
+            proofread_barrier_item = job_items.alias("ready_proofread_barrier_item")
             value = connection.execute(
                 select(func.min(job_steps.c.ordinal))
                 .join(job_items, job_items.c.id == job_steps.c.job_item_id)
@@ -2103,9 +2123,120 @@ class JobQueueRepository:
                             prior_step.c.status.in_(("pending", "running")),
                         )
                     ),
+                    or_(
+                        job_steps.c.kind != "render",
+                        ~exists(
+                            select(proofread_barrier_step.c.id)
+                            .select_from(
+                                proofread_barrier_step.join(
+                                    proofread_barrier_item,
+                                    proofread_barrier_item.c.id
+                                    == proofread_barrier_step.c.job_item_id,
+                                )
+                            )
+                            .where(
+                                proofread_barrier_item.c.job_id == fence.job_id,
+                                proofread_barrier_step.c.kind == "proofread",
+                                proofread_barrier_step.c.status.in_(
+                                    ("pending", "running")
+                                ),
+                            )
+                        ),
+                    ),
                 )
             ).scalar_one_or_none()
         return int(value) if value is not None else None
+
+    def checkpoint_step(
+        self,
+        fence: AttemptFence,
+        *,
+        step_id: str,
+        checkpoint: Mapping[str, Any],
+        publisher: Callable[[Connection], None] | None = None,
+    ) -> str:
+        """Persist an intra-step safe point and yield when control was requested."""
+
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            job_status = self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            safe_checkpoint = redact_sensitive_value(
+                dict(checkpoint),
+                secret_values=(),
+            )
+            step = connection.execute(
+                select(
+                    job_steps.c.job_item_id,
+                    job_items.c.page_id,
+                )
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
+                    job_steps.c.id == step_id,
+                    job_steps.c.status == "running",
+                    job_steps.c.attempt_id == fence.attempt_id,
+                    job_items.c.job_id == fence.job_id,
+                )
+            ).mappings().one_or_none()
+            if step is None:
+                raise AttemptFenced("step checkpoint was fenced")
+            if publisher is not None:
+                publisher(connection)
+            yielding = job_status in {"pausing", "cancelling"}
+            values: dict[str, object] = {
+                "checkpoint_json": _json(safe_checkpoint),
+                "updated_at": now,
+            }
+            if yielding:
+                values.update(status="pending", attempt_id=None)
+            connection.execute(
+                update(job_steps)
+                .where(
+                    job_steps.c.id == step_id,
+                    job_steps.c.attempt_id == fence.attempt_id,
+                )
+                .values(**values)
+            )
+            if yielding:
+                connection.execute(
+                    update(job_items)
+                    .where(job_items.c.id == step["job_item_id"])
+                    .values(status="pending", updated_at=now)
+                )
+            snapshot = self._progress_snapshot(connection, fence.job_id)
+            connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.lease_token == fence.lease_token,
+                    jobs.c.status == job_status,
+                )
+                .values(latest_progress_json=_json(snapshot), updated_at=now)
+            )
+            self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type="step_checkpointed",
+                payload={
+                    "itemId": str(step["job_item_id"]),
+                    "pageId": (
+                        str(step["page_id"])
+                        if step["page_id"] is not None
+                        else None
+                    ),
+                    "stepId": step_id,
+                    "yielded": yielding,
+                    "checkpoint": safe_checkpoint,
+                    "progress": snapshot,
+                },
+                now=now,
+            )
+            return job_status
 
     def complete_step(
         self,
@@ -2115,8 +2246,9 @@ class JobQueueRepository:
         checkpoint: Mapping[str, Any],
         input_fingerprint: str | None = None,
         publisher: Callable[[Connection], None] | None = None,
-    ) -> None:
-        self._finish_step(
+        defer_on_control: bool = False,
+    ) -> bool:
+        return self._finish_step(
             fence,
             step_id=step_id,
             status="completed",
@@ -2124,6 +2256,7 @@ class JobQueueRepository:
             error=None,
             input_fingerprint=input_fingerprint,
             publisher=publisher,
+            defer_on_control=defer_on_control,
         )
 
     def fail_step(
@@ -2143,6 +2276,7 @@ class JobQueueRepository:
             error={"code": code, "message": message},
             input_fingerprint=None,
             publisher=publisher,
+            defer_on_control=False,
         )
 
     def fail_terminal_item(
@@ -2661,7 +2795,8 @@ class JobQueueRepository:
         error: Mapping[str, Any] | None,
         input_fingerprint: str | None,
         publisher: Callable[[Connection], None] | None,
-    ) -> None:
+        defer_on_control: bool,
+    ) -> bool:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             job_status = self._assert_attempt(
@@ -2711,6 +2846,59 @@ class JobQueueRepository:
                 raise AttemptFenced("step completion was fenced")
             if publisher is not None:
                 publisher(connection)
+            if defer_on_control and job_status in {"pausing", "cancelling"}:
+                connection.execute(
+                    update(job_steps)
+                    .where(
+                        job_steps.c.id == step_id,
+                        job_steps.c.attempt_id == fence.attempt_id,
+                    )
+                    .values(
+                        status="pending",
+                        attempt_id=None,
+                        checkpoint_json=(
+                            _json(safe_checkpoint)
+                            if safe_checkpoint
+                            else None
+                        ),
+                        updated_at=now,
+                    )
+                )
+                connection.execute(
+                    update(job_items)
+                    .where(job_items.c.id == step["job_item_id"])
+                    .values(status="pending", updated_at=now)
+                )
+                snapshot = self._progress_snapshot(connection, fence.job_id)
+                connection.execute(
+                    update(jobs)
+                    .where(
+                        jobs.c.id == fence.job_id,
+                        jobs.c.attempt_id == fence.attempt_id,
+                        jobs.c.lease_token == fence.lease_token,
+                        jobs.c.status == job_status,
+                    )
+                    .values(latest_progress_json=_json(snapshot), updated_at=now)
+                )
+                self._append_event(
+                    connection,
+                    job_id=fence.job_id,
+                    event_type="step_checkpointed",
+                    payload={
+                        "itemId": str(step["job_item_id"]),
+                        "pageId": (
+                            str(step["page_id"])
+                            if step["page_id"] is not None
+                            else None
+                        ),
+                        "stepId": step_id,
+                        "yielded": True,
+                        "checkpoint": safe_checkpoint or {},
+                        "progress": snapshot,
+                    },
+                    now=now,
+                )
+                return False
             connection.execute(
                 update(job_steps)
                 .where(
@@ -2814,6 +3002,7 @@ class JobQueueRepository:
                 },
                 now=now,
             )
+            return True
 
     def _command(self, job_id: str, event: JobEvent) -> dict[str, object]:
         now = utcnow()

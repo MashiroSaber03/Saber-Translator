@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, UnidentifiedImageError
 from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
@@ -140,19 +140,21 @@ class PageRepairService:
         fill_color: str | None,
         idempotency_key: str,
     ) -> tuple[dict[str, object], bool]:
-        raw = upload.read(64 * 1024 * 1024 + 1)
-        if not raw or len(raw) > 64 * 1024 * 1024:
-            raise ValueError("repair mask is empty or exceeds 64 MiB")
-        with Image.open(BytesIO(raw)) as opened:
-            if (
-                opened.format != "PNG"
-                or opened.mode != "L"
-                or getattr(opened, "n_frames", 1) != 1
-            ):
-                raise ValueError(
-                    "repair mask must be a single-frame 8-bit grayscale PNG"
-                )
-            mask = opened.copy()
+        try:
+            with Image.open(upload) as opened:
+                if (
+                    opened.format != "PNG"
+                    or opened.mode != "L"
+                    or getattr(opened, "n_frames", 1) != 1
+                ):
+                    raise ValueError(
+                        "repair mask must be a single-frame 8-bit grayscale PNG"
+                    )
+                mask = opened.copy()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise ValueError(
+                "repair mask must be a single-frame 8-bit grayscale PNG"
+            ) from exc
         colors = mask.getcolors(maxcolors=3)
         if (
             colors is None
