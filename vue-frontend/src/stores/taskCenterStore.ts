@@ -96,6 +96,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   let eventRefreshInFlight = false
   let eventRefreshDirty = false
   let projectionVersion = 0
+  let projectionTimer: ReturnType<typeof setTimeout> | null = null
+  let projectionPromise: Promise<void> | null = null
+  const pendingProjectionJobIds = new Set<string>()
   const eventListeners = new Set<TaskCenterEventListener>()
 
   const activeCount = computed(
@@ -195,10 +198,43 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     history.value = trimHistoryBatches(historyWithoutJob)
   }
 
-  function hasJobProjection(value: unknown): value is V2Job {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-    const candidate = value as Partial<V2Job>
-    return typeof candidate.jobId === 'string' && typeof candidate.status === 'string'
+  function removeJobProjection(jobId: string): void {
+    queue.value = queue.value.filter(item => item.jobId !== jobId)
+    history.value = history.value.filter(item => item.jobId !== jobId)
+  }
+
+  function scheduleJobProjection(jobId: string): void {
+    pendingProjectionJobIds.add(jobId)
+    if (projectionTimer || projectionPromise) return
+    projectionTimer = setTimeout(() => {
+      projectionTimer = null
+      void flushJobProjections()
+    }, 100)
+  }
+
+  async function flushJobProjections(): Promise<void> {
+    if (projectionPromise || pendingProjectionJobIds.size === 0) return
+    const jobIds = [...pendingProjectionJobIds].slice(0, 200)
+    for (const jobId of jobIds) pendingProjectionJobIds.delete(jobId)
+    const request = jobsApi.snapshot(jobIds).then(result => {
+      const found = new Set(result.items.map(job => job.jobId))
+      for (const job of result.items) applyJobProjection(job)
+      for (const jobId of jobIds) {
+        if (!found.has(jobId)) removeJobProjection(jobId)
+      }
+      queueRevision.value = Math.max(queueRevision.value, result.queueRevision)
+      projectionVersion += 1
+    }).catch(() => {
+      scheduleRefresh()
+    }).finally(() => {
+      projectionPromise = null
+      if (pendingProjectionJobIds.size > 0) {
+        const nextJobId = pendingProjectionJobIds.values().next().value
+        if (nextJobId) scheduleJobProjection(nextJobId)
+      }
+    })
+    projectionPromise = request
+    await request
   }
 
   function scheduleRefresh(): void {
@@ -228,17 +264,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       const cursorGap = lastEventId.value > 0 && parsed.eventId !== lastEventId.value + 1
       latestEvent.value = parsed
       lastEventId.value = parsed.eventId
-      projectionVersion += 1
       for (const listener of eventListeners) listener(parsed)
-      if (hasJobProjection(parsed.job) && parsed.job.jobId === parsed.jobId) {
-        applyJobProjection(parsed.job)
-        if (typeof parsed.queueRevision === 'number') {
-          queueRevision.value = Math.max(queueRevision.value, parsed.queueRevision)
-        }
-      } else {
-        scheduleRefresh()
-      }
       if (cursorGap) scheduleRefresh()
+      else scheduleJobProjection(parsed.jobId)
     } catch {
       scheduleRefresh()
     }
@@ -268,6 +296,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   function disconnect(): void {
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = null
+    if (projectionTimer) clearTimeout(projectionTimer)
+    projectionTimer = null
+    pendingProjectionJobIds.clear()
     eventRefreshDirty = false
     eventSource?.close()
     eventSource = null

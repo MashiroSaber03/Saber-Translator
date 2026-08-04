@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
@@ -46,6 +47,9 @@ def materialize_render_payloads(
     page_id: str,
     *,
     initialize_auto_fields: frozenset[str] = frozenset(),
+    style_defaults_override: Mapping[str, object] | None = None,
+    override_font_id: bool = False,
+    font_id_override: str | None = None,
 ) -> list[tuple[str, dict[str, object], dict[str, object]]]:
     if "fontSize" in initialize_auto_fields:
         from src.core.rendering import calculate_auto_font_size
@@ -68,7 +72,11 @@ def materialize_render_payloads(
         ).mappings()
     )
     style_defaults = validate_page_style(
-        json.loads(page["page_style_defaults_json"]),
+        (
+            style_defaults_override
+            if style_defaults_override is not None
+            else json.loads(page["page_style_defaults_json"])
+        ),
         partial=False,
     )
     result = []
@@ -77,7 +85,11 @@ def materialize_render_payloads(
         font_path = resolve_font_path(
             connection,
             storage,
-            row["font_id"] or page["default_font_id"],
+            (
+                font_id_override
+                if override_font_id
+                else row["font_id"] or page["default_font_id"]
+            ),
         )
         if (
             "layoutDirection" in initialize_auto_fields

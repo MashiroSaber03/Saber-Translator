@@ -29,7 +29,7 @@ from src.backend_v2.storage.platform_repositories import (
 )
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
-from src.backend_v2.storage.defaults import default_translation_settings
+from src.backend_v2.storage.defaults import DEFAULT_FONT_ID, default_translation_settings
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
     app_settings,
@@ -1049,6 +1049,247 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert algorithms.repair_masks == [("L", (64, 64), 255)]
 
 
+def test_translation_rejects_a_stale_style_source_revision(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    with platform["engine"].begin() as connection:
+        revision = int(
+            connection.execute(
+                select(pages.c.document_revision).where(
+                    pages.c.id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(document_revision=revision + 1)
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="style source page document revision changed",
+    ):
+        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+            chapter_id=str(platform["chapter"]["id"]),
+            config={
+                "mode": "standard",
+                "styleSourcePageId": platform["page_id"],
+                "styleSourceDocumentRevision": revision,
+            },
+            page_ids=[platform["page_id"]],
+            idempotency_key="stale-task-style",
+        )
+
+    assert (
+        JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"]
+        == []
+    )
+
+
+def test_translation_style_source_idempotency_replays_after_later_edits(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    with platform["engine"].connect() as connection:
+        revision = int(
+            connection.execute(
+                select(pages.c.document_revision).where(
+                    pages.c.id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+    command = TranslationJobCommandService(platform["engine"])
+    request = {
+        "chapter_id": str(platform["chapter"]["id"]),
+        "config": {
+            "mode": "standard",
+            "styleSourcePageId": platform["page_id"],
+            "styleSourceDocumentRevision": revision,
+        },
+        "page_ids": [platform["page_id"]],
+        "idempotency_key": "task-style-replay",
+    }
+    accepted = command.create_chapter_job(**request)
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(document_revision=revision + 1)
+        )
+
+    assert command.create_chapter_job(**request) == accepted
+    assert len(
+        JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"]
+    ) == 1
+
+
+@pytest.mark.parametrize("execution_mode", ("sequential", "parallel"))
+def test_translation_freezes_one_source_page_style_for_every_target_page(
+    translation_platform,
+    execution_mode: str,
+) -> None:
+    platform = translation_platform
+    source_page_id = platform["page_id"]
+    target_page_id = _import_extra_page(platform, f"style-target-{execution_mode}.png")
+    with platform["engine"].begin() as connection:
+        source = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.page_style_defaults_json,
+            ).where(pages.c.id == source_page_id)
+        ).mappings().one()
+        source_style = json.loads(source["page_style_defaults_json"])
+        source_style.update(
+            {
+                "fontSize": 39,
+                "autoFontSize": False,
+                "layoutDirection": "horizontal",
+                "textColor": "#102030",
+                "fillColor": "#405060",
+                "inpaintMethod": "litelama",
+                "useAutoTextColor": False,
+                "strokeEnabled": True,
+                "strokeColor": "#708090",
+                "strokeWidth": 5,
+                "lineSpacing": 1.6,
+                "textAlign": "end",
+            }
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == source_page_id)
+            .values(page_style_defaults_json=json.dumps(source_style))
+        )
+        target_style = json.loads(
+            connection.execute(
+                select(pages.c.page_style_defaults_json).where(
+                    pages.c.id == target_page_id
+                )
+            ).scalar_one()
+        )
+        target_style.update(
+            {
+                "fontSize": 18,
+                "fillColor": "#FFFFFF",
+                "inpaintMethod": "solid",
+            }
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == target_page_id)
+            .values(page_style_defaults_json=json.dumps(target_style))
+        )
+
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={
+            "mode": "standard",
+            "executionMode": execution_mode,
+            "styleSourcePageId": source_page_id,
+            "styleSourceDocumentRevision": int(source["document_revision"]),
+        },
+        page_ids=[source_page_id, target_page_id],
+        idempotency_key=f"task-style-{execution_mode}",
+    )
+    algorithms = PageStyleRecordingAlgorithms()
+    job_id = _run_translation_job(platform, algorithms)
+
+    assert (
+        JobQueueRepository(platform["engine"]).get_job(job_id)["status"]
+        == "completed"
+    )
+    assert len(algorithms.repair_configs) == 2
+    assert all(
+        config["method"] == "lama"
+        and config["lama_model"] == "litelama"
+        and config["fill_color"] == "#405060"
+        for config in algorithms.repair_configs
+    )
+    assert len(algorithms.render_payloads) == 2
+    assert all(
+        payloads[0]["fontSize"] == 39
+        and payloads[0]["textDirection"] == "horizontal"
+        and payloads[0]["textColor"] == "#102030"
+        and payloads[0]["fillColor"] == "#405060"
+        and payloads[0]["inpaintMethod"] == "litelama"
+        for payloads in algorithms.render_payloads
+    )
+    with platform["engine"].connect() as connection:
+        persisted = [
+            json.loads(value)
+            for value in connection.execute(
+                select(bubbles.c.payload_json)
+                .where(bubbles.c.page_id.in_((source_page_id, target_page_id)))
+                .order_by(bubbles.c.page_id)
+            ).scalars()
+        ]
+    assert len(persisted) == 2
+    assert all(payload["inpaintMethod"] == "litelama" for payload in persisted)
+
+
+def test_translation_style_snapshot_overrides_fonts_when_reusing_bubbles(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    source_page_id = platform["page_id"]
+    target_page_id = _import_extra_page(platform, "style-font-reuse-target.png")
+
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "standard", "executionMode": "sequential"},
+        page_ids=[target_page_id],
+        idempotency_key="style-font-reuse-seed",
+    )
+    _run_translation_job(platform, FakeAlgorithms())
+
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == source_page_id)
+            .values(default_font_id=DEFAULT_FONT_ID)
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == target_page_id)
+            .values(default_font_id=None)
+        )
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.page_id == target_page_id)
+            .values(font_id=None)
+        )
+        source_revision = int(
+            connection.execute(
+                select(pages.c.document_revision).where(pages.c.id == source_page_id)
+            ).scalar_one()
+        )
+
+    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={
+            "mode": "standard",
+            "executionMode": "sequential",
+            "reuseExistingBubbles": True,
+            "styleSourcePageId": source_page_id,
+            "styleSourceDocumentRevision": source_revision,
+        },
+        page_ids=[target_page_id],
+        idempotency_key="style-font-reuse-run",
+    )
+    _run_translation_job(platform, FakeAlgorithms())
+
+    with platform["engine"].connect() as connection:
+        applied_font_ids = list(
+            connection.execute(
+                select(bubbles.c.font_id).where(bubbles.c.page_id == target_page_id)
+            ).scalars()
+        )
+    assert applied_font_ids
+    assert set(applied_font_ids) == {DEFAULT_FONT_ID}
+
+
 def test_translation_applies_extracted_colors_only_when_auto_color_is_enabled(
     translation_platform,
 ) -> None:
@@ -1794,13 +2035,28 @@ def test_failed_item_retry_refreezes_current_backend_settings(
     translation_platform,
 ) -> None:
     platform = translation_platform
+    with platform["engine"].connect() as connection:
+        source_page = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.page_style_defaults_json,
+            ).where(pages.c.id == platform["page_id"])
+        ).mappings().one()
+    source_revision = int(source_page["document_revision"])
     source = TranslationJobCommandService(platform["engine"]).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
-        config={"mode": "standard", "executionMode": "sequential"},
+        config={
+            "mode": "standard",
+            "executionMode": "sequential",
+            "styleSourcePageId": platform["page_id"],
+            "styleSourceDocumentRevision": source_revision,
+        },
         page_ids=[platform["page_id"]],
         idempotency_key="retry-source",
     )
     source_id = str(source["jobIds"][0])
+    current_style = json.loads(source_page["page_style_defaults_json"])
+    current_style["fillColor"] = "#123456"
     with platform["engine"].begin() as connection:
         connection.execute(
             update(job_items)
@@ -1820,6 +2076,14 @@ def test_failed_item_retry_refreezes_current_backend_settings(
             update(jobs)
             .where(jobs.c.id == source_id)
             .values(status="completed_with_errors", queue_rank=None)
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(
+                document_revision=source_revision + 1,
+                page_style_defaults_json=json.dumps(current_style),
+            )
         )
 
     settings_payload = default_translation_settings()
@@ -1878,6 +2142,12 @@ def test_failed_item_retry_refreezes_current_backend_settings(
     detail = JobQueueRepository(platform["engine"]).get_job(replacement_id)
     assert frozen["translation"]["provider"] == "custom"
     assert frozen["translation"]["model_name"] == "retry-current-model"
+    assert frozen["textStyleSnapshot"]["sourceDocumentRevision"] == (
+        source_revision + 1
+    )
+    assert frozen["textStyleSnapshot"]["pageStyleDefaults"]["fillColor"] == (
+        "#123456"
+    )
     assert "new-backend-only-key" not in json.dumps(frozen)
     assert detail["retryOfJobId"] == source_id
     assert detail["retryMode"] == "current"

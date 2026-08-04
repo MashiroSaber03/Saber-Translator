@@ -89,10 +89,12 @@ describe('useTranslationPipeline', () => {
     const imageStore = useImageStore()
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
+      documentRevision: 7,
       id: 'page-1',
     })
     addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
       chapterId: 'chapter-1',
+      documentRevision: 3,
       id: 'page-2',
     })
     imageStore.setCurrentImageIndex(0)
@@ -103,7 +105,11 @@ describe('useTranslationPipeline', () => {
     expect(mocks.createChapterTranslationJob).toHaveBeenCalledWith(
       'chapter-1',
       ['page-2'],
-      expect.objectContaining({ mode: 'standard' }),
+      expect.objectContaining({
+        mode: 'standard',
+        styleSourcePageId: 'page-1',
+        styleSourceDocumentRevision: 7,
+      }),
     )
     expect(imageStore.currentImageIndex).toBe(0)
     expect(imageStore.images[1]?.translationStatus).toBe('processing')
@@ -116,6 +122,7 @@ describe('useTranslationPipeline', () => {
     const imageStore = useImageStore()
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
+      documentRevision: 4,
       id: 'page-1',
     })
     const beforeCreateJob = vi.fn().mockResolvedValue(false)
@@ -133,6 +140,7 @@ describe('useTranslationPipeline', () => {
     settingsStore.settings.parallel.enabled = true
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
+      documentRevision: 4,
       id: 'page-1',
     })
 
@@ -143,14 +151,32 @@ describe('useTranslationPipeline', () => {
       'chapter-1',
       ['page-1'],
       'parallel',
+      { pageId: 'page-1', documentRevision: 4 },
     )
     expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+  })
+
+  it('does not silently fall back to per-page defaults without a committed style source', async () => {
+    const imageStore = useImageStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      id: 'page-1',
+    })
+
+    const result = await useTranslation().translateCurrentImage()
+
+    expect(result).toBe(false)
+    expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      '当前页文字样式尚未写入后端，未创建任务',
+    )
   })
 
   it('rejects pages that are not owned by one backend chapter', async () => {
     const imageStore = useImageStore()
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
+      documentRevision: 1,
       id: 'page-1',
     })
     addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
@@ -436,6 +462,7 @@ describe('useTranslationPipeline', () => {
     const taskCenterStore = useTaskCenterStore()
     addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
+      documentRevision: 1,
       id: 'page-1',
     })
     const translation = useTranslation()

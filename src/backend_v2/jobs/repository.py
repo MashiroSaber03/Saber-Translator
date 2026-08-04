@@ -811,7 +811,6 @@ class JobQueueRepository:
         after: int = 0,
         job_id: str | None = None,
         limit: int = 200,
-        include_projection: bool = False,
     ) -> list[dict[str, object]]:
         if after < 0:
             raise ValueError("event cursor must be nonnegative")
@@ -829,11 +828,18 @@ class JobQueueRepository:
                     .limit(limit)
                 ).mappings()
             )
-            if not rows or not include_projection:
-                return [self._event_dto(row) for row in rows]
+        return [self._event_dto(row) for row in rows]
+
+    def job_snapshot(self, *, job_ids: Sequence[str]) -> dict[str, object]:
+        unique_ids = tuple(dict.fromkeys(str(value) for value in job_ids if value))
+        if not unique_ids:
+            raise ValueError("at least one job_id is required")
+        if len(unique_ids) > 200:
+            raise ValueError("at most 200 job IDs may be read at once")
+        with self.engine.connect() as connection:
             snapshots = self._job_snapshots(
                 connection,
-                job_ids={str(row["job_id"]) for row in rows},
+                job_ids=set(unique_ids),
             )
             revision = int(
                 connection.execute(
@@ -842,14 +848,10 @@ class JobQueueRepository:
                     )
                 ).scalar_one()
             )
-            return [
-                self._event_dto(
-                    row,
-                    job=snapshots.get(str(row["job_id"])),
-                    queue_revision=revision,
-                )
-                for row in rows
-            ]
+        return {
+            "items": [snapshots[value] for value in unique_ids if value in snapshots],
+            "queueRevision": revision,
+        }
 
     def events_before(
         self,
@@ -2125,26 +2127,44 @@ class JobQueueRepository:
         *,
         step_kind: str,
     ) -> int | None:
-        """Return the earliest currently claimable round for one stage pool.
+        return self.ready_step_ordinals(
+            fence,
+            step_kinds=(step_kind,),
+        ).get(step_kind)
 
-        This is a read-only admission preflight.  The subsequent claim still
-        revalidates every condition inside ``BEGIN IMMEDIATE``.
+    def ready_step_ordinals(
+        self,
+        fence: AttemptFence,
+        *,
+        step_kinds: Sequence[str],
+    ) -> dict[str, int]:
+        """Return claimable rounds for a bounded set of batch stage pools.
+
+        This read-only admission preflight is shared by the parallel
+        coordinator.  Each subsequent claim still revalidates every condition
+        inside ``BEGIN IMMEDIATE``.
         """
 
+        unique_kinds = tuple(dict.fromkeys(step_kinds))
+        if not unique_kinds:
+            return {}
         now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
             prior_step = job_steps.alias("ready_prior_step")
             proofread_barrier_step = job_steps.alias("ready_proofread_barrier_step")
             proofread_barrier_item = job_items.alias("ready_proofread_barrier_item")
-            value = connection.execute(
-                select(func.min(job_steps.c.ordinal))
+            rows = connection.execute(
+                select(
+                    job_steps.c.kind,
+                    func.min(job_steps.c.ordinal),
+                )
                 .join(job_items, job_items.c.id == job_steps.c.job_item_id)
                 .where(
                     job_items.c.job_id == fence.job_id,
                     job_items.c.status.in_(("pending", "running")),
                     job_steps.c.status == "pending",
-                    job_steps.c.kind == step_kind,
+                    job_steps.c.kind.in_(unique_kinds),
                     ~exists(
                         select(prior_step.c.id).where(
                             prior_step.c.job_item_id == job_steps.c.job_item_id,
@@ -2173,8 +2193,9 @@ class JobQueueRepository:
                         ),
                     ),
                 )
-            ).scalar_one_or_none()
-        return int(value) if value is not None else None
+                .group_by(job_steps.c.kind)
+            )
+            return {str(kind): int(ordinal) for kind, ordinal in rows}
 
     def checkpoint_step(
         self,
@@ -4083,22 +4104,14 @@ class JobQueueRepository:
     @staticmethod
     def _event_dto(
         row: Mapping[str, Any],
-        *,
-        job: Mapping[str, object] | None = None,
-        queue_revision: int | None = None,
     ) -> dict[str, object]:
-        result: dict[str, object] = {
+        return {
             "eventId": int(row["id"]),
             "jobId": row["job_id"],
             "type": row["event_type"],
             "payload": _load_json(row["payload_json"], {}),
             "createdAt": _iso(row["created_at"]),
         }
-        if job is not None:
-            result["job"] = dict(job)
-        if queue_revision is not None:
-            result["queueRevision"] = queue_revision
-        return result
 
     @staticmethod
     def _job_snapshots(

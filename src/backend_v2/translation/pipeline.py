@@ -1259,6 +1259,7 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        style_defaults, task_font_id = self._task_text_style(step, snapshot)
         source = self._bound_asset(fence, step, page_id, "source")
         before = self._atomic_hook(
             fence,
@@ -1295,7 +1296,7 @@ class TranslationPipelineService:
                     directions[index] if index < len(directions) else "vertical"
                 ),
                 textlines=textlines[index] if index < len(textlines) else [],
-                style=snapshot.style_defaults,
+                style=style_defaults,
             )
             for index, value in enumerate(coords)
         ], snapshot.bubbles)
@@ -1365,6 +1366,7 @@ class TranslationPipelineService:
                             "id": str(uuid.uuid4()),
                             "page_id": page_id,
                             "ordinal": index,
+                            "font_id": task_font_id,
                             "payload_json": _json(payload),
                             "payload_schema_version": 1,
                             "updated_revision": new_revision,
@@ -1506,6 +1508,7 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        style_defaults, _task_font_id = self._task_text_style(step, snapshot)
         source = self._bound_asset(fence, step, page_id, "source")
         before = self._atomic_hook(
             fence,
@@ -1564,7 +1567,7 @@ class TranslationPipelineService:
         if len(colors) != len(snapshot.bubbles):
             raise JobConflict("color result count does not match persisted bubbles")
         updated = [dict(payload) for payload in snapshot.bubbles]
-        uses_auto_color = bool(snapshot.style_defaults["useAutoTextColor"])
+        uses_auto_color = bool(style_defaults["useAutoTextColor"])
         for payload, color in zip(updated, colors):
             foreground = color.get("fg_color")
             background = color.get("bg_color")
@@ -1910,6 +1913,7 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        style_defaults, _task_font_id = self._task_text_style(step, snapshot)
         source = self._bound_asset(fence, step, page_id, "source")
         precise_mask_asset_id = self._completed_step_asset_id(
             fence,
@@ -1928,8 +1932,8 @@ class TranslationPipelineService:
                 "inputAssetId": str(source["id"]),
                 "textMaskAssetId": precise_mask_asset_id,
                 "bubbles": [dict(value) for value in snapshot.bubbles],
-                "method": str(snapshot.style_defaults["inpaintMethod"]),
-                "fillColor": snapshot.style_defaults["fillColor"],
+                "method": str(style_defaults["inpaintMethod"]),
+                "fillColor": style_defaults["fillColor"],
             },
         )
         image = self._open_asset(str(before["inputAssetId"]), "RGB")
@@ -2008,6 +2012,11 @@ class TranslationPipelineService:
         page_id: str,
     ) -> Mapping[str, Any]:
         snapshot = self._snapshot(page_id)
+        style_defaults, task_font_id = self._task_text_style(step, snapshot)
+        has_task_text_style = isinstance(
+            self._config(step).get("textStyleSnapshot"),
+            Mapping,
+        )
         from src.backend_v2.rendering.fonts import (
             materialize_render_payloads,
         )
@@ -2042,6 +2051,9 @@ class TranslationPipelineService:
                 self.storage,
                 page_id,
                 initialize_auto_fields=initialize_auto_fields,
+                style_defaults_override=style_defaults,
+                override_font_id=has_task_text_style,
+                font_id_override=task_font_id,
             )
         render_payloads = [
             render_payload
@@ -2113,6 +2125,12 @@ class TranslationPipelineService:
                 connection, page_id, snapshot.document_revision
             )
             for bubble_id, payload in persisted_payloads:
+                values: dict[str, object] = {
+                    "payload_json": _json(payload),
+                    "updated_revision": snapshot.document_revision,
+                }
+                if has_task_text_style:
+                    values["font_id"] = task_font_id
                 connection.execute(
                     update(bubbles)
                     .where(
@@ -2121,10 +2139,7 @@ class TranslationPipelineService:
                         bubbles.c.updated_revision
                         <= snapshot.document_revision,
                     )
-                    .values(
-                        payload_json=_json(payload),
-                        updated_revision=snapshot.document_revision,
-                    )
+                    .values(**values)
                 )
             connection.execute(
                 insert(job_step_asset_outputs).values(
@@ -2453,6 +2468,23 @@ class TranslationPipelineService:
     def _config(self, step: Mapping[str, Any]) -> dict[str, Any]:
         value = step.get("config", {})
         return dict(value) if isinstance(value, Mapping) else {}
+
+    def _task_text_style(
+        self,
+        step: Mapping[str, Any],
+        snapshot: PageSnapshot,
+    ) -> tuple[dict[str, Any], str | None]:
+        value = self._config(step).get("textStyleSnapshot")
+        if not isinstance(value, Mapping):
+            return dict(snapshot.style_defaults), None
+        defaults = validate_page_style(
+            value.get("pageStyleDefaults"),
+            partial=False,
+        )
+        default_font_id = value.get("defaultFontId")
+        if default_font_id is not None and not isinstance(default_font_id, str):
+            raise JobConflict("frozen text style font is invalid")
+        return defaults, default_font_id
 
     def _effective_constraints(
         self,

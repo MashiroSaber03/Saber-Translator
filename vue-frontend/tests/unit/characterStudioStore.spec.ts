@@ -629,9 +629,47 @@ describe('characterStudioStore', () => {
         description: '新的角色描述',
       },
     })
+    getCharacterStudioIndexMock.mockClear()
+    getCharacterStudioChatStateMock.mockClear()
     await vi.advanceTimersByTimeAsync(3000)
 
     expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
+    expect(getCharacterStudioIndexMock).not.toHaveBeenCalled()
+    expect(getCharacterStudioChatStateMock).not.toHaveBeenCalled()
+  })
+
+  it('updates the library summary from the save response without reloading the workspace', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    if (!store.currentDocument) throw new Error('currentDocument missing in test setup')
+
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      meta: {
+        ...store.currentDocument.meta,
+        title: '更新后的阿尔法',
+        tags: ['主角', '已更新'],
+      },
+      status: {
+        ...store.currentDocument.status,
+        is_favorite: true,
+      },
+    })
+    getCharacterStudioIndexMock.mockClear()
+
+    await store.persistCurrentDocument()
+
+    expect(getCharacterStudioIndexMock).not.toHaveBeenCalled()
+    expect(store.documents[0]).toMatchObject({
+      id: 'doc_alpha',
+      title: '更新后的阿尔法',
+      tags: ['主角', '已更新'],
+      is_favorite: true,
+      sample_pages: [1],
+    })
   })
 
   it('manual save cancels any queued autosave request', async () => {
@@ -722,6 +760,68 @@ describe('characterStudioStore', () => {
     expect(store.currentDocument?.identity.description).toBe('保存期间继续输入的内容')
     expect(store.currentDocument?.revision).toBe(3)
     expect(store.isSaving).toBe(false)
+  })
+
+  it('saves edits made while chat state is rehydrating without leaving a stale autosave timer', async () => {
+    vi.useFakeTimers()
+    const chatRefresh = deferred<{
+      doc_id: string
+      active_session: CharacterStudioChatSession
+      archived_sessions: never[]
+      available_greetings: never[]
+    }>()
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    if (!store.currentDocument) throw new Error('currentDocument missing in test setup')
+
+    getCharacterStudioChatStateMock
+      .mockReset()
+      .mockReturnValueOnce(chatRefresh.promise)
+      .mockResolvedValue({
+        doc_id: 'doc_alpha',
+        active_session: deepClone(demoChatSession),
+        archived_sessions: [],
+        available_greetings: [],
+      })
+    saveCharacterStudioDocumentMock
+      .mockReset()
+      .mockImplementation(async (_docId: string, payload: CharacterStudioDocument) => ({
+        ...deepClone(payload),
+        revision: (payload.revision || 0) + 1,
+      }))
+
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      coreMessages: {
+        ...store.currentDocument.coreMessages,
+        first_message: '保存后需要刷新聊天的开场白',
+      },
+    })
+    const saving = store.persistCurrentDocument()
+    await vi.waitFor(() => expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(1))
+
+    if (!store.currentDocument) throw new Error('currentDocument disappeared during rehydrate')
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      identity: {
+        ...store.currentDocument.identity,
+        description: '聊天状态刷新期间继续输入的内容',
+      },
+    })
+    chatRefresh.resolve({
+      doc_id: 'doc_alpha',
+      active_session: deepClone(demoChatSession),
+      archived_sessions: [],
+      available_greetings: [],
+    })
+    await saving
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(2)
+    expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(1)
+    expect(store.currentDocument?.identity.description).toBe('聊天状态刷新期间继续输入的内容')
   })
 
   it('clears stale document state when loading a different book workspace', async () => {

@@ -444,14 +444,19 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     { deep: true },
   )
 
-  async function prepareJobCreation(pageIds: string[]): Promise<void> {
+  async function prepareJobCreation(
+    pageIds: string[],
+    styleSourcePageId?: string,
+  ): Promise<void> {
     if (
       options.beforeCreateJob
       && !(await options.beforeCreateJob())
     ) {
       throw new Error('章节工作态设置写入后端失败，未创建任务')
     }
-    for (const pageId of pageIds) {
+    const pagesToFlush = new Set(pageIds)
+    if (styleSourcePageId) pagesToFlush.add(styleSourcePageId)
+    for (const pageId of pagesToFlush) {
       if (!hasPendingPageDocument(pageId)) continue
       await flushPageDocument(pageId)
     }
@@ -480,15 +485,40 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
 
     const pageIds = pages.map(page => page!.id)
     try {
-      await prepareJobCreation(pageIds)
+      const styleSourcePageId = imageStore.currentImage?.id
+      if (!styleSourcePageId) {
+        throw new Error('没有可用的当前页文字样式，未创建任务')
+      }
+      await prepareJobCreation(pageIds, styleSourcePageId)
+      const committedStyleSource = imageStore.images.find(
+        page => page.id === styleSourcePageId,
+      )
+      if (
+        committedStyleSource?.chapterId !== chapterId
+        || !Number.isInteger(committedStyleSource.documentRevision)
+        || Number(committedStyleSource.documentRevision) < 1
+      ) {
+        throw new Error('当前页文字样式尚未写入后端，未创建任务')
+      }
+      const styleSource = {
+        pageId: committedStyleSource.id,
+        documentRevision: Number(committedStyleSource.documentRevision),
+      }
       const executionMode = settingsStore.settings.parallel.enabled
         ? 'parallel'
         : 'sequential'
       const batch = mode === 'removeText'
-        ? await createChapterRemoveTextJob(chapterId, pageIds, executionMode)
+        ? await createChapterRemoveTextJob(
+            chapterId,
+            pageIds,
+            executionMode,
+            styleSource,
+          )
         : await createChapterTranslationJob(chapterId, pageIds, {
             executionMode,
             mode,
+            styleSourcePageId: styleSource.pageId,
+            styleSourceDocumentRevision: styleSource.documentRevision,
             ...(pageOptions.reuseExistingBubbles === undefined
               ? {}
               : { reuseExistingBubbles: pageOptions.reuseExistingBubbles }),

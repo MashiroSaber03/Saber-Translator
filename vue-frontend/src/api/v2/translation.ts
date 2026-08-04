@@ -10,6 +10,11 @@ export type V2TranslationBatchAccepted = components['schemas']['JobBatchAccepted
 export type V2MultiChapterTranslationBatchAccepted =
   components['schemas']['TranslationBatchAccepted']
 
+export interface TranslationStyleSource {
+  pageId: string
+  documentRevision: number
+}
+
 export async function createChapterTranslationJob(
   chapterId: string,
   pageIds: string[],
@@ -27,11 +32,21 @@ export async function createChapterRemoveTextJob(
   chapterId: string,
   pageIds: string[],
   executionMode: 'sequential' | 'parallel',
+  styleSource?: TranslationStyleSource,
 ): Promise<V2TranslationBatchAccepted> {
   assertBackendActionAllowed()
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/remove-text-jobs`,
-    { executionMode, pageIds },
+    {
+      executionMode,
+      pageIds,
+      ...(styleSource
+        ? {
+            styleSourcePageId: styleSource.pageId,
+            styleSourceDocumentRevision: styleSource.documentRevision,
+          }
+        : {}),
+    },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

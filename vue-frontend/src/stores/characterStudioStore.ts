@@ -87,6 +87,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const selectedLibrarySearch = ref('')
   const _suspendAutosave = ref(false)
   const lastSyncedFingerprint = ref('')
+  const lastSyncedChatFingerprint = ref('')
   const pendingChatRehydrate = ref(false)
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   let activeDocumentSave: Promise<void> | null = null
@@ -383,21 +384,26 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
     if (activeDocumentSave) return activeDocumentSave
 
-    activeDocumentSave = persistCurrentDocumentUntilSynced().finally(() => {
+    activeDocumentSave = savePendingDocumentEdits().finally(() => {
       isSaving.value = false
       activeDocumentSave = null
     })
     return activeDocumentSave
   }
 
-  async function persistCurrentDocumentUntilSynced() {
+  async function savePendingDocumentEdits() {
     isSaving.value = true
     clearErrorMessage()
+    let chatStateChanged = false
     try {
       while (bookId.value && currentDocument.value) {
         const requestedBookId = bookId.value
         const snapshot = deepClone(currentDocument.value)
         const snapshotFingerprint = buildAutosaveFingerprint(snapshot)
+        if (autosaveTimer) {
+          clearTimeout(autosaveTimer)
+          autosaveTimer = null
+        }
         const document = await saveCharacterStudioDocument(snapshot.id, snapshot)
 
         if (
@@ -405,6 +411,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
           || currentDocument.value?.id !== snapshot.id
         ) return
 
+        chatStateChanged ||= (
+          buildChatFingerprint(snapshot) !== lastSyncedChatFingerprint.value
+          || buildChatFingerprint(document) !== lastSyncedChatFingerprint.value
+        )
         const editedWhileSaving =
           buildAutosaveFingerprint(currentDocument.value) !== snapshotFingerprint
         await runWithoutAutosave(async () => {
@@ -417,19 +427,17 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
             currentDocument.value = document
           }
           markDocumentSynced(document)
+          updateDocumentSummary(currentDocument.value)
         })
 
         if (editedWhileSaving) continue
-
-        await loadWorkspace(requestedBookId)
-        await rehydrateChatAfterDocumentMutation(document.id)
+        if (chatStateChanged) {
+          await rehydrateChatAfterDocumentMutation(document.id)
+          chatStateChanged = false
+        }
         if (
-          bookId.value !== requestedBookId
-          || currentDocument.value?.id !== document.id
-        ) return
-        if (
-          buildAutosaveFingerprint(currentDocument.value)
-          !== lastSyncedFingerprint.value
+          currentDocument.value
+          && buildAutosaveFingerprint(currentDocument.value) !== lastSyncedFingerprint.value
         ) continue
         return
       }
@@ -456,8 +464,43 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     return JSON.stringify(snapshot)
   }
 
+  function buildChatFingerprint(document: CharacterStudioDocument | null) {
+    if (!document) return ''
+    return JSON.stringify({
+      firstMessage: document.coreMessages.first_message,
+      alternateGreetings: document.coreMessages.alternate_greetings,
+    })
+  }
+
   function markDocumentSynced(document: CharacterStudioDocument | null) {
     lastSyncedFingerprint.value = buildAutosaveFingerprint(document)
+    lastSyncedChatFingerprint.value = buildChatFingerprint(document)
+  }
+
+  function updateDocumentSummary(document: CharacterStudioDocument | null) {
+    if (!document) return
+    const index = documents.value.findIndex(item => item.id === document.id)
+    const previous = index >= 0 ? documents.value[index] : undefined
+    const summary: CharacterStudioSummary = {
+      id: document.id,
+      title: document.meta.title,
+      origin: document.origin.type,
+      source_character: document.origin.source_character ?? null,
+      updated_at: document.meta.updated_at || document.updatedAt || '',
+      tags: [...document.meta.tags],
+      is_favorite: document.status.is_favorite,
+      has_avatar: document.avatarUrl === undefined
+        ? previous?.has_avatar ?? false
+        : Boolean(document.avatarUrl),
+      sample_pages: previous?.sample_pages ?? [],
+    }
+    if (index < 0) {
+      documents.value = [summary, ...documents.value]
+      return
+    }
+    const nextDocuments = [...documents.value]
+    nextDocuments[index] = summary
+    documents.value = nextDocuments
   }
 
   function rebaseUnsavedDocument(

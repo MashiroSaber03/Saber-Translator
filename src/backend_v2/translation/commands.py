@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import json
 from typing import Any
 
 from sqlalchemy import Engine, select
 
+from src.backend_v2.content.page_style import validate_page_style
 from src.backend_v2.jobs.repository import (
     JobItemSpec,
     JobQueueRepository,
@@ -31,6 +33,8 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "executionMode",
         "skipCompleted",
         "reuseExistingBubbles",
+        "styleSourcePageId",
+        "styleSourceDocumentRevision",
     }
 )
 
@@ -99,6 +103,26 @@ class TranslationJobCommandService:
         command = normalize_translation_command(config)
         mode = str(command["mode"])
         job_kind = "remove_text" if mode == "remove_text" else "translation"
+        _chapter, ordered_pages = resolve_chapter_pages(
+            self.engine,
+            chapter_id=chapter_id,
+            requested_page_ids=page_ids,
+        )
+        request_payload = {
+            "chapterId": chapter_id,
+            "pageIds": ordered_pages,
+            "config": command,
+            "retryOfJobId": retry_of_job_id,
+            "retryMode": retry_mode,
+        }
+        scope = idempotency_scope or f"chapter-translation:{chapter_id}"
+        replay = self.jobs.idempotency_replay(
+            scope=scope,
+            key=idempotency_key,
+            payload=request_payload,
+        )
+        if replay is not None:
+            return replay
         chapter, ordered_pages, normalized, spec = self._translation_spec(
             chapter_id=chapter_id,
             requested_page_ids=page_ids,
@@ -107,22 +131,13 @@ class TranslationJobCommandService:
             retry_of_job_id=retry_of_job_id,
             retry_mode=retry_mode,
         )
-        payload = {
-            "chapterId": chapter_id,
-            "pageIds": ordered_pages,
-            "config": normalized,
-            "retryOfJobId": retry_of_job_id,
-            "retryMode": retry_mode,
-        }
         return self.jobs.create_batch(
             kind=job_kind,
             display_name=f"{chapter['book_title']} / {chapter['title']}",
             specs=[spec],
-            idempotency_scope=(
-                idempotency_scope or f"chapter-translation:{chapter_id}"
-            ),
+            idempotency_scope=scope,
             idempotency_key=idempotency_key,
-            idempotency_payload=payload,
+            idempotency_payload=request_payload,
         )
 
     def create_batch(
@@ -279,6 +294,12 @@ class TranslationJobCommandService:
             chapter_id=chapter_id,
             command=command,
         )
+        text_style_snapshot = self._text_style_snapshot(
+            chapter_id=chapter_id,
+            command=command,
+        )
+        if text_style_snapshot is not None:
+            normalized["textStyleSnapshot"] = text_style_snapshot
         mode = str(command["mode"])
         step_kinds = step_kinds_for_mode(
             mode,
@@ -303,8 +324,54 @@ class TranslationJobCommandService:
             },
             retry_of_job_id=retry_of_job_id,
             retry_mode=retry_mode,
+            font_snapshots=(
+                {"taskTextStyle": str(text_style_snapshot["defaultFontId"])}
+                if text_style_snapshot is not None
+                and text_style_snapshot.get("defaultFontId") is not None
+                else None
+            ),
         )
         return chapter, ordered_pages, normalized, spec
+
+    def _text_style_snapshot(
+        self,
+        *,
+        chapter_id: str,
+        command: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        source_page_id = command.get("styleSourcePageId")
+        source_revision = command.get("styleSourceDocumentRevision")
+        if source_page_id is None and source_revision is None:
+            return None
+        with self.engine.connect() as connection:
+            source = connection.execute(
+                select(
+                    pages.c.document_revision,
+                    pages.c.default_font_id,
+                    pages.c.page_style_defaults_json,
+                ).where(
+                    pages.c.id == str(source_page_id),
+                    pages.c.chapter_id == chapter_id,
+                )
+            ).mappings().one_or_none()
+        if source is None:
+            raise ValueError("style source page does not belong to the chapter")
+        if int(source["document_revision"]) != int(source_revision):
+            raise ValueError("style source page document revision changed")
+        return {
+            "sourcePageId": str(source_page_id),
+            "sourceDocumentRevision": int(source_revision),
+            "defaultFontId": (
+                str(source["default_font_id"])
+                if source["default_font_id"] is not None
+                else None
+            ),
+            "pageStyleDefaults": validate_page_style(
+                json.loads(source["page_style_defaults_json"]),
+                partial=False,
+            ),
+        }
+
 
 def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
     unknown = set(config) - ALLOWED_CONFIG_KEYS
@@ -318,12 +385,36 @@ def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unsupported translation mode: {mode}")
     if execution_mode not in ALLOWED_EXECUTION_MODES:
         raise ValueError(f"unsupported execution mode: {execution_mode}")
-    return {
+    source_page_id = config.get("styleSourcePageId")
+    source_revision = config.get("styleSourceDocumentRevision")
+    if (source_page_id is None) != (source_revision is None):
+        raise ValueError(
+            "styleSourcePageId and styleSourceDocumentRevision must be provided together"
+        )
+    if source_page_id is not None and (
+        not isinstance(source_page_id, str) or not source_page_id
+    ):
+        raise ValueError("styleSourcePageId must be a non-empty string")
+    if source_revision is not None and (
+        isinstance(source_revision, bool)
+        or not isinstance(source_revision, int)
+        or source_revision < 1
+    ):
+        raise ValueError("styleSourceDocumentRevision must be a positive integer")
+    normalized = {
         "mode": mode,
         "executionMode": execution_mode,
         "skipCompleted": bool(config.get("skipCompleted", False)),
         "reuseExistingBubbles": bool(config.get("reuseExistingBubbles", False)),
     }
+    if source_page_id is not None:
+        normalized.update(
+            {
+                "styleSourcePageId": source_page_id,
+                "styleSourceDocumentRevision": source_revision,
+            }
+        )
+    return normalized
 
 
 def _batch_skip_reason(message: str) -> str:

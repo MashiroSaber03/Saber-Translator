@@ -537,6 +537,26 @@ class JobRetryService:
         page_ids = self._page_ids(selected_items)
         config = _json_object(source.get("config_json"))
         mode = str(config.get("mode", "standard"))
+        style_source: dict[str, object] = {}
+        frozen_style = config.get("textStyleSnapshot")
+        if isinstance(frozen_style, Mapping):
+            source_page_id = _optional_text(frozen_style.get("sourcePageId"))
+            if source_page_id:
+                with self.engine.connect() as connection:
+                    source_revision = connection.execute(
+                        select(pages.c.document_revision).where(
+                            pages.c.id == source_page_id,
+                            pages.c.chapter_id == str(chapter_id),
+                        )
+                    ).scalar_one_or_none()
+                if source_revision is None:
+                    raise JobConflict(
+                        "translation style source page no longer exists"
+                    )
+                style_source = {
+                    "styleSourcePageId": source_page_id,
+                    "styleSourceDocumentRevision": int(source_revision),
+                }
         return TranslationJobCommandService(self.engine).create_chapter_job(
             chapter_id=str(chapter_id),
             config={
@@ -548,6 +568,7 @@ class JobRetryService:
                 "reuseExistingBubbles": bool(
                     config.get("reuseExistingBubbles", False)
                 ),
+                **style_source,
             },
             page_ids=page_ids,
             idempotency_key=idempotency_key,

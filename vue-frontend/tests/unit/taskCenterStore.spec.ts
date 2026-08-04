@@ -7,6 +7,7 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),
+  snapshot: vi.fn(),
   reorder: vi.fn(),
 }))
 
@@ -14,6 +15,7 @@ vi.mock('@/api/v2/jobs', () => ({
   jobsApi: {
     get: mocks.get,
     list: mocks.list,
+    snapshot: mocks.snapshot,
     reorder: mocks.reorder,
   },
 }))
@@ -72,6 +74,7 @@ describe('taskCenterStore snapshot reconciliation', () => {
     FakeEventSource.latest = null
     vi.stubGlobal('EventSource', FakeEventSource)
     mocks.list.mockResolvedValue({ items: [], queueRevision: 1 })
+    mocks.snapshot.mockResolvedValue({ items: [], queueRevision: 1 })
     mocks.reorder.mockResolvedValue({ queueRevision: 2 })
   })
 
@@ -99,47 +102,117 @@ describe('taskCenterStore snapshot reconciliation', () => {
     expect(store.connected).toBe(true)
   })
 
-  it('coalesces event bursts and never overlaps durable snapshot requests', async () => {
+  it('coalesces event bursts and never overlaps targeted projection requests', async () => {
     vi.useFakeTimers()
-    let release: (() => void) | undefined
-    const pending = new Promise<void>(resolve => { release = resolve })
+    let releaseSnapshot: (() => void) | undefined
+    const pendingSnapshot = new Promise<void>(resolve => { releaseSnapshot = resolve })
     let activeRequests = 0
     let peakRequests = 0
-    mocks.list.mockImplementation(async () => {
+    let snapshotCalls = 0
+    mocks.snapshot.mockImplementation(async () => {
+      snapshotCalls += 1
       activeRequests += 1
       peakRequests = Math.max(peakRequests, activeRequests)
-      await pending
+      if (snapshotCalls === 1) await pendingSnapshot
       activeRequests -= 1
       return { items: [], queueRevision: 1 }
     })
     const store = useTaskCenterStore()
-    const initializing = store.initialize()
-    release?.()
-    await initializing
+    await store.initialize()
     mocks.list.mockClear()
 
-    for (let index = 1; index <= 20; index += 1) {
+    for (let index = 1; index <= 10; index += 1) {
       FakeEventSource.latest?.emit('page_completed', {
         eventId: index,
-        eventType: 'page_completed',
+        type: 'page_completed',
         jobId: 'job-1',
         payload: {},
       })
     }
-    await vi.advanceTimersByTimeAsync(250)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(mocks.snapshot).toHaveBeenCalledTimes(1)
+
+    for (let index = 11; index <= 20; index += 1) {
+      FakeEventSource.latest?.emit('page_completed', {
+        eventId: index,
+        type: 'page_completed',
+        jobId: 'job-1',
+        payload: {},
+      })
+    }
+    releaseSnapshot?.()
     await vi.runAllTimersAsync()
 
-    expect(mocks.list).toHaveBeenCalledTimes(2)
-    expect(peakRequests).toBeLessThanOrEqual(2)
+    expect(mocks.snapshot).toHaveBeenCalledTimes(2)
+    expect(mocks.snapshot).toHaveBeenNthCalledWith(1, ['job-1'])
+    expect(mocks.snapshot).toHaveBeenNthCalledWith(2, ['job-1'])
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(peakRequests).toBe(1)
+    store.disconnect()
+    vi.useRealTimers()
+  })
+
+  it('drains targeted projection bursts larger than the 200-job API limit', async () => {
+    vi.useFakeTimers()
+    mocks.snapshot.mockImplementation(async (jobIds: string[]) => ({
+      items: jobIds.map(jobId => makeJob({ jobId, status: 'running' })),
+      queueRevision: 2,
+    }))
+    const store = useTaskCenterStore()
+    await store.initialize()
+
+    for (let index = 1; index <= 205; index += 1) {
+      FakeEventSource.latest?.emit('page_completed', {
+        eventId: index,
+        type: 'page_completed',
+        jobId: `job-${index}`,
+        payload: {},
+      })
+    }
+    await vi.runAllTimersAsync()
+
+    expect(mocks.snapshot).toHaveBeenCalledTimes(2)
+    expect(mocks.snapshot.mock.calls[0]?.[0]).toHaveLength(200)
+    expect(mocks.snapshot.mock.calls[1]?.[0]).toHaveLength(5)
+    expect(new Set(mocks.snapshot.mock.calls.flatMap(call => call[0])).size).toBe(205)
+    expect(store.queue).toHaveLength(205)
     store.disconnect()
     vi.useRealTimers()
   })
 
   it('projects complete SSE job snapshots without reloading queue and history', async () => {
+    vi.useFakeTimers()
     mocks.list.mockImplementation(async (scope: 'queue' | 'history') => ({
       items: scope === 'queue' ? [makeJob({ jobId: 'job-1', status: 'queued', queueRank: 1 })] : [],
       queueRevision: 1,
     }))
+    mocks.snapshot
+      .mockResolvedValueOnce({
+        items: [makeJob({
+          jobId: 'job-1',
+          status: 'running',
+          queueRank: 1,
+          progress: {
+            executionMode: 'sequential',
+            jobStatus: 'running',
+            totalItems: 1,
+            completedItems: 1,
+            failedItems: 0,
+            skippedItems: 0,
+            cancelledItems: 0,
+            pools: [],
+          },
+        })],
+        queueRevision: 2,
+      })
+      .mockResolvedValueOnce({
+        items: [makeJob({
+          jobId: 'job-1',
+          status: 'completed',
+          finishedAt: '2026-08-04T12:00:00Z',
+        })],
+        queueRevision: 3,
+      })
     const store = useTaskCenterStore()
     await store.initialize()
     mocks.list.mockClear()
@@ -150,22 +223,6 @@ describe('taskCenterStore snapshot reconciliation', () => {
       type: 'job_started',
       payload: {},
       createdAt: null,
-      queueRevision: 2,
-      job: makeJob({
-        jobId: 'job-1',
-        status: 'running',
-        queueRank: 1,
-        progress: {
-          executionMode: 'sequential',
-          jobStatus: 'running',
-          totalItems: 1,
-          completedItems: 0,
-          failedItems: 0,
-          skippedItems: 0,
-          cancelledItems: 0,
-          pools: [],
-        },
-      }),
     })
     FakeEventSource.latest?.emit('page_completed', {
       eventId: 2,
@@ -173,25 +230,11 @@ describe('taskCenterStore snapshot reconciliation', () => {
       type: 'page_completed',
       payload: {},
       createdAt: null,
-      queueRevision: 2,
-      job: makeJob({
-        jobId: 'job-1',
-        status: 'running',
-        queueRank: 1,
-        progress: {
-          executionMode: 'sequential',
-          jobStatus: 'running',
-          totalItems: 1,
-          completedItems: 1,
-          failedItems: 0,
-          skippedItems: 0,
-          cancelledItems: 0,
-          pools: [],
-        },
-      }),
     })
+    await vi.advanceTimersByTimeAsync(100)
 
     expect(mocks.list).not.toHaveBeenCalled()
+    expect(mocks.snapshot).toHaveBeenCalledWith(['job-1'])
     expect(store.queue[0]?.status).toBe('running')
     expect(store.queue[0]?.progress.completedItems).toBe(1)
     expect(store.queueRevision).toBe(2)
@@ -202,13 +245,14 @@ describe('taskCenterStore snapshot reconciliation', () => {
       type: 'job_finished',
       payload: {},
       createdAt: null,
-      queueRevision: 3,
-      job: makeJob({ jobId: 'job-1', status: 'completed', finishedAt: '2026-08-04T12:00:00Z' }),
     })
+    await vi.advanceTimersByTimeAsync(100)
 
     expect(store.queue).toEqual([])
     expect(store.history.map(job => job.jobId)).toEqual(['job-1'])
     expect(mocks.list).not.toHaveBeenCalled()
+    store.disconnect()
+    vi.useRealTimers()
   })
 
   it('falls back to one durable refresh when the event cursor has a gap', async () => {
@@ -216,7 +260,6 @@ describe('taskCenterStore snapshot reconciliation', () => {
     const store = useTaskCenterStore()
     await store.initialize()
     mocks.list.mockClear()
-    const projected = makeJob({ jobId: 'job-1', status: 'running', queueRank: 1 })
 
     FakeEventSource.latest?.emit('job_started', {
       eventId: 1,
@@ -224,8 +267,6 @@ describe('taskCenterStore snapshot reconciliation', () => {
       type: 'job_started',
       payload: {},
       createdAt: null,
-      queueRevision: 2,
-      job: projected,
     })
     FakeEventSource.latest?.emit('page_completed', {
       eventId: 3,
@@ -233,13 +274,12 @@ describe('taskCenterStore snapshot reconciliation', () => {
       type: 'page_completed',
       payload: {},
       createdAt: null,
-      queueRevision: 2,
-      job: projected,
     })
     await vi.advanceTimersByTimeAsync(250)
     await vi.runAllTimersAsync()
 
     expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(mocks.snapshot).toHaveBeenCalledTimes(1)
     store.disconnect()
     vi.useRealTimers()
   })

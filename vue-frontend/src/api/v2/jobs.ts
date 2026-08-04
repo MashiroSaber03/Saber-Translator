@@ -6,6 +6,7 @@ export type V2JobDetail = components['schemas']['JobDetail']
 export type V2JobEvent = components['schemas']['JobEvent']
 export type V2JobStatus = components['schemas']['JobStatus']
 export type JobListResponse = components['schemas']['JobList']
+export type JobSnapshotResponse = components['schemas']['JobSnapshot']
 export type JobRetryAccepted = components['schemas']['JobRetryAccepted']
 export type JobEventList = components['schemas']['JobEventList']
 
@@ -27,6 +28,18 @@ export const jobsApi = {
 
   get(jobId: string): Promise<V2JobDetail> {
     return apiClient.get(`/api/v2/jobs/${encodeURIComponent(jobId)}`)
+  },
+
+  snapshot(jobIds: string[]): Promise<JobSnapshotResponse> {
+    const query = new URLSearchParams()
+    const uniqueJobIds = [...new Set(jobIds)]
+    if (uniqueJobIds.length > 200) {
+      throw new Error('一次最多读取 200 个任务快照')
+    }
+    for (const jobId of uniqueJobIds) {
+      query.append('job_id', jobId)
+    }
+    return apiClient.get(`/api/v2/jobs/snapshot?${query}`)
   },
 
   events(

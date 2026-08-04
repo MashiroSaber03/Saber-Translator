@@ -78,7 +78,6 @@ def create_jobs_blueprint(
                     backlog = repository.events_after(
                         after=cursor,
                         limit=1000,
-                        include_projection=True,
                     )
                     if not backlog:
                         break
@@ -114,6 +113,14 @@ def create_jobs_blueprint(
         response.headers["Cache-Control"] = "no-cache, no-transform"
         response.headers["X-Accel-Buffering"] = "no"
         return response
+
+    @blueprint.get("/jobs/snapshot")
+    def get_job_snapshot() -> Response:
+        return jsonify(
+            repository.job_snapshot(
+                job_ids=request.args.getlist("job_id"),
+            )
+        )
 
     @blueprint.get("/jobs/<job_id>")
     def get_job(job_id: str) -> Response:

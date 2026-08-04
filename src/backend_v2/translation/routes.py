@@ -81,19 +81,30 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/remove-text-jobs")
     def create_remove_text_job(chapter_id: str):
-        body = _json_body(allowed_keys={"executionMode", "pageIds"})
+        body = _json_body(
+            allowed_keys={
+                "executionMode",
+                "pageIds",
+                "styleSourcePageId",
+                "styleSourceDocumentRevision",
+            }
+        )
         page_ids = body.get("pageIds")
         if page_ids is not None and (
             not isinstance(page_ids, list)
             or not all(isinstance(value, str) for value in page_ids)
         ):
             raise ValueError("pageIds must be a string array")
+        config = {
+            "mode": "remove_text",
+            "executionMode": str(body.get("executionMode", "sequential")),
+        }
+        for key in ("styleSourcePageId", "styleSourceDocumentRevision"):
+            if key in body:
+                config[key] = body[key]
         result = service.create_chapter_job(
             chapter_id=chapter_id,
-            config={
-                "mode": "remove_text",
-                "executionMode": str(body.get("executionMode", "sequential")),
-            },
+            config=config,
             page_ids=page_ids,
             idempotency_key=_require_idempotency_key(),
             idempotency_scope=f"chapter-remove-text:{chapter_id}",

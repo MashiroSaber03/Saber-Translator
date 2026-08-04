@@ -565,6 +565,29 @@ paths:
           content:
             text/event-stream:
               schema: {type: string}
+  /jobs/snapshot:
+    get:
+      tags: [jobs]
+      operationId: getJobSnapshot
+      description: Read the current UI projection for a bounded set of jobs.
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 200
+            items: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: Current job rows, independent from the audit event stream.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobSnapshot"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /jobs/{job_id}:
     get:
       tags: [jobs]
@@ -4217,6 +4240,15 @@ components:
         queueRevision: {type: integer, minimum: 1}
         eventCursor: {type: integer, minimum: 0}
         workerOnline: {type: boolean}
+    JobSnapshot:
+      type: object
+      additionalProperties: false
+      required: [items, queueRevision]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Job"}
+        queueRevision: {type: integer, minimum: 1}
     JobDetail:
       unevaluatedProperties: false
       allOf:
@@ -4380,9 +4412,6 @@ components:
         type: {type: string}
         payload: {type: object, additionalProperties: true}
         createdAt: {type: [string, "null"], format: date-time}
-        job:
-          $ref: "#/components/schemas/Job"
-        queueRevision: {type: integer, minimum: 1}
     JobEventList:
       type: object
       additionalProperties: false
@@ -4527,6 +4556,14 @@ components:
           enum: [sequential, parallel]
         skipCompleted: {type: boolean}
         reuseExistingBubbles: {type: boolean}
+        styleSourcePageId:
+          allOf:
+            - {$ref: "#/components/schemas/Uuid"}
+          description: Page whose persisted text style is frozen for every target page.
+        styleSourceDocumentRevision:
+          type: integer
+          minimum: 1
+          description: Optimistic revision of styleSourcePageId; required with it.
     OptionalPageSelectionCommand:
       type: object
       additionalProperties: false
@@ -4559,6 +4596,14 @@ components:
           minItems: 1
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
+        styleSourcePageId:
+          allOf:
+            - {$ref: "#/components/schemas/Uuid"}
+          description: Page whose persisted text style is frozen for every target page.
+        styleSourceDocumentRevision:
+          type: integer
+          minimum: 1
+          description: Optimistic revision of styleSourcePageId; required with it.
     TranslationJobBatchCommand:
       type: object
       additionalProperties: false

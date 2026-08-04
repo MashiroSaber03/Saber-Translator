@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Engine, delete, or_, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.schema import Table
 
 from src.backend_v2.storage.database import immediate_transaction
@@ -54,8 +55,6 @@ class InsightReachabilityGarbageCollector:
     def collect(self, *, now: datetime | None = None) -> dict[str, int]:
         cutoff = (now or utcnow()) - self.grace
         with immediate_transaction(self.engine) as connection:
-            retained_job_runs = self._retained_job_run_ids(connection)
-
             # Inactive generations are not roots merely because they point to
             # the same analysis run as the current generation.  Retained jobs
             # are the exception: their partial previews must remain available
@@ -64,33 +63,27 @@ class InsightReachabilityGarbageCollector:
                 connection,
                 table=analysis_artifacts,
                 cutoff=cutoff,
-                retained_job_runs=retained_job_runs,
             )
             timelines = self._delete_inactive_generations(
                 connection,
                 table=timeline_versions,
                 cutoff=cutoff,
-                retained_job_runs=retained_job_runs,
             )
             vectors = self._delete_inactive_generations(
                 connection,
                 table=vector_generations,
                 cutoff=cutoff,
-                retained_job_runs=retained_job_runs,
             )
 
-            reachable_runs = self._reachable_run_ids(
-                connection,
-                retained_job_runs=retained_job_runs,
-            )
-            conditions = [analysis_runs.c.updated_at <= cutoff]
-            if reachable_runs:
-                conditions.append(analysis_runs.c.id.not_in(reachable_runs))
+            reachable = self._run_is_reachable()
             run_ids = [
                 str(value)
                 for value in connection.execute(
                     select(analysis_runs.c.id)
-                    .where(*conditions)
+                    .where(
+                        analysis_runs.c.updated_at <= cutoff,
+                        ~reachable,
+                    )
                     .order_by(analysis_runs.c.updated_at, analysis_runs.c.id)
                     .limit(self.limit)
                 ).scalars()
@@ -113,24 +106,32 @@ class InsightReachabilityGarbageCollector:
         *,
         table: Table,
         cutoff: datetime,
-        retained_job_runs: set[str],
     ) -> int:
-        conditions = [
-            table.c.is_active.is_(False),
-            table.c.updated_at <= cutoff,
-        ]
-        if retained_job_runs:
-            conditions.append(
-                or_(
-                    table.c.run_id.is_(None),
-                    table.c.run_id.not_in(retained_job_runs),
-                )
+        run = analysis_runs.alias(f"{table.name}_retained_run")
+        retained_by_run_job = (
+            select(run.c.id)
+            .where(
+                run.c.id == table.c.run_id,
+                run.c.job_id.is_not(None),
             )
+            .correlate(table)
+            .exists()
+        )
+        retained_by_job_projection = (
+            select(jobs.c.id)
+            .where(jobs.c.analysis_run_id == table.c.run_id)
+            .correlate(table)
+            .exists()
+        )
         generation_ids = [
             str(value)
             for value in connection.execute(
                 select(table.c.id)
-                .where(*conditions)
+                .where(
+                    table.c.is_active.is_(False),
+                    table.c.updated_at <= cutoff,
+                    ~or_(retained_by_run_job, retained_by_job_projection),
+                )
                 .order_by(table.c.updated_at, table.c.id)
                 .limit(self.limit)
             ).scalars()
@@ -140,70 +141,57 @@ class InsightReachabilityGarbageCollector:
         return len(generation_ids)
 
     @staticmethod
-    def _retained_job_run_ids(connection: Any) -> set[str]:
-        run_ids = {
-            str(value)
-            for value in connection.execute(
-                select(analysis_runs.c.id).where(
-                    analysis_runs.c.job_id.is_not(None)
-                )
-            ).scalars()
-        }
-        run_ids.update(
-            str(value)
-            for value in connection.execute(
-                select(jobs.c.analysis_run_id).where(
-                    jobs.c.analysis_run_id.is_not(None)
-                )
-            ).scalars()
+    def _run_is_reachable() -> ColumnElement[bool]:
+        retained_by_job_projection = (
+            select(jobs.c.id)
+            .where(jobs.c.analysis_run_id == analysis_runs.c.id)
+            .correlate(analysis_runs)
+            .exists()
         )
-        return run_ids
-
-    @staticmethod
-    def _reachable_run_ids(
-        connection: Any,
-        *,
-        retained_job_runs: set[str],
-    ) -> set[str]:
-        run_ids = set(retained_job_runs)
-        run_ids.update(
-            str(value)
-            for value in connection.execute(
-                select(analysis_heads.c.active_run_id)
-            ).scalars()
+        published_head = (
+            select(analysis_heads.c.id)
+            .where(analysis_heads.c.active_run_id == analysis_runs.c.id)
+            .correlate(analysis_runs)
+            .exists()
         )
-        run_ids.update(
-            str(value)
-            for value in connection.execute(
-                select(continuation_projects.c.source_run_id).where(
-                    continuation_projects.c.source_run_id.is_not(None)
+        continuation_source = (
+            select(continuation_projects.c.id)
+            .where(continuation_projects.c.source_run_id == analysis_runs.c.id)
+            .correlate(analysis_runs)
+            .exists()
+        )
+        cited_page_result = (
+            select(note_citations.c.note_id)
+            .select_from(
+                note_citations.join(
+                    analysis_page_results,
+                    analysis_page_results.c.id
+                    == note_citations.c.source_analysis_id,
                 )
-            ).scalars()
-        )
-        run_ids.update(
-            str(value)
-            for value in connection.execute(
-                select(analysis_page_results.c.run_id)
-                .join(
-                    note_citations,
-                    note_citations.c.source_analysis_id
-                    == analysis_page_results.c.id,
-                )
-                .where(note_citations.c.source_analysis_id.is_not(None))
-            ).scalars()
-        )
-        # All generations which survived the first pass temporarily root their
-        # source run.  This includes the one-hour publication grace window and
-        # prevents a recent generation from being detached by run deletion.
-        for table in (
-            analysis_artifacts,
-            timeline_versions,
-            vector_generations,
-        ):
-            run_ids.update(
-                str(value)
-                for value in connection.execute(
-                    select(table.c.run_id).where(table.c.run_id.is_not(None))
-                ).scalars()
             )
-        return run_ids
+            .where(analysis_page_results.c.run_id == analysis_runs.c.id)
+            .correlate(analysis_runs)
+            .exists()
+        )
+        surviving_generations = [
+            select(table.c.id)
+            .where(table.c.run_id == analysis_runs.c.id)
+            .correlate(analysis_runs)
+            .exists()
+            for table in (
+                analysis_artifacts,
+                timeline_versions,
+                vector_generations,
+            )
+        ]
+        # Generations surviving the first pass include active rows and rows in
+        # the grace window.  They temporarily root their source run, preventing
+        # the bounded cleanup from detaching live or freshly-published data.
+        return or_(
+            analysis_runs.c.job_id.is_not(None),
+            retained_by_job_projection,
+            published_head,
+            continuation_source,
+            cited_page_result,
+            *surviving_generations,
+        )

@@ -389,6 +389,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the current UI projection for a bounded set of jobs. */
+        get: operations["getJobSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2732,6 +2749,10 @@ export interface components {
             eventCursor: number;
             workerOnline: boolean;
         };
+        JobSnapshot: {
+            items: components["schemas"]["Job"][];
+            queueRevision: number;
+        };
         JobDetail: components["schemas"]["Job"] & {
             counts: components["schemas"]["JobCounts"];
             durationMs: number | null;
@@ -2816,8 +2837,6 @@ export interface components {
             };
             /** Format: date-time */
             createdAt: string | null;
-            job?: components["schemas"]["Job"];
-            queueRevision?: number;
         };
         JobEventList: {
             items: components["schemas"]["JobEvent"][];
@@ -2896,6 +2915,10 @@ export interface components {
             executionMode?: "sequential" | "parallel";
             skipCompleted?: boolean;
             reuseExistingBubbles?: boolean;
+            /** @description Page whose persisted text style is frozen for every target page. */
+            styleSourcePageId?: components["schemas"]["Uuid"];
+            /** @description Optimistic revision of styleSourcePageId; required with it. */
+            styleSourceDocumentRevision?: number;
         };
         OptionalPageSelectionCommand: {
             pageIds?: components["schemas"]["Uuid"][];
@@ -2908,6 +2931,10 @@ export interface components {
             /** @enum {string} */
             executionMode?: "sequential" | "parallel";
             pageIds?: components["schemas"]["Uuid"][];
+            /** @description Page whose persisted text style is frozen for every target page. */
+            styleSourcePageId?: components["schemas"]["Uuid"];
+            /** @description Optimistic revision of styleSourcePageId; required with it. */
+            styleSourceDocumentRevision?: number;
         };
         TranslationJobBatchCommand: {
             chapterIds?: components["schemas"]["Uuid"][];
@@ -5110,6 +5137,29 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
+        };
+    };
+    getJobSnapshot: {
+        parameters: {
+            query: {
+                job_id: components["schemas"]["Uuid"][];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current job rows, independent from the audit event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSnapshot"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
         };
     };
     getJob: {

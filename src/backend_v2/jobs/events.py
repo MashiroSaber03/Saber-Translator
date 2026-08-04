@@ -91,7 +91,6 @@ class JobEventBroadcaster:
                 events = self.repository.events_after(
                     after=self._cursor,
                     limit=1000,
-                    include_projection=True,
                 )
             except Exception:
                 LOGGER.exception("任务事件与 Worker 租约共享轮询失败，将继续重试")

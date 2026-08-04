@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import logging
 import sqlite3
 import threading
@@ -438,7 +438,7 @@ class JobWorkerLoop:
         stop_event: threading.Event,
         config: Mapping[str, Any],
     ) -> None:
-        """Run one serial worker per step kind so different stages can overlap."""
+        """Admit SQLite work centrally while stage handlers overlap."""
 
         pool_kinds = self.repository.step_kinds(heartbeat.fence)
         if not pool_kinds:
@@ -450,9 +450,6 @@ class JobWorkerLoop:
             return
         admission_closed = threading.Event()
         worker_errors: list[BaseException] = []
-        error_lock = threading.Lock()
-        pipeline_condition = threading.Condition()
-        pipeline_state_version = 0
         pipeline_wait_seconds = min(
             max(self.idle_poll_seconds, MIN_SCHEDULER_POLL_SECONDS),
             MAX_SCHEDULER_POLL_SECONDS,
@@ -483,32 +480,6 @@ class JobWorkerLoop:
         }
         lock_waiting_state_lock = threading.Lock()
 
-        def pipeline_version() -> int:
-            with pipeline_condition:
-                return pipeline_state_version
-
-        def signal_pipeline_changed() -> None:
-            nonlocal pipeline_state_version
-            with pipeline_condition:
-                pipeline_state_version += 1
-                pipeline_condition.notify_all()
-
-        def close_admission() -> None:
-            admission_closed.set()
-            signal_pipeline_changed()
-
-        def wait_for_pipeline_change(observed_version: int, timeout: float) -> None:
-            with pipeline_condition:
-                pipeline_condition.wait_for(
-                    lambda: (
-                        pipeline_state_version != observed_version
-                        or admission_closed.is_set()
-                        or stop_event.is_set()
-                        or heartbeat.fenced.is_set()
-                    ),
-                    timeout=timeout,
-                )
-
         def set_lock_waiting(pool_kind: str, waiting: bool) -> None:
             with lock_waiting_state_lock:
                 lock_waiting_states[pool_kind] = waiting
@@ -524,203 +495,144 @@ class JobWorkerLoop:
                 waiting,
             )
 
-        def run_pool(pool_kind: str) -> None:
+        def execute_step(
+            pool_kind: str,
+            step: Mapping[str, Any],
+        ) -> None:
+            handler = self.handlers.get(str(step["stepKind"]))
+            if handler is None:
+                LOGGER.error(
+                    "并行步骤无处理器：job=%s kind=%s step=%s",
+                    _short(heartbeat.fence.job_id),
+                    step["stepKind"],
+                    _short(step["stepId"]),
+                )
+                self.repository.fail_step(
+                    heartbeat.fence,
+                    step_id=str(step["stepId"]),
+                    code="UNSUPPORTED_STEP_KIND",
+                    message=f"no Worker handler for {step['stepKind']}",
+                )
+                return
+
+            step_kind, step_id, page_id = _step_log_fields(step)
+            step_started_at = time.monotonic()
+            LOGGER.info(
+                "步骤开始：job=%s kind=%s step=%s page=%s pool=%s",
+                _short(heartbeat.fence.job_id),
+                step_kind,
+                step_id,
+                page_id,
+                pool_kind,
+            )
+            if not self._before_pipeline(heartbeat.fence, step):
+                return
+            try:
+                if pool_kind in DEEP_LEARNING_STEP_KINDS:
+                    acquired = deep_learning_admission.acquire(blocking=False)
+                    if not acquired:
+                        set_lock_waiting(pool_kind, True)
+                        deep_learning_admission.acquire()
+                    try:
+                        if not acquired:
+                            set_lock_waiting(pool_kind, False)
+                        checkpoint = handler(heartbeat.fence, step)
+                    finally:
+                        deep_learning_admission.release()
+                else:
+                    checkpoint = handler(heartbeat.fence, step)
+            except Exception as exc:
+                LOGGER.exception(
+                    "步骤失败：job=%s kind=%s step=%s page=%s "
+                    "pool=%s duration=%.2fs",
+                    _short(heartbeat.fence.job_id),
+                    step_kind,
+                    step_id,
+                    page_id,
+                    pool_kind,
+                    time.monotonic() - step_started_at,
+                )
+                if heartbeat.fenced.is_set():
+                    return
+                self._after_pipeline(
+                    heartbeat.fence,
+                    item_id=str(step["itemId"]),
+                    page_id=step.get("pageId"),
+                    status="failed",
+                )
+                self.repository.fail_step(
+                    heartbeat.fence,
+                    step_id=str(step["stepId"]),
+                    code="STEP_FAILED",
+                    message=str(exc),
+                )
+                return
+
+            if checkpoint.get("__control_drained__"):
+                admission_closed.set()
+                return
+            LOGGER.info(
+                "步骤完成：job=%s kind=%s step=%s page=%s "
+                "pool=%s duration=%.2fs",
+                _short(heartbeat.fence.job_id),
+                step_kind,
+                step_id,
+                page_id,
+                pool_kind,
+                time.monotonic() - step_started_at,
+            )
+            if heartbeat.fenced.is_set():
+                return
+            if not checkpoint.get("__already_published__"):
+                self.repository.complete_step(
+                    heartbeat.fence,
+                    step_id=str(step["stepId"]),
+                    checkpoint=checkpoint,
+                )
+            self._after_completed_step(heartbeat.fence, step)
+
+        def execute_claimed(
+            pool_kind: str,
+            steps: Sequence[Mapping[str, Any]],
+            step: Mapping[str, Any] | None,
+        ) -> None:
+            if steps:
+                self._execute_batch(
+                    heartbeat,
+                    self.batch_handlers[pool_kind],
+                    steps,
+                )
+            elif step is not None:
+                execute_step(pool_kind, step)
+
+        def claim_with_retry(
+            pool_kind: str,
+            claim: Callable[
+                [],
+                tuple[list[Mapping[str, Any]], Mapping[str, Any] | None],
+            ],
+        ) -> tuple[list[Mapping[str, Any]], Mapping[str, Any] | None]:
             busy_failures = 0
             while (
                 not stop_event.is_set()
                 and not heartbeat.fenced.is_set()
                 and not admission_closed.is_set()
             ):
-                observed_version = pipeline_version()
-                admission_phase = True
                 try:
-                    status = self.repository.control_status(heartbeat.fence)
-                    if status in {"pausing", "cancelling"}:
-                        close_admission()
-                        return
-                    step_ordinal = self.repository.ready_step_ordinal(
-                        heartbeat.fence,
-                        step_kind=pool_kind,
-                    )
-                    steps = (
-                        self.repository.next_step_batch(
-                            heartbeat.fence,
-                            step_kind=pool_kind,
-                            limit=self._batch_size(
-                                pool_kind,
-                                config,
-                                step_ordinal=step_ordinal,
-                            ),
-                        )
-                        if (
-                            pool_kind in self.batch_handlers
-                            and step_ordinal is not None
-                        )
-                        else []
-                    )
-                    step = (
-                        None
-                        if pool_kind in self.batch_handlers
-                        else (
-                            self.repository.next_step(
-                                heartbeat.fence,
-                                allowed_kinds=(pool_kind,),
-                            )
-                            if step_ordinal is not None
-                            else None
-                        )
-                    )
-                    if not steps and step is None:
-                        pool_pending, pool_running = (
-                            self.repository.active_step_counts(
-                                heartbeat.fence,
-                                step_kind=pool_kind,
-                            )
-                        )
-                        busy_failures = 0
-                        if pool_pending == 0 and pool_running == 0:
-                            pending, running = self.repository.active_step_counts(
-                                heartbeat.fence
-                            )
-                            LOGGER.debug(
-                                "并行阶段池已完成并退出：job=%s pool=%s",
+                    return claim()
+                except AttemptFenced:
+                    raise
+                except BaseException as exc:
+                    if _is_sqlite_busy_error(exc):
+                        if busy_failures >= PIPELINE_BUSY_RETRY_LIMIT:
+                            LOGGER.warning(
+                                "并行阶段领取持续遇到 SQLite 写锁竞争，本轮延后："
+                                "job=%s pool=%s retries=%s",
                                 _short(heartbeat.fence.job_id),
                                 pool_kind,
+                                busy_failures,
                             )
-                            if pending == 0 and running == 0:
-                                close_admission()
-                            return
-                        wait_for_pipeline_change(
-                            observed_version,
-                            pipeline_wait_seconds,
-                        )
-                        continue
-                    busy_failures = 0
-                    admission_phase = False
-                    if steps:
-                        self._execute_batch(
-                            heartbeat,
-                            self.batch_handlers[pool_kind],
-                            steps,
-                        )
-                        signal_pipeline_changed()
-                        continue
-                    assert step is not None
-                    handler = self.handlers.get(str(step["stepKind"]))
-                    if handler is None:
-                        LOGGER.error(
-                            "并行步骤无处理器：job=%s kind=%s step=%s",
-                            _short(heartbeat.fence.job_id),
-                            step["stepKind"],
-                            _short(step["stepId"]),
-                        )
-                        self.repository.fail_step(
-                            heartbeat.fence,
-                            step_id=str(step["stepId"]),
-                            code="UNSUPPORTED_STEP_KIND",
-                            message=f"no Worker handler for {step['stepKind']}",
-                        )
-                        signal_pipeline_changed()
-                        continue
-                    step_kind, step_id, page_id = _step_log_fields(step)
-                    step_started_at = time.monotonic()
-                    LOGGER.info(
-                        "步骤开始：job=%s kind=%s step=%s page=%s pool=%s",
-                        _short(heartbeat.fence.job_id),
-                        step_kind,
-                        step_id,
-                        page_id,
-                        pool_kind,
-                    )
-                    if not self._before_pipeline(heartbeat.fence, step):
-                        signal_pipeline_changed()
-                        continue
-                    try:
-                        def execute_step() -> Mapping[str, Any]:
-                            return handler(
-                                heartbeat.fence,
-                                step,
-                            )
-
-                        if pool_kind in DEEP_LEARNING_STEP_KINDS:
-                            acquired = deep_learning_admission.acquire(blocking=False)
-                            if not acquired:
-                                set_lock_waiting(pool_kind, True)
-                                deep_learning_admission.acquire()
-                            try:
-                                if not acquired:
-                                    set_lock_waiting(pool_kind, False)
-                                checkpoint = execute_step()
-                            finally:
-                                deep_learning_admission.release()
-                        else:
-                            checkpoint = execute_step()
-                    except Exception as exc:
-                        LOGGER.exception(
-                            "步骤失败：job=%s kind=%s step=%s page=%s "
-                            "pool=%s duration=%.2fs",
-                            _short(heartbeat.fence.job_id),
-                            step_kind,
-                            step_id,
-                            page_id,
-                            pool_kind,
-                            time.monotonic() - step_started_at,
-                        )
-                        if heartbeat.fenced.is_set():
-                            return
-                        self._after_pipeline(
-                            heartbeat.fence,
-                            item_id=str(step["itemId"]),
-                            page_id=step.get("pageId"),
-                            status="failed",
-                        )
-                        self.repository.fail_step(
-                            heartbeat.fence,
-                            step_id=str(step["stepId"]),
-                            code="STEP_FAILED",
-                            message=str(exc),
-                        )
-                        signal_pipeline_changed()
-                    else:
-                        if checkpoint.get("__control_drained__"):
-                            close_admission()
-                            return
-                        LOGGER.info(
-                            "步骤完成：job=%s kind=%s step=%s page=%s "
-                            "pool=%s duration=%.2fs",
-                            _short(heartbeat.fence.job_id),
-                            step_kind,
-                            step_id,
-                            page_id,
-                            pool_kind,
-                            time.monotonic() - step_started_at,
-                        )
-                        if (
-                            not heartbeat.fenced.is_set()
-                            and not checkpoint.get("__already_published__")
-                        ):
-                            self.repository.complete_step(
-                                heartbeat.fence,
-                                step_id=str(step["stepId"]),
-                                checkpoint=checkpoint,
-                            )
-                        if not heartbeat.fenced.is_set():
-                            self._after_completed_step(
-                                heartbeat.fence,
-                                step,
-                            )
-                        signal_pipeline_changed()
-                except AttemptFenced:
-                    return
-                except BaseException as exc:
-                    if (
-                        admission_phase
-                        and _is_sqlite_busy_error(exc)
-                        and busy_failures < PIPELINE_BUSY_RETRY_LIMIT
-                        and not admission_closed.is_set()
-                        and not stop_event.is_set()
-                        and not heartbeat.fenced.is_set()
-                    ):
+                            return [], None
                         busy_failures += 1
                         retry_delay = min(
                             PIPELINE_BUSY_RETRY_BASE_SECONDS
@@ -736,49 +648,182 @@ class JobWorkerLoop:
                             PIPELINE_BUSY_RETRY_LIMIT,
                             retry_delay,
                         )
-                        wait_for_pipeline_change(observed_version, retry_delay)
+                        stop_event.wait(retry_delay)
                         continue
-                    LOGGER.exception(
-                        "并行流水线线程失败：job=%s pool=%s",
-                        _short(heartbeat.fence.job_id),
-                        pool_kind,
-                    )
-                    with error_lock:
-                        worker_errors.append(exc)
-                    close_admission()
-                    return
+                    raise
+            return [], None
+
+        def record_worker_error(
+            pool_kind: str,
+            exc: BaseException,
+        ) -> None:
+            LOGGER.exception(
+                "并行流水线执行失败：job=%s pool=%s",
+                _short(heartbeat.fence.job_id),
+                pool_kind,
+                exc_info=exc,
+            )
+            worker_errors.append(exc)
+            admission_closed.set()
 
         with ThreadPoolExecutor(
             max_workers=len(pool_kinds),
             thread_name_prefix="job-pipeline",
         ) as executor:
-            futures = [
-                executor.submit(run_pool, pool_kind)
-                for pool_kind in pool_kinds
-            ]
+            active_futures: dict[Future[None], str] = {}
             while (
-                not admission_closed.is_set()
-                and not stop_event.is_set()
+                not stop_event.is_set()
                 and not heartbeat.fenced.is_set()
             ):
-                observed_version = pipeline_version()
-                if all(future.done() for future in futures):
+                finished = [
+                    future for future in active_futures if future.done()
+                ]
+                for future in finished:
+                    pool_kind = active_futures.pop(future)
+                    try:
+                        future.result()
+                    except AttemptFenced:
+                        admission_closed.set()
+                    except BaseException as exc:
+                        record_worker_error(pool_kind, exc)
+                if admission_closed.is_set():
                     break
-                if self.safe_point is not None:
-                    _pending, running = self.repository.active_step_counts(
-                        heartbeat.fence
+
+                try:
+                    status = self.repository.control_status(heartbeat.fence)
+                    if status in {"pausing", "cancelling"}:
+                        admission_closed.set()
+                        break
+                    if not active_futures:
+                        pending, running = self.repository.active_step_counts(
+                            heartbeat.fence
+                        )
+                        if pending == 0 and running == 0:
+                            break
+                except AttemptFenced:
+                    admission_closed.set()
+                    break
+                except BaseException as exc:
+                    record_worker_error("admission", exc)
+                    break
+
+                if not active_futures and self.safe_point is not None:
+                    if self.safe_point():
+                        continue
+
+                try:
+                    should_admit = (
+                        bool(finished)
+                        or not active_futures
                     )
-                    if running == 0:
-                        if self.safe_point():
-                            signal_pipeline_changed()
-                            continue
-                wait_for_pipeline_change(
-                    observed_version,
-                    pipeline_wait_seconds,
-                )
-            close_admission()
-            for future in futures:
-                future.result()
+                    if should_admit:
+                        active_pool_kinds = set(active_futures.values())
+                        batch_pool_kinds = tuple(
+                            kind
+                            for kind in pool_kinds
+                            if (
+                                kind in self.batch_handlers
+                                and kind not in active_pool_kinds
+                            )
+                        )
+                        ready_batch_ordinals = (
+                            self.repository.ready_step_ordinals(
+                                heartbeat.fence,
+                                step_kinds=batch_pool_kinds,
+                            )
+                            if batch_pool_kinds
+                            else {}
+                        )
+                        for pool_kind, step_ordinal in ready_batch_ordinals.items():
+                            steps, _step = claim_with_retry(
+                                pool_kind,
+                                lambda pool_kind=pool_kind, step_ordinal=step_ordinal: (
+                                    self.repository.next_step_batch(
+                                        heartbeat.fence,
+                                        step_kind=pool_kind,
+                                        limit=self._batch_size(
+                                            pool_kind,
+                                            config,
+                                            step_ordinal=step_ordinal,
+                                        ),
+                                    ),
+                                    None,
+                                ),
+                            )
+                            if admission_closed.is_set():
+                                break
+                            if not steps:
+                                continue
+                            future = executor.submit(
+                                execute_claimed,
+                                pool_kind,
+                                tuple(steps),
+                                None,
+                            )
+                            active_futures[future] = pool_kind
+                            active_pool_kinds.add(pool_kind)
+
+                        ordinary_pool_kinds = [
+                            kind
+                            for kind in pool_kinds
+                            if (
+                                kind not in self.batch_handlers
+                                and kind not in active_pool_kinds
+                            )
+                        ]
+                        while ordinary_pool_kinds and not admission_closed.is_set():
+                            allowed_kinds = tuple(ordinary_pool_kinds)
+                            _steps, step = claim_with_retry(
+                                ",".join(allowed_kinds),
+                                lambda allowed_kinds=allowed_kinds: (
+                                    [],
+                                    self.repository.next_step(
+                                        heartbeat.fence,
+                                        allowed_kinds=allowed_kinds,
+                                    ),
+                                ),
+                            )
+                            if step is None:
+                                break
+                            pool_kind = str(step["stepKind"])
+                            if pool_kind not in ordinary_pool_kinds:
+                                raise RuntimeError(
+                                    "claimed step does not belong to an idle pool"
+                                )
+                            future = executor.submit(
+                                execute_claimed,
+                                pool_kind,
+                                (),
+                                step,
+                            )
+                            active_futures[future] = pool_kind
+                            ordinary_pool_kinds.remove(pool_kind)
+                except AttemptFenced:
+                    admission_closed.set()
+                    break
+                except BaseException as exc:
+                    record_worker_error("admission", exc)
+                    break
+
+                if admission_closed.is_set():
+                    break
+                if active_futures:
+                    wait(
+                        tuple(active_futures),
+                        timeout=pipeline_wait_seconds,
+                        return_when=FIRST_COMPLETED,
+                    )
+                    continue
+                stop_event.wait(pipeline_wait_seconds)
+
+            admission_closed.set()
+            for future, pool_kind in tuple(active_futures.items()):
+                try:
+                    future.result()
+                except AttemptFenced:
+                    pass
+                except BaseException as exc:
+                    record_worker_error(pool_kind, exc)
 
         if heartbeat.fenced.is_set() or stop_event.is_set():
             return

@@ -11,6 +11,7 @@ import time
 import uuid
 
 import pytest
+from flask import Flask
 from sqlalchemy import insert, select, update
 from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
@@ -27,6 +28,7 @@ from src.backend_v2.jobs.repository import (
     utcnow,
 )
 from src.backend_v2.jobs.retry import JobRetryService
+from src.backend_v2.jobs.routes import create_jobs_blueprint
 from src.backend_v2.jobs.worker_loop import AttemptHeartbeat, JobWorkerLoop
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
@@ -571,11 +573,52 @@ def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
         assert event is not None
         assert event["jobId"] == new_job
         assert event["type"] == "job_created"
-        assert event["job"]["jobId"] == new_job
-        assert event["job"]["status"] == "queued"
-        assert int(event["queueRevision"]) >= 1
+        assert "job" not in event
+        assert "queueRevision" not in event
+
+        snapshot = repository.job_snapshot(job_ids=[new_job])
+        assert snapshot["items"][0]["jobId"] == new_job
+        assert snapshot["items"][0]["status"] == "queued"
+        assert int(snapshot["queueRevision"]) >= 1
     finally:
         broadcaster.unsubscribe(subscription)
+        broadcaster.close()
+
+
+def test_job_snapshot_route_reads_only_requested_current_projections(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    first_job = _create_job(repository)
+    second_job = _create_job(repository)
+    broadcaster = JobEventBroadcaster(
+        repository,
+        epoch_repository=ProcessEpochRepository(engine),
+    )
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
+    )
+    try:
+        response = app.test_client().get(
+            "/api/v2/jobs/snapshot",
+            query_string=[
+                ("job_id", second_job),
+                ("job_id", first_job),
+            ],
+        )
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert [item["jobId"] for item in payload["items"]] == [
+            second_job,
+            first_job,
+        ]
+        assert all(item["status"] == "queued" for item in payload["items"])
+        assert int(payload["queueRevision"]) >= 1
+
+        missing = app.test_client().get("/api/v2/jobs/snapshot")
+        assert missing.status_code == 422
+    finally:
         broadcaster.close()
 
 
@@ -1198,13 +1241,16 @@ def test_parallel_supervisor_uses_bounded_wait_during_running_step(
     started = threading.Event()
     release = threading.Event()
     active_count_calls = 0
+    scoped_active_count_calls = 0
     count_lock = threading.Lock()
     original_active_step_counts = repository.active_step_counts
 
     def counted_active_step_counts(*args, **kwargs):
-        nonlocal active_count_calls
+        nonlocal active_count_calls, scoped_active_count_calls
         with count_lock:
             active_count_calls += 1
+            if kwargs.get("step_kind") is not None:
+                scoped_active_count_calls += 1
         return original_active_step_counts(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -1234,6 +1280,7 @@ def test_parallel_supervisor_uses_bounded_wait_during_running_step(
         with count_lock:
             calls_while_running = active_count_calls
         assert calls_while_running <= 5
+        assert scoped_active_count_calls == 0
 
         release.set()
         deadline = time.monotonic() + 5
@@ -1248,7 +1295,7 @@ def test_parallel_supervisor_uses_bounded_wait_during_running_step(
         thread.join(timeout=2)
 
 
-def test_parallel_worker_retries_sqlite_busy_during_stage_admission(
+def test_parallel_worker_defers_persistent_sqlite_busy_during_stage_admission(
     job_platform,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1272,10 +1319,10 @@ def test_parallel_worker_retries_sqlite_busy_during_stage_admission(
     original_next_step = repository.next_step
     admission_calls = 0
 
-    def busy_once(fence, *, allowed_kinds=None):
+    def busy_then_succeed(fence, *, allowed_kinds=None):
         nonlocal admission_calls
         admission_calls += 1
-        if admission_calls == 1:
+        if admission_calls <= 4:
             raise SqlAlchemyOperationalError(
                 "BEGIN IMMEDIATE",
                 (),
@@ -1283,7 +1330,7 @@ def test_parallel_worker_retries_sqlite_busy_during_stage_admission(
             )
         return original_next_step(fence, allowed_kinds=allowed_kinds)
 
-    monkeypatch.setattr(repository, "next_step", busy_once)
+    monkeypatch.setattr(repository, "next_step", busy_then_succeed)
     stop = threading.Event()
     loop = JobWorkerLoop(
         repository,
@@ -1300,7 +1347,7 @@ def test_parallel_worker_retries_sqlite_busy_during_stage_admission(
                 break
             time.sleep(0.01)
         assert repository.get_job(job_id)["status"] == "completed"
-        assert admission_calls == 2
+        assert admission_calls == 5
     finally:
         stop.set()
         thread.join(timeout=2)
