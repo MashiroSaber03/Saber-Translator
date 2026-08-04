@@ -4209,12 +4209,13 @@ components:
     JobList:
       type: object
       additionalProperties: false
-      required: [items, queueRevision, workerOnline]
+      required: [items, queueRevision, eventCursor, workerOnline]
       properties:
         items:
           type: array
           items: {$ref: "#/components/schemas/Job"}
         queueRevision: {type: integer, minimum: 1}
+        eventCursor: {type: integer, minimum: 0}
         workerOnline: {type: boolean}
     JobDetail:
       unevaluatedProperties: false
@@ -4379,6 +4380,9 @@ components:
         type: {type: string}
         payload: {type: object, additionalProperties: true}
         createdAt: {type: [string, "null"], format: date-time}
+        job:
+          $ref: "#/components/schemas/Job"
+        queueRevision: {type: integer, minimum: 1}
     JobEventList:
       type: object
       additionalProperties: false

@@ -571,6 +571,11 @@ class JobQueueRepository:
                     queue_state.c.singleton_id == 1
                 )
             ).scalar_one()
+            event_cursor = int(
+                connection.execute(
+                    select(func.coalesce(func.max(job_events.c.id), 0))
+                ).scalar_one()
+            )
             now = utcnow()
             worker_online = bool(
                 connection.execute(
@@ -589,6 +594,7 @@ class JobQueueRepository:
             return {
                 "items": [self._job_dto(row) for row in rows],
                 "queueRevision": int(revision),
+                "eventCursor": event_cursor,
                 "workerOnline": worker_online,
             }
 
@@ -805,6 +811,7 @@ class JobQueueRepository:
         after: int = 0,
         job_id: str | None = None,
         limit: int = 200,
+        include_projection: bool = False,
     ) -> list[dict[str, object]]:
         if after < 0:
             raise ValueError("event cursor must be nonnegative")
@@ -814,13 +821,35 @@ class JobQueueRepository:
         if job_id:
             condition = and_(condition, job_events.c.job_id == job_id)
         with self.engine.connect() as connection:
-            rows = connection.execute(
-                select(job_events)
-                .where(condition)
-                .order_by(job_events.c.id)
-                .limit(limit)
-            ).mappings()
-        return [self._event_dto(row) for row in rows]
+            rows = list(
+                connection.execute(
+                    select(job_events)
+                    .where(condition)
+                    .order_by(job_events.c.id)
+                    .limit(limit)
+                ).mappings()
+            )
+            if not rows or not include_projection:
+                return [self._event_dto(row) for row in rows]
+            snapshots = self._job_snapshots(
+                connection,
+                job_ids={str(row["job_id"]) for row in rows},
+            )
+            revision = int(
+                connection.execute(
+                    select(queue_state.c.queue_revision).where(
+                        queue_state.c.singleton_id == 1
+                    )
+                ).scalar_one()
+            )
+            return [
+                self._event_dto(
+                    row,
+                    job=snapshots.get(str(row["job_id"])),
+                    queue_revision=revision,
+                )
+                for row in rows
+            ]
 
     def events_before(
         self,
@@ -2567,6 +2596,13 @@ class JobQueueRepository:
             )
             if result.rowcount != 1:
                 raise AttemptFenced("job pipeline progress write was fenced")
+            self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type="pipeline_progress",
+                payload={"progress": snapshot},
+                now=now,
+            )
             return snapshot
 
     def acknowledge_drain(
@@ -4045,13 +4081,51 @@ class JobQueueRepository:
         }
 
     @staticmethod
-    def _event_dto(row: Mapping[str, Any]) -> dict[str, object]:
-        return {
+    def _event_dto(
+        row: Mapping[str, Any],
+        *,
+        job: Mapping[str, object] | None = None,
+        queue_revision: int | None = None,
+    ) -> dict[str, object]:
+        result: dict[str, object] = {
             "eventId": int(row["id"]),
             "jobId": row["job_id"],
             "type": row["event_type"],
             "payload": _load_json(row["payload_json"], {}),
             "createdAt": _iso(row["created_at"]),
+        }
+        if job is not None:
+            result["job"] = dict(job)
+        if queue_revision is not None:
+            result["queueRevision"] = queue_revision
+        return result
+
+    @staticmethod
+    def _job_snapshots(
+        connection: Any,
+        *,
+        job_ids: set[str],
+    ) -> dict[str, dict[str, object]]:
+        if not job_ids:
+            return {}
+        rows = connection.execute(
+            select(
+                jobs,
+                job_batches.c.display_name.label("batch_display_name"),
+                exists().where(
+                    chapter_write_locks.c.job_id == jobs.c.id
+                ).label("holds_chapter_lock"),
+            )
+            .join(
+                job_batches,
+                job_batches.c.id == jobs.c.batch_id,
+                isouter=True,
+            )
+            .where(jobs.c.id.in_(job_ids))
+        ).mappings()
+        return {
+            str(row["id"]): JobQueueRepository._job_dto(row)
+            for row in rows
         }
 
     @staticmethod

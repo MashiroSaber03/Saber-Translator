@@ -571,6 +571,9 @@ def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
         assert event is not None
         assert event["jobId"] == new_job
         assert event["type"] == "job_created"
+        assert event["job"]["jobId"] == new_job
+        assert event["job"]["status"] == "queued"
+        assert int(event["queueRevision"]) >= 1
     finally:
         broadcaster.unsubscribe(subscription)
         broadcaster.close()
@@ -1167,6 +1170,80 @@ def test_parallel_worker_quiesces_completed_pool_during_long_tail(
         assert repository.get_job(job_id)["status"] == "completed"
     finally:
         release_translate.set()
+        stop.set()
+        thread.join(timeout=2)
+
+
+def test_parallel_supervisor_uses_bounded_wait_during_running_step(
+    job_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="bounded supervisor polling",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=(JobItemSpec(page_id=None, step_kinds=("detect",)),),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    started = threading.Event()
+    release = threading.Event()
+    active_count_calls = 0
+    count_lock = threading.Lock()
+    original_active_step_counts = repository.active_step_counts
+
+    def counted_active_step_counts(*args, **kwargs):
+        nonlocal active_count_calls
+        with count_lock:
+            active_count_calls += 1
+        return original_active_step_counts(*args, **kwargs)
+
+    monkeypatch.setattr(
+        repository,
+        "active_step_counts",
+        counted_active_step_counts,
+    )
+
+    def handler(_fence, _step):
+        started.set()
+        assert release.wait(3)
+        return {"done": True}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler},
+        safe_point=lambda: False,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        assert started.wait(2)
+        time.sleep(0.35)
+        with count_lock:
+            calls_while_running = active_count_calls
+        assert calls_while_running <= 5
+
+        release.set()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+    finally:
+        release.set()
         stop.set()
         thread.join(timeout=2)
 

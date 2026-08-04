@@ -7,6 +7,16 @@ import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, Character
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 import { deepClone } from '@/utils/deepClone'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
 const demoDocument = {
   id: 'doc_alpha',
   bookId: 'book-demo',
@@ -648,6 +658,70 @@ describe('characterStudioStore', () => {
     await vi.advanceTimersByTimeAsync(2000)
 
     expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves edits made during a save and drains them through a follow-up revision', async () => {
+    const firstSave = deferred<CharacterStudioDocument>()
+    const secondSave = deferred<CharacterStudioDocument>()
+    saveCharacterStudioDocumentMock
+      .mockReset()
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise)
+
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    if (!store.currentDocument) throw new Error('currentDocument missing in test setup')
+
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      revision: 1,
+      identity: {
+        ...store.currentDocument.identity,
+        description: '第一次保存的内容',
+      },
+    })
+    const saving = store.persistCurrentDocument()
+    expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
+
+    if (!store.currentDocument) throw new Error('currentDocument disappeared during save')
+    store.updateCurrentDocument({
+      ...store.currentDocument,
+      identity: {
+        ...store.currentDocument.identity,
+        description: '保存期间继续输入的内容',
+      },
+    })
+
+    const firstPayload = deepClone(
+      saveCharacterStudioDocumentMock.mock.calls[0]![1] as CharacterStudioDocument,
+    )
+    firstSave.resolve({
+      ...firstPayload,
+      revision: 2,
+      meta: { ...firstPayload.meta, updated_at: '2026-05-15T00:01:00' },
+      updatedAt: '2026-05-15T00:01:00',
+    })
+
+    await vi.waitFor(() => expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(2))
+    const secondPayload = deepClone(
+      saveCharacterStudioDocumentMock.mock.calls[1]![1] as CharacterStudioDocument,
+    )
+    expect(secondPayload.identity.description).toBe('保存期间继续输入的内容')
+    expect(secondPayload.revision).toBe(2)
+
+    secondSave.resolve({
+      ...secondPayload,
+      revision: 3,
+      meta: { ...secondPayload.meta, updated_at: '2026-05-15T00:02:00' },
+      updatedAt: '2026-05-15T00:02:00',
+    })
+    await saving
+
+    expect(store.currentDocument?.identity.description).toBe('保存期间继续输入的内容')
+    expect(store.currentDocument?.revision).toBe(3)
+    expect(store.isSaving).toBe(false)
   })
 
   it('clears stale document state when loading a different book workspace', async () => {

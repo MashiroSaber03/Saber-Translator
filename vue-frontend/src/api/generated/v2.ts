@@ -2729,6 +2729,7 @@ export interface components {
         JobList: {
             items: components["schemas"]["Job"][];
             queueRevision: number;
+            eventCursor: number;
             workerOnline: boolean;
         };
         JobDetail: components["schemas"]["Job"] & {
@@ -2815,6 +2816,8 @@ export interface components {
             };
             /** Format: date-time */
             createdAt: string | null;
+            job?: components["schemas"]["Job"];
+            queueRevision?: number;
         };
         JobEventList: {
             items: components["schemas"]["JobEvent"][];

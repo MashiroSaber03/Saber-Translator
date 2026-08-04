@@ -89,6 +89,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const lastSyncedFingerprint = ref('')
   const pendingChatRehydrate = ref(false)
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  let activeDocumentSave: Promise<void> | null = null
   const patchSnapshot = ref<CharacterStudioDocument | null>(null)
   let workspaceLoadRequestId = 0
   let documentLoadRequestId = 0
@@ -374,27 +375,66 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  async function persistCurrentDocument() {
-    if (!bookId.value || !currentDocument.value) return
+  function persistCurrentDocument(): Promise<void> {
+    if (!bookId.value || !currentDocument.value) return Promise.resolve()
     if (autosaveTimer) {
       clearTimeout(autosaveTimer)
       autosaveTimer = null
     }
-    if (isSaving.value) return
+    if (activeDocumentSave) return activeDocumentSave
+
+    activeDocumentSave = persistCurrentDocumentUntilSynced().finally(() => {
+      isSaving.value = false
+      activeDocumentSave = null
+    })
+    return activeDocumentSave
+  }
+
+  async function persistCurrentDocumentUntilSynced() {
     isSaving.value = true
     clearErrorMessage()
     try {
-      const document = await saveCharacterStudioDocument(currentDocument.value.id, currentDocument.value)
-      await runWithoutAutosave(async () => {
-        currentDocument.value = document
-        markDocumentSynced(document)
-      })
-      await loadWorkspace(bookId.value)
-      await rehydrateChatAfterDocumentMutation(document.id)
+      while (bookId.value && currentDocument.value) {
+        const requestedBookId = bookId.value
+        const snapshot = deepClone(currentDocument.value)
+        const snapshotFingerprint = buildAutosaveFingerprint(snapshot)
+        const document = await saveCharacterStudioDocument(snapshot.id, snapshot)
+
+        if (
+          bookId.value !== requestedBookId
+          || currentDocument.value?.id !== snapshot.id
+        ) return
+
+        const editedWhileSaving =
+          buildAutosaveFingerprint(currentDocument.value) !== snapshotFingerprint
+        await runWithoutAutosave(async () => {
+          if (editedWhileSaving && currentDocument.value) {
+            currentDocument.value = rebaseUnsavedDocument(
+              currentDocument.value,
+              document,
+            )
+          } else {
+            currentDocument.value = document
+          }
+          markDocumentSynced(document)
+        })
+
+        if (editedWhileSaving) continue
+
+        await loadWorkspace(requestedBookId)
+        await rehydrateChatAfterDocumentMutation(document.id)
+        if (
+          bookId.value !== requestedBookId
+          || currentDocument.value?.id !== document.id
+        ) return
+        if (
+          buildAutosaveFingerprint(currentDocument.value)
+          !== lastSyncedFingerprint.value
+        ) continue
+        return
+      }
     } catch (error) {
       throw createActionError(error, '保存失败')
-    } finally {
-      isSaving.value = false
     }
   }
 
@@ -418,6 +458,20 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function markDocumentSynced(document: CharacterStudioDocument | null) {
     lastSyncedFingerprint.value = buildAutosaveFingerprint(document)
+  }
+
+  function rebaseUnsavedDocument(
+    localDocument: CharacterStudioDocument,
+    savedDocument: CharacterStudioDocument,
+  ): CharacterStudioDocument {
+    const rebased = deepClone(localDocument)
+    rebased.revision = savedDocument.revision
+    rebased.avatarUrl = savedDocument.avatarUrl
+    rebased.createdAt = savedDocument.createdAt
+    rebased.updatedAt = savedDocument.updatedAt
+    rebased.meta.created_at = savedDocument.meta.created_at
+    rebased.meta.updated_at = savedDocument.meta.updated_at
+    return rebased
   }
 
   function clearErrorMessage() {

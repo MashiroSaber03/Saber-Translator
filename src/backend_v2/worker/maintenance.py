@@ -10,22 +10,31 @@ import shutil
 import time
 from typing import Callable
 
-from sqlalchemy import Engine, delete, exists, select
+from sqlalchemy import Engine, delete, exists, func, or_, select, tuple_
 
 from src.backend_v2.insight.derived import InsightVectorStore
+from src.backend_v2.insight.gc import InsightReachabilityGarbageCollector
 from src.backend_v2.insight.qa import TransientRequestRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     NONTERMINAL_JOB_STATUSES,
+    idempotency_records,
+    job_artifacts,
     jobs,
+    operation_artifacts,
+    operations,
     web_import_drafts,
 )
 from src.backend_v2.timestamps import utcnow
 
 
 LOGGER = logging.getLogger(__name__)
+
+TERMINAL_OPERATION_STATUSES = ("completed", "failed", "cancelled")
+OPERATION_RETENTION = timedelta(days=30)
+MAINTENANCE_DELETE_LIMIT = 500
 
 
 class WorkerMaintenance:
@@ -44,6 +53,7 @@ class WorkerMaintenance:
         self.data_root = data_root.resolve()
         self.storage = AssetStorageService(data_root, engine)
         self.vector_store = InsightVectorStore(data_root)
+        self.insight_gc = InsightReachabilityGarbageCollector(engine)
         self.transient_requests = TransientRequestRepository(engine)
         self.jobs = JobQueueRepository(engine)
         self.engine = engine
@@ -61,9 +71,13 @@ class WorkerMaintenance:
         actions = (
             ("recover_journal", self.storage.recover_journal),
             ("prune_import_temp", self._prune_import_temp),
+            ("prune_job_history", self.jobs.prune_history),
+            ("prune_expired_artifacts", self._prune_expired_artifacts),
+            ("prune_terminal_operations", self._prune_terminal_operations),
+            ("prune_idempotency_records", self._prune_idempotency_records),
+            ("collect_insight_garbage", self.insight_gc.collect),
             ("collect_garbage", self.storage.collect_garbage),
             ("reconcile_orphan_objects", self.storage.reconcile_orphan_objects),
-            ("prune_job_history", self.jobs.prune_history),
             ("prune_transient_requests", self.transient_requests.prune),
             (
                 "collect_orphan_vector_collections",
@@ -90,6 +104,168 @@ class WorkerMaintenance:
                 time.monotonic() - started_at,
             )
         return True
+
+    def _prune_expired_artifacts(self) -> dict[str, int]:
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            job_keys = list(
+                connection.execute(
+                    select(job_artifacts.c.job_id, job_artifacts.c.kind)
+                    .where(job_artifacts.c.expires_at <= now)
+                    .order_by(job_artifacts.c.expires_at)
+                    .limit(MAINTENANCE_DELETE_LIMIT)
+                )
+            )
+            if job_keys:
+                connection.execute(
+                    delete(job_artifacts).where(
+                        tuple_(job_artifacts.c.job_id, job_artifacts.c.kind).in_(
+                            job_keys
+                        )
+                    )
+                )
+            operation_keys = list(
+                connection.execute(
+                    select(
+                        operation_artifacts.c.operation_id,
+                        operation_artifacts.c.kind,
+                    )
+                    .where(operation_artifacts.c.expires_at <= now)
+                    .order_by(operation_artifacts.c.expires_at)
+                    .limit(MAINTENANCE_DELETE_LIMIT)
+                )
+            )
+            if operation_keys:
+                connection.execute(
+                    delete(operation_artifacts).where(
+                        tuple_(
+                            operation_artifacts.c.operation_id,
+                            operation_artifacts.c.kind,
+                        ).in_(operation_keys)
+                    )
+                )
+        return {
+            "jobArtifacts": len(job_keys),
+            "operationArtifacts": len(operation_keys),
+        }
+
+    def _prune_terminal_operations(self) -> int:
+        now = utcnow()
+        cutoff = now - OPERATION_RETENTION
+        with immediate_transaction(self.engine) as connection:
+            operation_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(operations.c.id)
+                    .where(
+                        operations.c.status.in_(TERMINAL_OPERATION_STATUSES),
+                        func.coalesce(
+                            operations.c.finished_at,
+                            operations.c.updated_at,
+                            operations.c.created_at,
+                        )
+                        <= cutoff,
+                        ~exists(
+                            select(operation_artifacts.c.operation_id).where(
+                                operation_artifacts.c.operation_id
+                                == operations.c.id,
+                                or_(
+                                    operation_artifacts.c.expires_at.is_(None),
+                                    operation_artifacts.c.expires_at > now,
+                                ),
+                            )
+                        ),
+                        ~exists(
+                            select(idempotency_records.c.key).where(
+                                idempotency_records.c.resource_type
+                                == "operation",
+                                idempotency_records.c.resource_id
+                                == operations.c.id,
+                                idempotency_records.c.expires_at > now,
+                            )
+                        ),
+                    )
+                    .order_by(
+                        func.coalesce(
+                            operations.c.finished_at,
+                            operations.c.updated_at,
+                            operations.c.created_at,
+                        ),
+                        operations.c.id,
+                    )
+                    .limit(MAINTENANCE_DELETE_LIMIT)
+                ).scalars()
+            ]
+            if operation_ids:
+                connection.execute(
+                    delete(operations).where(operations.c.id.in_(operation_ids))
+                )
+        return len(operation_ids)
+
+    def _prune_idempotency_records(self) -> int:
+        now = utcnow()
+        active_operation = operations.alias("active_idempotent_operation")
+        active_batch_job = jobs.alias("active_idempotent_batch_job")
+        active_draft_job = jobs.alias("active_idempotent_draft_job")
+        linked_draft = web_import_drafts.alias("idempotent_web_import_draft")
+        with immediate_transaction(self.engine) as connection:
+            protected = or_(
+                exists(
+                    select(active_operation.c.id).where(
+                        idempotency_records.c.resource_type == "operation",
+                        active_operation.c.id == idempotency_records.c.resource_id,
+                        active_operation.c.status.in_(("pending", "running")),
+                    )
+                ),
+                exists(
+                    select(active_batch_job.c.id).where(
+                        idempotency_records.c.resource_type == "job_batch",
+                        active_batch_job.c.batch_id
+                        == idempotency_records.c.resource_id,
+                        active_batch_job.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                    )
+                ),
+                exists(
+                    select(linked_draft.c.id).where(
+                        idempotency_records.c.resource_type
+                        == "web_import_draft",
+                        linked_draft.c.id == idempotency_records.c.resource_id,
+                        or_(
+                            linked_draft.c.expires_at > now,
+                            exists(
+                                select(active_draft_job.c.id).where(
+                                    active_draft_job.c.web_import_draft_id
+                                    == linked_draft.c.id,
+                                    active_draft_job.c.status.in_(
+                                        NONTERMINAL_JOB_STATUSES
+                                    ),
+                                )
+                            ),
+                        ),
+                    )
+                ),
+            )
+            keys = list(
+                connection.execute(
+                    select(idempotency_records.c.scope, idempotency_records.c.key)
+                    .where(
+                        idempotency_records.c.expires_at <= now,
+                        ~protected,
+                    )
+                    .order_by(idempotency_records.c.expires_at)
+                    .limit(MAINTENANCE_DELETE_LIMIT)
+                )
+            )
+            if keys:
+                connection.execute(
+                    delete(idempotency_records).where(
+                        tuple_(
+                            idempotency_records.c.scope,
+                            idempotency_records.c.key,
+                        ).in_(keys)
+                    )
+                )
+        return len(keys)
 
     def _prune_import_temp(self) -> dict[str, int]:
         now = utcnow()

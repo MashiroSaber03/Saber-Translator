@@ -75,7 +75,11 @@ def create_jobs_blueprint(
                 # Durable catch-up first; the subscription was installed before
                 # this query, so events created during catch-up remain queued.
                 while True:
-                    backlog = repository.events_after(after=cursor, limit=1000)
+                    backlog = repository.events_after(
+                        after=cursor,
+                        limit=1000,
+                        include_projection=True,
+                    )
                     if not backlog:
                         break
                     for event in backlog:

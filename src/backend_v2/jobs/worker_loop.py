@@ -25,6 +25,8 @@ BatchStepHandler = Callable[
 DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 PIPELINE_BUSY_RETRY_LIMIT = 3
 PIPELINE_BUSY_RETRY_BASE_SECONDS = 0.05
+MIN_SCHEDULER_POLL_SECONDS = 0.1
+MAX_SCHEDULER_POLL_SECONDS = 0.5
 LOGGER = logging.getLogger("saber.worker.jobs")
 
 
@@ -145,6 +147,7 @@ class JobWorkerLoop:
         batch_handlers: Mapping[str, BatchStepHandler] | None = None,
         plugin_runtime: Any | None = None,
         safe_point: Callable[[], bool] | None = None,
+        on_activity: Callable[[], None] | None = None,
         idle_poll_seconds: float = 0.25,
     ) -> None:
         self.repository = repository
@@ -155,6 +158,9 @@ class JobWorkerLoop:
             raise ValueError("every batch handler requires a matching step handler")
         self.plugin_runtime = plugin_runtime
         self.safe_point = safe_point
+        self.on_activity = on_activity
+        if idle_poll_seconds <= 0:
+            raise ValueError("idle poll interval must be positive")
         self.idle_poll_seconds = idle_poll_seconds
 
     def run(self, stop_event: threading.Event) -> None:
@@ -173,6 +179,7 @@ class JobWorkerLoop:
             if fence is None:
                 stop_event.wait(self.idle_poll_seconds)
                 continue
+            self._note_activity()
             self._run_attempt(fence, stop_event)
         LOGGER.info("持久任务调度器已停止")
 
@@ -227,6 +234,7 @@ class JobWorkerLoop:
             heartbeat.stop()
             if self.plugin_runtime is not None:
                 self.plugin_runtime.release_job_state(fence.job_id)
+            self._note_activity()
             LOGGER.info(
                 "任务轮次结束：job=%s attempt=%s duration=%.2fs fenced=%s",
                 _short(fence.job_id),
@@ -234,6 +242,10 @@ class JobWorkerLoop:
                 time.monotonic() - started_at,
                 heartbeat.fenced.is_set(),
             )
+
+    def _note_activity(self) -> None:
+        if self.on_activity is not None:
+            self.on_activity()
 
     def _run_sequential_attempt(
         self,
@@ -326,7 +338,15 @@ class JobWorkerLoop:
                                     message=f"Worker 没有以下步骤的处理器：{kinds}",
                                 )
                                 return
-                        time.sleep(0.02)
+                        stop_event.wait(
+                            min(
+                                max(
+                                    self.idle_poll_seconds,
+                                    MIN_SCHEDULER_POLL_SECONDS,
+                                ),
+                                MAX_SCHEDULER_POLL_SECONDS,
+                            )
+                        )
                         continue
                     final_status = self._finish_job(fence)
                     LOGGER.info(
@@ -433,7 +453,10 @@ class JobWorkerLoop:
         error_lock = threading.Lock()
         pipeline_condition = threading.Condition()
         pipeline_state_version = 0
-        pipeline_wait_seconds = min(max(self.idle_poll_seconds, 0.05), 0.5)
+        pipeline_wait_seconds = min(
+            max(self.idle_poll_seconds, MIN_SCHEDULER_POLL_SECONDS),
+            MAX_SCHEDULER_POLL_SECONDS,
+        )
         has_deep_learning_pool = bool(
             set(pool_kinds).intersection(DEEP_LEARNING_STEP_KINDS)
         )
@@ -734,10 +757,11 @@ class JobWorkerLoop:
                 for pool_kind in pool_kinds
             ]
             while (
-                not admission_closed.wait(0.05)
+                not admission_closed.is_set()
                 and not stop_event.is_set()
                 and not heartbeat.fenced.is_set()
             ):
+                observed_version = pipeline_version()
                 if all(future.done() for future in futures):
                     break
                 if self.safe_point is not None:
@@ -745,7 +769,13 @@ class JobWorkerLoop:
                         heartbeat.fence
                     )
                     if running == 0:
-                        self.safe_point()
+                        if self.safe_point():
+                            signal_pipeline_changed()
+                            continue
+                wait_for_pipeline_change(
+                    observed_version,
+                    pipeline_wait_seconds,
+                )
             close_admission()
             for future in futures:
                 future.result()

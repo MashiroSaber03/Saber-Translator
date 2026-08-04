@@ -90,6 +90,7 @@ describe('taskCenterStore snapshot reconciliation', () => {
   it('refreshes the durable snapshot after the event stream reconnects', async () => {
     const store = useTaskCenterStore()
     await store.initialize()
+    FakeEventSource.latest?.onopen?.()
     mocks.list.mockClear()
 
     FakeEventSource.latest?.onopen?.()
@@ -130,6 +131,115 @@ describe('taskCenterStore snapshot reconciliation', () => {
 
     expect(mocks.list).toHaveBeenCalledTimes(2)
     expect(peakRequests).toBeLessThanOrEqual(2)
+    store.disconnect()
+    vi.useRealTimers()
+  })
+
+  it('projects complete SSE job snapshots without reloading queue and history', async () => {
+    mocks.list.mockImplementation(async (scope: 'queue' | 'history') => ({
+      items: scope === 'queue' ? [makeJob({ jobId: 'job-1', status: 'queued', queueRank: 1 })] : [],
+      queueRevision: 1,
+    }))
+    const store = useTaskCenterStore()
+    await store.initialize()
+    mocks.list.mockClear()
+
+    FakeEventSource.latest?.emit('job_started', {
+      eventId: 1,
+      jobId: 'job-1',
+      type: 'job_started',
+      payload: {},
+      createdAt: null,
+      queueRevision: 2,
+      job: makeJob({
+        jobId: 'job-1',
+        status: 'running',
+        queueRank: 1,
+        progress: {
+          executionMode: 'sequential',
+          jobStatus: 'running',
+          totalItems: 1,
+          completedItems: 0,
+          failedItems: 0,
+          skippedItems: 0,
+          cancelledItems: 0,
+          pools: [],
+        },
+      }),
+    })
+    FakeEventSource.latest?.emit('page_completed', {
+      eventId: 2,
+      jobId: 'job-1',
+      type: 'page_completed',
+      payload: {},
+      createdAt: null,
+      queueRevision: 2,
+      job: makeJob({
+        jobId: 'job-1',
+        status: 'running',
+        queueRank: 1,
+        progress: {
+          executionMode: 'sequential',
+          jobStatus: 'running',
+          totalItems: 1,
+          completedItems: 1,
+          failedItems: 0,
+          skippedItems: 0,
+          cancelledItems: 0,
+          pools: [],
+        },
+      }),
+    })
+
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(store.queue[0]?.status).toBe('running')
+    expect(store.queue[0]?.progress.completedItems).toBe(1)
+    expect(store.queueRevision).toBe(2)
+
+    FakeEventSource.latest?.emit('job_finished', {
+      eventId: 3,
+      jobId: 'job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+      queueRevision: 3,
+      job: makeJob({ jobId: 'job-1', status: 'completed', finishedAt: '2026-08-04T12:00:00Z' }),
+    })
+
+    expect(store.queue).toEqual([])
+    expect(store.history.map(job => job.jobId)).toEqual(['job-1'])
+    expect(mocks.list).not.toHaveBeenCalled()
+  })
+
+  it('falls back to one durable refresh when the event cursor has a gap', async () => {
+    vi.useFakeTimers()
+    const store = useTaskCenterStore()
+    await store.initialize()
+    mocks.list.mockClear()
+    const projected = makeJob({ jobId: 'job-1', status: 'running', queueRank: 1 })
+
+    FakeEventSource.latest?.emit('job_started', {
+      eventId: 1,
+      jobId: 'job-1',
+      type: 'job_started',
+      payload: {},
+      createdAt: null,
+      queueRevision: 2,
+      job: projected,
+    })
+    FakeEventSource.latest?.emit('page_completed', {
+      eventId: 3,
+      jobId: 'job-1',
+      type: 'page_completed',
+      payload: {},
+      createdAt: null,
+      queueRevision: 2,
+      job: projected,
+    })
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.runAllTimersAsync()
+
+    expect(mocks.list).toHaveBeenCalledTimes(2)
     store.disconnect()
     vi.useRealTimers()
   })

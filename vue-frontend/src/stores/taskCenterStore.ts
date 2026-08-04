@@ -20,12 +20,15 @@ const EVENT_TYPES = [
   'job_continue',
   'job_paused',
   'job_cancelled',
+  'job_interrupted',
   'job_finished',
   'job_failed',
   'chapter_write_intent_created',
   'chapter_write_lock_acquired',
   'step_started',
+  'step_checkpointed',
   'step_completed',
+  'pipeline_progress',
   'page_completed',
   'page_failed',
   'page_skipped',
@@ -46,6 +49,15 @@ const EVENT_TYPES = [
 ]
 
 type TaskCenterEventListener = (event: V2JobEvent) => void
+
+const QUEUE_STATUSES = new Set<V2JobStatus>([
+  'queued',
+  'running',
+  'pausing',
+  'paused',
+  'cancelling',
+])
+const HISTORY_BATCH_LIMIT = 200
 
 export interface WaitForJobOptions {
   onProgress?: (progress: V2Job['progress']) => void
@@ -78,10 +90,12 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const kindFilter = ref<'' | V2Job['kind']>('')
   const bookFilter = ref('')
   let eventSource: EventSource | null = null
+  let eventStreamOpenedOnce = false
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshPromise: Promise<void> | null = null
   let eventRefreshInFlight = false
   let eventRefreshDirty = false
+  let projectionVersion = 0
   const eventListeners = new Set<TaskCenterEventListener>()
 
   const activeCount = computed(
@@ -110,20 +124,81 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
 
   function refresh(): Promise<void> {
     if (refreshPromise) return refreshPromise
+    const startedProjectionVersion = projectionVersion
     loading.value = true
     refreshPromise = Promise.all([
       jobsApi.list('queue'),
       jobsApi.list('history'),
     ]).then(([queueResult, historyResult]) => {
+      if (projectionVersion !== startedProjectionVersion) {
+        scheduleRefresh()
+        return
+      }
       queue.value = queueResult.items
       history.value = historyResult.items
       queueRevision.value = queueResult.queueRevision
       workerOnline.value = queueResult.workerOnline !== false
+      if (
+        !eventSource &&
+        lastEventId.value === 0 &&
+        typeof queueResult.eventCursor === 'number' &&
+        typeof historyResult.eventCursor === 'number'
+      ) {
+        // The two snapshots are independent reads.  Starting from the older
+        // cursor guarantees that an event committed between them is replayed.
+        lastEventId.value = Math.min(queueResult.eventCursor, historyResult.eventCursor)
+      }
     }).finally(() => {
       loading.value = false
       refreshPromise = null
     })
     return refreshPromise
+  }
+
+  function queueOrder(left: V2Job, right: V2Job): number {
+    const leftRank = left.queueRank ?? Number.MAX_SAFE_INTEGER
+    const rightRank = right.queueRank ?? Number.MAX_SAFE_INTEGER
+    if (leftRank !== rightRank) return leftRank - rightRank
+    return String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+  }
+
+  function trimHistoryBatches(items: V2Job[]): V2Job[] {
+    const retained = new Set<string>()
+    return items.filter(job => {
+      const key = job.batchId || `job:${job.jobId}`
+      if (retained.has(key)) return true
+      if (retained.size >= HISTORY_BATCH_LIMIT) return false
+      retained.add(key)
+      return true
+    })
+  }
+
+  function applyJobProjection(job: V2Job): void {
+    const queueWithoutJob = queue.value.filter(item => item.jobId !== job.jobId)
+    const historyWithoutJob = history.value.filter(item => item.jobId !== job.jobId)
+    if (QUEUE_STATUSES.has(job.status)) {
+      queue.value = [...queueWithoutJob, job].sort(queueOrder)
+      history.value = historyWithoutJob
+      return
+    }
+
+    queue.value = queueWithoutJob
+    const previousIndex = history.value.findIndex(item => item.jobId === job.jobId)
+    if (previousIndex >= 0) {
+      historyWithoutJob.splice(previousIndex, 0, job)
+    } else if (job.batchId) {
+      const batchIndex = historyWithoutJob.findIndex(item => item.batchId === job.batchId)
+      historyWithoutJob.splice(batchIndex >= 0 ? batchIndex : 0, 0, job)
+    } else {
+      historyWithoutJob.unshift(job)
+    }
+    history.value = trimHistoryBatches(historyWithoutJob)
+  }
+
+  function hasJobProjection(value: unknown): value is V2Job {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const candidate = value as Partial<V2Job>
+    return typeof candidate.jobId === 'string' && typeof candidate.status === 'string'
   }
 
   function scheduleRefresh(): void {
@@ -145,10 +220,25 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   function receiveEvent(event: MessageEvent<string>): void {
     try {
       const parsed = JSON.parse(event.data) as V2JobEvent
+      if (!Number.isInteger(parsed.eventId) || parsed.eventId < 1) {
+        scheduleRefresh()
+        return
+      }
+      if (parsed.eventId <= lastEventId.value) return
+      const cursorGap = lastEventId.value > 0 && parsed.eventId !== lastEventId.value + 1
       latestEvent.value = parsed
-      lastEventId.value = Math.max(lastEventId.value, parsed.eventId)
+      lastEventId.value = parsed.eventId
+      projectionVersion += 1
       for (const listener of eventListeners) listener(parsed)
-      scheduleRefresh()
+      if (hasJobProjection(parsed.job) && parsed.job.jobId === parsed.jobId) {
+        applyJobProjection(parsed.job)
+        if (typeof parsed.queueRevision === 'number') {
+          queueRevision.value = Math.max(queueRevision.value, parsed.queueRevision)
+        }
+      } else {
+        scheduleRefresh()
+      }
+      if (cursorGap) scheduleRefresh()
     } catch {
       scheduleRefresh()
     }
@@ -159,7 +249,8 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     eventSource = new EventSource(`/api/v2/jobs/events?after=${lastEventId.value}`)
     eventSource.onopen = () => {
       connected.value = true
-      void refresh()
+      if (eventStreamOpenedOnce) void refresh()
+      eventStreamOpenedOnce = true
     }
     eventSource.onerror = () => {
       connected.value = false
@@ -180,6 +271,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     eventRefreshDirty = false
     eventSource?.close()
     eventSource = null
+    eventStreamOpenedOnce = false
     connected.value = false
   }
 

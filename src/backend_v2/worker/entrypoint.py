@@ -372,6 +372,7 @@ def run_worker(args: object) -> int:
                     "web_extract_page": web_import.handle_download_batch,
                 },
                 safe_point=run_immediate_work,
+                on_activity=model_lifecycle.note_activity,
                 plugin_runtime=plugin_job_runtime,
             ).run(stop_event)
     except BaseException:

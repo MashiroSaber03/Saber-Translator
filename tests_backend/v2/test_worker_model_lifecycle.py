@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
+import time
 import uuid
 
 from flask import Flask
@@ -9,6 +11,8 @@ from sqlalchemy import insert, select
 
 from src.backend_v2.api.system_routes import create_system_blueprint
 from src.backend_v2.content.repository import ContentRepository
+from src.backend_v2.jobs.repository import JobItemSpec, JobQueueRepository, JobSpec
+from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
@@ -163,6 +167,79 @@ def test_idle_model_cache_is_released_once_after_ten_minutes(
     assert lifecycle.release_if_idle() is False
     assert runtime_checks == 1
     assert released == ["plugins"]
+
+
+def test_durable_job_activity_rearms_idle_release_after_models_reload(
+    model_platform,
+    monkeypatch,
+) -> None:
+    engine, worker_epoch_id, _page_id = model_platform
+    clock = [0.0]
+    released: list[str] = []
+    monkeypatch.setattr(
+        "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
+        lambda *, release_callbacks: _run_release_callbacks(release_callbacks),
+    )
+    lifecycle = WorkerModelLifecycle(
+        WorkerModelControlRepository(engine),
+        worker_epoch_id=worker_epoch_id,
+        idle_timeout_seconds=600,
+        release_callbacks=(lambda: released.append("plugins"),),
+        monotonic=lambda: clock[0],
+    )
+    monkeypatch.setattr(lifecycle.repository, "runtime_busy", lambda: False)
+
+    clock[0] = 600
+    assert lifecycle.release_if_idle() is True
+    assert lifecycle.released_since_activity is True
+
+    jobs = JobQueueRepository(engine)
+    created = jobs.create_batch(
+        kind="export",
+        display_name="model activity integration",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"mode": "test"},
+                items=(
+                    JobItemSpec(page_id=None, step_kinds=("model_step",)),
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    stop = threading.Event()
+
+    def handle(_fence, _step):
+        clock[0] = 610
+        return {"modelLoaded": True}
+
+    loop = JobWorkerLoop(
+        jobs,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"model_step": handle},
+        on_activity=lifecycle.note_activity,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if jobs.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert jobs.get_job(job_id)["status"] == "completed"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+    assert lifecycle.released_since_activity is False
+    clock[0] = 1_209
+    assert lifecycle.release_if_idle() is False
+    clock[0] = 1_210
+    assert lifecycle.release_if_idle() is True
+    assert released == ["plugins", "plugins"]
 
 
 def _run_release_callbacks(release_callbacks) -> dict[str, object]:
