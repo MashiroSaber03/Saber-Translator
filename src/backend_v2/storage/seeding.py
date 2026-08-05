@@ -7,12 +7,12 @@ import uuid
 from sqlalchemy import Engine, case, insert, select, update
 
 from src.backend_v2.serialization import canonical_json
+from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.content.translation_constraints import (
     TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
 )
 from src.backend_v2.storage.defaults import (
-    DEFAULT_FONT_ID,
     DEFAULT_INSIGHT_SETTINGS,
     DEFAULT_TEXT_STYLE,
     DEFAULT_WEB_IMPORT_SETTINGS,
@@ -124,17 +124,43 @@ def seed_system_records(engine: Engine) -> None:
             )
         )
 
-        if connection.execute(
-            select(fonts.c.id).where(fonts.c.builtin_key == "default")
-        ).scalar_one_or_none() is None:
-            connection.execute(
-                insert(fonts).values(
-                    id=DEFAULT_FONT_ID,
-                    kind="builtin",
-                    display_name="默认字体",
-                    builtin_key="default",
+        existing_builtin_fonts = {
+            str(row["builtin_key"]): row
+            for row in connection.execute(
+                select(
+                    fonts.c.id,
+                    fonts.c.builtin_key,
+                    fonts.c.display_name,
+                ).where(fonts.c.kind == "builtin")
+            ).mappings()
+        }
+        for bundled_font in discover_bundled_fonts():
+            existing = existing_builtin_fonts.get(bundled_font.builtin_key)
+            if existing is None:
+                connection.execute(
+                    insert(fonts).values(
+                        id=bundled_font.id,
+                        kind="builtin",
+                        display_name=bundled_font.display_name,
+                        builtin_key=bundled_font.builtin_key,
+                    )
                 )
-            )
+                continue
+            existing_id = str(existing["id"])
+            if (
+                bundled_font.builtin_key == "default"
+                and existing_id != bundled_font.id
+            ):
+                raise RuntimeError(
+                    "bundled font catalog id mismatch for "
+                    f"{bundled_font.builtin_key}"
+                )
+            if str(existing["display_name"]) != bundled_font.display_name:
+                connection.execute(
+                    update(fonts)
+                    .where(fonts.c.id == existing_id)
+                    .values(display_name=bundled_font.display_name)
+                )
 
         existing_factory_types = set(
             connection.execute(

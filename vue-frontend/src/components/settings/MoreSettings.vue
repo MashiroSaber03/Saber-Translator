@@ -46,14 +46,14 @@
       <UiField
         variant="settings"
         label="上传自定义字体"
-        hint="支持 .ttf、.otf、.woff、.woff2 格式"
+        :hint="`支持 ${FONT_FILE_FORMATS_LABEL} 格式`"
       >
         <div class="more-settings__font-upload-row">
           <UiFileInput
             ref="fontInput"
             data-testid="font-upload-input"
             class="more-settings__hidden-file-input"
-            accept=".ttf,.otf,.woff,.woff2"
+            :accept="FONT_FILE_ACCEPT"
             @files-change="handleFontUpload"
           />
           <UiButton
@@ -127,6 +127,11 @@ import {
   type V2Font,
 } from '@/api/v2/settings'
 import { useToast } from '@/utils/toast'
+import {
+  FONT_FILE_ACCEPT,
+  FONT_FILE_FORMATS_LABEL,
+  isSupportedFontFileName,
+} from '@/utils/fontFiles'
 import ParallelSettings from './ParallelSettings.vue'
 
 const settingsStore = useSettingsStore()
@@ -182,10 +187,8 @@ async function handleFontUpload(files: File[]) {
   if (!file) return
   selectedFontFileName.value = file.name
 
-  const validExtensions = ['.ttf', '.otf', '.woff', '.woff2']
-  const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-  if (!validExtensions.includes(ext)) {
-    toast.error('不支持的字体格式，请上传 .ttf、.otf、.woff 或 .woff2 文件')
+  if (!isSupportedFontFileName(file.name)) {
+    toast.error(`不支持的字体格式，请上传 ${FONT_FILE_FORMATS_LABEL} 文件`)
     fontInput.value?.clear()
     return
   }

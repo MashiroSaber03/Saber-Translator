@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsSidebar from './SettingsSidebar.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import { useSettingsStore } from '@/stores/settings'
 
 const apiMocks = vi.hoisted(() => ({
   getFontList: vi.fn(),
@@ -119,6 +120,53 @@ describe('SettingsSidebar defaults', () => {
       'fontFamily',
       'font-custom',
     ])
+  })
+
+  it('shows every backend font before the custom upload action', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useSettingsStore().hydrateResourceCatalogs([
+      {
+        id: 'font-default',
+        displayName: '思源黑体',
+        kind: 'builtin',
+        builtinKey: 'default',
+        assetUrl: null,
+      },
+      {
+        id: 'font-kaiti',
+        displayName: '楷体',
+        kind: 'builtin',
+        builtinKey: 'resource:STKAITI.TTF',
+        assetUrl: null,
+      },
+    ], [])
+    const wrapper = mount(SettingsSidebar, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          UiCombobox: true,
+          ProductCollapsibleSection: {
+            name: 'ProductCollapsibleSection',
+            props: ['title', 'expanded'],
+            template: '<section><slot /></section>',
+          },
+          PageSelectionModal: true,
+        },
+      },
+    })
+
+    const options = (wrapper.vm as unknown as {
+      fontSelectOptions: Array<{ label: string, value: string }>
+    }).fontSelectOptions
+    expect(options).toEqual(expect.arrayContaining([
+      { label: '思源黑体', value: 'font-default' },
+      { label: '楷体', value: 'font-kaiti' },
+    ]))
+    expect(options.at(-1)).toEqual({
+      label: '自定义字体...',
+      value: 'custom-font',
+    })
   })
 
   it('maps parent shell colors through semantic tokens', () => {

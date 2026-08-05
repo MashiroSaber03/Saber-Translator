@@ -29,8 +29,10 @@ import {
   type WorkflowRunRequest,
 } from '@/types/workflow'
 import { clampPageSelection, createPageSelectionSummary } from '@/utils/pageSelection'
-
-const FONT_FILE_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2'] as const
+import {
+  FONT_FILE_FORMATS_LABEL,
+  isSupportedFontFileName,
+} from '@/utils/fontFiles'
 
 export interface ApplySettingsOptions {
   fontSize: boolean
@@ -348,11 +350,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     const file = files[0]
     if (!file) return
 
-    const fileName = file.name.toLowerCase()
-    const isValidType = FONT_FILE_EXTENSIONS.some(ext => fileName.endsWith(ext))
-
-    if (!isValidType) {
-      showToast('请选择 .ttf、.otf、.woff 或 .woff2 格式的字体文件', 'error')
+    if (!isSupportedFontFileName(file.name)) {
+      showToast(`请选择 ${FONT_FILE_FORMATS_LABEL} 格式的字体文件`, 'error')
       fontUploadInput.value?.clear()
       return
     }

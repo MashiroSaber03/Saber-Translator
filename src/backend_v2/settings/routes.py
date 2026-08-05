@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTCollection, TTFont
 from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import (
@@ -19,6 +19,7 @@ from src.backend_v2.api.request_helpers import (
     validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.builtin_fonts import SUPPORTED_FONT_SUFFIXES
 from src.backend_v2.settings.diagnostics import (
     CONNECTION_TEST_KINDS,
     ProviderDiagnostics,
@@ -347,16 +348,21 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
         payload = upload.stream.read()
         if not payload:
             raise ValueError("font is empty")
+        suffix = Path(upload.filename or "").suffix.lower()
+        if suffix not in SUPPORTED_FONT_SUFFIXES:
+            raise ValueError("font extension must be ttf, ttc, otf, woff, or woff2")
         try:
-            font = TTFont(BytesIO(payload), lazy=True)
+            font = (
+                TTCollection(BytesIO(payload), lazy=True)
+                if suffix == ".ttc"
+                else TTFont(BytesIO(payload), lazy=True)
+            )
             font.close()
         except Exception as exc:
             raise ValueError("uploaded file is not a valid font") from exc
-        suffix = Path(upload.filename or "").suffix.lower()
-        if suffix not in {".ttf", ".otf", ".woff", ".woff2"}:
-            raise ValueError("font extension must be ttf, otf, woff, or woff2")
         mime_types = {
             ".ttf": "font/ttf",
+            ".ttc": "font/collection",
             ".otf": "font/otf",
             ".woff": "font/woff",
             ".woff2": "font/woff2",

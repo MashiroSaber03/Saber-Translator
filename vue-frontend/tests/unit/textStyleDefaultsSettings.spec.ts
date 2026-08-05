@@ -234,7 +234,7 @@ describe('TextStyleDefaultsSettings', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
 
     expect(source).not.toContain('style="display: none"')
-    expect(source).toMatch(/accept="\.ttf,\.otf,\.woff,\.woff2"\s+hidden/)
+    expect(source).toMatch(/:accept="FONT_FILE_ACCEPT"\s+hidden/)
   })
 
   it('receives custom fonts through the typed file-input boundary', async () => {

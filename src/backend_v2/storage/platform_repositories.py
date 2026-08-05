@@ -11,7 +11,7 @@ import json
 import uuid
 from typing import Any
 
-from sqlalchemy import Engine, and_, delete, insert, select, update
+from sqlalchemy import Engine, and_, case, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.serialization import canonical_json as _canonical_json
@@ -988,7 +988,11 @@ class FontRepository:
     def list(self) -> list[dict[str, object]]:
         with self.engine.connect() as connection:
             rows = connection.execute(
-                select(fonts).order_by(fonts.c.kind, fonts.c.display_name)
+                select(fonts).order_by(
+                    case((fonts.c.builtin_key == "default", 0), else_=1),
+                    fonts.c.kind,
+                    func.lower(fonts.c.display_name),
+                )
             ).mappings()
             return [
                 {

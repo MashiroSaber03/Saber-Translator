@@ -60,7 +60,7 @@
         />
         <UiFileInput
           ref="fontUploadInput"
-          accept=".ttf,.otf,.woff,.woff2"
+          :accept="FONT_FILE_ACCEPT"
           hidden
           @files-change="handleFontUpload"
         />
@@ -215,6 +215,11 @@ import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
 import { listV2Fonts, uploadV2Font, type V2Font } from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
+import {
+  FONT_FILE_ACCEPT,
+  FONT_FILE_FORMATS_LABEL,
+  isSupportedFontFileName,
+} from '@/utils/fontFiles'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
   clampLineSpacing,
@@ -371,11 +376,8 @@ async function handleFontUpload(files: File[]): Promise<void> {
   const file = files[0]
   if (!file) return
 
-  const validExtensions = ['.ttf', '.otf', '.woff', '.woff2']
-  const fileName = file.name.toLowerCase()
-  const isValidType = validExtensions.some(ext => fileName.endsWith(ext))
-  if (!isValidType) {
-    toast.error('请选择 .ttf、.otf、.woff 或 .woff2 格式的字体文件')
+  if (!isSupportedFontFileName(file.name)) {
+    toast.error(`请选择 ${FONT_FILE_FORMATS_LABEL} 格式的字体文件`)
     fontUploadInput.value?.clear()
     return
   }

@@ -6,17 +6,29 @@ from collections.abc import Mapping, Sequence
 import json
 from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
+from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.page_style import validate_page_style
 from src.backend_v2.jobs.repository import (
+    JobConflict,
     JobItemSpec,
     JobQueueRepository,
     JobSpec,
 )
-from src.backend_v2.storage.schema import books, chapters, jobs, pages
-from src.backend_v2.storage.schema import NONTERMINAL_JOB_STATUSES
+from src.backend_v2.serialization import canonical_json as _json
+from src.backend_v2.storage.schema import (
+    NONTERMINAL_JOB_STATUSES,
+    books,
+    bubbles,
+    chapters,
+    jobs,
+    page_assets,
+    pages,
+    render_requests,
+)
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.timestamps import utcnow
 from src.shared.ai_providers import (
     HQ_TRANSLATION_CAPABILITY,
     TRANSLATION_CAPABILITY,
@@ -138,6 +150,9 @@ class TranslationJobCommandService:
             idempotency_scope=scope,
             idempotency_key=idempotency_key,
             idempotency_payload=request_payload,
+            transaction_initializer=lambda connection, _batch_id: (
+                self._materialize_text_styles(connection, (spec,))
+            ),
         )
 
     def create_batch(
@@ -240,6 +255,9 @@ class TranslationJobCommandService:
             idempotency_scope="translation-batch",
             idempotency_key=idempotency_key,
             idempotency_payload=idempotency_payload,
+            transaction_initializer=lambda connection, _batch_id: (
+                self._materialize_text_styles(connection, specs)
+            ),
         )
 
     def _resolve_book_chapter_ids(self, book_ids: Sequence[str]) -> list[str]:
@@ -371,6 +389,134 @@ class TranslationJobCommandService:
                 partial=False,
             ),
         }
+
+    @staticmethod
+    def _materialize_text_styles(
+        connection: Connection,
+        specs: Sequence[JobSpec],
+    ) -> None:
+        """Copy each frozen task style into its target page documents."""
+
+        now = utcnow()
+        for spec in specs:
+            snapshot = spec.config.get("textStyleSnapshot")
+            if not isinstance(snapshot, Mapping):
+                continue
+            if spec.chapter_id is None:
+                raise ValueError("text style materialization requires a chapter")
+
+            source_page_id = str(snapshot.get("sourcePageId", ""))
+            source_revision = int(snapshot.get("sourceDocumentRevision", 0))
+            default_font_id = snapshot.get("defaultFontId")
+            style_defaults = validate_page_style(
+                snapshot.get("pageStyleDefaults"),
+                partial=False,
+            )
+            source = connection.execute(
+                select(
+                    pages.c.document_revision,
+                    pages.c.default_font_id,
+                    pages.c.page_style_defaults_json,
+                ).where(
+                    pages.c.id == source_page_id,
+                    pages.c.chapter_id == spec.chapter_id,
+                )
+            ).mappings().one_or_none()
+            if source is None:
+                raise ValueError("style source page does not belong to the chapter")
+            source_defaults = validate_page_style(
+                json.loads(source["page_style_defaults_json"]),
+                partial=False,
+            )
+            if (
+                int(source["document_revision"]) != source_revision
+                or source["default_font_id"] != default_font_id
+                or source_defaults != style_defaults
+            ):
+                raise ValueError("style source page document revision changed")
+
+            target_page_ids = [
+                str(item.page_id)
+                for item in spec.items
+                if item.page_id is not None
+            ]
+            target_rows = list(
+                connection.execute(
+                    select(
+                        pages.c.id,
+                        pages.c.document_revision,
+                        pages.c.rendered_revision,
+                        pages.c.render_status,
+                        pages.c.default_font_id,
+                        pages.c.page_style_defaults_json,
+                    ).where(
+                        pages.c.chapter_id == spec.chapter_id,
+                        pages.c.id.in_(target_page_ids),
+                    )
+                ).mappings()
+            )
+            targets = {str(row["id"]): row for row in target_rows}
+            if set(targets) != set(target_page_ids):
+                raise ValueError("pageIds must all belong to the chapter")
+
+            for page_id in target_page_ids:
+                target = targets[page_id]
+                current_defaults = validate_page_style(
+                    json.loads(target["page_style_defaults_json"]),
+                    partial=False,
+                )
+                if (
+                    target["default_font_id"] == default_font_id
+                    and current_defaults == style_defaults
+                ):
+                    continue
+
+                base_revision = int(target["document_revision"])
+                new_revision = base_revision + 1
+                connection.execute(
+                    update(bubbles)
+                    .where(bubbles.c.page_id == page_id)
+                    .values(updated_revision=new_revision, updated_at=now)
+                )
+                connection.execute(
+                    update(render_requests)
+                    .where(
+                        render_requests.c.page_id == page_id,
+                        render_requests.c.status.in_(("pending", "running")),
+                    )
+                    .values(requested_revision=new_revision, updated_at=now)
+                )
+                page_values: dict[str, object] = {
+                    "default_font_id": default_font_id,
+                    "document_revision": new_revision,
+                    "page_style_defaults_json": _json(style_defaults),
+                    "updated_at": now,
+                }
+                if (
+                    target["render_status"] == "ready"
+                    and target["rendered_revision"] == base_revision
+                ):
+                    page_values["rendered_revision"] = new_revision
+                    connection.execute(
+                        update(page_assets)
+                        .where(
+                            page_assets.c.page_id == page_id,
+                            page_assets.c.role == "translated",
+                            page_assets.c.input_document_revision == base_revision,
+                        )
+                        .values(input_document_revision=new_revision)
+                    )
+                changed = connection.execute(
+                    update(pages)
+                    .where(
+                        pages.c.id == page_id,
+                        pages.c.chapter_id == spec.chapter_id,
+                        pages.c.document_revision == base_revision,
+                    )
+                    .values(**page_values)
+                )
+                if changed.rowcount != 1:
+                    raise JobConflict("target page document revision changed")
 
 
 def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:

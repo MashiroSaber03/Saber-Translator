@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from io import BytesIO
 import json
 from copy import deepcopy
 import os
@@ -11,9 +12,11 @@ import sys
 
 import pytest
 from flask import Flask
-from sqlalchemy import insert, select, text
+from fontTools.ttLib import TTCollection, TTFont
+from sqlalchemy import insert, select, text, update
 
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.storage.consistency import ConsistencyChecker
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import (
@@ -49,6 +52,7 @@ from src.backend_v2.storage.schema import (
     chapters,
     credential_versions,
     credentials,
+    fonts,
     jobs,
     metadata,
     object_commit_journal,
@@ -102,14 +106,53 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
         quick_chapters = connection.execute(
             select(chapters.c.id).where(chapters.c.book_id == quick_books[0])
         ).scalars().all()
+        seeded_fonts = connection.execute(
+            select(
+                fonts.c.id,
+                fonts.c.builtin_key,
+                fonts.c.display_name,
+            ).where(fonts.c.kind == "builtin")
+        ).mappings().all()
     engine.dispose()
     assert quick_books == [QUICK_WORKSPACE_BOOK_ID]
     assert quick_chapters == [QUICK_WORKSPACE_CHAPTER_ID]
+    default_font = next(
+        font for font in discover_bundled_fonts() if font.builtin_key == "default"
+    )
+    assert default_font.file_name == "思源黑体SourceHanSansK-Bold.TTF"
+    assert default_font.display_name == "思源黑体"
+    assert {
+        (str(row["id"]), str(row["builtin_key"]), str(row["display_name"]))
+        for row in seeded_fonts
+    } == {
+        (font.id, font.builtin_key, font.display_name)
+        for font in discover_bundled_fonts()
+    }
+
+    # Repair databases created by the first backend-first font catalog, which
+    # exposed a synthetic label instead of the real default resource name.
+    engine = create_sqlite_engine(first.database_path)
+    with engine.begin() as connection:
+        connection.execute(
+            update(fonts)
+            .where(fonts.c.builtin_key == "default")
+            .values(display_name="默认字体")
+        )
+    engine.dispose()
 
     second = initialize_database(data_root)
     assert second.created is False
     assert second.upgraded is False
     assert not list((data_root / "runtime").glob("pre-upgrade-*.sqlite3"))
+
+    engine = create_sqlite_engine(second.database_path)
+    try:
+        listed_fonts = FontRepository(engine).list()
+        assert len(listed_fonts) == len(discover_bundled_fonts())
+        assert listed_fonts[0]["builtinKey"] == "default"
+        assert listed_fonts[0]["displayName"] == "思源黑体"
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("retired_revision", [None, "0017"])
@@ -907,6 +950,41 @@ def test_settings_http_rejects_unknown_transaction_fields(platform) -> None:
     )
     assert nested.status_code == 422
     assert "legacyPayload" in nested.get_data(as_text=True)
+
+
+def test_settings_http_accepts_true_type_collections(platform) -> None:
+    data_root, engine = platform
+    source_path = next(
+        font.path for font in discover_bundled_fonts() if font.file_name == "ALGER.TTF"
+    )
+    source_font = TTFont(source_path)
+    collection = TTCollection()
+    collection.fonts = [source_font]
+    payload = BytesIO()
+    collection.save(payload)
+    source_font.close()
+
+    app = Flask("settings-font-collection-test")
+    app.register_blueprint(
+        create_settings_blueprint(data_root=data_root, engine=engine)
+    )
+    client = app.test_client()
+    response = client.post(
+        "/api/v2/fonts",
+        headers={"Idempotency-Key": "upload-font-collection"},
+        data={"file": (BytesIO(payload.getvalue()), "custom.ttc")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    uploaded_id = response.get_json()["id"]
+    listed = client.get("/api/v2/fonts").get_json()["items"]
+    assert any(
+        item["id"] == uploaded_id
+        and item["kind"] == "uploaded"
+        and item["displayName"] == "custom"
+        for item in listed
+    )
 
 
 def test_insight_provider_accepts_its_snake_case_openai_wire_contract(

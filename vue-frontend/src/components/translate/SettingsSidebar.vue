@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiFileInput from '@/components/ui/UiFileInput.vue'
+import { FONT_FILE_ACCEPT } from '@/utils/fontFiles'
 import PageSelectionModal from '@/components/translate/PageSelectionModal.vue'
 import { useSettingsSidebar, type ApplySettingsOptions, type SettingsSidebarEmit } from './useSettingsSidebar'
 import BookConstraintSection from './settings-sidebar/BookConstraintSection.vue'
@@ -111,7 +112,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 
       <UiFileInput
         ref="fontUploadInput"
-        accept=".ttf,.ttc,.otf"
+        :accept="FONT_FILE_ACCEPT"
         hidden
         @files-change="handleFontUpload"
       />

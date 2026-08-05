@@ -29,7 +29,7 @@ describe('TextStyleSection', () => {
     const wrapper = mount(TextStyleSection, {
       props: {
         applyOptions,
-        fontSelectOptions: [{ label: '默认字体', value: TEXT_STYLE_DEFAULTS.fontFamily }],
+        fontSelectOptions: [{ label: '思源黑体', value: TEXT_STYLE_DEFAULTS.fontFamily }],
         hasImages: true,
         inpaintMethodOptions,
         layoutDirectionOptions,
@@ -65,7 +65,7 @@ describe('TextStyleSection', () => {
     const wrapper = mount(TextStyleSection, {
       props: {
         applyOptions,
-        fontSelectOptions: [{ label: '默认字体', value: TEXT_STYLE_DEFAULTS.fontFamily }],
+        fontSelectOptions: [{ label: '思源黑体', value: TEXT_STYLE_DEFAULTS.fontFamily }],
         hasImages: true,
         inpaintMethodOptions,
         layoutDirectionOptions,
@@ -110,7 +110,7 @@ describe('TextStyleSection', () => {
     const wrapper = mount(TextStyleSection, {
       props: {
         applyOptions,
-        fontSelectOptions: [{ label: '默认字体', value: TEXT_STYLE_DEFAULTS.fontFamily }],
+        fontSelectOptions: [{ label: '思源黑体', value: TEXT_STYLE_DEFAULTS.fontFamily }],
         hasImages: true,
         inpaintMethodOptions,
         layoutDirectionOptions,

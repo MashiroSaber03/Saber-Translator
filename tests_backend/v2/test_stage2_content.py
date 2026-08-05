@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import uuid
 
-from PIL import Image
+from PIL import Image, ImageFont
 import pytest
 from sqlalchemy import insert, select, update
 
@@ -26,6 +26,10 @@ from src.backend_v2.rendering.fonts import (
     resolve_font_path,
 )
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.builtin_fonts import (
+    discover_bundled_fonts,
+    resolve_bundled_font_path,
+)
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.backend_v2.storage.schema import (
@@ -94,6 +98,25 @@ def test_font_resolution_rejects_an_unknown_v2_font(content_platform) -> None:
     with engine.connect() as connection:
         with pytest.raises(LookupError, match="font not found"):
             resolve_font_path(connection, storage, str(uuid.uuid4()))
+
+
+def test_bundled_font_id_resolves_to_a_renderable_resource(content_platform) -> None:
+    _data_root, engine, _repository, storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    bundled = next(
+        font for font in discover_bundled_fonts() if font.file_name == "ALGER.TTF"
+    )
+    with engine.connect() as connection:
+        resolved = resolve_font_path(connection, storage, bundled.id)
+
+    assert Path(resolved) == bundled.path
+    assert ImageFont.truetype(resolved, 16).getbbox("A") is not None
+
+
+def test_bundled_font_resolver_rejects_non_catalog_paths() -> None:
+    with pytest.raises(RuntimeError, match="unsupported builtin font"):
+        resolve_bundled_font_path("resource:../outside.ttf")
 
 
 def _import(
@@ -279,11 +302,12 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     assert payload["fonts"] == [
         {
             "assetUrl": None,
-            "builtinKey": "default",
-            "displayName": "默认字体",
-            "id": "00000000-0000-0000-0000-000000000010",
+            "builtinKey": font.builtin_key,
+            "displayName": font.display_name,
+            "id": font.id,
             "kind": "builtin",
         }
+        for font in discover_bundled_fonts()
     ]
     assert {item["type"] for item in payload["prompts"]} == {
         "translate",

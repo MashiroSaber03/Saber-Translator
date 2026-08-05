@@ -10,8 +10,8 @@ from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.builtin_fonts import resolve_bundled_font_path
 from src.backend_v2.storage.schema import assets, bubbles, fonts, pages
-from src.shared import constants
 
 
 def resolve_font_path(
@@ -20,7 +20,7 @@ def resolve_font_path(
     font_id: str | None,
 ) -> str:
     if not font_id:
-        return constants.DEFAULT_FONT_RELATIVE_PATH
+        return resolve_bundled_font_path("default")
     row = connection.execute(
         select(
             fonts.c.kind,
@@ -36,8 +36,8 @@ def resolve_font_path(
         if not row["relative_path"]:
             raise RuntimeError("uploaded font asset is missing")
         return str(storage.resolve_relative_path(str(row["relative_path"])))
-    if row["kind"] == "builtin" and row["builtin_key"] == "default":
-        return constants.DEFAULT_FONT_RELATIVE_PATH
+    if row["kind"] == "builtin":
+        return resolve_bundled_font_path(str(row["builtin_key"]))
     raise RuntimeError("unsupported builtin font")
 
 
