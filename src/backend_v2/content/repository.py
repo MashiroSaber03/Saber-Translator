@@ -480,6 +480,8 @@ class ContentRepository:
                 else None
             ),
             "chapterOrderRevision": book["chapter_order_revision"],
+            "createdAt": book["created_at"].isoformat(),
+            "updatedAt": book["updated_at"].isoformat(),
             "tags": [dict(row) for row in tag_rows],
             "chapters": [
                 {

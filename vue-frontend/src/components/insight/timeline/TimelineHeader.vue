@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 defineProps<{
@@ -16,7 +15,7 @@ defineEmits<{
 <template>
   <div class="timeline-header">
     <h3 class="timeline-header__title">
-      <UiIcon name="bar-chart" size="18" />
+      <span aria-hidden="true">📈</span>
       <span>剧情时间线</span>
     </h3>
     <UiButton
@@ -28,7 +27,7 @@ defineEmits<{
       @click="$emit('regenerate')"
     >
       <UiSpinner v-if="isRegenerating" :size="14" />
-      <UiIcon v-else name="refresh" size="14" />
+      <span v-else aria-hidden="true">🔄</span>
       <span>{{ isRegenerating ? '生成中...' : '重新生成' }}</span>
     </UiButton>
   </div>

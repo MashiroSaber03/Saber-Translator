@@ -21,7 +21,7 @@ withDefaults(defineProps<{
   border-radius: 10px;
   background-color: var(--product-form-section-background, var(--color-surface-input));
   box-shadow: none;
-  margin-bottom: 25px;
+  margin-bottom: var(--product-form-section-margin-bottom, 25px);
 }
 
 .product-form-section:last-child {
@@ -29,7 +29,7 @@ withDefaults(defineProps<{
 }
 
 .product-form-section--padded {
-  padding: 20px;
+  padding: var(--product-form-section-padding, 20px);
 }
 
 .product-form-section__title {
@@ -37,12 +37,12 @@ withDefaults(defineProps<{
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 15px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--product-form-section-divider, var(--color-border-muted));
+  margin-bottom: var(--product-form-section-title-margin-bottom, 15px);
+  padding-bottom: var(--product-form-section-title-padding-bottom, 10px);
+  border-bottom: var(--product-form-section-title-border-bottom, 1px solid var(--product-form-section-divider, var(--color-border-muted)));
   color: var(--product-form-section-title-text, var(--color-action-primary));
-  font-size: 1.1em;
-  font-weight: 600;
+  font-size: var(--product-form-section-title-font-size, 1.1em);
+  font-weight: var(--product-form-section-title-font-weight, 600);
 }
 
 .product-form-section :slotted(.ui-form-hint) {

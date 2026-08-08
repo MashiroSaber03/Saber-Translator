@@ -224,6 +224,8 @@ describe('InsightView task event projection', () => {
     expect(getAnalysisStatusMock).toHaveBeenCalledWith('book-1')
     expect(insightStore.analysisStatus).toBe('completed')
     expect(insightStore.currentTaskId).toBeNull()
+    expect(insightStore.progress.current).toBe(4)
+    expect(insightStore.progress.total).toBe(4)
     expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 

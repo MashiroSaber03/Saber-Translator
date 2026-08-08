@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
@@ -60,7 +59,7 @@ function toggleAll() {
 
 <template>
   <div class="chapter-list">
-    <ProductSectionHeader title="章节列表" icon-name="book-open">
+    <ProductSectionHeader title="章节列表" :heading-level="3">
       <template #actions>
         <UiButton
           v-if="chapters.length"
@@ -81,7 +80,7 @@ function toggleAll() {
           翻译选中章节（{{ selectedChapterIds.size }}）
         </UiButton>
         <UiButton size="sm" variant="primary" @click="$emit('create')">
-          <UiIcon name="plus" size="14" />
+          <span aria-hidden="true">+</span>
           <span>新建章节</span>
         </UiButton>
       </template>
@@ -140,6 +139,12 @@ function toggleAll() {
 }
 
 .chapter-list__empty-state {
-  align-items: center;
+  --product-status-banner-align-items: center;
+  --product-status-banner-justify-content: center;
+  --product-status-banner-padding: 40px 20px;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-text-align: center;
 }
 </style>

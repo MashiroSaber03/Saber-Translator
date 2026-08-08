@@ -5,11 +5,11 @@
         <h3 class="regex-workbench__title">正则脚本</h3>
         <p class="regex-workbench__description">统一维护提示替换、显示替换与运行位置，避免把运行时逻辑埋进大表单。</p>
       </div>
-      <ProductActionRow aria-label="正则脚本操作">
+      <ProductActionRow appearance="accent" aria-label="正则脚本操作">
         <UiButton variant="secondary" :disabled="generating" @click="$emit('generate')">
           {{ generating ? '生成中...' : 'AI 生成脚本' }}
         </UiButton>
-        <UiButton variant="primary" @click="$emit('add')">添加脚本</UiButton>
+        <UiButton variant="secondary" @click="$emit('add')">添加脚本</UiButton>
       </ProductActionRow>
     </div>
 
@@ -31,7 +31,7 @@
             variant="studio"
             @update:model-value="$emit('update:field', index, 'scriptName', String($event))"
           />
-          <ProductActionRow aria-label="正则脚本条目操作">
+          <ProductActionRow appearance="accent" aria-label="正则脚本条目操作">
             <UiButton variant="secondary" tone="danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
           </ProductActionRow>
         </div>

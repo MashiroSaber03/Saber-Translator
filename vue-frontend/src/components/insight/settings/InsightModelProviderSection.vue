@@ -32,6 +32,7 @@ withDefaults(defineProps<{
   testing?: boolean
   testLabel?: string
   testingLabel?: string
+  testPlacement?: 'inline' | 'panel-end'
 }>(), {
   apiKey: '',
   baseUrl: '',
@@ -42,7 +43,7 @@ withDefaults(defineProps<{
   showBaseUrl: false,
   baseUrlPlaceholder: '自定义 API 地址',
   showFetch: true,
-  fetchVariant: 'secondary',
+  fetchVariant: 'primary',
   fetchingModels: false,
   modelOptions: () => [],
   modelCount: 0,
@@ -50,6 +51,7 @@ withDefaults(defineProps<{
   testing: false,
   testLabel: '测试连接',
   testingLabel: '测试中...',
+  testPlacement: 'inline',
 })
 
 const emit = defineEmits<{
@@ -93,7 +95,10 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
 </script>
 
 <template>
-  <div class="insight-model-provider-section">
+  <div
+    class="insight-model-provider-section"
+    :class="{ 'insight-model-provider-section--test-panel-end': testPlacement === 'panel-end' }"
+  >
     <AiProviderSelectField
       :model-value="provider"
       :input-id="providerInputId"
@@ -125,6 +130,7 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
         :model-value="model"
         :input-id="modelInputId"
         :placeholder="modelPlaceholder"
+        fetch-appearance="muted"
         :fetch-variant="fetchVariant"
         :show-fetch="showFetch"
         :fetching="fetchingModels"
@@ -151,6 +157,7 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
 
     <UiButton
       v-if="showTest"
+      class="insight-model-provider-section__test-action"
       variant="secondary"
       :disabled="testing"
       @click="$emit('test')"
@@ -163,5 +170,13 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
 <style scoped>
 .insight-model-provider-section {
   display: block;
+}
+
+.insight-model-provider-section--test-panel-end {
+  display: contents;
+}
+
+.insight-model-provider-section--test-panel-end .insight-model-provider-section__test-action {
+  order: 100;
 }
 </style>

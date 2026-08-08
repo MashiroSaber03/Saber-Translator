@@ -17,6 +17,7 @@
           <div class="plugin-agent-block">
             <h3 class="plugin-agent-modal__block-title">任务模式</h3>
             <ProductSegmentedTabs
+              class="plugin-agent-mode-switch"
               :tabs="modeTabs"
               :active-tab="mode"
               aria-label="插件 Agent 任务模式"
@@ -228,12 +229,7 @@
               padding="none"
             >
               <template #empty>
-                <ProductStatusBanner
-                  tone="neutral"
-                  role="note"
-                  icon-name="message"
-                  title="插件 Agent"
-                >
+                <ProductStatusBanner title="插件 Agent" tone="neutral" role="note">
                   描述你想创建或修改的插件需求，agent 会先给出方案，再在你确认后执行。
                 </ProductStatusBanner>
               </template>
@@ -358,12 +354,11 @@
             <h3 class="plugin-agent-modal__block-title">触达文件</h3>
             <ProductStatusBanner
               v-if="!session?.touched_files?.length"
+              title="暂无文件变更"
               tone="neutral"
               role="note"
-              icon-name="file-text"
-              title="暂无文件变更"
             >
-              执行后会在这里显示本轮写入或修改的文件。
+              执行后会在这里显示本轮写入或修改的文件
             </ProductStatusBanner>
             <ProductRecordCard
               v-for="filePath in session?.touched_files || []"
@@ -597,27 +592,31 @@ function handlePromptExampleSelect(exampleId: string | number): void {
   margin-top: 12px;
 }
 
-.plugin-agent-start-execution-action,
-.plugin-agent-submit-message-action {
-  width: 69px;
-  padding-right: 0;
-  padding-left: 0;
+.plugin-agent-mode-switch {
+  --product-segmented-tabs-padding: 0;
+  --product-segmented-tabs-border: transparent;
+  --product-segmented-tabs-radius: 0;
+  --product-segmented-tabs-background: transparent;
+  --product-segmented-tabs-tab-padding: 10px 12px;
+  --product-segmented-tabs-tab-radius: 10px;
+  --product-segmented-tabs-tab-border: 1px solid var(--color-border-muted);
+  --product-segmented-tabs-tab-background: var(--color-surface-muted);
+  --product-segmented-tabs-active-border: 1px solid var(--color-action-primary);
+  --product-segmented-tabs-active-background: var(--color-action-primary);
+  --product-segmented-tabs-active-text: var(--color-text-inverse);
+  --product-segmented-tabs-active-shadow: none;
+
+  gap: 8px;
 }
 
 .plugin-agent-start-execution-action {
-  height: 24px;
-  min-height: 0;
-  padding-top: 3px;
-  padding-bottom: 3px;
-  font-size: 12px;
+  width: auto;
 }
 
 .plugin-agent-submit-message-action {
-  flex: 0 0 69px;
+  flex: 0 0 auto;
   height: 80px;
   min-height: 80px;
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 .plugin-agent-input {
@@ -693,6 +692,8 @@ function handlePromptExampleSelect(exampleId: string | number): void {
 }
 
 .plugin-agent-messages {
+  --product-scroll-stack-empty-justify-content: flex-start;
+
   margin-top: 16px;
 }
 

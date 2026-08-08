@@ -68,6 +68,7 @@ const workflowChipItems = computed<ProductChipItem[]>(() => [
     />
     <UiButton
       class="workflow-section__run-action"
+      :class="{ 'workflow-section__run-action--safe': !isDangerousWorkflow }"
       :variant="isDangerousWorkflow ? 'danger' : 'primary'"
       size="lg"
       block
@@ -88,6 +89,10 @@ const workflowChipItems = computed<ProductChipItem[]>(() => [
   --settings-sidebar-workflow-panel-background: var(--color-surface-quiet);
   --settings-sidebar-workflow-remember-text: var(--color-text-secondary);
   --settings-sidebar-workflow-description-text: var(--color-text-secondary);
+  --settings-sidebar-workflow-field-label: var(--color-text-default);
+  --settings-sidebar-workflow-chip-border: var(--color-border-muted);
+  --settings-sidebar-workflow-chip-background: var(--color-surface-neutral-muted);
+  --settings-sidebar-workflow-chip-text: var(--color-text-supporting);
 
   display: flex;
   flex-direction: column;
@@ -100,6 +105,10 @@ const workflowChipItems = computed<ProductChipItem[]>(() => [
 }
 
 .workflow-section__mode-field {
+  --ui-field-label-color: var(--settings-sidebar-workflow-field-label);
+  --ui-field-label-font-size: 13px;
+  --ui-field-label-font-weight: 600;
+
   margin-bottom: 0;
 }
 
@@ -116,12 +125,31 @@ const workflowChipItems = computed<ProductChipItem[]>(() => [
 }
 
 .workflow-section__meta {
+  --product-chip-list-chip-font-weight: 600;
+  --product-chip-list-neutral-border: var(--settings-sidebar-workflow-chip-border);
+  --product-chip-list-neutral-background: var(--settings-sidebar-workflow-chip-background);
+  --product-chip-list-neutral-text: var(--settings-sidebar-workflow-chip-text);
+  --product-chip-list-primary-border: var(--settings-sidebar-workflow-chip-border);
+  --product-chip-list-primary-background: var(--settings-sidebar-workflow-chip-background);
+  --product-chip-list-primary-text: var(--settings-sidebar-workflow-chip-text);
+
   margin-top: 2px;
 }
 
 .workflow-section__run-action {
   min-height: 54px;
   font-weight: 700;
+}
+
+.workflow-section__run-action--safe {
+  background: linear-gradient(135deg, var(--color-action-success) 0%, var(--color-status-success) 100%);
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--color-action-success) 24%, transparent);
+}
+
+.workflow-section__run-action--safe:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--color-status-success) 0%, var(--color-action-success) 100%);
+  box-shadow: 0 10px 18px color-mix(in srgb, var(--color-action-success) 28%, transparent);
+  transform: translateY(-1px);
 }
 
 .workflow-section__description {

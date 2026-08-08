@@ -5,8 +5,8 @@
         <h3 class="lorebook-tree-editor__title">世界书树</h3>
         <p class="lorebook-tree-editor__description">支持根条目与子条目，适合逐步积累设定与触发知识。</p>
       </div>
-      <ProductActionRow aria-label="世界书树操作">
-        <UiButton variant="primary" @click="addRootEntry">添加根条目</UiButton>
+      <ProductActionRow appearance="accent" aria-label="世界书树操作">
+        <UiButton variant="secondary" @click="addRootEntry">添加根条目</UiButton>
         <UiButton variant="secondary" :disabled="importing" @click="pickWorldbook">
           {{ importing ? '导入中...' : '导入世界书' }}
         </UiButton>

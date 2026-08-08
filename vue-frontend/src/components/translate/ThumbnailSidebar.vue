@@ -238,7 +238,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  padding: 20px;
+  padding: 20px 0 0;
   margin-left: 0;
   order: 1;
   scrollbar-width: thin;

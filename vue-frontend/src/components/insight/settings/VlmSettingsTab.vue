@@ -169,7 +169,10 @@ useInsightSettingsDraft<StoreVlmConfig>({
 </script>
 
 <template>
-  <InsightSettingsPanel description="VLM（视觉语言模型）用于分析漫画图片内容，提取对话和场景信息。">
+  <InsightSettingsPanel
+    class="vlm-settings-tab"
+    description="VLM（视觉语言模型）用于分析漫画图片内容，提取对话和场景信息。"
+  >
     <InsightModelProviderSection
       v-model:provider="provider"
       v-model:api-key="apiKey"
@@ -188,6 +191,7 @@ useInsightSettingsDraft<StoreVlmConfig>({
       :model-options="modelOptions"
       :model-count="modelCount"
       :show-base-url="showBaseUrl"
+      test-placement="panel-end"
       :testing="isTesting"
       @provider-change="onProviderChange"
       @model-change="selectModel"
@@ -195,7 +199,7 @@ useInsightSettingsDraft<StoreVlmConfig>({
       @test="testConnection"
     />
 
-    <UiFormGrid>
+    <UiFormGrid class="vlm-settings-tab__execution-grid">
       <UiField
         variant="settings"
         label="RPM 限制"
@@ -278,3 +282,21 @@ useInsightSettingsDraft<StoreVlmConfig>({
     </UiField>
   </InsightSettingsPanel>
 </template>
+
+<style scoped>
+.vlm-settings-tab {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+}
+
+.vlm-settings-tab__execution-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (--breakpoint-md-down) {
+  .vlm-settings-tab__execution-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>

@@ -5,7 +5,6 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
@@ -95,7 +94,12 @@ watch(
 <template>
   <form class="web-import-extract-bar" aria-label="网页导入提取" @submit.prevent="handleSubmit">
     <UiFormGrid class="web-import-extract-bar__form">
-      <UiField variant="settings" label="网页 URL" control-id="webImportSourceUrl">
+      <UiField
+        variant="settings"
+        label="网页 URL"
+        control-id="webImportSourceUrl"
+        label-visually-hidden
+      >
         <UiInput
           ref="sourceUrlInputRef"
           id="webImportSourceUrl"
@@ -107,7 +111,12 @@ watch(
         />
       </UiField>
 
-      <UiField variant="settings" label="提取引擎" control-id="webImportEngine">
+      <UiField
+        variant="settings"
+        label="提取引擎"
+        control-id="webImportEngine"
+        label-visually-hidden
+      >
         <UiSelect
           id="webImportEngine"
           :model-value="selectedEngine"
@@ -129,7 +138,7 @@ watch(
           :disabled="!canExtract"
         >
           <UiSpinner v-if="status === 'extracting'" label="提取中" :decorative="false" />
-          <UiIcon v-else name="search" />
+          <span v-else aria-hidden="true">🔍</span>
           {{ status === 'extracting' ? '提取中...' : '开始提取' }}
         </UiButton>
       </ProductActionRow>
@@ -145,7 +154,12 @@ watch(
       {{ supportStatus.message }}
     </ProductStatusBanner>
 
-    <ProductStatusBanner class="web-import-extract-bar__notice" tone="warning" role="note">
+    <ProductStatusBanner
+      class="web-import-extract-bar__notice"
+      tone="warning"
+      role="note"
+    >
+      <template #icon>⚠️</template>
       请仅爬取您有权访问的内容，并遵守目标网站的使用条款。
     </ProductStatusBanner>
   </form>
@@ -159,13 +173,28 @@ watch(
 .web-import-extract-bar__form {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   align-items: end;
+  gap: 11px;
   margin-bottom: 12px;
+}
+
+@media (--breakpoint-md-up) {
+  .web-import-extract-bar__form {
+    grid-template-columns: minmax(0, 1fr) 121px auto;
+  }
 }
 
 .web-import-extract-bar__actions {
   display: flex;
   align-items: flex-end;
   min-width: 0;
+}
+
+.web-import-extract-bar__submit {
+  --ui-button-padding: 10px 14px;
+}
+
+.web-import-extract-bar__notice {
+  --product-status-banner-padding: 10px 14px;
 }
 
 .web-import-extract-bar__support-status,

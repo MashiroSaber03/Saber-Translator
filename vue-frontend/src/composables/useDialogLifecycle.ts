@@ -32,7 +32,10 @@ function focusDialog(entry: DialogEntry): void {
   const container = entry.container.value
   if (!container) return
   const autofocusTarget = container.querySelector<HTMLElement>('[autofocus]')
-  const target = autofocusTarget ?? getFocusableElements(container)[0] ?? container
+  // Keep the dialog itself as the neutral initial focus target so opening a
+  // modal does not imply an action or add an unsolicited focus ring. Explicit
+  // autofocus controls still take precedence for forms that need it.
+  const target = autofocusTarget ?? container
   target.focus({ preventScroll: true })
 }
 
@@ -58,10 +61,18 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
   const first = focusable[0]!
   const last = focusable.at(-1)!
   const activeElement = document.activeElement
-  if (event.shiftKey && (activeElement === first || !container.contains(activeElement))) {
+  if (event.shiftKey && (
+    activeElement === first
+    || activeElement === container
+    || !container.contains(activeElement)
+  )) {
     event.preventDefault()
     last.focus({ preventScroll: true })
-  } else if (!event.shiftKey && (activeElement === last || !container.contains(activeElement))) {
+  } else if (!event.shiftKey && (
+    activeElement === last
+    || activeElement === container
+    || !container.contains(activeElement)
+  )) {
     event.preventDefault()
     first.focus({ preventScroll: true })
   }

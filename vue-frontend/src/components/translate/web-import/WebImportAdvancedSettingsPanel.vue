@@ -14,7 +14,7 @@ defineProps<{
 </script>
 
 <template>
-  <ProductFormSection>
+  <ProductFormSection class="web-import-advanced__section">
     <template #title>自定义请求头</template>
 
     <UiField variant="settings" label="Cookie" control-id="webImportCustomCookie">
@@ -47,3 +47,15 @@ defineProps<{
     </UiField>
   </ProductFormSection>
 </template>
+
+<style scoped>
+.web-import-advanced__section {
+  --product-form-section-margin-bottom: 0;
+  --product-form-section-title-margin-bottom: 12px;
+  --product-form-section-title-padding-bottom: 0;
+  --product-form-section-title-border-bottom: 0;
+  --product-form-section-title-text: var(--color-text-default);
+  --product-form-section-title-font-size: 14px;
+  --product-form-section-title-font-weight: 600;
+}
+</style>

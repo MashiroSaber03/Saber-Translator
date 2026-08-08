@@ -79,7 +79,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 
       <div v-if="editingMessageId === item.message_id" class="studio-message-list__editor">
         <UiTextarea v-model="editingContent" rows="4" variant="studio" aria-label="编辑聊天消息内容" />
-        <ProductActionRow class="studio-message-list__editor-actions" aria-label="编辑聊天消息操作" justify="start" variant="toolbar">
+        <ProductActionRow appearance="accent" class="studio-message-list__editor-actions" aria-label="编辑聊天消息操作" justify="start" variant="toolbar">
           <UiButton variant="primary" size="xs" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">
             保存并重新生成
           </UiButton>
@@ -115,7 +115,7 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
       </template>
 
       <template #actions>
-        <ProductActionRow class="studio-message-list__actions" aria-label="聊天消息操作" justify="start" variant="toolbar">
+        <ProductActionRow appearance="accent" class="studio-message-list__actions" aria-label="聊天消息操作" justify="start" variant="toolbar">
           <UiButton
             v-if="canEditMessage(item)"
             variant="secondary"

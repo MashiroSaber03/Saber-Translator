@@ -13,7 +13,7 @@
     <div id="edit-toolbar-help-tooltip" class="edit-toolbar-help__popover" role="tooltip">
       <div class="edit-toolbar-help__section">
         <div class="edit-toolbar-help__title">
-          <UiIcon name="mouse-pointer" size="14" />
+          <span class="edit-toolbar-help__title-icon" aria-hidden="true">🖱️</span>
           <span>鼠标操作</span>
         </div>
         <div class="edit-toolbar-help__item">
@@ -40,7 +40,7 @@
 
       <div class="edit-toolbar-help__section">
         <div class="edit-toolbar-help__title">
-          <UiIcon name="keyboard" size="14" />
+          <span class="edit-toolbar-help__title-icon" aria-hidden="true">⌨️</span>
           <span>快捷键</span>
         </div>
         <div class="edit-toolbar-help__item">
@@ -163,6 +163,11 @@ import UiIcon from '@/components/ui/UiIcon.vue'
   color: var(--edit-toolbar-help-title-text);
   font-size: 12px;
   font-weight: 600;
+}
+
+.edit-toolbar-help__title-icon {
+  font-size: 14px;
+  line-height: 1;
 }
 
 .edit-toolbar-help__item {

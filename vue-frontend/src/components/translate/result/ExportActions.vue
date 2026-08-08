@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import type { DownloadFormat } from '@/composables/useExportImport'
@@ -68,21 +67,21 @@ function handleImportFile(files: File[]): void {
       justify="center"
     >
       <UiButton
+        class="result-export-actions__button result-export-actions__button--primary"
         variant="primary"
         :disabled="!hasDownloadableImage"
         @click="$emit('downloadCurrent')"
       >
-        <UiIcon name="download" />
         下载当前图片
       </UiButton>
 
       <div class="result-export-actions__download-all">
         <UiButton
+          class="result-export-actions__button result-export-actions__button--primary"
           variant="primary"
           :disabled="!hasImages || isDownloading"
           @click="$emit('downloadAll')"
         >
-          <UiIcon name="download" />
           下载所有图片
         </UiButton>
         <div class="result-export-actions__format">
@@ -98,20 +97,20 @@ function handleImportFile(files: File[]): void {
       </div>
 
       <UiButton
-        variant="secondary"
+        class="result-export-actions__button result-export-actions__button--success"
+        variant="primary"
         :disabled="!hasImages"
         @click="$emit('exportText')"
       >
-        <UiIcon name="file-text" />
         导出文本
       </UiButton>
 
       <UiButton
-        variant="secondary"
+        class="result-export-actions__button result-export-actions__button--success"
+        variant="primary"
         :disabled="!hasImages"
         @click="triggerImportText"
       >
-        <UiIcon name="upload" />
         导入文本
       </UiButton>
 
@@ -137,6 +136,26 @@ function handleImportFile(files: File[]): void {
 
 .result-export-actions__row {
   width: 100%;
+  gap: 12px;
+}
+
+.result-export-actions__button {
+  --ui-button-padding: 12px 24px;
+  --ui-button-font-size: 0.95em;
+  --ui-button-primary-disabled-opacity: 0.5;
+  --ui-button-primary-shadow: 0 2px 6px color-mix(in srgb, var(--color-overlay-backdrop-solid) 10%, transparent);
+}
+
+.result-export-actions__button--primary {
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-hover) 0%, var(--color-action-primary) 100%);
+  --ui-button-primary-hover-background: linear-gradient(135deg, color-mix(in srgb, var(--color-action-primary-hover) 82%, var(--color-overlay-backdrop-solid)) 0%, var(--color-action-primary) 100%);
+  --ui-button-primary-hover-shadow: 0 4px 10px color-mix(in srgb, var(--color-action-primary) 30%, transparent);
+}
+
+.result-export-actions__button--success {
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-surface-success) 0%, var(--color-action-success-strong) 100%);
+  --ui-button-primary-hover-background: linear-gradient(135deg, color-mix(in srgb, var(--color-surface-success) 82%, var(--color-overlay-backdrop-solid)) 0%, var(--color-action-success-strong) 100%);
+  --ui-button-primary-hover-shadow: 0 4px 10px color-mix(in srgb, var(--color-surface-success) 30%, transparent);
 }
 
 .result-export-actions__download-all {

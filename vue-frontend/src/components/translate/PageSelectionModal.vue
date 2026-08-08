@@ -172,9 +172,10 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
     title="指定翻译页码"
     size="full"
     custom-class="page-selection-modal"
-    width="min(1180px, 95vw)"
-    height="min(88vh, 920px)"
-    body-padding="compact"
+    width="95vw"
+    height="90vh"
+    header-padding="20px"
+    footer-padding="14px 20px"
     scroll-mode="contained"
     @update:model-value="emit('update:modelValue', $event)"
     @close="closeModal"
@@ -249,6 +250,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
             aria-label="选择翻译页码"
             :max-height="560"
             :min-item-width="150"
+            :overscan-rows="1"
             :items="currentFolderThumbnailItems"
             @select="handleThumbnailSelect"
           />
@@ -260,6 +262,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
             aria-label="选择翻译页码"
             :max-height="560"
             :min-item-width="150"
+            :overscan-rows="1"
             :items="flatThumbnailItems"
             @select="handleThumbnailSelect"
           />
@@ -302,6 +305,19 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   min-height: 100%;
 }
 
+.page-selection-summary-banner {
+  --product-status-banner-align-items: center;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-gap: 0;
+  --product-status-banner-padding: 16px 18px;
+  --product-status-banner-radius: 14px;
+  --product-status-banner-title-color: var(--color-text-heading);
+  --product-status-banner-title-font-size: 16px;
+  --product-status-banner-title-margin-bottom: 4px;
+  --product-status-banner-body-color: var(--color-text-supporting);
+  --product-status-banner-body-font-size: 14px;
+}
+
 .page-selection-browser-card {
   display: flex;
   flex: 1;
@@ -311,14 +327,14 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   overflow: hidden;
   background: var(--color-surface-base);
   border: 1px solid var(--page-selection-modal-border-default);
-  border-radius: 10px;
+  border-radius: 14px;
   box-shadow: 0 8px 20px var(--page-selection-modal-shadow-raised);
 }
 
 .page-selection-shortcuts {
   padding: 12px;
   border: 1px solid var(--page-selection-modal-border-subtle);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--color-surface-muted);
 }
 

@@ -1,13 +1,16 @@
 <script setup lang="ts">
 type ProductActionRowJustify = 'start' | 'center' | 'end' | 'between'
 type ProductActionRowVariant = 'default' | 'dialog' | 'toolbar'
+type ProductActionRowAppearance = 'default' | 'accent'
 
 const props = withDefaults(defineProps<{
+  appearance?: ProductActionRowAppearance
   ariaLabel?: string
   divider?: boolean
   justify?: ProductActionRowJustify
   variant?: ProductActionRowVariant
 }>(), {
+  appearance: 'default',
   ariaLabel: undefined,
   divider: false,
   justify: 'end',
@@ -21,6 +24,7 @@ const props = withDefaults(defineProps<{
     :class="[
       `product-action-row--${props.justify}`,
       `product-action-row--${props.variant}`,
+      `product-action-row--appearance-${props.appearance}`,
       { 'product-action-row--divider': props.divider },
     ]"
     role="group"
@@ -88,5 +92,28 @@ const props = withDefaults(defineProps<{
   --ui-button-secondary-border: none;
   --ui-button-secondary-hover-background: var(--color-surface-hover);
   --ui-button-secondary-hover-color: var(--color-text-default);
+}
+
+.product-action-row--appearance-accent {
+  --ui-button-primary-background: linear-gradient(
+    135deg,
+    var(--color-text-link-strong) 0%,
+    color-mix(in srgb, var(--color-text-link-strong) 65%, var(--color-action-brand)) 100%
+  );
+  --ui-button-primary-hover-background: linear-gradient(
+    135deg,
+    var(--color-text-link-strong) 0%,
+    color-mix(in srgb, var(--color-text-link-strong) 65%, var(--color-action-brand)) 100%
+  );
+  --ui-button-primary-shadow: 0 2px 8px color-mix(in srgb, var(--color-text-link-strong) 22%, transparent);
+  --ui-button-primary-hover-shadow: 0 6px 20px color-mix(in srgb, var(--color-text-link-strong) 26%, transparent);
+  --ui-button-secondary-background: color-mix(in srgb, var(--color-text-heading) 7%, transparent);
+  --ui-button-secondary-color: var(--color-text-default);
+  --ui-button-secondary-border: none;
+  --ui-button-secondary-hover-background: color-mix(in srgb, var(--color-text-link-strong) 14%, transparent);
+  --ui-button-secondary-hover-border-color: transparent;
+  --ui-button-disabled-border: none;
+  --ui-button-disabled-background: color-mix(in srgb, var(--color-text-heading) 7%, transparent);
+  --ui-button-disabled-opacity: 0.68;
 }
 </style>

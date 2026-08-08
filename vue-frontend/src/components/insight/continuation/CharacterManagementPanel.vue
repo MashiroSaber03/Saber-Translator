@@ -1,9 +1,10 @@
 <template>
   <div class="character-management-panel">
     <ProductSectionHeader title="角色档案" description="点击角色查看和管理形态" icon-name="users">
+      <template #icon>🎭</template>
       <template #actions>
         <UiButton variant="primary" @click="openAddCharacterDialog" size="sm">
-          <UiIcon name="plus" size="14" />
+          <span aria-hidden="true">➕</span>
           <span>新增角色</span>
         </UiButton>
       </template>
@@ -17,7 +18,7 @@
       icon-name="users"
       :title="isLoading ? '正在加载角色档案' : '暂无角色档案'"
     >
-      {{ isLoading ? '正在加载角色数据...' : '点击“新增角色”添加角色。' }}
+      {{ isLoading ? '正在加载角色数据...' : '暂无角色数据，点击"新增角色"添加' }}
     </ProductStatusBanner>
 
     <div v-else class="character-management-panel__layout">
@@ -124,7 +125,6 @@
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductAvatar from '@/components/product/ProductAvatar.vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
@@ -377,6 +377,22 @@ function closeOrthoDialog() {
 .character-management-panel {
   container-type: inline-size;
   container-name: continuation-character-management;
+}
+
+.character-management-panel__empty-status {
+  --product-status-banner-align-items: center;
+  --product-status-banner-justify-content: center;
+  --product-status-banner-gap: 0;
+  --product-status-banner-padding: 20px 0;
+  --product-status-banner-border: 0;
+  --product-status-banner-radius: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-text-align: center;
+  --product-status-banner-title-font-size: 0.95rem;
+  --product-status-banner-title-margin-bottom: 4px;
+  --product-status-banner-title-display: none;
+  --product-status-banner-body-font-size: 0.9rem;
 }
 
 .character-management-panel__layout {

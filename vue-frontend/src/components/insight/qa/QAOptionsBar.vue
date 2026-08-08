@@ -38,6 +38,14 @@ const qaModeTabs: ProductSegmentedTab[] = [
   { id: 'precise', label: '精确模式', iconName: 'target' },
   { id: 'global', label: '全局模式', iconName: 'globe' },
 ]
+const qaModeGlyphs: Record<QAMode, string> = {
+  precise: '🎯',
+  global: '🌐',
+}
+
+function qaModeGlyph(tabId: string): string {
+  return tabId === 'precise' || tabId === 'global' ? qaModeGlyphs[tabId] : ''
+}
 const showPreciseModeOptions = computed(() => props.qaMode === 'precise')
 const parentChildModel = computed({
   get: () => props.useParentChild,
@@ -88,7 +96,9 @@ function updateQaMode(mode: string): void {
       :tabs="qaModeTabs"
       :active-tab="qaMode"
       @update:active-tab="updateQaMode"
-    />
+    >
+      <template #tabIcon="{ tab }">{{ qaModeGlyph(tab.id) }}</template>
+    </ProductSegmentedTabs>
 
     <span class="qa-options-bar__divider" aria-hidden="true">|</span>
 
@@ -182,6 +192,15 @@ function updateQaMode(mode: string): void {
 }
 
 .qa-options-bar__mode-tabs {
+  --product-segmented-tabs-active-background: var(--color-surface-brand);
+  --product-segmented-tabs-active-text: var(--color-text-inverse);
+  --product-segmented-tabs-active-shadow: none;
+  --product-segmented-tabs-background: var(--insight-surface-secondary);
+  --product-segmented-tabs-border: transparent;
+  --product-segmented-tabs-gap: 2px;
+  --product-segmented-tabs-padding: 2px;
+  --product-segmented-tabs-tab-padding: 6px 12px;
+
   flex: 0 0 auto;
 }
 
@@ -193,7 +212,7 @@ function updateQaMode(mode: string): void {
 .qa-options-bar__precise-options {
   display: flex;
   flex-wrap: wrap;
-  flex: 1 1 360px;
+  flex: 1 1 0;
   align-items: center;
   gap: 16px;
   min-width: 0;

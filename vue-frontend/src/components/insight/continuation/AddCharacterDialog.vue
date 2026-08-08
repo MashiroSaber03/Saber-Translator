@@ -1,5 +1,5 @@
 <template>
-  <ContinuationDialogShell title="新增角色" @close="close">
+  <ContinuationDialogShell title="➕ 新增角色" @close="close">
     <ContinuationDialogForm>
       <ContinuationDialogField
         label="角色名称"

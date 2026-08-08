@@ -1768,6 +1768,49 @@ describe('characterStudioStore', () => {
     expect(store.chatPromptPreviewError).toBe('')
   })
 
+  it('keeps the latest server revision when undoing an already-autosaved agent patch', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    const versionedDocument = {
+      ...deepClone(structuredDocument),
+      revision: 1,
+    }
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(versionedDocument)
+    saveCharacterStudioDocumentMock
+      .mockReset()
+      .mockImplementation(async (_docId: string, payload: CharacterStudioDocument) => ({
+        ...deepClone(payload),
+        revision: payload.revision + 1,
+      }))
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    store.pendingAgentPatch = {
+      set: {
+        'identity.description': 'patch 修改后的描述',
+      },
+    }
+    store.applyPendingPatch()
+    await store.persistCurrentDocument()
+
+    expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(1)
+    expect(store.currentDocument?.revision).toBe(2)
+    expect(store.currentDocument?.identity.description).toBe('patch 修改后的描述')
+
+    store.undoLastPatch()
+    expect(store.currentDocument?.revision).toBe(2)
+    expect(store.currentDocument?.identity.description).toBe('测试角色')
+    await store.persistCurrentDocument()
+
+    expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(2)
+    expect(
+      (saveCharacterStudioDocumentMock.mock.calls[1]![1] as CharacterStudioDocument).revision,
+    ).toBe(2)
+    expect(store.currentDocument?.revision).toBe(3)
+  })
+
   it('clears a no-op frozen patch without creating undo state or autosaving', async () => {
     vi.useFakeTimers()
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')

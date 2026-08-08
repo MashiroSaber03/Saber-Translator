@@ -125,6 +125,29 @@ describe('bookshelf v2 api contracts', () => {
     )
   })
 
+  it('updates a book cover through the multipart PUT contract', async () => {
+    uploadMock.mockResolvedValue(book)
+    const cover = new File(['cover'], 'cover.png', { type: 'image/png' })
+    const { updateBook } = await import('@/api/bookshelf')
+
+    await updateBook(book.id, { title: 'Updated Book', cover })
+
+    expect(uploadMock).toHaveBeenCalledTimes(1)
+    const [url, body, config, method] = uploadMock.mock.calls[0]
+    expect(url).toBe('/api/v2/books/book%2Fid%20one')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('title')).toBe('Updated Book')
+    expect((body as FormData).get('tagIds')).toBe('[]')
+    const uploadedCover = (body as FormData).get('cover')
+    expect(uploadedCover).toBeInstanceOf(File)
+    expect((uploadedCover as File).name).toBe('cover.png')
+    expect((uploadedCover as File).type).toBe('image/png')
+    expect((uploadedCover as File).size).toBe(cover.size)
+    expect(config).toEqual(commandConfig)
+    expect(method).toBe('put')
+    expect(putMock).not.toHaveBeenCalled()
+  })
+
   it('uses direct chapter resources and idempotency headers', async () => {
     putMock.mockResolvedValue({
       id: 'chapter/id one',

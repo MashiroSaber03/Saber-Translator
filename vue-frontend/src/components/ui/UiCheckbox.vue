@@ -32,6 +32,7 @@ function handleChange(event: Event) {
     class="ui-checkbox"
     :class="{
       'ui-checkbox--disabled': disabled,
+      'ui-checkbox--checked': modelValue,
       'ui-checkbox--with-content': label || description,
     }"
   >
@@ -54,14 +55,17 @@ function handleChange(event: Event) {
 <style scoped>
 .ui-checkbox {
   display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  color: var(--color-text-default);
+  align-items: var(--ui-checkbox-align-items, flex-start);
+  gap: var(--ui-checkbox-gap, 8px);
+  color: var(--ui-checkbox-color, var(--color-text-default));
   cursor: pointer;
 }
 
 .ui-checkbox__input {
-  margin-top: 2px;
+  width: var(--ui-checkbox-input-width, auto);
+  height: var(--ui-checkbox-input-height, auto);
+  margin: var(--ui-checkbox-input-margin, 2px 0 0);
+  accent-color: var(--ui-checkbox-input-accent-color, auto);
 }
 
 .ui-checkbox__content {
@@ -71,7 +75,7 @@ function handleChange(event: Event) {
 }
 
 .ui-checkbox__label {
-  font-weight: 500;
+  font-weight: var(--ui-checkbox-label-font-weight, 500);
 }
 
 .ui-checkbox__description {
@@ -83,5 +87,11 @@ function handleChange(event: Event) {
 .ui-checkbox--disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.ui-checkbox--checked {
+  border-color: var(--ui-checkbox-checked-border-color, currentColor);
+  background: var(--ui-checkbox-checked-background, transparent);
+  color: var(--ui-checkbox-checked-color, var(--ui-checkbox-color, var(--color-text-default)));
 }
 </style>

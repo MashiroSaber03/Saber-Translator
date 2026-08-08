@@ -159,19 +159,19 @@
         建议 Sakura 服务使用"逐气泡翻译"模式，可获得更稳定的翻译效果
       </ProductStatusBanner>
       <ProductActionRow v-show="isLocalProvider" aria-label="本地翻译连接测试" justify="start">
-        <UiButton variant="secondary" @click="testLocalConnection" :disabled="isTesting">
+        <UiButton variant="secondary" tone="info" @click="testLocalConnection" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
-            <UiIcon name="link" />
+            <span aria-hidden="true">🔗</span>
             <span>测试连接</span>
           </template>
         </UiButton>
       </ProductActionRow>
       <ProductActionRow v-show="!isLocalProvider" aria-label="云端翻译连接测试" justify="start">
-        <UiButton variant="secondary" @click="testCloudConnection" :disabled="isTesting">
+        <UiButton variant="secondary" tone="info" @click="testCloudConnection" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
-            <UiIcon name="link" />
+            <span aria-hidden="true">🔗</span>
             <span>测试连接</span>
           </template>
         </UiButton>
@@ -235,7 +235,6 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'

@@ -287,7 +287,7 @@ describe('ReaderControls', () => {
     )
     expect(source).toContain('useDialogLifecycle')
     expect(source).not.toContain("case 'Escape':")
-    expect(document.activeElement).toBe(wrapper.get('.reader-controls__close-button').element)
+    expect(document.activeElement).toBe(wrapper.get('.reader-controls__settings-content').element)
 
     await wrapper.get('.reader-controls__close-button').trigger('click')
     await nextTick()

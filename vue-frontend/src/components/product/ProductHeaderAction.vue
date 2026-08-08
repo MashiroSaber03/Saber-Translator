@@ -116,7 +116,8 @@ function handleClick(event: MouseEvent) {
     :title="titleText"
     @click="handleClick"
   >
-    <UiIcon v-if="iconName" :name="iconName" :size="iconSize" />
+    <span v-if="$slots.icon" class="product-header-action__icon-text" aria-hidden="true"><slot name="icon" /></span>
+    <UiIcon v-else-if="iconName" :name="iconName" :size="iconSize" />
     <span v-if="label && !iconOnly" class="product-header-action__label">{{ label }}</span>
     <slot />
   </component>
@@ -141,22 +142,22 @@ function handleClick(event: MouseEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 8px 12px;
+  gap: var(--product-header-action-gap, 8px);
+  min-height: var(--product-header-action-min-height, 38px);
+  padding: var(--product-header-action-padding, 8px 12px);
   border: 1px solid var(--product-header-action-border-color, var(--internal-product-header-action-border-color));
-  border-radius: 999px;
+  border-radius: var(--product-header-action-radius, 999px);
   background: var(--product-header-action-surface, var(--internal-product-header-action-surface));
   color: var(--product-header-action-text-color, var(--internal-product-header-action-text-color));
   cursor: pointer;
   font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1;
+  font-size: var(--product-header-action-font-size, 0.9rem);
+  font-weight: var(--product-header-action-font-weight, 600);
+  line-height: var(--product-header-action-line-height, 1);
   text-decoration: none;
   transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease, transform 0.2s ease;
   user-select: none;
-  white-space: nowrap;
+  white-space: var(--product-header-action-white-space, nowrap);
 }
 
 .product-header-action:hover:not(.product-header-action--disabled, .product-header-action--static) {
@@ -208,7 +209,7 @@ function handleClick(event: MouseEvent) {
 }
 
 .product-header-action--icon-only {
-  width: 38px;
+  width: var(--product-header-action-icon-only-width, 38px);
   padding: 0;
 }
 
@@ -230,6 +231,12 @@ function handleClick(event: MouseEvent) {
   min-width: 0;
 }
 
+.product-header-action__icon-text {
+  flex: 0 0 auto;
+  font-size: var(--product-header-action-icon-font-size, 1em);
+  line-height: 1;
+}
+
 @media (--breakpoint-md-down) {
   .product-header-action {
     min-height: 34px;
@@ -238,7 +245,7 @@ function handleClick(event: MouseEvent) {
   }
 
   .product-header-action--icon-only {
-    width: 34px;
+    width: var(--product-header-action-icon-only-mobile-width, 34px);
   }
 
   .product-header-action--collapse-label-md {

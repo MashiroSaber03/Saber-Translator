@@ -177,11 +177,12 @@ watch(
             <ProductHeaderAction
               class="reader-header__button"
               title="返回书架"
-              icon-name="chevron-left"
               label="返回"
               collapse-label-on-mobile
               @click="goBack"
-            />
+            >
+              <template #icon>←</template>
+            </ProductHeaderAction>
             <div class="reader-header__book-info">
               <span class="reader-header__book-title">{{ bookInfo?.title || '加载中...' }}</span>
               <span class="reader-header__separator">·</span>
@@ -215,30 +216,32 @@ watch(
                 label="翻译"
                 @click="setViewMode('translated')"
               />
-              <span
-                class="reader-header__translated-count"
-                aria-label="已翻译页面数量"
-              >
-                已翻译 {{ translatedPageCount }}/{{ imagesData.length }}
-              </span>
             </div>
+            <span
+              class="reader-header__translated-count"
+              aria-label="已翻译页面数量"
+            >
+              已翻译 {{ translatedPageCount }}/{{ imagesData.length }}
+            </span>
             <ProductHeaderAction
               class="reader-header__button"
               title="阅读设置"
               aria-label="阅读设置"
-              icon-name="settings"
               icon-only
               @click="openSettings"
-            />
+            >
+              <template #icon>⚙️</template>
+            </ProductHeaderAction>
             <ProductHeaderAction
               variant="solid"
               class="reader-header__button reader-header__button--primary"
               title="进入翻译页面"
-              icon-name="pencil"
               label="翻译"
               collapse-label-on-mobile
               @click="goToTranslate"
-            />
+            >
+              <template #icon>✏️</template>
+            </ProductHeaderAction>
           </div>
         </template>
       </ProductPageHeader>
@@ -280,6 +283,20 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.reader-header__button,
+.reader-header__mode-button {
+  --product-header-action-min-height: 36px;
+  --product-header-action-radius: 8px;
+}
+
+.reader-header__button {
+  --product-header-action-gap: 4px;
+}
+
+.reader-header__button.product-header-action--icon-only {
+  width: 44px;
 }
 
 .reader-header__book-info {
@@ -331,7 +348,7 @@ watch(
 .reader-header__translated-count {
   display: inline-flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0;
   color: var(--color-text-inverse);
   font-size: 12px;
   white-space: nowrap;
@@ -359,6 +376,10 @@ watch(
 
 @media (--breakpoint-xs-down) {
   .reader-header__book-info {
+    display: none;
+  }
+
+  .reader-header__page-info {
     display: none;
   }
 

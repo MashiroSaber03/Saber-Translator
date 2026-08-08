@@ -275,6 +275,7 @@ describe('TimelinePanel', () => {
 
     const emptyState = wrapper.getComponent(ProductEmptyState)
     expect(emptyState.props('iconName')).toBe('bar-chart')
+    expect(emptyState.get('.product-empty-state__icon-text').text()).toBe('📈')
     expect(emptyState.props('title')).toBe('时间线尚未生成')
     expect(emptyState.props('description')).toBe(
       '完成漫画分析后会自动生成时间线，或点击下方按钮手动生成'

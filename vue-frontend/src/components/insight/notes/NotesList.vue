@@ -29,9 +29,8 @@ defineEmits<{
         tone="neutral"
         role="note"
         icon-name="file-text"
-        title="暂无笔记"
       >
-        添加笔记后会显示在这里。
+        暂无笔记
       </ProductStatusBanner>
     </template>
 
@@ -54,6 +53,14 @@ defineEmits<{
 }
 
 .notes-list__empty-status {
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-padding: 20px;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-body-color: var(--insight-text-muted);
+  --product-status-banner-body-font-size: 14px;
+  --product-status-banner-text-align: center;
+
   margin: 8px;
 }
 </style>

@@ -149,6 +149,7 @@ describe('QAPanel Markdown rendering', () => {
       title: '智能问答',
       tone: 'neutral',
     })
+    expect(emptyState.get('.product-status-banner__icon-text').text()).toBe('💬')
     expect(wrapper.text()).toContain('针对已分析的漫画内容提问，获取精准回答')
   })
 
@@ -171,6 +172,7 @@ describe('QAPanel Markdown rendering', () => {
         plugins: [pinia],
       },
     })
+    expect(wrapper.getComponent(ProductComposer).props('showSubmitIcon')).toBe(false)
     await flushPromises()
 
     const composer = wrapper.getComponent(ProductComposer)

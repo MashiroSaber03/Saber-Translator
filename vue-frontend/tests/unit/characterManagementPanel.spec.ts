@@ -234,6 +234,7 @@ describe('CharacterManagementPanel', () => {
       description: '点击角色查看和管理形态',
       iconName: 'users',
     })
+    expect(header.get('.product-section-header__icon-text').text()).toBe('🎭')
     expect(header.text()).toContain('新增角色')
     expect(source).toContain(
       "import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'"
@@ -298,7 +299,7 @@ describe('CharacterManagementPanel', () => {
     expect(banner.props('tone')).toBe('neutral')
     expect(banner.props('role')).toBe('note')
     expect(banner.props('iconName')).toBe('users')
-    expect(wrapper.text()).toContain('点击“新增角色”添加')
+    expect(wrapper.text()).toContain('暂无角色数据，点击"新增角色"添加')
     expect(wrapper.find('.empty-state').exists()).toBe(false)
   })
 

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, onMounted } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -44,7 +43,7 @@ function openSettingsAndClose() {
     @close="closeGuide"
   >
     <div class="guide-content">
-      <UiIcon name="sparkles" class="guide-icon" size="44" />
+      <div class="guide-icon" aria-hidden="true">🎉</div>
 
       <div class="guide-message">
         <p class="guide-title">首次使用提醒</p>
@@ -71,7 +70,7 @@ function openSettingsAndClose() {
           variant="primary"
           @click="openSettingsAndClose"
         >
-          <UiIcon name="settings" />
+          <span aria-hidden="true">⚙️</span>
           <span>立即配置</span>
         </UiButton>
         <UiButton
@@ -100,7 +99,14 @@ function openSettingsAndClose() {
 
 .guide-icon {
   margin-bottom: 16px;
-  color: var(--color-action-primary);
+  font-size: 44px;
+  line-height: 1;
+}
+
+.guide-actions {
+  --ui-button-primary-background: var(--color-action-primary);
+  --ui-button-primary-hover-background: var(--color-action-primary-hover);
+  --ui-button-primary-shadow: none;
 }
 
 .guide-message {

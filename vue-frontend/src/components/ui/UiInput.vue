@@ -142,9 +142,9 @@ defineExpose({ focus })
 }
 
 :where(.ui-input--sm) {
-  min-height: 32px;
-  padding: 6px 10px;
-  font-size: 0.85rem;
+  min-height: var(--ui-input-sm-min-height, 32px);
+  padding: var(--ui-input-sm-padding, 6px 10px);
+  font-size: var(--ui-input-sm-font-size, 0.85rem);
 }
 
 :where(.ui-input--xs) {

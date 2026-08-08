@@ -182,6 +182,29 @@ describe('ContinuationPanel', () => {
     mocks.savePages.mockReset().mockResolvedValue(undefined)
   })
 
+  it('preserves the backend prerequisite details in workflow feedback', () => {
+    mocks.state.isDataReady.value = false
+    mocks.state.messageType.value = 'error'
+    mocks.state.errorMessage.value = '续写前置数据未就绪：story_summary、compressed_context'
+
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    const expectedMessage = '续写前置数据未就绪：story_summary、compressed_context'
+    expect(wrapper.getComponent(ProductStatusBanner).text()).toContain(expectedMessage)
+    expect(wrapper.get('.continuation-panel__sync-status').text()).toBe(expectedMessage)
+    expect(wrapper.text()).not.toContain('时间线数据不存在或为空')
+  })
+
   it('re-initializes continuation data after clearing the workflow', async () => {
     const wrapper = mount(ContinuationPanel, {
       global: {

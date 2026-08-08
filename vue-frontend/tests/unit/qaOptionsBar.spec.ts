@@ -151,6 +151,7 @@ describe('QAOptionsBar', () => {
       { id: 'precise', label: '精确模式', iconName: 'target' },
       { id: 'global', label: '全局模式', iconName: 'globe' },
     ])
+    expect(wrapper.findAll('.product-segmented-tabs__icon-text').map(icon => icon.text())).toEqual(['🎯', '🌐'])
 
     modeTabs.vm.$emit('update:activeTab', 'global')
 

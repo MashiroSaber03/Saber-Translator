@@ -1,5 +1,5 @@
 <template>
-  <div class="ui-model-picker">
+  <div class="ui-model-picker" :class="`ui-model-picker--fetch-${fetchAppearance}`">
     <div class="ui-model-picker__entry">
       <UiInput
         :id="inputId"
@@ -20,7 +20,7 @@
         :disabled="disabled || fetchDisabled || fetching"
         @click="emit('fetch')"
       >
-        <UiIcon name="search" />
+        <UiIcon name="search" size="16" />
         <span>{{ fetching ? fetchingLabel : fetchLabel }}</span>
       </UiButton>
     </div>
@@ -56,6 +56,7 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   readonly?: boolean
   showFetch?: boolean
+  fetchAppearance?: 'default' | 'muted'
   fetchVariant?: 'primary' | 'secondary'
   fetchTitle?: string
   fetchLabel?: string
@@ -71,6 +72,7 @@ const props = withDefaults(defineProps<{
   disabled: false,
   readonly: false,
   showFetch: true,
+  fetchAppearance: 'default',
   fetchVariant: 'secondary',
   fetchTitle: '获取可用模型列表',
   fetchLabel: '获取模型',
@@ -140,6 +142,25 @@ function handleSelect(value: UiSelectValue): void {
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
+}
+
+.ui-model-picker__fetch.ui-button--primary {
+  --ui-button-primary-background: var(--color-action-primary);
+  --ui-button-primary-hover-background: var(--color-action-primary-hover);
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-disabled-background: var(--color-action-primary);
+  --ui-button-primary-disabled-opacity: 0.6;
+}
+
+.ui-model-picker--fetch-muted .ui-model-picker__fetch.ui-button--primary {
+  --ui-button-primary-background: var(--color-surface-muted);
+  --ui-button-primary-color: var(--color-text-default);
+  --ui-button-primary-hover-background: var(--color-surface-interactive-hover);
+  --ui-button-primary-hover-transform: none;
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-hover-shadow: none;
+  --ui-button-primary-disabled-background: var(--color-surface-muted);
+  --ui-button-primary-disabled-color: var(--color-text-supporting);
 }
 
 .ui-model-picker__fetch:disabled {

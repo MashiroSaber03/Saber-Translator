@@ -119,11 +119,11 @@ describe('ReaderCanvas', () => {
 
     const emptyState = wrapper.getComponent(ProductEmptyState)
     expect(emptyState.props()).toMatchObject({
-      iconName: 'book-open',
       title: '暂无图片',
       description: '该章节还没有图片，点击下方按钮开始翻译',
       variant: 'inverse',
     })
+    expect(emptyState.get('.product-empty-state__icon-text').text()).toBe('📖')
     const translateButton = wrapper.getComponent(UiButton)
     expect(translateButton.props('variant')).toBe('primary')
     expect(translateButton.text()).toContain('进入翻译')

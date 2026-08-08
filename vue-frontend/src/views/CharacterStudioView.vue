@@ -468,6 +468,21 @@ watch(() => props.docId, async nextDocId => {
 }
 
 .studio-page__workspace-root {
+  --product-empty-state-align-items: flex-start;
+  --product-empty-state-justify-content: flex-start;
+  --product-empty-state-max-width: none;
+  --product-empty-state-min-height: 260px;
+  --product-empty-state-margin-inline: 0;
+  --product-empty-state-padding: 0;
+  --product-empty-state-text-align: left;
+  --product-empty-state-icon-display: none;
+  --product-empty-state-title-font-size: 13px;
+  --product-empty-state-title-font-weight: 400;
+  --product-empty-state-title: var(--studio-text-muted);
+  --product-empty-state-description-margin: 4px 0 0;
+  --product-empty-state-description-font-size: 13px;
+  --product-empty-state-description-line-height: 1.6;
+
   display: flex;
   flex: 1;
   min-height: 0;
@@ -481,12 +496,35 @@ watch(() => props.docId, async nextDocId => {
 }
 
 .studio-page__workspace-slot-content {
+  height: 100%;
   min-height: 100%;
+}
+
+.studio-page__missing-context-state {
+  --product-empty-state-icon-display: none;
+  --product-empty-state-max-width: 560px;
+  --product-empty-state-min-height: 0;
+  --product-empty-state-padding: 48px 32px;
+  --product-empty-state-eyebrow-background: color-mix(in srgb, var(--color-text-link-strong) 12%, transparent);
+  --product-empty-state-eyebrow-text: var(--color-text-link-strong);
+  --product-empty-state-title: var(--color-text-heading);
+  --product-empty-state-title-font-size: 30px;
+  --product-empty-state-title-margin: 4px 0 0;
+  --product-empty-state-description: var(--color-text-supporting);
+  --product-empty-state-description-font-size: 13px;
+  --product-empty-state-description-line-height: 1.7;
+  --product-empty-state-description-margin: 12px 0 0;
+
+  margin: auto;
+  border: 1px solid var(--studio-border-default);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--color-surface-card) 90%, transparent);
+  box-shadow: 0 26px 42px color-mix(in srgb, var(--color-text-heading) 8%, transparent);
 }
 
 .studio-page__workspace-slot-content > .studio-editor,
 .studio-page__workspace-slot-content > .character-studio-preview {
-  height: auto;
+  height: 100%;
   min-height: 100%;
   overflow: visible;
 }

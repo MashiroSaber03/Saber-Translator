@@ -50,7 +50,6 @@ defineProps<{
           role="note"
           size="compact"
           title="发送消息后查看运行结果"
-          description="这里会显示最新一轮的变量快照、世界书命中、正则命中与任务执行记录。"
         />
       </div>
     </div>

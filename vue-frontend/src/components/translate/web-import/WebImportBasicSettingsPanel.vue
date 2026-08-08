@@ -46,7 +46,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
 </script>
 
 <template>
-  <ProductFormSection>
+  <ProductFormSection class="web-import-basic__section">
     <template #title>Firecrawl 配置</template>
     <UiField
       variant="settings"
@@ -79,7 +79,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
     </ProductActionRow>
   </ProductFormSection>
 
-  <ProductFormSection>
+  <ProductFormSection class="web-import-basic__section">
     <template #title>AI Agent 配置</template>
 
     <AiProviderSelectField
@@ -150,7 +150,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
     </ProductActionRow>
   </ProductFormSection>
 
-  <ProductFormSection>
+  <ProductFormSection class="web-import-basic__section">
     <template #title>提取设置</template>
 
     <UiField variant="settings" label="提取提示词" control-id="webImportExtractionPrompt">
@@ -178,7 +178,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
     </UiField>
   </ProductFormSection>
 
-  <ProductFormSection>
+  <ProductFormSection class="web-import-basic__section">
     <template #title>下载设置</template>
 
     <UiFormGrid>
@@ -233,7 +233,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
     </UiField>
   </ProductFormSection>
 
-  <ProductFormSection>
+  <ProductFormSection class="web-import-basic__section">
     <template #title>界面设置</template>
     <UiFormGrid>
       <UiField variant="settings" control="checkbox">
@@ -253,3 +253,15 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
     </UiFormGrid>
   </ProductFormSection>
 </template>
+
+<style scoped>
+.web-import-basic__section {
+  --product-form-section-margin-bottom: 16px;
+  --product-form-section-title-margin-bottom: 12px;
+  --product-form-section-title-padding-bottom: 0;
+  --product-form-section-title-border-bottom: 0;
+  --product-form-section-title-text: var(--color-text-default);
+  --product-form-section-title-font-size: 14px;
+  --product-form-section-title-font-weight: 600;
+}
+</style>

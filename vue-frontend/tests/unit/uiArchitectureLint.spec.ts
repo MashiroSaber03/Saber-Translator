@@ -1168,19 +1168,21 @@ describe('UI architecture icon ownership lint', () => {
   })
 
   it('rejects product-level string icon fallback props', () => {
-    const result = runUiArchitectureSourceFixture('src/components/product/ProductTabbedWorkspace.vue', `
-      <script setup lang="ts">
-      export type ProductWorkspaceTab = {
-        id: string
-        label: string
-        iconName?: UiIconName
-        icon?: string
-      }
-      </script>
-    `)
+    for (const stringIconProp of ['icon?: string', 'iconText?: string']) {
+      const result = runUiArchitectureSourceFixture('src/components/product/ProductTabbedWorkspace.vue', `
+        <script setup lang="ts">
+        export type ProductWorkspaceTab = {
+          id: string
+          label: string
+          iconName?: UiIconName
+          ${stringIconProp}
+        }
+        </script>
+      `)
 
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('product icon props must use typed iconName values instead of string icon fallbacks')
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('product icon props must use typed iconName values instead of string icon fallbacks')
+    }
   })
 
   it('rejects translation progress pool icons typed as raw strings', () => {

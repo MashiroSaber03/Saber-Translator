@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { V2Job } from '@/api/v2/jobs'
-import { projectInsightPageProgress } from '@/utils/insightJobProgress'
+import {
+  projectInsightPageProgress,
+  projectTerminalInsightPageProgress,
+} from '@/utils/insightJobProgress'
 
 function progress(): V2Job['progress'] {
   return {
@@ -63,5 +66,20 @@ describe('projectInsightPageProgress', () => {
     pagePool.completed = 1
 
     expect(projectInsightPageProgress(value).current).toBe(1)
+  })
+
+  it('closes finished progress even when the terminal event precedes the refreshed job snapshot', () => {
+    const stale = progress()
+
+    expect(projectTerminalInsightPageProgress(stale, 'job_finished')).toEqual({
+      current: 1,
+      total: 1,
+      currentStepKind: '',
+    })
+    expect(projectTerminalInsightPageProgress(stale, 'job_failed')).toEqual({
+      current: 0,
+      total: 1,
+      currentStepKind: '',
+    })
   })
 })

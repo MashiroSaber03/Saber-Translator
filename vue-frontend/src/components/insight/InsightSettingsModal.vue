@@ -90,14 +90,18 @@ const promptsDraft = ref<Record<string, string>>({ ...insightStore.config.prompt
 const imageGenDraft = ref<StoreImageGenConfig>({ ...insightStore.config.imageGen })
 
 const settingsTabs = [
-  { id: 'vlm', label: 'VLM 多模态', iconName: 'image' },
-  { id: 'llm', label: 'LLM 对话', iconName: 'message' },
-  { id: 'batch', label: '批量分析', iconName: 'bar-chart' },
-  { id: 'embedding', label: '向量模型', iconName: 'target' },
-  { id: 'reranker', label: '重排序', iconName: 'refresh' },
-  { id: 'imagegen', label: '生图模型', iconName: 'palette' },
-  { id: 'prompts', label: '提示词', iconName: 'file-text' },
-] satisfies Array<{ id: InsightSettingsTabId; label: string; iconName: 'image' | 'message' | 'bar-chart' | 'target' | 'refresh' | 'palette' | 'file-text' }>
+  { id: 'vlm', label: 'VLM 多模态', glyph: '🖼️' },
+  { id: 'llm', label: 'LLM 对话', glyph: '💬' },
+  { id: 'batch', label: '批量分析', glyph: '📊' },
+  { id: 'embedding', label: '向量模型', glyph: '🔢' },
+  { id: 'reranker', label: '重排序', glyph: '🔄' },
+  { id: 'imagegen', label: '生图模型', glyph: '🎨' },
+  { id: 'prompts', label: '提示词', glyph: '📝' },
+] satisfies Array<{ id: InsightSettingsTabId; label: string; glyph: string }>
+
+function settingsTabGlyph(tabId: string): string {
+  return settingsTabs.find(tab => tab.id === tabId)?.glyph ?? ''
+}
 
 function isInsightSettingsTabId(value: string): value is InsightSettingsTabId {
   return settingsTabs.some(tab => tab.id === value)
@@ -276,7 +280,9 @@ onBeforeUnmount(() => {
         aria-label="漫画分析设置分类"
         class="insight-settings-tabs"
         @update:active-tab="updateSettingsTab"
-      />
+      >
+        <template #tabIcon="{ tab }">{{ settingsTabGlyph(tab.id) }}</template>
+      </ProductSegmentedTabs>
 
       <VlmSettingsTab
         v-if="hasVisitedSettingsTab('vlm')"
@@ -354,7 +360,16 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .insight-settings-tabs {
+  --product-segmented-tabs-active-background: var(--color-surface-brand);
+  --product-segmented-tabs-active-text: var(--color-text-inverse);
+  --product-segmented-tabs-active-shadow: none;
+  --product-segmented-tabs-background: transparent;
+  --product-segmented-tabs-padding: 0 0 8px;
+  --product-segmented-tabs-radius: 0;
+  --product-segmented-tabs-tab-radius: 4px;
+
   margin-bottom: 16px;
+  border-width: 0 0 1px;
 }
 
 .insight-settings-message {

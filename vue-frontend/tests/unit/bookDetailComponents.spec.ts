@@ -73,19 +73,17 @@ describe('bookshelf detail child components', () => {
     expect(wrapper.find('.remove-detail-tag').exists()).toBe(false)
 
     expect(wrapper.get('.book-detail-summary__add-tag').attributes('aria-label')).toBe('添加标签')
-    expect(wrapper.get('.book-detail-summary__add-tag').getComponent(UiIcon).props('name')).toBe('plus')
+    expect(wrapper.get('.book-detail-summary__add-tag').text()).toBe('+')
     expect(wrapper.getComponent(UiIconButton).props()).toMatchObject({
       label: '添加标签',
       variant: 'soft',
       size: 'sm',
     })
-    expect(wrapper.get('.book-detail-summary__add-tag').text()).not.toContain('+')
 
     const insightButton = wrapper.findAll('.book-detail-summary__actions button')
       .find(button => button.text().includes('漫画分析'))
     expect(insightButton).toBeTruthy()
-    expect(insightButton!.getComponent(UiIcon).props('name')).toBe('bar-chart')
-    expect(insightButton!.text()).not.toContain('●')
+    expect(insightButton!.text()).toContain('●')
   })
 
   it('does not assert shared button primitives through internal class names', () => {
@@ -114,7 +112,8 @@ describe('bookshelf detail child components', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.book-detail-summary__cover-image').exists()).toBe(false)
-    expect(wrapper.get('.book-detail-summary__cover-placeholder').text()).toBe('无封面')
+    expect(wrapper.get('.book-detail-summary__cover-placeholder').text()).toBe('📖')
+    expect(wrapper.get('.book-detail-summary__cover-placeholder').attributes('aria-label')).toBe('无封面')
 
     await wrapper.setProps({
       book: {
@@ -249,7 +248,7 @@ describe('bookshelf detail child components', () => {
     expect(wrapper.find('.quick-tags-empty').exists()).toBe(false)
   })
 
-  it('renders chapter creation with the shared plus icon', () => {
+  it('renders chapter creation with the compact plus glyph', () => {
     const wrapper = mount(ChapterList, {
       props: {
         chapters: [],
@@ -260,8 +259,7 @@ describe('bookshelf detail child components', () => {
 
     const createButton = wrapper.get('button')
     expect(createButton.text()).toContain('新建章节')
-    expect(createButton.getComponent(UiIcon).props('name')).toBe('plus')
-    expect(createButton.text()).not.toContain('+')
+    expect(createButton.text()).toContain('+')
 
     const emptyState = wrapper.getComponent(ProductStatusBanner)
     expect(emptyState.props()).toMatchObject({
@@ -289,7 +287,7 @@ describe('bookshelf detail child components', () => {
 
     expect(header.props()).toMatchObject({
       title: '章节列表',
-      iconName: 'book-open',
+      headingLevel: 3,
     })
     expect(header.text()).toContain('新建章节')
     expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
@@ -355,9 +353,9 @@ describe('bookshelf detail child components', () => {
       .map(button => button.props('variant'))
     expect(buttonVariants).toEqual([
       'primary',
-      'secondary',
-      'secondary',
-      'danger',
+      'primary',
+      'card-action',
+      'plain-danger',
     ])
     expect(wrapper.find('.chapter-action-btn').exists()).toBe(false)
     expect(wrapper.find('.chapter-enter-btn').exists()).toBe(false)

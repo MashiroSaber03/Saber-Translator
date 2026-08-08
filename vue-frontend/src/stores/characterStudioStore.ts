@@ -636,7 +636,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function undoLastPatch() {
     if (!patchSnapshot.value) return
-    currentDocument.value = patchSnapshot.value
+    const snapshot = patchSnapshot.value
+    const latestDocument = currentDocument.value
+    currentDocument.value = latestDocument?.id === snapshot.id
+      ? rebaseUnsavedDocument(snapshot, latestDocument)
+      : snapshot
     patchSnapshot.value = null
     pendingAgentPatch.value = null
     invalidateDocumentDerivedCaches()

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ProductHeaderAction from './ProductHeaderAction.vue'
 import { useSettingsStore } from '@/stores/settings'
+import type { UiIconName } from '@/components/ui/iconRegistry'
 
 const props = withDefaults(defineProps<{
   iconSize?: 'md' | 'lg'
@@ -19,7 +20,7 @@ const label = computed(() => (
       : '切换浅色模式'
 ))
 
-const iconName = computed(() => (
+const iconName = computed<UiIconName>(() => (
   settingsStore.theme === 'light'
     ? 'sun'
     : settingsStore.theme === 'dark'

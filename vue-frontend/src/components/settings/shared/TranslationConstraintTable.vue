@@ -7,7 +7,11 @@
         aria-label="搜索约束表格"
         placeholder="搜索表格内容..."
       />
-      <ProductActionRow aria-label="约束表格操作" justify="start">
+      <ProductActionRow
+        class="translation-constraint-table__actions"
+        aria-label="约束表格操作"
+        justify="start"
+      >
         <UiButton variant="secondary" type="button" @click="addRow" size="sm">新增</UiButton>
         <UiButton variant="secondary" type="button" @click="triggerImport('json')" size="sm">
           导入 JSON
@@ -315,6 +319,10 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
   min-width: 220px;
 }
 
+.translation-constraint-table__actions {
+  gap: 8px;
+}
+
 .translation-constraint-table__table {
   width: 100%;
   border-collapse: collapse;
@@ -359,10 +367,13 @@ function mergeImportedRows(importedRows: TableRow[]): TableRow[] {
 }
 
 .translation-constraint-table__sort-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   color: inherit;
   font-weight: inherit;
-  text-align: left;
+  text-align: center;
   user-select: none;
 }
 

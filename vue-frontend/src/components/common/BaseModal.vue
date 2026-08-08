@@ -379,6 +379,10 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.ui-modal__container:focus {
+  outline: none;
+}
+
 .ui-modal__container--small {
   width: 400px;
   max-width: 90vw;
@@ -462,6 +466,10 @@ onUnmounted(() => {
 .ui-modal__close:hover {
   background-color: var(--base-modal-close-hover-background);
   color: var(--color-text-strong, var(--color-text-heading));
+}
+
+.ui-modal__close:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .ui-modal__header--brand .ui-modal__close {

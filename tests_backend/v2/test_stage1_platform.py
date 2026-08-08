@@ -26,6 +26,7 @@ from src.backend_v2.storage.defaults import (
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
+    hash_epoch_token,
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
@@ -45,6 +46,7 @@ from src.backend_v2.storage.platform_repositories import (
 )
 from src.backend_v2.storage.schema import (
     assets,
+    api_executor_leases,
     books,
     bubbles,
     chapter_write_intents,
@@ -60,6 +62,7 @@ from src.backend_v2.storage.schema import (
     pages,
     process_epochs,
     render_requests,
+    worker_leases,
 )
 from src.backend_v2.storage.seeding import (
     QUICK_WORKSPACE_BOOK_ID,
@@ -565,6 +568,56 @@ def test_expired_or_replaced_epoch_cannot_be_renewed(platform) -> None:
         )
     assert not repository.renew(role="worker", epoch_id="worker", token="secret")
     assert not repository.renew(role="worker", epoch_id="worker", token="wrong")
+
+
+def test_launcher_epoch_tokens_are_never_persisted_in_plaintext(platform) -> None:
+    _data_root, engine = platform
+    repository = ProcessEpochRepository(engine, lease_seconds=3)
+    registrations = (
+        EpochRegistration("worker-secret-epoch", "worker-secret", "worker", 123),
+        EpochRegistration("api-secret-epoch", "api-secret", "api", 321),
+    )
+    for registration in registrations:
+        repository.register(registration)
+
+    with engine.connect() as connection:
+        epoch_tokens = {
+            str(row.id): str(row.token_hash)
+            for row in connection.execute(
+                select(process_epochs.c.id, process_epochs.c.token_hash).where(
+                    process_epochs.c.id.in_(
+                        registration.epoch_id for registration in registrations
+                    )
+                )
+            )
+        }
+        worker_token = connection.execute(
+            select(worker_leases.c.lease_token).where(
+                worker_leases.c.worker_epoch_id == "worker-secret-epoch"
+            )
+        ).scalar_one()
+        api_token = connection.execute(
+            select(api_executor_leases.c.lease_token).where(
+                api_executor_leases.c.api_epoch_id == "api-secret-epoch"
+            )
+        ).scalar_one()
+
+    assert epoch_tokens == {
+        "worker-secret-epoch": hash_epoch_token("worker-secret"),
+        "api-secret-epoch": hash_epoch_token("api-secret"),
+    }
+    assert worker_token == hash_epoch_token("worker-secret")
+    assert api_token == hash_epoch_token("api-secret")
+    assert repository.renew(
+        role="worker",
+        epoch_id="worker-secret-epoch",
+        token="worker-secret",
+    )
+    assert repository.renew(
+        role="api",
+        epoch_id="api-secret-epoch",
+        token="api-secret",
+    )
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,7 @@
           <h3 class="greeting-workbench__section-title">主问候</h3>
           <p class="greeting-workbench__section-description">角色进入对话时最先展示的开场白。它决定了语气、场景和第一印象。</p>
         </div>
-        <ProductActionRow aria-label="主问候操作">
+        <ProductActionRow appearance="accent" aria-label="主问候操作">
           <UiButton variant="secondary" :disabled="generating" @click="$emit('generate')">
             {{ generating ? '生成中...' : '批量生成' }}
           </UiButton>
@@ -28,8 +28,8 @@
           <h3 class="greeting-workbench__section-title">备用问候</h3>
           <p class="greeting-workbench__section-description">维护多种开场方式，可随时采用为主问候或继续打磨。</p>
         </div>
-        <ProductActionRow aria-label="备用问候操作">
-          <UiButton variant="primary" @click="$emit('add')">添加备用问候</UiButton>
+        <ProductActionRow appearance="accent" aria-label="备用问候操作">
+          <UiButton variant="secondary" @click="$emit('add')">添加备用问候</UiButton>
         </ProductActionRow>
       </div>
 
@@ -49,7 +49,7 @@
               <span class="greeting-workbench__index-chip">#{{ index + 1 }}</span>
               <strong class="greeting-workbench__alternate-name">备用问候</strong>
             </div>
-            <ProductActionRow aria-label="备用问候条目操作">
+            <ProductActionRow appearance="accent" aria-label="备用问候条目操作">
               <UiButton variant="secondary" @click="$emit('promote', item)" size="sm">设为主问候</UiButton>
               <UiButton variant="secondary" :disabled="index === 0" @click="$emit('move', index, -1)" size="sm">上移</UiButton>
               <UiButton variant="secondary" :disabled="index === alternates.length - 1" @click="$emit('move', index, 1)" size="sm">下移</UiButton>

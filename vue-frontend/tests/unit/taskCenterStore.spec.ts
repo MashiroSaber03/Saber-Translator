@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { V2Job } from '@/api/v2/jobs'
+import type { V2Job, V2JobDetail } from '@/api/v2/jobs'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const mocks = vi.hoisted(() => ({
@@ -63,6 +63,33 @@ function makeJob(overrides: Partial<V2Job> & Pick<V2Job, 'jobId' | 'status'>): V
     },
     target: {},
     createdAt: null,
+    ...overrides,
+  }
+}
+
+function makeDetail(
+  overrides: Partial<V2JobDetail> & Pick<V2JobDetail, 'jobId' | 'status'>,
+): V2JobDetail {
+  const job = makeJob(overrides)
+  return {
+    ...job,
+    counts: {
+      total: job.progress.totalItems,
+      pending: 0,
+      running: 0,
+      completed: job.progress.completedItems,
+      failed: job.progress.failedItems,
+      skipped: job.progress.skippedItems,
+      cancelled: job.progress.cancelledItems,
+    },
+    durationMs: null,
+    error: null,
+    configSummary: {},
+    items: [],
+    failedItems: [],
+    artifacts: [],
+    resources: [],
+    recentEvents: [],
     ...overrides,
   }
 }
@@ -251,6 +278,93 @@ describe('taskCenterStore snapshot reconciliation', () => {
     expect(store.queue).toEqual([])
     expect(store.history.map(job => job.jobId)).toEqual(['job-1'])
     expect(mocks.list).not.toHaveBeenCalled()
+    store.disconnect()
+    vi.useRealTimers()
+  })
+
+  it('refreshes an expanded detail when its projected job reaches a new state', async () => {
+    vi.useFakeTimers()
+    const paused = makeDetail({
+      jobId: 'job-1',
+      status: 'paused',
+      progress: {
+        executionMode: 'sequential',
+        jobStatus: 'paused',
+        totalItems: 2,
+        completedItems: 0,
+        failedItems: 0,
+        skippedItems: 0,
+        cancelledItems: 0,
+        pools: [],
+      },
+      recentEvents: [{
+        eventId: 1,
+        jobId: 'job-1',
+        type: 'job_paused',
+        payload: {},
+        createdAt: null,
+      }],
+    })
+    const completed = makeDetail({
+      jobId: 'job-1',
+      status: 'completed',
+      finishedAt: '2026-08-08T04:45:00Z',
+      durationMs: 30_000,
+      progress: {
+        executionMode: 'sequential',
+        jobStatus: 'completed',
+        totalItems: 2,
+        completedItems: 2,
+        failedItems: 0,
+        skippedItems: 0,
+        cancelledItems: 0,
+        pools: [],
+      },
+      counts: {
+        total: 2,
+        pending: 0,
+        running: 0,
+        completed: 2,
+        failed: 0,
+        skipped: 0,
+        cancelled: 0,
+      },
+      recentEvents: [{
+        eventId: 2,
+        jobId: 'job-1',
+        type: 'job_finished',
+        payload: {},
+        createdAt: null,
+      }],
+    })
+    mocks.get.mockResolvedValueOnce(paused).mockResolvedValueOnce(completed)
+    mocks.snapshot.mockResolvedValue({
+      items: [makeJob({
+        jobId: 'job-1',
+        status: 'completed',
+        finishedAt: completed.finishedAt,
+        progress: completed.progress,
+      })],
+      queueRevision: 2,
+    })
+    const store = useTaskCenterStore()
+    await store.initialize()
+    store.drawerOpen = true
+    await store.loadDetail('job-1')
+
+    FakeEventSource.latest?.emit('job_finished', {
+      eventId: 2,
+      jobId: 'job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+    })
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(store.selectedDetail?.status).toBe('completed')
+    expect(store.selectedDetail?.counts.completed).toBe(2)
+    expect(store.selectedDetail?.durationMs).toBe(30_000)
+    expect(store.selectedDetail?.recentEvents.map(event => event.eventId)).toEqual([1, 2])
     store.disconnect()
     vi.useRealTimers()
   })

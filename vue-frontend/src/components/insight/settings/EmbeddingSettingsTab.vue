@@ -138,6 +138,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
 
 <template>
   <InsightSettingsPanel
+    class="embedding-settings-tab"
     description="Embedding（向量化模型）用于将文本转换为向量，支持语义搜索和问答功能。"
   >
     <InsightModelProviderSection
@@ -158,6 +159,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
       :model-options="modelOptions"
       :model-count="modelCount"
       :show-base-url="showBaseUrl"
+      test-placement="panel-end"
       :testing="isTesting"
       @provider-change="onProviderChange"
       @model-change="selectModel"
@@ -223,3 +225,11 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
     </UiField>
   </InsightSettingsPanel>
 </template>
+
+<style scoped>
+.embedding-settings-tab {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+}
+</style>

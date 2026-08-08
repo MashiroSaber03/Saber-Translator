@@ -124,7 +124,7 @@ describe('task center projection', () => {
       },
     })
 
-    expect(currentStepLabel(running)).toBe('第 3 项 · translate')
+    expect(currentStepLabel(running)).toBe('第 3 项 · 文本翻译')
     expect(poolProgress(running)).toEqual([
       {
         kind: 'translate',

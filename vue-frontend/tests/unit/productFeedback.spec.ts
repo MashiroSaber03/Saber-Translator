@@ -72,6 +72,16 @@ describe('product feedback components', () => {
     expect(wrapper.text()).toContain('操作失败')
   })
 
+  it('supports business-owned glyph slots in status banners without rendering the fallback svg icon', () => {
+    const wrapper = mount(ProductStatusBanner, {
+      props: { iconName: 'message', tone: 'neutral' },
+      slots: { default: '欢迎提问', icon: '💬' },
+    })
+
+    expect(wrapper.get('.product-status-banner__icon-text').text()).toBe('💬')
+    expect(wrapper.findComponent(UiIcon).exists()).toBe(false)
+  })
+
   it('renders empty states with typed icons and action content', () => {
     const wrapper = mount(ProductEmptyState, {
       props: {
@@ -90,6 +100,19 @@ describe('product feedback components', () => {
     expect(wrapper.get('h2').text()).toBe('书架空空如也')
     expect(wrapper.text()).toContain('点击新建书籍开始')
     expect(wrapper.get('.product-empty-state__actions').text()).toContain('新建')
+  })
+
+  it('supports business-owned glyph slots in empty states', () => {
+    const wrapper = mount(ProductEmptyState, {
+      props: {
+        iconName: 'book-open',
+        title: '书架空空如也',
+      },
+      slots: { icon: '📚' },
+    })
+
+    expect(wrapper.get('.product-empty-state__icon-text').text()).toBe('📚')
+    expect(wrapper.findComponent(UiIcon).exists()).toBe(false)
   })
 
   it('owns the reusable slot-based card grid layout', () => {
@@ -655,6 +678,31 @@ describe('product feedback components', () => {
     expect(wrapper.get('.product-section-header').classes()).toContain('product-section-header--sm')
     expect(wrapper.find('.product-section-header__description').exists()).toBe(false)
     expect(wrapper.find('.product-section-header__actions').exists()).toBe(false)
+  })
+
+  it('can hide the composer submit icon for text-only actions', () => {
+    const wrapper = mount(ProductComposer, {
+      props: {
+        modelValue: '测试',
+        showSubmitIcon: false,
+      },
+    })
+
+    expect(wrapper.findComponent(UiIcon).exists()).toBe(false)
+    expect(wrapper.get('button').text()).toBe('发送')
+  })
+
+  it('supports business-owned glyph slots in section headers', () => {
+    const wrapper = mount(ProductSectionHeader, {
+      props: {
+        title: '页面详情',
+        iconName: 'file-text',
+      },
+      slots: { icon: '📄' },
+    })
+
+    expect(wrapper.get('.product-section-header__icon-text').text()).toBe('📄')
+    expect(wrapper.findComponent(UiIcon).exists()).toBe(false)
   })
 
   it('keeps section headers responsive when long titles share space with actions', () => {

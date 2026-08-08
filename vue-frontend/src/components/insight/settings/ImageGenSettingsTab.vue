@@ -86,7 +86,10 @@ useInsightSettingsDraft<StoreImageGenConfig>({
 </script>
 
 <template>
-  <InsightSettingsPanel description="生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。">
+  <InsightSettingsPanel
+    class="imagegen-settings-tab"
+    description="生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。"
+  >
     <InsightModelProviderSection
       v-model:provider="provider"
       v-model:api-key="apiKey"
@@ -122,3 +125,11 @@ useInsightSettingsDraft<StoreImageGenConfig>({
     </UiField>
   </InsightSettingsPanel>
 </template>
+
+<style scoped>
+.imagegen-settings-tab {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+}
+</style>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import UiInput from '@/components/ui/UiInput.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
@@ -197,7 +196,7 @@ async function saveBook() {
               alt="封面预览"
             >
             <div v-else class="book-modal__cover-placeholder">
-              <UiIcon name="camera" class="book-modal__upload-icon" size="32" />
+              <span class="book-modal__upload-icon" aria-hidden="true">📷</span>
               <span>点击或拖拽上传封面</span>
             </div>
           </div>
@@ -262,6 +261,16 @@ async function saveBook() {
 </template>
 
 <style scoped>
+.book-modal__form {
+  --ui-field-dialog-header-margin-bottom: 8px;
+  --ui-input-min-height: 38px;
+  --ui-input-radius: 6px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .book-modal__cover-preview {
   width: 150px;
   height: 200px;
@@ -290,6 +299,8 @@ async function saveBook() {
 
 .book-modal__upload-icon {
   display: inline-flex;
+  font-size: 32px;
+  line-height: 1;
 }
 
 .book-modal__tag-input-container {

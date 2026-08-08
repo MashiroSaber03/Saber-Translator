@@ -11,6 +11,7 @@ withDefaults(defineProps<{
   tone?: 'default' | 'inverse'
   control?: 'default' | 'checkbox'
   layout?: 'stacked' | 'inline'
+  labelVisuallyHidden?: boolean
 }>(), {
   label: '',
   hint: '',
@@ -23,6 +24,7 @@ withDefaults(defineProps<{
   tone: 'default',
   control: 'default',
   layout: 'stacked',
+  labelVisuallyHidden: false,
 })
 </script>
 
@@ -40,7 +42,11 @@ withDefaults(defineProps<{
       },
     ]"
   >
-    <div v-if="label || $slots['label-actions']" class="ui-field__header">
+    <div
+      v-if="label || $slots['label-actions']"
+      class="ui-field__header"
+      :class="{ 'ui-field__header--visually-hidden': labelVisuallyHidden }"
+    >
       <label v-if="label" class="ui-field__label" :for="controlId || forId || undefined">
         {{ label }}
         <span v-if="required" class="ui-field__required" aria-hidden="true">*</span>
@@ -64,9 +70,21 @@ withDefaults(defineProps<{
 }
 
 .ui-field__label {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-default);
+  color: var(--ui-field-label-color, var(--color-text-default));
+  font-size: var(--ui-field-label-font-size, 0.9rem);
+  font-weight: var(--ui-field-label-font-weight, 600);
+}
+
+.ui-field__header--visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .ui-field--tone-inverse .ui-field__label {
@@ -96,12 +114,12 @@ withDefaults(defineProps<{
 .ui-field__hint,
 .ui-field__error {
   margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: var(--ui-field-message-font-size, 0.82rem);
+  line-height: var(--ui-field-message-line-height, 1.45);
 }
 
 .ui-field__hint {
-  color: var(--color-text-supporting);
+  color: var(--ui-field-hint-color, var(--color-text-supporting));
 }
 
 .ui-field__error {
@@ -129,7 +147,7 @@ withDefaults(defineProps<{
 }
 
 .ui-field--settings > .ui-field__header {
-  margin-bottom: 6px;
+  margin-bottom: var(--ui-field-settings-header-margin-bottom, 6px);
 }
 
 .ui-field--control-checkbox {
@@ -169,7 +187,7 @@ withDefaults(defineProps<{
 }
 
 .ui-field--dialog > .ui-field__header {
-  margin-bottom: 6px;
+  margin-bottom: var(--ui-field-dialog-header-margin-bottom, 6px);
 }
 
 .ui-field--dialog .ui-field__label {

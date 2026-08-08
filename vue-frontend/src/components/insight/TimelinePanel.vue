@@ -83,6 +83,7 @@ const {
         title="时间线尚未生成"
         description="完成漫画分析后会自动生成时间线，或点击下方按钮手动生成"
       >
+        <template #icon>📈</template>
         <template #actions>
           <UiButton
             variant="primary"
@@ -183,9 +184,21 @@ const {
 }
 
 .timeline-panel__empty {
-  --product-empty-state-min-height: 280px;
-
-  padding-block: 48px;
+  --product-empty-state-min-height: 0;
+  --product-empty-state-padding: 60px 20px;
+  --product-empty-state-icon-width: auto;
+  --product-empty-state-icon-height: auto;
+  --product-empty-state-icon-margin-bottom: 16px;
+  --product-empty-state-icon-border: 0;
+  --product-empty-state-icon-radius: 0;
+  --product-empty-state-icon-background: transparent;
+  --product-empty-state-icon-color: inherit;
+  --product-empty-state-icon-font-size: 48px;
+  --product-empty-state-title-font-size: 18px;
+  --product-empty-state-title-margin: 0 0 8px;
+  --product-empty-state-description-margin: 0 0 16px;
+  --product-empty-state-description-font-size: 14px;
+  --product-empty-state-actions-margin-top: 0;
 }
 
 .timeline-panel__section {

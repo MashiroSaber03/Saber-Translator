@@ -78,6 +78,7 @@ export interface PageData {
 
 export interface InsightChapter {
   analyzed: boolean
+  analyzed_count: number
   end_page: number
   id: string
   start_page: number
@@ -509,6 +510,7 @@ export async function getInsightChapters(bookId: string): Promise<InsightChapter
       start_page: startPage,
       end_page: offset,
       analyzed: chapter.analysisCounts.ready + chapter.analysisCounts.stale === chapter.pageCount,
+      analyzed_count: chapter.analysisCounts.ready + chapter.analysisCounts.stale,
     }
   })
 }

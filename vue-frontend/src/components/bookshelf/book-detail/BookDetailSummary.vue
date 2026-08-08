@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BookData } from '@/types/api'
 
@@ -65,7 +64,7 @@ function handleCoverError(): void {
         :alt="`${book.title} 封面`"
         @error="handleCoverError"
       >
-      <div v-else class="book-detail-summary__cover-placeholder">无封面</div>
+      <div v-else class="book-detail-summary__cover-placeholder" aria-label="无封面">📖</div>
     </div>
     <div class="book-detail-summary__meta">
       <h3 class="book-detail-summary__title">{{ book.title }}</h3>
@@ -86,7 +85,7 @@ function handleCoverError(): void {
           size="sm"
           @click="emit('addTag')"
         >
-          <UiIcon name="plus" size="14" />
+          <span aria-hidden="true">+</span>
         </UiIconButton>
       </div>
       <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">章节数：</span><span>{{ chapterCount }}</span></p>
@@ -94,7 +93,7 @@ function handleCoverError(): void {
       <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">最后更新：</span><span>{{ formatDate(book.updatedAt) }}</span></p>
       <div class="book-detail-summary__actions">
         <UiButton size="sm" variant="primary" @click="emit('insight')">
-          <UiIcon name="bar-chart" size="14" />
+          <span aria-hidden="true">●</span>
           漫画分析
         </UiButton>
         <UiButton size="sm" variant="secondary" @click="emit('edit')">编辑书籍</UiButton>
@@ -130,12 +129,10 @@ function handleCoverError(): void {
 }
 
 .book-detail-summary__cover-placeholder {
-  display: grid;
-  height: 100%;
-  place-items: center;
+  padding: 4px;
   color: var(--color-text-inverse);
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .book-detail-summary__meta {
@@ -181,7 +178,14 @@ function handleCoverError(): void {
 
 .book-detail-summary__add-tag {
   flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
   margin-left: 6px;
+  border: 1px dashed var(--color-border-muted);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-supporting);
+  font-size: 0.9rem;
 }
 
 .book-detail-summary__actions {

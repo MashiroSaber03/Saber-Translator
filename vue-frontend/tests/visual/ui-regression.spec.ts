@@ -1069,6 +1069,11 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
     return
   }
 
+  if (path === '/api/v2/insight/artifacts/overviews') {
+    await fulfillJson({ items: ['no_spoiler', 'story_summary', 'character_guide'] })
+    return
+  }
+
   if (path.startsWith('/api/v2/insight/artifacts/overviews/')) {
     const template = decodeURIComponent(path.split('/').at(-1) || 'story_summary')
     await fulfillJson({
@@ -1078,12 +1083,34 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       payload: {
         content: template === 'story_summary'
           ? '这是用于视觉回归的故事概览。'
-          : `已生成的 ${template} 概览。`,
+          : template === 'no_spoiler'
+            ? '这是用于视觉回归的无剧透概览。'
+            : `已生成的 ${template} 概览。`,
       },
       revision: 1,
       runId: 'demo-run',
       status: 'ready',
       template,
+    })
+    return
+  }
+
+  if (path === '/api/v2/insight/books/demo-book/recent-page-analyses') {
+    await fulfillJson({
+      items: [
+        {
+          pageId: 'demo-page-2',
+          displayPageNumber: 2,
+          summary: '主角在雨夜发现了新的线索。',
+          generatedAt: '2026-08-08T08:00:00Z',
+        },
+        {
+          pageId: 'demo-page-1',
+          displayPageNumber: 1,
+          summary: '故事从安静的街道展开。',
+          generatedAt: '2026-08-08T07:00:00Z',
+        },
+      ],
     })
     return
   }
@@ -1894,8 +1921,9 @@ test('translate loaded workspace keeps fixed sidebar sizing contract', async ({ 
   await expect(page.locator('.settings-sidebar')).toHaveCSS('padding-left', '20px')
   await expect(page.locator('.settings-sidebar')).toHaveCSS('padding-right', '20px')
   await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('width', '230px')
-  await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-left', '20px')
-  await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-right', '20px')
+  await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-top', '20px')
+  await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-left', '0px')
+  await expect(page.locator('.thumbnail-sidebar')).toHaveCSS('padding-right', '0px')
   await expect(page.locator('.thumbnail-sidebar__title')).toHaveCSS('color', 'rgb(44, 62, 80)')
   await expect(page.locator('.translate-shell__main')).toHaveCSS('margin-left', '340px')
   await expect(page.locator('.translate-shell__main')).toHaveCSS('margin-right', '240px')
@@ -1903,6 +1931,38 @@ test('translate loaded workspace keeps fixed sidebar sizing contract', async ({ 
     fullPage: true,
     animations: 'disabled',
   })
+})
+
+test('translate header keeps enlarged controls inside its surface', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 900 })
+  await page.goto('/translate?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
+
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '200%'
+  })
+
+  const surface = page.locator('.product-page-header__content')
+  await expect(surface).toBeVisible()
+  const surfaceBounds = await surface.boundingBox()
+  expect(surfaceBounds).not.toBeNull()
+
+  const visibleRegions = surface.locator(
+    '.product-page-header__brand, .product-page-header__nav, .product-page-header__actions',
+  )
+  const regionCount = await visibleRegions.count()
+  for (let index = 0; index < regionCount; index += 1) {
+    const bounds = await visibleRegions.nth(index).boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(surfaceBounds!.x - 1)
+    expect(bounds!.y).toBeGreaterThanOrEqual(surfaceBounds!.y - 1)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
+      surfaceBounds!.x + surfaceBounds!.width + 1,
+    )
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(
+      surfaceBounds!.y + surfaceBounds!.height + 1,
+    )
+  }
 })
 
 test('translate edit workspace keeps dark editor shell contract', async ({ page }) => {
@@ -2073,6 +2133,11 @@ test('insight selected-book sidebars keep their gutter contract', async ({ page 
   await expect(page.locator('.product-tabbed-workspace__tab').nth(1)).toHaveCSS('color', 'rgb(102, 102, 102)')
   await expect(page.locator('.overview-panel__card--stats .overview-panel__card-title')).toHaveCSS('color', 'rgb(51, 51, 51)')
   await expect(page.locator('.page-detail-panel .product-section-header__title')).toHaveCSS('color', 'rgb(51, 51, 51)')
+  await expect(page.getByText('这是用于视觉回归的无剧透概览。')).toBeVisible()
+  await expect(page.locator('.overview-panel__recent-page-card')).toHaveCount(2)
+  await expect(page.locator('.overview-panel')).toHaveScreenshot('insight-overview-populated.png', {
+    animations: 'disabled',
+  })
   await expect(page).toHaveScreenshot('insight-selected-sidebars.png', {
     fullPage: true,
     animations: 'disabled',
@@ -2087,6 +2152,7 @@ test('insight overview action buttons keep their component styling', async ({ pa
   const currentExportButton = exportActions.getByRole('button', { name: '导出当前' })
   const allExportButton = exportActions.getByRole('button', { name: '导出全部' })
   await expect(exportActions).toBeVisible()
+  await expect(currentExportButton).toBeEnabled()
   await expect(currentExportButton).toHaveCSS('border-radius', '8px')
   await expect(currentExportButton).toHaveCSS('padding-left', '12px')
   await expect(currentExportButton).toHaveCSS('border-top-width', '0px')
@@ -2206,13 +2272,15 @@ test('narrow insight continuation wizard keeps controls inside the scroll owner'
       panelScrollWidth: panel.scrollWidth,
       scrollOwnerClientWidth: scrollOwner?.clientWidth ?? 0,
       scrollOwnerScrollWidth: scrollOwner?.scrollWidth ?? 0,
+      stepCount: panel.querySelectorAll('.product-wizard-steps__step').length,
       stepRowCount: stepRows.size,
     }
   })
 
   expect(layout.panelScrollWidth).toBeLessThanOrEqual(layout.panelClientWidth + 1)
   expect(layout.scrollOwnerScrollWidth).toBeLessThanOrEqual(layout.scrollOwnerClientWidth + 1)
-  expect(layout.stepRowCount).toBeGreaterThan(1)
+  expect(layout.stepCount).toBe(4)
+  expect(layout.stepRowCount).toBe(1)
 })
 
 test('character studio empty workspace keeps its layout contract', async ({ page }) => {

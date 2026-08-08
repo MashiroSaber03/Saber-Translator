@@ -39,7 +39,7 @@ defineEmits<{
       description="围绕角色卡本体给出结构化建议，可应用 patch 或撤销。"
     >
       <template #actions>
-        <ProductActionRow class="agent-workspace__actions" aria-label="卡片助手 patch 操作" justify="start" variant="toolbar">
+        <ProductActionRow appearance="accent" class="agent-workspace__actions" aria-label="卡片助手 patch 操作" justify="start" variant="toolbar">
           <UiButton
             variant="secondary"
             :disabled="!pendingPatch"
@@ -98,7 +98,7 @@ defineEmits<{
             placeholder="例如：请审查当前角色卡，并建议补充世界书与状态任务。"
             @update:model-value="$emit('update:agentInput', $event)"
           />
-          <ProductActionRow class="agent-workspace__composer-actions" aria-label="卡片助手消息操作" justify="start">
+          <ProductActionRow appearance="accent" class="agent-workspace__composer-actions" aria-label="卡片助手消息操作" justify="start">
             <UiIconButton
               variant="primary"
               size="lg"

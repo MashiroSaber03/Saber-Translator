@@ -116,13 +116,14 @@
           <UiField variant="settings">
             <UiButton
               variant="secondary"
+              tone="info"
               block
               @click="testRoundConnection(index)"
               :disabled="roundTestingStates[index]"
             >
               <span v-if="roundTestingStates[index]">测试中...</span>
               <template v-else>
-                <UiIcon name="link" />
+                <span aria-hidden="true">🔗</span>
                 <span>测试连接</span>
               </template>
             </UiButton>

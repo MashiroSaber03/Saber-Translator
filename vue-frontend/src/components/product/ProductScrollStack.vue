@@ -79,6 +79,6 @@ defineExpose({ scrollToBottom })
 }
 
 .product-scroll-stack--empty {
-  justify-content: center;
+  justify-content: var(--product-scroll-stack-empty-justify-content, center);
 }
 </style>

@@ -514,7 +514,6 @@ async function quickAddTagToBook(tagName: string) {
     title="确认删除"
     size="small"
     custom-class="confirm-modal"
-    body-text-align="center"
     :close-on-overlay="true"
     :close-on-esc="true"
   >

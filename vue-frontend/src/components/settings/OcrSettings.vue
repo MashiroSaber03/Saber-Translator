@@ -134,10 +134,10 @@
         </UiField>
       </UiFormGrid>
       <ProductActionRow aria-label="百度 OCR 操作" justify="start">
-        <UiButton variant="secondary" @click="testBaiduOcr" :disabled="isTesting">
+        <UiButton variant="secondary" tone="info" @click="testBaiduOcr" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
-            <UiIcon name="link" />
+            <span aria-hidden="true">🔗</span>
             <span>测试连接</span>
           </template>
         </UiButton>
@@ -284,10 +284,10 @@
         />
       </UiField>
       <ProductActionRow aria-label="AI 视觉 OCR 操作" justify="start">
-        <UiButton variant="secondary" @click="testAiVisionOcr" :disabled="isTesting">
+        <UiButton variant="secondary" tone="info" @click="testAiVisionOcr" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
-            <UiIcon name="link" />
+            <span aria-hidden="true">🔗</span>
             <span>测试连接</span>
           </template>
         </UiButton>
@@ -302,7 +302,6 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiPasswordField from '@/components/ui/UiPasswordField.vue'

@@ -202,6 +202,8 @@ const {
 <style scoped>
 .edit-workspace {
   --edit-workspace-shell-background: var(--color-surface-inverse);
+  --edit-workspace-repair-brush-hint-background: color-mix(in srgb, var(--color-status-success) 90%, transparent);
+  --edit-workspace-restore-brush-hint-background: color-mix(in srgb, var(--color-status-info) 90%, transparent);
 
   display: flex;
   flex-direction: column;
@@ -217,5 +219,42 @@ const {
   border-radius: 0;
   flex-shrink: 0;
   transition: none;
+}
+
+.edit-workspace--brush-mode-active::before {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  z-index: var(--z-local-popover);
+  padding: 6px 16px;
+  border-radius: 20px;
+  color: var(--color-text-inverse);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: edit-workspace-brush-hint 0.3s ease;
+}
+
+.edit-workspace--brush-mode-active[data-brush-mode="repair"]::before {
+  content: '修复笔刷 - 滚轮调整大小';
+  background: var(--edit-workspace-repair-brush-hint-background);
+}
+
+.edit-workspace--brush-mode-active[data-brush-mode="restore"]::before {
+  content: '还原笔刷 - 滚轮调整大小';
+  background: var(--edit-workspace-restore-brush-hint-background);
+}
+
+@keyframes edit-workspace-brush-hint {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 </style>

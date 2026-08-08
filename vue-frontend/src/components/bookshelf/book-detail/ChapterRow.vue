@@ -99,23 +99,27 @@ const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.v
           进入翻译
         </UiButton>
         <UiButton
-          variant="secondary"
+          variant="primary"
+          tone="success"
           size="xs"
+          class="chapter-row__read-action"
           :disabled="imageCount === 0"
           @click="$emit('read', chapter.id)"
         >
           进入阅读
         </UiButton>
         <UiButton
-          variant="secondary"
+          variant="card-action"
           size="xs"
+          class="chapter-row__edit-action"
           @click="$emit('edit', chapter.id)"
         >
           编辑
         </UiButton>
         <UiButton
-          variant="danger"
+          variant="plain-danger"
           size="xs"
+          class="chapter-row__delete-action"
           @click="$emit('delete', chapter.id)"
         >
           删除
@@ -186,5 +190,28 @@ const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.v
 .chapter-row__actions {
   flex: 1 1 280px;
   min-width: 0;
+}
+
+.chapter-row__read-action {
+  --ui-button-xs-padding: 6px 10px;
+}
+
+.chapter-row__edit-action,
+.chapter-row__delete-action {
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--color-text-supporting);
+  font-size: 0.8rem;
+  transition: background 0.2s, color 0.2s;
+}
+
+.chapter-row__edit-action:hover,
+.chapter-row__delete-action:hover {
+  background: var(--color-surface-card);
+  color: var(--color-text-default);
+}
+
+.chapter-row__delete-action:hover {
+  color: var(--color-status-error);
 }
 </style>

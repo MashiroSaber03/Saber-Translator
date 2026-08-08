@@ -22,6 +22,7 @@ withDefaults(defineProps<{
 .product-search-toolbar {
   display: flex;
   flex-direction: column;
+  width: 100%;
   gap: 16px;
   margin-bottom: 24px;
   padding: 16px;
@@ -34,6 +35,7 @@ withDefaults(defineProps<{
 .product-search-toolbar__search {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 8px;
   min-width: 0;
 }

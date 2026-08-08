@@ -51,6 +51,7 @@ describe('NotesToolbar', () => {
       iconName: 'file-text',
       size: 'sm',
     })
+    expect(header.get('.product-section-header__icon-text').text()).toBe('📝')
     expect(header.findComponent(UiSelect).exists()).toBe(true)
     expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
     expect(source).not.toContain('section-header-with-actions')

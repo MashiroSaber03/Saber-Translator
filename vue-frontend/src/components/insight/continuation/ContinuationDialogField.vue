@@ -30,6 +30,8 @@ defineProps<{
 }
 
 :slotted(.continuation-dialog__form-input) {
+  --ui-textarea-min-height: 0;
+
   font: inherit;
 }
 </style>

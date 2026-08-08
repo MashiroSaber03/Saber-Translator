@@ -102,6 +102,7 @@ defineExpose({
 :where(.ui-textarea) {
   box-sizing: border-box;
   width: 100%;
+  height: var(--ui-textarea-height, auto);
   min-height: var(--ui-textarea-min-height, 96px);
   padding: var(--ui-textarea-padding, 10px 12px);
   border: var(--ui-textarea-border, 1px solid var(--color-border-muted));
@@ -140,12 +141,12 @@ defineExpose({
 }
 
 :where(.ui-textarea--panel) {
-  padding: 12px;
+  padding: var(--ui-textarea-panel-padding, 12px);
   border: 1px solid var(--color-border-muted, var(--color-border-subtle));
   border-radius: 8px;
   background: var(--color-surface-input, var(--color-surface-base));
   color: var(--color-text-default);
-  line-height: 1.6;
+  line-height: var(--ui-textarea-panel-line-height, 1.6);
 }
 
 :where(.ui-textarea--panel.ui-textarea--lg) {

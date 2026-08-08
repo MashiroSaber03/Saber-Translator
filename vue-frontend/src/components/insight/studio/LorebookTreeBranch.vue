@@ -10,7 +10,7 @@
             <span class="lorebook-tree-branch__meta-item">{{ localEntry.position }}</span>
           </div>
         </div>
-        <ProductActionRow class="lorebook-tree-branch__actions" aria-label="世界书条目操作" @click.prevent>
+        <ProductActionRow appearance="accent" class="lorebook-tree-branch__actions" aria-label="世界书条目操作" @click.prevent>
           <UiButton variant="secondary" size="sm" @click="move(-1)" :disabled="index === 0">上移</UiButton>
           <UiButton variant="secondary" size="sm" @click="move(1)" :disabled="index >= siblingCount - 1">下移</UiButton>
           <UiButton variant="secondary" size="sm" @click="addChild">子项</UiButton>

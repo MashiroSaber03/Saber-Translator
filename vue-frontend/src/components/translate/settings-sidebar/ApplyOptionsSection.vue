@@ -112,26 +112,56 @@ defineEmits<{
   --apply-options-section-menu-shadow: var(--shadow-medium);
   --apply-options-section-option-text: var(--color-text-secondary);
   --apply-options-section-option-hover-text: var(--color-action-primary-hover);
+  --apply-options-section-action-background: linear-gradient(135deg, var(--color-action-primary-soft) 0%, var(--color-action-primary-hover) 100%);
+  --apply-options-section-action-hover-background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-text-link-strong) 100%);
+  --apply-options-section-options-action-background: linear-gradient(135deg, var(--color-action-primary-hover) 0%, var(--color-text-link-strong) 100%);
+  --apply-options-section-options-action-hover-background: linear-gradient(135deg, var(--color-text-link-strong) 0%, color-mix(in srgb, var(--color-text-link-strong) 78%, var(--color-surface-inverse)) 100%);
+  --apply-options-section-options-action-border: color-mix(in srgb, var(--color-text-inverse) 24%, transparent);
+  --apply-options-section-options-action-text: var(--color-text-inverse);
 
   display: flex;
   flex-direction: column;
   position: relative;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 19px;
 }
 
 .apply-options-section__actions {
+  --ui-button-padding: 0;
+  --ui-button-radius: 8px 0 0 8px;
+  --ui-button-font-size: 13px;
+  --ui-button-primary-background: var(--apply-options-section-action-background);
+  --ui-button-primary-hover-background: var(--apply-options-section-action-hover-background);
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-hover-shadow: none;
+  --ui-button-primary-hover-transform: none;
+
+  gap: 0;
   width: 100%;
+  height: 38px;
 }
 
 .apply-options-section__action {
   flex: 1;
   min-width: 0;
+  height: 38px;
   font-weight: 600;
 }
 
 .apply-options-section__options-action {
   flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-left: 1px solid var(--apply-options-section-options-action-border);
+  border-radius: 0 8px 8px 0;
+  background: var(--apply-options-section-options-action-background);
+  color: var(--apply-options-section-options-action-text);
+}
+
+.apply-options-section__options-action:hover:not(:disabled) {
+  background: var(--apply-options-section-options-action-hover-background);
+  transform: none;
 }
 
 .apply-options-section__menu {

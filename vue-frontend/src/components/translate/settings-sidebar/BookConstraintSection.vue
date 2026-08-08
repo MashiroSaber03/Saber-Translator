@@ -61,8 +61,15 @@ defineEmits<{
 .book-constraint-section {
   --product-form-section-background: var(--color-surface-quiet);
   --product-form-section-border: var(--color-border-muted);
-  --product-form-section-divider: var(--color-border-muted);
+  --product-form-section-divider: transparent;
   --product-form-section-title-text: var(--color-text-heading);
+  --product-form-section-margin-bottom: 0;
+  --product-form-section-padding: 12px;
+  --product-form-section-title-margin-bottom: 0;
+  --product-form-section-title-padding-bottom: 0;
+  --product-form-section-title-border-bottom: 0;
+  --product-form-section-title-font-size: 15px;
+  --product-form-section-title-font-weight: 700;
   --book-constraint-section-hint-text: var(--color-text-supporting);
 
   margin-top: 14px;
@@ -71,17 +78,29 @@ defineEmits<{
 
 .book-constraint-section__hint {
   margin: 0;
+  margin-top: 6px;
   color: var(--book-constraint-section-hint-text);
   font-size: 12px;
   line-height: 1.4;
 }
 
 .book-constraint-section__actions {
+  --ui-button-padding: 0;
+  --ui-button-radius: 8px;
+  --ui-button-font-size: 13px;
+  --ui-button-secondary-background: var(--color-surface-base);
+  --ui-button-secondary-color: var(--color-text-default);
+  --ui-button-secondary-border: 1px solid var(--color-border-input);
+  --ui-button-secondary-hover-background: var(--color-surface-interactive-hover);
+
+  gap: 10px;
   margin-top: 12px;
 }
 
 .book-constraint-section__action {
   flex: 1;
+  min-height: 38px;
+  font-weight: 600;
 }
 
 .book-constraint-section__status {

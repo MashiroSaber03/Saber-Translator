@@ -42,7 +42,7 @@ defineEmits<{
         </div>
       </div>
     </div>
-    <ProductActionRow class="studio-hero-section__actions" aria-label="角色概览操作">
+    <ProductActionRow appearance="accent" class="studio-hero-section__actions" aria-label="角色概览操作">
       <UiButton
         variant="primary"
         :disabled="isGenerationLocked"

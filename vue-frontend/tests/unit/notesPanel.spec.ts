@@ -110,9 +110,9 @@ describe('NotesPanel', () => {
       tone: 'neutral',
       role: 'note',
       iconName: 'file-text',
-      title: '暂无笔记',
     })
-    expect(wrapper.text()).toContain('添加笔记后会显示在这里。')
+    expect(emptyState.props('title')).toBe('')
+    expect(wrapper.text()).toContain('暂无笔记')
     expect(source).toContain("import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'")
     expect(source).toContain('class="notes-list__empty-status"')
     expect(source).not.toContain('notes-list-empty-status')

@@ -23,6 +23,7 @@ function handleSelect(bookId: string): void {
     v-model="selectedBookId"
     class="insight-book-selector"
     :books="books"
+    placeholder="-- 选择书籍 --"
     @select="handleSelect"
   />
 </template>

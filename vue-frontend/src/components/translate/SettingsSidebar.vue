@@ -85,7 +85,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
         :apply-options="applyOptions"
         :font-select-options="fontSelectOptions"
         :has-images="hasImages"
-        :disabled="!isCurrentPageReady"
+        :disabled="hasImages && !isCurrentPageReady"
         :inpaint-method-options="inpaintMethodOptions"
         :layout-direction-options="layoutDirectionOptions"
         :show-apply-options="showApplyOptions"

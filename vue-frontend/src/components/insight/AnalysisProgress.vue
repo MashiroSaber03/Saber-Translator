@@ -2,6 +2,7 @@
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
@@ -11,15 +12,15 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
-import type { AnalysisMode } from '@/types/insight'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
 import type { ApiError } from '@/types'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 
-const analysisModeOptions = [
+type AnalysisScope = 'full' | 'chapter' | 'page'
+
+const analysisModeOptions: Array<{ label: string; value: AnalysisScope }> = [
   { label: '全书', value: 'full' },
-  { label: '增量', value: 'incremental' },
   { label: '章节', value: 'chapter' },
   { label: '单页', value: 'page' }
 ]
@@ -38,7 +39,8 @@ const chapterOptions = computed(() => {
 const insightStore = useInsightStore()
 const taskCenterStore = useTaskCenterStore()
 
-const analysisMode = ref<AnalysisMode>('incremental')
+const analysisMode = ref<AnalysisScope>('full')
+const incrementalAnalysis = ref(true)
 const selectedChapterId = ref('')
 const inputPageNum = ref<number | null>(null)
 const isStarting = ref(false)
@@ -73,7 +75,7 @@ const statusLabel = computed(() => {
     case 'cancelled': return '已取消'
     case 'failed': return '分析失败'
     case 'error': return '状态异常'
-    default: return '未分析'
+    default: return insightStore.analyzedPageCount > 0 ? '部分分析' : '未分析'
   }
 })
 
@@ -133,9 +135,7 @@ const canStartAnalysis = computed(() => {
 const analysisModeDescription = computed(() => {
   switch (analysisMode.value) {
     case 'full':
-      return '使用新 run 全量重跑；完成发布前旧结果持续可读'
-    case 'incremental':
-      return '仅分析新增或原图内容已变化的页面'
+      return '全量重跑整本书（旧结果持续可读）'
     case 'chapter':
       return '仅分析选中章节的页面'
     case 'page':
@@ -166,7 +166,13 @@ const estimatedTime = computed(() => {
 const progressPercent = computed(() => Math.max(0, Math.min(100, insightStore.progressPercent)))
 
 function updateAnalysisMode(value: string | number): void {
-  analysisMode.value = value as AnalysisMode
+  const nextMode = String(value)
+  if (nextMode !== 'full' && nextMode !== 'chapter' && nextMode !== 'page') return
+  analysisMode.value = nextMode
+}
+
+function updateIncrementalAnalysis(value: boolean): void {
+  incrementalAnalysis.value = value
 }
 
 function updateSelectedChapter(value: string | number): void {
@@ -214,7 +220,7 @@ async function startAnalysis(): Promise<void> {
       options.mode = 'pages'
       options.pages = [inputPageNum.value]
     } else {
-      options.mode = analysisMode.value === 'incremental' ? 'incremental' : 'full'
+      options.mode = incrementalAnalysis.value ? 'incremental' : 'full'
     }
 
     const submission = await insightApi.startAnalysis(insightStore.currentBookId, options)
@@ -530,7 +536,10 @@ watch(analysisMode, () => {
       {{ analysisModeDescription }}
     </div>
 
-    <div v-if="showIdleButtons && estimatedTime" class="analysis-progress-panel__estimated-time">
+    <div
+      v-if="showIdleButtons && analysisMode === 'full' && estimatedTime"
+      class="analysis-progress-panel__estimated-time"
+    >
       <UiIcon name="clock" />
       <span>{{ estimatedTime }}</span>
     </div>
@@ -538,9 +547,16 @@ watch(analysisMode, () => {
     <ProductActionRow
       class="analysis-progress-panel__options-row"
       aria-label="分析附加操作"
-      justify="end"
+      justify="between"
       variant="toolbar"
     >
+      <UiCheckbox
+        class="analysis-progress-panel__incremental-checkbox"
+        :model-value="incrementalAnalysis"
+        label="增量模式"
+        aria-label="增量模式"
+        @change="updateIncrementalAnalysis"
+      />
       <UiIconButton
         size="xs"
         variant="soft"
@@ -705,6 +721,19 @@ watch(analysisMode, () => {
   width: 100%;
   padding-top: 8px;
   border-top: 1px solid var(--color-border-muted);
+}
+
+.analysis-progress-panel__incremental-checkbox {
+  --ui-checkbox-align-items: center;
+  --ui-checkbox-gap: 6px;
+  --ui-checkbox-color: var(--insight-text-secondary);
+  --ui-checkbox-input-width: 14px;
+  --ui-checkbox-input-height: 14px;
+  --ui-checkbox-input-margin: 0;
+  --ui-checkbox-input-accent-color: var(--insight-action-primary);
+  --ui-checkbox-label-font-weight: 400;
+
+  font-size: 12px;
 }
 
 </style>

@@ -46,11 +46,13 @@ watch(
   >
     <template #empty>
       <ProductStatusBanner
+        class="qa-message-list__welcome"
         tone="neutral"
         role="note"
         icon-name="message"
         title="智能问答"
       >
+        <template #icon>💬</template>
         针对已分析的漫画内容提问，获取精准回答
       </ProductStatusBanner>
     </template>
@@ -65,3 +67,28 @@ watch(
     />
   </ProductScrollStack>
 </template>
+
+<style scoped>
+.qa-message-list {
+  --product-scroll-stack-empty-justify-content: flex-start;
+}
+
+.qa-message-list__welcome {
+  --product-status-banner-flex-direction: column;
+  --product-status-banner-align-items: center;
+  --product-status-banner-justify-content: center;
+  --product-status-banner-gap: 0;
+  --product-status-banner-width: 100%;
+  --product-status-banner-padding: 58px 20px 40px;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-text-align: center;
+  --product-status-banner-icon-margin: 0 0 16px;
+  --product-status-banner-icon-font-size: 48px;
+  --product-status-banner-icon-transform: none;
+  --product-status-banner-accent: color-mix(in srgb, var(--color-action-brand) 40%, transparent);
+  --product-status-banner-title-margin-bottom: 8px;
+  --product-status-banner-title-font-size: 1.17rem;
+  --product-status-banner-body-color: var(--insight-text-secondary);
+}
+</style>

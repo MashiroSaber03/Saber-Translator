@@ -10,8 +10,10 @@ const props = withDefaults(defineProps<{
   steps: ProductWizardStep[]
   activeIndex: number
   ariaLabel?: string
+  fitContent?: boolean
 }>(), {
   ariaLabel: undefined,
+  fitContent: false,
 })
 
 const emit = defineEmits<{
@@ -36,7 +38,11 @@ function selectStep(index: number): void {
 </script>
 
 <template>
-  <nav class="product-wizard-steps" :aria-label="ariaLabel">
+  <nav
+    class="product-wizard-steps"
+    :class="{ 'product-wizard-steps--fit-content': fitContent }"
+    :aria-label="ariaLabel"
+  >
     <UiButton
       v-for="(step, index) in props.steps"
       :key="`${index}-${step.label}`"
@@ -129,6 +135,23 @@ function selectStep(index: number): void {
   overflow-wrap: anywhere;
   font-size: 14px;
   font-weight: 500;
+}
+
+@media (--breakpoint-md-up) {
+  .product-wizard-steps--fit-content {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .product-wizard-steps--fit-content .product-wizard-steps__step {
+    flex: 0 0 auto;
+    padding-inline: 12px;
+  }
+
+  .product-wizard-steps--fit-content .product-wizard-steps__label {
+    overflow-wrap: normal;
+    white-space: nowrap;
+  }
 }
 
 @media (--breakpoint-sm-down) {

@@ -13,12 +13,13 @@
           title="重新OCR此气泡"
           @click="handleOcrRecognize"
         >
-          <UiIcon name="refresh" class="bubble-editor__refresh-icon" size="14" />
+          <span class="bubble-editor__refresh-icon bubble-editor__emoji-icon" aria-hidden="true">🔄</span>
         </UiIconButton>
       </div>
       <UiTextarea
         ref="originalTextInput"
         :model-value="localOriginalText"
+        :rows="2"
         class="bubble-editor__textarea bubble-editor__textarea--original"
         placeholder="OCR识别的日语原文..."
         spellcheck="false"
@@ -26,7 +27,7 @@
       />
       <div class="bubble-editor__text-actions">
         <UiButton variant="toolbar" class="bubble-editor__text-action bubble-editor__text-action--copy" @click="copyOriginalText">
-          <UiIcon name="copy" size="14" />
+          <span class="bubble-editor__emoji-icon" aria-hidden="true">📋</span>
           <span>复制</span>
         </UiButton>
         <UiButton
@@ -35,7 +36,7 @@
           @click="toggleJpKeyboard"
           title="显示/隐藏50音键盘"
         >
-          <UiIcon name="keyboard" size="14" />
+          <span class="bubble-editor__emoji-icon" aria-hidden="true">⌨️</span>
           <span>50音</span>
         </UiButton>
       </div>
@@ -62,12 +63,13 @@
           title="重新翻译此气泡"
           @click="handleReTranslate"
         >
-          <UiIcon name="refresh" class="bubble-editor__refresh-icon" size="14" />
+          <span class="bubble-editor__refresh-icon bubble-editor__emoji-icon" aria-hidden="true">🔄</span>
         </UiIconButton>
       </div>
       <UiTextarea
         ref="translatedTextInput"
         :model-value="localTranslatedText"
+        :rows="2"
         class="bubble-editor__textarea bubble-editor__textarea--translated"
         placeholder="翻译后的中文..."
         spellcheck="false"
@@ -75,7 +77,7 @@
       />
       <div class="bubble-editor__text-actions">
         <UiButton variant="toolbar" class="bubble-editor__text-action bubble-editor__text-action--copy" @click="copyTranslatedText">
-          <UiIcon name="copy" size="14" />
+          <span class="bubble-editor__emoji-icon" aria-hidden="true">📋</span>
           <span>复制</span>
         </UiButton>
       </div>
@@ -109,6 +111,9 @@
               :max="FONT_SIZE_MAX"
               :step="FONT_SIZE_STEP"
               controls
+              controls-placement="after"
+              decrement-text="A-"
+              increment-text="A+"
               aria-label="字号"
               title="字号"
               decrement-label="减小字号"
@@ -383,7 +388,7 @@
           tone="success"
           size="sm"
           block
-          class="bubble-editor__footer-action"
+          class="bubble-editor__footer-action bubble-editor__footer-action--apply"
           @click="applyToAll"
         >
           样式同步到本页全部气泡
@@ -561,6 +566,11 @@ const {
 .bubble-editor__refresh-action--loading .bubble-editor__refresh-icon {
   display: inline-block;
   animation: spin-icon 1s linear infinite;
+}
+
+.bubble-editor__emoji-icon {
+  font-size: 14px;
+  line-height: 1;
 }
 
 .bubble-editor__textarea {
@@ -753,6 +763,8 @@ const {
 
 .bubble-editor__number-field--font {
   --ui-number-field-input-width: 60px;
+  --ui-number-field-control-width: 50px;
+  --ui-number-field-control-height: 34px;
 }
 
 .bubble-editor__number-field--compact {
@@ -844,5 +856,12 @@ const {
 
 .bubble-editor__footer-action {
   flex: 1;
+  min-height: 40px;
+}
+
+.bubble-editor__footer-action--apply {
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-soft) 100%);
+  --ui-button-primary-hover-background: var(--ui-button-primary-background);
+  --ui-button-primary-hover-shadow: 0 4px 12px color-mix(in srgb, var(--color-action-primary) 30%, transparent);
 }
 </style>

@@ -59,7 +59,21 @@ onBeforeUnmount(() => taskCenterStore.disconnect())
 
 <style scoped>
 .backend-restricted-banner {
-  width: min(760px, calc(100% - 24px));
-  margin: 12px auto 0;
+  --product-status-banner-background: var(--color-surface-card);
+
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  width: min(640px, calc(100% - 32px));
+  margin: 0;
+  box-shadow: var(--shadow-medium);
+}
+
+@media (--breakpoint-md-down) {
+  .backend-restricted-banner {
+    bottom: 12px;
+    left: 12px;
+    width: calc(100% - 24px);
+  }
 }
 </style>

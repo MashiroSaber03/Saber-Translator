@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<{
   activeTab: string
   ariaLabel?: string
   layout?: 'wrap' | 'scroll'
-  appearance?: 'segmented' | 'underline'
+  appearance?: 'segmented' | 'underline' | 'radio'
 }>(), {
   ariaLabel: undefined,
   layout: 'wrap',
@@ -92,7 +92,10 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
       @click="selectTab(tab)"
       @keydown="selectAdjacentTab($event, tab)"
     >
-      <UiIcon v-if="tab.iconName" :name="tab.iconName" size="15" />
+      <span v-if="$slots.tabIcon" class="product-segmented-tabs__icon-text" aria-hidden="true">
+        <slot name="tabIcon" :tab="tab" />
+      </span>
+      <UiIcon v-else-if="tab.iconName" :name="tab.iconName" size="15" />
       <span>{{ tab.label }}</span>
     </UiButton>
   </div>
@@ -116,13 +119,20 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 }
 
 .product-segmented-tabs__tab {
-  flex: 1 1 0;
+  position: var(--product-segmented-tabs-tab-position, static);
+  flex: var(--product-segmented-tabs-tab-flex, 1 1 0);
   justify-content: center;
-  min-width: max-content;
-  gap: 6px;
+  min-width: var(--product-segmented-tabs-tab-min-width, max-content);
+  gap: var(--product-segmented-tabs-tab-gap, 6px);
   padding: var(--product-segmented-tabs-tab-padding, 7px 12px);
+  border: var(--product-segmented-tabs-tab-border, 0);
   border-radius: var(--product-segmented-tabs-tab-radius, var(--radius-control));
+  background: var(--product-segmented-tabs-tab-background, transparent);
   color: var(--product-segmented-tabs-text, var(--color-text-supporting));
+  font-size: var(--product-segmented-tabs-tab-font-size, inherit);
+  font-weight: var(--product-segmented-tabs-tab-font-weight, inherit);
+  line-height: var(--product-segmented-tabs-tab-line-height, normal);
+  box-shadow: var(--product-segmented-tabs-tab-shadow, none);
 }
 
 .product-segmented-tabs--scroll .product-segmented-tabs__tab {
@@ -131,9 +141,16 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 
 .product-segmented-tabs__tab--active,
 .product-segmented-tabs__tab--active:hover {
+  border: var(--product-segmented-tabs-active-border, var(--product-segmented-tabs-tab-border, 0));
   background: var(--product-segmented-tabs-active-background, var(--color-surface-base));
   color: var(--product-segmented-tabs-active-text, var(--color-text-default));
   box-shadow: var(--product-segmented-tabs-active-shadow, var(--shadow-soft));
+  font-weight: var(--product-segmented-tabs-active-font-weight, var(--product-segmented-tabs-tab-font-weight, inherit));
+}
+
+.product-segmented-tabs__icon-text {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .product-segmented-tabs--appearance-underline {
@@ -158,5 +175,32 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
   background: transparent;
   color: var(--color-action-primary);
   box-shadow: none;
+}
+
+.product-segmented-tabs--appearance-radio .product-segmented-tabs__tab {
+  position: relative;
+  flex: var(--product-segmented-tabs-radio-tab-flex, 0 0 auto);
+  gap: var(--product-segmented-tabs-radio-tab-gap, 6px);
+  padding: var(--product-segmented-tabs-radio-tab-padding, 0);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.product-segmented-tabs--appearance-radio .product-segmented-tabs__tab::before {
+  box-sizing: border-box;
+  flex: 0 0 var(--product-segmented-tabs-radio-size, 12px);
+  width: var(--product-segmented-tabs-radio-size, 12px);
+  height: var(--product-segmented-tabs-radio-size, 12px);
+  border: 1px solid var(--product-segmented-tabs-radio-border, var(--color-text-secondary));
+  border-radius: 50%;
+  content: '';
+}
+
+.product-segmented-tabs--appearance-radio .product-segmented-tabs__tab--active::before {
+  border-color: var(--product-segmented-tabs-radio-active-color, var(--color-action-primary));
+  background: var(--product-segmented-tabs-radio-active-color, var(--color-action-primary));
+  box-shadow: inset 0 0 0 var(--product-segmented-tabs-radio-inner-width, 3px)
+    var(--product-segmented-tabs-radio-inner-color, var(--color-surface-base));
 }
 </style>

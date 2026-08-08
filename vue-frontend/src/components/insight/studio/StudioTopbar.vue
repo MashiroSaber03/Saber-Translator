@@ -1,8 +1,8 @@
 <template>
   <header class="studio-topbar">
     <div class="studio-topbar__left">
-      <ProductHeaderAction class="studio-topbar__action" icon-name="chevron-left" label="返回分析" @click="$emit('back')" />
-      <ProductHeaderAction class="studio-topbar__action" icon-name="users" label="角色资源" @click="$emit('open-resource')" />
+      <ProductHeaderAction class="studio-topbar__action" label="返回分析" @click="$emit('back')" />
+      <ProductHeaderAction class="studio-topbar__action" label="角色资源" @click="$emit('open-resource')" />
       <div class="studio-topbar__title-block">
         <div class="studio-topbar__title-row">
           <h1 class="studio-topbar__title">角色工坊 2.0</h1>
@@ -27,10 +27,9 @@
     </div>
 
     <div class="studio-topbar__right">
-      <ProductHeaderAction class="studio-topbar__action" icon-name="download" label="导出区" @click="$emit('open-export')" />
+      <ProductHeaderAction class="studio-topbar__action" label="导出区" @click="$emit('open-export')" />
       <ProductHeaderAction
         class="studio-topbar__action"
-        icon-name="target"
         :disabled="!hasDocument || validatePending"
         :label="validatePending ? '诊断中...' : '诊断'"
         @click="$emit('validate')"
@@ -38,7 +37,6 @@
       <ProductHeaderAction
         variant="solid"
         class="studio-topbar__action studio-topbar__action--primary"
-        icon-name="save"
         :disabled="!hasDocument || savePending"
         :label="savePending ? '保存中...' : '保存'"
         @click="$emit('save')"
@@ -72,14 +70,14 @@ defineEmits<{
 <style scoped>
 .studio-topbar {
   --studio-topbar-backdrop-background: color-mix(in srgb, var(--color-surface-card) 90%, transparent);
-  --studio-topbar-primary-action-end: var(--color-action-brand-strong);
-  --studio-topbar-primary-action-shadow: var(--shadow-action-brand);
-  --studio-topbar-primary-action-start: var(--color-action-brand);
-  --studio-topbar-status-background: color-mix(in srgb, var(--color-action-brand) 6%, transparent);
-  --studio-topbar-title-text: var(--color-text-heading);
-  --product-header-action-context-surface: var(--studio-surface-muted);
+  --studio-topbar-primary-action-end: color-mix(in srgb, var(--color-text-link-strong) 65%, var(--color-action-brand));
+  --studio-topbar-primary-action-shadow: color-mix(in srgb, var(--color-text-link-strong) 22%, transparent);
+  --studio-topbar-primary-action-start: var(--color-text-link-strong);
+  --studio-topbar-status-background: var(--studio-surface-tint-muted);
+  --studio-topbar-title-text: var(--studio-text-strong);
+  --product-header-action-context-surface: var(--studio-surface-tint);
   --product-header-action-context-text: var(--studio-text-default);
-  --product-header-action-context-hover-surface: var(--studio-surface-tint-muted);
+  --product-header-action-context-hover-surface: var(--studio-surface-tint-strong);
   --product-header-action-context-solid-surface: linear-gradient(135deg, var(--studio-topbar-primary-action-start), var(--studio-topbar-primary-action-end));
   --product-header-action-context-solid-shadow: var(--studio-topbar-primary-action-shadow);
   --product-header-action-context-solid-text: var(--color-text-inverse);

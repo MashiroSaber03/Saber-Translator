@@ -25,7 +25,7 @@
         class="translation-progress__pool"
       >
         <div class="translation-progress__pool-heading">
-          <strong>{{ poolLabel(pool.kind) }}</strong>
+          <strong>{{ stepKindLabel(pool.kind) }}</strong>
           <span>
             完成 {{ pool.completed }} / {{ pool.total }}
             · 处理中 {{ pool.processing }}
@@ -46,7 +46,7 @@
         </div>
         <UiProgressBar
           :value="poolPercent(pool)"
-          :label="`${poolLabel(pool.kind)} Pool`"
+          :label="`${stepKindLabel(pool.kind)}流水线`"
           size="sm"
           :striped="pool.processing > 0"
           :animated="pool.processing > 0"
@@ -65,6 +65,7 @@ import {
 } from '@/composables/useTranslationPipeline'
 import { useImageStore } from '@/stores/imageStore'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
+import { stepKindLabel } from '@/utils/taskDisplay'
 
 interface Props {
   progress: TranslationProgress
@@ -107,31 +108,11 @@ const progressLabel = computed(() => {
   }
   if (value.executionMode === 'sequential' && value.currentStep) {
     details.push(
-      `第 ${value.currentStep.itemOrdinal} 页 · ${poolLabel(value.currentStep.kind)}`,
+      `第 ${value.currentStep.itemOrdinal} 页 · ${stepKindLabel(value.currentStep.kind)}`,
     )
   }
   return details.length > 0 ? `${base}（${details.join('，')}）` : base
 })
-
-const POOL_LABELS: Record<string, string> = {
-  detect: '检测',
-  ocr: 'OCR',
-  color: '颜色',
-  glossary: '术语',
-  auto_glossary: '术语',
-  auto_terms: '术语',
-  translate: '翻译',
-  hq_translate: 'HQ 翻译',
-  proofread: 'AI 校对',
-  repair: '修复',
-  render: '渲染',
-  save: '保存',
-  publish: '保存',
-}
-
-function poolLabel(kind: string): string {
-  return POOL_LABELS[kind] ?? kind
-}
 
 function poolPercent(pool: TranslationPoolProgress): number {
   if (pool.total === 0) return 0

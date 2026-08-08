@@ -100,8 +100,13 @@ function tabPanelId(tabId: string): string {
           @click="selectTab(tab)"
           @keydown="selectAdjacentTab($event, tab)"
         >
+          <span
+            v-if="$slots.tabIcon"
+            class="product-tabbed-workspace__tab-icon-text"
+            aria-hidden="true"
+          ><slot name="tabIcon" :tab="tab" /></span>
           <UiIcon
-            v-if="tab.iconName"
+            v-else-if="tab.iconName"
             class="product-tabbed-workspace__tab-icon"
             :name="tab.iconName"
             :size="16"
@@ -169,6 +174,11 @@ function tabPanelId(tabId: string): string {
 
 .product-tabbed-workspace__tab-icon {
   min-width: 0;
+}
+
+.product-tabbed-workspace__tab-icon-text {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .product-tabbed-workspace__tab-label {

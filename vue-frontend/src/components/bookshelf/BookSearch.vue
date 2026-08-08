@@ -97,6 +97,7 @@ onUnmounted(clearPendingSearch)
         class="book-search__field"
         placeholder="搜索书籍名称或标签..."
         aria-label="搜索书籍"
+        :show-icon="false"
         @update:model-value="handleSearchQueryUpdate"
         @search="handleSearch"
         @clear="clearSearch"
@@ -108,7 +109,7 @@ onUnmounted(clearPendingSearch)
         title="搜索"
         @click="handleSearch"
       >
-        搜索
+        🔍
       </UiButton>
     </template>
 
@@ -126,12 +127,19 @@ onUnmounted(clearPendingSearch)
 
 <style scoped>
 .book-search__field {
+  --product-search-field-input-padding: 10px 16px;
+  --product-search-field-radius: 8px;
+
   flex: 1;
   min-width: 0;
 }
 
 .book-search__submit-action {
   flex: 0 0 auto;
+  min-width: 46px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 1rem;
 }
 
 .book-search__tags {

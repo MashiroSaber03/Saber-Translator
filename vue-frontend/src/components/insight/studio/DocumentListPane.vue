@@ -98,6 +98,14 @@ function documentChips(item: CharacterStudioSummary): ProductChipItem[] {
   --document-list-pane-active-shadow: var(--studio-shadow-floating);
   --document-list-pane-active-background: var(--color-surface-raised);
   --document-list-pane-title-text: var(--studio-text-strong);
+  --product-empty-state-align-items: flex-start;
+  --product-empty-state-justify-content: flex-start;
+  --product-empty-state-margin-inline: 0;
+  --product-empty-state-min-height: 0;
+  --product-empty-state-padding: 8px 0;
+  --product-empty-state-text-align: left;
+  --product-empty-state-title: var(--color-text-supporting);
+  --product-empty-state-title-font-weight: 400;
 
   display: flex;
   flex-direction: column;

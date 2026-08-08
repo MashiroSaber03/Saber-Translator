@@ -44,10 +44,10 @@ const emit = defineEmits<{
 }>()
 
 const settingsTabs = [
-  { id: 'basic', label: '基本设置', iconName: 'settings' },
-  { id: 'preprocess', label: '图片预处理', iconName: 'image' },
-  { id: 'advanced', label: '高级设置', iconName: 'list' },
-] satisfies Array<{ id: SettingsTab; label: string; iconName: 'settings' | 'image' | 'list' }>
+  { id: 'basic', label: '基本设置' },
+  { id: 'preprocess', label: '图片预处理' },
+  { id: 'advanced', label: '高级设置' },
+] satisfies Array<{ id: SettingsTab; label: string }>
 
 const settingsTabIds = settingsTabs.map(tab => tab.id)
 
@@ -66,11 +66,12 @@ function updateSettingsTab(tabId: string): void {
     class="web-import-settings-section"
     title="设置"
     hint="点击展开配置"
-    icon-name="settings"
+    text-toggle
     aria-label="网页导入设置"
     :expanded="settingsExpanded"
     @update:expanded="$emit('update:settingsExpanded', $event)"
   >
+    <template #icon>⚙️</template>
     <ProductSegmentedTabs
       :tabs="settingsTabs"
       :active-tab="activeSettingsTab"
@@ -81,6 +82,7 @@ function updateSettingsTab(tabId: string): void {
 
     <ProductStatusBanner
       class="web-import-settings__sync-status"
+      :class="{ 'web-import-settings__sync-status--dirty': hasUnsavedSettings }"
       :tone="hasUnsavedSettings ? 'warning' : 'success'"
       role="status"
       aria-live="polite"
@@ -150,11 +152,49 @@ function updateSettingsTab(tabId: string): void {
 }
 
 .web-import-settings__sync-status {
+  --product-status-banner-align-items: center;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-padding: 12px 14px;
+  --product-status-banner-radius: 10px;
+  --product-status-banner-min-height: 63px;
+  --product-status-banner-background: var(--color-surface-muted);
+  --product-status-banner-border: 1px solid var(--color-border-muted);
+  --product-status-banner-body-color: var(--color-status-success);
+  --product-status-banner-body-font-size: 13px;
+  --product-status-banner-body-font-weight: 500;
+  --ui-button-sm-padding: 8px 14px;
+  --ui-button-primary-background: var(--color-action-primary);
+  --ui-button-primary-hover-background: var(--color-action-primary-hover);
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-disabled-background: var(--color-action-primary);
+  --ui-button-primary-disabled-opacity: 0.6;
+
   margin-bottom: 16px;
 }
 
+.web-import-settings__sync-status--dirty {
+  --product-status-banner-body-color: var(--color-status-warning-hover);
+}
+
 .web-import-settings__tabs {
+  --product-segmented-tabs-padding: 0 0 8px;
+  --product-segmented-tabs-border: var(--color-border-muted);
+  --product-segmented-tabs-radius: 0;
+  --product-segmented-tabs-background: transparent;
+  --product-segmented-tabs-shadow: none;
+  --product-segmented-tabs-tab-padding: 8px 16px;
+  --product-segmented-tabs-tab-radius: 6px 6px 0 0;
+  --product-segmented-tabs-tab-flex: 0 0 auto;
+  --product-segmented-tabs-tab-min-width: 0;
+  --product-segmented-tabs-tab-gap: 0;
+  --product-segmented-tabs-tab-font-size: 13px;
+  --product-segmented-tabs-tab-font-weight: 400;
+  --product-segmented-tabs-active-background: var(--color-surface-muted);
+  --product-segmented-tabs-active-shadow: none;
+  --product-segmented-tabs-active-font-weight: 500;
+
   margin-bottom: 16px;
+  border-width: 0 0 1px;
 }
 
 .web-import-settings__tab-content {
@@ -162,6 +202,5 @@ function updateSettingsTab(tabId: string): void {
   max-block-size: min(52dvh, 480px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 </style>

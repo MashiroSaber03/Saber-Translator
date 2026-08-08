@@ -74,7 +74,7 @@ describe('BaseModal', () => {
     const wrapper = mountModal({ title: 'Focus Modal' })
     await nextTick()
 
-    expect(document.activeElement).toBe(getCloseButton())
+    expect(document.activeElement).toBe(getContainer())
 
     await wrapper.setProps({ modelValue: false })
     await nextTick()
@@ -91,6 +91,10 @@ describe('BaseModal', () => {
     await nextTick()
 
     const closeButton = getCloseButton()
+    getContainer().focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(closeButton)
+
     lastAction.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
     expect(document.activeElement).toBe(closeButton)

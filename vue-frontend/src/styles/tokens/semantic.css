@@ -16,6 +16,7 @@
   --color-status-error-hover: #d43f3a;
   --color-status-error-active: #c9302c;
   --color-status-error-bright: #ff6b6b;
+  --color-status-error-bright-hover: #ee5a5a;
   --color-status-error-vivid: #ff1744;
   --color-status-warning: #f0ad4e;
   --color-status-warning-hover: #eb9316;
@@ -109,6 +110,7 @@
   --color-status-error: #f87171;
   --color-status-error-hover: #ef4444;
   --color-status-error-active: #dc2626;
+  --color-status-error-bright-hover: #ef4444;
   --color-status-warning: #fbbf24;
   --color-status-warning-hover: #f59e0b;
   --color-status-info: #38bdf8;

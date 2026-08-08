@@ -125,16 +125,33 @@ function selectThumbnailPage(pageId: string | number): void {
   selectPage(Number(pageId))
 }
 
-function isChapterAnalyzed(chapter: { id: string; analyzed?: boolean }): boolean {
+type ChapterAnalysisState = 'none' | 'partial' | 'completed'
+
+function chapterAnalysisState(chapter: {
+  id: string
+  analyzed?: boolean
+  analyzedCount?: number
+}): ChapterAnalysisState {
   const state = pageLists.value.get(chapter.id)
   if (state && state.nextCursor === null && state.items.length > 0) {
-    return state.items.every(page => page.analysisState !== 'not_analyzed')
+    const analyzedCount = state.items.filter(
+      page => page.analysisState !== 'not_analyzed',
+    ).length
+    if (analyzedCount === state.items.length) return 'completed'
+    return analyzedCount > 0 ? 'partial' : 'none'
   }
-  return Boolean(chapter.analyzed)
+  if (chapter.analyzed) return 'completed'
+  return Number(chapter.analyzedCount) > 0 ? 'partial' : 'none'
 }
 
-function chapterStateChips(chapter: { id: string; startPage: number; endPage: number; analyzed?: boolean }): ProductChipItem[] {
-  const analyzed = isChapterAnalyzed(chapter)
+function chapterStateChips(chapter: {
+  id: string
+  startPage: number
+  endPage: number
+  analyzed?: boolean
+  analyzedCount?: number
+}): ProductChipItem[] {
+  const analysisState = chapterAnalysisState(chapter)
 
   return [
     {
@@ -144,8 +161,16 @@ function chapterStateChips(chapter: { id: string; startPage: number; endPage: nu
     },
     {
       id: `${chapter.id}-analysis`,
-      label: analyzed ? '已分析' : '待分析',
-      tone: analyzed ? 'success' : 'neutral',
+      label: analysisState === 'completed'
+        ? '已分析'
+        : analysisState === 'partial'
+          ? '部分分析'
+          : '待分析',
+      tone: analysisState === 'completed'
+        ? 'success'
+        : analysisState === 'partial'
+          ? 'warning'
+          : 'neutral',
     },
   ]
 }

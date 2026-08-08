@@ -8,7 +8,7 @@
     @close="handleClose"
   >
     <div class="constraint-modal-body">
-      <ProductStatusBanner tone="info" role="note">
+      <ProductStatusBanner class="constraint-modal-body__description" tone="info" role="note">
         命中当前文本的禁翻内容会被保护为占位符，翻译完成后再还原。
       </ProductStatusBanner>
       <UiCheckbox
@@ -160,6 +160,16 @@ async function handleSave(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.constraint-modal-body__description {
+  --product-status-banner-gap: 0;
+  --product-status-banner-padding: 0;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-body-color: var(--color-text-secondary);
+  --product-status-banner-body-font-size: 13px;
 }
 
 </style>

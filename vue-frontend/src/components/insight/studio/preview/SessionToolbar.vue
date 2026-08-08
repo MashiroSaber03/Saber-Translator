@@ -132,6 +132,7 @@ onUnmounted(() => {
           </UiButton>
           <ProductStatusBanner
             v-if="archivedSessions.length === 0"
+            class="session-toolbar__archive-empty"
             icon-name="message"
             role="note"
             tone="neutral"
@@ -189,7 +190,7 @@ onUnmounted(() => {
         </UiButton>
       </div>
     </div>
-    <ProductActionRow class="session-toolbar__actions" aria-label="聊天会话操作" justify="start" variant="toolbar">
+    <ProductActionRow appearance="accent" class="session-toolbar__actions" aria-label="聊天会话操作" justify="start" variant="toolbar">
       <UiButton variant="secondary" :disabled="!hasDocument || chatMutating || chatStreaming" size="sm" @click="$emit('new-session')">
         新对话
       </UiButton>
@@ -335,8 +336,8 @@ onUnmounted(() => {
   padding: 10px;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--color-surface-card) 88%, transparent);
-  box-shadow: 0 18px 38px var(--shadow-medium);
+  background: var(--color-surface-card);
+  box-shadow: 0 18px 38px color-mix(in srgb, var(--color-text-heading) 18%, transparent);
 }
 
 .session-toolbar__session-item {
@@ -361,7 +362,7 @@ onUnmounted(() => {
 
 .session-toolbar__session-item:hover,
 .session-toolbar__session-item--active {
-  background: color-mix(in srgb, var(--color-action-brand) 6%, transparent);
+  background: color-mix(in srgb, var(--color-text-link-strong) 8%, transparent);
 }
 
 .session-toolbar__session-item--current {
@@ -402,6 +403,16 @@ onUnmounted(() => {
   border-radius: 999px;
   background: var(--studio-surface-tint-muted);
   color: var(--color-text-link-strong);
+}
+
+.session-toolbar__archive-empty {
+  --product-status-banner-icon-display: none;
+  --product-status-banner-title-display: none;
+  --product-status-banner-padding: 12px 14px;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-body-color: var(--studio-text-muted);
+  --product-status-banner-body-font-size: 13px;
 }
 
 .session-toolbar__actions {

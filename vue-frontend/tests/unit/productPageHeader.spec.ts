@@ -86,6 +86,15 @@ describe('ProductPageHeader', () => {
     await button.trigger('click')
     expect(button.emitted('click')).toHaveLength(1)
 
+    const textIconButton = mount(ProductHeaderAction, {
+      props: {
+        iconOnly: true,
+        ariaLabel: '阅读设置',
+      },
+      slots: { icon: '⚙️' },
+    })
+    expect(textIconButton.get('.product-header-action__icon-text').text()).toBe('⚙️')
+
     const external = mount(ProductHeaderAction, {
       props: {
         as: 'a',

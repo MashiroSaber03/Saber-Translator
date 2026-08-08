@@ -10,12 +10,14 @@ const props = withDefaults(defineProps<{
   modelValue: string
   placeholder?: string
   rows?: number | string
+  showSubmitIcon?: boolean
   submitLabel?: string
 }>(), {
   disabled: false,
   inputLabel: undefined,
   placeholder: '',
   rows: 1,
+  showSubmitIcon: true,
   submitLabel: '发送',
 })
 
@@ -61,7 +63,7 @@ function handleKeydown(event: KeyboardEvent): void {
       :disabled="submitDisabled"
       @click="submit"
     >
-      <UiIcon name="send" />
+      <UiIcon v-if="showSubmitIcon" name="send" />
       <span>{{ submitLabel }}</span>
     </UiButton>
   </div>

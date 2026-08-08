@@ -15,6 +15,7 @@ defineEmits<{
 
 <template>
   <ProductSectionHeader title="笔记" icon-name="file-text" size="sm">
+    <template #icon>📝</template>
     <template #actions>
       <UiSelect
         :model-value="filter"

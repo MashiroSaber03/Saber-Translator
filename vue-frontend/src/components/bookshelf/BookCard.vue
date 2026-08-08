@@ -78,7 +78,7 @@ function handleImageError() {
           loading="lazy"
           @error="handleImageError"
         >
-        <div v-else class="book-card__cover-placeholder">无封面</div>
+        <div v-else class="book-card__cover-placeholder" aria-label="无封面">📖</div>
       </div>
 
       <div class="book-card__info">
@@ -225,8 +225,8 @@ function handleImageError() {
   left: 50%;
   transform: translate(-50%, -50%);
   color: var(--book-card-cover-placeholder);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 3rem;
+  font-weight: 400;
   letter-spacing: 0;
   white-space: nowrap;
 }

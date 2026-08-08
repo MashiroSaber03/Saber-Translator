@@ -86,7 +86,11 @@ class ProcessEpochRepository:
                 connection.execute(
                     insert(api_executor_leases).values(
                         api_epoch_id=registration.epoch_id,
-                        lease_token=registration.token,
+                        # The Launcher-issued epoch token must remain a
+                        # process-only secret.  This legacy-named column stores
+                        # the same irreversible digest as process_epochs rather
+                        # than duplicating the plaintext token in SQLite.
+                        lease_token=hash_epoch_token(registration.token),
                         heartbeat_at=now,
                         lease_expires_at=expires_at,
                     )
@@ -95,7 +99,7 @@ class ProcessEpochRepository:
                 connection.execute(
                     insert(worker_leases).values(
                         worker_epoch_id=registration.epoch_id,
-                        lease_token=registration.token,
+                        lease_token=hash_epoch_token(registration.token),
                         heartbeat_at=now,
                         lease_expires_at=expires_at,
                     )
@@ -177,7 +181,7 @@ class ProcessEpochRepository:
                     update(lease_table)
                     .where(
                         epoch_column == epoch_id,
-                        lease_table.c.lease_token == token,
+                        lease_table.c.lease_token == token_hash,
                         lease_table.c.lease_expires_at > now,
                     )
                     .values(heartbeat_at=now, lease_expires_at=expires_at)

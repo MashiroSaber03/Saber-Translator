@@ -1,7 +1,7 @@
 <script setup lang="ts">
 
-import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
+import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -136,40 +136,39 @@ function clearError() {
       :disabled="isLoading"
       @select="handleFileSelect"
     >
-      <template #default="{ isDragging: dropzoneDragging }">
-        <div class="image-upload__drop-content">
-          <UiIcon name="upload" class="image-upload__drop-icon" size="30" />
-          <p class="image-upload__drop-title">
-            {{ dropzoneDragging ? '释放文件开始导入' : '拖拽图片、PDF、CBZ 或电子书到这里' }}
-          </p>
-          <p class="image-upload__drop-hint">点击此区域选择文件</p>
-        </div>
+      <template #default>
+        <span aria-hidden="true" />
       </template>
     </ProductFileDropzone>
     <ProductActionRow
-      class="image-upload__actions"
+      class="image-upload__drop-title"
       aria-label="其他导入方式"
       justify="center"
-      variant="toolbar"
     >
+      拖拽图片、PDF或MOBI文件到这里，或
+      <span class="image-upload__select-link">选择文件</span>
+      <span class="image-upload__separator">|</span>
       <UiButton
-        variant="secondary"
+        class="image-upload__inline-action"
+        variant="link"
         size="sm"
         :disabled="isLoading"
         aria-label="选择本地图片文件夹"
-        @click="triggerFolderSelect"
+        @click.stop="triggerFolderSelect"
       >
-        <UiIcon name="folder-open" size="16" />
+        <UiIcon name="folder-open" size="15" />
         <span>选择文件夹</span>
       </UiButton>
+      <span class="image-upload__separator" aria-hidden="true">|</span>
       <UiButton
-        variant="secondary"
+        class="image-upload__inline-action"
+        variant="link"
         size="sm"
         :disabled="isLoading"
         aria-label="从网页导入漫画图片"
-        @click="triggerWebImport"
+        @click.stop="triggerWebImport"
       >
-        <UiIcon name="globe" size="16" />
+        <UiIcon name="globe" size="15" />
         <span>从网页导入</span>
       </UiButton>
     </ProductActionRow>
@@ -211,13 +210,11 @@ function clearError() {
 .image-upload {
   /* owner tokens: image-upload */
   --image-upload-drop-title: var(--color-text-default);
-  --image-upload-drop-hint: var(--color-text-secondary);
-  --image-upload-drop-icon: var(--color-action-primary);
-  --product-file-dropzone-padding: 38px 24px;
+  --product-file-dropzone-padding: 40px;
   --product-file-dropzone-radius: 12px;
   --product-file-dropzone-background: var(--color-surface-app);
   --product-file-dropzone-background-hover: var(--color-surface-interactive-hover);
-  --product-file-dropzone-border: var(--color-border-muted);
+  --product-file-dropzone-border: var(--color-border-default);
   --product-file-dropzone-border-hover: var(--color-border-accent);
   --product-file-dropzone-color: var(--color-text-secondary);
 
@@ -226,39 +223,52 @@ function clearError() {
 }
 
 .image-upload__dropzone {
-  width: min(100%, 720px);
-  min-height: 150px;
-  margin: 0 auto 12px;
-}
-
-.image-upload__drop-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 86px;
-}
-
-.image-upload__drop-icon {
-  color: var(--image-upload-drop-icon);
+  width: 85%;
+  min-height: 160px;
+  margin: 0 auto 15px;
 }
 
 .image-upload__drop-title {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  z-index: var(--z-local);
+  width: calc(85% - 80px);
   margin: 0;
   color: var(--image-upload-drop-title);
-  font-size: 1.02rem;
+  font-size: 1.1em;
+  font-weight: 400;
+  line-height: 1.6;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.image-upload__select-link,
+.image-upload__inline-action {
+  color: var(--color-action-primary);
   font-weight: 700;
 }
 
-.image-upload__drop-hint {
-  margin: 0;
-  color: var(--image-upload-drop-hint);
-  font-size: 0.9rem;
+.image-upload__inline-action {
+  --ui-button-link-color: var(--color-action-primary);
+  --ui-button-link-font-size: 1em;
+  --ui-button-link-font-weight: 700;
+  --ui-button-link-text-decoration: underline;
+
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: baseline;
+  pointer-events: auto;
 }
 
-.image-upload__actions {
-  margin-bottom: 15px;
+.image-upload__select-link {
+  text-decoration: underline;
+}
+
+.image-upload__separator {
+  margin: 0 4px;
+  color: var(--color-border-default);
+  font-weight: 400;
 }
 
 .image-upload__error-banner {
@@ -268,5 +278,17 @@ function clearError() {
 
 .image-upload__error-text {
   font-weight: 600;
+}
+
+@media (--breakpoint-md-down) {
+  .image-upload__dropzone {
+    width: 100%;
+    min-height: 150px;
+  }
+
+  .image-upload__drop-title {
+    top: 75px;
+    width: calc(100% - 80px);
+  }
 }
 </style>

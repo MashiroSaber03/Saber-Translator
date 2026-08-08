@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import BaseModal from '@/components/common/BaseModal.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import { useWebImportModal } from './useWebImportModal'
 import WebImportExtractBar from './web-import/WebImportExtractBar.vue'
 import WebImportFooterActions from './web-import/WebImportFooterActions.vue'
@@ -76,15 +75,17 @@ const {
     custom-class="web-import-modal"
     frame-variant="floating"
     divider-variant="soft"
-    max-width="800px"
-    footer-padding="16px 20px"
+    max-width="900px"
+    header-padding="16px 20px 20px"
+    body-padding-value="13px 20px 17px"
+    footer-padding="17px 20px"
     :close-on-overlay="!isProcessing"
     :close-on-esc="!isProcessing"
     @close="handleClose"
   >
     <template #title>
       <span class="web-import-modal__title">
-        <UiIcon name="globe" />
+        <span aria-hidden="true">🌐</span>
         <span>从网页导入漫画</span>
       </span>
     </template>
@@ -175,5 +176,11 @@ const {
 
 .web-import-modal__body {
   display: block;
+
+  --ui-button-primary-background: var(--color-border-info);
+  --ui-button-primary-hover-background: color-mix(in srgb, var(--color-border-info) 84%, var(--color-overlay-backdrop-solid));
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-disabled-background: var(--color-border-info);
+  --ui-button-primary-disabled-opacity: 0.6;
 }
 </style>

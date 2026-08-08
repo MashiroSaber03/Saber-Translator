@@ -5,11 +5,11 @@
         <h3 class="task-workbench__title">状态任务</h3>
         <p class="task-workbench__description">用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
       </div>
-      <ProductActionRow aria-label="状态任务操作">
+      <ProductActionRow appearance="accent" aria-label="状态任务操作">
         <UiButton variant="secondary" :disabled="generating" @click="$emit('generate')">
           {{ generating ? '生成中...' : 'AI 生成任务' }}
         </UiButton>
-        <UiButton variant="primary" @click="$emit('add')">添加任务</UiButton>
+        <UiButton variant="secondary" @click="$emit('add')">添加任务</UiButton>
       </ProductActionRow>
     </div>
 
@@ -31,7 +31,7 @@
             variant="studio"
             @update:model-value="$emit('update:field', index, 'name', String($event))"
           />
-          <ProductActionRow aria-label="状态任务条目操作">
+          <ProductActionRow appearance="accent" aria-label="状态任务条目操作">
             <UiButton variant="secondary" tone="danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
           </ProductActionRow>
         </div>

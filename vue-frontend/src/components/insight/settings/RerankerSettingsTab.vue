@@ -137,6 +137,7 @@ useInsightSettingsDraft<StoreRerankerConfig>({
 
 <template>
   <InsightSettingsPanel
+    class="reranker-settings-tab"
     description="Reranker（重排序模型）用于对搜索结果进行重新排序，提高问答准确性。"
   >
     <InsightModelProviderSection
@@ -157,6 +158,7 @@ useInsightSettingsDraft<StoreRerankerConfig>({
       :model-options="modelOptions"
       :model-count="modelCount"
       :show-base-url="showBaseUrl"
+      test-placement="panel-end"
       :testing="isTesting"
       @provider-change="onProviderChange"
       @model-change="selectModel"
@@ -217,3 +219,11 @@ useInsightSettingsDraft<StoreRerankerConfig>({
     </UiField>
   </InsightSettingsPanel>
 </template>
+
+<style scoped>
+.reranker-settings-tab {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+}
+</style>

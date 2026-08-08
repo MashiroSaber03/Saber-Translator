@@ -29,7 +29,12 @@ import CharacterStudioEntryPanel from '@/components/insight/CharacterStudioEntry
 import * as insightApi from '@/api/insight'
 import { getBookDetail } from '@/api/bookshelf'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
-import { projectInsightPageProgress } from '@/utils/insightJobProgress'
+import {
+  projectInsightPageProgress,
+  projectTerminalInsightPageProgress,
+  type InsightTerminalEventType,
+} from '@/utils/insightJobProgress'
+import { stepKindLabel } from '@/utils/taskDisplay'
 import type { BookData, ChapterData, ChapterInfo } from '@/types'
 
 const route = useRoute()
@@ -40,13 +45,17 @@ const taskCenterStore = useTaskCenterStore()
 
 type InsightTabId = 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'
 
-const insightTabs: Array<{ id: InsightTabId; label: string; iconName: UiIconName }> = [
-  { id: 'overview', label: '概览', iconName: 'bar-chart' },
-  { id: 'qa', label: '智能问答', iconName: 'message' },
-  { id: 'timeline', label: '时间线', iconName: 'clock' },
-  { id: 'continuation', label: '续写', iconName: 'palette' },
-  { id: 'character_studio', label: '角色工坊', iconName: 'book-marked' },
+const insightTabs: Array<{ id: InsightTabId; label: string; iconName: UiIconName; glyph: string }> = [
+  { id: 'overview', label: '概览', iconName: 'bar-chart', glyph: '📊' },
+  { id: 'qa', label: '智能问答', iconName: 'message', glyph: '💬' },
+  { id: 'timeline', label: '时间线', iconName: 'clock', glyph: '📈' },
+  { id: 'continuation', label: '续写', iconName: 'palette', glyph: '🎨' },
+  { id: 'character_studio', label: '角色工坊', iconName: 'book-marked', glyph: '🃏' },
 ]
+
+function insightTabGlyph(tabId: string): string {
+  return insightTabs.find(tab => tab.id === tabId)?.glyph ?? ''
+}
 
 const activeTab = ref<InsightTabId>('overview')
 const showSettingsModal = ref(false)
@@ -142,6 +151,7 @@ async function loadBook(bookId: string): Promise<void> {
             startPage: chapter.start_page,
             endPage: chapter.end_page,
             analyzed: chapter.analyzed,
+            analyzedCount: chapter.analyzed_count,
           })))
         }
       } catch {
@@ -206,7 +216,7 @@ function projectActiveInsightJob(): void {
   insightStore.updateProgress(
     progress.current,
     progress.total,
-    progress.currentStepKind,
+    progress.currentStepKind ? stepKindLabel(progress.currentStepKind) : undefined,
   )
 }
 
@@ -326,8 +336,15 @@ watch(
       : event.type === 'job_cancelled'
         ? 'cancelled'
         : 'failed'
+    const terminalProgress = projectTerminalInsightPageProgress(
+      relatedJob.progress,
+      event.type as InsightTerminalEventType,
+    )
     await loadAnalysisStatus()
     if (!isInsightViewMounted) return
+    if (terminalProgress.total > 0) {
+      insightStore.updateProgress(terminalProgress.current, terminalProgress.total)
+    }
     insightStore.setAnalysisStatus(terminalStatus)
     insightStore.setCurrentTaskId(null)
     insightStore.triggerDataRefresh()
@@ -412,17 +429,17 @@ watch(
               class="insight-view__book-cover"
             >
             <div v-else class="insight-view__book-cover-placeholder">
-              <UiIcon name="book-open" size="26" />
+              <span aria-hidden="true">📖</span>
             </div>
           </div>
           <h2 class="insight-view__book-title" :title="currentBook?.title">{{ currentBook?.title || '选择书籍' }}</h2>
           <div class="insight-view__book-meta">
             <span class="insight-view__book-meta-item">
-              <UiIcon name="file-text" class="insight-view__book-meta-icon" />
+              <span class="insight-view__book-meta-icon" aria-hidden="true">📄</span>
               <span>{{ currentBook?.totalPages || 0 }}</span> 页
             </span>
             <span class="insight-view__book-meta-item">
-              <UiIcon name="bar-chart" class="insight-view__book-meta-icon" />
+              <span class="insight-view__book-meta-icon" aria-hidden="true">📊</span>
               <span>{{ insightStore.analyzedPageCount }}</span> 已分析
             </span>
           </div>
@@ -435,7 +452,7 @@ watch(
 
       <div class="insight-view__content">
         <div v-if="!hasSelectedBook" class="insight-view__select-book-prompt">
-          <UiIcon name="book-open" class="insight-view__select-book-icon" size="42" />
+          <span class="insight-view__select-book-icon" aria-hidden="true">📚</span>
           <h2 class="insight-view__select-book-title">选择要分析的书籍</h2>
           <p class="insight-view__select-book-description">从下方列表中选择一本书籍开始智能分析</p>
           <BookSelector @select="loadBook" />
@@ -449,6 +466,7 @@ watch(
           aria-label="漫画分析工作区"
           @select="switchTab"
         >
+          <template #tabIcon="{ tab }">{{ insightTabGlyph(tab.id) }}</template>
           <template #beforeTabs>
             <UiIconButton
               class="insight-view__mobile-nav-button"
@@ -544,7 +562,7 @@ watch(
   --product-tabbed-workspace-border: var(--insight-view-sidebar-divider);
   --product-tabbed-workspace-tab-text: var(--insight-text-secondary);
   --product-tabbed-workspace-tab-background-hover: var(--insight-surface-tertiary);
-  --product-tabbed-workspace-tab-background-active: var(--insight-action-primary);
+  --product-tabbed-workspace-tab-background-active: var(--color-action-primary);
 }
 
 .insight-view__mobile-nav-button {

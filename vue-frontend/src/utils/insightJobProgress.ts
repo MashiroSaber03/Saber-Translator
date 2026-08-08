@@ -6,6 +6,8 @@ export interface InsightPageProgress {
   currentStepKind: string
 }
 
+export type InsightTerminalEventType = 'job_finished' | 'job_failed' | 'job_cancelled'
+
 export function projectInsightPageProgress(
   progress: V2Job['progress'],
 ): InsightPageProgress {
@@ -25,5 +27,17 @@ export function projectInsightPageProgress(
     ),
     total: pagePool.total,
     currentStepKind,
+  }
+}
+
+export function projectTerminalInsightPageProgress(
+  progress: V2Job['progress'],
+  eventType: InsightTerminalEventType,
+): InsightPageProgress {
+  const projected = projectInsightPageProgress(progress)
+  return {
+    ...projected,
+    current: eventType === 'job_finished' ? projected.total : projected.current,
+    currentStepKind: '',
   }
 }

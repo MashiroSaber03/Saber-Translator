@@ -112,7 +112,7 @@ defineExpose({
       >
         <div class="edit-image-comparison__panel-header">
           <span class="edit-image-comparison__panel-title">
-            <UiIcon name="book-open" size="14" />
+            <span class="edit-image-comparison__panel-title-icon" aria-hidden="true">📖</span>
             <span>原图 (日文)</span>
           </span>
           <UiIconButton
@@ -189,7 +189,7 @@ defineExpose({
       >
         <div class="edit-image-comparison__panel-header">
           <span class="edit-image-comparison__panel-title">
-            <UiIcon name="file-text" size="14" />
+            <span class="edit-image-comparison__panel-title-icon" aria-hidden="true">📝</span>
             <span>{{ processedImageLabel }}</span>
           </span>
           <UiIconButton
@@ -339,6 +339,11 @@ defineExpose({
   font-weight: 500;
 }
 
+.edit-image-comparison__panel-title-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .edit-image-comparison__image-panel--original .edit-image-comparison__panel-title {
   color: var(--edit-image-comparison-original-title-text);
 }
@@ -348,7 +353,29 @@ defineExpose({
 }
 
 .edit-image-comparison__panel-toggle {
+  --ui-button-icon-width: 24px;
+  --ui-button-icon-height: 24px;
+
   color: var(--color-text-inverse);
+}
+
+.edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-header {
+  align-items: flex-start;
+}
+
+.edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-title {
+  display: block;
+  flex: 0 0 13px;
+  width: 13px;
+  min-width: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-title-icon {
+  display: block;
+  margin-bottom: 2px;
 }
 
 .edit-image-comparison__viewport {
@@ -502,19 +529,10 @@ defineExpose({
 
 .edit-image-comparison--layout-vertical .edit-image-comparison__canvas-region {
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
 }
 
 .edit-image-comparison--layout-vertical .edit-image-comparison__image-panel {
-  min-width: 0;
   min-height: 150px;
-}
-
-.edit-image-comparison--layout-vertical .edit-image-comparison__image-panel--collapsed {
-  flex: 0 0 40px;
-  min-width: 0;
-  min-height: 40px;
 }
 
 .edit-image-comparison--layout-vertical .edit-image-comparison__editor-panel {

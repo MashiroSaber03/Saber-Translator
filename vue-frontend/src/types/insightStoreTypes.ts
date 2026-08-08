@@ -32,6 +32,7 @@ export interface ChapterInfo {
   startPage: number
   endPage: number
   analyzed: boolean
+  analyzedCount?: number
   summary?: string
 }
 

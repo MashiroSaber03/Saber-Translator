@@ -1,5 +1,9 @@
 <template>
-  <ProductWorkspacePanel variant="wizard" aria-label="续写工作区">
+  <ProductWorkspacePanel
+    class="continuation-panel__workspace"
+    variant="wizard"
+    aria-label="续写工作区"
+  >
     <div class="continuation-panel">
       <ProductStatusBanner
         v-if="workflowMessage"
@@ -23,7 +27,7 @@
         >
           <span v-if="state.isSyncingAnalysis.value">同步中...</span>
           <template v-else>
-            <UiIcon name="refresh" />
+            <span aria-hidden="true">🔄</span>
             <span>同步分析数据</span>
           </template>
         </UiButton>
@@ -33,12 +37,15 @@
         :steps="wizardSteps"
         :active-index="state.currentStep.value"
         aria-label="续写步骤"
+        fit-content
         @select="navigateToStep"
       />
       <div class="continuation-panel__step-content">
         <div v-if="state.currentStep.value === 0" class="continuation-panel__step-panel">
-          <ProductSectionHeader title="续写设置" icon-name="file-text" />
-          <UiFormGrid>
+          <ProductSectionHeader title="续写设置" icon-name="file-text">
+            <template #icon>📝</template>
+          </ProductSectionHeader>
+          <UiFormGrid class="continuation-panel__settings-grid">
             <UiField
               variant="settings"
               label="续写页数"
@@ -89,7 +96,7 @@
           />
           <ProductActionRow aria-label="续写设置操作" divider justify="between">
             <UiButton variant="danger" @click="requestClearAndRestart">
-              <UiIcon name="trash" />
+              <span aria-hidden="true">🗑️</span>
               <span>清除数据重新开始</span>
             </UiButton>
             <UiButton variant="primary" :disabled="!canProceedToScript" @click="goToStep(1)">
@@ -304,7 +311,7 @@ const analysisSyncStatus = computed(() => {
     return '正在同步最新分析数据...'
   }
   if (!state.isDataReady.value) {
-    return state.errorMessage.value || '缺少故事概要或时间线，暂不可续写'
+    return workflowMessage.value || '续写前置数据尚未就绪'
   }
   if (state.lastAnalysisSyncAt.value) {
     const syncDate = new Date(state.lastAnalysisSyncAt.value)
@@ -606,10 +613,25 @@ onBeforeUnmount(() => {
 <style scoped>
 .continuation-panel {
   --continuation-panel-sync-background: var(--color-surface-quiet);
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+  --ui-input-background: var(--color-surface-muted);
+  --ui-input-sm-min-height: 38px;
+  --ui-input-sm-padding: 9px 12px;
+  --ui-textarea-min-height: 0;
+  --ui-textarea-panel-padding: 10px 12px;
+  --ui-textarea-panel-line-height: normal;
 
   width: 100%;
   min-width: 0;
   min-height: 100%;
+}
+
+.continuation-panel__workspace {
+  --product-workspace-panel-border: transparent;
+  --product-workspace-panel-radius: 0;
+  --product-workspace-panel-shadow: none;
 }
 
 .continuation-panel__sync-bar {
@@ -646,10 +668,16 @@ onBeforeUnmount(() => {
 
 .continuation-panel__message {
   margin-bottom: 16px;
+
+  --product-status-banner-icon-display: none;
 }
 
 .continuation-panel__steps {
   margin-bottom: 24px;
+}
+
+.continuation-panel__settings-grid {
+  grid-template-columns: 1fr;
 }
 
 .continuation-panel__step-content {

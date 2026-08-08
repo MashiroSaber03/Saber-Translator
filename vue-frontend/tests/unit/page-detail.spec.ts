@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { useInsightStore } from '@/stores/insightStore'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -275,12 +276,13 @@ describe('PageDetail', () => {
       iconName: 'file-text',
       size: 'sm',
     })
+    expect(header.get('.product-section-header__icon-text').text()).toBe('📄')
     expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
     expect(source).not.toContain('class="section-title"')
     expect(source).not.toContain('.section-title')
   })
 
-  it('uses product status feedback when no page is selected', async () => {
+  it('uses the product empty state when no page is selected', async () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/insight/PageDetail.vue'), 'utf8')
     expect(source).toContain('ProductStatusBanner')
     expect(source).not.toContain('placeholder-text')
@@ -301,12 +303,12 @@ describe('PageDetail', () => {
     })
     await nextTick()
 
-    const banner = wrapper.getComponent(ProductStatusBanner)
-    expect(banner.props()).toMatchObject({
-      iconName: 'file-text',
-      title: '选择页面查看详情',
-      tone: 'neutral',
+    const emptyState = wrapper.getComponent(ProductEmptyState)
+    expect(emptyState.props()).toMatchObject({
+      title: '点击左侧导航树中的页面查看详情',
+      role: 'note',
     })
+    expect(emptyState.get('.product-empty-state__icon-text').text()).toBe('📄')
     expect(getPageDataMock).not.toHaveBeenCalled()
   })
 
@@ -376,9 +378,10 @@ describe('PageDetail', () => {
     expect(unanalyzedWrapper.getComponent(ProductStatusBanner).props()).toMatchObject({
       iconName: 'file-text',
       role: 'note',
-      title: '此页尚未分析',
       tone: 'neutral',
     })
+    expect(unanalyzedWrapper.getComponent(ProductStatusBanner).props('title')).toBe('')
+    expect(unanalyzedWrapper.getComponent(ProductStatusBanner).text()).toBe('此页尚未分析，点击下方按钮开始分析')
 
     getPageDataMock.mockReset()
     getPageDataMock.mockResolvedValueOnce({

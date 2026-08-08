@@ -8,7 +8,7 @@
     @close="handleClose"
   >
     <div class="constraint-modal-body">
-      <ProductStatusBanner tone="info" role="note">
+      <ProductStatusBanner class="constraint-modal-body__description" tone="info" role="note">
         命中当前文本的术语会追加到翻译提示词中，并在翻译完成后做术语检查。
       </ProductStatusBanner>
       <UiCheckbox
@@ -21,7 +21,7 @@
         label="自动添加术语"
         @change="toggleAutoExtractEnabled"
       />
-      <ProductStatusBanner tone="neutral" role="note">
+      <ProductStatusBanner class="constraint-modal-body__description" tone="neutral" role="note">
         仅书架模式生效。开启后会在当前页正式翻译前，自动从 OCR
         结果中提取专有名词和人名并写入本书术语表。
       </ProductStatusBanner>
@@ -29,8 +29,10 @@
         variant="dialog"
         label="自动术语提取提示词"
         control-id="autoGlossaryPrompt"
-        description="默认会显示内置提示词，你可以直接在此基础上修改；如果你把内容全部删空后保存，系统会自动恢复为默认提示词。"
       >
+        <p class="constraint-modal-body__field-description">
+          默认会显示内置提示词，你可以直接在此基础上修改；如果你把内容全部删空后保存，系统会自动恢复为默认提示词。
+        </p>
         <UiTextarea
           id="autoGlossaryPrompt"
           :model-value="draft.autoExtractPrompt"
@@ -40,11 +42,15 @@
           @update:model-value="updateAutoExtractPrompt"
         />
       </UiField>
-      <ProductActionRow aria-label="自动术语提取提示词操作">
+      <ProductActionRow
+        class="constraint-modal-body__reset-row"
+        aria-label="自动术语提取提示词操作"
+      >
         <UiButton
           type="button"
           variant="secondary"
           size="sm"
+          block
           class="reset-auto-glossary-prompt-btn"
           @click="resetAutoExtractPrompt"
         >
@@ -222,6 +228,33 @@ async function handleSave(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 14px;
+
+  --ui-textarea-panel-line-height: normal;
+  --ui-textarea-panel-padding: 10px 12px;
+  --ui-textarea-height: 120px;
+}
+
+.constraint-modal-body__description {
+  --product-status-banner-gap: 0;
+  --product-status-banner-padding: 0;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-body-color: var(--color-text-secondary);
+  --product-status-banner-body-font-size: 13px;
+}
+
+.constraint-modal-body__reset-row {
+  align-items: stretch;
+  margin-top: -10px;
+  margin-bottom: 13px;
+}
+
+.constraint-modal-body__field-description {
+  margin: 6px 0 10px;
+  color: var(--color-text-supporting);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 </style>

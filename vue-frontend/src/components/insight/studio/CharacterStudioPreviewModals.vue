@@ -83,10 +83,12 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
       accessibility-label="选择开场白"
       :items="greetingItems"
       :model-value="selectedGreetingId"
+      variant="compact"
       @update:model-value="$emit('update:selectedGreetingId', $event)"
     />
     <template #footer>
       <ProductActionRow
+        appearance="accent"
         class="character-studio-preview-modals__actions"
         aria-label="开场白选择操作"
         variant="dialog"
@@ -128,7 +130,7 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
       {{ promptPreviewError }}
     </ProductStatusBanner>
     <div v-else-if="promptPreview.trim()" class="character-studio-preview-modals__prompt-body">
-      <ProductActionRow class="character-studio-preview-modals__prompt-tools" aria-label="提示词预览操作">
+      <ProductActionRow appearance="accent" class="character-studio-preview-modals__prompt-tools" aria-label="提示词预览操作">
         <UiButton variant="secondary" @click="$emit('copy-prompt-preview')" size="sm">
           复制内容
         </UiButton>
@@ -161,20 +163,40 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
 
 <style scoped>
 .character-studio-preview-modals__copy-text {
-  color: var(--studio-text-default);
+  color: var(--color-text-supporting);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .character-studio-preview-modals__greeting-grid {
   --product-choice-card-grid-gap: 12px;
-  --product-choice-card-grid-item-background: color-mix(in srgb, var(--color-surface-card) 86%, transparent);
-  --product-choice-card-grid-item-background-selected: var(--studio-surface-tint);
-  --product-choice-card-grid-item-border: var(--studio-border-default);
-  --product-choice-card-grid-item-border-selected: color-mix(in srgb, var(--color-action-brand) 28%, transparent);
-  --product-choice-card-grid-item-radius: 16px;
+  --product-choice-card-grid-columns: repeat(2, minmax(0, 1fr));
+  --product-choice-card-grid-item-align-items: stretch;
+  --product-choice-card-grid-item-justify-content: flex-start;
+  --product-choice-card-grid-item-min-height: 0;
+  --product-choice-card-grid-item-text-align: left;
+  --product-choice-card-grid-item-background: color-mix(in srgb, var(--color-surface-page) 84%, transparent);
+  --product-choice-card-grid-item-background-selected: color-mix(in srgb, var(--color-text-link-strong) 10%, transparent);
+  --product-choice-card-grid-item-border: color-mix(in srgb, var(--color-text-heading) 8%, transparent);
+  --product-choice-card-grid-item-border-width: 1px;
+  --product-choice-card-grid-item-border-selected: color-mix(in srgb, var(--color-text-link-strong) 28%, transparent);
+  --product-choice-card-grid-item-radius: 18px;
   --product-choice-card-grid-item-padding: 16px;
-  --product-choice-card-grid-item-shadow-hover: 0 0 0 2px color-mix(in srgb, var(--color-action-brand) 16%, transparent);
+  --product-choice-card-grid-item-shadow-hover: 0 0 0 2px color-mix(in srgb, var(--color-text-link-strong) 16%, transparent);
+  --product-choice-card-grid-item-shadow-selected: inset 0 0 0 1px color-mix(in srgb, var(--color-text-link-strong) 16%, transparent);
+  --product-choice-card-grid-heading-width: 100%;
+  --product-choice-card-grid-heading-justify-content: space-between;
+  --product-choice-card-grid-label-padding: 4px 9px;
+  --product-choice-card-grid-label-radius: 999px;
+  --product-choice-card-grid-label-background: color-mix(in srgb, var(--color-text-link-strong) 10%, transparent);
+  --product-choice-card-grid-label-color: var(--color-text-link-strong);
+  --product-choice-card-grid-label-font-size: 11px;
+  --product-choice-card-grid-label-font-weight: 400;
+  --product-choice-card-grid-description-margin-top: 4px;
+  --product-choice-card-grid-description-color: var(--color-text-heading);
+  --product-choice-card-grid-description-font-size: 13px;
+  --product-choice-card-grid-description-line-height: 1.7;
+  --product-choice-card-grid-description-white-space: pre-wrap;
 
   margin-top: 14px;
 }
@@ -184,10 +206,10 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
   margin: 10px 0 0;
   padding: 14px;
   overflow: auto;
-  border: 1px solid var(--studio-border-default);
+  border: 1px solid color-mix(in srgb, var(--color-text-heading) 8%, transparent);
   border-radius: 16px;
-  background: var(--studio-surface-soft);
-  color: var(--studio-text-strong);
+  background: color-mix(in srgb, var(--color-surface-page) 92%, transparent);
+  color: var(--color-text-heading);
   font-size: 12px;
   line-height: 1.7;
   white-space: pre-wrap;

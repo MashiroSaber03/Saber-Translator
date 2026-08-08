@@ -157,7 +157,10 @@ useInsightSettingsDraft<StoreLlmConfig>({
 </script>
 
 <template>
-  <InsightSettingsPanel description="LLM（对话模型）用于生成故事概要、智能问答等文本生成任务。">
+  <InsightSettingsPanel
+    class="llm-settings-tab"
+    description="LLM（对话模型）用于生成故事概要、智能问答等文本生成任务。"
+  >
     <InsightModelProviderSection
       v-model:provider="provider"
       v-model:api-key="apiKey"
@@ -176,6 +179,7 @@ useInsightSettingsDraft<StoreLlmConfig>({
       :model-options="modelOptions"
       :model-count="modelCount"
       :show-base-url="showBaseUrl"
+      test-placement="panel-end"
       :testing="isTesting"
       @provider-change="onProviderChange"
       @model-change="selectModel"
@@ -183,7 +187,7 @@ useInsightSettingsDraft<StoreLlmConfig>({
       @test="testConnection"
     />
 
-    <UiFormGrid>
+    <UiFormGrid class="llm-settings-tab__execution-grid">
       <UiField variant="settings" label="RPM 限制" control-id="insight-llm-rpm-limit">
         <UiNumberField v-model="rpmLimit" input-id="insight-llm-rpm-limit" :min="0" :max="100" />
       </UiField>
@@ -222,3 +226,21 @@ useInsightSettingsDraft<StoreLlmConfig>({
     </UiField>
   </InsightSettingsPanel>
 </template>
+
+<style scoped>
+.llm-settings-tab {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+}
+
+.llm-settings-tab__execution-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (--breakpoint-md-down) {
+  .llm-settings-tab__execution-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -6,7 +6,7 @@ withDefaults(defineProps<{
   ariaLive?: 'polite' | 'assertive' | 'off'
   description?: string
   eyebrow?: string
-  iconName: UiIconName
+  iconName?: UiIconName
   role?: 'status' | 'note'
   size?: 'default' | 'compact'
   title: string
@@ -15,6 +15,7 @@ withDefaults(defineProps<{
   ariaLive: undefined,
   description: '',
   eyebrow: '',
+  iconName: undefined,
   role: undefined,
   size: 'default',
   variant: 'default',
@@ -31,8 +32,9 @@ withDefaults(defineProps<{
     :role="role"
     :aria-live="ariaLive"
   >
-    <div class="product-empty-state__icon" aria-hidden="true">
-      <UiIcon :name="iconName" size="40" />
+    <div v-if="$slots.icon || iconName" class="product-empty-state__icon" aria-hidden="true">
+      <span v-if="$slots.icon" class="product-empty-state__icon-text"><slot name="icon" /></span>
+      <UiIcon v-else-if="iconName" :name="iconName" size="40" />
     </div>
     <p v-if="eyebrow" class="product-empty-state__eyebrow">
       {{ eyebrow }}
@@ -59,16 +61,16 @@ withDefaults(defineProps<{
   --internal-product-empty-state-eyebrow-text: var(--color-text-supporting);
   --internal-product-empty-state-title: var(--color-text-strong);
 
-  display: flex;
+  display: var(--product-empty-state-display, flex);
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 520px;
+  align-items: var(--product-empty-state-align-items, center);
+  justify-content: var(--product-empty-state-justify-content, center);
+  max-width: var(--product-empty-state-max-width, 520px);
   min-height: var(--product-empty-state-min-height, var(--internal-product-empty-state-min-height));
-  margin-inline: auto;
-  padding: 64px 20px;
+  margin-inline: var(--product-empty-state-margin-inline, auto);
+  padding: var(--product-empty-state-padding, 64px 20px);
   color: var(--product-empty-state-text, var(--internal-product-empty-state-text));
-  text-align: center;
+  text-align: var(--product-empty-state-text-align, center);
 }
 
 .product-empty-state--inverse {
@@ -90,16 +92,21 @@ withDefaults(defineProps<{
 }
 
 .product-empty-state__icon {
-  display: inline-flex;
+  display: var(--product-empty-state-icon-display, inline-flex);
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
-  margin-bottom: 18px;
+  width: var(--product-empty-state-icon-width, 72px);
+  height: var(--product-empty-state-icon-height, 72px);
+  margin-bottom: var(--product-empty-state-icon-margin-bottom, 18px);
   border: 1px solid var(--product-empty-state-icon-border, var(--internal-product-empty-state-icon-border));
-  border-radius: 18px;
+  border-radius: var(--product-empty-state-icon-radius, 18px);
   background: var(--product-empty-state-icon-background, var(--internal-product-empty-state-icon-background));
   color: var(--product-empty-state-icon-color, var(--internal-product-empty-state-icon-color));
+}
+
+.product-empty-state__icon-text {
+  font-size: var(--product-empty-state-icon-font-size, 40px);
+  line-height: 1;
 }
 
 .product-empty-state--compact .product-empty-state__icon {
@@ -122,10 +129,10 @@ withDefaults(defineProps<{
 }
 
 .product-empty-state__title {
-  margin: 0;
+  margin: var(--product-empty-state-title-margin, 0);
   color: var(--product-empty-state-title, var(--internal-product-empty-state-title));
-  font-weight: 700;
-  font-size: 1.45rem;
+  font-weight: var(--product-empty-state-title-font-weight, 700);
+  font-size: var(--product-empty-state-title-font-size, 1.45rem);
   line-height: 1.25;
 }
 
@@ -135,10 +142,10 @@ withDefaults(defineProps<{
 }
 
 .product-empty-state__description {
-  margin: 10px 0 0;
+  margin: var(--product-empty-state-description-margin, 10px 0 0);
   color: var(--product-empty-state-description, var(--internal-product-empty-state-description));
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: var(--product-empty-state-description-font-size, 0.95rem);
+  line-height: var(--product-empty-state-description-line-height, 1.6);
 }
 
 .product-empty-state--compact .product-empty-state__description {
@@ -152,6 +159,6 @@ withDefaults(defineProps<{
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
-  margin-top: 24px;
+  margin-top: var(--product-empty-state-actions-margin-top, 24px);
 }
 </style>

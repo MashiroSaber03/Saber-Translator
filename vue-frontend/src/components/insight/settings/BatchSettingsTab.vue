@@ -153,7 +153,7 @@ watch(() => props.syncRequestId, () => {
 
 <template>
   <InsightSettingsPanel class="batch-settings-tab" description="配置批量分析的参数，影响分析速度和质量。">
-    <UiFormGrid>
+    <UiFormGrid class="batch-settings-tab__primary-fields">
       <UiField
         variant="settings"
         label="每批次分析页数"
@@ -265,12 +265,23 @@ watch(() => props.syncRequestId, () => {
       icon-name="settings"
       role="note"
     >
-      每 <strong class="batch-settings-tab__config-value">{{ pagesPerBatch }}</strong> 页一批
+      ：每 <strong class="batch-settings-tab__config-value">{{ pagesPerBatch }}</strong> 页一批
     </ProductStatusBanner>
   </InsightSettingsPanel>
 </template>
 
 <style scoped>
+.batch-settings-tab {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+}
+
+.batch-settings-tab__primary-fields {
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
 .batch-settings-tab__layers-preview {
   margin: 0;
   padding-left: 20px;
@@ -293,10 +304,27 @@ watch(() => props.syncRequestId, () => {
 
 .batch-settings-tab__summary-banner {
   margin-top: 16px;
+
+  --product-status-banner-icon-display: none;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: var(--color-surface-muted);
+  --product-status-banner-padding: 14px;
 }
 
 .batch-settings-tab__config-banner {
   margin-top: 12px;
+
+  --product-status-banner-icon-display: none;
+  --product-status-banner-content-display: flex;
+  --product-status-banner-content-align-items: center;
+  --product-status-banner-content-gap: 0;
+  --product-status-banner-title-display: inline;
+  --product-status-banner-title-margin-bottom: 0;
+  --product-status-banner-body-display: inline;
+  --product-status-banner-border: 1px solid color-mix(in srgb, var(--color-border-brand) 18%, transparent);
+  --product-status-banner-radius: 4px;
+  --product-status-banner-background: color-mix(in srgb, var(--color-surface-brand) 7%, var(--color-surface-card));
+  --product-status-banner-padding: 10px 12px;
 }
 
 .batch-settings-tab__custom-layers {

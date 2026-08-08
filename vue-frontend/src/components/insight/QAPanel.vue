@@ -494,12 +494,27 @@ watch(
 }
 
 .qa-panel__input-shell {
+  position: relative;
   padding: 16px;
   border-top: 1px solid var(--color-border-muted);
   background: var(--insight-surface-secondary);
 }
 
 .qa-panel__status {
-  margin-bottom: 12px;
+  --product-status-banner-align-items: center;
+  --product-status-banner-gap: 8px;
+  --product-status-banner-padding: 7px 10px;
+  --product-status-banner-content-display: flex;
+  --product-status-banner-content-align-items: center;
+  --product-status-banner-content-gap: 6px;
+  --product-status-banner-title-margin-bottom: 0;
+  --product-status-banner-title-font-size: 12px;
+  --product-status-banner-body-font-size: 12px;
+
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% + 8px);
+  left: 16px;
+  margin: 0;
 }
 </style>

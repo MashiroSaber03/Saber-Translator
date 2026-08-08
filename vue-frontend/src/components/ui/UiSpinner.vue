@@ -31,9 +31,9 @@ const isDecorative = computed(() => props.decorative || props.label.length === 0
   flex: 0 0 auto;
   width: var(--ui-spinner-size);
   height: var(--ui-spinner-size);
-  border: 2px solid transparent;
-  border-top-color: currentcolor;
+  border: var(--ui-spinner-border-width, 2px) solid var(--ui-spinner-track-color, transparent);
+  border-top-color: var(--ui-spinner-color, currentcolor);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--ui-spinner-duration, 0.8s) linear infinite;
 }
 </style>

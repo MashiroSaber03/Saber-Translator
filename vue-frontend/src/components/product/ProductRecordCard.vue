@@ -85,9 +85,13 @@ function handleClick(event: MouseEvent): void {
 
 <style scoped>
 .product-record-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--product-record-card-gap, 8px);
+  display: var(--product-record-card-display, flex);
+  flex-direction: var(--product-record-card-flex-direction, column);
+  grid-template-columns: var(--product-record-card-grid-template-columns, none);
+  grid-template-rows: var(--product-record-card-grid-template-rows, none);
+  align-items: var(--product-record-card-align-items, normal);
+  column-gap: var(--product-record-card-column-gap, var(--product-record-card-gap, 8px));
+  row-gap: var(--product-record-card-row-gap, var(--product-record-card-gap, 8px));
   padding: var(--product-record-card-padding, 12px);
   border: 1px solid var(--product-record-card-border, var(--color-border-muted));
   border-radius: var(--product-record-card-radius, 8px);
@@ -119,7 +123,7 @@ function handleClick(event: MouseEvent): void {
 }
 
 .product-record-card__header {
-  display: flex;
+  display: var(--product-record-card-header-display, flex);
   align-items: flex-start;
   gap: var(--product-record-card-gap, 8px);
   min-width: 0;
@@ -132,6 +136,8 @@ function handleClick(event: MouseEvent): void {
 }
 
 .product-record-card__meta {
+  grid-column: var(--product-record-card-meta-grid-column, auto);
+  grid-row: var(--product-record-card-meta-grid-row, auto);
   flex: 1 1 auto;
   min-width: 0;
   color: var(--color-text-supporting);
@@ -139,6 +145,9 @@ function handleClick(event: MouseEvent): void {
 }
 
 .product-record-card__actions {
+  grid-column: var(--product-record-card-actions-grid-column, auto);
+  grid-row: var(--product-record-card-actions-grid-row, auto);
+  align-self: var(--product-record-card-actions-align-self, auto);
   display: inline-flex;
   flex: 0 0 auto;
   gap: 4px;
@@ -148,5 +157,10 @@ function handleClick(event: MouseEvent): void {
 .product-record-card__body,
 .product-record-card__footer {
   min-width: 0;
+}
+
+.product-record-card__body {
+  grid-column: var(--product-record-card-body-grid-column, auto);
+  grid-row: var(--product-record-card-body-grid-row, auto);
 }
 </style>

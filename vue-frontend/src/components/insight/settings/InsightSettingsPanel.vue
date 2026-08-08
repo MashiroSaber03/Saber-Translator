@@ -7,14 +7,25 @@ defineProps<{
 <template>
   <section class="insight-settings-panel">
     <p class="insight-settings-panel__hint">{{ description }}</p>
-    <slot />
+    <div class="insight-settings-panel__content">
+      <slot />
+    </div>
   </section>
 </template>
 
 <style scoped>
 .insight-settings-panel {
-  padding: 16px 0;
+  padding: 28px 0 16px;
   min-height: 300px;
+}
+
+.insight-settings-panel__content {
+  --ui-input-sm-min-height: 38px;
+  --ui-input-sm-padding: 9px 12px;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .insight-settings-panel__hint {

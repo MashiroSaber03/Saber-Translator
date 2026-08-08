@@ -165,7 +165,7 @@ onUnmounted(() => {
         :disabled="!hasPrevChapter"
         @click="navigateChapter('prev')"
       >
-        <UiIcon name="chevron-left" class="reader-controls__nav-icon" size="16" />
+        <span class="reader-controls__nav-icon" aria-hidden="true">◀</span>
         <span class="reader-controls__nav-text">上一章</span>
       </UiButton>
       <UiButton
@@ -176,7 +176,7 @@ onUnmounted(() => {
         @click="navigateChapter('next')"
       >
         <span class="reader-controls__nav-text">下一章</span>
-        <UiIcon name="chevron-right" class="reader-controls__nav-icon" size="16" />
+        <span class="reader-controls__nav-icon" aria-hidden="true">▶</span>
       </UiButton>
     </nav>
   </OverlayLayer>
@@ -191,7 +191,7 @@ onUnmounted(() => {
       label="回到顶部"
       @click="scrollToTop"
     >
-      <UiIcon name="chevron-up" size="24" />
+      <span aria-hidden="true">↑</span>
     </UiIconButton>
   </OverlayLayer>
 
@@ -341,6 +341,7 @@ onUnmounted(() => {
   border-radius: 12px;
   box-shadow: 0 8px 32px var(--reader-controls-settings-panel-shadow);
   overflow: hidden;
+  outline: none;
 }
 
 .reader-controls__settings-header {
@@ -370,6 +371,9 @@ onUnmounted(() => {
 
 .reader-controls__setting-field {
   --ui-field-inverse-label-color: var(--reader-controls-setting-label-text);
+  --ui-field-label-font-size: 13px;
+  --ui-field-label-font-weight: 400;
+  --ui-field-settings-header-margin-bottom: 8px;
 
   margin-bottom: 20px;
 }

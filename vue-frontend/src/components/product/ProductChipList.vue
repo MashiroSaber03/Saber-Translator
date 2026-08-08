@@ -133,6 +133,7 @@ function chipPressed(item: ProductChipItem): string | undefined {
   border: 1px solid transparent;
   border-radius: 999px;
   font: inherit;
+  font-weight: var(--product-chip-list-chip-font-weight, inherit);
   line-height: 1.35;
   transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
@@ -142,14 +143,15 @@ function chipPressed(item: ProductChipItem): string | undefined {
 }
 
 .product-chip-list__chip--neutral {
-  border-color: var(--color-border-muted);
-  background: var(--color-surface-muted);
-  color: var(--color-text-supporting);
+  border-color: var(--product-chip-list-neutral-border, var(--color-border-muted));
+  background: var(--product-chip-list-neutral-background, var(--color-surface-muted));
+  color: var(--product-chip-list-neutral-text, var(--color-text-supporting));
 }
 
 .product-chip-list__chip--primary {
-  background: var(--color-action-primary);
-  color: var(--color-text-inverse);
+  border-color: var(--product-chip-list-primary-border, transparent);
+  background: var(--product-chip-list-primary-background, var(--color-action-primary));
+  color: var(--product-chip-list-primary-text, var(--color-text-inverse));
 }
 
 .product-chip-list__chip--success {

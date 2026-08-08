@@ -117,7 +117,7 @@ defineEmits<{
     <div class="studio-overview-tab__workspace-row studio-overview-tab__workspace-row--single">
       <StudioEditorSectionPanel title="最近诊断摘要" description="导出前先看这里，能快速判断当前角色是否存在结构性问题。">
         <template #actions>
-          <ProductActionRow aria-label="诊断操作">
+          <ProductActionRow appearance="accent" aria-label="诊断操作">
             <UiButton
               variant="secondary"
               :disabled="pendingState.validating"

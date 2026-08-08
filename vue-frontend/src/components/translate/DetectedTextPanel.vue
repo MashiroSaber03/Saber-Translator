@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
-import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 
 export interface DetectedTextItem {
   original: string
@@ -67,15 +67,12 @@ function formatText(text: string): string {
       :empty="items.length === 0"
     >
       <template #empty>
-        <ProductStatusBanner
-          class="detected-text-panel__empty"
-          tone="neutral"
-          role="note"
+        <ProductEmptyState
           icon-name="scan-line"
-          title="暂无检测文本"
-        >
-          未检测到文本或尚未翻译。
-        </ProductStatusBanner>
+          role="note"
+          size="compact"
+          title="未检测到文本或尚未翻译"
+        />
       </template>
 
       <article
@@ -124,6 +121,8 @@ function formatText(text: string): string {
 }
 
 .detected-text-panel__list {
+  --product-scroll-stack-empty-justify-content: flex-start;
+
   min-height: 0;
   overflow-x: auto;
 }
@@ -155,7 +154,4 @@ function formatText(text: string): string {
   color: var(--detected-text-panel-translated-text);
 }
 
-.detected-text-panel__empty {
-  margin: 8px;
-}
 </style>

@@ -31,3 +31,11 @@ defineEmits<{
     />
   </UiField>
 </template>
+
+<style scoped>
+.chapter-form-content__field {
+  --ui-input-min-height: 44px;
+
+  margin-bottom: 20px;
+}
+</style>

@@ -269,8 +269,9 @@ describe('OverviewPanel', () => {
     await flushPromises()
 
     const emptyBanners = emptyWrapper.findAllComponents(ProductStatusBanner)
-    expect(emptyBanners.map(banner => banner.props('title'))).toEqual([
-      '尚未生成概览',
+    expect(emptyBanners.map(banner => banner.props('title'))).toEqual(['', ''])
+    expect(emptyBanners.map(banner => banner.text())).toEqual([
+      '选择模板类型，点击生成按钮',
       '暂无分析记录',
     ])
 

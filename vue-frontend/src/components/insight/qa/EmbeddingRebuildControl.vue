@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 defineProps<{
@@ -27,7 +26,7 @@ defineEmits<{
       <span>{{ progressLabel || '重建中...' }}</span>
     </template>
     <template v-else>
-      <UiIcon name="refresh" />
+      <span aria-hidden="true">🔄</span>
       <span>重建向量</span>
     </template>
   </UiButton>

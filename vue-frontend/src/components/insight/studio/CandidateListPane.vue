@@ -6,7 +6,6 @@
     </div>
     <ProductEmptyState
       v-if="!hasTimeline"
-      description="你仍然可以空白新建或导入角色卡。"
       icon-name="bar-chart"
       role="note"
       size="compact"
@@ -14,7 +13,6 @@
     />
     <ProductEmptyState
       v-else-if="candidates.length === 0"
-      icon-name="users"
       role="note"
       size="compact"
       title="没有可用候选角色"
@@ -28,7 +26,7 @@
               首登 {{ item.first_appearance || '-' }} 页 · 对话 {{ item.dialogue_count }} · 关键页 {{ item.sample_pages.slice(0, 3).join(' / ') || '-' }}
             </div>
           </div>
-          <ProductActionRow aria-label="候选角色操作">
+          <ProductActionRow appearance="accent" aria-label="候选角色操作">
             <UiButton variant="secondary" :disabled="!!creatingCandidateName" size="sm" @click="$emit('create', item.name)">
               {{ creatingCandidateName === item.name ? '创建中...' : '创建' }}
             </UiButton>
@@ -60,6 +58,14 @@ defineEmits<{
 <style scoped>
 .candidate-list-pane {
   --candidate-list-pane-name-text: var(--studio-text-strong);
+  --product-empty-state-align-items: flex-start;
+  --product-empty-state-justify-content: flex-start;
+  --product-empty-state-margin-inline: 0;
+  --product-empty-state-min-height: 0;
+  --product-empty-state-padding: 8px 0;
+  --product-empty-state-text-align: left;
+  --product-empty-state-title: var(--color-text-supporting);
+  --product-empty-state-title-font-weight: 400;
 
   display: flex;
   flex-direction: column;

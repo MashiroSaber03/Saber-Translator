@@ -95,7 +95,7 @@ describe('TranslationProgress', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('OCR')
+    expect(wrapper.text()).toContain('文字识别')
     expect(wrapper.text()).toContain('完成 1 / 3')
     expect(wrapper.text()).toContain('处理中 1')
     expect(wrapper.text()).toContain('等待深度学习锁')

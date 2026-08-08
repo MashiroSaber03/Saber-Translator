@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   modelValue?: string
   placeholder?: string
+  showIcon?: boolean
   size?: 'lg' | 'md' | 'sm' | 'xs'
 }>(), {
   ariaLabel: '搜索',
@@ -21,6 +22,7 @@ const props = withDefaults(defineProps<{
   disabled: false,
   modelValue: '',
   placeholder: '',
+  showIcon: true,
   size: 'md',
 })
 
@@ -54,8 +56,11 @@ defineExpose({ focus })
 </script>
 
 <template>
-  <div class="product-search-field">
-    <UiIcon class="product-search-field__icon" name="search" size="16" />
+  <div
+    class="product-search-field"
+    :class="{ 'product-search-field--without-icon': !showIcon }"
+  >
+    <UiIcon v-if="showIcon" class="product-search-field__icon" name="search" size="16" />
     <UiInput
       ref="inputRef"
       class="product-search-field__input"
@@ -108,6 +113,10 @@ defineExpose({ focus })
   --ui-input-border: var(--product-search-field-border, 1px solid var(--color-border-muted));
   --ui-input-focus-border: var(--product-search-field-focus-border, var(--color-action-primary));
   --ui-input-focus-shadow: var(--product-search-field-focus-shadow, var(--color-focus-brand-subtle));
+}
+
+.product-search-field--without-icon .product-search-field__input {
+  --ui-input-padding: var(--product-search-field-input-padding-without-icon, 9px 40px 9px 12px);
 }
 
 .product-search-field__clear {

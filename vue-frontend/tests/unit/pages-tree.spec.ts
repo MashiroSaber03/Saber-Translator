@@ -511,4 +511,17 @@ describe('PagesTree', () => {
     expect(grid.findAll('[data-product-thumbnail-id]').length).toBeLessThanOrEqual(8)
     expect(wrapper.find('.pages-tree-panel__load-more').exists()).toBe(true)
   })
+
+  it('distinguishes a partially analyzed chapter from an untouched chapter', async () => {
+    getInsightPagesPageMock.mockResolvedValueOnce({
+      items: [pageSummary(1, { analyzed: true }), pageSummary(2)],
+      nextCursor: null,
+    })
+
+    const wrapper = mount(PagesTree)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('部分分析')
+    expect(wrapper.text()).not.toContain('待分析')
+  })
 })

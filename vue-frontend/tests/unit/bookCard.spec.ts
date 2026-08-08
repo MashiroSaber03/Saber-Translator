@@ -63,7 +63,8 @@ describe('BookCard', () => {
 
     expect(wrapper.find('img').exists()).toBe(false)
     expect(wrapper.findAll('.book-card__cover-placeholder')).toHaveLength(1)
-    expect(wrapper.find('.book-card__cover-placeholder').text()).toBe('无封面')
+    expect(wrapper.find('.book-card__cover-placeholder').text()).toBe('📖')
+    expect(wrapper.find('.book-card__cover-placeholder').attributes('aria-label')).toBe('无封面')
   })
 
   it('renders book tags through the shared product chip contract', () => {

@@ -60,11 +60,11 @@ function handleVisibleChange(ids: string[]): void {
     <ProductEmptyState
       v-else-if="showEmptyState"
       class="reader-canvas__empty-state"
-      icon-name="book-open"
       title="暂无图片"
       description="该章节还没有图片，点击下方按钮开始翻译"
       variant="inverse"
     >
+      <template #icon>📖</template>
       <template #actions>
         <UiButton variant="primary" @click="emit('goTranslate')">
           进入翻译
@@ -100,6 +100,11 @@ function handleVisibleChange(ids: string[]): void {
 }
 
 .reader-canvas__loading-state {
+  --ui-spinner-border-width: 3px;
+  --ui-spinner-track-color: var(--color-overlay-inverse-soft);
+  --ui-spinner-color: var(--color-action-brand);
+  --ui-spinner-duration: 1s;
+
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -109,10 +114,26 @@ function handleVisibleChange(ids: string[]): void {
 }
 
 .reader-canvas__loading-text {
-  margin: 0;
+  margin: 16px 0;
 }
 
 .reader-canvas__empty-state {
   --product-empty-state-min-height: calc(100dvh - 56px);
+  --product-empty-state-max-width: none;
+  --product-empty-state-padding: 20px;
+  --product-empty-state-icon-width: auto;
+  --product-empty-state-icon-height: auto;
+  --product-empty-state-icon-margin-bottom: 16px;
+  --product-empty-state-icon-border: 0;
+  --product-empty-state-icon-radius: 0;
+  --product-empty-state-icon-background: transparent;
+  --product-empty-state-icon-font-size: 64px;
+  --product-empty-state-title-margin: 0 0 8px;
+  --product-empty-state-title-font-size: 1.5rem;
+  --product-empty-state-title-font-weight: 500;
+  --product-empty-state-description-margin: 0 0 24px;
+  --product-empty-state-description-font-size: 14px;
+  --product-empty-state-actions-margin-top: 0;
 }
+
 </style>

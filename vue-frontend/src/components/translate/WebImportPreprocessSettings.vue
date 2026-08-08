@@ -42,9 +42,7 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
 </script>
 
 <template>
-  <ProductFormSection>
-    <template #title>图片预处理</template>
-
+  <ProductFormSection class="web-import-preprocess__section">
     <UiField variant="settings" control="checkbox">
       <UiCheckbox
         :model-value="draftSettings.imagePreprocess.enabled"
@@ -65,7 +63,7 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
   </ProductFormSection>
 
   <template v-if="draftSettings.imagePreprocess.enabled">
-    <ProductFormSection>
+    <ProductFormSection class="web-import-preprocess__section">
       <template #title>压缩设置</template>
 
       <UiField variant="settings" control="checkbox">
@@ -107,7 +105,7 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
       </template>
     </ProductFormSection>
 
-    <ProductFormSection>
+    <ProductFormSection class="web-import-preprocess__section">
       <template #title>格式转换</template>
 
       <UiField variant="settings" control="checkbox">
@@ -134,3 +132,15 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
     </ProductFormSection>
   </template>
 </template>
+
+<style scoped>
+.web-import-preprocess__section {
+  --product-form-section-margin-bottom: 16px;
+  --product-form-section-title-margin-bottom: 8px;
+  --product-form-section-title-padding-bottom: 0;
+  --product-form-section-title-border-bottom: 0;
+  --product-form-section-title-text: var(--color-text-supporting);
+  --product-form-section-title-font-size: 13px;
+  --product-form-section-title-font-weight: 500;
+}
+</style>

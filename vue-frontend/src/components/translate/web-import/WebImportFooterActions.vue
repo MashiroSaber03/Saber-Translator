@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
 import type { ExtractResult, WebImportState } from '@/types/webImport'
 
@@ -29,12 +28,23 @@ defineEmits<{
     </UiButton>
     <UiButton
       variant="primary"
+      class="web-import-footer-actions__primary"
       :disabled="!extractResult?.success || selectedCount === 0 || isProcessing"
       @click="$emit('import')"
     >
       <UiSpinner v-if="status === 'downloading'" label="下载中" :decorative="false" />
-      <UiIcon v-else name="download" />
+      <span v-else aria-hidden="true">📥</span>
       {{ status === 'downloading' ? '下载中...' : '导入' }}
     </UiButton>
   </ProductActionRow>
 </template>
+
+<style scoped>
+.web-import-footer-actions__primary {
+  --ui-button-primary-background: var(--color-action-primary);
+  --ui-button-primary-hover-background: var(--color-action-primary-hover);
+  --ui-button-primary-shadow: none;
+  --ui-button-primary-disabled-background: var(--color-action-primary);
+  --ui-button-primary-disabled-opacity: 0.6;
+}
+</style>

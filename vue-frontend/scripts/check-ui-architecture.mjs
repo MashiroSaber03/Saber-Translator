@@ -124,7 +124,7 @@ const CUSTOM_STYLE_ATTR_RE = /(?::custom-style|custom-style)\s*=\s*(["'])([\s\S]
 const BASE_MODAL_OPENING_TAG_RE = /<BaseModal\b[\s\S]*?(?:\/>|>)/g
 const BASE_MODAL_VISUAL_PROP_ATTR_RE = /\b(?:background|border|border-radius|box-shadow|header-border|header-background|header-color|title-color|title-font-size|title-font-weight|close-color|close-font-size|close-hover-color|close-hover-background|body-background|footer-border|footer-background)\s*=/g
 const DIRECT_LUCIDE_IMPORT_RE = /(?:from\s+['"]@lucide\/vue['"]|import\s*\([^)]*['"]@lucide\/vue['"][^)]*\))/
-const PRODUCT_STRING_ICON_FALLBACK_RE = /\bicon\s*\?:\s*string\b|v-else-if\s*=\s*["'][^"']*\.icon["']|{{\s*[^}]*\.icon\s*}}/
+const PRODUCT_STRING_ICON_FALLBACK_RE = /\bicon(?:Text)?\s*\?:\s*string\b|v-else-if\s*=\s*["'][^"']*\.icon(?:Text)?["']|{{\s*[^}]*\.icon(?:Text)?\s*}}/
 const TRANSLATION_POOL_STRING_ICON_RE = /\bicon\s*:\s*string\b|poolIconName\s*\(\s*icon\s*:\s*string/
 const LOCAL_DARK_MODE_MEDIA_RE = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/
 const UI_PRIMITIVE_BUSINESS_OWNER_TOKEN_RE = /--(?:bookshelf|book-card|character-studio|edit|insight|reader|studio|translate|web-import)-[A-Za-z0-9_-]+/g

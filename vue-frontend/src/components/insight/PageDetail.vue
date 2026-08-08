@@ -4,6 +4,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
+import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
@@ -222,17 +223,24 @@ onUnmounted(() => {
 
 <template>
   <div class="page-detail-panel">
-    <ProductSectionHeader title="页面详情" icon-name="file-text" size="sm" />
+    <ProductSectionHeader
+      class="page-detail-panel__section-header"
+      title="页面详情"
+      icon-name="file-text"
+      size="sm"
+    >
+      <template #icon>📄</template>
+    </ProductSectionHeader>
 
     <div class="page-detail-panel__body">
-      <ProductStatusBanner
+      <ProductEmptyState
         v-if="!selectedPageNum"
-        tone="neutral"
-        icon-name="file-text"
-        title="选择页面查看详情"
+        class="page-detail-panel__empty-state"
+        role="note"
+        title="点击左侧导航树中的页面查看详情"
       >
-        点击左侧导航树中的页面查看详情。
-      </ProductStatusBanner>
+        <template #icon>📄</template>
+      </ProductEmptyState>
 
       <div v-else-if="isLoading" class="page-detail-panel__loading-state">
         <UiSpinner
@@ -247,7 +255,7 @@ onUnmounted(() => {
       <div v-else class="page-detail-panel__content">
         <div class="page-detail-panel__header">
           <h4 class="page-detail-panel__title">
-            <UiIcon name="file-text" />
+            <span aria-hidden="true">📄</span>
             <span>第 {{ selectedPageNum }} 页</span>
           </h4>
           <div class="page-detail-panel__nav-buttons">
@@ -320,7 +328,7 @@ onUnmounted(() => {
           class="page-detail-panel__analysis-status"
           :class="{ 'page-detail-panel__analysis-status--analyzed': isPageAnalyzed }"
         >
-          {{ isPageAnalyzed ? '已分析' : '未分析' }}
+          {{ isPageAnalyzed ? '✓ 已分析' : '○ 未分析' }}
         </div>
 
         <div v-if="pageAnalysis?.page_summary" class="page-detail-panel__summary">
@@ -335,10 +343,9 @@ onUnmounted(() => {
           class="page-detail-panel__summary-feedback"
           icon-name="file-text"
           role="note"
-          title="此页尚未分析"
           tone="neutral"
         >
-          点击下方按钮开始分析。
+          此页尚未分析，点击下方按钮开始分析
         </ProductStatusBanner>
 
         <div v-if="pageAnalysis?.key_events?.length" class="page-detail-panel__dialogues">
@@ -490,6 +497,11 @@ onUnmounted(() => {
   --page-detail-success-text: var(--color-status-success);
 
   padding: 20px 18px;
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.page-detail-panel__section-header {
+  margin-top: 14px;
 }
 
 .page-detail-panel__loading-state {
@@ -499,6 +511,23 @@ onUnmounted(() => {
   text-align: center;
   padding: 24px;
   color: var(--insight-text-secondary);
+}
+
+.page-detail-panel__empty-state {
+  --product-empty-state-min-height: 0;
+  --product-empty-state-padding: 55px 24px 4px;
+  --product-empty-state-icon-width: auto;
+  --product-empty-state-icon-height: auto;
+  --product-empty-state-icon-margin-bottom: 22px;
+  --product-empty-state-icon-border: 0;
+  --product-empty-state-icon-radius: 0;
+  --product-empty-state-icon-background: transparent;
+  --product-empty-state-icon-color: inherit;
+  --product-empty-state-icon-font-size: 48px;
+  --product-empty-state-title: var(--insight-text-secondary);
+  --product-empty-state-title-font-size: 16px;
+  --product-empty-state-title-font-weight: 400;
+  --product-empty-state-title-margin: 16px 0;
 }
 
 .page-detail-panel__loading-indicator {
@@ -648,7 +677,15 @@ onUnmounted(() => {
 }
 
 .page-detail-panel__summary-feedback {
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-padding: 0;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-body-color: var(--insight-text-secondary);
+  --product-status-banner-body-font-size: 14px;
+
   margin-bottom: 16px;
+  font-style: italic;
 }
 
 .page-detail-panel__scene-mood {

@@ -7,10 +7,8 @@ import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import type { UiIconName } from '@/components/ui/iconRegistry'
 import { marked } from 'marked'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { triggerBlobDownload } from '@/utils/browserDownload'
@@ -38,28 +36,28 @@ const recentAnalyzedPages = ref<Array<{
 interface OverviewTemplateOption {
   value: OverviewTemplateType
   label: string
-  iconName: UiIconName
+  iconText: string
   description: string
 }
 
 const templateOptions: OverviewTemplateOption[] = [
-  { value: 'no_spoiler', label: '无剧透简介', iconName: 'sparkles', description: '不含剧透的简短介绍，适合推荐给他人' },
-  { value: 'story_summary', label: '故事概要', iconName: 'book-open', description: '完整的剧情回顾，包含所有剧透' },
-  { value: 'recap', label: '前情回顾', iconName: 'clock', description: '之前发生的重要事件回顾' },
-  { value: 'character_guide', label: '角色图鉴', iconName: 'users', description: '主要角色介绍和关系' },
-  { value: 'world_setting', label: '世界观设定', iconName: 'globe', description: '故事背景和世界观设定' },
-  { value: 'highlights', label: '名场面盘点', iconName: 'sparkles', description: '精彩片段和经典场景回顾' },
-  { value: 'reading_notes', label: '阅读笔记', iconName: 'file-text', description: '阅读过程中的重点笔记' }
+  { value: 'no_spoiler', label: '无剧透简介', iconText: '🎁', description: '不含剧透的简短介绍，适合推荐给他人' },
+  { value: 'story_summary', label: '故事概要', iconText: '📖', description: '完整的剧情回顾，包含所有剧透' },
+  { value: 'recap', label: '前情回顾', iconText: '⏪', description: '之前发生的重要事件回顾' },
+  { value: 'character_guide', label: '角色图鉴', iconText: '👥', description: '主要角色介绍和关系' },
+  { value: 'world_setting', label: '世界观设定', iconText: '🌍', description: '故事背景和世界观设定' },
+  { value: 'highlights', label: '名场面盘点', iconText: '✨', description: '精彩片段和经典场景回顾' },
+  { value: 'reading_notes', label: '阅读笔记', iconText: '📝', description: '阅读过程中的重点笔记' }
 ]
 
 const templateSelectOptions = templateOptions.map(t => ({
-  label: t.label,
+  label: `${t.iconText} ${t.label}`,
   value: t.value
 }))
 
-const currentTemplateIcon = computed<UiIconName>(() => {
+const currentTemplateIconText = computed(() => {
   const template = templateOptions.find(t => t.value === currentTemplate.value)
-  return template?.iconName || 'bar-chart'
+  return template?.iconText || '📊'
 })
 
 const currentTemplateDescription = computed(() => {
@@ -307,7 +305,7 @@ onUnmounted(() => {
     <div class="overview-panel__card overview-panel__card--summary">
       <div class="overview-panel__card-header">
         <div class="overview-panel__template-heading">
-          <UiIcon class="overview-panel__title-icon" :name="currentTemplateIcon" size="20" />
+          <span class="overview-panel__title-icon" aria-hidden="true">{{ currentTemplateIconText }}</span>
           <UiSelect
             v-model="currentTemplate"
             aria-label="选择概览模板"
@@ -322,14 +320,14 @@ onUnmounted(() => {
             size="sm"
             @click="generateOverview(false)"
           >
-            <UiIcon name="file-text" size="16" />
+            <span aria-hidden="true">📄</span>
           </UiIconButton>
           <UiIconButton
             label="重新生成"
             size="sm"
             @click="generateOverview(true)"
           >
-            <UiIcon name="refresh" size="16" />
+            <span aria-hidden="true">🔄</span>
           </UiIconButton>
         </div>
       </div>
@@ -356,18 +354,18 @@ onUnmounted(() => {
         </ProductStatusBanner>
         <ProductStatusBanner
           v-else
+          class="overview-panel__empty-feedback"
           tone="neutral"
           icon-name="file-text"
-          title="尚未生成概览"
         >
-          选择模板类型，点击生成按钮。
+          选择模板类型，点击生成按钮
         </ProductStatusBanner>
       </div>
     </div>
 
     <div class="overview-panel__card overview-panel__card--stats">
       <h3 class="overview-panel__card-title">
-        <UiIcon name="bar-chart" size="18" />
+        <span aria-hidden="true">📊</span>
         <span>分析统计</span>
       </h3>
       <div class="overview-panel__stats-grid">
@@ -393,7 +391,7 @@ onUnmounted(() => {
           title="导出当前概览"
           @click="exportCurrentOverview" size="sm"
         >
-          <UiIcon name="file-text" size="14" />
+          <span aria-hidden="true">📄</span>
           <span>导出当前</span>
         </UiButton>
         <UiButton
@@ -402,7 +400,7 @@ onUnmounted(() => {
           title="导出完整分析数据"
           @click="exportAnalysisData" size="sm"
         >
-          <UiIcon v-if="!isExporting" name="download" size="14" />
+          <span v-if="!isExporting" aria-hidden="true">📤</span>
           <span>{{ isExporting ? '导出中...' : '导出全部' }}</span>
         </UiButton>
       </ProductActionRow>
@@ -410,17 +408,17 @@ onUnmounted(() => {
 
     <div class="overview-panel__card overview-panel__card--recent">
       <h3 class="overview-panel__card-title">
-        <UiIcon name="clock" size="18" />
+        <span aria-hidden="true">🕐</span>
         <span>最近分析</span>
       </h3>
       <div class="overview-panel__recent-pages">
         <ProductStatusBanner
           v-if="recentAnalyzedPages.length === 0"
+          class="overview-panel__empty-feedback"
           tone="neutral"
           icon-name="clock"
-          title="暂无分析记录"
         >
-          完成页面分析后会在这里显示最近记录。
+          暂无分析记录
         </ProductStatusBanner>
         <ProductRecordCard
           v-for="page in recentAnalyzedPages"
@@ -473,6 +471,8 @@ onUnmounted(() => {
 
 .overview-panel__title-icon {
   color: var(--insight-action-primary);
+  font-size: 20px;
+  line-height: 1;
 }
 
 .overview-panel__card-actions {
@@ -619,6 +619,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.overview-panel__empty-feedback {
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-padding: 0;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-content-display: block;
+  --product-status-banner-body-color: var(--insight-text-muted);
+  --product-status-banner-body-font-size: 14px;
+  --product-status-banner-text-align: center;
 }
 
 .overview-panel__recent-page-card {

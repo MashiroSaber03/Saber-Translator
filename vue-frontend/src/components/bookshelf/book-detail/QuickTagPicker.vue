@@ -43,6 +43,7 @@ function addExistingTag(id: string | number): void {
       :model-value="filter"
       placeholder="输入标签名称进行搜索或创建..."
       aria-label="搜索或创建标签"
+      :show-icon="false"
       autofocus
       @update:model-value="$emit('update:filter', String($event))"
       @search="$emit('submit')"
@@ -85,6 +86,10 @@ function addExistingTag(id: string | number): void {
 
 <style scoped>
 .quick-tag-picker__input-wrapper {
+  --product-search-field-input-padding: 12px 16px;
+  --product-search-field-radius: 8px;
+  --ui-input-min-height: 44px;
+
   margin-bottom: 16px;
 }
 
@@ -141,6 +146,16 @@ function addExistingTag(id: string | number): void {
 }
 
 .quick-tag-picker__empty-state {
-  align-items: center;
+  --product-status-banner-align-items: center;
+  --product-status-banner-justify-content: center;
+  --product-status-banner-padding: 24px 16px;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-body-color: var(--color-text-supporting);
+  --product-status-banner-text-align: center;
+
+  color: var(--color-text-supporting);
+  font-style: italic;
 }
 </style>

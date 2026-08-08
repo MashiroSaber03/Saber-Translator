@@ -8,9 +8,12 @@ import UiInput from '@/components/ui/UiInput.vue'
 const props = withDefaults(defineProps<{
   ariaLabel?: string
   controls?: boolean
+  controlsPlacement?: 'split' | 'after'
   decrementLabel?: string
+  decrementText?: string
   disabled?: boolean
   incrementLabel?: string
+  incrementText?: string
   inputId?: string
   max?: number
   min?: number
@@ -23,9 +26,12 @@ const props = withDefaults(defineProps<{
 }>(), {
   ariaLabel: undefined,
   controls: false,
+  controlsPlacement: 'split',
   decrementLabel: '减少数值',
+  decrementText: '',
   disabled: false,
   incrementLabel: '增加数值',
+  incrementText: '',
   inputId: undefined,
   max: undefined,
   min: undefined,
@@ -89,7 +95,7 @@ function stepBy(direction: -1 | 1): void {
     ]"
   >
     <UiButton
-      v-if="controls"
+      v-if="controls && controlsPlacement === 'split'"
       variant="secondary"
       icon
       :size="size"
@@ -97,7 +103,8 @@ function stepBy(direction: -1 | 1): void {
       :disabled="!canDecrement"
       @click="stepBy(-1)"
     >
-      <UiIcon name="minus" />
+      <span v-if="decrementText" class="ui-number-field__control-text">{{ decrementText }}</span>
+      <UiIcon v-else name="minus" />
     </UiButton>
 
     <UiInput
@@ -125,7 +132,21 @@ function stepBy(direction: -1 | 1): void {
       :disabled="!canIncrement"
       @click="stepBy(1)"
     >
-      <UiIcon name="plus" />
+      <span v-if="incrementText" class="ui-number-field__control-text">{{ incrementText }}</span>
+      <UiIcon v-else name="plus" />
+    </UiButton>
+
+    <UiButton
+      v-if="controls && controlsPlacement === 'after'"
+      variant="secondary"
+      icon
+      :size="size"
+      :aria-label="decrementLabel"
+      :disabled="!canDecrement"
+      @click="stepBy(-1)"
+    >
+      <span v-if="decrementText" class="ui-number-field__control-text">{{ decrementText }}</span>
+      <UiIcon v-else name="minus" />
     </UiButton>
   </div>
 </template>
@@ -137,12 +158,12 @@ function stepBy(direction: -1 | 1): void {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: fit-content;
+  width: var(--ui-number-field-width, fit-content);
 }
 
 .ui-number-field__input {
   width: var(--ui-number-field-input-width, var(--internal-ui-number-field-input-width));
-  text-align: center;
+  text-align: var(--ui-number-field-text-align, center);
 }
 
 .ui-number-field--xs {
@@ -154,8 +175,14 @@ function stepBy(direction: -1 | 1): void {
 }
 
 .ui-number-field--with-controls {
-  --ui-button-icon-width: 28px;
-  --ui-button-icon-height: 28px;
+  --ui-button-icon-width: var(--ui-number-field-control-width, 28px);
+  --ui-button-icon-height: var(--ui-number-field-control-height, 28px);
+}
+
+.ui-number-field__control-text {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .ui-number-field__input::-webkit-inner-spin-button,

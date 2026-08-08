@@ -147,29 +147,50 @@ async function deleteTag(tagName: string) {
 </script>
 
 <template>
-  <BaseModal title="标签管理" @close="emit('close')">
+  <BaseModal
+    title="标签管理"
+    header-padding="16px 20px 19px"
+    body-padding-value="20px 20px 17px"
+    @close="emit('close')"
+  >
     <div class="tag-manage-modal__form">
-      <UiFormGrid>
-        <UiField label="标签名称" variant="settings" control-id="tag-manage-new-name">
+      <UiFormGrid class="tag-manage-modal__new-tag-grid">
+        <UiField
+          class="tag-manage-modal__new-tag-name-field"
+          variant="settings"
+          label="标签名称"
+          control-id="tag-manage-new-name"
+          label-visually-hidden
+        >
           <UiInput
             id="tag-manage-new-name"
             v-model="newTagName"
+            class="tag-manage-modal__new-tag-name"
             type="text"
             placeholder="输入新标签名称..."
             @keydown.enter="createTag"
           />
         </UiField>
-        <UiField label="标签颜色" variant="settings" control-id="tag-manage-new-color">
+        <UiField
+          variant="settings"
+          label="标签颜色"
+          control-id="tag-manage-new-color"
+          label-visually-hidden
+        >
           <UiColorInput
             input-id="tag-manage-new-color"
             v-model="newTagColor"
             title="选择颜色"
           />
         </UiField>
+        <ProductActionRow
+          class="tag-manage-modal__new-tag-row"
+          aria-label="新建标签操作"
+          justify="start"
+        >
+          <UiButton variant="primary" size="sm" @click="createTag">添加</UiButton>
+        </ProductActionRow>
       </UiFormGrid>
-      <ProductActionRow aria-label="新建标签操作" justify="start">
-        <UiButton variant="primary" size="sm" @click="createTag">添加</UiButton>
-      </ProductActionRow>
     </div>
 
     <div class="tag-manage-modal__list">
@@ -272,6 +293,27 @@ async function deleteTag(tagName: string) {
   margin-bottom: 20px;
 }
 
+.tag-manage-modal__new-tag-row {
+  --ui-button-sm-padding: 9px 14px;
+
+  flex-wrap: nowrap;
+}
+
+.tag-manage-modal__new-tag-grid {
+  --ui-colorpicker-width: 40px;
+  --ui-colorpicker-height: 40px;
+  --ui-colorpicker-radius: 6px;
+
+  grid-template-columns: minmax(0, 1fr) 40px auto;
+  gap: 9px;
+  margin-bottom: 0;
+}
+
+.tag-manage-modal__new-tag-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .tag-manage-modal__list {
   display: flex;
   flex-direction: column;
@@ -281,7 +323,14 @@ async function deleteTag(tagName: string) {
 }
 
 .tag-manage-modal__empty-state {
-  align-items: center;
+  --product-status-banner-align-items: center;
+  --product-status-banner-justify-content: center;
+  --product-status-banner-min-height: 95px;
+  --product-status-banner-padding: 0;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+  --product-status-banner-icon-display: none;
+  --product-status-banner-text-align: center;
 }
 
 .tag-manage-modal__item {
@@ -322,6 +371,16 @@ async function deleteTag(tagName: string) {
 .tag-manage-modal__edit-save-action,
 .tag-manage-modal__edit-cancel-action {
   flex: 0 0 auto;
+}
+
+@media (--breakpoint-sm-down) {
+  .tag-manage-modal__new-tag-grid {
+    grid-template-columns: 1fr auto;
+  }
+
+  .tag-manage-modal__new-tag-name-field {
+    grid-column: 1 / -1;
+  }
 }
 
 </style>

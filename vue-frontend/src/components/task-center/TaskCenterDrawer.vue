@@ -24,6 +24,14 @@ import { showToast } from '@/utils/toast'
 import { releaseWorkerModelCache } from '@/api/v2/system'
 import type { V2AcceptedJob } from '@/api/v2/insight'
 import { confirmProductAction } from '@/composables/useProductConfirm'
+import {
+  eventTypeLabel,
+  formatByteSize,
+  formatTaskDuration,
+  jobKindLabel,
+  resourceRoleLabel,
+  stepKindLabel,
+} from '@/utils/taskDisplay'
 
 const store = useTaskCenterStore()
 const tab = ref<'queue' | 'history'>('queue')
@@ -69,7 +77,7 @@ const statusOptions = computed<UiSelectOption[]>(() => [
 ])
 const kindOptions = computed<UiSelectOption[]>(() => [
   { label: '全部', value: '' },
-  ...availableKinds.value.map(kind => ({ label: kind, value: kind })),
+  ...availableKinds.value.map(kind => ({ label: jobKindLabel(kind), value: kind })),
 ])
 const bookOptions = computed<UiSelectOption[]>(() => {
   const labels = new Map<string, string>()
@@ -550,7 +558,7 @@ async function analysisCreated(result: V2AcceptedJob) {
                       <div>
                         <strong>{{ describeJobTarget(job) }}</strong>
                         <span>
-                          {{ job.kind }}
+                          <span :title="job.kind">{{ jobKindLabel(job.kind) }}</span>
                           <template v-if="queuePosition(job)"> · 队列第 {{ queuePosition(job) }} 位</template>
                         </span>
                       </div>
@@ -569,7 +577,7 @@ async function analysisCreated(result: V2AcceptedJob) {
                     </div>
                     <div v-if="poolProgress(job).length" class="task-job__pools">
                       <div v-for="pool in poolProgress(job)" :key="pool.kind">
-                        <strong>{{ pool.kind }}</strong>
+                        <strong :title="pool.kind">{{ stepKindLabel(pool.kind) }}</strong>
                         <span>
                           等待 {{ pool.waiting }} · 处理中 {{ pool.processing }} · 完成 {{ pool.completed }}
                           <template v-if="pool.lockWaiting"> · 等待深度学习锁</template>
@@ -657,7 +665,7 @@ async function analysisCreated(result: V2AcceptedJob) {
                           <div><dt>创建时间</dt><dd>{{ formatTimestamp(store.selectedDetail.createdAt) }}</dd></div>
                           <div><dt>开始时间</dt><dd>{{ formatTimestamp(store.selectedDetail.startedAt) }}</dd></div>
                           <div><dt>结束时间</dt><dd>{{ formatTimestamp(store.selectedDetail.finishedAt) }}</dd></div>
-                          <div><dt>耗时</dt><dd>{{ store.selectedDetail.durationMs === null ? '—' : `${store.selectedDetail.durationMs} ms` }}</dd></div>
+                          <div><dt>耗时</dt><dd>{{ formatTaskDuration(store.selectedDetail.durationMs) }}</dd></div>
                           <div><dt>完成</dt><dd>{{ store.selectedDetail.counts.completed }} / {{ store.selectedDetail.counts.total }}</dd></div>
                           <div><dt>失败</dt><dd>{{ store.selectedDetail.counts.failed }}</dd></div>
                           <div><dt>跳过</dt><dd>{{ store.selectedDetail.counts.skipped }}</dd></div>
@@ -670,7 +678,7 @@ async function analysisCreated(result: V2AcceptedJob) {
                           <strong>失败项</strong>
                           <ul>
                             <li v-for="item in store.selectedDetail.failedItems" :key="item.itemId">
-                              #{{ item.ordinal }} · {{ item.stepKind || '未知步骤' }} · {{ formatPayload(item.error) }}
+                              #{{ item.ordinal }} · {{ item.stepKind ? stepKindLabel(item.stepKind) : '未知步骤' }} · {{ formatPayload(item.error) }}
                             </li>
                           </ul>
                         </section>
@@ -682,8 +690,8 @@ async function analysisCreated(result: V2AcceptedJob) {
                           <strong>步骤资源</strong>
                           <ul>
                             <li v-for="resource in store.selectedDetail.resources" :key="`${resource.stepId}:${resource.role}`">
-                              <a :href="resource.url" target="_blank" rel="noopener">{{ resource.role }}</a>
-                              · {{ resource.mimeType }} · {{ resource.byteSize }} B
+                              <a :href="resource.url" target="_blank" rel="noopener" :title="resource.role">{{ resourceRoleLabel(resource.role) }}</a>
+                              · {{ resource.mimeType }} · {{ formatByteSize(resource.byteSize) }}
                             </li>
                           </ul>
                         </section>
@@ -700,7 +708,7 @@ async function analysisCreated(result: V2AcceptedJob) {
                           </UiButton>
                           <ul>
                             <li v-for="event in [...store.selectedDetail.recentEvents].reverse()" :key="event.eventId">
-                              #{{ event.eventId }} · {{ event.type }}
+                              <span :title="event.type">#{{ event.eventId }} · {{ eventTypeLabel(event.type) }}</span>
                             </li>
                           </ul>
                         </section>

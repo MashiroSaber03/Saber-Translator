@@ -192,7 +192,7 @@ describe('BookshelfView', () => {
     const wrapper = mountView()
 
     const emptyStates = wrapper.findAllComponents(ProductEmptyState)
-    expect(emptyStates.map(state => state.props('iconName'))).toEqual(['book-open'])
+    expect(wrapper.get('.product-empty-state__icon-text').text()).toBe('📚')
     expect(emptyStates[0].props()).toMatchObject({
       title: '书架空空如也',
       description: '点击"新建书籍"开始你的翻译之旅',

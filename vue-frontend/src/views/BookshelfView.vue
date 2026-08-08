@@ -330,6 +330,7 @@ async function applyBatchTags() {
         v-if="bookshelfStore.batchMode"
         class="bookshelf-batch-bar"
         aria-label="书架批量操作"
+        justify="start"
       >
         <UiButton variant="secondary" @click="bookshelfStore.toggleSelectAll">
           {{ bookshelfStore.isAllSelected ? '取消全选' : '全选当前书籍' }}
@@ -386,10 +387,11 @@ async function applyBatchTags() {
 
         <ProductEmptyState
           v-else-if="isEmpty"
-          icon-name="book-open"
+          class="bookshelf-main__empty-state"
           title="书架空空如也"
           description="点击&quot;新建书籍&quot;开始你的翻译之旅"
         >
+          <template #icon>📚</template>
           <template #actions>
             <UiButton variant="primary" @click="openCreateBookModal">
               <UiIcon name="plus" size="16" />
@@ -400,10 +402,12 @@ async function applyBatchTags() {
 
         <ProductEmptyState
           v-else
-          icon-name="search"
+          class="bookshelf-main__empty-state"
           title="未找到匹配的书籍"
           description="尝试调整搜索条件或标签筛选"
-        />
+        >
+          <template #icon>🔍</template>
+        </ProductEmptyState>
       </div>
     </main>
 
@@ -489,6 +493,11 @@ async function applyBatchTags() {
   font-size: 1.8rem;
 }
 
+.bookshelf-toolbar__title::before {
+  content: '📚';
+  font-size: 1.5rem;
+}
+
 .bookshelf-toolbar__actions {
   display: flex;
   flex-wrap: wrap;
@@ -497,6 +506,22 @@ async function applyBatchTags() {
 
 .bookshelf-main__books {
   min-height: 400px;
+}
+
+.bookshelf-main__empty-state {
+  --product-empty-state-min-height: 0;
+  --product-empty-state-padding: 80px 20px;
+  --product-empty-state-icon-width: auto;
+  --product-empty-state-icon-height: auto;
+  --product-empty-state-icon-margin-bottom: 16px;
+  --product-empty-state-icon-border: 0;
+  --product-empty-state-icon-radius: 0;
+  --product-empty-state-icon-background: transparent;
+  --product-empty-state-icon-color: inherit;
+  --product-empty-state-icon-font-size: 4rem;
+  --product-empty-state-title-font-size: 1.5rem;
+  --product-empty-state-title-margin: 0 0 8px;
+  --product-empty-state-description-margin: 0 0 24px;
 }
 
 .bookshelf-query-bar {

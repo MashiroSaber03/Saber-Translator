@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
@@ -97,7 +98,7 @@ describe('AnalysisProgress', () => {
     expect(wrapper.text()).not.toContain('书籍 book-1 已有运行中的任务')
   })
 
-  it('offers four explicit scopes and sends full mode when selected', async () => {
+  it('maps the analysis scope and independent incremental control to backend modes', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
@@ -120,18 +121,74 @@ describe('AnalysisProgress', () => {
     const analysisModeSelect = wrapper.getComponent(UiSelect)
     expect(analysisModeSelect.props('options')).toEqual([
       expect.objectContaining({ value: 'full' }),
-      expect.objectContaining({ value: 'incremental' }),
       expect.objectContaining({ value: 'chapter' }),
       expect.objectContaining({ value: 'page' }),
     ])
-    analysisModeSelect.vm.$emit('change', 'full')
-    await flushPromises()
-    expect(wrapper.text()).toContain('完成发布前旧结果持续可读')
+    expect(analysisModeSelect.props('modelValue')).toBe('full')
+
+    const incrementalCheckbox = wrapper.getComponent(UiCheckbox)
+    expect(incrementalCheckbox.props('label')).toBe('增量模式')
+    expect(incrementalCheckbox.props('modelValue')).toBe(true)
 
     await wrapper.get('button[aria-label="开始分析"]').trigger('click')
     await flushPromises()
 
-    expect(startAnalysisMock).toHaveBeenCalledWith('book-1', expect.objectContaining({ mode: 'full' }))
+    expect(startAnalysisMock).toHaveBeenLastCalledWith(
+      'book-1',
+      expect.objectContaining({ mode: 'incremental' }),
+    )
+  })
+
+  it('describes an idle book with existing results as partially analyzed', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setAnalysisStatus('idle')
+    store.setBookTotalPages(20)
+    store.setAnalyzedPagesCount(3)
+
+    const wrapper = mount(AnalysisProgress, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    expect(wrapper.find('.analysis-progress-panel__status-label').text()).toBe('部分分析')
+  })
+
+  it('sends full mode when the incremental control is disabled', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setAnalysisStatus('idle')
+    store.setBookTotalPages(20)
+    store.setChapters([])
+
+    startAnalysisMock.mockResolvedValue({
+      success: true,
+      jobId: 'task-full',
+    })
+
+    const wrapper = mount(AnalysisProgress, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    await wrapper.get('input[aria-label="增量模式"]').setValue(false)
+    await flushPromises()
+    expect(wrapper.getComponent(UiCheckbox).props('modelValue')).toBe(false)
+    expect(wrapper.text()).toContain('旧结果持续可读')
+
+    await wrapper.get('button[aria-label="开始分析"]').trigger('click')
+    await flushPromises()
+
+    expect(startAnalysisMock).toHaveBeenLastCalledWith(
+      'book-1',
+      expect.objectContaining({ mode: 'full' }),
+    )
   })
 
   it('names analysis mode selectors when they are not wrapped in visible fields', async () => {

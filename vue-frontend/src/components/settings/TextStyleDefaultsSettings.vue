@@ -2,11 +2,11 @@
   <div class="text-style-defaults-settings">
     <ProductFormSection>
       <template #title>文本默认值</template>
-      <ProductStatusBanner tone="info" role="note">
+      <p class="text-style-defaults-settings__intro">
         这里修改的是后端数据库中的全局默认文字设置。
         <br />
         保存成功后，新导入页面和后续任务会使用这些默认值。
-      </ProductStatusBanner>
+      </p>
       <ProductActionRow aria-label="文本默认值操作" justify="start">
         <UiButton
           variant="secondary"
@@ -404,3 +404,12 @@ function handleFontSelectChange(value: string | number): void {
 }
 
 </script>
+
+<style scoped>
+.text-style-defaults-settings__intro {
+  margin: 0 0 14px;
+  color: var(--color-text-supporting);
+  font-size: 13px;
+  line-height: 1.6;
+}
+</style>

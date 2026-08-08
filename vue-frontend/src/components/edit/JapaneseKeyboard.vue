@@ -24,10 +24,11 @@
 
     <div class="kana-keyboard__options">
       <div class="kana-keyboard__mode-select">
-        <span class="kana-keyboard__mode-label">字符：</span>
         <ProductSegmentedTabs
+          class="kana-keyboard__mode-tabs"
           :tabs="kanaModeTabs"
           :active-tab="kanaMode"
+          appearance="radio"
           aria-label="假名字符类型"
           @select="handleKanaModeSelect"
         />
@@ -170,7 +171,10 @@
     </div>
 
     <div class="kana-keyboard__footer">
-      <UiButton variant="danger" size="sm" @click="deleteChar">退格</UiButton>
+      <UiButton class="kana-keyboard__backspace" variant="danger" size="sm" @click="deleteChar">
+        <UiIcon name="arrow-left" size="14" />
+        退格
+      </UiButton>
     </div>
   </div>
 </template>
@@ -373,8 +377,8 @@ onUnmounted(() => {
 <style scoped>
 .kana-keyboard {
   --japanese-keyboard-panel-shadow: color-mix(in srgb, var(--color-overlay-backdrop-solid) 15%, transparent);
-  --japanese-keyboard-header-start: var(--color-status-error);
-  --japanese-keyboard-header-end: var(--color-status-error-hover);
+  --japanese-keyboard-header-start: var(--color-status-error-bright);
+  --japanese-keyboard-header-end: var(--color-status-error-bright-hover);
   --japanese-keyboard-header-button-background: var(--color-overlay-inverse-muted);
   --japanese-keyboard-kana-key-background: var(--color-surface-quiet);
   --japanese-keyboard-kana-key-hover-background: var(--color-surface-interactive-hover);
@@ -392,6 +396,9 @@ onUnmounted(() => {
 }
 
 .kana-keyboard__header {
+  --ui-button-icon-width: 24px;
+  --ui-button-icon-height: 24px;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -407,14 +414,23 @@ onUnmounted(() => {
 }
 
 .kana-keyboard__tabs {
-  --product-segmented-tabs-background: var(--japanese-keyboard-header-button-background);
+  --product-segmented-tabs-background: transparent;
   --product-segmented-tabs-border: transparent;
+  --product-segmented-tabs-padding: 0;
+  --product-segmented-tabs-radius: 0;
+  --product-segmented-tabs-gap: 4px;
+  --product-segmented-tabs-tab-padding: 4px 10px;
+  --product-segmented-tabs-tab-radius: 4px;
+  --product-segmented-tabs-tab-background: var(--japanese-keyboard-header-button-background);
+  --product-segmented-tabs-tab-font-size: 11px;
+  --product-segmented-tabs-tab-line-height: 1.35;
   --product-segmented-tabs-active-background: var(--color-surface-base);
   --product-segmented-tabs-active-text: var(--color-text-danger-strong);
+  --product-segmented-tabs-active-shadow: none;
   --product-segmented-tabs-text: var(--color-text-inverse);
 
-  flex: 1 1 auto;
-  max-width: 360px;
+  flex: 0 1 auto;
+  max-width: none;
 }
 
 .kana-keyboard__options {
@@ -439,8 +455,29 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.kana-keyboard__mode-label {
-  font-weight: 500;
+.kana-keyboard__mode-tabs {
+  --product-segmented-tabs-background: transparent;
+  --product-segmented-tabs-border: transparent;
+  --product-segmented-tabs-padding: 0;
+  --product-segmented-tabs-radius: 0;
+  --product-segmented-tabs-gap: 12px;
+  --product-segmented-tabs-active-text: var(--color-text-default);
+  --product-segmented-tabs-text: var(--color-text-default);
+  --product-segmented-tabs-tab-font-size: 12px;
+  --product-segmented-tabs-tab-font-weight: 400;
+  --product-segmented-tabs-radio-tab-gap: 4px;
+  --product-segmented-tabs-radio-border: var(--color-text-secondary);
+  --product-segmented-tabs-radio-active-color: var(--color-text-danger-strong);
+  --product-segmented-tabs-radio-inner-color: var(--color-surface-subtle);
+}
+
+.kana-keyboard__target-select {
+  --ui-select-min-height: 40px;
+  --ui-select-padding: 4px 8px;
+  --ui-select-radius: 4px;
+  --ui-select-font-size: 12px;
+
+  width: 210px;
 }
 
 .kana-keyboard__tab-content {
@@ -557,6 +594,17 @@ onUnmounted(() => {
   padding: 8px 12px;
   background: var(--color-surface-subtle);
   border-top: 1px solid var(--color-border-default);
+}
+
+.kana-keyboard__backspace {
+  --ui-button-danger-background: color-mix(in srgb, var(--color-status-error) 10%, transparent);
+  --ui-button-danger-color: var(--color-text-danger-strong);
+  --ui-button-danger-border: 1px solid color-mix(in srgb, var(--color-status-error) 30%, transparent);
+  --ui-button-danger-shadow: none;
+  --ui-button-sm-padding: 6px 16px;
+  --ui-button-sm-font-size: 12px;
+
+  border-radius: 4px;
 }
 
 </style>

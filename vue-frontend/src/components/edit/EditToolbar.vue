@@ -11,7 +11,7 @@
           title="上一张图片 (A)"
           @click="$emit('go-previous-image')"
         >
-          <UiIcon name="chevrons-left" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--compact" aria-hidden="true">◀◀</span>
         </UiIconButton>
         <UiButton
           variant="toolbar"
@@ -32,7 +32,7 @@
           title="下一张图片 (D)"
           @click="$emit('go-next-image')"
         >
-          <UiIcon name="chevrons-right" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--compact" aria-hidden="true">▶▶</span>
         </UiIconButton>
         <UiIconButton
           variant="inverse"
@@ -44,7 +44,7 @@
           title="显示/隐藏缩略图"
           @click="$emit('toggle-thumbnails')"
         >
-          <UiIcon name="list" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--thumbnail" aria-hidden="true">☷</span>
         </UiIconButton>
       </div>
 
@@ -60,7 +60,7 @@
           title="上一个气泡"
           @click="$emit('select-previous-bubble')"
         >
-          <UiIcon name="chevron-left" size="16" />
+          <span class="edit-toolbar__text-glyph" aria-hidden="true">◀</span>
         </UiIconButton>
         <span class="edit-toolbar__bubble-indicator">
           气泡 <span class="edit-toolbar__bubble-indicator-value">{{ selectedBubbleIndex >= 0 ? selectedBubbleIndex + 1 : 0 }}</span> / <span class="edit-toolbar__bubble-indicator-value">{{ bubbleCount }}</span>
@@ -74,7 +74,7 @@
           title="下一个气泡"
           @click="$emit('select-next-bubble')"
         >
-          <UiIcon name="chevron-right" size="16" />
+          <span class="edit-toolbar__text-glyph" aria-hidden="true">▶</span>
         </UiIconButton>
       </div>
 
@@ -99,7 +99,7 @@
           title="切换视图模式"
           @click="$emit('toggle-view-mode')"
         >
-          <UiIcon name="image" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--view-mode" aria-hidden="true">⧉</span>
         </UiIconButton>
         <UiIconButton
           variant="inverse"
@@ -111,10 +111,10 @@
           title="同步缩放/拖动"
           @click="$emit('toggle-sync')"
         >
-          <UiIcon name="link" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--sync" aria-hidden="true">🔗</span>
         </UiIconButton>
         <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="适应屏幕" title="适应屏幕 (双击)" @click="$emit('fit-to-screen')">
-          <UiIcon name="maximize" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--fit" aria-hidden="true">⛶</span>
         </UiIconButton>
         <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="放大" title="放大 (+)" @click="$emit('zoom-in')">
           <UiIcon name="plus" size="16" />
@@ -124,7 +124,7 @@
           <UiIcon name="minus" size="16" />
         </UiIconButton>
         <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="原始大小" title="原始大小" @click="$emit('reset-zoom')">
-          <UiIcon name="home" size="16" />
+          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--reset" aria-hidden="true">1:1</span>
         </UiIconButton>
       </div>
 
@@ -481,6 +481,36 @@ const brushCursorStyle = computed(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.edit-toolbar__text-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.edit-toolbar__text-glyph--compact {
+  font-size: 10px;
+  letter-spacing: -2px;
+}
+
+.edit-toolbar__text-glyph--thumbnail,
+.edit-toolbar__text-glyph--fit {
+  font-size: 16px;
+}
+
+.edit-toolbar__text-glyph--view-mode {
+  font-size: 18px;
+}
+
+.edit-toolbar__text-glyph--sync {
+  font-size: 12px;
+}
+
+.edit-toolbar__text-glyph--reset {
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .edit-toolbar__view-controls .edit-toolbar__zoom-level {

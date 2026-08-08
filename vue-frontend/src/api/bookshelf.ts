@@ -234,6 +234,7 @@ export async function updateBook(
         bookPath(bookId),
         bookFormData(title, tagIds, data.cover),
         idempotencyConfig(),
+        'put',
       )
     } else {
       await apiClient.put(

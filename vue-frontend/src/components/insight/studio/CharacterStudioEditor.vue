@@ -2,6 +2,7 @@
   <main class="studio-editor">
     <section v-if="!localDocument" class="studio-editor__onboarding">
       <ProductEmptyState
+        class="studio-editor__onboarding-empty-state"
         eyebrow="角色工坊"
         icon-name="users"
         role="note"
@@ -39,7 +40,9 @@
           layout="scroll"
           :tabs="tabItems"
           @update:active-tab="$emit('update:activeTab', normalizeTab($event))"
-        />
+        >
+          <template #tabIcon="{ tab }">{{ editorTabGlyph(tab.id) }}</template>
+        </ProductSegmentedTabs>
 
         <StudioOverviewTab
           v-if="activeTab === 'overview'"
@@ -62,7 +65,7 @@
             description="聚合角色身份与世界观上下文，优先把角色基底写清楚，再去扩展运行时能力。"
           >
             <template #actions>
-              <ProductActionRow aria-label="角色设定生成操作" justify="start">
+              <ProductActionRow appearance="accent" aria-label="角色设定生成操作" justify="start">
                 <UiButton variant="secondary" :disabled="isGenerationLocked" @click="$emit('generate', 'identity')" size="sm">
                   {{ isGenerating('identity') ? '重写中...' : 'AI 重写本区' }}
                 </UiButton>
@@ -186,7 +189,9 @@
               layout="scroll"
               :tabs="scriptTabs"
               @update:active-tab="$emit('update:activeScriptTab', normalizeScriptTab($event))"
-            />
+            >
+              <template #tabIcon="{ tab }">{{ scriptTabGlyph(tab.id) }}</template>
+            </ProductSegmentedTabs>
 
             <div class="studio-editor__script-panel">
               <RegexWorkbench
@@ -222,7 +227,7 @@
             description="在这里完成结构诊断、上下文裁剪确认和最终导出。导出前建议先跑一遍诊断。"
           >
             <template #actions>
-              <ProductActionRow aria-label="导出与诊断操作" justify="start">
+              <ProductActionRow appearance="accent" aria-label="导出与诊断操作" justify="start">
                 <UiButton variant="secondary" :disabled="pendingState.validating" @click="$emit('validate')" size="sm">
                   {{ pendingState.validating ? '诊断中...' : '重新诊断' }}
                 </UiButton>
@@ -372,6 +377,16 @@ const scriptTabs = scriptTabItems.map(item => ({
   label: item.label,
   iconName: item.iconName,
 }))
+const editorTabGlyphs = new Map(editorTabItems.map(item => [item.value, item.glyph]))
+const scriptTabGlyphs = new Map(scriptTabItems.map(item => [item.value, item.glyph]))
+
+function editorTabGlyph(tabId: string): string {
+  return editorTabGlyphs.get(tabId as typeof editorTabItems[number]['value']) ?? ''
+}
+
+function scriptTabGlyph(tabId: string): string {
+  return scriptTabGlyphs.get(tabId as typeof scriptTabItems[number]['value']) ?? ''
+}
 
 const flattenedLorebookCount = computed(() => {
   if (!localDocument.value) return 0
@@ -600,6 +615,24 @@ function toggleScriptFreeze(checked: boolean) {
   padding: 36px;
 }
 
+.studio-editor__onboarding-empty-state {
+  --product-empty-state-align-items: flex-start;
+  --product-empty-state-justify-content: flex-start;
+  --product-empty-state-max-width: 560px;
+  --product-empty-state-min-height: 0;
+  --product-empty-state-margin-inline: 0;
+  --product-empty-state-padding: 0;
+  --product-empty-state-text-align: left;
+  --product-empty-state-icon-display: none;
+  --product-empty-state-title-margin: 18px 0 0;
+  --product-empty-state-title-font-size: 30px;
+  --product-empty-state-title-font-weight: 700;
+  --product-empty-state-title: var(--studio-text-strong);
+  --product-empty-state-description-margin: 12px 0 0;
+  --product-empty-state-description-font-size: 0.95rem;
+  --product-empty-state-description-line-height: 1.8;
+}
+
 .studio-editor__onboarding-tip-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
@@ -612,8 +645,15 @@ function toggleScriptFreeze(checked: boolean) {
   color: var(--studio-text-strong);
 }
 
+.studio-editor__onboarding-tip-card {
+  --product-record-card-background: var(--color-surface-quiet);
+  --product-record-card-border: var(--studio-border-default);
+  --product-record-card-radius: 18px;
+  --product-record-card-padding: 16px;
+}
+
 .studio-editor__onboarding-tip-description {
-  margin: 0;
+  margin: 8px 0 0;
   color: var(--studio-text-muted);
   font-size: 13px;
   line-height: 1.7;

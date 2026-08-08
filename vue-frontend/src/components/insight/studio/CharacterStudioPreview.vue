@@ -5,7 +5,9 @@
       aria-label="角色工坊预览工作区"
       :tabs="tabs"
       @update:active-tab="selectTab"
-    />
+    >
+      <template #tabIcon="{ tab }">{{ previewTabGlyph(tab.id) }}</template>
+    </ProductSegmentedTabs>
 
     <ChatWorkspace
       v-if="activeTab === 'chat'"
@@ -148,6 +150,11 @@ const tabs = studioPreviewTabs.map(tab => ({
   iconName: tab.iconName,
   label: tab.label,
 }))
+const previewTabGlyphs = new Map(studioPreviewTabs.map(tab => [tab.value, tab.glyph]))
+
+function previewTabGlyph(tabId: string): string {
+  return previewTabGlyphs.get(tabId as typeof studioPreviewTabs[number]['value']) ?? ''
+}
 const agentInput = ref('')
 const selectedGreetingId = ref('')
 const greetingPickerOpen = ref(false)

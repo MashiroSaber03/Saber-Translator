@@ -52,10 +52,10 @@
       </UiField>
 
       <UiField variant="settings">
-        <UiButton variant="secondary" block @click="testConnection" :disabled="isTesting">
+        <UiButton variant="secondary" tone="info" @click="testConnection" :disabled="isTesting">
           <span v-if="isTesting">测试中...</span>
           <template v-else>
-            <UiIcon name="link" />
+            <span aria-hidden="true">🔗</span>
             <span>测试连接</span>
           </template>
         </UiButton>
@@ -166,7 +166,6 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'

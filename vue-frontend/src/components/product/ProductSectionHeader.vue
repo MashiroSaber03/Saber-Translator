@@ -7,10 +7,12 @@ type ProductSectionHeaderSize = 'md' | 'sm'
 const props = withDefaults(defineProps<{
   title: string
   description?: string
+  headingLevel?: 2 | 3 | 4 | 5
   iconName?: UiIconName
   size?: ProductSectionHeaderSize
 }>(), {
   description: '',
+  headingLevel: 4,
   iconName: undefined,
   size: 'md',
 })
@@ -22,10 +24,11 @@ const props = withDefaults(defineProps<{
     :class="`product-section-header--${props.size}`"
   >
     <div class="product-section-header__copy">
-      <h4 class="product-section-header__title">
-        <UiIcon v-if="iconName" :name="iconName" size="16" />
+      <component :is="`h${headingLevel}`" class="product-section-header__title">
+        <span v-if="$slots.icon" class="product-section-header__icon-text" aria-hidden="true"><slot name="icon" /></span>
+        <UiIcon v-else-if="iconName" :name="iconName" size="16" />
         <span class="product-section-header__title-text">{{ title }}</span>
-      </h4>
+      </component>
       <p v-if="description" class="product-section-header__description">
         {{ description }}
       </p>
@@ -68,6 +71,12 @@ const props = withDefaults(defineProps<{
 .product-section-header__title-text {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.product-section-header__icon-text {
+  flex: 0 0 auto;
+  font-size: var(--product-section-header-icon-font-size, 1em);
+  line-height: 1;
 }
 
 .product-section-header--sm {

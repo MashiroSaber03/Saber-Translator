@@ -206,6 +206,20 @@ def test_book_creation_rejects_retired_request_fields(content_platform) -> None:
     assert "form.description" in multipart_response.get_data(as_text=True)
 
 
+def test_book_detail_includes_the_list_projection_timestamps(content_platform) -> None:
+    _data_root, _engine, repository, _storage, _importer, book, _chapter = (
+        content_platform
+    )
+
+    summary = next(
+        item for item in repository.list_books() if item["id"] == book["id"]
+    )
+    detail = repository.get_book(str(book["id"]))
+
+    assert detail["createdAt"] == summary["createdAt"]
+    assert detail["updatedAt"] == summary["updatedAt"]
+
+
 def test_page_operation_rejects_client_payload(content_platform) -> None:
     data_root, engine, repository, _storage, importer, _book, chapter = (
         content_platform

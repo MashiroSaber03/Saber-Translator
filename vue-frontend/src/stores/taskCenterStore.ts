@@ -98,6 +98,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   let projectionVersion = 0
   let projectionTimer: ReturnType<typeof setTimeout> | null = null
   let projectionPromise: Promise<void> | null = null
+  let detailProjectionTimer: ReturnType<typeof setTimeout> | null = null
+  let detailProjectionPromise: Promise<void> | null = null
+  let detailProjectionDirty = false
   const pendingProjectionJobIds = new Set<string>()
   const eventListeners = new Set<TaskCenterEventListener>()
 
@@ -141,6 +144,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       history.value = historyResult.items
       queueRevision.value = queueResult.queueRevision
       workerOnline.value = queueResult.workerOnline !== false
+      if (selectedDetail.value) {
+        scheduleSelectedDetailRefresh(selectedDetail.value.jobId)
+      }
       if (
         !eventSource &&
         lastEventId.value === 0 &&
@@ -177,6 +183,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   function applyJobProjection(job: V2Job): void {
+    scheduleSelectedDetailRefresh(job.jobId)
     const queueWithoutJob = queue.value.filter(item => item.jobId !== job.jobId)
     const historyWithoutJob = history.value.filter(item => item.jobId !== job.jobId)
     if (QUEUE_STATUSES.has(job.status)) {
@@ -196,6 +203,60 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       historyWithoutJob.unshift(job)
     }
     history.value = trimHistoryBatches(historyWithoutJob)
+  }
+
+  function mergeDetailEvents(
+    previous: V2JobEvent[],
+    current: V2JobEvent[],
+  ): V2JobEvent[] {
+    const byId = new Map<number, V2JobEvent>()
+    for (const event of [...previous, ...current]) {
+      byId.set(event.eventId, event)
+    }
+    return [...byId.values()].sort((left, right) => left.eventId - right.eventId)
+  }
+
+  function scheduleSelectedDetailRefresh(jobId: string): void {
+    if (
+      !drawerOpen.value
+      || selectedDetail.value?.jobId !== jobId
+    ) return
+    detailProjectionDirty = true
+    if (detailProjectionTimer || detailProjectionPromise) return
+    detailProjectionTimer = setTimeout(() => {
+      detailProjectionTimer = null
+      void flushSelectedDetailRefresh()
+    }, 100)
+  }
+
+  async function flushSelectedDetailRefresh(): Promise<void> {
+    const jobId = selectedDetail.value?.jobId
+    if (
+      detailProjectionPromise
+      || !detailProjectionDirty
+      || !drawerOpen.value
+      || !jobId
+    ) return
+    detailProjectionDirty = false
+    const request = jobsApi.get(jobId).then((detail) => {
+      const previous = selectedDetail.value
+      if (previous?.jobId !== jobId) return
+      selectedDetail.value = {
+        ...detail,
+        recentEvents: mergeDetailEvents(previous.recentEvents, detail.recentEvents),
+      }
+    }).catch(() => {
+      // The durable queue/history projection remains usable if the optional
+      // expanded-detail refresh races with a transient request failure.
+    }).finally(() => {
+      detailProjectionPromise = null
+      const selectedJobId = selectedDetail.value?.jobId
+      if (detailProjectionDirty && selectedJobId) {
+        scheduleSelectedDetailRefresh(selectedJobId)
+      }
+    })
+    detailProjectionPromise = request
+    await request
   }
 
   function removeJobProjection(jobId: string): void {
@@ -298,6 +359,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     refreshTimer = null
     if (projectionTimer) clearTimeout(projectionTimer)
     projectionTimer = null
+    if (detailProjectionTimer) clearTimeout(detailProjectionTimer)
+    detailProjectionTimer = null
+    detailProjectionDirty = false
     pendingProjectionJobIds.clear()
     eventRefreshDirty = false
     eventSource?.close()

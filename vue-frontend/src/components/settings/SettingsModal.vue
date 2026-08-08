@@ -21,7 +21,7 @@
   >
     <template #title>
       <span class="settings-modal__title">
-        <UiIcon name="settings" />
+        <span aria-hidden="true">⚙️</span>
         <span>设置</span>
       </span>
     </template>
@@ -118,7 +118,6 @@ import type {
 import { deepClone } from '@/utils/deepClone'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
@@ -329,6 +328,10 @@ async function handleSave() {
 }
 
 .settings-modal__tab-content {
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-number-field-text-align: left;
+
   flex: 1;
   overflow-y: auto;
   padding: 25px;

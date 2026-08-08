@@ -126,12 +126,18 @@ describe('apiClient error normalization', () => {
       await expect(apiClient.delete('/api/v2/books/one')).resolves.toEqual({ ok: true })
       await expect(apiClient.upload('/api/v2/pages', new FormData())).resolves.toEqual({ ok: true })
       await expect(
+        apiClient.upload('/api/v2/books/one', new FormData(), undefined, 'put'),
+      ).resolves.toEqual({ ok: true })
+      await expect(
         createChapterTranslationJob('chapter', [], { mode: 'standard' }),
       ).rejects.toBeInstanceOf(BackendAccessRestrictedError)
 
       expect(getRequestMock).toHaveBeenCalledTimes(1)
       expect(postRequestMock).toHaveBeenCalledTimes(2)
-      expect(putRequestMock).toHaveBeenCalledTimes(1)
+      expect(putRequestMock).toHaveBeenCalledTimes(2)
+      expect(putRequestMock.mock.calls[1]?.[2]).toMatchObject({
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       expect(patchRequestMock).toHaveBeenCalledTimes(1)
       expect(deleteRequestMock).toHaveBeenCalledTimes(1)
     } finally {

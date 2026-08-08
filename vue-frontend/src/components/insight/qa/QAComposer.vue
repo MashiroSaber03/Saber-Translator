@@ -23,10 +23,20 @@ const questionModel = computed({
 
 <template>
   <ProductComposer
+    class="qa-composer"
     v-model="questionModel"
     placeholder="输入你的问题..."
     :disabled="disabled || isStreaming"
+    :show-submit-icon="false"
     submit-label="发送"
     @submit="emit('submit')"
   />
 </template>
+
+<style scoped>
+.qa-composer {
+  --ui-button-primary-disabled-background: var(--insight-text-muted);
+  --ui-button-primary-disabled-color: var(--color-text-inverse);
+  --ui-button-primary-disabled-opacity: 1;
+}
+</style>

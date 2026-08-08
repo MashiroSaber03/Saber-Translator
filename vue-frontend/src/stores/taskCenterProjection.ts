@@ -1,5 +1,6 @@
 import type { V2Job } from '@/api/v2/jobs'
 import { projectInsightPageProgress } from '@/utils/insightJobProgress'
+import { jobKindLabel, stepKindLabel } from '@/utils/taskDisplay'
 
 export interface JobBatchProjection {
   key: string
@@ -68,7 +69,7 @@ export function describeJobTarget(job: V2Job): string {
   if (chapter) return `章节：${chapter}${pageCount ? ` · ${pageCount} 页` : ''}`
   if (book) return `书籍：${book}${pageCount ? ` · ${pageCount} 页` : ''}`
   if (page) return `页面：${page}`
-  return name || job.kind
+  return name || jobKindLabel(job.kind)
 }
 
 export function progressPercent(job: V2Job): number {
@@ -143,7 +144,7 @@ export function currentStepLabel(job: V2Job): string {
     : page
       ? `页面 ${page}`
       : ''
-  return [target, kind].filter(Boolean).join(' · ')
+  return [target, kind ? stepKindLabel(kind) : ''].filter(Boolean).join(' · ')
 }
 
 export function poolProgress(job: V2Job): JobPoolProjection[] {

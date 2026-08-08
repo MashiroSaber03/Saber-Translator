@@ -3,7 +3,7 @@ import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'inverse' | 'link' | 'toolbar' | 'card-action' | 'tab' | 'plain-danger'
-  tone?: 'neutral' | 'primary' | 'danger' | 'success' | 'warning'
+  tone?: 'neutral' | 'primary' | 'danger' | 'success' | 'warning' | 'info'
   size?: 'lg' | 'md' | 'sm' | 'xs'
   type?: 'button' | 'submit' | 'reset'
   disabled?: boolean
@@ -64,14 +64,15 @@ const buttonClasses = computed(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   text-decoration: none;
-  white-space: nowrap;
+  width: var(--ui-button-width, auto);
+  white-space: var(--ui-button-white-space, nowrap);
   user-select: none;
 }
 
 .ui-button:not(:where(.ui-button--bare)):disabled {
-  border: var(--ui-button-disabled-border, 1px solid var(--color-border-default));
-  background: var(--ui-button-disabled-background, var(--color-surface-muted));
-  color: var(--ui-button-disabled-color, var(--color-text-supporting));
+  border: var(--ui-button-disabled-border, var(--internal-ui-button-disabled-border, 1px solid var(--color-border-default)));
+  background: var(--ui-button-disabled-background, var(--internal-ui-button-disabled-background, var(--color-surface-muted)));
+  color: var(--ui-button-disabled-color, var(--internal-ui-button-disabled-color, var(--color-text-supporting)));
   box-shadow: none;
   opacity: var(--ui-button-disabled-opacity, 1);
   transform: none;
@@ -112,6 +113,19 @@ const buttonClasses = computed(() => {
   font-size: 13px;
 }
 
+.ui-button--primary:disabled {
+  border: var(--ui-button-primary-disabled-border, none);
+  background: var(
+    --ui-button-primary-disabled-background,
+    var(
+      --ui-button-primary-background,
+      linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%)
+    )
+  );
+  color: var(--ui-button-primary-disabled-color, var(--color-text-inverse));
+  opacity: var(--ui-button-primary-disabled-opacity, 0.55);
+}
+
 .ui-button--secondary {
   background: var(--ui-button-secondary-background, var(--color-surface-card));
   color: var(--ui-button-secondary-color, var(--color-text-default));
@@ -122,6 +136,26 @@ const buttonClasses = computed(() => {
   background: var(--ui-button-secondary-hover-background, var(--color-surface-interactive-hover));
   border-color: var(--ui-button-secondary-hover-border-color, var(--color-text-supporting));
   color: var(--ui-button-secondary-hover-color, var(--ui-button-secondary-color, var(--color-text-default)));
+}
+
+.ui-button--secondary.ui-button--tone-info {
+  --internal-ui-button-disabled-background: var(--color-status-info);
+  --internal-ui-button-disabled-border: 0;
+  --internal-ui-button-disabled-color: var(--color-text-inverse);
+
+  border-color: transparent;
+  background: var(--color-status-info);
+  color: var(--color-text-inverse);
+}
+
+.ui-button--secondary.ui-button--tone-info:disabled {
+  opacity: 0.6;
+}
+
+.ui-button--secondary.ui-button--tone-info:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--color-status-info) 84%, var(--color-text-default));
+  color: var(--color-text-inverse);
 }
 
 .ui-button--inverse {
@@ -171,7 +205,7 @@ const buttonClasses = computed(() => {
   color: var(--ui-button-link-color, var(--color-action-primary));
   font-size: var(--ui-button-link-font-size, 0.78rem);
   font-weight: var(--ui-button-link-font-weight, 500);
-  text-decoration: none;
+  text-decoration: var(--ui-button-link-text-decoration, none);
   border-radius: var(--ui-button-link-radius, 4px);
 }
 

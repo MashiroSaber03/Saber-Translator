@@ -82,7 +82,6 @@ const isTextStyleExpanded = ref(true)
             :model-value="textStyle.autoFontSize"
             :disabled="disabled"
             label="自动计算初始字号"
-            description="首次翻译时为每个气泡计算合适字号"
             @change="$emit('updateAutoFontSize', $event)"
           />
         </UiField>
@@ -295,12 +294,48 @@ const isTextStyleExpanded = ref(true)
   --settings-sidebar-text-style-title-divider: var(--color-border-muted);
   --settings-sidebar-text-style-title: var(--color-text-heading);
   --settings-sidebar-text-style-title-note: var(--color-text-supporting);
+  --settings-sidebar-text-style-header-divider: var(--settings-sidebar-text-style-title-divider);
   --settings-sidebar-text-style-toggle-background: var(--color-surface-muted);
   --settings-sidebar-text-style-toggle-border: var(--color-border-muted);
+  --settings-sidebar-text-style-toggle-text: var(--color-text-secondary);
+  --settings-sidebar-text-style-toggle-checked-border: var(--color-border-brand);
+  --settings-sidebar-text-style-toggle-checked-background: var(--color-focus-brand-soft);
+  --settings-sidebar-text-style-toggle-checked-text: var(--color-text-brand);
+  --settings-sidebar-text-style-group-title: var(--settings-sidebar-text-style-title);
+  --settings-sidebar-text-style-group-note: var(--settings-sidebar-text-style-title-note);
+  --settings-sidebar-text-style-field-label: var(--color-text-default);
+  --settings-sidebar-text-style-field-hint: var(--color-text-supporting);
   --settings-sidebar-text-style-hint-border: var(--color-border-info);
   --settings-sidebar-text-style-hint-background: var(--color-surface-interactive-hover);
   --settings-sidebar-text-style-hint-text: var(--color-text-link);
   --settings-sidebar-text-style-stroke-divider: var(--color-border-muted);
+  --product-collapsible-section-header-gap: 0;
+  --product-collapsible-section-header-margin: 0 0 10px;
+  --product-collapsible-section-header-padding: 0 0 8px;
+  --product-collapsible-section-header-border: 0;
+  --product-collapsible-section-header-border-bottom: 1px solid var(--settings-sidebar-text-style-header-divider);
+  --product-collapsible-section-header-background: transparent;
+  --product-collapsible-section-header-hover-background: transparent;
+  --product-collapsible-section-title-color: var(--color-text-heading);
+  --product-collapsible-section-title-font-size: 17px;
+  --product-collapsible-section-title-font-weight: 700;
+  --product-collapsible-section-title-order: 1;
+  --product-collapsible-section-hint-order: 2;
+  --product-collapsible-section-toggle-order: 3;
+  --product-collapsible-section-toggle-margin-left: auto;
+  --product-collapsible-section-toggle-color: var(--color-text-supporting);
+  --product-collapsible-section-body-padding: 2px 0 0;
+  --product-collapsible-section-body-background: transparent;
+  --ui-number-field-width: 100%;
+  --ui-number-field-input-width: 100%;
+  --ui-input-min-height: 40px;
+  --ui-input-padding: 9px 10px;
+  --ui-input-border: 1px solid var(--color-border-input);
+  --ui-input-radius: 8px;
+  --ui-input-background: var(--color-surface-input);
+  --ui-input-font-size: 14px;
+  --ui-selector-control-background: var(--color-surface-input);
+  --ui-selector-control-border: var(--color-border-input);
 
   margin: 0 0 12px;
   padding: 12px;
@@ -360,19 +395,27 @@ const isTextStyleExpanded = ref(true)
 
 .text-style-section__group-title {
   margin: 0;
-  color: var(--settings-sidebar-text-style-title);
+  color: var(--settings-sidebar-text-style-group-title);
   font-weight: 700;
   font-size: 14px;
   line-height: 1.2;
 }
 
 .text-style-section__group-note {
-  color: var(--settings-sidebar-text-style-title-note);
+  color: var(--settings-sidebar-text-style-group-note);
   font-size: 11px;
   line-height: 1.2;
 }
 
 .text-style-section__field {
+  --ui-field-label-color: var(--settings-sidebar-text-style-field-label);
+  --ui-field-label-font-size: 13px;
+  --ui-field-label-font-weight: 600;
+  --ui-field-settings-header-margin-bottom: 3px;
+  --ui-field-hint-color: var(--settings-sidebar-text-style-field-hint);
+  --ui-field-message-font-size: 11px;
+  --ui-field-message-line-height: 1.3;
+
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -391,10 +434,21 @@ const isTextStyleExpanded = ref(true)
 }
 
 .text-style-section__toggle {
+  --ui-checkbox-gap: 6px;
+  --ui-checkbox-color: var(--settings-sidebar-text-style-toggle-text);
+  --ui-checkbox-input-width: 14px;
+  --ui-checkbox-input-height: 14px;
+  --ui-checkbox-input-margin: 0;
+  --ui-checkbox-input-accent-color: var(--color-action-primary);
+  --ui-checkbox-label-font-weight: 500;
+  --ui-checkbox-checked-border-color: var(--settings-sidebar-text-style-toggle-checked-border);
+  --ui-checkbox-checked-background: var(--settings-sidebar-text-style-toggle-checked-background);
+  --ui-checkbox-checked-color: var(--settings-sidebar-text-style-toggle-checked-text);
+
   width: fit-content;
-  padding: 6px 9px;
+  padding: 5px 10px;
   border: 1px solid var(--settings-sidebar-text-style-toggle-border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--settings-sidebar-text-style-toggle-background);
   font-size: 12px;
 }
