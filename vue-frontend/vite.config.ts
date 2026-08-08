@@ -1,10 +1,19 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { Agent } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
+const apiProxyTarget = process.env.SABER_API_PROXY_TARGET?.trim()
+  || 'http://127.0.0.1:5000'
+const apiProxyAgent = new Agent({
+  keepAlive: true,
+  keepAliveMsecs: 1_000,
+  maxFreeSockets: 8,
+  maxSockets: 32,
+})
 
 export default defineConfig({
   plugins: [vue()],
@@ -37,13 +46,15 @@ export default defineConfig({
 
   server: {
     port: 5173,
+    strictPort: true,
     host: true,
     fs: {
       allow: [workspaceRoot],
     },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000',
+        target: apiProxyTarget,
+        agent: apiProxyAgent,
         changeOrigin: true,
         timeout: 300000,
         proxyTimeout: 300000,

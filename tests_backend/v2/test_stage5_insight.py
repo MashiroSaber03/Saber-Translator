@@ -378,28 +378,18 @@ def insight_platform(tmp_path: Path):
         repository=content,
         storage=storage,
     )
-    lease = content.create_import_lease(str(chapter["id"]))
     page_ids: list[str] = []
-    try:
-        for index, color in enumerate(((255, 255, 255), (240, 240, 240)), 1):
-            payload = BytesIO()
-            with Image.new("RGB", (64, 64), color) as image:
-                image.save(payload, format="PNG")
-            imported, _ = importer.import_page(
-                chapter_id=str(chapter["id"]),
-                logical_path=f"page-{index}.png",
-                upload=BytesIO(payload.getvalue()),
-                lease_id=lease.id,
-                owner_token=lease.owner_token,
-                idempotency_key=f"page-{index}",
-            )
-            page_ids.append(str(imported["page"]["id"]))
-    finally:
-        content.release_import_lease(
+    for index, color in enumerate(((255, 255, 255), (240, 240, 240)), 1):
+        payload = BytesIO()
+        with Image.new("RGB", (64, 64), color) as image:
+            image.save(payload, format="PNG")
+        imported, _ = importer.import_page(
             chapter_id=str(chapter["id"]),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
+            logical_path=f"page-{index}.png",
+            upload=BytesIO(payload.getvalue()),
+            idempotency_key=f"page-{index}",
         )
+        page_ids.append(str(imported["page"]["id"]))
     epoch_id = str(uuid.uuid4())
     ProcessEpochRepository(engine).register(
         EpochRegistration(epoch_id, "worker", "worker", 555)

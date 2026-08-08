@@ -13,12 +13,14 @@ import { useWebImportStore } from '@/stores/webImportStore'
 const mocks = vi.hoisted(() => ({
   createContainerImportJob: vi.fn(),
   importImagesSequentially: vi.fn(),
+  retryFailedImageImports: vi.fn(),
   toast: vi.fn(),
 }))
 
 vi.mock('@/api/v2/content', () => ({
   createContainerImportJob: mocks.createContainerImportJob,
   importImagesSequentially: mocks.importImagesSequentially,
+  retryFailedImageImports: mocks.retryFailedImageImports,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -29,7 +31,11 @@ describe('ImageUpload', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    mocks.importImagesSequentially.mockResolvedValue([{ pageId: 'page-1' }])
+    mocks.importImagesSequentially.mockResolvedValue({
+      failures: [],
+      results: [{ pageId: 'page-1' }],
+    })
+    mocks.retryFailedImageImports.mockResolvedValue({ failures: [], results: [] })
     mocks.createContainerImportJob.mockResolvedValue({
       batchId: 'batch-1',
       jobIds: ['job-1'],
@@ -97,6 +103,45 @@ describe('ImageUpload', () => {
 
     expect(wrapper.getComponent(ProductStatusBanner).props('tone')).toBe('danger')
     expect(wrapper.text()).toContain('backend rejected')
+  })
+
+  it('keeps partial success and retries only failed images with their original keys', async () => {
+    const good = new File(['good'], '001.png', { type: 'image/png' })
+    const bad = new File(['bad'], '002.png', { type: 'image/png' })
+    const failed = {
+      entry: { file: bad, logicalPath: '002.png' },
+      error: new Error('连接中断'),
+      idempotencyKey: 'stable-key',
+    }
+    mocks.importImagesSequentially.mockResolvedValueOnce({
+      failures: [failed],
+      results: [{ pageId: 'page-1' }],
+    })
+    mocks.retryFailedImageImports.mockResolvedValueOnce({
+      failures: [],
+      results: [{ pageId: 'page-2' }],
+    })
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [good, bad])
+    await flushPromises()
+
+    expect(wrapper.emitted('uploadComplete')).toEqual([[1]])
+    expect(wrapper.text()).toContain('仅重试失败项')
+    const retryButton = wrapper.findAll('button').find(button => button.text() === '仅重试失败项')
+    if (!retryButton) throw new Error('retry button was not rendered')
+    await retryButton.trigger('click')
+    await flushPromises()
+
+    expect(mocks.retryFailedImageImports).toHaveBeenCalledWith(
+      'chapter-1',
+      [failed],
+      expect.objectContaining({
+        onProgress: expect.any(Function),
+        onRetry: expect.any(Function),
+      }),
+    )
+    expect(wrapper.emitted('uploadComplete')).toEqual([[1], [1]])
   })
 
   it('contains no FileReader, PDF.js, or browser Base64 import pipeline', () => {

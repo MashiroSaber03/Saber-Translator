@@ -4,7 +4,7 @@
 >
 > 文档角色：本项目后端中心化重构的唯一主方案文档；实施、评审和验收均以本文为准
 >
-> 最后更新：2026-07-28
+> 最后更新：2026-08-09
 
 ## 1. 文档目的
 
@@ -56,7 +56,7 @@
 | 开发环境 | 重构全程固定使用项目根目录现有 Python 虚拟环境 `venv/`；依赖安装、脚本、后端启动、迁移、测试和打包辅助命令均不得使用系统全局 Python |
 | 自动保存 | 删除旧的可选自动保存功能；任务产物始终强制持久化 |
 | 导入 | 普通图片由浏览器逐页幂等上传；容器与网页导入由后端 job 解析，逐页正式入库 |
-| 删除 | 用户语义为永久删除；非终态 job、active operation 或有效导入租约仍引用目标时禁止删除 |
+| 删除 | 用户语义为永久删除；非终态 job 或 active operation 仍引用目标时禁止删除 |
 | 并发调度 | 不增加资源类型调度、智能穿插或多任务并发 |
 | Insight 页面结果 | 页面级规范只保存摘要、关键事件、连续性说明和警告；角色、时间线等结构化数据由派生任务独立生成 |
 | Insight 全书发布 | 新 run 隔离写入，全部必需步骤完成后原子切换 active 指针（允许带失败页发布为 completed_with_errors，失败页由"重试失败项"局部补齐）；任务级失败或取消不破坏旧正式结果 |
@@ -114,7 +114,7 @@
 5. 在一个短数据库事务中创建 assets、pages 和明确资产引用。
 6. 向前端返回正式 `page_id` 和页面元数据。
 
-只有完成入库的页面才能加入翻译或 Insight 任务。普通图片导入不提供断点会话，但每页使用 `Idempotency-Key`，章节导入租约使用 owner token 并在最后活动 60 秒后释放；中断时保留已入库页面。容器和网页导入属于队列任务，浏览器关闭后继续，逐页发布成功页面，任务终态后按 TTL 清理原始容器和草稿临时文件。
+只有完成入库的页面才能加入翻译或 Insight 任务。普通图片不建立批次会话，而是逐张独立上传；每张图片使用稳定的 `Idempotency-Key`，中断时保留已入库页面，瞬时网络/代理故障以同一 key 有限重试，最终失败项可单独重试。容器和网页导入属于队列任务，浏览器关闭后继续，逐页发布成功页面，任务终态后按 TTL 清理原始容器和草稿临时文件。
 
 ## 4. 目标运行架构
 
@@ -231,10 +231,9 @@ API 与 Worker 的全部**业务数据协作**通道如下，均经 SQLite 与�
 | 临时 Worker 请求 | `transient_requests` 表 | 仅用于 vector_query 等必须跨进程但不保存的请求；绑定连接 token，断线取消，完成结果由 API 消费确认后删除，遗留终态按短 TTL 清理 |
 | 页面渲染 | `render_requests` 表 | 每页最多一个待处理请求；新 revision 覆盖旧待处理 revision，由 API render executor 消费 |
 | 任务事件与进度 | `job_events` + `jobs.latest_progress` | 关键状态、页面结果、警告和错误写事件；高频百分比只覆盖 latest_progress，禁止逐 tick 堆积事件 |
-| 章节写入意图 | `chapter_write_intents` | 队首章节写 job 在 queued 排空阶段为全部目标章节建立；封闭新编辑、写 operation/render 链和导入租约，旧即时写链排空后原子升级为章节写锁；绑定 Worker epoch/租约，旧 epoch 恢复时清理 |
+| 章节写入意图 | `chapter_write_intents` | 队首章节写 job 在 queued 排空阶段为全部目标章节建立；封闭新编辑、写 operation/render 链和普通图片写入，旧即时写链排空后原子升级为章节写锁；绑定 Worker epoch/租约，旧 epoch 恢复时清理 |
 | 章节写锁 | `chapter_write_locks` | 仅修改章节页面/文档的 job 启动时按全部目标章节原子获取；记录 job/lock_generation/当前 owner attempt/lease，paused/interrupted 继续持有，终态释放 |
 | 插件包版本 | `plugins`、`plugin_versions` | API 管理 manifest 与版本；Worker 按任务快照加载固定 package_version |
-| 导入租约 | `import_leases` | owner_token_hash、目标章节、最后活动时间和 60 秒到期时间；明文 token 只在签发响应返回一次，Worker 启动写任务前校验租约 |
 | Provider 限速 | `provider_rate_limits` | API 与 Worker 共用 SQLite 令牌/时间窗，合计遵守 RPM |
 | 进程 epoch | `process_epochs` + `worker_leases` + `api_executor_leases` | Launcher/API/Worker 启动身份、心跳和恢复完成标记；API 单独重启只创建新的 api epoch，不创建或失效 worker epoch |
 | Worker 控制命令 | `worker_commands` | API 提交释放模型等进程控制事实，Worker 只在原子步骤安全点领取；命令绑定 worker epoch，旧 epoch 的 running 命令由新 Worker 恢复为 pending |
@@ -289,9 +288,9 @@ pending → running → completed | failed | cancelled
 - 单泡 OCR、颜色、编辑 PATCH 都按稳定 bubble_id 定位，但提交时仍验证整页 revision；冲突统一返回 409，不自动合并。
 - 单页检测整体替换本页 bubbles 并发布 text_mask，只有发起 revision 仍为最新时才能提交。
 - clean 和 translated 的发布同样受 revision 保护；source 与 thumbnail_source 只由导入/replace-source 事务成组发布。repair mask 是 operation 的不可变输入而不是可发布的页面 current role。来自 job 的发布额外验证 job attempt_id/lease_token，来自 operation 的发布验证 operation attempt_id/lease_token、active 状态、目标与 base_revision，来自 render_request 的发布验证请求仍是该页最新 revision。
-- operation/render_request 创建和领取时都复查 `chapter_write_intents` 与 `chapter_write_locks`。队首章节写 job 先在一个短事务中为全部目标章节原子建立 `chapter_write_intents`；任一目标已有锁、有效导入租约或其他 job 的意图则本次不建立。意图建立后 job 仍为 queued、记录 `blocked_reason=draining_immediate_writes`，但新建页面文档写入、replace-source、页面写 operation、由新业务写入产生的 render_request 和普通图片 import lease 一律返回 `423 chapter_write_pending`，从而禁止持续新写入让 job 永久饥饿。
+- operation/render_request 创建和领取时都复查 `chapter_write_intents` 与 `chapter_write_locks`。队首章节写 job 先在一个短事务中为全部目标章节原子建立 `chapter_write_intents`；任一目标已有锁或其他 job 的意图则本次不建立。意图建立后 job 仍为 queued、记录 `blocked_reason=draining_immediate_writes`，但新建页面文档写入（含普通图片上传）、replace-source、页面写 operation 和由新业务写入产生的 render_request 一律返回 `423 chapter_write_pending`，从而禁止持续新写入让 job 永久饥饿。
 - 意图建立前已经 active 的写 operation，以及已经 pending/running 的 render_request，可以继续领取、完成并发布其既定 revision；完成该旧 operation 所必需的后续 render_request 也允许在同一 operation 发布事务中创建或推进。除此之外不得在意图后扩展新的业务写链。Worker 保持该 job 为不可跳过的队首，等待这些意图前链路全部终态。
-- 排空后，Worker 在一个 `BEGIN IMMEDIATE` 事务中再次验证全部意图仍归当前 `job_id + worker_epoch_id + intent_set_id + 各章节 intent_generation + lease_token`、没有残余旧写链且没有导入租约，再为全部目标章节创建 `chapter_write_locks`、删除对应意图、创建新 job attempt/lease，并把 job 从 queued 原子转为 running；任一步失败整体回滚，不得出现意图已删但锁尚未建立的可写窗口。queued 取消、领取放弃或旧 Worker epoch 恢复会以 fencing 条件删除意图而保留/终结相应 job，旧执行器无权删除新 generation 的意图。
+- 排空后，Worker 在一个 `BEGIN IMMEDIATE` 事务中再次验证全部意图仍归当前 `job_id + worker_epoch_id + intent_set_id + 各章节 intent_generation + lease_token` 且没有残余旧写链，再为全部目标章节创建 `chapter_write_locks`、删除对应意图、创建新 job attempt/lease，并把 job 从 queued 原子转为 running；任一步失败整体回滚，不得出现意图已删但锁尚未建立的可写窗口。queued 取消、领取放弃或旧 Worker epoch 恢复会以 fencing 条件删除意图而保留/终结相应 job，旧执行器无权删除新 generation 的意图。
 - 已取得 `chapter_write_lock` 的章节写 job 在 paused 和 interrupted 时继续保留该锁。需要编辑该章节或执行破坏性操作时必须先取消任务；未取得章节锁的只读/其他领域 job 不因 paused/interrupted 状态凭空产生锁。
 
 ### 4.5 冻结环境进程模型
@@ -371,7 +370,6 @@ data-v2/
 - `object_commit_journal`：只记录 staging→objects→数据库引用三段提交窗口，供崩溃恢复和无 DB 记录 objects 孤儿对账；不作为业务资产的第二事实源。
 - `tags`、`book_tags`：标签及关联。
 - `translation_constraints`：书籍级术语和翻译约束，`book_id` 唯一并带 revision；章节任务在创建时冻结所属书籍的 baseline。
-- `import_leases`：普通图片导入 owner_token_hash、目标章节、最后活动时间和到期时间；`chapter_id` 唯一，单章同一时刻只允许一个有效 owner。数据库不保存可直接复用的明文 token。
 - `web_import_drafts`、`web_import_draft_pages`：网页提取状态、候选页、缩略图、选中状态、日志摘要和 24 小时 TTL。
 
 `books.kind` 至少支持：
@@ -507,7 +505,7 @@ erDiagram
 - `UNIQUE(studio_messages.session_id, studio_messages.ordinal)`；所有聊天/总结 operation 必须保存 `base_session_revision + base_session_generation`。
 - 同一章节同时最多一个非终态 translation job；同一 draft 最多一个根 web_import_commit；同一容器 idempotency scope 最多一个根 container_import。
 - 全局队列任意时刻最多一个 `running|pausing|paused|cancelling` 当前 job；interrupted 不受此唯一约束。
-- `chapter_write_intents.chapter_id`、`chapter_write_locks.chapter_id`、有效 `import_leases.chapter_id`、`analysis_heads` 的 book/page head key、各 active artifact/vector/timeline 指针均有对应唯一约束。
+- `chapter_write_intents.chapter_id`、`chapter_write_locks.chapter_id`、`analysis_heads` 的 book/page head key、各 active artifact/vector/timeline 指针均有对应唯一约束。
 - `chapter_write_intents(job_id, intent_set_id)` 与 `(worker_epoch_id, lease_expires_at)` 建索引，分别服务于全目标原子升级/取消和旧 epoch 恢复清理；任何扫描全表寻找意图 owner 的实现不通过阶段 0 查询计划验收。
 - `idempotency_records(scope, key)` 唯一；记录 `request_hash、http_status、response_json、resource_type、resource_id、created_at、expires_at`。重复同键同 hash 返回原创建响应的状态码和资源 ID，即使资源随后状态变化；同键不同 hash 返回 409。记录不得保存上传文件、secret 或完整大型响应。
 
@@ -632,7 +630,6 @@ SQLite 不支持可延迟 UNIQUE，章节、页面和任务排序禁止逐行直
 - 任何非终态 job 或 active operation 仍引用书籍、章节、页面或快速工作区时，删除请求必须拒绝；用户必须先取消。
 - credential_version、plugin_version、上传字体/字体资产只有在页面、operation 和任务历史均无引用时才能删除；数据库 FK 是最终保护，不能用“代码缺失时跳过”降级。
 - job 自身的 credential/plugin/font/config snapshot 是任务历史的从属行，不构成“反向保护该 job 永久保留”的外部引用。任务历史按保留策略删除时应在同一事务中级联删除这些 snapshot，从而释放对不可变版本的引用；只有来自其他业务实体、非终态任务、operation、partial/续写/产物或重试链的外部引用才可阻止历史清理。
-- 目标章节持有未过期普通图片导入租约时，删除与快速工作区重置/转正同样返回 `423`。
 - 业务删除先在短事务内移除引用，并把当时已无引用的 asset 行设置 `gc_marked_at`；媒体 API 对已标记资产立即返回 404，因此用户语义不等待物理删文件。所有创建业务关联的 Repository 命令只允许引用未标记资产。
 - 后台 GC 再删除无引用 objects 与 asset 行，失败可重试，不需要跨目录搬运或用户回收站。实际删文件前必须重新查询所有明确关联（包括 job/operation 输入引用与任务产物引用）；仅凭较早标记不得删除。若发现异常新增引用则清除 GC 标记并记录一致性错误，优先保数据。
 - 所有文件创建遵循“文件先正式落位、数据库后引用”；崩溃最多产生可回收孤儿文件，正式数据库不得引用缺失文件。
@@ -676,7 +673,7 @@ SQLite 不支持可延迟 UNIQUE，章节、页面和任务排序禁止逐行直
 - 普通书架接口默认不返回该工作区。
 - 重新打开快速翻译页面时恢复现有页面、结果和任务。
 - 只有用户点击"新建快速翻译"时才重置工作区：确认后永久删除旧章节并级联其页面、文档和资产关联，在同一本工作区书籍下创建新空章节；无引用的不可变 asset 文件按 §5.5 异步 GC，不在业务事务中级联删文件。`translation_constraints` 一并清空。
-- 有任何非终态 job、active operation 或有效导入租约引用工作区时，重置返回 `423`。
+- 有任何非终态 job 或 active operation 引用工作区时，重置返回 `423`。
 - 重置完成后导入的新图片进入新的快速章节。
 
 ### 6.2 与书架翻译统一
@@ -720,7 +717,7 @@ SQLite 不支持可延迟 UNIQUE，章节、页面和任务排序禁止逐行直
 - `POST /api/v2/quick-workspace/promote`，body 指定 `{ mode: "new_book", title, chapter_title }` 或 `{ mode: "existing_book", book_id, chapter_title }`。
 - 转正是一次数据库事务：将快速章节改挂目标书籍并为 quick workspace 创建新的空章节。objects 按 asset_id 全局存放，因此不移动、不复制任何文件。
 - 移动语义：成功后快速工作区变为新空章节（等价一次重置，但数据不删除而是归档到目标书籍）。
-- 有任何非终态 job、active operation 或有效导入租约引用时返回 `423` 拒绝。
+- 有任何非终态 job 或 active operation 引用时返回 `423` 拒绝。
 - `translation_constraints` 处理：new_book 模式把工作区约束内容复制到新书；existing_book 模式保留目标书籍原约束并丢弃工作区约束，同时提示用户。两种模式都在同一事务中把 quick_workspace 自身的约束重置为空，确保新建的快速章节不会继承已经转正的术语。
 - 入口：快速模式顶栏"保存到书架"按钮；弹窗选择新建书籍（输入书名与章节名）或已有书籍（选书 + 输入章节名）。
 
@@ -784,8 +781,8 @@ POST /api/v2/quick-workspace/promote
 - running/pausing/paused/cancelling 的当前任务固定在队列顶部。
 - 普通 queued 任务允许手动上移、下移、置顶和取消。由 paused/interrupted 继续而来且仍持章节锁的 queued 任务组成不可排序的“恢复前缀”，按用户继续/批次原顺序排在普通 queued 之前，只能等待领取或取消；取消时释放其锁。队首章节写 job 一旦建立 `chapter_write_intents`，也从普通可排序集合中移除，固定为“即时写入排空项”；取消时在同一事务释放其全部意图。
 - 暂停当前任务后阻塞整个队列；保存型 operation 仍可按其执行边界运行，但针对被锁章节的写 operation 返回 `423`。
-- Worker 按持久排序领取最靠前的“当前可执行”queued job。唯一允许跳过的情况是目标章节仍被 interrupted job 的持久锁或有效导入租约占用；被阻塞 job 保持 queued 并记录 `blocked_reason`，以及二选一的明确 FK `blocked_by_job_id` 或 `blocked_by_import_lease_id`，Worker 可继续后方不冲突的 job。除此之外不得按模型、资源类型或预计耗时自动穿插。
-- 队首章节写 job 在没有章节锁/有效导入租约/其他意图后，先按 §4.4 为全部目标章节原子建立 `chapter_write_intents`，记录 `blocked_reason=draining_immediate_writes` 并封闭新写入。Worker/API executor 只完成意图建立前已经 active 的 operation/render 链，job 不持章节写锁但不得跳过到后方 job；旧链排空后立即原子升级为章节锁并进入 running。该屏障保证持续编辑流不能让队首 job 无限等待。
+- Worker 按持久排序领取最靠前的“当前可执行”queued job。唯一允许跳过的情况是目标章节仍被 interrupted job 的持久锁占用；被阻塞 job 保持 queued 并通过 `blocked_reason=blocked_by_job` 与 `blocked_by_job_id` 指明 owner，Worker 可继续后方不冲突的 job。除此之外不得按模型、资源类型或预计耗时自动穿插。
+- 队首章节写 job 在没有章节锁或其他意图后，先按 §4.4 为全部目标章节原子建立 `chapter_write_intents`，记录 `blocked_reason=draining_immediate_writes` 并封闭新写入。Worker/API executor 只完成意图建立前已经 active 的 operation/render 链，job 不持章节写锁但不得跳过到后方 job；旧链排空后立即原子升级为章节锁并进入 running。该屏障保证持续编辑流不能让队首 job 无限等待。
 - 不实现任务并行、资源类型调度或自动智能穿插。
 
 ### 7.2 任务分类与粒度
@@ -979,7 +976,7 @@ interrupted
 ### 7.9 章节锁与编辑一致性
 
 - 写任务只锁定其实际涉及的章节，不阻塞其他章节浏览和编辑。
-- §7.2 封闭清单中的章节写 job 到达队首后，先在一个短 `BEGIN IMMEDIATE` 中确认全部目标章节没有写锁、有效导入租约或其他 job 的意图，再递增各章节持久 generation，并为全部目标章节写入共享同一 `intent_set_id` 的 `chapter_write_intents`；任一目标不可得则整体不写。意图建立事务与所有页面写命令、operation/render 创建及 import lease 签发在相同 Repository 准入检查下串行化。
+- §7.2 封闭清单中的章节写 job 到达队首后，先在一个短 `BEGIN IMMEDIATE` 中确认全部目标章节没有写锁或其他 job 的意图，再递增各章节持久 generation，并为全部目标章节写入共享同一 `intent_set_id` 的 `chapter_write_intents`；任一目标不可得则整体不写。意图建立事务与所有页面写命令（含普通图片上传）及 operation/render 创建在相同 Repository 准入检查下串行化。
 - `chapter_write_intents` 是 queued→running 期间的准入/排空屏障，不是章节写锁：新页面写命令、写 operation、replace-source、导入和由新业务写入产生的 render_request 返回 `423 chapter_write_pending`；意图前已 active 的 operation/render 链可以完成。该 job 固定队首且不运行后方 job，直到旧链收敛。
 - Worker 的轻量 heartbeat 协调器独立续期该 intent set。意图续租 CAS 影响 0 行时先重读 job：若是合法 queued 取消导致意图已释放，则只终止本次排空循环；若 job 仍 queued 而 owner/set/generation 已不匹配，则毒化该领取循环并回到数据库调度事实；若同时是 Worker epoch 失效，则执行 §4.4 的整进程自我隔离。任何分支都不得用旧 generation 清理或升级新意图。
 - 旧链排空后，在同一短事务中为全部目标章节把意图原子升级为 `chapter_write_locks`、绑定新 attempt/lease 并执行 queued→running；任一验证失败整体回滚。不存在先删意图、后建锁的可编辑窗口。paused/interrupted 保留锁，completed/completed_with_errors/failed/cancelled 释放锁；fencing 失效的旧 attempt 无权释放新锁。非章节写 job 跳过意图与锁步骤。
@@ -1134,9 +1131,9 @@ Context 至少包含：
 6. 在短事务中创建资产、页面和明确引用。
 7. 返回正式 `page_id`、页面元数据和资产 URL。
 
-普通图片导入开始时通过 `POST /api/v2/chapters/{chapter_id}/import-leases` 取得 `lease_id + owner_token + expires_at`；签发前必须确认目标章节没有 `chapter_write_intent` 或 `chapter_write_lock`，否则返回 423。owner_token 使用足够熵的随机值，只在创建响应中返回，数据库仅保存不可逆 hash；后续逐页上传与主动释放通过 `Import-Lease-Token` 请求头携带，不放进 URL 或日志。每页请求同时携带 owner token 和 `Idempotency-Key`：同一键同一请求返回原结果，同一键不同请求返回 409。成功上传自动续期，正常结束以 DELETE 主动释放，最后活动 60 秒后过期。有效租约期间禁止创建或启动目标章节写任务，也阻止删除、重置和转正；已存在的 queued job 按 §7.1 显示 blocked，租约释放后恢复可执行。普通图片导入不建立可恢复会话；中断后已完成页面保留。
+普通图片按一张一个 `POST /api/v2/chapters/{chapter_id}/pages` 请求顺序导入，不创建任务或批次租约。每张图片在首次发送前生成独立 `Idempotency-Key`，连接超时、重置或开发代理 502/503/504 等暂时性故障必须复用同一键自动重试：同一键同一请求返回原结果，同一键不同请求返回 409。源图与缩略图发布后，在同一个短 `BEGIN IMMEDIATE` 事务中再次校验 `chapter_write_intent` / `chapter_write_lock`，创建页面、绑定两个资产、递增页面顺序 revision 并写入幂等结果；因此页面只会完整可见或完全不可见。某张图片最终失败不回滚已成功页面，也不阻止后续图片尝试；前端只保留失败项及其原幂等键供“仅重试失败项”。普通图片处理不调用模型服务商。
 
-`container_import` 与 `web_import_commit` 不使用浏览器租约：前者在任务创建时冻结源容器引用并于首次解析后持久化有序成员 manifest，后者在任务创建时冻结有序 draft_page_id；两者运行时由 job 自己持章节锁。导入页 ordinal 在持锁后按当时章节尾部依冻结输入顺序分配，每页成功即持久化输入项到 page_id 的映射，interrupted 继续不得重复建页。`web_extract` 同样不使用浏览器租约，但只写草稿且不持章节锁。三者在浏览器关闭后都继续；实际提交任务逐页发布成功结果。原容器与解包目录、网页下载包都只是临时任务/草稿文件，不进入正式 assets：container_import 终态后最多保留 24 小时供失败项重试，网页文件随 draft 的滚动 24 小时 TTL；存在非终态重试引用时延后清理，过期后“沿用原输入重试”不可用并提示重新上传/提取。
+`container_import` 与 `web_import_commit` 仍由后端任务执行：前者在任务创建时冻结源容器引用并于首次解析后持久化有序成员 manifest，后者在任务创建时冻结有序 draft_page_id；两者运行时由 job 自己持章节锁。导入页 ordinal 在持锁后按当时章节尾部依冻结输入顺序分配，每页成功即持久化输入项到 page_id 的映射，interrupted 继续不得重复建页。`web_extract` 只写草稿且不持章节锁。三者在浏览器关闭后都继续；实际提交任务逐页发布成功结果。原容器与解包目录、网页下载包都只是临时任务/草稿文件，不进入正式 assets：container_import 终态后最多保留 24 小时供失败项重试，网页文件随 draft 的滚动 24 小时 TTL；存在非终态重试引用时延后清理，过期后“沿用原输入重试”不可用并提示重新上传/提取。
 
 ### 11.2 缩略图规范
 
@@ -1175,7 +1172,7 @@ Context 至少包含：
 - 资产 URL 包含不可变 asset_id，使用长期 immutable Cache-Control、ETag、Last-Modified 和条件请求；发布新版本必须生成新 asset_id/URL。
 - 页面列表使用游标分页，默认 50 条，最大 200 条；另提供 `all=1` 全量元数据模式（仅元数据、无二进制），供阅读器等需要稳定滚动总高度的场景一次取全（§21.3）。
 - OpenAPI 3 是接口、错误体和枚举的正式契约；前端 TypeScript 类型从规范生成，禁止继续维护重复手写 DTO。
-- 错误语义统一：409 revision/idempotency/唯一 active operation 冲突，423 章节写入意图/章节写锁/任务或导入租约锁，422 输入校验，202 已创建后台 job/operation。
+- 错误语义统一：409 revision/idempotency/唯一 active operation 冲突，423 章节写入意图/章节写锁或任务保护，422 输入校验，202 已创建后台 job/operation。
 - 列表场景只加载缩略图；主图和阅读器按当前页/视口窗口懒加载原始 source 或 translated。v2 不开发中档 preview、瓦片或多分辨率金字塔。
 
 核心接口组：
@@ -1189,7 +1186,6 @@ Context 至少包含：
 /api/v2/pages/{page_id}/source
 /api/v2/pages/{page_id}/render
 /api/v2/assets/{asset_id}
-/api/v2/chapters/{chapter_id}/import-leases
 /api/v2/chapters/{chapter_id}/container-import-jobs
 /api/v2/web-import/support-checks
 /api/v2/web-import/drafts
@@ -1289,7 +1285,7 @@ Context 至少包含：
 - 实现 job_batch/job/job_item/job_step、FIFO、排序、暂停、取消、人工继续和自动启动。
 - 实现 attempt_id/lease_token fencing、`chapter_write_intents` 准入排空屏障与章节锁原子升级、checkpoint、并行 Pool drain ack、关键事件+覆盖式进度和单 SSE。
 - 实现带 attempt/lease fencing 的 operations、可合并 render_requests、API render executor 与 API 保存型远程 operation。
-- 把阶段 2 的删除、快速工作区 reset/promote 和普通图片导入租约接入非终态 job/active operation/章节锁保护；阶段 2 独立验收时没有任务的情形不代表这些 guard 可以省略。
+- 把阶段 2 的删除、快速工作区 reset/promote 和普通图片逐页写入接入非终态 job/active operation/章节写意图与写锁保护；阶段 2 独立验收时没有任务的情形不代表这些 guard 可以省略。
 - 实现 `container_import`、`web_extract`、`web_import_commit` 和 export handler；先用 container import 与 export 两种任务验证读写、产物、断线、API/Worker 崩溃和迟到写回。
 - 完成任务中心全局抽屉。
 
@@ -1365,7 +1361,7 @@ Context 至少包含：
 - §7.4.1 输入绑定逐类可测：queued translation 在 item 开始前 replace-source 后使用新 source；export 仍读取创建时冻结资产；Insight 冻结 source 在运行期间被替换时不得把旧结果发布为当前 page head。
 - 已取得章节写锁的 paused/interrupted 不释放锁；所有非终态任务都阻止破坏性操作，取消后已完成页面保留。
 - API 单独重启不改变任务；Worker/Launcher 恢复后 queued 保持顺序并自动继续，paused 保持阻塞，interrupted 等待人工继续或取消。
-- 被 interrupted 章节锁或有效导入租约阻塞的 queued job 不进入 running，后方不冲突 job 可按持久顺序继续；锁释放后被阻塞 job 恢复可执行。
+- 被 interrupted 章节锁阻塞的 queued job 不进入 running，后方不冲突 job 可按持久顺序继续；锁释放后被阻塞 job 恢复可执行。
 - 状态转换矩阵（§7.3）逐格可测：pausing/cancelling 中 Worker 崩溃分别转 interrupted/cancelled，无任务永卡非终态。
 - 并行 Pool 在每个通道容量组合下请求 pause/cancel：admission gate 立即关闭，已投递原子 step 收敛到 checkpoint，全部 drain ack 后才进入 paused/cancelled；Worker 在 drain 期间崩溃时由持久 step/checkpoint 重建且旧 ack/回调无效。
 - `resume` 只接受 paused，`continue` 只接受 interrupted；两者错误状态均稳定返回 409，下一次领取都创建新 attempt，并在不释放章节锁的前提下原子转移 lock_generation/owner。
@@ -1404,7 +1400,7 @@ Context 至少包含：
 - 同一 Pool 保持串行，不同 Pool 可以流水线重叠，并遵守 1–4 的深度学习并发限制。
 - 章节写锁只由 §7.2 封闭清单中的章节写任务取得且只影响涉及章节；export、Insight、续写等非章节写任务运行时不使翻译编辑器只读，其他章节仍可编辑并运行 operations。
 - 章节写锁封闭清单逐类验证：translation/remove_text/detect/style_apply/text_import/container_import/web_import_commit 获取锁；export、Insight、vector/派生物、续写、insight_export/web_extract/plugin_agent 不获取锁，但非终态引用仍阻止删除。
-- 同章 active 写 operation/render_request 与队首章节写 job 同时竞争时，数据库只允许即时写事务先提交或 job 先建立 `chapter_write_intents` 之一：前者被纳入待排空旧链，后者让新写命令/operation/import lease 返回 `423 chapter_write_pending`。持续并发提交 PATCH/operation 也不能让 job 饥饿；旧链排空后意图、全部章节锁和 queued→running 必须原子切换，不存在“无意图且无锁”的可写窗口或“job 持锁等待 pending operation”的死锁。
+- 同章 active 写 operation/render_request 与队首章节写 job 同时竞争时，数据库只允许即时写事务先提交或 job 先建立 `chapter_write_intents` 之一：前者被纳入待排空旧链，后者让新写命令（含普通图片上传）或 operation 返回 `423 chapter_write_pending`。持续并发提交 PATCH/operation 也不能让 job 饥饿；旧链排空后意图、全部章节锁和 queued→running 必须原子切换，不存在“无意图且无锁”的可写窗口或“job 持锁等待 pending operation”的死锁。
 - §4.4.1 partial unique index 保证同页最多一个 active 页面写 operation、同文档最多一个生成 operation、同会话最多一个 chat/summary operation；render_request 不进入 operations/history，按 page_id 只有一行。
 - 页面 batch document mutation 在一个 CAS 中成功或整体失败，只推进一次 revision/一次 render_request；page-repair 严格验证二值 PNG 尺寸与灰度语义，所有 method 创建同一种 operation，并由后端按 method 指定 executor。
 - 已持锁的 paused/interrupted 任务继续并重新进入 queued 时沿用原章节写锁；恢复、重新领取或取消的任一时刻都不存在短暂可编辑窗口，旧 attempt 也不能释放新 attempt 的锁。
@@ -1418,7 +1414,7 @@ Context 至少包含：
 - “应用并下一张”只在目标 document_revision 的 translated 已发布后跳转；普通切页只等待 PATCH 成功，渲染在离开页面后继续。
 - API 保存型远程 operation 由固定大小 executor 执行，不因请求量无限创建线程；Launcher 确认旧 API epoch 失效后，pending operation 可由新 epoch 领取，旧 epoch running operation 明确失败且迟到写回被 fencing 拒绝。
 - Worker 本地模型/API 纯 CPU operation 租约过期后仅在 base_revision 仍有效时以新 attempt 重做；旧 attempt 迟到结果和终态写入均被拒绝，revision 已变化时 operation 明确失败而不覆盖新状态。
-- 意图建立后，意图前已经 active 的 operation/render_request 及其必需的后续 render 可以完成；新页面 PATCH、replace-source、页面写 operation、普通图片 import lease 和无既有 operation 来源的新 render_request 均返回 423。queued 取消与旧 Worker epoch 恢复释放意图，旧 generation 的清理/回调不能删除新 Worker 建立的意图。
+- 意图建立后，意图前已经 active 的 operation/render_request 及其必需的后续 render 可以完成；新页面 PATCH、replace-source、页面写 operation、普通图片上传和无既有 operation 来源的新 render_request 均返回 423。queued 取消与旧 Worker epoch 恢复释放意图，旧 generation 的清理/回调不能删除新 Worker 建立的意图。
 - 模拟两个 API executor 同时存活：Launcher 未确认旧 PID 终止前不得签发新 epoch；确认切换后只有当前 api_epoch 能领取，旧 epoch 对 operation/render_request 的 heartbeat、发布和终态写入全部影响 0 行。
 - `transient_requests` 完成/消费竞态可测：Worker 先写 completed/result，API 读取并标记 consumed 后才删除；Worker 不得提前删除，连接关闭和未消费 TTL 都不会留下永久行或让已完成结果在读取前消失。
 - 幂等并发可测：相同 scope/key/hash 的并发命令只创建一个资源且全部重放相同结果；相同 key 不同 hash 稳定返回 409；过期清理不得删除仍服务于非终态资源创建重试的记录。
@@ -1481,7 +1477,7 @@ Context 至少包含：
 | 消字 | 最终显示干净图，但保留气泡原文、译文和样式数据 |
 | 使用已有气泡翻译 | 保持当前语义：复用气泡几何，但全部重新 OCR |
 | 应用样式到全部 | 更新所有目标页默认样式；已有气泡同步修改并重渲染 |
-| 删除 | 用户语义为永久删除；存在非终态 job、active operation 或有效导入租约时禁止删除 |
+| 删除 | 用户语义为永久删除；存在非终态 job 或 active operation 时禁止删除 |
 | 失败重试 | 默认重试当前章节最近一次同类型任务的失败项；翻译/检测/去字任务默认使用当前设置重建配置快照，可选沿用原配置/凭据/插件/字体快照（§7.6），输入资产在新任务创建时重新冻结；`style_apply` 例外地沿用原任务冻结的 `selected_fields`、样式值和 `font_id`，若要使用当前侧栏值必须创建新的“应用到全部页”任务 |
 | 凭据 | API Key 明文只保存在后端凭据表（§22），不通过普通 API、日志或任务事件回传；任务快照引用凭据版本 |
 | 撤销重做 | 不提供通用撤销/重做、编辑历史或任务回滚；只保存当前状态与任务检查点 |
@@ -1570,8 +1566,6 @@ PATCH  /api/v2/pages/{page_id}/bubbles/{bubble_id}
 DELETE /api/v2/pages/{page_id}/bubbles/{bubble_id}
 GET    /api/v2/pages/{page_id}/render-status
 POST   /api/v2/chapters/{chapter_id}/pages
-POST   /api/v2/chapters/{chapter_id}/import-leases
-DELETE /api/v2/chapters/{chapter_id}/import-leases/{lease_id}
 POST   /api/v2/chapters/{chapter_id}/container-import-jobs  # multipart 源容器 + 创建 container_import
 DELETE /api/v2/pages/{page_id}
 DELETE /api/v2/chapters/{chapter_id}/pages
@@ -1699,14 +1693,13 @@ PDF/MOBI/AZW/AZW3/CBZ：
 - `test-firecrawl` 与 `test-agent` 并入 connection-tests，仍属于断线即取消的临时请求。
 - 网页导入免责声明确认继续作为纯 UI 偏好保存在 localStorage，不进入 draft 或任务事实。
 
-普通图片导入租约：
+普通图片直接导入：
 
-- 开始上传时由 import-leases 端点取得 lease_id 与只返回一次的 owner token；逐页上传和 DELETE 释放都以 `Import-Lease-Token` 请求头证明 owner，正常结束立即释放。
-- 取得租约时若章节已有持久写入意图或写锁则返回 423；若只有尚未建立意图的普通 queued job，允许导入并让该 job 在租约释放前显示 blocked。
-- 只有携带相同 owner token 的成功逐页上传才能续期。
-- 最后活动 60 秒后过期；后续上传需重新获取租约。
-- 租约存在时禁止为该章节创建或启动写任务；释放后已上传部分立即作为普通章节使用。
-- 不提供断点续传或“未完成章节”状态。
+- 浏览器按自然文件名顺序逐张上传；每张独立保存原图、生成并保存 WebP 缩略图，再原子创建页面引用。
+- 每张图片在整个自动重试与“仅重试失败项”期间复用同一个幂等键；已在后端提交但响应丢失时只会重放原结果，不会重复建页。
+- 连接错误与开发代理暂时性 5xx 使用有限退避重试；业务校验错误不盲目重试，批次结束后统一列出失败项。
+- 章节已有持久写入意图或写锁时，单张写入在事务内返回 423；此前完成的页面继续保留。
+- 不创建可暂停/取消的普通图片任务，也不提供“未完成章节”状态；PDF、压缩包、电子书和网页提交仍使用可恢复的后端任务。
 
 #### 16.3.3 九种工作流映射
 
@@ -2104,8 +2097,8 @@ ZIP、CBZ、PDF：
 - 1000 页图片导入时浏览器不持有全部原图或 Data URL。
 - PDF/MOBI/AZW/AZW3/CBZ 仅上传容器，后端 `container_import` job 解析且不返回图片 Base64。
 - PDF 导入界面和设置中不存在前端解析选项，浏览器构建产物不再包含翻译页 PDF.js 解析链。
-- 导入中断后已上传页保留，锁超时后可创建任务。
-- import lease 创建、逐页续期、owner-token 校验、主动释放与 60 秒超时逐项可测；错误 token 不得续期或释放他人租约。
+- 导入中断后已上传页保留，其余图片可直接重新上传；不存在等待批次租约超时的恢复窗口。
+- 普通图片逐张独立写入，原图与缩略图在同一次页面导入中持久化；网络/代理瞬时故障以同一 `Idempotency-Key` 有限重试，成功页不回滚，最终失败项可单独重试且不会重复建页。
 - 网页导入的 auto/gallery-dl/ai-agent、支持探测、候选选择、结构化日志、预处理/下载设置和自动导入语义均保留；关闭浏览器后提取与已触发的自动 commit 继续，重进后可由 draft 恢复。
 - container manifest 与 web commit 的 draft_page_id 集合在首次/创建检查点后不漂移；interrupted 继续不重复已入库页面，排队期间章节新增页面后导入结果仍按运行时尾部连续追加。
 - 自动/人工 web commit 竞争只生成一个根任务；24 小时内失败项重试只提交未成功输入，临时源/draft 过期后原输入重试明确不可用而不产生空任务。
@@ -3387,7 +3380,7 @@ AI 执行：
 - 标签实体化：`tags(id, name 唯一, color, created_at)`，`book_tags(book_id, tag_id)`；改名为单条 UPDATE，删除级联清理关联行，book_count 由 SQL 聚合。
 - 章节排序使用 ordinal 字段；拖拽排序为一次 PUT 提交全量顺序。
 - translation_constraints 保持书籍级（16.3.12 已定 revision 化）；书架创建书籍时初始化默认值，编辑入口仍在翻译页。
-- 删除语义遵循 §5.5：书籍/章节存在任何非终态 job、active operation 或有效导入租约引用时返回 `423`；删除级联清理结构化关系，无引用 assets 与 Chroma generation 由 GC 异步回收。
+- 删除语义遵循 §5.5：书籍/章节存在任何非终态 job 或 active operation 引用时返回 `423`；删除级联清理结构化关系，无引用 assets 与 Chroma generation 由 GC 异步回收。
 
 ### 19.4 列表与查询
 
@@ -3415,7 +3408,7 @@ AI 执行：
 
 - 工具栏"批量管理"进入批量模式；卡片显示复选框；操作条提供全选、翻译选中书籍全部章节、批量删除、批量添加标签、批量移除标签、退出。
 - 批量翻译为每本选中书籍的每个非空章节创建 `standard` translation job，归入同一 job_batch；书架不新增第二套翻译设置 UI，每章在批次创建时按“当前全局任务设置 + 该章已有非样式 settings_memory 工作态”解析并冻结 credential/plugin/顺序或并行模式等任务级快照。页面文字样式和 font 不从 settings_memory 推断，按 §7.4.1 在各 page item 开始时绑定该页文档事实。创建时跳过 0 页章节、缺少必需凭据或已有非终态翻译任务的章节并逐项报告原因。
-- 批量删除逐书执行完整删除保护（非终态 job、active operation 或有效导入租约引用则拒绝该书），返回成功/失败/被拒清单。
+- 批量删除逐书执行完整删除保护（非终态 job 或 active operation 引用则拒绝该书），返回成功/失败/被拒清单。
 - 批量标签基于 tag_id 语义（现有后端批量 API 升级为 v2）。
 
 任务状态：
@@ -3500,7 +3493,7 @@ CRUD 与存储：
 - 0 页章节与已占用章节被跳过并在结果中报告。
 - 批量删除对被任务引用的书籍返回拒绝清单，其余正常删除。
 - 章节徽章与卡片角标随 SSE 实时更新；浏览器刷新后状态与任务中心一致。
-- 非终态 job、active operation 或有效导入租约引用时，书籍/章节删除返回 `423`。
+- 非终态 job 或 active operation 引用时，书籍/章节删除返回 `423`。
 
 兼容与清理：
 
@@ -3552,7 +3545,7 @@ CRUD 与存储：
 等待队列：
 
 - 批次卡片：标题（来源+书名）、任务计数与状态分布、整批置顶、整批取消（等价于对批内全部 queued 任务批量执行）；展开显示批内任务行。
-- 任务行：类型、目标（章节/页面）、队列位置；普通 queued 的操作为上移、下移、置顶、取消。仍持章节锁的恢复 queued 显示“等待重新领取/锁已保留”，固定在恢复前缀且只允许取消；已建立 `chapter_write_intents` 的队首 queued 显示“正在排空即时写入/新编辑已暂停”，同样不可排序且取消会原子释放意图；`/api/v2/jobs/reorder` 对两者返回 409。因其他 interrupted 章节锁或导入租约暂不可执行时显示明确 blocked 原因，但保持 queued 和普通排序位置。
+- 任务行：类型、目标（章节/页面）、队列位置；普通 queued 的操作为上移、下移、置顶、取消。仍持章节锁的恢复 queued 显示“等待重新领取/锁已保留”，固定在恢复前缀且只允许取消；已建立 `chapter_write_intents` 的队首 queued 显示“正在排空即时写入/新编辑已暂停”，同样不可排序且取消会原子释放意图；`/api/v2/jobs/reorder` 对两者返回 409。因其他 interrupted 章节锁暂不可执行时显示明确 blocked 原因，但保持 queued 和普通排序位置。
 
 ### 20.4 历史区
 

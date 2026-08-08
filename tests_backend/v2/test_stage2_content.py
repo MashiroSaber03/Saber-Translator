@@ -120,7 +120,7 @@ def test_bundled_font_resolver_rejects_non_catalog_paths() -> None:
 
 
 def _import(
-    repository: ContentRepository,
+    _repository: ContentRepository,
     importer: ImageImportService,
     *,
     chapter_id: str,
@@ -128,22 +128,12 @@ def _import(
     logical_path: str,
     key: str,
 ):
-    lease = repository.create_import_lease(chapter_id)
-    try:
-        return importer.import_page(
-            chapter_id=chapter_id,
-            logical_path=logical_path,
-            upload=BytesIO(payload),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-            idempotency_key=key,
-        )
-    finally:
-        repository.release_import_lease(
-            chapter_id=chapter_id,
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-        )
+    return importer.import_page(
+        chapter_id=chapter_id,
+        logical_path=logical_path,
+        upload=BytesIO(payload),
+        idempotency_key=key,
+    )
 
 
 def test_server_info_uses_the_configured_v2_api_port(content_platform) -> None:
@@ -435,6 +425,49 @@ def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
         assert decoded.size == (320, 213)
 
 
+def test_page_import_api_needs_only_a_stable_idempotency_key_and_replays(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, _importer, _book, chapter = content_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    chapter_id = str(chapter["id"])
+    payload = _image_bytes((48, 72))
+
+    first = client.post(
+        f"/api/v2/chapters/{chapter_id}/pages",
+        data={
+            "file": (BytesIO(payload), "api.png"),
+            "logicalPath": "api.png",
+        },
+        headers={"Idempotency-Key": "api-page-stable-key"},
+    )
+    replay = client.post(
+        f"/api/v2/chapters/{chapter_id}/pages",
+        data={
+            "file": (BytesIO(payload), "api.png"),
+            "logicalPath": "api.png",
+        },
+        headers={"Idempotency-Key": "api-page-stable-key"},
+    )
+
+    assert first.status_code == 201
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.get_json() == first.get_json()
+    assert len(repository.list_pages(chapter_id=chapter_id, all_pages=True)["items"]) == 1
+
+
 def test_page_import_materializes_the_saved_default_font_as_a_foreign_key(
     content_platform,
 ) -> None:
@@ -562,31 +595,19 @@ def test_import_is_idempotent_and_duplicate_names_are_server_deduplicated(
         logical_path="page.png",
         key="same",
     )
-    lease = repository.create_import_lease(chapter_id)
-    try:
-        replay, replayed = importer.import_page(
+    replay, replayed = importer.import_page(
+        chapter_id=chapter_id,
+        logical_path="page.png",
+        upload=BytesIO(payload),
+        idempotency_key="same",
+    )
+    assert replayed and replay == first
+    with pytest.raises(IdempotencyConflict):
+        importer.import_page(
             chapter_id=chapter_id,
             logical_path="page.png",
-            upload=BytesIO(payload),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
+            upload=BytesIO(_image_bytes((31, 40))),
             idempotency_key="same",
-        )
-        assert replayed and replay == first
-        with pytest.raises(IdempotencyConflict):
-            importer.import_page(
-                chapter_id=chapter_id,
-                logical_path="page.png",
-                upload=BytesIO(_image_bytes((31, 40))),
-                lease_id=lease.id,
-                owner_token=lease.owner_token,
-                idempotency_key="same",
-            )
-    finally:
-        repository.release_import_lease(
-            chapter_id=chapter_id,
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
         )
 
     second, _ = _import(
@@ -778,26 +799,11 @@ def test_last_visited_page_is_independent_last_write_wins(
     }
 
 
-def test_import_lease_and_chapter_order_cas_enforce_backend_ownership(
+def test_page_import_and_chapter_order_cas_enforce_backend_ownership(
     content_platform,
 ) -> None:
-    _root, engine, repository, _storage, _importer, book, chapter = content_platform
+    _root, engine, repository, _storage, importer, book, chapter = content_platform
     chapter_id = str(chapter["id"])
-    lease = repository.create_import_lease(chapter_id)
-    with pytest.raises(ContentLocked):
-        repository.create_import_lease(chapter_id)
-    with pytest.raises(ContentLocked):
-        repository.release_import_lease(
-            chapter_id=chapter_id,
-            lease_id=lease.id,
-            owner_token="wrong",
-        )
-    repository.release_import_lease(
-        chapter_id=chapter_id,
-        lease_id=lease.id,
-        owner_token=lease.owner_token,
-    )
-
     second = repository.create_chapter(book_id=str(book["id"]), title="Second")
     revision = repository.list_chapters(str(book["id"]))["book"][
         "chapter_order_revision"
@@ -833,7 +839,12 @@ def test_import_lease_and_chapter_order_cas_enforce_backend_ownership(
             )
         )
     with pytest.raises(ContentLocked):
-        repository.create_import_lease(chapter_id)
+        importer.import_page(
+            chapter_id=chapter_id,
+            logical_path="blocked.png",
+            upload=BytesIO(_image_bytes((20, 20))),
+            idempotency_key="blocked-page",
+        )
 
 
 def test_media_api_streams_immutable_asset_and_honors_conditional_get(
@@ -1498,7 +1509,7 @@ def test_quick_workspace_promote_rejects_duplicate_destinations(
         )
 
 
-@pytest.mark.parametrize("blocker", ("job", "operation", "import_lease"))
+@pytest.mark.parametrize("blocker", ("job", "operation"))
 def test_quick_workspace_reset_and_promote_reject_every_active_work_kind(
     content_platform,
     blocker: str,
@@ -1544,9 +1555,6 @@ def test_quick_workspace_reset_and_promote_reject_every_active_work_kind(
                     request_json="{}",
                 )
             )
-    else:
-        repository.create_import_lease(quick_chapter_id)
-
     with pytest.raises(ContentLocked):
         repository.reset_quick_workspace()
     with pytest.raises(ContentLocked):

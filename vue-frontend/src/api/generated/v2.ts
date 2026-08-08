@@ -1428,38 +1428,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/chapters/{chapter_id}/import-leases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createChapterImportLease"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/chapters/{chapter_id}/import-leases/{lease_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["releaseChapterImportLease"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/pages/{page_id}/document": {
         parameters: {
             query?: never;
@@ -2730,7 +2698,7 @@ export interface components {
             chapterId?: components["schemas"]["Uuid"] | null;
             pageId?: components["schemas"]["Uuid"] | null;
             /** @enum {string|null} */
-            blockedReason?: null | "blocked_by_job" | "blocked_by_import_lease" | "draining_immediate_writes" | "retained_chapter_lock";
+            blockedReason?: null | "blocked_by_job" | "draining_immediate_writes" | "retained_chapter_lock";
             blockedByJobId?: components["schemas"]["Uuid"] | null;
             progress: components["schemas"]["JobProgress"];
             target: {
@@ -3714,12 +3682,6 @@ export interface components {
             page: components["schemas"]["PageSummary"];
             pageOrderRevision: number;
         };
-        ImportLease: {
-            leaseId: components["schemas"]["Uuid"];
-            ownerToken: string;
-            /** Format: date-time */
-            expiresAt: string;
-        };
         ReplacePageSourceCommand: {
             /** Format: binary */
             file: string;
@@ -4356,7 +4318,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorEnvelope"];
             };
         };
-        /** @description A chapter intent/lock, import lease, or active task blocks the command. */
+        /** @description A chapter intent/lock or active task blocks the command. */
         Locked: {
             headers: {
                 [name: string]: unknown;
@@ -4395,7 +4357,6 @@ export interface components {
         MessageId: components["schemas"]["Uuid"];
         BookId: components["schemas"]["Uuid"];
         ChapterId: components["schemas"]["Uuid"];
-        LeaseId: components["schemas"]["Uuid"];
         AssetId: components["schemas"]["Uuid"];
         DraftId: components["schemas"]["Uuid"];
         DraftPageId: components["schemas"]["Uuid"];
@@ -4409,8 +4370,6 @@ export interface components {
         PromptId: components["schemas"]["Uuid"];
         PluginId: string;
         PluginAgentSessionId: string;
-        ImportLeaseId: components["schemas"]["Uuid"];
-        ImportLeaseToken: string;
         /** @description Stable key for this normalized command and target scope. */
         IdempotencyKey: string;
     };
@@ -7203,8 +7162,6 @@ export interface operations {
             header: {
                 /** @description Stable key for this normalized command and target scope. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-                "Import-Lease-Id": components["parameters"]["ImportLeaseId"];
-                "Import-Lease-Token": components["parameters"]["ImportLeaseToken"];
             };
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
@@ -7344,63 +7301,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
-            423: components["responses"]["Locked"];
-        };
-    };
-    createChapterImportLease: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                chapter_id: components["parameters"]["ChapterId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Owner token is returned once and only its hash is stored. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ImportLease"];
-                };
-            };
-            423: components["responses"]["Locked"];
-        };
-    };
-    releaseChapterImportLease: {
-        parameters: {
-            query?: never;
-            header: {
-                "Import-Lease-Token": components["parameters"]["ImportLeaseToken"];
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                chapter_id: components["parameters"]["ChapterId"];
-                lease_id: components["parameters"]["LeaseId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Lease released. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @constant */
-                        released: true;
-                    };
-                };
-            };
             423: components["responses"]["Locked"];
         };
     };

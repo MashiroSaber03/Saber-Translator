@@ -136,7 +136,6 @@ def upgrade() -> None:
     sa.Column('web_import_draft_id', sa.String(length=36), nullable=True),
     sa.Column('blocked_reason', sa.String(length=64), nullable=True),
     sa.Column('blocked_by_job_id', sa.String(length=36), nullable=True),
-    sa.Column('blocked_by_import_lease_id', sa.String(length=36), nullable=True),
     sa.Column('attempt_id', sa.String(length=36), nullable=True),
     sa.Column('lease_token', sa.String(length=200), nullable=True),
     sa.Column('lease_expires_at', sa.DateTime(timezone=True), nullable=True),
@@ -149,16 +148,14 @@ def upgrade() -> None:
     sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
-    sa.CheckConstraint("blocked_reason IS NULL OR blocked_reason IN ('blocked_by_job','blocked_by_import_lease','draining_immediate_writes')", name=op.f('ck_jobs_blocked_reason_values')),
+    sa.CheckConstraint("blocked_reason IS NULL OR blocked_reason IN ('blocked_by_job','draining_immediate_writes')", name=op.f('ck_jobs_blocked_reason_values')),
     sa.CheckConstraint("kind IN ('translation', 'remove_text', 'detect', 'style_apply', 'text_import', 'container_import', 'web_extract', 'web_import_commit', 'export', 'insight_analysis', 'insight_export', 'vector_rebuild', 'continuation', 'derived_rebuild', 'plugin_agent')", name=op.f('ck_jobs_kind_values')),
     sa.CheckConstraint("retry_mode IS NULL OR retry_mode IN ('current','original')", name=op.f('ck_jobs_retry_mode_values')),
     sa.CheckConstraint("status IN ('queued', 'running', 'pausing', 'paused', 'cancelling', 'cancelled', 'completed', 'completed_with_errors', 'failed', 'interrupted')", name=op.f('ck_jobs_status_values')),
-    sa.CheckConstraint('(blocked_by_job_id IS NULL OR blocked_by_import_lease_id IS NULL)', name=op.f('ck_jobs_single_blocker')),
     sa.CheckConstraint('(retry_of_job_id IS NULL AND retry_mode IS NULL) OR (retry_of_job_id IS NOT NULL AND retry_mode IS NOT NULL)', name=op.f('ck_jobs_retry_lineage_complete')),
     sa.CheckConstraint('queue_rank IS NULL OR queue_rank >= 1', name=op.f('ck_jobs_queue_rank_positive')),
     sa.ForeignKeyConstraint(['analysis_run_id'], ['analysis_runs.id'], name=op.f('fk_jobs_analysis_run_id_analysis_runs'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['batch_id'], ['job_batches.id'], name=op.f('fk_jobs_batch_id_job_batches'), ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['blocked_by_import_lease_id'], ['import_leases.id'], name=op.f('fk_jobs_blocked_by_import_lease_id_import_leases'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['blocked_by_job_id'], ['jobs.id'], name=op.f('fk_jobs_blocked_by_job_id_jobs'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_jobs_book_id_books'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['chapter_id'], ['chapters.id'], name=op.f('fk_jobs_chapter_id_chapters'), ondelete='SET NULL'),
@@ -172,7 +169,6 @@ def upgrade() -> None:
     )
     op.create_index('ix_jobs_analysis_run_id', 'jobs', ['analysis_run_id'], unique=False)
     op.create_index('ix_jobs_batch_status', 'jobs', ['batch_id', 'status'], unique=False)
-    op.create_index('ix_jobs_blocked_by_import_lease_id', 'jobs', ['blocked_by_import_lease_id'], unique=False)
     op.create_index('ix_jobs_blocked_by_job_id', 'jobs', ['blocked_by_job_id'], unique=False)
     op.create_index('ix_jobs_book_id', 'jobs', ['book_id'], unique=False)
     op.create_index('ix_jobs_chapter_status', 'jobs', ['chapter_id', 'status'], unique=False)
@@ -854,18 +850,6 @@ def upgrade() -> None:
     )
     op.create_index('ix_continuation_form_image_versions_asset_id', 'continuation_form_image_versions', ['asset_id'], unique=False)
     op.create_index('ix_continuation_form_image_versions_thumbnail_asset_id', 'continuation_form_image_versions', ['thumbnail_asset_id'], unique=False)
-    op.create_table('import_leases',
-    sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('chapter_id', sa.String(length=36), nullable=False),
-    sa.Column('owner_token_hash', sa.String(length=64), nullable=False),
-    sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
-    sa.ForeignKeyConstraint(['chapter_id'], ['chapters.id'], name=op.f('fk_import_leases_chapter_id_chapters'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_import_leases')),
-    sa.UniqueConstraint('chapter_id', name=op.f('uq_import_leases_chapter_id'))
-    )
-    op.create_index('ix_import_leases_expires_at', 'import_leases', ['expires_at'], unique=False)
     op.create_table('pages',
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('chapter_id', sa.String(length=36), nullable=False),
@@ -1368,8 +1352,6 @@ def downgrade() -> None:
     op.drop_table('timeline_characters')
     op.drop_index('ix_pages_default_font_id', table_name='pages')
     op.drop_table('pages')
-    op.drop_index('ix_import_leases_expires_at', table_name='import_leases')
-    op.drop_table('import_leases')
     op.drop_index('ix_continuation_form_image_versions_thumbnail_asset_id', table_name='continuation_form_image_versions')
     op.drop_index('ix_continuation_form_image_versions_asset_id', table_name='continuation_form_image_versions')
     op.drop_table('continuation_form_image_versions')
@@ -1471,7 +1453,6 @@ def downgrade() -> None:
     op.drop_index('ix_jobs_chapter_status', table_name='jobs')
     op.drop_index('ix_jobs_book_id', table_name='jobs')
     op.drop_index('ix_jobs_blocked_by_job_id', table_name='jobs')
-    op.drop_index('ix_jobs_blocked_by_import_lease_id', table_name='jobs')
     op.drop_index('ix_jobs_batch_status', table_name='jobs')
     op.drop_index('ix_jobs_analysis_run_id', table_name='jobs')
     op.drop_table('jobs')

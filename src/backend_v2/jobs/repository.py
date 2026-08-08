@@ -53,7 +53,6 @@ from src.backend_v2.storage.schema import (
     chapter_write_locks,
     chapters,
     credential_versions,
-    import_leases,
     idempotency_records,
     assets,
     job_asset_inputs,
@@ -3239,7 +3238,6 @@ class JobQueueRepository:
                 job_id=job_id,
                 reason="blocked_by_job",
                 blocked_job_id=str(foreign_lock["job_id"]),
-                import_lease_id=None,
                 now=now,
             )
             return "blocked"
@@ -3294,7 +3292,6 @@ class JobQueueRepository:
                     worker_epoch_id=worker_epoch_id,
                     blocked_reason=None,
                     blocked_by_job_id=None,
-                    blocked_by_import_lease_id=None,
                     updated_at=now,
                 )
             )
@@ -3307,24 +3304,6 @@ class JobQueueRepository:
             )
             return "ready_preclaimed"
 
-        active_import = connection.execute(
-            select(import_leases.c.id)
-            .where(
-                import_leases.c.chapter_id.in_(chapter_ids),
-                import_leases.c.expires_at > now,
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-        if active_import is not None:
-            self._set_blocked(
-                connection,
-                job_id=job_id,
-                reason="blocked_by_import_lease",
-                blocked_job_id=None,
-                import_lease_id=str(active_import),
-                now=now,
-            )
-            return "blocked"
         foreign_intent = connection.execute(
             select(chapter_write_intents.c.job_id)
             .where(
@@ -3339,7 +3318,6 @@ class JobQueueRepository:
                 job_id=job_id,
                 reason="blocked_by_job",
                 blocked_job_id=str(foreign_intent),
-                import_lease_id=None,
                 now=now,
             )
             return "blocked"
@@ -3380,7 +3358,6 @@ class JobQueueRepository:
             .values(
                 blocked_reason="draining_immediate_writes",
                 blocked_by_job_id=None,
-                blocked_by_import_lease_id=None,
                 worker_epoch_id=worker_epoch_id,
                 lease_token=lease_token,
                 lease_expires_at=expires,
@@ -3421,7 +3398,6 @@ class JobQueueRepository:
                 worker_epoch_id=worker_epoch_id,
                 blocked_reason=None,
                 blocked_by_job_id=None,
-                blocked_by_import_lease_id=None,
                 started_at=func.coalesce(jobs.c.started_at, now),
                 latest_progress_json=_json(progress),
                 updated_at=now,
@@ -3504,7 +3480,6 @@ class JobQueueRepository:
         job_id: str,
         reason: str,
         blocked_job_id: str | None,
-        import_lease_id: str | None,
         now: datetime,
     ) -> None:
         connection.execute(
@@ -3513,7 +3488,6 @@ class JobQueueRepository:
             .values(
                 blocked_reason=reason,
                 blocked_by_job_id=blocked_job_id,
-                blocked_by_import_lease_id=import_lease_id,
                 updated_at=now,
             )
         )

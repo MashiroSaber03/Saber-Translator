@@ -65,14 +65,10 @@ class ImageImportService:
         chapter_id: str,
         logical_path: str,
         upload: BinaryIO,
-        lease_id: str,
-        owner_token: str,
         idempotency_key: str,
     ) -> tuple[dict[str, object], bool]:
         if not idempotency_key or len(idempotency_key) > 200:
             raise ValueError("Idempotency-Key is required and must be at most 200 characters")
-        if not owner_token:
-            raise ValueError("Import-Lease-Token is required")
         temporary = (
             self.data_root
             / "temp"
@@ -107,11 +103,6 @@ class ImageImportService:
             if replay is not None:
                 return replay, True
 
-            self.repository.validate_and_renew_import_lease(
-                chapter_id=chapter_id,
-                lease_id=lease_id,
-                owner_token=owner_token,
-            )
             source_asset, thumbnail_asset = self._publish_temporary(temporary)
             return self.repository.append_page(
                 chapter_id=chapter_id,
@@ -121,8 +112,6 @@ class ImageImportService:
                 idempotency_scope=scope,
                 idempotency_key=idempotency_key,
                 request_hash=request_hash,
-                lease_id=lease_id,
-                owner_token=owner_token,
             )
         finally:
             temporary.unlink(missing_ok=True)

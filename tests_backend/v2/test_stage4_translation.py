@@ -505,22 +505,12 @@ def translation_platform(tmp_path: Path):
     payload = BytesIO()
     with Image.new("RGB", (64, 64), (255, 255, 255)) as image:
         image.save(payload, format="PNG")
-    lease = content.create_import_lease(str(chapter["id"]))
-    try:
-        imported, _ = importer.import_page(
-            chapter_id=str(chapter["id"]),
-            logical_path="page.png",
-            upload=BytesIO(payload.getvalue()),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-            idempotency_key="page",
-        )
-    finally:
-        content.release_import_lease(
-            chapter_id=str(chapter["id"]),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-        )
+    imported, _ = importer.import_page(
+        chapter_id=str(chapter["id"]),
+        logical_path="page.png",
+        upload=BytesIO(payload.getvalue()),
+        idempotency_key="page",
+    )
     epoch_id = str(uuid.uuid4())
     ProcessEpochRepository(engine).register(
         EpochRegistration(epoch_id, "worker", "worker", 555)
@@ -1985,22 +1975,12 @@ def test_multi_chapter_batch_creates_eligible_jobs_and_reports_skips(
     payload = BytesIO()
     with Image.new("RGB", (64, 64), (240, 240, 240)) as image:
         image.save(payload, format="PNG")
-    lease = content.create_import_lease(str(eligible["id"]))
-    try:
-        importer.import_page(
-            chapter_id=str(eligible["id"]),
-            logical_path="eligible.png",
-            upload=BytesIO(payload.getvalue()),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-            idempotency_key="eligible-page",
-        )
-    finally:
-        content.release_import_lease(
-            chapter_id=str(eligible["id"]),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-        )
+    importer.import_page(
+        chapter_id=str(eligible["id"]),
+        logical_path="eligible.png",
+        upload=BytesIO(payload.getvalue()),
+        idempotency_key="eligible-page",
+    )
 
     commands = TranslationJobCommandService(platform["engine"])
     occupied = commands.create_chapter_job(
@@ -2063,22 +2043,12 @@ def test_book_batch_resolves_chapters_in_requested_book_order(
     payload = BytesIO()
     with Image.new("RGB", (64, 64), (240, 240, 240)) as image:
         image.save(payload, format="PNG")
-    lease = content.create_import_lease(str(second_chapter["id"]))
-    try:
-        importer.import_page(
-            chapter_id=str(second_chapter["id"]),
-            logical_path="second.png",
-            upload=BytesIO(payload.getvalue()),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-            idempotency_key="second-book-page",
-        )
-    finally:
-        content.release_import_lease(
-            chapter_id=str(second_chapter["id"]),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-        )
+    importer.import_page(
+        chapter_id=str(second_chapter["id"]),
+        logical_path="second.png",
+        upload=BytesIO(payload.getvalue()),
+        idempotency_key="second-book-page",
+    )
 
     commands = TranslationJobCommandService(platform["engine"])
     accepted = commands.create_batch(
@@ -2522,22 +2492,12 @@ def _import_extra_page(
     with Image.new("RGB", (64, 64), (255, 255, 255)) as image:
         image.save(payload, format="PNG")
     target_chapter_id = chapter_id or str(platform["chapter"]["id"])
-    lease = content.create_import_lease(target_chapter_id)
-    try:
-        imported, _ = importer.import_page(
-            chapter_id=target_chapter_id,
-            logical_path=name,
-            upload=BytesIO(payload.getvalue()),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-            idempotency_key=f"import-{name}",
-        )
-    finally:
-        content.release_import_lease(
-            chapter_id=target_chapter_id,
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-        )
+    imported, _ = importer.import_page(
+        chapter_id=target_chapter_id,
+        logical_path=name,
+        upload=BytesIO(payload.getvalue()),
+        idempotency_key=f"import-{name}",
+    )
     return str(imported["page"]["id"])
 
 

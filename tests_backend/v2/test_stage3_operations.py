@@ -70,22 +70,12 @@ def operation_platform(tmp_path: Path):
     image_bytes = BytesIO()
     with Image.new("RGB", (64, 64), (12, 34, 56)) as image:
         image.save(image_bytes, format="PNG")
-    lease = content.create_import_lease(str(chapter["id"]))
-    try:
-        imported, _ = importer.import_page(
-            chapter_id=str(chapter["id"]),
-            logical_path="1.png",
-            upload=BytesIO(image_bytes.getvalue()),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-            idempotency_key="page-1",
-        )
-    finally:
-        content.release_import_lease(
-            chapter_id=str(chapter["id"]),
-            lease_id=lease.id,
-            owner_token=lease.owner_token,
-        )
+    imported, _ = importer.import_page(
+        chapter_id=str(chapter["id"]),
+        logical_path="1.png",
+        upload=BytesIO(image_bytes.getvalue()),
+        idempotency_key="page-1",
+    )
     page_id = str(imported["page"]["id"])
     bubble_id = str(uuid.uuid4())
     with engine.begin() as connection:

@@ -1951,8 +1951,6 @@ paths:
       operationId: importChapterPage
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/ImportLeaseId"
-        - $ref: "#/components/parameters/ImportLeaseToken"
       requestBody:
         required: true
         content:
@@ -2044,44 +2042,6 @@ paths:
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
         "422": {$ref: "#/components/responses/ValidationError"}
-  /chapters/{chapter_id}/import-leases:
-    post:
-      tags: [content]
-      operationId: createChapterImportLease
-      parameters:
-        - $ref: "#/components/parameters/ChapterId"
-        - $ref: "#/components/parameters/IdempotencyKey"
-      responses:
-        "201":
-          description: Owner token is returned once and only its hash is stored.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ImportLease"
-        "423":
-          $ref: "#/components/responses/Locked"
-  /chapters/{chapter_id}/import-leases/{lease_id}:
-    delete:
-      tags: [content]
-      operationId: releaseChapterImportLease
-      parameters:
-        - $ref: "#/components/parameters/ChapterId"
-        - $ref: "#/components/parameters/LeaseId"
-        - $ref: "#/components/parameters/ImportLeaseToken"
-        - $ref: "#/components/parameters/IdempotencyKey"
-      responses:
-        "200":
-          description: Lease released.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [released]
-                properties:
-                  released: {type: boolean, const: true}
-        "423":
-          $ref: "#/components/responses/Locked"
   /pages/{page_id}/document:
     get:
       tags: [pages]
@@ -3640,12 +3600,6 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
-    LeaseId:
-      name: lease_id
-      in: path
-      required: true
-      schema:
-        $ref: "#/components/schemas/Uuid"
     AssetId:
       name: asset_id
       in: path
@@ -3728,19 +3682,6 @@ components:
       schema:
         type: string
         pattern: "^[a-f0-9]{32}$"
-    ImportLeaseId:
-      name: Import-Lease-Id
-      in: header
-      required: true
-      schema:
-        $ref: "#/components/schemas/Uuid"
-    ImportLeaseToken:
-      name: Import-Lease-Token
-      in: header
-      required: true
-      schema:
-        type: string
-        minLength: 32
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -3764,7 +3705,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
     Locked:
-      description: A chapter intent/lock, import lease, or active task blocks the command.
+      description: A chapter intent/lock or active task blocks the command.
       content:
         application/json:
           schema:
@@ -4208,7 +4149,6 @@ components:
           enum:
             - null
             - blocked_by_job
-            - blocked_by_import_lease
             - draining_immediate_writes
             - retained_chapter_lock
         blockedByJobId:
@@ -6099,14 +6039,6 @@ components:
       properties:
         page: {$ref: "#/components/schemas/PageSummary"}
         pageOrderRevision: {type: integer, minimum: 1}
-    ImportLease:
-      type: object
-      additionalProperties: false
-      required: [leaseId, ownerToken, expiresAt]
-      properties:
-        leaseId: {$ref: "#/components/schemas/Uuid"}
-        ownerToken: {type: string, minLength: 32}
-        expiresAt: {type: string, format: date-time}
     ReplacePageSourceCommand:
       type: object
       additionalProperties: false

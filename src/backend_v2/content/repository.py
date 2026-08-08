@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
-import secrets
 from typing import Any
 import uuid
 
@@ -43,7 +41,6 @@ from src.backend_v2.storage.schema import (
     chapters,
     idempotency_records,
     fonts,
-    import_leases,
     job_items,
     jobs,
     operations,
@@ -138,13 +135,6 @@ class ContentLocked(RuntimeError):
 
 class IdempotencyConflict(ContentConflict):
     pass
-
-
-@dataclass(frozen=True, slots=True)
-class ImportLease:
-    id: str
-    owner_token: str
-    expires_at: datetime
 
 
 def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
@@ -1473,8 +1463,6 @@ class ContentRepository:
         idempotency_scope: str,
         idempotency_key: str,
         request_hash: str,
-        lease_id: str,
-        owner_token: str,
     ) -> tuple[dict[str, object], bool]:
         logical_path = normalize_logical_path(requested_logical_path)
         now = _utcnow()
@@ -1512,22 +1500,6 @@ class ContentRepository:
             if chapter is None:
                 raise ContentNotFound("chapter not found")
             self._assert_chapter_writable(connection, chapter_id)
-            token_hash = hashlib.sha256(owner_token.encode("utf-8")).hexdigest()
-            lease_expiry = now + timedelta(seconds=60)
-            renewed = connection.execute(
-                update(import_leases)
-                .where(
-                    import_leases.c.id == lease_id,
-                    import_leases.c.chapter_id == chapter_id,
-                    import_leases.c.owner_token_hash == token_hash,
-                    import_leases.c.expires_at > now,
-                )
-                .values(last_activity_at=now, expires_at=lease_expiry)
-            )
-            if renewed.rowcount != 1:
-                raise ContentLocked(
-                    "import lease is missing, expired, or owned by another client"
-                )
             existing_paths = set(
                 connection.execute(
                     select(pages.c.logical_source_path).where(
@@ -2365,85 +2337,6 @@ class ContentRepository:
             "translatedUrl": url("translated"),
         }
 
-    def create_import_lease(self, chapter_id: str) -> ImportLease:
-        now = _utcnow()
-        expires_at = now + timedelta(seconds=60)
-        owner_token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(owner_token.encode("utf-8")).hexdigest()
-        lease_id = str(uuid.uuid4())
-        with immediate_transaction(self.engine) as connection:
-            if connection.execute(
-                select(chapters.c.id).where(chapters.c.id == chapter_id)
-            ).scalar_one_or_none() is None:
-                raise ContentNotFound("chapter not found")
-            self._assert_chapter_writable(connection, chapter_id)
-            connection.execute(
-                delete(import_leases).where(
-                    import_leases.c.chapter_id == chapter_id,
-                    import_leases.c.expires_at <= now,
-                )
-            )
-            if connection.execute(
-                select(import_leases.c.id).where(
-                    import_leases.c.chapter_id == chapter_id
-                )
-            ).scalar_one_or_none() is not None:
-                raise ContentLocked("an image import is already active for this chapter")
-            connection.execute(
-                insert(import_leases).values(
-                    id=lease_id,
-                    chapter_id=chapter_id,
-                    owner_token_hash=token_hash,
-                    last_activity_at=now,
-                    expires_at=expires_at,
-                )
-            )
-        return ImportLease(lease_id, owner_token, expires_at)
-
-    def validate_and_renew_import_lease(
-        self,
-        *,
-        chapter_id: str,
-        lease_id: str,
-        owner_token: str,
-    ) -> datetime:
-        now = _utcnow()
-        expires_at = now + timedelta(seconds=60)
-        token_hash = hashlib.sha256(owner_token.encode("utf-8")).hexdigest()
-        with immediate_transaction(self.engine) as connection:
-            changed = connection.execute(
-                update(import_leases)
-                .where(
-                    import_leases.c.id == lease_id,
-                    import_leases.c.chapter_id == chapter_id,
-                    import_leases.c.owner_token_hash == token_hash,
-                    import_leases.c.expires_at > now,
-                )
-                .values(last_activity_at=now, expires_at=expires_at)
-            )
-            if changed.rowcount != 1:
-                raise ContentLocked("import lease is missing, expired, or owned by another client")
-        return expires_at
-
-    def release_import_lease(
-        self,
-        *,
-        chapter_id: str,
-        lease_id: str,
-        owner_token: str,
-    ) -> None:
-        token_hash = hashlib.sha256(owner_token.encode("utf-8")).hexdigest()
-        with self.engine.begin() as connection:
-            removed = connection.execute(
-                delete(import_leases).where(
-                    import_leases.c.id == lease_id,
-                    import_leases.c.chapter_id == chapter_id,
-                    import_leases.c.owner_token_hash == token_hash,
-                )
-            )
-            if removed.rowcount != 1:
-                raise ContentLocked("import lease is missing or owned by another client")
-
     def reset_quick_workspace(self) -> dict[str, str]:
         with immediate_transaction(self.engine) as connection:
             book = connection.execute(
@@ -2700,13 +2593,7 @@ class ContentRepository:
                 ),
             ).limit(1)
         ).scalar_one_or_none()
-        active_import = connection.execute(  # type: ignore[attr-defined]
-            select(import_leases.c.id).where(
-                import_leases.c.chapter_id.in_(chapter_ids),
-                import_leases.c.expires_at > _utcnow(),
-            ).limit(1)
-        ).scalar_one_or_none() if chapter_ids else None
-        if active_job or active_operation or active_import:
+        if active_job or active_operation:
             raise ContentLocked("quick workspace is still referenced by active work")
 
     @staticmethod

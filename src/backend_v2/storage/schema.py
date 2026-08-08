@@ -553,7 +553,6 @@ jobs = Table(
     ),
     Column("blocked_reason", String(64)),
     Column("blocked_by_job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="SET NULL")),
-    Column("blocked_by_import_lease_id", String(UUID_LENGTH)),
     Column("attempt_id", String(UUID_LENGTH)),
     Column("lease_token", String(200)),
     Column("lease_expires_at", DateTime(timezone=True)),
@@ -583,12 +582,8 @@ jobs = Table(
     CheckConstraint("queue_rank IS NULL OR queue_rank >= 1", name="queue_rank_positive"),
     CheckConstraint(
         "blocked_reason IS NULL OR blocked_reason IN ("
-        "'blocked_by_job','blocked_by_import_lease','draining_immediate_writes')",
+        "'blocked_by_job','draining_immediate_writes')",
         name="blocked_reason_values",
-    ),
-    CheckConstraint(
-        "(blocked_by_job_id IS NULL OR blocked_by_import_lease_id IS NULL)",
-        name="single_blocker",
     ),
 )
 
@@ -889,22 +884,6 @@ chapter_write_locks = Table(
     CheckConstraint("lock_generation >= 1", name="generation_positive"),
 )
 Index("ix_chapter_write_locks_job", chapter_write_locks.c.job_id)
-
-import_leases = Table(
-    "import_leases",
-    metadata,
-    Column("id", String(UUID_LENGTH), primary_key=True),
-    Column("chapter_id", String(UUID_LENGTH), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, unique=True),
-    Column("owner_token_hash", String(HASH_LENGTH), nullable=False),
-    Column("last_activity_at", DateTime(timezone=True), nullable=False),
-    Column("expires_at", DateTime(timezone=True), nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
-)
-Index("ix_import_leases_expires_at", import_leases.c.expires_at)
-
-jobs.c.blocked_by_import_lease_id.append_foreign_key(
-    ForeignKey("import_leases.id", ondelete="SET NULL")
-)
 
 studio_documents = Table(
     "studio_documents",
@@ -2001,7 +1980,6 @@ _FOREIGN_KEY_LOOKUP_INDEXES = (
     ("ix_jobs_analysis_run_id", jobs.c.analysis_run_id),
     ("ix_jobs_continuation_project_id", jobs.c.continuation_project_id),
     ("ix_jobs_blocked_by_job_id", jobs.c.blocked_by_job_id),
-    ("ix_jobs_blocked_by_import_lease_id", jobs.c.blocked_by_import_lease_id),
     ("ix_jobs_worker_epoch_id", jobs.c.worker_epoch_id),
     ("ix_job_items_page_id", job_items.c.page_id),
     ("ix_job_drain_acks_last_step_id", job_drain_acks.c.last_step_id),

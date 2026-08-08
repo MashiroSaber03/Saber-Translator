@@ -104,6 +104,44 @@ describe('apiClient error normalization', () => {
     })
   })
 
+  it('distinguishes a missing backend response from an application 500', async () => {
+    const { ApiClientError } = await import('@/api/client')
+    const responseErrorHandler = responseUseMock.mock.calls[0]?.[1] as ResponseErrorHandler | undefined
+    if (!responseErrorHandler) throw new Error('response error interceptor was not registered')
+
+    const error = await responseErrorHandler(Object.assign(new Error('Network Error'), {
+      code: 'ERR_NETWORK',
+      message: 'Network Error',
+    }) as AxiosError).catch((value: unknown) => value)
+
+    expect(error).toBeInstanceOf(ApiClientError)
+    expect(error).toMatchObject({
+      code: 'network_error',
+      message: '无法连接后端服务，请稍后重试',
+      status: 0,
+    })
+  })
+
+  it('labels the Vite empty text response as a proxy connection failure', async () => {
+    const responseErrorHandler = responseUseMock.mock.calls[0]?.[1] as ResponseErrorHandler | undefined
+    if (!responseErrorHandler) throw new Error('response error interceptor was not registered')
+
+    const error = await responseErrorHandler(Object.assign(new Error('status 500'), {
+      code: 'ERR_BAD_RESPONSE',
+      response: {
+        status: 500,
+        data: '',
+        headers: { 'content-type': 'text/plain' },
+      },
+    }) as AxiosError).catch((value: unknown) => value)
+
+    expect(error).toMatchObject({
+      code: 'proxy_connection_error',
+      message: '开发代理与后端连接中断，请稍后重试',
+      status: 500,
+    })
+  })
+
   it('keeps unrelated mutations open while task APIs enforce the settings gate', async () => {
     const { apiClient } = await import('@/api/client')
     const { createChapterTranslationJob } = await import('@/api/v2/translation')
@@ -135,9 +173,7 @@ describe('apiClient error normalization', () => {
       expect(getRequestMock).toHaveBeenCalledTimes(1)
       expect(postRequestMock).toHaveBeenCalledTimes(2)
       expect(putRequestMock).toHaveBeenCalledTimes(2)
-      expect(putRequestMock.mock.calls[1]?.[2]).toMatchObject({
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      expect(putRequestMock.mock.calls[1]?.[2]).toBeUndefined()
       expect(patchRequestMock).toHaveBeenCalledTimes(1)
       expect(deleteRequestMock).toHaveBeenCalledTimes(1)
     } finally {

@@ -14,6 +14,10 @@ import { useWebImportStore } from '@/stores/webImportStore'
 import {
   createContainerImportJob,
   importImagesSequentially,
+  retryFailedImageImports,
+  type SequentialImportFailure,
+  type SequentialImportOptions,
+  type SequentialImportSummary,
 } from '@/api/v2/content'
 
 const props = defineProps<{
@@ -29,7 +33,9 @@ const errorMessage = ref('')
 const uploadProgress = ref(0)
 const currentFileName = ref('')
 const showProgress = ref(false)
+const failedImports = ref<SequentialImportFailure[]>([])
 const CONTAINER_SUFFIXES = new Set(['.pdf', '.zip', '.cbz', '.mobi', '.azw', '.azw3'])
+const IMAGE_SUFFIXES = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tif', '.tiff', '.webp'])
 
 function triggerWebImport() {
   webImportStore.openModal()
@@ -40,12 +46,12 @@ function triggerFolderSelect() {
 async function handleFolderSelect(files: File[]) {
   if (files.length === 0) return
   try {
-    const imageFiles = files.filter(file => file.type.startsWith('image/'))
+    const imageFiles = files.filter(isImageFile)
     if (imageFiles.length === 0) {
       showToast('所选文件夹中没有找到图片文件', 'warning')
       return
     }
-    await importImageFiles(imageFiles)
+    await processFiles(imageFiles)
   } finally {
     folderInputRef.value?.clear()
   }
@@ -63,15 +69,46 @@ function fileSuffix(file: File): string {
   return index >= 0 ? file.name.slice(index).toLowerCase() : ''
 }
 
-async function importImageFiles(files: File[]): Promise<number> {
-  if (!props.chapterId || files.length === 0) return 0
-  const results = await importImagesSequentially(props.chapterId, files, {
+function isImageFile(file: File): boolean {
+  return file.type.startsWith('image/') || IMAGE_SUFFIXES.has(fileSuffix(file))
+}
+
+function imageImportOptions(): SequentialImportOptions {
+  return {
     onProgress: state => {
       currentFileName.value = state.currentPath
       uploadProgress.value = Math.round(state.completed / state.total * 100)
     },
-  })
-  return results.length
+    onRetry: state => {
+      currentFileName.value = `${state.currentPath}（连接重试 ${state.attempt}/${state.maxAttempts}）`
+    },
+  }
+}
+
+async function importImageFiles(files: File[]): Promise<SequentialImportSummary> {
+  if (!props.chapterId || files.length === 0) return { failures: [], results: [] }
+  return importImagesSequentially(props.chapterId, files, imageImportOptions())
+}
+
+function applyImageImportSummary(summary: SequentialImportSummary): void {
+  failedImports.value = summary.failures
+  if (summary.results.length > 0) {
+    showToast(`已写入后端 ${summary.results.length} 张图片`, 'success')
+    emit('uploadComplete', summary.results.length)
+  }
+  if (summary.failures.length === 0) {
+    errorMessage.value = ''
+    return
+  }
+  const details = summary.failures
+    .slice(0, 3)
+    .map(failure => `${failure.entry.logicalPath}：${failure.error.message}`)
+    .join('；')
+  const omitted = summary.failures.length > 3
+    ? `；另有 ${summary.failures.length - 3} 张`
+    : ''
+  errorMessage.value = `${summary.failures.length} 张图片写入失败：${details}${omitted}。可仅重试失败项，已成功图片不会重复写入。`
+  showToast(errorMessage.value, 'error')
 }
 
 async function processFiles(files: File[]) {
@@ -82,29 +119,27 @@ async function processFiles(files: File[]) {
   }
   isLoading.value = true
   errorMessage.value = ''
+  failedImports.value = []
   showProgress.value = true
   uploadProgress.value = 0
   try {
-    const images = files.filter(file => file.type.startsWith('image/'))
+    const images = files.filter(isImageFile)
     const containers = files.filter(file => CONTAINER_SUFFIXES.has(fileSuffix(file)))
     const unsupported = files.filter(
-      file => !file.type.startsWith('image/') && !CONTAINER_SUFFIXES.has(fileSuffix(file)),
+      file => !isImageFile(file) && !CONTAINER_SUFFIXES.has(fileSuffix(file)),
     )
     for (const file of unsupported) {
       showToast(`不支持的文件类型: ${file.name}`, 'warning')
     }
 
-    let importedCount = await importImageFiles(images)
+    const imageSummary = await importImageFiles(images)
+    applyImageImportSummary(imageSummary)
     for (const [index, file] of containers.entries()) {
       currentFileName.value = `上传到后端任务：${file.name}`
       await createContainerImportJob(props.chapterId, file)
       uploadProgress.value = Math.round((index + 1) / containers.length * 100)
     }
 
-    if (importedCount > 0) {
-      showToast(`已写入后端 ${importedCount} 张图片`, 'success')
-      emit('uploadComplete', importedCount)
-    }
     if (containers.length > 0) {
       showToast(
         `已创建 ${containers.length} 个后端解析任务，可安全关闭页面`,
@@ -121,8 +156,34 @@ async function processFiles(files: File[]) {
     currentFileName.value = ''
   }
 }
+
+async function retryFailedImages() {
+  if (!props.chapterId || failedImports.value.length === 0 || isLoading.value) return
+  isLoading.value = true
+  errorMessage.value = ''
+  showProgress.value = true
+  uploadProgress.value = 0
+  try {
+    const summary = await retryFailedImageImports(
+      props.chapterId,
+      failedImports.value,
+      imageImportOptions(),
+    )
+    applyImageImportSummary(summary)
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : '重试图片失败，请稍后再试'
+    errorMessage.value = errMsg
+    showToast(errMsg, 'error')
+  } finally {
+    isLoading.value = false
+    showProgress.value = false
+    currentFileName.value = ''
+  }
+}
+
 function clearError() {
   errorMessage.value = ''
+  failedImports.value = []
 }
 </script>
 <template>
@@ -193,6 +254,15 @@ function clearError() {
     >
       <span class="image-upload__error-text">{{ errorMessage }}</span>
       <template #actions>
+        <UiButton
+          v-if="failedImports.length"
+          variant="secondary"
+          size="sm"
+          :disabled="isLoading"
+          @click="retryFailedImages"
+        >
+          仅重试失败项
+        </UiButton>
         <UiIconButton
           variant="soft"
           size="sm"

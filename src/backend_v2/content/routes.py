@@ -472,31 +472,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             bubble_id=bubble_id,
         )
 
-    @blueprint.post("/chapters/<chapter_id>/import-leases")
-    def create_import_lease(chapter_id: str) -> tuple[Response, int]:
-        _require_idempotency_key()
-        lease = repository.create_import_lease(chapter_id)
-        return (
-            jsonify(
-                {
-                    "leaseId": lease.id,
-                    "ownerToken": lease.owner_token,
-                    "expiresAt": lease.expires_at.isoformat(),
-                }
-            ),
-            201,
-        )
-
-    @blueprint.delete("/chapters/<chapter_id>/import-leases/<lease_id>")
-    def release_import_lease(chapter_id: str, lease_id: str) -> Response:
-        _require_idempotency_key()
-        repository.release_import_lease(
-            chapter_id=chapter_id,
-            lease_id=lease_id,
-            owner_token=request.headers.get("Import-Lease-Token", ""),
-        )
-        return jsonify({"released": True})
-
     @blueprint.post("/chapters/<chapter_id>/pages")
     def import_page(chapter_id: str):
         idempotency_key = _require_idempotency_key()
@@ -514,8 +489,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             chapter_id=chapter_id,
             logical_path=logical_path,
             upload=upload.stream,
-            lease_id=request.headers.get("Import-Lease-Id", ""),
-            owner_token=request.headers.get("Import-Lease-Token", ""),
             idempotency_key=idempotency_key,
         )
         response = jsonify(result)

@@ -1,4 +1,4 @@
-import { apiClient } from '@/api/client'
+import { apiClient, ApiClientError } from '@/api/client'
 import type { components } from '@/api/generated/v2'
 import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 
@@ -7,7 +7,6 @@ export type V2Chapter = components['schemas']['Chapter']
 export type V2ChapterNavigation = components['schemas']['ChapterNavigation']
 export type V2ChapterSettingsMemory = components['schemas']['ChapterSettingsMemory']
 export type V2ContainerImportAccepted = components['schemas']['JobBatchAccepted']
-export type V2ImportLease = components['schemas']['ImportLease']
 export type V2PageDocument = components['schemas']['PageDocument']
 export type V2PageDocumentBatchMutation = components['schemas']['PageDocumentBatchMutation']
 export type V2PageDocumentMutationResponse = components['schemas']['PageDocumentMutationResponse']
@@ -30,9 +29,50 @@ export interface BrowserImportFile {
 export interface SequentialImportProgress {
   completed: number
   currentPath: string
-  result: V2PageImportResult
+  failed: number
+  result?: V2PageImportResult
+  error?: Error
+  succeeded: number
   total: number
 }
+
+export interface SequentialImportRetry {
+  attempt: number
+  currentPath: string
+  maxAttempts: number
+}
+
+export interface SequentialImportFailure {
+  entry: BrowserImportFile
+  error: Error
+  idempotencyKey: string
+}
+
+export interface SequentialImportSummary {
+  failures: SequentialImportFailure[]
+  results: V2PageImportResult[]
+}
+
+interface PendingImageImport {
+  entry: BrowserImportFile
+  idempotencyKey: string
+}
+
+export interface SequentialImportOptions {
+  onProgress?: (progress: SequentialImportProgress) => void
+  onRetry?: (retry: SequentialImportRetry) => void
+  signal?: AbortSignal
+}
+
+const UPLOAD_RETRY_DELAYS_MS = [250, 750, 1_500, 3_000] as const
+const RETRYABLE_UPLOAD_CODES = new Set([
+  'ECONNABORTED',
+  'ERR_NETWORK',
+  'ETIMEDOUT',
+  'network_error',
+  'proxy_connection_error',
+])
+const RETRYABLE_UPLOAD_STATUSES = new Set([408, 425, 429, 502, 503, 504])
 
 export function newIdempotencyKey(): string {
   return crypto.randomUUID()
@@ -97,35 +137,9 @@ export async function getTranslationBootstrap(
   )
 }
 
-export async function createImportLease(
-  chapterId: string,
-): Promise<V2ImportLease> {
-  return apiClient.post<V2ImportLease>(
-    `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/import-leases`,
-    undefined,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
-  )
-}
-
-export async function releaseImportLease(
-  chapterId: string,
-  lease: V2ImportLease,
-): Promise<void> {
-  await apiClient.delete(
-    `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/import-leases/${encodeURIComponent(lease.leaseId)}`,
-    {
-      headers: {
-        'Idempotency-Key': newIdempotencyKey(),
-        'Import-Lease-Token': lease.ownerToken,
-      },
-    },
-  )
-}
-
 export async function importChapterPage(
   chapterId: string,
   entry: BrowserImportFile,
-  lease: V2ImportLease,
   options: { idempotencyKey: string; signal?: AbortSignal },
 ): Promise<V2PageImportResult> {
   const body = new FormData()
@@ -138,43 +152,122 @@ export async function importChapterPage(
       signal: options.signal,
       headers: {
         'Idempotency-Key': options.idempotencyKey,
-        'Import-Lease-Id': lease.leaseId,
-        'Import-Lease-Token': lease.ownerToken,
       },
     },
   )
 }
 
+function normalizeImportError(error: unknown): Error {
+  return error instanceof Error ? error : new Error('图片写入后端失败')
+}
+
+function isRetryableUploadError(error: Error): boolean {
+  return error instanceof ApiClientError
+    && (
+      error.status === 0
+      || RETRYABLE_UPLOAD_CODES.has(error.code)
+      || RETRYABLE_UPLOAD_STATUSES.has(error.status)
+    )
+}
+
+function waitForUploadRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason)
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, delayMs)
+    const abort = () => {
+      clearTimeout(timer)
+      reject(signal?.reason)
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
+async function importPendingImagesSequentially(
+  chapterId: string,
+  pending: PendingImageImport[],
+  options: SequentialImportOptions,
+): Promise<SequentialImportSummary> {
+  const results: V2PageImportResult[] = []
+  const failures: SequentialImportFailure[] = []
+  const maxAttempts = UPLOAD_RETRY_DELAYS_MS.length + 1
+
+  for (const item of pending) {
+    options.signal?.throwIfAborted()
+    let result: V2PageImportResult | undefined
+    let finalError: Error | undefined
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        result = await importChapterPage(chapterId, item.entry, {
+          idempotencyKey: item.idempotencyKey,
+          signal: options.signal,
+        })
+        break
+      } catch (error) {
+        if (options.signal?.aborted) throw error
+        const normalized = normalizeImportError(error)
+        if (!isRetryableUploadError(normalized) || attempt === maxAttempts) {
+          finalError = normalized
+          break
+        }
+        options.onRetry?.({
+          attempt: attempt + 1,
+          currentPath: item.entry.logicalPath,
+          maxAttempts,
+        })
+        await waitForUploadRetry(UPLOAD_RETRY_DELAYS_MS[attempt - 1], options.signal)
+      }
+    }
+
+    if (result) {
+      results.push(result)
+    } else {
+      failures.push({
+        entry: item.entry,
+        error: finalError || new Error('图片写入后端失败'),
+        idempotencyKey: item.idempotencyKey,
+      })
+    }
+    options.onProgress?.({
+      completed: results.length + failures.length,
+      currentPath: item.entry.logicalPath,
+      failed: failures.length,
+      ...(result ? { result } : { error: finalError }),
+      succeeded: results.length,
+      total: pending.length,
+    })
+  }
+  return { failures, results }
+}
+
 export async function importImagesSequentially(
   chapterId: string,
   files: FileList | File[],
-  options: {
-    onProgress?: (progress: SequentialImportProgress) => void
-    signal?: AbortSignal
-  } = {},
-): Promise<V2PageImportResult[]> {
-  const ordered = browserImportFiles(files)
-  const lease = await createImportLease(chapterId)
-  const results: V2PageImportResult[] = []
-  try {
-    for (const [index, entry] of ordered.entries()) {
-      options.signal?.throwIfAborted()
-      const result = await importChapterPage(chapterId, entry, lease, {
-        idempotencyKey: newIdempotencyKey(),
-        signal: options.signal,
-      })
-      results.push(result)
-      options.onProgress?.({
-        completed: index + 1,
-        currentPath: entry.logicalPath,
-        result,
-        total: ordered.length,
-      })
-    }
-    return results
-  } finally {
-    await releaseImportLease(chapterId, lease)
-  }
+  options: SequentialImportOptions = {},
+): Promise<SequentialImportSummary> {
+  const pending = browserImportFiles(files).map(entry => ({
+    entry,
+    idempotencyKey: newIdempotencyKey(),
+  }))
+  return importPendingImagesSequentially(chapterId, pending, options)
+}
+
+export async function retryFailedImageImports(
+  chapterId: string,
+  failures: SequentialImportFailure[],
+  options: SequentialImportOptions = {},
+): Promise<SequentialImportSummary> {
+  return importPendingImagesSequentially(
+    chapterId,
+    failures.map(({ entry, idempotencyKey }) => ({ entry, idempotencyKey })),
+    options,
+  )
 }
 
 export async function createContainerImportJob(

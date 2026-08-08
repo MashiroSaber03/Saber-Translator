@@ -241,8 +241,6 @@ function blockedReasonLabel(job: V2Job): string {
       return '等待重新领取，章节锁已保留'
     case 'blocked_by_job':
       return '等待其他中断任务释放章节锁'
-    case 'blocked_by_import_lease':
-      return '等待导入任务释放章节'
     default:
       return job.blockedReason ? `等待：${job.blockedReason}` : ''
   }
