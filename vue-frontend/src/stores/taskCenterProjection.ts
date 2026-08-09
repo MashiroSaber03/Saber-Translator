@@ -75,7 +75,7 @@ export function describeJobTarget(job: V2Job): string {
 export function progressPercent(job: V2Job): number {
   const counts = progressCounts(job)
   if (counts.total <= 0) return 0
-  return Math.max(0, Math.min(100, Math.round(counts.completed / counts.total * 100)))
+  return Math.max(0, Math.min(100, counts.completed / counts.total * 100))
 }
 
 export function progressCounts(job: V2Job): JobProgressCounts {

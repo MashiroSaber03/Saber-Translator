@@ -77,7 +77,7 @@ function imageImportOptions(): SequentialImportOptions {
   return {
     onProgress: state => {
       currentFileName.value = state.currentPath
-      uploadProgress.value = Math.round(state.completed / state.total * 100)
+      uploadProgress.value = state.completed / state.total * 100
     },
     onRetry: state => {
       currentFileName.value = `${state.currentPath}（连接重试 ${state.attempt}/${state.maxAttempts}）`
@@ -137,7 +137,7 @@ async function processFiles(files: File[]) {
     for (const [index, file] of containers.entries()) {
       currentFileName.value = `上传到后端任务：${file.name}`
       await createContainerImportJob(props.chapterId, file)
-      uploadProgress.value = Math.round((index + 1) / containers.length * 100)
+      uploadProgress.value = (index + 1) / containers.length * 100
     }
 
     if (containers.length > 0) {

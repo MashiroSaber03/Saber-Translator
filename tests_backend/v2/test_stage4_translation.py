@@ -558,7 +558,9 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
             "kind": "translation",
             "status": "queued",
             "queueRank": 1,
-            "pageIds": [platform["page_id"]],
+            "pages": [
+                {"pageId": platform["page_id"], "status": "pending"}
+            ],
             "progress": {
                 "executionMode": "parallel",
                 "jobStatus": "queued",

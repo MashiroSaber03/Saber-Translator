@@ -101,6 +101,37 @@ describe('TranslationProgress', () => {
     expect(wrapper.text()).toContain('等待深度学习锁')
   })
 
+  it('keeps non-zero progress visible for large jobs', () => {
+    const wrapper = mount(TranslationProgress, {
+      props: {
+        progress: {
+          isInProgress: true,
+          current: 8,
+          total: 2702,
+          completed: 8,
+          failed: 0,
+          executionMode: 'parallel',
+          pools: [{
+            kind: 'translate',
+            total: 2702,
+            completed: 8,
+            failed: 0,
+            skipped: 0,
+            waiting: 2693,
+            processing: 1,
+            lockWaiting: false,
+            current: [],
+          }],
+        },
+      },
+    })
+
+    const bars = wrapper.findAllComponents(UiProgressBar)
+    expect(bars[0]?.props('value')).toBeCloseTo(8 / 2702 * 100)
+    expect(bars[1]?.props('value')).toBeCloseTo(8 / 2702 * 100)
+    expect(bars[0]?.props('value')).toBeGreaterThan(0)
+  })
+
   it('does not import the removed browser-owned pool pipeline', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/TranslationProgress.vue'),

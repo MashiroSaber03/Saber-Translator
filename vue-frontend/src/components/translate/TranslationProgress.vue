@@ -93,7 +93,7 @@ const progressPercent = computed(() => {
   }
   if (currentProgress.value.total === 0) return 0
   return clampPercent(
-    Math.round(currentProgress.value.current / currentProgress.value.total * 100),
+    currentProgress.value.current / currentProgress.value.total * 100,
   )
 })
 const progressLabel = computed(() => {
@@ -117,7 +117,7 @@ const progressLabel = computed(() => {
 function poolPercent(pool: TranslationPoolProgress): number {
   if (pool.total === 0) return 0
   return clampPercent(
-    Math.round((pool.completed + pool.failed + pool.skipped) / pool.total * 100),
+    (pool.completed + pool.failed + pool.skipped) / pool.total * 100,
   )
 }
 </script>

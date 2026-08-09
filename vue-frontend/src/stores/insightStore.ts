@@ -102,7 +102,11 @@ export const useInsightStore = defineStore('insight', () => {
   const providerConfigs = ref<ProviderConfigsCache>({ vlm: {}, llm: {}, embedding: {}, reranker: {}, imageGen: {} })
   const configManager = useInsightConfigManager(providerConfigs)
 
-  const progressPercent = computed(() => progress.value.total === 0 ? 0 : Math.round((progress.value.current / progress.value.total) * 100))
+  const progressPercent = computed(() => (
+    progress.value.total === 0
+      ? 0
+      : progress.value.current / progress.value.total * 100
+  ))
   const isAnalyzing = computed(() => ACTIVE_ANALYSIS_STATUSES.has(analysisStatus.value))
   const analyzedPageCount = computed(() => analyzedPagesCount.value)
   const totalPageCount = computed(() => bookTotalPages.value)

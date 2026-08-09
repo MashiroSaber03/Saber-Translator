@@ -3637,7 +3637,11 @@ export interface components {
                 status: components["schemas"]["JobStatus"];
                 queueRank: number | null;
                 progress: components["schemas"]["JobProgress"];
-                pageIds: components["schemas"]["Uuid"][];
+                pages: {
+                    pageId: components["schemas"]["Uuid"];
+                    /** @enum {string} */
+                    status: "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
+                }[];
             }[];
             activeWebImportDraft: {
                 id: components["schemas"]["Uuid"];

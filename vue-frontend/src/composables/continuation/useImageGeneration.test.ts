@@ -125,6 +125,29 @@ describe('useImageGeneration backend job ownership', () => {
     expect(generateAllPageImagesMock).toHaveBeenCalledWith('book-1', [1])
   })
 
+  it('keeps small non-zero progress visible for large image jobs', async () => {
+    const pending = deferred<{ status: string }>()
+    waitForJobMock.mockImplementationOnce((
+      _jobId: string,
+      options: { onProgress?: (progress: Record<string, unknown>) => void },
+    ) => {
+      options.onProgress?.({ completedItems: 8, totalItems: 2702 })
+      return pending.promise
+    })
+    const pages = ref([page(1)])
+    const state = createState(pages)
+    const composable = useImageGeneration(ref('book-1'), state)
+
+    const generation = composable.batchGenerateImages(pages.value)
+    await vi.waitFor(() => {
+      expect(composable.generationProgress.value).toBeCloseTo(8 / 2702 * 100)
+    })
+    expect(composable.generationProgress.value).toBeGreaterThan(0)
+
+    pending.resolve({ status: 'completed' })
+    await generation
+  })
+
   it('does not refresh stale UI state after the selected book changes', async () => {
     const pending = deferred<{ status: string }>()
     waitForJobMock.mockReturnValueOnce(pending.promise)

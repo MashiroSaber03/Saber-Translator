@@ -183,7 +183,7 @@ function applyProgressSnapshot(
     failed,
     isInProgress: status ? ACTIVE_JOB_STATUSES.has(status) : true,
     label: label ?? jobStatusLabel(status),
-    percentage: total > 0 ? Math.round(current / total * 100) : 0,
+    percentage: total > 0 ? current / total * 100 : 0,
     executionMode,
     status,
     queuePosition: metadata.queuePosition,
@@ -244,16 +244,21 @@ export function restoreTranslationFromBootstrap(
     return
   }
   activeJobId.value = job.id
-  activePageIds.value = [...job.pageIds]
+  activePageIds.value = job.pages.map(page => page.pageId)
   applyProgressSnapshot(
     job.progress,
     jobStatusLabel(job.status),
     { queuePosition: job.queueRank, status: job.status },
   )
-  imageStore.setBatchTranslationInProgress(job.pageIds.length > 1)
-  const targetPages = new Set(job.pageIds)
+  imageStore.setBatchTranslationInProgress(job.pages.length > 1)
+  const pageStates = new Map(job.pages.map(page => [page.pageId, page.status]))
   imageStore.images.forEach((image, index) => {
-    if (targetPages.has(image.id)) imageStore.setTranslationStatus(index, 'processing')
+    const status = pageStates.get(image.id)
+    if (status === 'pending' || status === 'running') {
+      imageStore.setTranslationStatus(index, 'processing')
+    } else if (status === 'failed') {
+      imageStore.setTranslationStatus(index, 'failed')
+    }
   })
 }
 

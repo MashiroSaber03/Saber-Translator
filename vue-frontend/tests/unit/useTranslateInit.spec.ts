@@ -282,14 +282,20 @@ describe('useTranslateInit', () => {
     expect(state.isBookshelfMode.value).toBe(false)
   })
 
-  it('restores backend active job progress and page scope after refresh', async () => {
+  it('restores backend active job progress without overwriting completed pages', async () => {
     const payload = bootstrap('book-1', 'chapter-1')
+    Object.assign(payload.pages.items[0], {
+      documentRevision: 2,
+      renderedRevision: 2,
+      renderStatus: 'ready',
+      translatedUrl: '/api/v2/assets/translated-1',
+    })
     payload.activeJobs = [{
       id: 'job-1',
       kind: 'translation',
       status: 'running',
       queueRank: 1,
-      pageIds: ['page-1'],
+      pages: [{ pageId: 'page-1', status: 'completed' }],
       progress: {
         executionMode: 'parallel',
         jobStatus: 'running',
@@ -319,6 +325,7 @@ describe('useTranslateInit', () => {
     expect(translation.progress.value.isInProgress).toBe(true)
     expect(translation.progress.value.executionMode).toBe('parallel')
     expect(translation.progress.value.pools[0]?.kind).toBe('ocr')
+    expect(useImageStore().images[0]?.translationStatus).toBe('completed')
   })
 
   it('hydrates and CAS-persists chapter-scoped non-style work state', async () => {

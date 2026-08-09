@@ -22,7 +22,7 @@ interface ImageGenerationComposable {
 function progressPercent(progress: Record<string, unknown>): number {
   const completed = Number(progress.completedItems ?? 0)
   const total = Number(progress.totalItems ?? 0)
-  return total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 5
+  return total > 0 ? Math.min(100, completed / total * 100) : 5
 }
 
 export function useImageGeneration(

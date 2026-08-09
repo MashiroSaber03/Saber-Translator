@@ -49,11 +49,11 @@ describe('insight progress properties', () => {
     fc.assert(
       fc.property(progressArbitrary, ({ current, total }) => {
         const store = createStore()
-        const expectedPercent = total === 0 ? 0 : Math.round((current / total) * 100)
+        const expectedPercent = total === 0 ? 0 : current / total * 100
 
         store.updateProgress(current, total)
 
-        expect(store.progressPercent).toBe(expectedPercent)
+        expect(store.progressPercent).toBeCloseTo(expectedPercent)
         expect(store.progressPercent).toBeGreaterThanOrEqual(0)
         expect(store.progressPercent).toBeLessThanOrEqual(100)
       }),

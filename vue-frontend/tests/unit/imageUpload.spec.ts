@@ -8,6 +8,11 @@ import ImageUpload from '@/components/translate/ImageUpload.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import UiProgressBar from '@/components/ui/UiProgressBar.vue'
+import type {
+  SequentialImportOptions,
+  SequentialImportSummary,
+} from '@/api/v2/content'
 import { useWebImportStore } from '@/stores/webImportStore'
 
 const mocks = vi.hoisted(() => ({
@@ -74,6 +79,36 @@ describe('ImageUpload', () => {
     )
     expect(wrapper.emitted('uploadComplete')).toEqual([[1]])
     expect(mocks.toast).toHaveBeenCalledWith('已写入后端 1 张图片', 'success')
+  })
+
+  it('keeps small non-zero upload progress visible for large batches', async () => {
+    let resolveImport!: (summary: SequentialImportSummary) => void
+    mocks.importImagesSequentially.mockReturnValueOnce(
+      new Promise<SequentialImportSummary>(resolve => {
+        resolveImport = resolve
+      }),
+    )
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const file = new File(['image'], '001.png', { type: 'image/png' })
+
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
+    await vi.waitFor(() => expect(mocks.importImagesSequentially).toHaveBeenCalled())
+    const options = mocks.importImagesSequentially.mock.calls[0]?.[2] as SequentialImportOptions
+    options.onProgress?.({
+      completed: 8,
+      currentPath: '008.png',
+      failed: 0,
+      succeeded: 8,
+      total: 2702,
+    })
+    await wrapper.vm.$nextTick()
+
+    const percent = wrapper.getComponent(UiProgressBar).props('value') as number
+    expect(percent).toBeCloseTo(8 / 2702 * 100)
+    expect(percent).toBeGreaterThan(0)
+
+    resolveImport({ failures: [], results: [] })
+    await flushPromises()
   })
 
   it('submits PDF and comic archives as durable backend jobs', async () => {

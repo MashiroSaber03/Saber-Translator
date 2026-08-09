@@ -184,6 +184,8 @@ describe('backend-owned export/import contracts', () => {
     expect(source).not.toContain('exportTextToJson')
     expect(source).not.toContain('WatchStopHandle')
     expect(source).not.toContain('30 * 60')
+    expect(source).not.toContain('Math.round(complete / total')
+    expect(source).toContain('complete / total * 90 + 5')
     expect(source).toContain('createChapterExportJob')
     expect(source).toContain('previewChapterTextImport')
     expect(source).toContain('taskCenterStore.waitForJob')

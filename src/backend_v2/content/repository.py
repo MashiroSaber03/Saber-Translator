@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -870,19 +870,25 @@ class ContentRepository:
                 ).mappings()
             )
             active_job_ids = [str(job["id"]) for job in active_jobs]
-            active_job_pages: dict[str, list[str]] = {
+            active_job_pages: dict[str, list[dict[str, str]]] = {
                 job_id: [] for job_id in active_job_ids
             }
             if active_job_ids:
-                for job_id, page_id in connection.execute(
-                    select(job_items.c.job_id, job_items.c.page_id)
+                for job_id, page_id, status in connection.execute(
+                    select(
+                        job_items.c.job_id,
+                        job_items.c.page_id,
+                        job_items.c.status,
+                    )
                     .where(
                         job_items.c.job_id.in_(active_job_ids),
                         job_items.c.page_id.is_not(None),
                     )
                     .order_by(job_items.c.job_id, job_items.c.ordinal)
                 ):
-                    active_job_pages[str(job_id)].append(str(page_id))
+                    active_job_pages[str(job_id)].append(
+                        {"pageId": str(page_id), "status": str(status)}
+                    )
             active_draft = connection.execute(
                 select(
                     web_import_drafts.c.id,
@@ -975,7 +981,7 @@ class ContentRepository:
                     "status": job["status"],
                     "queueRank": job["queue_rank"],
                     "progress": json.loads(job["latest_progress_json"]),
-                    "pageIds": active_job_pages.get(str(job["id"]), []),
+                    "pages": active_job_pages.get(str(job["id"]), []),
                 }
                 for job in active_jobs
             ],

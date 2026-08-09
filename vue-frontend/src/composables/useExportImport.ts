@@ -152,7 +152,7 @@ export function useExportImport() {
             + progressValue(progress, 'failedItems')
           )
           downloadProgress.value = total > 0
-            ? Math.min(95, Math.round(complete / total * 90) + 5)
+            ? Math.min(95, complete / total * 90 + 5)
             : 5
           downloadProgressText.value = `后端正在生成导出文件：${complete}/${total || 1}`
         },

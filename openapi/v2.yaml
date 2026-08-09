@@ -5960,16 +5960,24 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [id, kind, status, queueRank, progress, pageIds]
+            required: [id, kind, status, queueRank, progress, pages]
             properties:
               id: {$ref: "#/components/schemas/Uuid"}
               kind: {$ref: "#/components/schemas/JobKind"}
               status: {$ref: "#/components/schemas/JobStatus"}
               queueRank: {type: [integer, "null"], minimum: 1}
               progress: {$ref: "#/components/schemas/JobProgress"}
-              pageIds:
+              pages:
                 type: array
-                items: {$ref: "#/components/schemas/Uuid"}
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [pageId, status]
+                  properties:
+                    pageId: {$ref: "#/components/schemas/Uuid"}
+                    status:
+                      type: string
+                      enum: [pending, running, completed, failed, skipped, cancelled]
         activeWebImportDraft:
           oneOf:
             - type: object

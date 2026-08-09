@@ -51,6 +51,18 @@ describe('task center projection', () => {
     expect(progressPercent(job({ progress: {} }))).toBe(0)
   })
 
+  it('keeps small non-zero progress visible for large jobs', () => {
+    const percent = progressPercent(job({
+      progress: {
+        totalItems: 2702,
+        completedItems: 8,
+      },
+    }))
+
+    expect(percent).toBeCloseTo(8 / 2702 * 100)
+    expect(percent).toBeGreaterThan(0)
+  })
+
   it('counts only page items for Insight analysis jobs', () => {
     const running = job({
       kind: 'insight_analysis',
