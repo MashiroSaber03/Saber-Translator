@@ -4,6 +4,8 @@ import logging
 import time
 from typing import List, Optional
 
+from src.shared.memory_errors import is_memory_allocation_error
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,8 @@ class BaiduOCRInterface:
                 return None
         except Exception as e:
             logger.error(f"获取百度访问令牌时出错: {str(e)}")
+            if is_memory_allocation_error(e):
+                raise
             return None
     
     def _ensure_request_interval(self, min_interval_ms: int = 500):
@@ -191,6 +195,8 @@ class BaiduOCRInterface:
             
             except Exception as e:
                 logger.error(f"百度OCR识别时出错: {str(e)}")
+                if is_memory_allocation_error(e):
+                    raise
                 if retry < max_retries - 1:
                     wait_time = retry_delay * (retry + 1)
                     logger.info(f"将在 {wait_time} 秒后重试...")
@@ -231,6 +237,8 @@ def get_baidu_ocr(api_key: str = None, secret_key: str = None, version: str = "s
         except Exception as e:
             logger.error(f"初始化百度OCR时出错: {str(e)}")
             _baidu_ocr_instance = None
+            if is_memory_allocation_error(e):
+                raise
     
     return _baidu_ocr_instance
 

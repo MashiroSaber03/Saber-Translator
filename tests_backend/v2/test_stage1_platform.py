@@ -18,7 +18,10 @@ from sqlalchemy import insert, select, text, update
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.storage.consistency import ConsistencyChecker
-from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.database import (
+    create_sqlite_engine,
+    immediate_transaction,
+)
 from src.backend_v2.storage.defaults import (
     DEFAULT_INSIGHT_SETTINGS,
     default_translation_settings,
@@ -704,6 +707,75 @@ def test_integrity_scan_and_two_pass_gc_never_delete_referenced_assets(
         remaining = set(connection.execute(select(assets.c.id)).scalars())
     assert unreferenced.id not in remaining
     assert referenced.id in remaining
+
+
+def test_asset_gc_limits_each_mark_and_delete_batch(platform) -> None:
+    data_root, engine = platform
+    storage = AssetStorageService(data_root, engine)
+    asset_ids = {
+        storage.publish_bytes(
+            f"unused-{index}".encode(),
+            extension="bin",
+            mime_type="application/octet-stream",
+        ).id
+        for index in range(3)
+    }
+    started_at = utcnow()
+
+    first = storage.collect_garbage(
+        grace_seconds=10,
+        now=started_at,
+        batch_limit=2,
+    )
+    second = storage.collect_garbage(
+        grace_seconds=10,
+        now=started_at,
+        batch_limit=2,
+    )
+    third = storage.collect_garbage(
+        grace_seconds=10,
+        now=started_at + timedelta(seconds=11),
+        batch_limit=2,
+    )
+    fourth = storage.collect_garbage(
+        grace_seconds=10,
+        now=started_at + timedelta(seconds=11),
+        batch_limit=2,
+    )
+
+    assert first.marked == 2
+    assert second.marked == 1
+    assert third.deleted_rows == 2
+    assert fourth.deleted_rows == 1
+    with engine.connect() as connection:
+        remaining = set(
+            connection.execute(
+                select(assets.c.id).where(assets.c.id.in_(asset_ids))
+            ).scalars()
+        )
+    assert remaining == set()
+
+
+def test_asset_gc_does_not_request_a_write_lock_when_nothing_can_change(
+    platform,
+) -> None:
+    data_root, engine = platform
+    storage = AssetStorageService(data_root, engine)
+    referenced = storage.publish_bytes(
+        b"font",
+        extension="ttf",
+        mime_type="font/ttf",
+    )
+    FontRepository(engine).register_uploaded(
+        asset_id=referenced.id,
+        display_name="Referenced",
+    )
+
+    with immediate_transaction(engine):
+        result = storage.collect_garbage(batch_limit=1)
+
+    assert result.marked == 0
+    assert result.deleted_rows == 0
 
 
 def test_orphan_object_reconciliation_honors_database_journal_and_grace(

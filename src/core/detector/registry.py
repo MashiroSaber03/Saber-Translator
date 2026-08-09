@@ -9,6 +9,8 @@ from typing import Dict, Type, Literal
 
 from PIL import Image
 
+from src.shared.memory_errors import is_memory_allocation_error
+
 from .base import BaseTextDetector
 from .data_types import DetectionResult
 
@@ -176,6 +178,8 @@ def detect(
         except ImportError as e:
             logger.warning(f"大图检测模块导入失败，回退到普通检测: {e}")
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.warning(f"大图检测失败，回退到普通检测: {e}")
     
     # 普通检测

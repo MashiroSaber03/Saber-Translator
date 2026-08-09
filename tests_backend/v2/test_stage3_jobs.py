@@ -29,7 +29,11 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.jobs.routes import create_jobs_blueprint
-from src.backend_v2.jobs.worker_loop import AttemptHeartbeat, JobWorkerLoop
+from src.backend_v2.jobs.worker_loop import (
+    PARALLEL_PIPELINE_LEAD_WINDOW,
+    AttemptHeartbeat,
+    JobWorkerLoop,
+)
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
@@ -724,6 +728,40 @@ def test_job_attempt_heartbeat_retries_sqlite_busy_without_fencing() -> None:
         heartbeat.stop()
 
 
+def test_job_attempt_heartbeat_fences_after_finite_sqlite_busy_retries() -> None:
+    class AlwaysBusyRepository:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def renew_attempt(self, _fence):
+            self.calls += 1
+            raise SqlAlchemyOperationalError(
+                "UPDATE jobs",
+                (),
+                sqlite3.OperationalError("database is locked"),
+            )
+
+    repository = AlwaysBusyRepository()
+    heartbeat = AttemptHeartbeat(
+        repository,  # type: ignore[arg-type]
+        AttemptFence(
+            job_id="00000000-0000-0000-0000-000000000001",
+            attempt_id="00000000-0000-0000-0000-000000000002",
+            lease_token="lease",
+            worker_epoch_id="00000000-0000-0000-0000-000000000003",
+            lease_expires_at=utcnow() + timedelta(seconds=10),
+        ),
+        interval_seconds=0.01,
+    )
+
+    heartbeat.start()
+    try:
+        assert heartbeat.fenced.wait(1)
+        assert repository.calls == 2
+    finally:
+        heartbeat.stop()
+
+
 def test_failed_item_retry_creates_related_replacement_from_durable_facts(
     job_platform,
 ) -> None:
@@ -1129,6 +1167,80 @@ def test_parallel_worker_uses_serial_stage_pools_with_cross_stage_overlap(
     assert cross_stage_overlap.is_set()
 
 
+def test_parallel_pipeline_limits_upstream_lead_to_fifty_items(
+    job_platform,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    page_count = PARALLEL_PIPELINE_LEAD_WINDOW + 1
+    created = repository.create_batch(
+        kind="translation",
+        display_name="bounded parallel pipeline",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=tuple(
+                    JobItemSpec(page_id=None, step_kinds=("detect", "save"))
+                    for _index in range(page_count)
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    state_lock = threading.Lock()
+    detected = 0
+    reached_window = threading.Event()
+    save_started = threading.Event()
+    release_save = threading.Event()
+
+    def handler(_fence, step):
+        nonlocal detected
+        kind = str(step["stepKind"])
+        if kind == "detect":
+            with state_lock:
+                detected += 1
+                if detected == PARALLEL_PIPELINE_LEAD_WINDOW:
+                    reached_window.set()
+            return {"done": kind}
+        save_started.set()
+        assert release_save.wait(5)
+        return {"done": kind}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler, "save": handler},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        assert save_started.wait(2)
+        assert reached_window.wait(5)
+        time.sleep(0.25)
+        with state_lock:
+            assert detected == PARALLEL_PIPELINE_LEAD_WINDOW
+
+        release_save.set()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+        with state_lock:
+            assert detected == page_count
+    finally:
+        release_save.set()
+        stop.set()
+        thread.join(timeout=2)
+
+
 def test_parallel_worker_quiesces_completed_pool_during_long_tail(
     job_platform,
     monkeypatch: pytest.MonkeyPatch,
@@ -1162,11 +1274,20 @@ def test_parallel_worker_quiesces_completed_pool_during_long_tail(
     release_translate = threading.Event()
     original_next_step = repository.next_step
 
-    def counted_next_step(fence, *, allowed_kinds=None):
+    def counted_next_step(
+        fence,
+        *,
+        allowed_kinds=None,
+        max_item_ordinal=None,
+    ):
         kind = str(allowed_kinds[0])
         with state_lock:
             next_step_calls[kind] += 1
-        return original_next_step(fence, allowed_kinds=allowed_kinds)
+        return original_next_step(
+            fence,
+            allowed_kinds=allowed_kinds,
+            max_item_ordinal=max_item_ordinal,
+        )
 
     monkeypatch.setattr(repository, "next_step", counted_next_step)
 

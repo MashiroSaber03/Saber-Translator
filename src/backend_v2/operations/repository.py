@@ -546,6 +546,28 @@ class OperationRepository:
             raise ValueError("executor_role must be api or worker")
         if not allowed_kinds:
             return None
+        claim_conditions = (
+            operations.c.executor_role == executor_role,
+            operations.c.status == "pending",
+            operations.c.kind.in_(tuple(allowed_kinds)),
+        )
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_epoch(
+                connection,
+                role=executor_role,
+                epoch_id=executor_epoch_id,
+                now=now,
+            )
+            pending_id = connection.execute(
+                select(operations.c.id)
+                .where(*claim_conditions)
+                .order_by(operations.c.created_at)
+                .limit(1)
+            ).scalar_one_or_none()
+        if pending_id is None:
+            return None
+
         now = utcnow()
         expires = now + timedelta(seconds=self.attempt_lease_seconds)
         with immediate_transaction(self.engine) as connection:
@@ -557,11 +579,7 @@ class OperationRepository:
             )
             row = connection.execute(
                 select(operations)
-                .where(
-                    operations.c.executor_role == executor_role,
-                    operations.c.status == "pending",
-                    operations.c.kind.in_(allowed_kinds),
-                )
+                .where(*claim_conditions)
                 .order_by(operations.c.created_at)
                 .limit(1)
             ).mappings().one_or_none()

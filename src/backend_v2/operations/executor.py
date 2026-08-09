@@ -16,6 +16,7 @@ from src.backend_v2.operations.repository import (
     RenderFence,
     RenderRequestRepository,
 )
+from src.backend_v2.storage.database import is_sqlite_busy_error
 
 
 OperationHandler = Callable[
@@ -121,12 +122,18 @@ class DurableOperationExecutor:
                 self._admission.release()
                 self._stop.set()
                 return
-            except Exception:
+            except Exception as exc:
                 self._admission.release()
-                LOGGER.exception(
-                    "%s operation 调度器领取失败，将继续轮询",
-                    self.executor_role,
-                )
+                if is_sqlite_busy_error(exc):
+                    LOGGER.warning(
+                        "%s operation 调度器遇到 SQLite 写锁竞争，将继续轮询",
+                        self.executor_role,
+                    )
+                else:
+                    LOGGER.exception(
+                        "%s operation 调度器领取失败，将继续轮询",
+                        self.executor_role,
+                    )
                 self._stop.wait(max(1.0, self.poll_seconds))
                 continue
             if claimed is None:

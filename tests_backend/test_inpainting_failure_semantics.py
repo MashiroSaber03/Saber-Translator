@@ -35,6 +35,28 @@ def test_lama_failure_uses_the_documented_solid_fallback(
         source.close()
 
 
+def test_lama_allocation_failure_does_not_use_solid_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(inpainting, "is_lama_available", lambda: True)
+    monkeypatch.setattr(
+        inpainting,
+        "clean_image_with_lama",
+        mock.Mock(side_effect=RuntimeError("CUDA out of memory")),
+    )
+    source = Image.new("RGB", (8, 8), "white")
+    try:
+        with pytest.raises(RuntimeError, match="CUDA out of memory"):
+            inpainting.inpaint_bubbles(
+                source,
+                [(1, 1, 6, 6)],
+                method="lama",
+                fill_color="#112233",
+            )
+    finally:
+        source.close()
+
+
 def test_solid_fill_failure_is_not_reported_as_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

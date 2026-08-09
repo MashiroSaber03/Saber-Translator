@@ -7,6 +7,11 @@ import logging
 import threading
 
 from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.storage.database import (
+    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
+    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+    is_sqlite_busy_error,
+)
 from src.backend_v2.storage.epochs import ProcessEpochRepository
 
 
@@ -50,19 +55,39 @@ class EpochHeartbeat:
 
     def _run(self) -> None:
         while not self._stop.wait(self._interval_seconds):
-            try:
-                renewed = self._repository.renew(
-                    role=self._role,  # type: ignore[arg-type]
-                    epoch_id=self._identity.epoch_id,
-                    token=self._identity.epoch_token,
-                )
-            except Exception:
-                LOGGER.exception(
-                    "%s epoch 心跳执行失败，执行器立即自我隔离",
-                    self._role.upper(),
-                )
-                self._fence()
-                return
+            busy_failures = 0
+            while True:
+                try:
+                    renewed = self._repository.renew(
+                        role=self._role,  # type: ignore[arg-type]
+                        epoch_id=self._identity.epoch_id,
+                        token=self._identity.epoch_token,
+                    )
+                except Exception as exc:
+                    if (
+                        is_sqlite_busy_error(exc)
+                        and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
+                    ):
+                        busy_failures += 1
+                        LOGGER.warning(
+                            "%s epoch 心跳遇到 SQLite 写锁竞争，将有限重试："
+                            "attempt=%s/%s",
+                            self._role.upper(),
+                            busy_failures,
+                            SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+                        )
+                        if self._stop.wait(
+                            SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
+                        ):
+                            return
+                        continue
+                    LOGGER.exception(
+                        "%s epoch 心跳执行失败，执行器立即自我隔离",
+                        self._role.upper(),
+                    )
+                    self._fence()
+                    return
+                break
             if renewed:
                 continue
             LOGGER.error("%s epoch 心跳失租，执行器立即自我隔离", self._role.upper())

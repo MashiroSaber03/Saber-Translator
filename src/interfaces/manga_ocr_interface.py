@@ -5,6 +5,7 @@ import torch
 
 # 导入路径助手
 from src.shared.path_helpers import resource_path
+from src.shared.memory_errors import is_memory_allocation_error
 
 # 设置缓存目录路径 - 新位置：models/manga_ocr/
 model_cache_dir = resource_path('models/manga_ocr')
@@ -78,6 +79,8 @@ def get_manga_ocr_instance():
                     # 尝试自动混合精度
                     torch.set_float32_matmul_precision('high')
             except Exception as e:
+                if is_memory_allocation_error(e):
+                    raise
                 logger.warning(f"设置torch优化选项失败: {e}")
         else:
             logger.debug("使用CPU运行")
@@ -94,6 +97,8 @@ def get_manga_ocr_instance():
             end_time = time.time()
             logger.info(f"MangaOCR 初始化完成，耗时 {end_time - start_time:.1f}s")
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.error(f"使用本地路径加载模型失败: {e}")
             # 如果指定路径失败，尝试回退到默认路径
             logger.debug("尝试使用默认路径加载模型...")
@@ -105,6 +110,8 @@ def get_manga_ocr_instance():
     except Exception as e:
         logger.error(f"初始化 MangaOCR 实例失败: {e}", exc_info=True)
         _manga_ocr_instance = None
+        if is_memory_allocation_error(e):
+            raise
         return None
 
 
@@ -139,4 +146,6 @@ def recognize_japanese_text(image_pil):
         return text if text else ""
     except Exception as e:
         logger.error(f"MangaOCR识别失败: {e}", exc_info=True)
+        if is_memory_allocation_error(e):
+            raise
         return ""

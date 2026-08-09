@@ -13,6 +13,45 @@ from sqlalchemy.engine import Connection
 
 DEFAULT_BUSY_TIMEOUT_MS = 5_000
 DATABASE_FILENAME = "saber.sqlite3"
+SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT = 1
+SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS = 0.1
+
+
+def is_sqlite_busy_error(exc: BaseException) -> bool:
+    """Recognize SQLite writer contention through DBAPI/SQLAlchemy wrappers."""
+
+    candidates: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while candidates:
+        current = candidates.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, sqlite3.OperationalError):
+            code = getattr(current, "sqlite_errorcode", None)
+            if isinstance(code, int) and (code & 0xFF) in {
+                sqlite3.SQLITE_BUSY,
+                sqlite3.SQLITE_LOCKED,
+            }:
+                return True
+            message = str(current).lower()
+            if any(
+                marker in message
+                for marker in (
+                    "database is locked",
+                    "database table is locked",
+                    "database schema is locked",
+                )
+            ):
+                return True
+        for nested in (
+            getattr(current, "orig", None),
+            current.__cause__,
+            current.__context__,
+        ):
+            if isinstance(nested, BaseException):
+                candidates.append(nested)
+    return False
 
 
 def sqlite_url(database_path: Path) -> str:

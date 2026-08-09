@@ -26,6 +26,7 @@ from src.shared.openai_options import (
     create_openai_compatible_options,
 )
 from src.shared.image_helpers import image_to_base64
+from src.shared.memory_errors import is_memory_allocation_error
 
 # 设置日志
 logger = logging.getLogger("VisionInterface")
@@ -60,6 +61,8 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
         image_base64 = image_to_base64(image_pil)
     except Exception as e:
         logger.error(f"图像转Base64失败: {e}")
+        if is_memory_allocation_error(e):
+            raise
         return ""
 
     try:
@@ -136,4 +139,6 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
         return content
     except Exception as e:
         logger.error(f"调用AI视觉OCR服务 ({provider}) 时发生顶层异常: {e}", exc_info=True)
+        if is_memory_allocation_error(e):
+            raise
         return ""

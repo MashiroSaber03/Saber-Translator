@@ -22,6 +22,8 @@ import logging
 from typing import List, Tuple, Dict, Optional
 from PIL import Image
 
+from src.shared.memory_errors import is_memory_allocation_error
+
 logger = logging.getLogger("ColorExtractor")
 
 # 单例实例
@@ -41,7 +43,9 @@ def _resolve_preferred_device(device: Optional[str] = None) -> str:
         import torch
 
         return 'cuda' if torch.cuda.is_available() else 'cpu'
-    except Exception:
+    except Exception as error:
+        if is_memory_allocation_error(error):
+            raise
         return 'cpu'
 
 
@@ -139,6 +143,8 @@ class ColorExtractor:
             
         except Exception as e:
             logger.error(f"颜色提取器初始化失败: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             return False
     
     @property

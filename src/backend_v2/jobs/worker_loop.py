@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import logging
-import sqlite3
 import threading
 import time
 from typing import Any
@@ -14,6 +13,11 @@ from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
     JobQueueRepository,
+)
+from src.backend_v2.storage.database import (
+    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
+    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+    is_sqlite_busy_error,
 )
 
 
@@ -25,6 +29,7 @@ BatchStepHandler = Callable[
 DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 PIPELINE_BUSY_RETRY_LIMIT = 3
 PIPELINE_BUSY_RETRY_BASE_SECONDS = 0.05
+PARALLEL_PIPELINE_LEAD_WINDOW = 50
 MIN_SCHEDULER_POLL_SECONDS = 0.1
 MAX_SCHEDULER_POLL_SECONDS = 0.5
 LOGGER = logging.getLogger("saber.worker.jobs")
@@ -32,39 +37,6 @@ LOGGER = logging.getLogger("saber.worker.jobs")
 
 def _short(value: object) -> str:
     return str(value)[:8]
-
-
-def _is_sqlite_busy_error(exc: BaseException) -> bool:
-    """Recognize SQLite writer-contention errors through SQLAlchemy wrappers."""
-
-    candidates: list[BaseException] = [exc]
-    seen: set[int] = set()
-    while candidates:
-        current = candidates.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        if isinstance(current, sqlite3.OperationalError):
-            code = getattr(current, "sqlite_errorcode", None)
-            if isinstance(code, int) and (code & 0xFF) in {
-                sqlite3.SQLITE_BUSY,
-                sqlite3.SQLITE_LOCKED,
-            }:
-                return True
-            message = str(current).lower()
-            if (
-                "database is locked" in message
-                or "database table is locked" in message
-            ):
-                return True
-        for nested in (
-            getattr(current, "orig", None),
-            current.__cause__,
-            current.__context__,
-        ):
-            if isinstance(nested, BaseException):
-                candidates.append(nested)
-    return False
 
 
 def _step_log_fields(step: Mapping[str, Any]) -> tuple[str, str, str]:
@@ -105,25 +77,38 @@ class AttemptHeartbeat:
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval_seconds):
-            try:
-                renewed = self.repository.renew_attempt(self.fence)
-            except Exception as exc:
-                if _is_sqlite_busy_error(exc):
-                    LOGGER.warning(
-                        "任务 attempt 心跳遇到 SQLite 写锁竞争，将继续重试："
+            busy_failures = 0
+            while True:
+                try:
+                    renewed = self.repository.renew_attempt(self.fence)
+                except Exception as exc:
+                    if (
+                        is_sqlite_busy_error(exc)
+                        and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
+                    ):
+                        busy_failures += 1
+                        LOGGER.warning(
+                            "任务 attempt 心跳遇到 SQLite 写锁竞争，将有限重试："
+                            "job=%s attempt=%s retry=%s/%s",
+                            _short(self.fence.job_id),
+                            _short(self.fence.attempt_id),
+                            busy_failures,
+                            SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+                        )
+                        if self._stop.wait(
+                            SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
+                        ):
+                            return
+                        continue
+                    LOGGER.exception(
+                        "任务 attempt 心跳执行失败，立即放弃本次 attempt："
                         "job=%s attempt=%s",
                         _short(self.fence.job_id),
                         _short(self.fence.attempt_id),
                     )
-                    continue
-                LOGGER.exception(
-                    "任务 attempt 心跳执行失败，立即放弃本次 attempt："
-                    "job=%s attempt=%s",
-                    _short(self.fence.job_id),
-                    _short(self.fence.attempt_id),
-                )
-                self.fenced.set()
-                return
+                    self.fenced.set()
+                    return
+                break
             if renewed is None:
                 LOGGER.warning(
                     "任务租约失效：job=%s attempt=%s",
@@ -457,6 +442,7 @@ class JobWorkerLoop:
         has_deep_learning_pool = bool(
             set(pool_kinds).intersection(DEEP_LEARNING_STEP_KINDS)
         )
+        has_terminal_save = "save" in pool_kinds
         deep_learning_concurrency = (
             int(config["deepLearningConcurrency"])
             if has_deep_learning_pool
@@ -468,10 +454,12 @@ class JobWorkerLoop:
             deep_learning_concurrency
         )
         LOGGER.info(
-            "并行流水线启动：job=%s pools=%s deep_learning_concurrency=%s",
+            "并行流水线启动：job=%s pools=%s deep_learning_concurrency=%s "
+            "lead_window=%s",
             _short(heartbeat.fence.job_id),
             ",".join(pool_kinds),
             deep_learning_concurrency,
+            PARALLEL_PIPELINE_LEAD_WINDOW if has_terminal_save else "disabled",
         )
         lock_waiting_states = {
             kind: False
@@ -623,7 +611,7 @@ class JobWorkerLoop:
                 except AttemptFenced:
                     raise
                 except BaseException as exc:
-                    if _is_sqlite_busy_error(exc):
+                    if is_sqlite_busy_error(exc):
                         if busy_failures >= PIPELINE_BUSY_RETRY_LIMIT:
                             LOGGER.warning(
                                 "并行阶段领取持续遇到 SQLite 写锁竞争，本轮延后："
@@ -717,6 +705,17 @@ class JobWorkerLoop:
                         or not active_futures
                     )
                     if should_admit:
+                        max_item_ordinal = (
+                            self.repository.terminal_item_count(heartbeat.fence)
+                            + PARALLEL_PIPELINE_LEAD_WINDOW
+                            if has_terminal_save
+                            else None
+                        )
+                        ordinal_limit = (
+                            {"max_item_ordinal": max_item_ordinal}
+                            if max_item_ordinal is not None
+                            else {}
+                        )
                         active_pool_kinds = set(active_futures.values())
                         batch_pool_kinds = tuple(
                             kind
@@ -730,6 +729,7 @@ class JobWorkerLoop:
                             self.repository.ready_step_ordinals(
                                 heartbeat.fence,
                                 step_kinds=batch_pool_kinds,
+                                **ordinal_limit,
                             )
                             if batch_pool_kinds
                             else {}
@@ -746,6 +746,7 @@ class JobWorkerLoop:
                                             config,
                                             step_ordinal=step_ordinal,
                                         ),
+                                        **ordinal_limit,
                                     ),
                                     None,
                                 ),
@@ -780,6 +781,7 @@ class JobWorkerLoop:
                                     self.repository.next_step(
                                         heartbeat.fence,
                                         allowed_kinds=allowed_kinds,
+                                        **ordinal_limit,
                                     ),
                                 ),
                             )

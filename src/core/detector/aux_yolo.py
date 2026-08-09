@@ -12,6 +12,7 @@ import logging
 from typing import List, Optional, Sequence
 
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 
 from .data_types import TextLine
 from .registry import DETECTOR_YOLO, get_detector
@@ -168,6 +169,8 @@ def maybe_merge_with_aux_yolo(
             aux_detector=aux_detector,
         )
     except Exception as error:
+        if is_memory_allocation_error(error):
+            raise
         logger.warning(f"辅助 YSGYolo 检测失败，回退主检测结果: {error}")
         return list(main_lines)
 

@@ -87,6 +87,7 @@ TERMINAL_JOB_STATUSES = (
     "completed_with_errors",
     "failed",
 )
+TERMINAL_ITEM_STATUSES = ("completed", "failed", "skipped", "cancelled")
 HISTORY_JOB_STATUSES = (*TERMINAL_JOB_STATUSES, "interrupted")
 QUEUE_JOB_STATUSES = ("queued", *CURRENT_JOB_STATUSES)
 HISTORY_BATCH_LIMIT = 200
@@ -1733,9 +1734,7 @@ class JobQueueRepository:
                 .where(
                     job_items.c.job_id == fence.job_id,
                     job_items.c.page_id.is_not(None),
-                    job_items.c.status.in_(
-                        ("completed", "failed", "skipped", "cancelled")
-                    ),
+                    job_items.c.status.in_(TERMINAL_ITEM_STATUSES),
                 )
                 .order_by(job_items.c.ordinal)
             ).mappings()
@@ -1747,6 +1746,28 @@ class JobQueueRepository:
                 }
                 for row in rows
             ]
+
+    def terminal_item_count(self, fence: AttemptFence) -> int:
+        """Return items that have fully left the durable page pipeline."""
+
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            return int(
+                connection.execute(
+                    select(func.count())
+                    .select_from(job_items)
+                    .where(
+                        job_items.c.job_id == fence.job_id,
+                        job_items.c.status.in_(TERMINAL_ITEM_STATUSES),
+                    )
+                ).scalar_one()
+            )
 
     def pending_step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
         """Return the durable step kinds that still need a Worker handler."""
@@ -1799,7 +1820,10 @@ class JobQueueRepository:
         fence: AttemptFence,
         *,
         allowed_kinds: Sequence[str] | None = None,
+        max_item_ordinal: int | None = None,
     ) -> dict[str, object] | None:
+        if max_item_ordinal is not None and max_item_ordinal < 1:
+            raise ValueError("maximum item ordinal must be positive")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
@@ -1843,6 +1867,8 @@ class JobQueueRepository:
             ]
             if allowed_kinds:
                 conditions.append(job_steps.c.kind.in_(tuple(allowed_kinds)))
+            if max_item_ordinal is not None:
+                conditions.append(job_items.c.ordinal <= max_item_ordinal)
             row = connection.execute(
                 select(
                     job_steps.c.id.label("step_id"),
@@ -1946,6 +1972,7 @@ class JobQueueRepository:
         *,
         step_kind: str,
         limit: int,
+        max_item_ordinal: int | None = None,
     ) -> list[dict[str, object]]:
         """Claim one durable step batch at a shared round boundary.
 
@@ -1956,6 +1983,8 @@ class JobQueueRepository:
 
         if not step_kind or limit < 1 or limit > 32:
             raise ValueError("step batch kind/limit is invalid")
+        if max_item_ordinal is not None and max_item_ordinal < 1:
+            raise ValueError("maximum item ordinal must be positive")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
@@ -1969,12 +1998,14 @@ class JobQueueRepository:
                     prior_step.c.status.in_(("pending", "running")),
                 )
             )
-            base_conditions = (
+            base_conditions = [
                 jobs.c.id == fence.job_id,
                 job_items.c.status.in_(("pending", "running")),
                 job_steps.c.status == "pending",
                 job_steps.c.kind == step_kind,
-            )
+            ]
+            if max_item_ordinal is not None:
+                base_conditions.append(job_items.c.ordinal <= max_item_ordinal)
             first_ordinal = connection.execute(
                 select(func.min(job_steps.c.ordinal))
                 .join(job_items, job_items.c.id == job_steps.c.job_item_id)
@@ -2025,26 +2056,31 @@ class JobQueueRepository:
             )
             if len(rows) < limit:
                 blocked_prior = job_steps.alias("blocked_prior_step")
+                blocked_conditions = [
+                    job_items.c.job_id == fence.job_id,
+                    job_items.c.status.in_(("pending", "running")),
+                    job_steps.c.status == "pending",
+                    job_steps.c.kind == step_kind,
+                    job_steps.c.ordinal == int(first_ordinal),
+                    exists(
+                        select(blocked_prior.c.id).where(
+                            blocked_prior.c.job_item_id
+                            == job_steps.c.job_item_id,
+                            blocked_prior.c.ordinal < job_steps.c.ordinal,
+                            blocked_prior.c.status.in_(("pending", "running")),
+                        )
+                    ),
+                ]
+                if max_item_ordinal is not None:
+                    blocked_conditions.append(
+                        job_items.c.ordinal <= max_item_ordinal
+                    )
                 blocked = int(
                     connection.execute(
                         select(func.count())
                         .select_from(job_steps)
                         .join(job_items, job_items.c.id == job_steps.c.job_item_id)
-                        .where(
-                            job_items.c.job_id == fence.job_id,
-                            job_items.c.status.in_(("pending", "running")),
-                            job_steps.c.status == "pending",
-                            job_steps.c.kind == step_kind,
-                            job_steps.c.ordinal == int(first_ordinal),
-                            exists(
-                                select(blocked_prior.c.id).where(
-                                    blocked_prior.c.job_item_id
-                                    == job_steps.c.job_item_id,
-                                    blocked_prior.c.ordinal < job_steps.c.ordinal,
-                                    blocked_prior.c.status.in_(("pending", "running")),
-                                )
-                            ),
-                        )
+                        .where(*blocked_conditions)
                     ).scalar_one()
                 )
                 if blocked:
@@ -2125,10 +2161,12 @@ class JobQueueRepository:
         fence: AttemptFence,
         *,
         step_kind: str,
+        max_item_ordinal: int | None = None,
     ) -> int | None:
         return self.ready_step_ordinals(
             fence,
             step_kinds=(step_kind,),
+            max_item_ordinal=max_item_ordinal,
         ).get(step_kind)
 
     def ready_step_ordinals(
@@ -2136,6 +2174,7 @@ class JobQueueRepository:
         fence: AttemptFence,
         *,
         step_kinds: Sequence[str],
+        max_item_ordinal: int | None = None,
     ) -> dict[str, int]:
         """Return claimable rounds for a bounded set of batch stage pools.
 
@@ -2147,51 +2186,56 @@ class JobQueueRepository:
         unique_kinds = tuple(dict.fromkeys(step_kinds))
         if not unique_kinds:
             return {}
+        if max_item_ordinal is not None and max_item_ordinal < 1:
+            raise ValueError("maximum item ordinal must be positive")
         now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
             prior_step = job_steps.alias("ready_prior_step")
             proofread_barrier_step = job_steps.alias("ready_proofread_barrier_step")
             proofread_barrier_item = job_items.alias("ready_proofread_barrier_item")
+            conditions = [
+                job_items.c.job_id == fence.job_id,
+                job_items.c.status.in_(("pending", "running")),
+                job_steps.c.status == "pending",
+                job_steps.c.kind.in_(unique_kinds),
+                ~exists(
+                    select(prior_step.c.id).where(
+                        prior_step.c.job_item_id == job_steps.c.job_item_id,
+                        prior_step.c.ordinal < job_steps.c.ordinal,
+                        prior_step.c.status.in_(("pending", "running")),
+                    )
+                ),
+                or_(
+                    job_steps.c.kind != "render",
+                    ~exists(
+                        select(proofread_barrier_step.c.id)
+                        .select_from(
+                            proofread_barrier_step.join(
+                                proofread_barrier_item,
+                                proofread_barrier_item.c.id
+                                == proofread_barrier_step.c.job_item_id,
+                            )
+                        )
+                        .where(
+                            proofread_barrier_item.c.job_id == fence.job_id,
+                            proofread_barrier_step.c.kind == "proofread",
+                            proofread_barrier_step.c.status.in_(
+                                ("pending", "running")
+                            ),
+                        )
+                    ),
+                ),
+            ]
+            if max_item_ordinal is not None:
+                conditions.append(job_items.c.ordinal <= max_item_ordinal)
             rows = connection.execute(
                 select(
                     job_steps.c.kind,
                     func.min(job_steps.c.ordinal),
                 )
                 .join(job_items, job_items.c.id == job_steps.c.job_item_id)
-                .where(
-                    job_items.c.job_id == fence.job_id,
-                    job_items.c.status.in_(("pending", "running")),
-                    job_steps.c.status == "pending",
-                    job_steps.c.kind.in_(unique_kinds),
-                    ~exists(
-                        select(prior_step.c.id).where(
-                            prior_step.c.job_item_id == job_steps.c.job_item_id,
-                            prior_step.c.ordinal < job_steps.c.ordinal,
-                            prior_step.c.status.in_(("pending", "running")),
-                        )
-                    ),
-                    or_(
-                        job_steps.c.kind != "render",
-                        ~exists(
-                            select(proofread_barrier_step.c.id)
-                            .select_from(
-                                proofread_barrier_step.join(
-                                    proofread_barrier_item,
-                                    proofread_barrier_item.c.id
-                                    == proofread_barrier_step.c.job_item_id,
-                                )
-                            )
-                            .where(
-                                proofread_barrier_item.c.job_id == fence.job_id,
-                                proofread_barrier_step.c.kind == "proofread",
-                                proofread_barrier_step.c.status.in_(
-                                    ("pending", "running")
-                                ),
-                            )
-                        ),
-                    ),
-                )
+                .where(*conditions)
                 .group_by(job_steps.c.kind)
             )
             return {str(kind): int(ordinal) for kind, ordinal in rows}

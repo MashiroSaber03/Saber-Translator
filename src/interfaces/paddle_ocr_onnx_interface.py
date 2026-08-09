@@ -21,6 +21,7 @@ from typing import List, Tuple
 import time
 
 from src.shared.path_helpers import resource_path
+from src.shared.memory_errors import is_memory_allocation_error
 from src.core.ocr_types import OcrResult, create_ocr_result
 
 # 设置环境变量
@@ -181,6 +182,8 @@ class PaddleOCRHandlerONNX:
         except Exception as e:
             logger.error(f"❌ PaddleOCR ONNX 初始化失败: {e}", exc_info=True)
             self.initialized = False
+            if is_memory_allocation_error(e):
+                raise
             return False
     
     def recognize_text(self, image: Image.Image, bubble_coords: List[Tuple[int, int, int, int]]) -> List[str]:
@@ -234,6 +237,8 @@ class PaddleOCRHandlerONNX:
                 img_np = image
         except Exception as e:
             print(f"❌ 图像转换失败: {e}")
+            if is_memory_allocation_error(e):
+                raise
             return [
                 create_ocr_result(
                     "",
@@ -321,6 +326,8 @@ class PaddleOCRHandlerONNX:
 
             except Exception as e:
                 print(f"❌ 气泡 {i} 识别失败: {e}")
+                if is_memory_allocation_error(e):
+                    raise
                 import traceback
                 traceback.print_exc()
                 recognized_results.append(

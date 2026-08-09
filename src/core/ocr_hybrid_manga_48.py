@@ -17,6 +17,7 @@ from src.interfaces.manga_ocr_interface import recognize_japanese_text
 from src.interfaces.ocr_48px import get_48px_ocr_handler
 from src.interfaces.ocr_48px.interface import get_transformed_region
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 logger = logging.getLogger("HybridOcrManga48")
@@ -108,7 +109,9 @@ def _recognize_manga_textlines(
             region = _get_mangaocr_region(img_np, line_info)
             with Image.fromarray(region) as region_image:
                 text = recognize_japanese_text(region_image)
-        except Exception:
+        except Exception as error:
+            if is_memory_allocation_error(error):
+                raise
             text = ""
 
         results.append(

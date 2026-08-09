@@ -13,6 +13,7 @@ from PIL import Image
 from shapely.geometry import Point, Polygon
 
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 
 from .data_types import DetectionResult, TextBlock, TextLine
 from .registry import DETECTOR_SABER_YOLO, detect
@@ -211,6 +212,8 @@ def apply_saber_yolo_refinement(
             sort_method='none',
         )
     except Exception as error:
+        if is_memory_allocation_error(error):
+            raise
         logger.warning(f"SaberYOLO 二阶段纠错失败，回退原检测结果: {error}")
         return detection_result
 

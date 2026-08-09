@@ -6,6 +6,7 @@ import cv2 # 需要 cv2 来创建掩码
 from src.interfaces.lama_interface import clean_image_with_lama, is_lama_available
 
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 
 logger = logging.getLogger("CoreInpainting")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -254,7 +255,9 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
                     logger.debug("LAMA 修复成功")
                 else:
                     logger.error("LAMA 修复执行失败，未返回结果。将回退。")
-            except Exception:
+            except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
                 # 架构方案明确规定 LaMA/LiteLaMA 失败后，在同一 operation
                 # 内使用冻结的 fill_color 回退到纯色填充。
                 logger.exception("LAMA 修复过程中出错，回退到纯色填充")

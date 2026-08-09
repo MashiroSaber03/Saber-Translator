@@ -24,6 +24,7 @@ import einops
 
 from src.shared.path_helpers import resource_path
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 from src.core.ocr_types import OcrResult, OcrTextlineResult, create_ocr_result, create_ocr_textline_result
 
 logger = logging.getLogger("Model48pxOCR")
@@ -137,6 +138,8 @@ class Model48pxOCR:
                     logger.info(f"✅ 48px OCR 已切换到设备: {device}")
                 except Exception as e:
                     logger.error(f"❌ 48px OCR 切换设备失败: {e}", exc_info=True)
+                    if is_memory_allocation_error(e):
+                        raise
                     return False
             return True
             
@@ -175,6 +178,8 @@ class Model48pxOCR:
             
         except Exception as e:
             logger.error(f"❌ 48px OCR 初始化失败: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             return False
 
     def _infer_regions_with_color(
@@ -404,6 +409,8 @@ class Model48pxOCR:
 
         except Exception as e:
             logger.error(f"48px OCR 识别失败: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             return [
                 create_ocr_result(
                     "",
@@ -502,6 +509,8 @@ class Model48pxOCR:
             ]
         except Exception as e:
             logger.error(f"48px OCR 文本行识别失败: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             return [
                 create_ocr_textline_result(
                     "",
@@ -782,6 +791,8 @@ class Model48pxOCR:
             
         except Exception as e:
             logger.error(f"颜色提取失败: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
     
     def _prepare_region_for_batch(self, region: np.ndarray) -> Optional[np.ndarray]:

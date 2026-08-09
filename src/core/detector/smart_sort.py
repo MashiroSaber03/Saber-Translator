@@ -8,8 +8,12 @@
 """
 
 import logging
-import numpy as np
 from typing import List, Tuple
+
+import numpy as np
+
+from src.shared.memory_errors import is_memory_allocation_error
+
 from .data_types import TextBlock
 from .panel_detector import get_panels_from_array
 
@@ -83,6 +87,8 @@ def sort_regions(
             return sorted_all
         
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.debug(f"分镜检测失败 ({e.__class__.__name__}: {str(e)[:100]})，降级到简单排序")
             return _simple_sort(regions, right_to_left)
     

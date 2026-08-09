@@ -6,6 +6,7 @@ from PIL import Image
 
 # 导入路径助手
 from src.shared.path_helpers import resource_path
+from src.shared.memory_errors import is_memory_allocation_error
 
 logger = logging.getLogger("LAMAInterface")
 
@@ -34,6 +35,8 @@ try:
 except ImportError as e:
     logger.warning(f"无法导入 LAMA MPE 模块: {e}")
 except Exception as e:
+    if is_memory_allocation_error(e):
+        raise
     logger.warning(f"LAMA MPE 初始化失败: {e}")
 
 # --- 检查 litelama ---
@@ -57,6 +60,8 @@ try:
 except ImportError as e:
     logger.warning(f"litelama 库不可用: {e}")
 except Exception as e:
+    if is_memory_allocation_error(e):
+        raise
     logger.warning(f"litelama 初始化失败: {e}")
 
 # 最终状态日志
@@ -97,6 +102,8 @@ def _clean_with_lama_mpe(image, mask, disable_resize=False):
         return Image.fromarray(result_np)
     except Exception as e:
         logger.error(f"LAMA MPE 修复失败: {e}", exc_info=True)
+        if is_memory_allocation_error(e):
+            raise
         return None
 
 
@@ -153,7 +160,9 @@ class LiteLamaInpainter:
             default_config_path = os.path.join(litelama_package_dir, "config.yaml")
             if os.path.exists(default_config_path):
                 config_path = default_config_path
-        except Exception:
+        except Exception as error:
+            if is_memory_allocation_error(error):
+                raise
             pass
         
         # 创建模型实例
@@ -306,6 +315,8 @@ class LiteLamaInpainter:
             return result
         except Exception as e:
             logger.error(f"litelama 预测过程中出错: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             self._cleanup_memory()  # 出错时也清理
             return None
     
@@ -351,6 +362,8 @@ def _clean_with_litelama(image, mask, disable_resize=False):
         return inpainter.inpaint(image, mask, disable_resize=disable_resize)
     except Exception as e:
         logger.error(f"litelama 清理过程中出错: {e}")
+        if is_memory_allocation_error(e):
+            raise
         return None
 
 
@@ -440,6 +453,8 @@ def clean_image_with_lama(image, mask, lama_model='lama_mpe', disable_resize=Fal
             
     except Exception as e:
         logger.error(f"LAMA 修复过程中出错: {e}", exc_info=True)
+        if is_memory_allocation_error(e):
+            raise
         return None
 
 

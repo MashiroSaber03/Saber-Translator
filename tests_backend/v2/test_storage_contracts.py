@@ -103,6 +103,32 @@ def test_every_non_primary_foreign_key_has_a_leading_lookup_index() -> None:
     assert missing == []
 
 
+def test_every_asset_reference_has_a_leading_lookup_index() -> None:
+    missing: list[str] = []
+    for table in metadata.tables.values():
+        indexed_leaders = {
+            getattr(index.expressions[0], "name", None)
+            for index in table.indexes
+            if index.expressions
+        }
+        indexed_leaders.update(
+            next(iter(constraint.columns)).name
+            for constraint in table.constraints
+            if isinstance(constraint, UniqueConstraint) and constraint.columns
+        )
+        primary_key_columns = list(table.primary_key.columns)
+        if primary_key_columns:
+            indexed_leaders.add(primary_key_columns[0].name)
+        for column in table.columns:
+            references_asset = any(
+                foreign_key.column.table is assets
+                for foreign_key in column.foreign_keys
+            )
+            if references_asset and column.name not in indexed_leaders:
+                missing.append(f"{table.name}.{column.name}")
+    assert missing == []
+
+
 def test_large_dataset_hot_queries_use_declared_indexes(engine) -> None:
     now = datetime(2026, 7, 29, 12)
     with engine.begin() as connection:

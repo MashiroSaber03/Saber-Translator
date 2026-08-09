@@ -20,6 +20,7 @@ from src.backend_v2.storage.schema import assets, metadata, object_commit_journa
 
 
 _EXTENSION_PATTERN = re.compile(r"^[a-z0-9]{1,12}$")
+ASSET_GC_BATCH_LIMIT = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -411,19 +412,46 @@ class AssetStorageService:
         *,
         grace_seconds: int = 3600,
         now: datetime | None = None,
+        batch_limit: int = ASSET_GC_BATCH_LIMIT,
     ) -> GarbageCollectionResult:
+        if grace_seconds < 0:
+            raise ValueError("grace_seconds must be nonnegative")
+        if batch_limit < 1:
+            raise ValueError("asset GC batch limit must be positive")
         current_time = now or _utcnow()
         cutoff = current_time - timedelta(seconds=grace_seconds)
         referenced = self._asset_is_referenced()
-        with self.engine.begin() as connection:
-            connection.execute(
-                update(assets)
-                .where(
-                    assets.c.gc_marked_at.is_not(None),
-                    referenced,
+
+        # Reference discovery can scan a large asset catalog. Keep that work out
+        # of SQLite's single-writer transaction, then recheck only the selected
+        # primary keys while holding the write reservation.
+        while True:
+            with self.engine.connect() as connection:
+                reactivated_ids = list(
+                    connection.execute(
+                        select(assets.c.id)
+                        .where(
+                            assets.c.gc_marked_at.is_not(None),
+                            referenced,
+                        )
+                        .order_by(assets.c.gc_marked_at, assets.c.id)
+                        .limit(batch_limit)
+                    ).scalars()
                 )
-                .values(gc_marked_at=None, updated_at=current_time)
-            )
+            if not reactivated_ids:
+                break
+            with immediate_transaction(self.engine) as connection:
+                connection.execute(
+                    update(assets)
+                    .where(
+                        assets.c.id.in_(reactivated_ids),
+                        assets.c.gc_marked_at.is_not(None),
+                        referenced,
+                    )
+                    .values(gc_marked_at=None, updated_at=current_time)
+                )
+
+        with self.engine.connect() as connection:
             candidates = list(
                 connection.execute(
                     select(
@@ -434,16 +462,10 @@ class AssetStorageService:
                         assets.c.gc_marked_at <= cutoff,
                         ~referenced,
                     )
+                    .order_by(assets.c.gc_marked_at, assets.c.id)
+                    .limit(batch_limit)
                 ).mappings()
             )
-            marked = connection.execute(
-                update(assets)
-                .where(
-                    assets.c.gc_marked_at.is_(None),
-                    ~referenced,
-                )
-                .values(gc_marked_at=current_time, updated_at=current_time)
-            ).rowcount
 
         deleted_rows = 0
         deleted_files = 0
@@ -485,8 +507,39 @@ class AssetStorageService:
                     deleted_rows += 1
                     if existed:
                         deleted_files += 1
+
+        with self.engine.connect() as connection:
+            unmarked_ids = list(
+                connection.execute(
+                    select(assets.c.id)
+                    .where(
+                        assets.c.gc_marked_at.is_(None),
+                        ~referenced,
+                    )
+                    .order_by(assets.c.id)
+                    .limit(batch_limit)
+                ).scalars()
+            )
+        marked = 0
+        if unmarked_ids:
+            with immediate_transaction(self.engine) as connection:
+                marked = int(
+                    connection.execute(
+                        update(assets)
+                        .where(
+                            assets.c.id.in_(unmarked_ids),
+                            assets.c.gc_marked_at.is_(None),
+                            ~referenced,
+                        )
+                        .values(
+                            gc_marked_at=current_time,
+                            updated_at=current_time,
+                        )
+                    ).rowcount
+                    or 0
+                )
         return GarbageCollectionResult(
-            marked=int(marked or 0),
+            marked=marked,
             deleted_rows=deleted_rows,
             deleted_files=deleted_files,
         )

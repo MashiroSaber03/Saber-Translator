@@ -455,6 +455,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('message_id', 'asset_id', name=op.f('pk_studio_message_assets')),
     sa.UniqueConstraint('message_id', 'ordinal', name=op.f('uq_studio_message_assets_message_id'))
     )
+    op.create_index('ix_studio_message_assets_asset_id', 'studio_message_assets', ['asset_id'], unique=False)
     op.create_table('worker_commands',
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('kind', sa.String(length=64), nullable=False),
@@ -1095,6 +1096,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['job_item_id'], ['job_items.id'], name=op.f('fk_job_asset_inputs_job_item_id_job_items'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('job_id', 'asset_id', 'role', name=op.f('pk_job_asset_inputs'))
     )
+    op.create_index('ix_job_asset_inputs_asset_id', 'job_asset_inputs', ['asset_id'], unique=False)
     op.create_index('ix_job_asset_inputs_job_item_id', 'job_asset_inputs', ['job_item_id'], unique=False)
     op.create_table('job_steps',
     sa.Column('id', sa.String(length=36), nullable=False),
@@ -1317,6 +1319,7 @@ def downgrade() -> None:
     op.drop_table('note_citations')
     op.drop_table('job_steps')
     op.drop_index('ix_job_asset_inputs_job_item_id', table_name='job_asset_inputs')
+    op.drop_index('ix_job_asset_inputs_asset_id', table_name='job_asset_inputs')
     op.drop_table('job_asset_inputs')
     op.drop_index('uq_analysis_heads_page', table_name='analysis_heads', sqlite_where=sa.text('page_id IS NOT NULL'))
     op.drop_index('uq_analysis_heads_book', table_name='analysis_heads', sqlite_where=sa.text('page_id IS NULL'))
@@ -1407,6 +1410,7 @@ def downgrade() -> None:
     op.drop_index('ix_worker_commands_worker_epoch_id', table_name='worker_commands')
     op.drop_index('ix_worker_commands_claim', table_name='worker_commands')
     op.drop_table('worker_commands')
+    op.drop_index('ix_studio_message_assets_asset_id', table_name='studio_message_assets')
     op.drop_table('studio_message_assets')
     op.drop_index('ix_plugin_versions_plugin_id', table_name='plugin_versions')
     op.drop_table('plugin_versions')

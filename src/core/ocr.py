@@ -11,6 +11,7 @@ from src.interfaces.manga_ocr_interface import recognize_japanese_text, get_mang
 from src.interfaces.paddle_ocr_onnx_interface import get_paddle_ocr_handler
 from src.interfaces.baidu_ocr_interface import recognize_text_with_baidu_ocr
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 # 导入新的AI视觉OCR服务调用函数(将在下一步创建)
 from src.interfaces.vision_interface import call_ai_vision_ocr_service
 from src.shared.ai_providers import (
@@ -123,6 +124,8 @@ def _recognize_with_baidu_ocr_results(
             )
         except Exception as error:
             logger.error(f"处理气泡 {i} (百度OCR) 时出错: {error}", exc_info=True)
+            if is_memory_allocation_error(error):
+                raise
             if strict_errors:
                 raise
             results.append(
@@ -168,6 +171,8 @@ def _recognize_with_paddle_ocr_results(
         )
     except Exception as error:
         logger.error(f"使用 PaddleOCR 识别时出错: {error}", exc_info=True)
+        if is_memory_allocation_error(error):
+            raise
         if strict_errors:
             raise
         return _empty_ocr_results(
@@ -218,6 +223,8 @@ def _recognize_with_manga_ocr_results(
             )
         except Exception as error:
             logger.error(f"处理气泡 {i} (MangaOCR) 时出错: {error}", exc_info=True)
+            if is_memory_allocation_error(error):
+                raise
             if strict_errors:
                 raise
             results.append(
@@ -459,6 +466,8 @@ def _recognize_with_ai_vision_results(
                 time.sleep(0.5)
         except Exception as error:
             logger.error(f"处理气泡 {i} (AI视觉OCR) 时出错: {error}", exc_info=True)
+            if is_memory_allocation_error(error):
+                raise
             if strict_errors:
                 raise
             results.append(

@@ -21,6 +21,7 @@ import torch
 
 from src.shared.path_helpers import resource_path
 from src.shared import constants
+from src.shared.memory_errors import is_memory_allocation_error
 
 logger = logging.getLogger("PaddleOCR_VL")
 
@@ -199,6 +200,8 @@ class PaddleOCRVLHandler:
         except Exception as e:
             logger.error(f"❌ PaddleOCR-VL 初始化失败: {e}", exc_info=True)
             self.initialized = False
+            if is_memory_allocation_error(e):
+                raise
             return False
     
 
@@ -337,6 +340,8 @@ class PaddleOCRVLHandler:
                     
                 except Exception as e:
                     logger.error(f"气泡 {i} 识别失败: {e}")
+                    if is_memory_allocation_error(e):
+                        raise
                     results.append("")
             
             # 清理 GPU 显存
@@ -348,6 +353,8 @@ class PaddleOCRVLHandler:
             
         except Exception as e:
             logger.error(f"PaddleOCR-VL 识别失败: {e}", exc_info=True)
+            if is_memory_allocation_error(e):
+                raise
             return [""] * len(bubble_coords)
 
 

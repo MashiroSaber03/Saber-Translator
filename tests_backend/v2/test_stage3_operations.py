@@ -116,6 +116,42 @@ def operation_platform(tmp_path: Path):
         engine.dispose()
 
 
+def test_empty_operation_claim_does_not_compete_for_sqlite_write_lock(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+
+    with immediate_transaction(platform["engine"]):
+        claimed = repository.claim_next(
+            executor_role="api",
+            executor_epoch_id=platform["api_epoch_id"],
+            allowed_kinds=("bubble_translate",),
+        )
+
+    assert claimed is None
+
+
+def test_empty_operation_claim_still_fences_an_inactive_epoch(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(process_epochs)
+            .where(process_epochs.c.id == platform["api_epoch_id"])
+            .values(status="lost")
+        )
+
+    with pytest.raises(OperationFenced):
+        repository.claim_next(
+            executor_role="api",
+            executor_epoch_id=platform["api_epoch_id"],
+            allowed_kinds=("bubble_translate",),
+        )
+
+
 def test_page_operation_is_idempotent_fenced_and_persistent(
     operation_platform,
 ) -> None:
