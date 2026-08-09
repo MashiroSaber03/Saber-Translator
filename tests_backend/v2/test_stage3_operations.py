@@ -91,7 +91,9 @@ def operation_platform(tmp_path: Path):
                 updated_revision=1,
             )
         )
-    epoch_repository = ProcessEpochRepository(engine)
+    # Fixture actors do not run heartbeat threads. Keep their synthetic epochs
+    # alive for the whole test even on a slow, full-suite CI run.
+    epoch_repository = ProcessEpochRepository(engine, lease_seconds=300)
     worker_epoch_id = str(uuid.uuid4())
     api_epoch_id = str(uuid.uuid4())
     epoch_repository.register(

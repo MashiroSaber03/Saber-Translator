@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "saber-chan",
+  "displayName": "Saber酱",
+  "description": "陪伴漫画翻译与分析任务的桌面助手",
+  "spritesheetPath": "spritesheet.webp",
+  "cell": {
+    "width": 192,
+    "height": 208
+  },
+  "columns": 8,
+  "rows": [
+    {"state": "idle", "row": 0, "frameCount": 8, "durationsMs": [180, 180, 180, 180, 180, 180, 180, 180], "loop": true},
+    {"state": "greeting", "row": 1, "frameCount": 8, "durationsMs": [110, 110, 110, 110, 110, 110, 110, 500], "loop": false},
+    {"state": "starting", "row": 2, "frameCount": 8, "durationsMs": [120, 120, 120, 120, 120, 120, 120, 120], "loop": true},
+    {"state": "waiting", "row": 3, "frameCount": 8, "durationsMs": [180, 180, 180, 180, 180, 180, 180, 180], "loop": true},
+    {"state": "translating", "row": 4, "frameCount": 8, "durationsMs": [120, 120, 120, 120, 120, 120, 120, 120], "loop": true},
+    {"state": "analyzing", "row": 5, "frameCount": 8, "durationsMs": [120, 120, 120, 120, 120, 120, 120, 120], "loop": true},
+    {"state": "transfer", "row": 6, "frameCount": 8, "durationsMs": [120, 120, 120, 120, 120, 120, 120, 120], "loop": true},
+    {"state": "paused", "row": 7, "frameCount": 8, "durationsMs": [180, 180, 180, 180, 180, 180, 180, 180], "loop": true},
+    {"state": "success", "row": 8, "frameCount": 8, "durationsMs": [110, 110, 110, 110, 110, 110, 110, 600], "loop": false},
+    {"state": "warning", "row": 9, "frameCount": 8, "durationsMs": [120, 120, 120, 120, 120, 120, 120, 600], "loop": false},
+    {"state": "failed", "row": 10, "frameCount": 8, "durationsMs": [150, 150, 150, 150, 150, 150, 150, 150], "loop": true},
+    {"state": "drag_right", "row": 11, "frameCount": 8, "durationsMs": [90, 90, 90, 90, 90, 90, 90, 90], "loop": true},
+    {"state": "drag_left", "row": 12, "frameCount": 8, "durationsMs": [90, 90, 90, 90, 90, 90, 90, 90], "loop": true}
+  ]
+}

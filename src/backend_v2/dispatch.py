@@ -10,9 +10,9 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Saber Translator backend-first v2")
     parser.add_argument(
         "--role",
-        choices=("launcher", "api", "worker"),
-        default="launcher",
-        help="Process role. The packaged executable defaults to launcher.",
+        choices=("desktop", "launcher", "api", "worker"),
+        default="desktop",
+        help="Process role. The packaged executable defaults to the desktop shell.",
     )
     parser.add_argument("--data-dir", help="Explicit v2 data root.")
     parser.add_argument("--host", default="0.0.0.0")
@@ -48,6 +48,11 @@ def dispatch(argv: Sequence[str] | None = None) -> int:
         from src.backend_v2.worker.entrypoint import run_worker
 
         return run_worker(args)
+
+    if args.role == "desktop":
+        from src.backend_v2.desktop.entrypoint import run_desktop
+
+        return run_desktop(args)
 
     from src.backend_v2.launcher.entrypoint import run_launcher
 

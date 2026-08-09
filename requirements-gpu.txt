@@ -21,6 +21,7 @@ waitress>=3.0,<4
 SQLAlchemy>=2.0,<2.1
 alembic>=1.18,<2
 psutil>=7.0,<8
+PySide6-Essentials>=6.8,<7
 
 # Base tools
 pyyaml

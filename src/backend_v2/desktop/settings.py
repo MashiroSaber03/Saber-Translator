@@ -1,0 +1,143 @@
+"""Small, versioned desktop settings file with no legacy migration path."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+
+SETTINGS_SCHEMA_VERSION = 1
+PET_SCALES = frozenset({75, 100, 125, 150})
+LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR"})
+
+
+@dataclass(frozen=True, slots=True)
+class DesktopSettings:
+    schema_version: int = SETTINGS_SCHEMA_VERSION
+    port: int = 5000
+    allow_lan: bool = False
+    log_level: str = "INFO"
+    open_browser_on_start: bool = True
+    pet_enabled: bool = True
+    pet_always_on_top: bool = True
+    pet_scale_percent: int = 100
+    pet_screen_name: str = ""
+    pet_position_x: float = 1.0
+    pet_position_y: float = 1.0
+    window_width: int = 1080
+    window_height: int = 720
+
+    def updated(self, **changes: Any) -> "DesktopSettings":
+        return replace(self, **changes)
+
+
+class DesktopSettingsStore:
+    def __init__(self, data_root: Path) -> None:
+        self.path = data_root / "launcher-settings.json"
+
+    def load(self, defaults: DesktopSettings | None = None) -> DesktopSettings:
+        fallback = defaults or DesktopSettings()
+        if not self.path.exists():
+            return fallback
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            settings = self._decode(payload)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            self.path.unlink(missing_ok=True)
+            self.save(fallback)
+            return fallback
+        return settings
+
+    def save(self, settings: DesktopSettings) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schemaVersion": settings.schema_version,
+            "server": {
+                "port": settings.port,
+                "allowLan": settings.allow_lan,
+                "logLevel": settings.log_level,
+                "openBrowserOnStart": settings.open_browser_on_start,
+            },
+            "pet": {
+                "enabled": settings.pet_enabled,
+                "alwaysOnTop": settings.pet_always_on_top,
+                "scalePercent": settings.pet_scale_percent,
+                "screenName": settings.pet_screen_name,
+                "positionX": settings.pet_position_x,
+                "positionY": settings.pet_position_y,
+            },
+            "window": {
+                "width": settings.window_width,
+                "height": settings.window_height,
+            },
+        }
+        temporary = self.path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        os.replace(temporary, self.path)
+
+    @staticmethod
+    def _decode(payload: object) -> DesktopSettings:
+        if not isinstance(payload, dict):
+            raise ValueError("desktop settings must be an object")
+        if payload.get("schemaVersion") != SETTINGS_SCHEMA_VERSION:
+            raise ValueError("unsupported desktop settings schema")
+        server = payload.get("server")
+        pet = payload.get("pet")
+        window = payload.get("window")
+        if not isinstance(server, dict) or not isinstance(pet, dict) or not isinstance(window, dict):
+            raise ValueError("desktop settings sections are missing")
+
+        port = server.get("port")
+        log_level = server.get("logLevel")
+        scale = pet.get("scalePercent")
+        position_x = pet.get("positionX")
+        position_y = pet.get("positionY")
+        width = window.get("width")
+        height = window.get("height")
+        if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+            raise ValueError("invalid desktop port")
+        if not isinstance(log_level, str) or log_level not in LOG_LEVELS:
+            raise ValueError("invalid desktop log level")
+        if not isinstance(scale, int) or isinstance(scale, bool) or scale not in PET_SCALES:
+            raise ValueError("invalid desktop pet scale")
+        if not isinstance(position_x, (int, float)) or not 0.0 <= float(position_x) <= 1.0:
+            raise ValueError("invalid desktop pet x position")
+        if not isinstance(position_y, (int, float)) or not 0.0 <= float(position_y) <= 1.0:
+            raise ValueError("invalid desktop pet y position")
+        if not isinstance(width, int) or isinstance(width, bool) or width < 920:
+            raise ValueError("invalid desktop window width")
+        if not isinstance(height, int) or isinstance(height, bool) or height < 640:
+            raise ValueError("invalid desktop window height")
+
+        booleans = (
+            server.get("allowLan"),
+            server.get("openBrowserOnStart"),
+            pet.get("enabled"),
+            pet.get("alwaysOnTop"),
+        )
+        if any(not isinstance(value, bool) for value in booleans):
+            raise ValueError("invalid desktop boolean setting")
+        screen_name = pet.get("screenName")
+        if not isinstance(screen_name, str):
+            raise ValueError("invalid desktop pet screen")
+
+        return DesktopSettings(
+            port=port,
+            allow_lan=bool(server["allowLan"]),
+            log_level=log_level,
+            open_browser_on_start=bool(server["openBrowserOnStart"]),
+            pet_enabled=bool(pet["enabled"]),
+            pet_always_on_top=bool(pet["alwaysOnTop"]),
+            pet_scale_percent=scale,
+            pet_screen_name=screen_name,
+            pet_position_x=float(position_x),
+            pet_position_y=float(position_y),
+            window_width=width,
+            window_height=height,
+        )

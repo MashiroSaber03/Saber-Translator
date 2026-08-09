@@ -2,8 +2,8 @@
 """Backend-first production PyInstaller specification.
 
 Build with ``pyinstaller app.spec --noconfirm`` after the Vue production build.
-The resulting executable defaults to the Launcher role and dispatches isolated
-API and Worker child processes from the same bundle.
+The resulting executable defaults to the native desktop shell, which owns the
+same isolated API and Worker lifecycle used by the terminal Launcher role.
 """
 
 import os
@@ -29,6 +29,7 @@ module_collection_mode = {
 # 1. v2 静态资源、内置字体、契约和迁移
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static'), os.path.join('src', 'backend_v2', 'static')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'resources'), os.path.join('src', 'backend_v2', 'resources')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'desktop', 'assets'), os.path.join('src', 'backend_v2', 'desktop', 'assets')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'plugins', 'plugin_builder_skill.md'), os.path.join('src', 'backend_v2', 'plugins')))
@@ -105,6 +106,12 @@ hiddenimports += [
     'src.backend_v2.worker', 'src.backend_v2.worker.entrypoint',
     'src.backend_v2.launcher', 'src.backend_v2.launcher.entrypoint',
     'src.backend_v2.launcher.windows_job',
+    'src.backend_v2.desktop', 'src.backend_v2.desktop.entrypoint',
+    'src.backend_v2.desktop.settings', 'src.backend_v2.desktop.task_client',
+    'src.backend_v2.desktop.pet_state', 'src.backend_v2.desktop.pet',
+    'src.backend_v2.desktop.theme', 'src.backend_v2.desktop.window',
+    'PySide6', 'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtNetwork',
+    'PySide6.QtWidgets',
     'sqlalchemy', 'alembic', 'waitress',
 
     # Flask 相关
@@ -222,7 +229,7 @@ for mod in ['src.backend_v2', 'flask', 'werkzeug', 'jinja2', 'torch', 'torchvisi
 
 # ===================== 排除项 =====================
 excludes = [
-    'tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'PySide6',
+    'tkinter', 'PyQt5', 'PyQt6', 'PySide2',
     'IPython', 'jupyter', 'notebook', 'pytest', 'sphinx', 'docutils',
     # 不需要的子模块（避免警告）
     'onnx', 'tensorboard', 'timm',
@@ -263,12 +270,13 @@ exe = EXE(
     strip=False,
     upx=False,
     console=True,
+    hide_console='hide-early',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static', 'favicon.ico') if os.path.exists(os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static', 'favicon.ico')) else None,
+    icon=os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'desktop', 'assets', 'app-icon.ico'),
 )
 
 coll = COLLECT(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 import json
 import logging
 import os
@@ -10,8 +11,9 @@ from pathlib import Path
 import secrets
 import subprocess
 import sys
+import threading
 import time
-from typing import Any
+from typing import Any, Callable
 from urllib.error import URLError
 from urllib.request import urlopen
 import uuid
@@ -47,6 +49,41 @@ API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
 API_HEALTH_FAILURE_LIMIT = 3
 RESTART_STABILITY_SECONDS = 30.0
 LOGGER = logging.getLogger("saber.launcher")
+
+
+class LauncherState(str, Enum):
+    """Stable service states shared by the CLI and desktop shell."""
+
+    STOPPED = "stopped"
+    STARTING = "starting"
+    RUNNING = "running"
+    DEGRADED = "degraded"
+    STOPPING = "stopping"
+
+
+class _LauncherStopRequested(Exception):
+    """Internal control flow used to cancel a startup wait promptly."""
+
+
+@dataclass(frozen=True, slots=True)
+class LauncherConfig:
+    data_root: Path
+    host: str
+    port: int
+    log_level: str | None = None
+    open_browser: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LauncherStatus:
+    state: LauncherState
+    message: str
+    api_pid: int | None = None
+    worker_pid: int | None = None
+
+
+StatusCallback = Callable[[LauncherStatus], None]
+ChildOutputCallback = Callable[[str, str], None]
 
 
 @dataclass(slots=True)
@@ -125,7 +162,12 @@ def _child_environment(
     return environment
 
 
-def _spawn(command: list[str], environment: dict[str, str]) -> subprocess.Popen[str]:
+def _spawn(
+    command: list[str],
+    environment: dict[str, str],
+    *,
+    capture_output: bool = False,
+) -> subprocess.Popen[str]:
     creation_flags = 0
     if os.name == "nt":
         creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -134,8 +176,47 @@ def _spawn(command: list[str], environment: dict[str, str]) -> subprocess.Popen[
         cwd=str(project_root()),
         env=environment,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE if capture_output else None,
+        stderr=subprocess.STDOUT if capture_output else None,
+        bufsize=1,
         creationflags=creation_flags,
     )
+
+
+def _start_output_reader(
+    process: subprocess.Popen[str],
+    *,
+    role: str,
+    callback: ChildOutputCallback | None,
+) -> None:
+    if callback is None or process.stdout is None:
+        return
+
+    def read_output() -> None:
+        try:
+            for line in process.stdout:
+                rendered = line.rstrip("\r\n")
+                if rendered:
+                    try:
+                        callback(role, rendered)
+                    except Exception:
+                        LOGGER.exception("转发 %s 子进程日志失败", role.upper())
+        finally:
+            process.stdout.close()
+
+    thread = threading.Thread(
+        target=read_output,
+        name=f"saber-{role}-output",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _raise_if_stop_requested(stop_event: threading.Event | None) -> None:
+    if stop_event is not None and stop_event.is_set():
+        raise _LauncherStopRequested
 
 
 def _wait_for_api(
@@ -144,10 +225,12 @@ def _wait_for_api(
     expected_epoch_id: str,
     child: subprocess.Popen[str],
     timeout_seconds: float = 30.0,
+    stop_event: threading.Event | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     url = f"http://127.0.0.1:{port}/api/v2/health"
     while time.monotonic() < deadline:
+        _raise_if_stop_requested(stop_event)
         return_code = child.poll()
         if return_code is not None:
             raise RuntimeError(f"v2 API exited during startup with code {return_code}")
@@ -157,7 +240,10 @@ def _wait_for_api(
                 if response.status == 200 and payload.get("epochId") == expected_epoch_id:
                     return
         except (OSError, URLError):
-            time.sleep(0.1)
+            if stop_event is None:
+                time.sleep(0.1)
+            elif stop_event.wait(0.1):
+                raise _LauncherStopRequested
     raise RuntimeError(f"v2 API did not become healthy within {timeout_seconds:.0f}s")
 
 
@@ -246,21 +332,29 @@ def _wait_for_worker(
     expected_epoch_id: str,
     child: subprocess.Popen[str],
     timeout_seconds: float = 30.0,
+    stop_event: threading.Event | None = None,
 ) -> None:
     marker = data_root / "runtime" / "worker-ready.json"
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
+        _raise_if_stop_requested(stop_event)
         return_code = child.poll()
         if return_code is not None:
             raise RuntimeError(f"v2 Worker exited during startup with code {return_code}")
         try:
             payload = json.loads(marker.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            time.sleep(0.1)
+            if stop_event is None:
+                time.sleep(0.1)
+            elif stop_event.wait(0.1):
+                raise _LauncherStopRequested
             continue
         if payload.get("epochId") == expected_epoch_id:
             return
-        time.sleep(0.1)
+        if stop_event is None:
+            time.sleep(0.1)
+        elif stop_event.wait(0.1):
+            raise _LauncherStopRequested
     raise RuntimeError(f"v2 Worker did not become healthy within {timeout_seconds:.0f}s")
 
 
@@ -308,7 +402,10 @@ def _start_child(
     child_job: ChildProcessJob,
     restart_count: int,
     log_level: str | None = None,
+    output_callback: ChildOutputCallback | None = None,
+    stop_event: threading.Event | None = None,
 ) -> ManagedChild:
+    _raise_if_stop_requested(stop_event)
     registration = _new_registration(role)
     repository.register(registration)
     started_at = time.monotonic()
@@ -328,6 +425,12 @@ def _start_child(
                 registration,
                 log_level=log_level,
             ),
+            capture_output=output_callback is not None,
+        )
+        _start_output_reader(
+            process,
+            role=role,
+            callback=output_callback,
         )
         if not repository.bind_pid(registration, process.pid):
             process.terminate()
@@ -339,19 +442,28 @@ def _start_child(
                 port,
                 expected_epoch_id=registration.epoch_id,
                 child=process,
+                stop_event=stop_event,
             )
         else:
             _wait_for_worker(
                 data_root,
                 expected_epoch_id=registration.epoch_id,
                 child=process,
+                stop_event=stop_event,
             )
-    except BaseException:
-        LOGGER.exception(
-            "%s 子进程启动失败（epoch=%s）",
-            role.upper(),
-            registration.epoch_id[:8],
-        )
+    except BaseException as error:
+        if isinstance(error, _LauncherStopRequested):
+            LOGGER.info(
+                "正在取消 %s 子进程启动（epoch=%s）",
+                role.upper(),
+                registration.epoch_id[:8],
+            )
+        else:
+            LOGGER.exception(
+                "%s 子进程启动失败（epoch=%s）",
+                role.upper(),
+                registration.epoch_id[:8],
+            )
         if process is not None:
             _stop_children([process])
         if role == "api":
@@ -387,9 +499,12 @@ def _start_child_with_retries(
     child_job: ChildProcessJob,
     restart_count: int,
     log_level: str | None = None,
+    output_callback: ChildOutputCallback | None = None,
+    stop_event: threading.Event | None = None,
 ) -> ManagedChild:
     current_restart_count = restart_count
     while current_restart_count <= MAX_CONSECUTIVE_RESTARTS:
+        _raise_if_stop_requested(stop_event)
         try:
             return _start_child(
                 role=role,
@@ -400,7 +515,11 @@ def _start_child_with_retries(
                 child_job=child_job,
                 restart_count=current_restart_count,
                 log_level=log_level,
+                output_callback=output_callback,
+                stop_event=stop_event,
             )
+        except _LauncherStopRequested:
+            raise
         except Exception:
             current_restart_count += 1
             if current_restart_count > MAX_CONSECUTIVE_RESTARTS:
@@ -411,10 +530,254 @@ def _start_child_with_retries(
                 current_restart_count,
                 MAX_CONSECUTIVE_RESTARTS,
             )
-            time.sleep(0.25)
+            if stop_event is None:
+                time.sleep(0.25)
+            elif stop_event.wait(0.25):
+                raise _LauncherStopRequested
     raise RuntimeError(
         f"v2 {role} exceeded {MAX_CONSECUTIVE_RESTARTS} consecutive restarts"
     )
+
+
+class LauncherSupervisor:
+    """UI-independent owner for the complete API/Worker lifecycle."""
+
+    def __init__(
+        self,
+        config: LauncherConfig,
+        *,
+        status_callback: StatusCallback | None = None,
+        output_callback: ChildOutputCallback | None = None,
+    ) -> None:
+        self.config = config
+        self._status_callback = status_callback
+        self._output_callback = output_callback
+        self._stop_event = threading.Event()
+        self._run_lock = threading.Lock()
+        self._status = LauncherStatus(LauncherState.STOPPED, "后端未启动")
+
+    @property
+    def status(self) -> LauncherStatus:
+        return self._status
+
+    def request_stop(self) -> None:
+        self._stop_event.set()
+
+    def _publish(
+        self,
+        state: LauncherState,
+        message: str,
+        children: dict[str, ManagedChild] | None = None,
+    ) -> None:
+        children = children or {}
+        status = LauncherStatus(
+            state=state,
+            message=message,
+            api_pid=(children.get("api").process.pid if children.get("api") else None),
+            worker_pid=(
+                children.get("worker").process.pid if children.get("worker") else None
+            ),
+        )
+        self._status = status
+        if self._status_callback is not None:
+            self._status_callback(status)
+
+    def run(self) -> int:
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("launcher supervisor is already running")
+        clean_exit = False
+        children: dict[str, ManagedChild] = {}
+        config = self.config
+        try:
+            self._publish(LauncherState.STARTING, "正在初始化后端")
+            _raise_if_stop_requested(self._stop_event)
+            with DataRootLock(config.data_root):
+                LOGGER.info("已取得数据目录单实例锁")
+                storage = initialize_database(config.data_root)
+                LOGGER.info(
+                    "数据库初始化与完整性检查完成：revision=%s，新建=%s，升级=%s",
+                    storage.schema_revision,
+                    "是" if storage.created else "否",
+                    "是" if storage.upgraded else "否",
+                )
+                engine = create_sqlite_engine(database_path_for(config.data_root))
+                repository = ProcessEpochRepository(engine)
+                object_storage = AssetStorageService(config.data_root, engine)
+                launcher_registration = _new_registration("launcher", pid=os.getpid())
+                repository.register(launcher_registration)
+                try:
+                    _reconcile_all_previous_epochs(repository)
+                    LOGGER.info("已完成历史进程租约与中断任务恢复")
+                    recovered = object_storage.recover_journal()
+                    integrity = object_storage.scan_integrity()
+                    LOGGER.info(
+                        "对象存储检查完成：恢复日志=%s，检查对象=%s，缺失=%s，恢复=%s",
+                        recovered,
+                        integrity.checked,
+                        integrity.missing,
+                        integrity.restored,
+                    )
+
+                    with ChildProcessJob() as child_job:
+                        try:
+                            for role in ("api", "worker"):
+                                children[role] = _start_child_with_retries(
+                                    role=role,
+                                    data_root=config.data_root,
+                                    host=config.host,
+                                    port=config.port,
+                                    repository=repository,
+                                    child_job=child_job,
+                                    restart_count=0,
+                                    log_level=config.log_level,
+                                    output_callback=self._output_callback,
+                                    stop_event=self._stop_event,
+                                )
+
+                            _raise_if_stop_requested(self._stop_event)
+                            if config.open_browser:
+                                webbrowser.open_new(f"http://127.0.0.1:{config.port}/")
+                                LOGGER.info(
+                                    "已请求打开浏览器：http://127.0.0.1:%s/",
+                                    config.port,
+                                )
+                            LOGGER.info(
+                                "后端全部就绪：本机 http://127.0.0.1:%s/，监听 %s:%s",
+                                config.port,
+                                config.host,
+                                config.port,
+                            )
+                            self._publish(
+                                LauncherState.RUNNING,
+                                "API 与 Worker 运行正常",
+                                children,
+                            )
+
+                            while not self._stop_event.wait(0.25):
+                                now = time.monotonic()
+                                for role, managed in list(children.items()):
+                                    _reset_restart_count_after_stable_run(
+                                        managed,
+                                        now=now,
+                                    )
+                                    return_code = managed.process.poll()
+                                    if (
+                                        return_code is None
+                                        and _api_health_requires_restart(
+                                            managed,
+                                            port=config.port,
+                                            now=now,
+                                        )
+                                    ):
+                                        LOGGER.error(
+                                            "API 进程仍存活但健康检查持续失败，"
+                                            "先终止旧进程再执行 epoch 恢复：pid=%s，epoch=%s",
+                                            managed.process.pid,
+                                            managed.registration.epoch_id[:8],
+                                        )
+                                        self._publish(
+                                            LauncherState.DEGRADED,
+                                            "API 健康检查失败，正在恢复",
+                                            children,
+                                        )
+                                        _stop_children([managed.process])
+                                        return_code = managed.process.poll()
+                                    if (
+                                        return_code is None
+                                        and _worker_epoch_requires_restart(
+                                            managed,
+                                            repository=repository,
+                                            now=now,
+                                        )
+                                    ):
+                                        LOGGER.error(
+                                            "Worker epoch 已失效但旧进程仍存活，"
+                                            "正在终止旧进程后重启：pid=%s，epoch=%s",
+                                            managed.process.pid,
+                                            managed.registration.epoch_id[:8],
+                                        )
+                                        self._publish(
+                                            LauncherState.DEGRADED,
+                                            "Worker 状态异常，正在恢复",
+                                            children,
+                                        )
+                                        _stop_children([managed.process])
+                                        return_code = managed.process.poll()
+                                    if return_code is None:
+                                        continue
+                                    LOGGER.warning(
+                                        "%s 子进程意外退出：pid=%s，exit_code=%s",
+                                        role.upper(),
+                                        managed.process.pid,
+                                        return_code,
+                                    )
+                                    if role == "api":
+                                        repository.reconcile_dead_api(
+                                            managed.registration.epoch_id
+                                        )
+                                    else:
+                                        repository.reconcile_dead_worker(
+                                            managed.registration.epoch_id
+                                        )
+                                    restart_count = managed.restart_count + 1
+                                    if restart_count > MAX_CONSECUTIVE_RESTARTS:
+                                        raise RuntimeError(
+                                            f"v2 {role} exceeded "
+                                            f"{MAX_CONSECUTIVE_RESTARTS} consecutive restarts"
+                                        )
+                                    self._publish(
+                                        LauncherState.DEGRADED,
+                                        f"{role.upper()} 已退出，正在重启",
+                                        children,
+                                    )
+                                    children[role] = _start_child_with_retries(
+                                        role=role,
+                                        data_root=config.data_root,
+                                        host=config.host,
+                                        port=config.port,
+                                        repository=repository,
+                                        child_job=child_job,
+                                        restart_count=restart_count,
+                                        log_level=config.log_level,
+                                        output_callback=self._output_callback,
+                                        stop_event=self._stop_event,
+                                    )
+                                    self._publish(
+                                        LauncherState.RUNNING,
+                                        "API 与 Worker 运行正常",
+                                        children,
+                                    )
+                            clean_exit = True
+                        except KeyboardInterrupt:
+                            LOGGER.info("收到终止信号，准备关闭后端")
+                            clean_exit = True
+                        finally:
+                            self._publish(
+                                LauncherState.STOPPING,
+                                "正在停止 API 与 Worker",
+                                children,
+                            )
+                            _stop_children(
+                                [managed.process for managed in children.values()]
+                            )
+                            for managed in children.values():
+                                repository.close(managed.registration)
+                finally:
+                    repository.close(launcher_registration)
+                    engine.dispose()
+                    LOGGER.info("Launcher 已关闭")
+        except _LauncherStopRequested:
+            clean_exit = True
+            LOGGER.info("收到停止请求，取消后端启动")
+        except BaseException as error:
+            self._publish(LauncherState.DEGRADED, f"后端运行失败：{error}")
+            LOGGER.exception("Launcher 运行失败")
+            raise
+        finally:
+            if clean_exit:
+                self._publish(LauncherState.STOPPED, "后端已停止")
+            self._run_lock.release()
+        return 0
 
 
 def run_launcher(args: object) -> int:
@@ -444,147 +807,12 @@ def run_launcher(args: object) -> int:
         port,
         log_path,
     )
-    with DataRootLock(data_root):
-        LOGGER.info("已取得数据目录单实例锁")
-        storage = initialize_database(data_root)
-        LOGGER.info(
-            "数据库初始化与完整性检查完成：revision=%s，新建=%s，升级=%s",
-            storage.schema_revision,
-            "是" if storage.created else "否",
-            "是" if storage.upgraded else "否",
+    return LauncherSupervisor(
+        LauncherConfig(
+            data_root=data_root,
+            host=host,
+            port=port,
+            log_level=log_level,
+            open_browser=not args.no_browser,
         )
-        engine = create_sqlite_engine(database_path_for(data_root))
-        repository = ProcessEpochRepository(engine)
-        object_storage = AssetStorageService(data_root, engine)
-        launcher_registration = _new_registration("launcher", pid=os.getpid())
-        repository.register(launcher_registration)
-        children: dict[str, ManagedChild] = {}
-        try:
-            _reconcile_all_previous_epochs(repository)
-            LOGGER.info("已完成历史进程租约与中断任务恢复")
-            recovered = object_storage.recover_journal()
-            integrity = object_storage.scan_integrity()
-            LOGGER.info(
-                "对象存储检查完成：恢复日志=%s，检查对象=%s，缺失=%s，恢复=%s",
-                recovered,
-                integrity.checked,
-                integrity.missing,
-                integrity.restored,
-            )
-
-            with ChildProcessJob() as child_job:
-                try:
-                    for role in ("api", "worker"):
-                        children[role] = _start_child_with_retries(
-                            role=role,
-                            data_root=data_root,
-                            host=host,
-                            port=port,
-                            repository=repository,
-                            child_job=child_job,
-                            restart_count=0,
-                            log_level=log_level,
-                        )
-
-                    if not args.no_browser:
-                        webbrowser.open_new(f"http://127.0.0.1:{port}/")
-                        LOGGER.info(
-                            "已请求打开浏览器：http://127.0.0.1:%s/",
-                            port,
-                        )
-                    LOGGER.info(
-                        "后端全部就绪：本机 http://127.0.0.1:%s/，局域网监听 %s:%s",
-                        port,
-                        host,
-                        port,
-                    )
-
-                    while True:
-                        now = time.monotonic()
-                        for role, managed in list(children.items()):
-                            _reset_restart_count_after_stable_run(
-                                managed,
-                                now=now,
-                            )
-                            return_code = managed.process.poll()
-                            if (
-                                return_code is None
-                                and _api_health_requires_restart(
-                                    managed,
-                                    port=port,
-                                    now=now,
-                                )
-                            ):
-                                LOGGER.error(
-                                    "API 进程仍存活但健康检查持续失败，"
-                                    "先终止旧进程再执行 epoch 恢复：pid=%s，epoch=%s",
-                                    managed.process.pid,
-                                    managed.registration.epoch_id[:8],
-                                )
-                                _stop_children([managed.process])
-                                return_code = managed.process.poll()
-                            if (
-                                return_code is None
-                                and _worker_epoch_requires_restart(
-                                    managed,
-                                    repository=repository,
-                                    now=now,
-                                )
-                            ):
-                                LOGGER.error(
-                                    "Worker epoch 已失效但旧进程仍存活，"
-                                    "正在终止旧进程后重启：pid=%s，epoch=%s",
-                                    managed.process.pid,
-                                    managed.registration.epoch_id[:8],
-                                )
-                                _stop_children([managed.process])
-                                return_code = managed.process.poll()
-                            if return_code is None:
-                                continue
-                            LOGGER.warning(
-                                "%s 子进程意外退出：pid=%s，exit_code=%s",
-                                role.upper(),
-                                managed.process.pid,
-                                return_code,
-                            )
-                            if role == "api":
-                                repository.reconcile_dead_api(
-                                    managed.registration.epoch_id
-                                )
-                            else:
-                                repository.reconcile_dead_worker(
-                                    managed.registration.epoch_id
-                                )
-                            restart_count = managed.restart_count + 1
-                            if restart_count > MAX_CONSECUTIVE_RESTARTS:
-                                raise RuntimeError(
-                                    f"v2 {role} exceeded "
-                                    f"{MAX_CONSECUTIVE_RESTARTS} consecutive restarts"
-                                )
-                            children[role] = _start_child_with_retries(
-                                role=role,
-                                data_root=data_root,
-                                host=host,
-                                port=port,
-                                repository=repository,
-                                child_job=child_job,
-                                restart_count=restart_count,
-                                log_level=log_level,
-                            )
-                        time.sleep(0.25)
-                except KeyboardInterrupt:
-                    LOGGER.info("收到终止信号，准备关闭后端")
-                    return 0
-                finally:
-                    _stop_children(
-                        [managed.process for managed in children.values()]
-                    )
-                    for managed in children.values():
-                        repository.close(managed.registration)
-        except BaseException:
-            LOGGER.exception("Launcher 运行失败")
-            raise
-        finally:
-            repository.close(launcher_registration)
-            engine.dispose()
-            LOGGER.info("Launcher 已关闭")
+    ).run()
