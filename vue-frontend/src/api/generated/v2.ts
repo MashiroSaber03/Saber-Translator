@@ -2729,7 +2729,6 @@ export interface components {
             items: components["schemas"]["JobItemDetail"][];
             failedItems: components["schemas"]["JobFailureItem"][];
             artifacts: components["schemas"]["JobArtifact"][];
-            resources: components["schemas"]["JobResource"][];
             recentEvents: components["schemas"]["JobEvent"][];
         };
         JobCounts: {
@@ -2778,16 +2777,6 @@ export interface components {
             stepId: components["schemas"]["Uuid"] | null;
             stepKind: string | null;
             error: components["schemas"]["ErrorPayload"] | null;
-        };
-        JobResource: {
-            stepId: components["schemas"]["Uuid"];
-            role: string;
-            assetId: components["schemas"]["Uuid"];
-            url: string;
-            mimeType: string;
-            byteSize: number;
-            /** @enum {string} */
-            integrityStatus: "ok" | "missing";
         };
         JobArtifact: {
             kind: string;

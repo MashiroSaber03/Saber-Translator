@@ -4,6 +4,8 @@ from io import BytesIO
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import sqlite3
+import threading
 import uuid
 import zipfile
 
@@ -13,7 +15,7 @@ from sqlalchemy import insert, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentRepository
-from src.backend_v2.operations.executor import WorkerOperationRunner
+from src.backend_v2.operations.executor import _LeaseHeartbeat, WorkerOperationRunner
 from src.backend_v2.operations.repository import (
     OperationConflict,
     OperationFence,
@@ -336,6 +338,46 @@ def test_worker_operation_runner_delegates_claimed_operation_to_handler(
     stored = repository.get(accepted["operationId"])
     assert stored["status"] == "completed"
     assert stored["result"] == {"operationId": accepted["operationId"]}
+
+
+def test_operation_heartbeat_retries_one_sqlite_lock_without_fencing() -> None:
+    calls = 0
+    renewed = threading.Event()
+
+    def renew() -> object:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise sqlite3.OperationalError("database is locked")
+        renewed.set()
+        return object()
+
+    heartbeat = _LeaseHeartbeat(renew, interval_seconds=0.01)
+    heartbeat.start()
+    try:
+        assert renewed.wait(1)
+        assert calls >= 2
+        assert not heartbeat.fenced.is_set()
+    finally:
+        heartbeat.stop()
+
+
+def test_operation_heartbeat_fences_after_finite_sqlite_lock_retries() -> None:
+    calls = 0
+
+    def renew() -> object:
+        nonlocal calls
+        calls += 1
+        raise sqlite3.OperationalError("database is locked")
+
+    heartbeat = _LeaseHeartbeat(renew, interval_seconds=0.01)
+    heartbeat.start()
+    try:
+        assert heartbeat.fenced.wait(1)
+    finally:
+        heartbeat.stop()
+
+    assert calls == 2
 
 
 def test_worker_ocr_plugin_mutates_domain_result_before_publish(

@@ -26,10 +26,8 @@ import type { V2AcceptedJob } from '@/api/v2/insight'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import {
   eventTypeLabel,
-  formatByteSize,
   formatTaskDuration,
   jobKindLabel,
-  resourceRoleLabel,
   stepKindLabel,
 } from '@/utils/taskDisplay'
 
@@ -288,6 +286,18 @@ async function cancelJob(job: V2Job) {
   )
 }
 
+async function clearHistory() {
+  const confirmed = await confirmProductAction({
+    title: '清空任务历史',
+    message: '确定清空所有可清理的历史任务吗？中断任务会保留，其他已删除记录无法恢复。',
+    confirmText: '清空历史',
+    cancelText: '取消',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  await runAction(() => store.clearHistory(), '任务历史已清空')
+}
+
 async function downloadArtifact(job: V2Job) {
   const pending = new Set(downloading.value)
   pending.add(job.jobId)
@@ -429,7 +439,7 @@ async function analysisCreated(result: V2AcceptedJob) {
             v-if="tab === 'history' && store.history.length"
             size="xs"
             variant="ghost"
-            @click="store.clearHistory"
+            @click="clearHistory"
           >
             清空历史
           </UiButton>
@@ -683,15 +693,6 @@ async function analysisCreated(result: V2AcceptedJob) {
                         <section>
                           <strong>配置摘要（已脱敏）</strong>
                           <pre>{{ formatPayload(store.selectedDetail.configSummary) }}</pre>
-                        </section>
-                        <section v-if="store.selectedDetail.resources.length">
-                          <strong>步骤资源</strong>
-                          <ul>
-                            <li v-for="resource in store.selectedDetail.resources" :key="`${resource.stepId}:${resource.role}`">
-                              <a :href="resource.url" target="_blank" rel="noopener" :title="resource.role">{{ resourceRoleLabel(resource.role) }}</a>
-                              · {{ resource.mimeType }} · {{ formatByteSize(resource.byteSize) }}
-                            </li>
-                          </ul>
                         </section>
                         <section v-if="store.selectedDetail.recentEvents.length">
                           <strong>最近事件</strong>

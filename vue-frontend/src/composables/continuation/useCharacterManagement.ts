@@ -4,16 +4,16 @@ import type { ContinuationState } from './useContinuationState'
 import { runContinuationMutation } from './continuationActionRunner'
 
 export interface CharacterManagementComposable {
-    addCharacter: (name: string, aliases: string[], description: string) => Promise<void>
-    deleteCharacter: (name: string) => Promise<void>
-    updateCharacterInfo: (name: string, newName: string, aliases: string[]) => Promise<void>
-    toggleCharacterEnabled: (name: string, enabled: boolean) => Promise<void>
-    addForm: (charName: string, formName: string, description: string) => Promise<void>
-    updateForm: (charName: string, formId: string, formName: string, description: string) => Promise<void>
-    deleteForm: (charName: string, formId: string) => Promise<void>
-    uploadFormImage: (charName: string, formId: string, file: File) => Promise<void>
-    deleteFormImage: (charName: string, formId: string) => Promise<void>
-    toggleFormEnabled: (charName: string, formId: string, enabled: boolean) => Promise<void>
+    addCharacter: (name: string, aliases: string[], description: string) => Promise<boolean>
+    deleteCharacter: (name: string) => Promise<boolean>
+    updateCharacterInfo: (name: string, newName: string, aliases: string[]) => Promise<boolean>
+    toggleCharacterEnabled: (name: string, enabled: boolean) => Promise<boolean>
+    addForm: (charName: string, formName: string, description: string) => Promise<boolean>
+    updateForm: (charName: string, formId: string, formName: string, description: string) => Promise<boolean>
+    deleteForm: (charName: string, formId: string) => Promise<boolean>
+    uploadFormImage: (charName: string, formId: string, file: File) => Promise<boolean>
+    deleteFormImage: (charName: string, formId: string) => Promise<boolean>
+    toggleFormEnabled: (charName: string, formId: string, enabled: boolean) => Promise<boolean>
     generateOrtho: (
         charName: string,
         formId: string,
@@ -25,9 +25,9 @@ export interface CharacterManagementComposable {
 export function useCharacterManagement(bookId: Ref<string | undefined>, state: ContinuationState): CharacterManagementComposable {
     async function addCharacter(name: string, aliases: string[], description: string) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '添加失败',
             successMessage: '角色添加成功',
@@ -42,9 +42,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function deleteCharacter(name: string) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '删除失败',
             successMessage: '角色删除成功',
@@ -55,9 +55,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function updateCharacterInfo(name: string, newName: string, aliases: string[]) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '更新失败',
             successMessage: '角色信息更新成功',
@@ -71,15 +71,15 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function toggleCharacterEnabled(name: string, enabled: boolean) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
         const char = state.characters.value.find(c => c.name === name)
-        if (!char) return
+        if (!char) return false
 
         const previousEnabled = char.enabled
         char.enabled = enabled
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '操作失败',
             run: () => continuationApi.updateCharacterInfo(activeBookId, name, {
@@ -95,9 +95,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function addForm(charName: string, formName: string, description: string) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '添加失败',
             successMessage: '形态添加成功',
@@ -111,9 +111,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function updateForm(charName: string, formId: string, formName: string, description: string) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '更新失败',
             successMessage: '形态更新成功',
@@ -127,9 +127,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function deleteForm(charName: string, formId: string) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '删除失败',
             successMessage: '形态删除成功',
@@ -140,9 +140,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function uploadFormImage(charName: string, formId: string, file: File) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '上传失败',
             successMessage: '图片上传成功',
@@ -156,9 +156,9 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function deleteFormImage(charName: string, formId: string) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '删除失败',
             successMessage: '图片删除成功',
@@ -172,18 +172,18 @@ export function useCharacterManagement(bookId: Ref<string | undefined>, state: C
 
     async function toggleFormEnabled(charName: string, formId: string, enabled: boolean) {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId) return false
 
         const char = state.characters.value.find(c => c.name === charName)
-        if (!char) return
+        if (!char) return false
 
         const form = char.forms?.find(f => f.form_id === formId)
-        if (!form) return
+        if (!form) return false
 
         const previousEnabled = form.enabled
         form.enabled = enabled
 
-        await runContinuationMutation({
+        return runContinuationMutation({
             state,
             failurePrefix: '操作失败',
             run: () => continuationApi.toggleFormEnabled(activeBookId, charName, formId, enabled),

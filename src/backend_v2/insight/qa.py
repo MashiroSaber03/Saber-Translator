@@ -35,7 +35,12 @@ from src.backend_v2.redaction import (
     secret_values_from_json,
 )
 from src.backend_v2.settings.resolver import SettingsResolver
-from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.database import (
+    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
+    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+    immediate_transaction,
+    is_sqlite_busy_error,
+)
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     analysis_artifacts,
@@ -483,15 +488,36 @@ class TransientHeartbeat:
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval_seconds):
-            try:
-                renewed = self.repository.renew(self.fence)
-            except Exception:
-                LOGGER.exception(
-                    "Insight transient 心跳执行失败，立即放弃本次请求：request=%s",
-                    self.fence.request_id[:8],
-                )
-                self.fenced.set()
-                return
+            busy_failures = 0
+            while True:
+                try:
+                    renewed = self.repository.renew(self.fence)
+                except Exception as exc:
+                    if (
+                        is_sqlite_busy_error(exc)
+                        and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
+                    ):
+                        busy_failures += 1
+                        LOGGER.warning(
+                            "Insight transient 心跳遇到 SQLite 写锁竞争，将重试："
+                            "request=%s retry=%s/%s",
+                            self.fence.request_id[:8],
+                            busy_failures,
+                            SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+                        )
+                        if self._stop.wait(
+                            SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
+                        ):
+                            return
+                        continue
+                    LOGGER.exception(
+                        "Insight transient 心跳执行失败，立即放弃本次请求："
+                        "request=%s",
+                        self.fence.request_id[:8],
+                    )
+                    self.fenced.set()
+                    return
+                break
             if not renewed:
                 self.fenced.set()
                 return

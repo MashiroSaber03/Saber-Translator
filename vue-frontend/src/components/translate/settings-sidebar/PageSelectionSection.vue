@@ -168,6 +168,9 @@ const isPageSelectionExpanded = ref(false)
 }
 
 .page-selection-section__summary-block {
+  --product-status-banner-flex-direction: column;
+  --product-status-banner-align-items: stretch;
+  --product-status-banner-gap: 8px;
   --product-status-banner-icon-display: none;
   --product-status-banner-padding: 8px 10px;
   --product-status-banner-body-color: var(--settings-sidebar-page-selection-summary-text);

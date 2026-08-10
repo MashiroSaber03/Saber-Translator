@@ -6,6 +6,7 @@ import uuid
 import zipfile
 
 from PIL import Image
+import pytest
 from sqlalchemy import insert, select
 
 from src.backend_v2.content.repository import ContentRepository
@@ -191,4 +192,83 @@ def test_container_import_and_export_are_worker_owned_and_durable(
             "chapter/translated_001.png",
             "chapter/clean_002.png",
         ]
+    engine.dispose()
+
+
+def test_export_propagates_memory_failure_and_removes_partial_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Memory failure")
+    chapter = content.create_chapter(
+        book_id=str(book["id"]),
+        title="Chapter",
+    )
+    page_id = str(uuid.uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            insert(pages).values(
+                id=page_id,
+                chapter_id=str(chapter["id"]),
+                ordinal=1,
+                logical_source_path="page.png",
+            )
+        )
+    storage = AssetStorageService(data_root, engine)
+    storage.publish_bytes(
+        _png((32, 64, 96)),
+        extension="png",
+        mime_type="image/png",
+        width=32,
+        height=40,
+        bind=lambda connection, asset_id: connection.execute(
+            insert(page_assets).values(
+                page_id=page_id,
+                role="source",
+                asset_id=asset_id,
+                input_source_revision=1,
+                input_document_revision=1,
+            )
+        ),
+    )
+    jobs = JobQueueRepository(engine)
+    accepted = TransferCommandService(
+        data_root=data_root,
+        engine=engine,
+    ).create_export(
+        chapter_id=str(chapter["id"]),
+        export_format="cbz",
+        page_ids=None,
+        idempotency_key="memory-failure",
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(epoch_id, "worker", "worker", 901)
+    )
+    fence = jobs.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    assert fence.job_id == accepted["jobIds"][0]
+    step = jobs.next_step(fence)
+    assert step is not None
+    worker = TransferWorkerService(
+        data_root=data_root,
+        engine=engine,
+        jobs_repository=jobs,
+    )
+
+    def fail_write(*_args, **_kwargs) -> None:
+        raise MemoryError("native allocation failed")
+
+    monkeypatch.setattr(zipfile.ZipFile, "write", fail_write)
+    with pytest.raises(MemoryError, match="allocation failed"):
+        worker.handler(fence, step)
+    assert not (
+        data_root / "temp" / "exports" / f"{fence.job_id}.cbz"
+    ).exists()
     engine.dispose()

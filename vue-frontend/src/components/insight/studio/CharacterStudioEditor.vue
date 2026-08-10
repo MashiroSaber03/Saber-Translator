@@ -489,9 +489,19 @@ function moveGreeting(index: number, direction: -1 | 1) {
   list.splice(target, 0, item!)
 }
 
-function useAsPrimary(greeting: string) {
+function useAsPrimary(index: number) {
   if (!localDocument.value) return
-  localDocument.value.coreMessages.first_message = greeting
+  const messages = localDocument.value.coreMessages
+  const greeting = messages.alternate_greetings[index]
+  if (greeting === undefined) return
+
+  const previousPrimary = messages.first_message
+  messages.first_message = greeting
+  if (previousPrimary) {
+    messages.alternate_greetings.splice(index, 1, previousPrimary)
+  } else {
+    messages.alternate_greetings.splice(index, 1)
+  }
 }
 
 function addRegexScript() {

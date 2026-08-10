@@ -30,7 +30,7 @@ from src.backend_v2.storage.schema import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FOUNDATION_REVISION = "v2_foundation_20260801"
+FOUNDATION_REVISION = "v2_foundation_20260810"
 
 
 @pytest.fixture()

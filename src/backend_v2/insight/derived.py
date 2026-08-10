@@ -50,6 +50,7 @@ from src.backend_v2.storage.schema import (
     vector_generations,
     jobs,
 )
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 DERIVED_KINDS = frozenset(
@@ -280,6 +281,8 @@ class ProviderDerivedAlgorithms:
                 fallback_reason=None,
             )
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             enhanced_error = exc
 
         compressed_payloads = [
@@ -307,6 +310,8 @@ class ProviderDerivedAlgorithms:
                     fallback_reason=_safe_timeline_error(enhanced_error),
                 )
             except Exception as exc:
+                if is_memory_allocation_error(exc):
+                    raise
                 compressed_error = exc
 
         events = []

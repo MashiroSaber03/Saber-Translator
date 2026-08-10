@@ -50,7 +50,7 @@
               <strong class="greeting-workbench__alternate-name">备用问候</strong>
             </div>
             <ProductActionRow appearance="accent" aria-label="备用问候条目操作">
-              <UiButton variant="secondary" @click="$emit('promote', item)" size="sm">设为主问候</UiButton>
+              <UiButton variant="secondary" @click="$emit('promote', index)" size="sm">设为主问候</UiButton>
               <UiButton variant="secondary" :disabled="index === 0" @click="$emit('move', index, -1)" size="sm">上移</UiButton>
               <UiButton variant="secondary" :disabled="index === alternates.length - 1" @click="$emit('move', index, 1)" size="sm">下移</UiButton>
               <UiButton variant="secondary" tone="danger" @click="$emit('remove', index)" size="sm">删除</UiButton>
@@ -88,7 +88,7 @@ defineEmits<{
   (e: 'add'): void
   (e: 'remove', index: number): void
   (e: 'move', index: number, direction: -1 | 1): void
-  (e: 'promote', value: string): void
+  (e: 'promote', index: number): void
   (e: 'generate'): void
 }>()
 </script>

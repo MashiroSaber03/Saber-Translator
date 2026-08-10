@@ -165,4 +165,12 @@ describe('NotesPanel', () => {
     expect(addButton.text()).toContain('添加笔记')
     expect(addButton.text()).not.toContain('+')
   })
+
+  it('creates manual notes as text notes instead of offering an incomplete QA form', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/NotesPanel.vue'), 'utf8')
+
+    expect(source).toContain("type: editingNote.value?.type ?? 'text'")
+    expect(source).not.toContain('noteTypeOptions')
+    expect(source).not.toContain('v-model:note-type')
+  })
 })

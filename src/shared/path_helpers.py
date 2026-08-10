@@ -32,7 +32,7 @@ def get_resource_root():
         base_path = sys._MEIPASS
         logger.debug(f"打包环境中，资源基础路径: {base_path}")
         return base_path
-    except Exception:
+    except AttributeError:
         base_path = get_project_root()
         logger.debug(f"开发环境中，资源基础路径: {base_path}")
         return base_path

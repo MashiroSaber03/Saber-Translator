@@ -19,6 +19,7 @@ from src.shared.ai_providers import (
     provider_supports_capability,
 )
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
+from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
     OpenAICompatibleSyncExecutor,
@@ -30,6 +31,7 @@ from src.shared.openai_options import (
     create_openai_compatible_options,
 )
 from src.shared.openai_rate_limits import SharedRPMLimiter
+
 logger = logging.getLogger("CoreTranslation")
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 _chat_transport = OpenAICompatibleChatTransport()
@@ -262,6 +264,8 @@ def translate_single_text(
                     )
                 break
             except Exception as e:
+                if is_memory_allocation_error(e):
+                    raise
                 last_error = e
                 error_message = str(e)
                 logger.error(
@@ -521,6 +525,8 @@ def _parse_batch_json_response(response_text: str) -> list:
         translations = [t[1] for t in translations]
         
     except Exception as e:
+        if is_memory_allocation_error(e):
+            raise
         logger.warning(f"提取翻译结果失败: {e}")
         # 🔍 修改：不再降级，直接抛出异常
         raise TranslationParseException(f"从 JSON 提取翻译结果失败: {e}")
@@ -584,6 +590,8 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                 logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
                 return translations
             except OpenAICompatibleBusinessRetryableError as error:
+                if is_memory_allocation_error(error):
+                    raise
                 last_error = error
                 logger.error("[尝试 %s/%s] 批量翻译解析失败: %s", attempt + 1, business_retries + 1, error)
                 if attempt < business_retries:
@@ -591,6 +599,8 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
                     continue
                 break
             except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
                 last_error = error
                 logger.error("[尝试 %s/%s] 批量翻译失败: %s", attempt + 1, business_retries + 1, error, exc_info=True)
                 if attempt < business_retries:

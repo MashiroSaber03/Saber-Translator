@@ -19,7 +19,7 @@ function formatContinuationActionError(prefix: string, message: string): string 
 
 export async function runContinuationMutation<T>(
   options: ContinuationMutationOptions<T>
-): Promise<T | undefined> {
+): Promise<boolean> {
   try {
     const result = await options.run()
 
@@ -27,13 +27,13 @@ export async function runContinuationMutation<T>(
     if (options.successMessage) {
       options.state.showMessage(options.successMessage, 'success')
     }
-    return result
+    return true
   } catch (error) {
     await options.onFailure?.()
     options.state.showMessage(
       formatContinuationActionError(options.failurePrefix, toContinuationActionError(error)),
       'error'
     )
-    return undefined
+    return false
   }
 }

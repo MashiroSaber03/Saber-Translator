@@ -20,8 +20,6 @@ const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
   detect: '文本检测',
   ocr: '文字识别',
   color: '颜色分析',
-  glossary: '术语提取',
-  auto_glossary: '术语提取',
   auto_terms: '术语提取',
   translate: '文本翻译',
   hq_translate: '高质量翻译',
@@ -29,13 +27,11 @@ const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
   repair: '文字修复',
   render: '排版渲染',
   save: '保存结果',
-  publish: '保存结果',
   publish_clean: '发布去字图片',
   style_apply_document: '应用页面样式',
   text_import_apply: '写入导入文本',
   container_scan: '扫描导入文件',
   container_import_page: '导入页面',
-  container_cleanup: '清理导入临时文件',
   export_package: '打包导出',
   web_extract_scan: '扫描网页内容',
   web_extract_page: '提取网页图片',
@@ -102,16 +98,6 @@ const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   web_import_agent_log: '网页导入助手日志',
 }
 
-const RESOURCE_ROLE_LABELS: Readonly<Record<string, string>> = {
-  source: '原始图片',
-  thumbnail_source: '原图缩略图',
-  clean: '去字图片',
-  translated: '翻译结果',
-  text_mask: '文字遮罩',
-  model_raw: '模型原始输出',
-  character_reference: '角色参考图',
-}
-
 function unknownLabel(category: string, value: string): string {
   const normalized = value.trim()
   return normalized ? `未知${category}（${normalized}）` : `未知${category}`
@@ -131,10 +117,6 @@ export function eventTypeLabel(type: string): string {
   return EVENT_TYPE_LABELS[type] ?? unknownLabel('事件', type)
 }
 
-export function resourceRoleLabel(role: string): string {
-  return RESOURCE_ROLE_LABELS[role] ?? unknownLabel('资源', role)
-}
-
 export function formatTaskDuration(durationMs: number | null | undefined): string {
   if (durationMs === null || durationMs === undefined || !Number.isFinite(durationMs)) return '—'
   const milliseconds = Math.max(0, Math.round(durationMs))
@@ -151,17 +133,4 @@ export function formatTaskDuration(durationMs: number | null | undefined): strin
   const minutes = totalMinutes % 60
   const hours = Math.floor(totalMinutes / 60)
   return `${hours} 小时 ${minutes} 分 ${seconds} 秒`
-}
-
-export function formatByteSize(byteSize: number): string {
-  if (!Number.isFinite(byteSize) || byteSize < 0) return '—'
-  if (byteSize < 1024) return `${Math.round(byteSize)} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let value = byteSize / 1024
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-  return `${Number(value.toFixed(1))} ${units[unitIndex]}`
 }

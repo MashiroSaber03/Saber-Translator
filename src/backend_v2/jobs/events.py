@@ -39,7 +39,7 @@ class JobEventBroadcaster:
         self._started = False
         self._subscribers: set[EventSubscription] = set()
         # Do not touch SQLite during application construction.  This keeps API
-        # probes side-effect free and lets the Launcher own migration ordering.
+        # probes side-effect free and lets the Launcher own schema initialization.
         self._cursor = 0
         self._thread = threading.Thread(
             target=self._run,

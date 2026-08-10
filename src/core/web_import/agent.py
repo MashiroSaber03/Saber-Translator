@@ -23,6 +23,7 @@ from src.shared.ai_providers import (
     resolve_provider_base_url_for_capability,
 )
 from src.shared.openai_helpers import create_openai_client
+from src.shared.memory_errors import is_memory_allocation_error
 
 from .prompts import get_system_prompt
 from .firecrawl_tools import FIRECRAWL_TOOLS, execute_firecrawl_tool_sync
@@ -228,6 +229,8 @@ class MangaScraperAgent:
             )
             
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             error_msg = str(e)
             emit_log('error', f"提取失败: {error_msg}")
             logger.exception("Agent 提取异常")
@@ -260,6 +263,8 @@ class MangaScraperAgent:
 
                 return self._call_llm_non_stream(messages)
             except Exception as e:
+                if is_memory_allocation_error(e):
+                    raise
                 logger.error(f"LLM 调用失败 (尝试 {attempt + 1}/{max_attempts}): {e}")
                 if attempt >= max_attempts - 1 or not self._should_retry_llm_error(e):
                     raise
@@ -497,6 +502,8 @@ class MangaScraperAgent:
                 error=f"JSON 解析失败: {e}"
             )
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.error(f"结果解析失败: {e}")
             return ExtractResult(
                 success=False,

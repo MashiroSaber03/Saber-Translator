@@ -1,9 +1,8 @@
 """Phase-0 SQLAlchemy Core metadata for the v2 fact model.
 
 The metadata intentionally encodes constraints that must be enforced by SQLite
-rather than by handler-level prechecks.  Later phases add domain repositories
-and may add tables through new migrations; they must not weaken these baseline
-invariants.
+rather than by handler-level prechecks. Incompatible schema changes require a
+clean data root and a replacement foundation; old databases are not migrated.
 """
 
 from __future__ import annotations
@@ -341,8 +340,16 @@ pages = Table(
     Column("page_style_schema_version", Integer, nullable=False, server_default="1"),
     Column("warnings_json", Text, nullable=False, server_default="[]"),
     *_timestamps(),
-    UniqueConstraint("chapter_id", "ordinal"),
-    UniqueConstraint("chapter_id", "logical_source_path"),
+    UniqueConstraint(
+        "chapter_id",
+        "ordinal",
+        name="uq_pages_chapter_id_ordinal",
+    ),
+    UniqueConstraint(
+        "chapter_id",
+        "logical_source_path",
+        name="uq_pages_chapter_id_logical_source_path",
+    ),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("source_revision >= 1", name="source_revision_positive"),
     CheckConstraint("document_revision >= 1", name="document_revision_positive"),
@@ -686,12 +693,18 @@ job_drain_acks = Table(
 job_events = Table(
     "job_events",
     metadata,
-    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column(
+        "id",
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    ),
     Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
     Column("event_type", String(64), nullable=False),
     Column("payload_json", Text, nullable=False, server_default="{}"),
     Column("payload_schema_version", Integer, nullable=False, server_default="1"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+    sqlite_autoincrement=True,
 )
 Index("ix_job_events_job_cursor", job_events.c.job_id, job_events.c.id)
 Index(
@@ -795,7 +808,7 @@ worker_leases = Table(
     "worker_leases",
     metadata,
     Column("worker_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="CASCADE"), primary_key=True),
-    Column("lease_token", String(200), nullable=False),
+    Column("token_hash", String(HASH_LENGTH), nullable=False),
     Column("heartbeat_at", DateTime(timezone=True), nullable=False),
     Column("lease_expires_at", DateTime(timezone=True), nullable=False),
 )
@@ -838,7 +851,7 @@ api_executor_leases = Table(
     "api_executor_leases",
     metadata,
     Column("api_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="CASCADE"), primary_key=True),
-    Column("lease_token", String(200), nullable=False),
+    Column("token_hash", String(HASH_LENGTH), nullable=False),
     Column("heartbeat_at", DateTime(timezone=True), nullable=False),
     Column("lease_expires_at", DateTime(timezone=True), nullable=False),
 )

@@ -66,7 +66,6 @@ from src.backend_v2.storage.schema import (
     job_font_snapshots,
     job_plugin_snapshots,
     job_steps,
-    job_step_asset_outputs,
     jobs,
     operations,
     page_assets,
@@ -500,7 +499,19 @@ class JobQueueRepository:
                         )
                     )
         except IntegrityError as exc:
-            raise JobConflict("a conflicting nonterminal job already exists") from exc
+            message = str(exc.orig)
+            conflict_markers = (
+                "uq_jobs_one_current",
+                "uq_jobs_one_nonterminal_translation_per_chapter",
+                "uq_jobs_one_nonterminal_web_commit_per_draft",
+                "jobs.chapter_id",
+                "jobs.web_import_draft_id",
+            )
+            if any(marker in message for marker in conflict_markers):
+                raise JobConflict(
+                    "a conflicting nonterminal job already exists"
+                ) from exc
+            raise
         return response
 
     def list_jobs(
@@ -686,33 +697,6 @@ class JobQueueRepository:
                     )
                 ).mappings()
             )
-            resource_rows = list(
-                connection.execute(
-                    select(
-                        job_step_asset_outputs.c.job_step_id,
-                        job_step_asset_outputs.c.role,
-                        job_step_asset_outputs.c.asset_id,
-                        assets.c.mime_type,
-                        assets.c.byte_size,
-                        assets.c.integrity_status,
-                    )
-                    .join(
-                        job_steps,
-                        job_steps.c.id
-                        == job_step_asset_outputs.c.job_step_id,
-                    )
-                    .join(
-                        job_items,
-                        job_items.c.id == job_steps.c.job_item_id,
-                    )
-                    .join(
-                        assets,
-                        assets.c.id == job_step_asset_outputs.c.asset_id,
-                    )
-                    .where(job_items.c.job_id == job_id)
-                    .order_by(job_items.c.ordinal, job_steps.c.ordinal)
-                ).mappings()
-            )
             recent_event_rows = list(
                 connection.execute(
                     select(job_events)
@@ -761,18 +745,6 @@ class JobQueueRepository:
                 "expiresAt": _iso(row["expires_at"]),
             }
             for row in artifact_rows
-        ]
-        result["resources"] = [
-            {
-                "stepId": row["job_step_id"],
-                "role": row["role"],
-                "assetId": row["asset_id"],
-                "url": f"/api/v2/assets/{row['asset_id']}",
-                "mimeType": row["mime_type"],
-                "byteSize": int(row["byte_size"]),
-                "integrityStatus": row["integrity_status"],
-            }
-            for row in resource_rows
         ]
         result["recentEvents"] = [
             self._event_dto(row) for row in reversed(recent_event_rows)
@@ -4168,14 +4140,8 @@ class JobQueueRepository:
         payload: Mapping[str, Any],
         now: datetime,
     ) -> int:
-        event_id = int(
-            connection.execute(
-                select(func.coalesce(func.max(job_events.c.id), 0) + 1)
-            ).scalar_one()
-        )
-        connection.execute(
+        result = connection.execute(
             insert(job_events).values(
-                id=event_id,
                 job_id=job_id,
                 event_type=event_type,
                 payload_json=_json(redact_sensitive_value(dict(payload))),
@@ -4183,7 +4149,7 @@ class JobQueueRepository:
                 created_at=now,
             )
         )
-        return event_id
+        return int(result.inserted_primary_key[0])
 
     @staticmethod
     def _bump_queue_revision(connection: Any, now: datetime) -> int:

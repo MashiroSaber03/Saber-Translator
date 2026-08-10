@@ -45,6 +45,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
@@ -88,8 +89,6 @@ class TransferWorkerService:
             return self._scan_container(fence, step)
         if kind == "container_import_page":
             return self._import_container_page(fence, step)
-        if kind == "container_cleanup":
-            return self._cleanup_container(fence, step)
         if kind == "export_package":
             return self._export(fence, step)
         raise ValueError(f"unsupported transfer step: {kind}")
@@ -312,22 +311,6 @@ class TransferWorkerService:
         )
         return {**checkpoint, "__already_published__": True}
 
-    def _cleanup_container(
-        self,
-        fence: AttemptFence,
-        step: Mapping[str, Any],
-    ) -> Mapping[str, Any]:
-        # Older queued jobs can still contain this step.  Container inputs are
-        # retained for the 24-hour retry window and removed by Worker
-        # maintenance, never at job completion.
-        checkpoint = {"retainedForRetry": True}
-        self.jobs.complete_step(
-            fence,
-            step_id=str(step["stepId"]),
-            checkpoint=checkpoint,
-        )
-        return {**checkpoint, "__already_published__": True}
-
     def _export(
         self,
         fence: AttemptFence,
@@ -344,65 +327,70 @@ class TransferWorkerService:
         output_path = output_dir / f"{fence.job_id}.{export_format}"
         failures: list[dict[str, object]] = []
         successful = 0
-        if export_format in {"zip", "cbz"}:
-            used_names: set[str] = set()
-            with zipfile.ZipFile(
-                output_path,
-                "w",
-                compression=zipfile.ZIP_DEFLATED,
-                allowZip64=True,
-            ) as archive:
+        try:
+            if export_format in {"zip", "cbz"}:
+                used_names: set[str] = set()
+                with zipfile.ZipFile(
+                    output_path,
+                    "w",
+                    compression=zipfile.ZIP_DEFLATED,
+                    allowZip64=True,
+                ) as archive:
+                    for entry in entries:
+                        try:
+                            path = asset_paths[str(entry["assetId"])]
+                            member = self._export_member_name(
+                                entry,
+                                used_names,
+                                extension=path.suffix.lower() or ".png",
+                            )
+                            archive.write(path, member)
+                            successful += 1
+                        except Exception as exc:
+                            if is_memory_allocation_error(exc):
+                                raise
+                            failures.append(
+                                {"pageId": entry.get("pageId"), "message": str(exc)}
+                            )
+            else:
+                import img2pdf
+
+                paths: list[str] = []
                 for entry in entries:
                     try:
                         path = asset_paths[str(entry["assetId"])]
-                        member = self._export_member_name(
-                            entry,
-                            used_names,
-                            extension=path.suffix.lower() or ".png",
-                        )
-                        archive.write(path, member)
+                        with Image.open(path) as image:
+                            image.verify()
+                        paths.append(str(path))
                         successful += 1
                     except Exception as exc:
+                        if is_memory_allocation_error(exc):
+                            raise
                         failures.append(
                             {"pageId": entry.get("pageId"), "message": str(exc)}
                         )
-        else:
-            import img2pdf
-
-            paths: list[str] = []
-            for entry in entries:
-                try:
-                    path = asset_paths[str(entry["assetId"])]
-                    with Image.open(path) as image:
-                        image.verify()
-                    paths.append(str(path))
-                    successful += 1
-                except Exception as exc:
-                    failures.append(
-                        {"pageId": entry.get("pageId"), "message": str(exc)}
-                    )
-            if paths:
-                with output_path.open("wb") as output:
-                    img2pdf.convert(*paths, outputstream=output)
-        if successful == 0:
+                if paths:
+                    with output_path.open("wb") as output:
+                        img2pdf.convert(*paths, outputstream=output)
+            if successful == 0:
+                raise RuntimeError("export could not read any frozen page asset")
+            mime = (
+                "application/pdf"
+                if export_format == "pdf"
+                else (
+                    "application/vnd.comicbook+zip"
+                    if export_format == "cbz"
+                    else "application/zip"
+                )
+            )
+            with output_path.open("rb") as source:
+                artifact = self.storage.publish_stream(
+                    source,
+                    extension=export_format,
+                    mime_type=mime,
+                )
+        finally:
             output_path.unlink(missing_ok=True)
-            raise RuntimeError("export could not read any frozen page asset")
-        mime = (
-            "application/pdf"
-            if export_format == "pdf"
-            else (
-                "application/vnd.comicbook+zip"
-                if export_format == "cbz"
-                else "application/zip"
-            )
-        )
-        with output_path.open("rb") as source:
-            artifact = self.storage.publish_stream(
-                source,
-                extension=export_format,
-                mime_type=mime,
-            )
-        output_path.unlink(missing_ok=True)
         expires = utcnow() + timedelta(hours=24)
 
         def publish(connection: Connection) -> None:

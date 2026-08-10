@@ -216,14 +216,16 @@ function openEditCharacterDialog() {
 }
 
 async function handleAddCharacter(name: string, aliases: string[], description: string) {
-  await charMgmt.addCharacter(name, aliases, description)
-  showAddCharDialog.value = false
+  if (await charMgmt.addCharacter(name, aliases, description)) {
+    showAddCharDialog.value = false
+  }
 }
 
 async function handleSaveCharacterInfo(name: string, aliases: string[]) {
   if (!selectedCharacter.value) return
-  await charMgmt.updateCharacterInfo(selectedCharacter.value, name, aliases)
-  showEditCharDialog.value = false
+  if (await charMgmt.updateCharacterInfo(selectedCharacter.value, name, aliases)) {
+    showEditCharDialog.value = false
+  }
 }
 
 async function handleDeleteCharacter() {
@@ -238,8 +240,9 @@ async function handleDeleteCharacter() {
   })
   if (!confirmed) return
 
-  await charMgmt.deleteCharacter(characterName)
-  selectedCharacter.value = null
+  if (await charMgmt.deleteCharacter(characterName)) {
+    selectedCharacter.value = null
+  }
 }
 
 async function handleToggleCharacter(enabled: boolean) {
@@ -260,19 +263,22 @@ function openEditFormDialog(form: CharacterForm) {
 
 async function handleAddForm(formName: string, description: string) {
   if (!selectedCharacter.value) return
-  await charMgmt.addForm(selectedCharacter.value, formName, description)
-  showAddFormDialog.value = false
+  if (await charMgmt.addForm(selectedCharacter.value, formName, description)) {
+    showAddFormDialog.value = false
+  }
 }
 
 async function handleSaveFormInfo(formName: string, description: string) {
   if (!selectedCharacter.value || !editingForm.value) return
-  await charMgmt.updateForm(
+  const saved = await charMgmt.updateForm(
     selectedCharacter.value,
     editingForm.value.form_id,
     formName,
     description
   )
-  showEditFormDialog.value = false
+  if (saved) {
+    showEditFormDialog.value = false
+  }
 }
 
 async function handleDeleteForm(form: CharacterForm) {

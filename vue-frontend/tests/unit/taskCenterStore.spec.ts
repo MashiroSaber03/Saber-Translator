@@ -88,7 +88,6 @@ function makeDetail(
     items: [],
     failedItems: [],
     artifacts: [],
-    resources: [],
     recentEvents: [],
     ...overrides,
   }

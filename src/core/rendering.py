@@ -17,7 +17,8 @@ except ImportError:
 
 # 导入常量和路径助手
 from src.shared import constants
-from src.shared.path_helpers import resource_path, get_font_path
+from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.path_helpers import get_font_path, resource_path
 
 # 类型提示（避免循环导入）
 if TYPE_CHECKING:
@@ -222,6 +223,8 @@ def get_cached_freetype_font(path: str) -> Optional["freetype.Face"]:
                 logger.warning(f"FreeType 字体未找到: {path}")
                 return None
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.error(f"FreeType 字体加载失败: {path} - {e}")
             return None
     
@@ -307,6 +310,8 @@ def get_char_ink_offset(char: str, font: ImageFont.FreeTypeFont) -> Tuple[float,
         return (offset_x, offset_y)
         
     except Exception as e:
+        if is_memory_allocation_error(e):
+            raise
         logger.debug(f"获取字符 '{char}' 墨水偏移时出错: {e}")
         return (0.0, 0.0)
 
@@ -401,7 +406,9 @@ def get_vertical_center_adjusted_y(char: str, font: ImageFont.FreeTypeFont,
         max_shift = line_height_approx * 0.75
         clamped_shift = max(-max_shift, min(max_shift, raw_shift))
         return current_y_char + clamped_shift
-    except Exception:
+    except Exception as error:
+        if is_memory_allocation_error(error):
+            raise
         return current_y_char
 
 
@@ -724,6 +731,8 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
                 high = mid - 1
 
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.error(f"计算字号 {mid} 时出错: {e}", exc_info=True)
             high = mid - 1
 
@@ -920,7 +929,9 @@ def render_ellipsis_block(content: str, font,
                 )
             else:
                 cropped = rotated
-        except Exception:
+        except Exception as error:
+            if is_memory_allocation_error(error):
+                raise
             cropped = rotated
 
         actual_w, actual_h = cropped.size
@@ -1166,8 +1177,9 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                 char_width = bbox[2] - bbox[0]
                 if char_width > max_char_width:
                     max_char_width = char_width
-            except:
-                pass
+            except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
         line_max_widths.append(max_char_width)
 
     current_x_col = current_x_base
@@ -1289,6 +1301,8 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                         logger.debug(f"字符 '{converted_char}' 使用回退字体: {os.path.basename(fallback_path)}")
                                         break
                                     except Exception as e:
+                                        if is_memory_allocation_error(e):
+                                            raise
                                         logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
                                         continue
                     else:
@@ -1297,6 +1311,8 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                 try:
                                     special_font = get_font(NOTOSANS_FONT_PATH, font_size)
                                 except Exception as e:
+                                    if is_memory_allocation_error(e):
+                                        raise
                                     logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
                                     special_font = font
                             if special_font is not None:
@@ -1399,6 +1415,8 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_height,
                                         cropped_rotated,
                                     )
                             except Exception as e:
+                                if is_memory_allocation_error(e):
+                                    raise
                                 logger.warning(
                                     f"旋转字符粘贴失败: {e}，回退到直接绘制"
                                 )
@@ -1554,6 +1572,8 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                                 logger.debug(f"字符 '{char}' 使用回退字体: {os.path.basename(fallback_path)}")
                                 break
                             except Exception as e:
+                                if is_memory_allocation_error(e):
+                                    raise
                                 logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
                                 continue
             else:
@@ -1563,6 +1583,8 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width,
                         try:
                             special_font = get_font(NOTOSANS_FONT_PATH, font_size)
                         except Exception as e:
+                            if is_memory_allocation_error(e):
+                                raise
                             logger.error(f"加载NotoSans字体失败: {e}，回退到普通字体")
                             special_font = font
                     

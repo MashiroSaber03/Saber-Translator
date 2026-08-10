@@ -9,6 +9,14 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 
+const { confirmProductActionMock } = vi.hoisted(() => ({
+  confirmProductActionMock: vi.fn(),
+}))
+
+vi.mock('@/composables/useProductConfirm', () => ({
+  confirmProductAction: confirmProductActionMock,
+}))
+
 const pushMock = vi.fn()
 const replaceMock = vi.fn()
 
@@ -32,6 +40,8 @@ describe('CharacterStudioView workspace shell', () => {
     setActivePinia(createPinia())
     pushMock.mockReset()
     replaceMock.mockReset()
+    confirmProductActionMock.mockReset()
+    confirmProductActionMock.mockResolvedValue(true)
   })
 
   it('uses current product copy for the missing-book empty state', () => {
@@ -109,6 +119,50 @@ describe('CharacterStudioView workspace shell', () => {
     expect(wrapper.find('.product-split-workspace').exists()).toBe(true)
     expect(wrapper.find('[data-testid="editor-scroll"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="chat-scroll"]').exists()).toBe(true)
+  })
+
+  it('requires confirmation before deleting a role document', async () => {
+    const studioStore = useCharacterStudioStore()
+    const bookshelfStore = useBookshelfStore()
+    bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
+    studioStore.loadWorkspace = vi.fn().mockResolvedValue(undefined)
+    studioStore.currentDocument = {
+      id: 'doc-delete',
+      origin: { type: 'manual', source_character: null },
+      meta: { title: '待删除角色' },
+    } as never
+    studioStore.deleteCurrentDocument = vi.fn().mockResolvedValue(undefined)
+    confirmProductActionMock.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+
+    const wrapper = mount(CharacterStudioView, {
+      props: { bookId: 'book-demo' },
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div />' },
+          CharacterStudioEditor: {
+            emits: ['delete'],
+            template: '<button class="delete-document" @click="$emit(\'delete\')">删除文档</button>',
+          },
+          CharacterStudioPreview: { template: '<div />' },
+          StudioTopbar: { template: '<div />' },
+        },
+      },
+    })
+
+    await wrapper.get('.delete-document').trigger('click')
+    await flushPromises()
+    expect(studioStore.deleteCurrentDocument).not.toHaveBeenCalled()
+
+    await wrapper.get('.delete-document').trigger('click')
+    await flushPromises()
+    expect(confirmProductActionMock).toHaveBeenCalledWith({
+      title: '删除角色文档',
+      message: '确定删除“待删除角色”吗？角色设定、聊天会话与导出记录将一并删除，无法恢复。',
+      confirmText: '删除',
+      tone: 'danger',
+    })
+    expect(studioStore.deleteCurrentDocument).toHaveBeenCalledOnce()
   })
 
   it('maps view owner colors through semantic tokens', () => {

@@ -47,6 +47,7 @@ from src.backend_v2.storage.schema import (
     job_config_snapshots,
     job_events,
     job_items,
+    job_step_asset_outputs,
     job_steps,
     jobs,
     metadata,
@@ -103,6 +104,46 @@ def _create_job(
         ],
     )
     return str(result["jobIds"][0])
+
+
+def test_job_detail_does_not_expose_internal_step_asset_checkpoints(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    asset_id = str(uuid.uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            insert(assets).values(
+                id=asset_id,
+                relative_path=f"internal/{asset_id}.png",
+                mime_type="image/png",
+                checksum="1" * 64,
+                byte_size=1,
+                width=1,
+                height=1,
+            )
+        )
+        connection.execute(
+            insert(job_step_asset_outputs).values(
+                job_step_id=str(step["stepId"]),
+                role="translated",
+                asset_id=asset_id,
+            )
+        )
+
+    assert "resources" not in repository.get_job(job_id)
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(job_step_asset_outputs.c.asset_id).where(
+                job_step_asset_outputs.c.job_step_id == str(step["stepId"]),
+                job_step_asset_outputs.c.role == "translated",
+            )
+        ).scalar_one() == asset_id
 
 
 def test_history_list_limit_counts_batches_not_member_jobs(job_platform) -> None:
@@ -428,6 +469,32 @@ def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
             .where(job_items.c.job_id == job_id)
             .order_by(job_steps.c.ordinal)
         ).scalars().all() == ["completed", "completed"]
+
+
+def test_worker_loop_retries_sqlite_lock_during_queue_claim() -> None:
+    stop = threading.Event()
+
+    class BusyOnceRepository:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def claim_next(self, *, worker_epoch_id: str):
+            assert worker_epoch_id == "worker"
+            self.calls += 1
+            if self.calls == 1:
+                raise sqlite3.OperationalError("database is locked")
+            stop.set()
+            return None
+
+    repository = BusyOnceRepository()
+    JobWorkerLoop(
+        repository,  # type: ignore[arg-type]
+        worker_epoch_id="worker",
+        handlers={},
+        idle_poll_seconds=0.01,
+    ).run(stop)
+
+    assert repository.calls == 2
 
 
 def test_worker_loop_fails_instead_of_spinning_on_unregistered_step(
@@ -918,6 +985,15 @@ def test_interrupted_job_is_listed_only_in_history(job_platform) -> None:
     ] == [job_id]
 
 
+def test_create_translation_reports_a_real_nonterminal_conflict(job_platform) -> None:
+    _engine, repository, _book, chapter, _worker_epoch_id = job_platform
+    chapter_id = str(chapter["id"])
+    _create_job(repository, kind="translation", chapter_id=chapter_id)
+
+    with pytest.raises(JobConflict, match="conflicting nonterminal job"):
+        _create_job(repository, kind="translation", chapter_id=chapter_id)
+
+
 def test_clear_history_deletes_retry_children_before_sources_and_protects_live_lineage(
     job_platform,
 ) -> None:
@@ -955,6 +1031,22 @@ def test_clear_history_deletes_retry_children_before_sources_and_protects_live_l
     assert repository.clear_history() == 2
     with pytest.raises(LookupError):
         repository.get_job(source_id)
+
+
+def test_clear_history_does_not_reuse_event_cursor(job_platform) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    first_cursor = repository.latest_event_id()
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(status="completed", queue_rank=None)
+        )
+
+    assert repository.clear_history() == 1
+    _create_job(repository)
+    assert repository.latest_event_id() > first_cursor
 
 
 def test_history_retains_latest_200_batches_and_cascades_old_members(

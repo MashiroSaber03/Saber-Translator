@@ -316,9 +316,9 @@ describe('CharacterManagementPanel', () => {
 
   it('uses product confirmation for destructive character form actions', async () => {
     const characterManagement = {
-      deleteCharacter: vi.fn().mockResolvedValue(undefined),
-      deleteForm: vi.fn().mockResolvedValue(undefined),
-      deleteFormImage: vi.fn().mockResolvedValue(undefined),
+      deleteCharacter: vi.fn().mockResolvedValue(true),
+      deleteForm: vi.fn().mockResolvedValue(true),
+      deleteFormImage: vi.fn().mockResolvedValue(true),
     }
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = mount(CharacterManagementPanel, {
@@ -372,6 +372,50 @@ describe('CharacterManagementPanel', () => {
     expect(characterManagement.deleteForm).toHaveBeenCalledWith('主角', 'form-1')
     expect(characterManagement.deleteFormImage).toHaveBeenCalledWith('主角', 'form-1')
     expect(characterManagement.deleteCharacter).toHaveBeenCalledWith('主角')
+  })
+
+  it('keeps the character dialog open when persistence fails', async () => {
+    const characterManagement = {
+      addCharacter: vi.fn().mockResolvedValue(false),
+    }
+    const addCharacterDialogStub = defineComponent({
+      emits: ['close', 'add'],
+      setup(_props, { emit }) {
+        return () => h('button', {
+          type: 'button',
+          class: 'submit-character',
+          onClick: () => emit('add', '失败角色', [], '描述'),
+        }, '确认添加')
+      },
+    })
+    const state = createState()
+    state.characters.value = []
+    const wrapper = mount(CharacterManagementPanel, {
+      props: {
+        bookId: 'book-1',
+        characterManagement,
+        state,
+      },
+      global: {
+        stubs: {
+          CharacterDetailPanel: characterDetailPanelStub,
+          AddCharacterDialog: addCharacterDialogStub,
+          EditCharacterDialog: true,
+          AddFormDialog: true,
+          EditFormDialog: true,
+          OrthographicDialog: true,
+        },
+      },
+    })
+
+    const openButton = wrapper.findAll('button').find(button => button.text().includes('新增角色'))
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    await wrapper.get('.submit-character').trigger('click')
+    await flushPromises()
+
+    expect(characterManagement.addCharacter).toHaveBeenCalledWith('失败角色', [], '描述')
+    expect(wrapper.find('.submit-character').exists()).toBe(true)
   })
 
   it('keeps character management panel hooks under the panel owner', () => {

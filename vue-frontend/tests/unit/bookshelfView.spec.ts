@@ -1,10 +1,11 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BookshelfView from '@/views/BookshelfView.vue'
+import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { useSettingsStore } from '@/stores/settings'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -207,5 +208,23 @@ describe('BookshelfView', () => {
     expect(source).toContain('<ProductCardGrid')
     expect(source).not.toContain('class="books-grid"')
     expect(source).not.toContain('grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))')
+  })
+
+  it('disables batch translation when selected books contain no chapters', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const store = useBookshelfStore()
+    store.books = [{ id: 'empty-book', title: 'Empty', chapterCount: 0 }]
+    store.enterBatchMode()
+    store.toggleBookSelection('empty-book')
+    await nextTick()
+
+    const translateButton = wrapper.findAll('button')
+      .find(button => button.text().includes('翻译全部章节'))
+    expect(translateButton?.attributes('disabled')).toBeDefined()
+
+    store.books = [{ id: 'empty-book', title: 'Empty', chapterCount: 1 }]
+    await nextTick()
+    expect(translateButton?.attributes('disabled')).toBeUndefined()
   })
 })

@@ -37,9 +37,25 @@ describe('useCharacterManagement', () => {
     const management = useCharacterManagement(ref('book-1'), state as never)
     const file = new File(['demo'], 'form.png', { type: 'image/png' })
 
-    await management.uploadFormImage('Saber', 'form_1', file)
+    const succeeded = await management.uploadFormImage('Saber', 'form_1', file)
 
+    expect(succeeded).toBe(true)
     expect(uploadFormImageMock).toHaveBeenCalledTimes(1)
     expect(uploadFormImageMock).toHaveBeenCalledWith('book-1', 'Saber', 'form_1', file)
+  })
+
+  it('returns failure after reporting a rejected mutation', async () => {
+    uploadFormImageMock.mockRejectedValueOnce(new Error('upload failed'))
+    const state = {
+      characters: ref([]),
+      imageRefreshKey: ref(0),
+      initializeData: vi.fn().mockResolvedValue(undefined),
+      showMessage: vi.fn(),
+    }
+    const management = useCharacterManagement(ref('book-1'), state as never)
+    const file = new File(['demo'], 'form.png', { type: 'image/png' })
+
+    await expect(management.uploadFormImage('Saber', 'form_1', file)).resolves.toBe(false)
+    expect(state.showMessage).toHaveBeenCalledWith('上传失败: upload failed', 'error')
   })
 })

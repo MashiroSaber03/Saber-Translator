@@ -52,6 +52,10 @@ const isEmpty = computed(() => (
   && bookshelfStore.selectedTagNames.length === 0
 ))
 const selectedBookCount = computed(() => bookshelfStore.selectedBookIds.size)
+const hasSelectedChapters = computed(() => bookshelfStore.books.some(book => (
+  bookshelfStore.selectedBookIds.has(book.id)
+  && (book.chapterCount ?? book.chapters?.length ?? 0) > 0
+)))
 const sortValue = computed(() => `${bookshelfStore.sortBy}:${bookshelfStore.sortOrder}`)
 const sortOptions = [
   { label: '更新时间（新→旧）', value: 'updatedAt:desc' },
@@ -338,7 +342,7 @@ async function applyBatchTags() {
         <span class="bookshelf-batch-bar__count">已选择 {{ selectedBookCount }} 本</span>
         <UiButton
           variant="primary"
-          :disabled="selectedBookCount === 0 || batchBusy"
+          :disabled="!hasSelectedChapters || batchBusy"
           @click="translateSelectedBooks"
         >
           翻译全部章节

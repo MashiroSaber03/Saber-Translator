@@ -595,10 +595,9 @@ class LauncherSupervisor:
                 LOGGER.info("已取得数据目录单实例锁")
                 storage = initialize_database(config.data_root)
                 LOGGER.info(
-                    "数据库初始化与完整性检查完成：revision=%s，新建=%s，升级=%s",
+                    "数据库初始化与完整性检查完成：revision=%s，新建=%s",
                     storage.schema_revision,
                     "是" if storage.created else "否",
-                    "是" if storage.upgraded else "否",
                 )
                 engine = create_sqlite_engine(database_path_for(config.data_root))
                 repository = ProcessEpochRepository(engine)

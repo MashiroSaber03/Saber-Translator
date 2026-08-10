@@ -191,6 +191,8 @@ describe('SettingsSidebar page selection workflow', () => {
     expect(source).not.toContain('variant="toolbar"')
     expect(source).not.toContain('page-selection-open-btn')
     expect(source).not.toMatch(/\.page-selection-open-btn\s*\{[\s\S]*?(display|justify-content|padding)/)
+    expect(source).toContain('--product-status-banner-flex-direction: column')
+    expect(source).toContain('--product-status-banner-align-items: stretch')
   })
 
   it('keeps page-selection section hooks under the page-selection owner', () => {

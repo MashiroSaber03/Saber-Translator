@@ -7,16 +7,20 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtNetwork import QNetworkReply
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from src.backend_v2.desktop.entrypoint import DesktopController
+from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
 from src.backend_v2.desktop.settings import DesktopSettings, DesktopSettingsStore
 from src.backend_v2.desktop.task_client import TaskApiClient
 from src.backend_v2.desktop.window import SettingsPage, TaskCenterPage
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ICON = PROJECT_ROOT / "src" / "backend_v2" / "desktop" / "assets" / "app-icon.png"
+ASSET_ROOT = PROJECT_ROOT / "src" / "backend_v2" / "desktop" / "assets"
+NATIVE_ICON = ASSET_ROOT / ("app-icon.ico" if os.name == "nt" else "app-icon.png")
+BRAND_LOGO = ASSET_ROOT / "app-icon.png"
 
 
 def _app() -> QApplication:
@@ -70,17 +74,75 @@ def test_settings_emit_immediately_without_a_save_button(tmp_path) -> None:
     assert "保存设置" not in [button.text() for button in page.findChildren(QPushButton)]
 
 
-def test_backend_startup_controls_lock_while_service_is_running(tmp_path) -> None:
+def test_backend_startup_controls_remain_editable_while_service_is_running(
+    tmp_path,
+) -> None:
     _app()
     page = SettingsPage(DesktopSettings(), tmp_path)
 
     page.set_backend_running(True)
 
-    assert not page.port.isEnabled()
-    assert not page.allow_lan.isEnabled()
-    assert not page.log_level.isEnabled()
+    assert page.port.isEnabled()
+    assert page.allow_lan.isEnabled()
+    assert page.log_level.isEnabled()
     assert page.open_browser.isEnabled()
     assert page.pet_enabled.isEnabled()
+
+
+def test_running_backend_restarts_after_startup_setting_changes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = _app()
+    controller = DesktopController(
+        app,
+        data_root=tmp_path,
+        settings_store=DesktopSettingsStore(tmp_path),
+        settings=DesktopSettings(),
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
+    )
+    restarts: list[bool] = []
+    monkeypatch.setattr(controller, "restart_backend", lambda: restarts.append(True))
+    controller._status = LauncherStatus(LauncherState.RUNNING, "运行中")
+
+    controller.apply_settings(controller.settings.updated(port=5112))
+
+    assert controller.settings.port == 5112
+    assert restarts == [True]
+    assert controller.window.settings.auto_save_status.text() == (
+        "已自动保存 · 正在重启后端"
+    )
+    controller._pet_timer.stop()
+    controller.tray.hide()
+    controller.pet.close()
+    controller.window.allow_close()
+    controller.deleteLater()
+    app.processEvents()
+
+
+def test_task_list_failure_releases_refresh_gate() -> None:
+    _app()
+    client = TaskApiClient()
+    client._running = True
+    client._base_url = "http://127.0.0.1:5000"
+    client._refresh_inflight = True
+
+    class FailedReply:
+        def error(self):
+            return QNetworkReply.NetworkError.ConnectionRefusedError
+
+        def errorString(self) -> str:
+            return "connection refused"
+
+        def deleteLater(self) -> None:
+            pass
+
+    client._finish_list("queue", FailedReply(), client._generation)
+    client._finish_list("history", FailedReply(), client._generation)
+
+    assert client._refresh_inflight is False
+    client.stop()
 
 
 def test_controller_persists_and_applies_settings_as_the_control_changes(tmp_path) -> None:
@@ -91,7 +153,8 @@ def test_controller_persists_and_applies_settings_as_the_control_changes(tmp_pat
         data_root=tmp_path,
         settings_store=store,
         settings=DesktopSettings(),
-        app_icon_path=APP_ICON,
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
     )
 
     controller.window.settings.port.setValue(5111)
@@ -118,16 +181,17 @@ def test_controller_uses_one_rounded_logo_for_window_tray_and_sidebar(tmp_path) 
         data_root=tmp_path,
         settings_store=DesktopSettingsStore(tmp_path),
         settings=DesktopSettings(),
-        app_icon_path=APP_ICON,
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
     )
 
-    expected_icon = QIcon(str(APP_ICON)).pixmap(64, 64).toImage()
+    expected_icon = QIcon(str(NATIVE_ICON)).pixmap(64, 64).toImage()
     assert controller.window.windowIcon().pixmap(64, 64).toImage() == expected_icon
     assert controller.tray.icon().pixmap(64, 64).toImage() == expected_icon
 
     logo = controller.window.sidebar.findChild(QLabel, "brandLogo")
     assert logo is not None
-    expected_logo = QPixmap(str(APP_ICON)).scaled(
+    expected_logo = QPixmap(str(BRAND_LOGO)).scaled(
         38,
         38,
         Qt.AspectRatioMode.KeepAspectRatioByExpanding,

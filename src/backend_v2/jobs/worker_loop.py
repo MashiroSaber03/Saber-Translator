@@ -161,6 +161,14 @@ class JobWorkerLoop:
                 LOGGER.error("Worker epoch 已失效，停止领取任务")
                 stop_event.set()
                 return
+            except Exception as exc:
+                if not is_sqlite_busy_error(exc):
+                    raise
+                LOGGER.warning(
+                    "持久任务调度器遇到 SQLite 写锁竞争，将继续轮询"
+                )
+                stop_event.wait(self.idle_poll_seconds)
+                continue
             if fence is None:
                 stop_event.wait(self.idle_poll_seconds)
                 continue

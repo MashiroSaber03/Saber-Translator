@@ -6,6 +6,8 @@ import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
 import uuid
 import zipfile
 
@@ -45,7 +47,10 @@ from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.transfer.commands import TransferCommandService
 from src.backend_v2.web_import.commands import WebImportCommandService
-from src.backend_v2.web_import.worker import WebImportWorkerService
+from src.backend_v2.web_import.worker import (
+    WebImportWorkerService,
+    _gallery_dl_urls,
+)
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.worker.maintenance import WorkerMaintenance
 from src.core.web_import.agent import MangaScraperAgent
@@ -92,6 +97,24 @@ def test_web_agent_result_parser_accepts_only_the_current_schema() -> None:
         "https://example.test/chapter",
     )
     assert not retired.success
+
+
+def test_gallery_dl_memory_failure_is_not_treated_as_no_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeJob:
+        def __init__(self, _url: str) -> None:
+            pass
+
+        def run(self) -> None:
+            raise MemoryError("native allocation failed")
+
+    module = ModuleType("gallery_dl")
+    module.job = SimpleNamespace(Job=FakeJob)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "gallery_dl", module)
+
+    with pytest.raises(MemoryError, match="allocation failed"):
+        _gallery_dl_urls("https://example.test/chapter", max_candidates=10)
 
 
 def _run_job(

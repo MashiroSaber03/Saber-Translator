@@ -25,8 +25,6 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
-from src.shared.ai_transport import RETRYABLE_EXCEPTIONS, RETRYABLE_STATUS_CODES
-from src.shared.http_config import build_httpx_kwargs
 from src.shared.ai_providers import (
     IMAGE_GEN_CAPABILITY,
     normalize_provider_id,
@@ -34,6 +32,9 @@ from src.shared.ai_providers import (
     provider_supports_capability,
     resolve_provider_base_url_for_capability,
 )
+from src.shared.ai_transport import RETRYABLE_EXCEPTIONS, RETRYABLE_STATUS_CODES
+from src.shared.http_config import build_httpx_kwargs
+from src.shared.memory_errors import is_memory_allocation_error
 
 from ..config_models import ImageGenConfig
 from .base_client import BaseAPIClient
@@ -279,6 +280,8 @@ class ImageGenClient(BaseAPIClient):
                 "mime": mime,
             }
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             logger.error("编码参考图失败: %s", exc)
             return None
 
@@ -328,12 +331,16 @@ class ImageGenClient(BaseAPIClient):
                 try:
                     font = ImageFont.truetype(font_path, font_size)
                     break
-                except Exception:
+                except Exception as exc:
+                    if is_memory_allocation_error(exc):
+                        raise
                     continue
             if font is None:
                 try:
                     font = ImageFont.truetype("arial.ttf", font_size)
-                except Exception:
+                except Exception as exc:
+                    if is_memory_allocation_error(exc):
+                        raise
                     font = ImageFont.load_default()
 
             bbox = draw.textbbox((0, 0), character_name, font=font)
@@ -349,6 +356,8 @@ class ImageGenClient(BaseAPIClient):
             new_img.save(buffer, format=image_format, quality=95)
             return buffer.getvalue(), mime
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             logger.warning("添加角色标签失败: %s，将使用原图", exc)
             return None
 

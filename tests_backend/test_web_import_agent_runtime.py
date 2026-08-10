@@ -66,6 +66,17 @@ class WebImportAgentRuntimeTests(unittest.TestCase):
         self.assertIs(result, final_message)
         self.assertEqual(create_mock.call_count, 3)
 
+    def test_call_llm_does_not_retry_memory_failure(self) -> None:
+        agent = self._build_agent(maxRetries=3, useStream=False)
+        create_mock = mock.Mock(side_effect=MemoryError("native allocation failed"))
+        agent.client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create_mock))
+        )
+
+        with self.assertRaisesRegex(MemoryError, "allocation failed"):
+            agent._call_llm([{"role": "user", "content": "hello"}])
+        self.assertEqual(create_mock.call_count, 1)
+
     def test_call_llm_stream_mode_can_reconstruct_tool_calls(self) -> None:
         agent = self._build_agent(useStream=True)
 

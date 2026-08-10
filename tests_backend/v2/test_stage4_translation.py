@@ -2473,6 +2473,8 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
     assert standard["ocr"]["ai_vision_ocr_prompt"] == "provider ocr prompt"
     assert standard["ocr"]["ai_vision_prompt_mode"] == "json"
     assert standard["ocr"]["ai_vision_min_image_size"] == 96
+    assert "providerRevision" not in standard["settingsSnapshot"]
+    assert standard["settingsSnapshot"]["providerRevisions"]
     assert hq["translation"]["model_name"] == "provider-hq-model"
     assert hq["translation"]["prompt_content"] == "provider hq prompt"
     assert hq["translation"]["batchSize"] == 7

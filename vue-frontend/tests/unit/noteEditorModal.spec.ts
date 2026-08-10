@@ -10,7 +10,6 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import ProductDetailPanel from '@/components/product/ProductDetailPanel.vue'
 import ProductDetailSection from '@/components/product/ProductDetailSection.vue'
 import UiField from '@/components/ui/UiField.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import type { NoteData } from '@/stores/insightStore'
 
@@ -39,11 +38,6 @@ describe('NoteEditorModal', () => {
         notePageNum: null,
         noteTags: '',
         noteTitle: '问答笔记',
-        noteType: 'qa',
-        noteTypeOptions: [
-          { label: '问答笔记', value: 'qa' },
-          { label: '文本笔记', value: 'text' },
-        ],
         visible: true,
       },
       global: {
@@ -83,11 +77,6 @@ describe('NoteEditorModal', () => {
         notePageNum: 8,
         noteTags: '剧情',
         noteTitle: '伏笔',
-        noteType: 'text',
-        noteTypeOptions: [
-          { label: '问答笔记', value: 'qa' },
-          { label: '文本笔记', value: 'text' },
-        ],
         visible: true,
       },
       global: {
@@ -103,10 +92,8 @@ describe('NoteEditorModal', () => {
       'settings',
       'settings',
       'settings',
-      'settings',
     ])
     expect(fields.map(field => field.props('label'))).toEqual([
-      '笔记类型',
       '标题',
       '内容',
       '关联页码',
@@ -114,18 +101,13 @@ describe('NoteEditorModal', () => {
     ])
     expect(fields.map(field => field.props('required'))).toEqual([
       false,
-      false,
       true,
       false,
       false,
     ])
 
-    const noteTypeSelect = wrapper.getComponent(UiSelect)
-    expect(noteTypeSelect.props('modelValue')).toBe('text')
-    expect(noteTypeSelect.props('options')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'qa' }),
-      expect.objectContaining({ value: 'text' }),
-    ]))
+    expect(wrapper.text()).not.toContain('笔记类型')
+    expect(wrapper.text()).not.toContain('问答笔记')
     expect(wrapper.getComponent(UiTextarea).props('variant')).toBe('panel')
   })
 
@@ -137,11 +119,6 @@ describe('NoteEditorModal', () => {
         notePageNum: 8,
         noteTags: '剧情',
         noteTitle: '伏笔',
-        noteType: 'text',
-        noteTypeOptions: [
-          { label: '问答笔记', value: 'qa' },
-          { label: '文本笔记', value: 'text' },
-        ],
         visible: true,
       },
       global: {

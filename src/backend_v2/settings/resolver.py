@@ -443,7 +443,6 @@ class SettingsResolver:
                 "translationConstraintRevision": (
                     int(constraint_row["revision"])
                 ),
-                "providerRevision": next(iter(provider_revisions.values()), 0),
                 "providerRevisions": provider_revisions,
             },
         }

@@ -15,17 +15,11 @@ const noteFilterOptions: Array<{ label: string; value: NoteType | 'all' }> = [
   { label: '问答笔记', value: 'qa' },
 ]
 
-const noteTypeOptions: Array<{ label: string; value: NoteType }> = [
-  { label: '文本笔记', value: 'text' },
-  { label: '问答笔记', value: 'qa' },
-]
-
 const insightStore = useInsightStore()
 const showNoteModal = ref(false)
 const editingNote = ref<NoteData | null>(null)
 const newNoteTitle = ref('')
 const newNoteContent = ref('')
-const newNoteType = ref<NoteType>('text')
 const newNotePageNum = ref<number | null>(null)
 const newNoteTags = ref('')
 
@@ -38,7 +32,6 @@ const noteTypeFilter = computed({
 function resetDraft(): void {
   newNoteTitle.value = ''
   newNoteContent.value = ''
-  newNoteType.value = 'text'
   newNotePageNum.value = insightStore.selectedPageNum
   newNoteTags.value = ''
 }
@@ -55,7 +48,6 @@ async function openEditModal(note: NoteData): Promise<void> {
   editingNote.value = detail
   newNoteTitle.value = detail.title || ''
   newNoteContent.value = detail.content
-  newNoteType.value = detail.type
   newNotePageNum.value = detail.pageNum || null
   newNoteTags.value = (detail.tags || []).join(', ')
   showNoteModal.value = true
@@ -81,7 +73,7 @@ async function saveNote(): Promise<void> {
   const notePayload = {
     title: newNoteTitle.value || undefined,
     content: newNoteContent.value,
-    type: newNoteType.value,
+    type: editingNote.value?.type ?? 'text',
     pageNum: newNotePageNum.value || undefined,
     tags: tags.length > 0 ? tags : undefined,
   }
@@ -151,10 +143,8 @@ function goToPage(pageNum: number): void {
     <NoteEditorModal
       :visible="showNoteModal"
       :editing-note="editingNote"
-      :note-type-options="noteTypeOptions"
       v-model:note-title="newNoteTitle"
       v-model:note-content="newNoteContent"
-      v-model:note-type="newNoteType"
       v-model:note-page-num="newNotePageNum"
       v-model:note-tags="newNoteTags"
       @close="closeNoteModal"

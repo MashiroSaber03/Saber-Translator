@@ -753,6 +753,71 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
         )
 
 
+def test_continue_plugin_cannot_swallow_memory_failure(plugin_platform) -> None:
+    data_root, engine = plugin_platform
+    PluginRegistry(data_root=data_root, engine=engine).import_archive(
+        data=_plugin_archive(
+            plugin_id="memory_failure_v3",
+            hooks=["before_translate"],
+            failure_policy="continue",
+            source=(
+                "class Plugin:\n"
+                "    def before_translate(self, context, payload):\n"
+                "        raise MemoryError('native allocation failed')\n"
+            ),
+        ),
+        base_revision=0,
+        idempotency_key="memory-failure-v1",
+    )
+    jobs = JobQueueRepository(engine)
+    jobs.create_batch(
+        kind="export",
+        display_name="memory failure plugin",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"mode": "standard"},
+                items=(
+                    JobItemSpec(
+                        page_id=None,
+                        step_kinds=("export_package",),
+                    ),
+                ),
+                plugin_snapshots=_enabled_snapshots(engine),
+            )
+        ],
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(
+            role="worker",
+            epoch_id=epoch_id,
+            token="worker-token",
+            pid=1237,
+        )
+    )
+    fence = jobs.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    runtime = PluginJobRuntime(
+        data_root=data_root,
+        engine=engine,
+        repository=jobs,
+    )
+    page_id = str(uuid.uuid4())
+    with pytest.raises(MemoryError, match="allocation failed"):
+        runtime.run_atomic(
+            fence,
+            phase="before",
+            step="translate",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "originalTexts": ["source"],
+                "translationConfig": {},
+            },
+        )
+
+
 def test_worker_plugin_lifecycle_is_job_once_and_pipeline_once_per_page(
     plugin_platform,
 ) -> None:

@@ -10,7 +10,13 @@ from typing import List, Dict, Optional
 
 from PIL import Image
 
+from src.shared.ai_providers import (
+    VLM_CAPABILITY,
+    normalize_provider_id,
+    resolve_provider_base_url_for_capability,
+)
 from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
+from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.openai_execution import (
     OpenAICompatibleAsyncExecutor,
     OpenAICompatibleBusinessRetryableError,
@@ -18,11 +24,6 @@ from src.shared.openai_execution import (
     extract_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
-from src.shared.ai_providers import (
-    VLM_CAPABILITY,
-    normalize_provider_id,
-    resolve_provider_base_url_for_capability,
-)
 
 from .config_models import (
     VLMConfig,
@@ -64,6 +65,8 @@ def resize_image_if_needed(image_bytes: bytes, max_size: int) -> bytes:
 
         return compressed_bytes
     except Exception as e:
+        if is_memory_allocation_error(e):
+            raise
         logger.warning(f"图片压缩失败，使用原图: {e}")
         return image_bytes
 

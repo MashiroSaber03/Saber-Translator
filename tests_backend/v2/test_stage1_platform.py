@@ -99,10 +99,9 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
     first = initialize_database(data_root)
-    assert first.schema_revision == "v2_foundation_20260801"
+    assert first.schema_revision == "v2_foundation_20260810"
     assert first.created is True
-    assert first.upgraded is False
-    assert schema_smoke_test(first.database_path) == "v2_foundation_20260801"
+    assert schema_smoke_test(first.database_path) == "v2_foundation_20260810"
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:
@@ -135,21 +134,8 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
         for font in discover_bundled_fonts()
     }
 
-    # Repair databases created by the first backend-first font catalog, which
-    # exposed a synthetic label instead of the real default resource name.
-    engine = create_sqlite_engine(first.database_path)
-    with engine.begin() as connection:
-        connection.execute(
-            update(fonts)
-            .where(fonts.c.builtin_key == "default")
-            .values(display_name="默认字体")
-        )
-    engine.dispose()
-
     second = initialize_database(data_root)
     assert second.created is False
-    assert second.upgraded is False
-    assert not list((data_root / "runtime").glob("pre-upgrade-*.sqlite3"))
 
     engine = create_sqlite_engine(second.database_path)
     try:
@@ -161,7 +147,29 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
         engine.dispose()
 
 
-@pytest.mark.parametrize("retired_revision", [None, "0017"])
+def test_storage_initialization_rejects_conflicting_builtin_font_metadata(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    initialized = initialize_database(data_root)
+    engine = create_sqlite_engine(initialized.database_path)
+    with engine.begin() as connection:
+        connection.execute(
+            update(fonts)
+            .where(fonts.c.builtin_key == "default")
+            .values(display_name="默认字体")
+        )
+    engine.dispose()
+
+    with pytest.raises(RuntimeError, match="display name mismatch"):
+        initialize_database(data_root)
+
+
+@pytest.mark.parametrize(
+    "retired_revision",
+    [None, "0017", "v2_foundation_20260801"],
+)
 def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
     tmp_path: Path,
     retired_revision: str | None,
@@ -188,7 +196,6 @@ def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
         assert connection.execute("SELECT value FROM sentinel").fetchall() == [
             ("untouched",)
         ]
-    assert not list((data_root / "runtime").glob("pre-upgrade-*.sqlite3"))
 
 
 def test_storage_initialization_rejects_extra_nonformal_tables(
@@ -595,12 +602,12 @@ def test_launcher_epoch_tokens_are_never_persisted_in_plaintext(platform) -> Non
             )
         }
         worker_token = connection.execute(
-            select(worker_leases.c.lease_token).where(
+            select(worker_leases.c.token_hash).where(
                 worker_leases.c.worker_epoch_id == "worker-secret-epoch"
             )
         ).scalar_one()
         api_token = connection.execute(
-            select(api_executor_leases.c.lease_token).where(
+            select(api_executor_leases.c.token_hash).where(
                 api_executor_leases.c.api_epoch_id == "api-secret-epoch"
             )
         ).scalar_one()

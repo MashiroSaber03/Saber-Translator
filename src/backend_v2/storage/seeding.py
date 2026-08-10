@@ -108,7 +108,7 @@ def seed_system_records(engine: Engine) -> None:
                 )
 
         # Runtime enablement is a process-lifetime override.  The Launcher is
-        # the sole migration/seeding owner, so reset it once before API and
+        # the sole initialization/seeding owner, so reset it once before API and
         # Worker are spawned; an API child restart must not rewrite this state.
         connection.execute(
             update(plugins).values(
@@ -124,6 +124,9 @@ def seed_system_records(engine: Engine) -> None:
             )
         )
 
+        bundled_fonts = {
+            font.builtin_key: font for font in discover_bundled_fonts()
+        }
         existing_builtin_fonts = {
             str(row["builtin_key"]): row
             for row in connection.execute(
@@ -134,7 +137,13 @@ def seed_system_records(engine: Engine) -> None:
                 ).where(fonts.c.kind == "builtin")
             ).mappings()
         }
-        for bundled_font in discover_bundled_fonts():
+        unexpected_builtin_keys = existing_builtin_fonts.keys() - bundled_fonts.keys()
+        if unexpected_builtin_keys:
+            raise RuntimeError(
+                "bundled font catalog contains unsupported keys: "
+                f"{sorted(unexpected_builtin_keys)}"
+            )
+        for bundled_font in bundled_fonts.values():
             existing = existing_builtin_fonts.get(bundled_font.builtin_key)
             if existing is None:
                 connection.execute(
@@ -146,20 +155,15 @@ def seed_system_records(engine: Engine) -> None:
                     )
                 )
                 continue
-            existing_id = str(existing["id"])
-            if (
-                bundled_font.builtin_key == "default"
-                and existing_id != bundled_font.id
-            ):
+            if str(existing["id"]) != bundled_font.id:
                 raise RuntimeError(
                     "bundled font catalog id mismatch for "
                     f"{bundled_font.builtin_key}"
                 )
             if str(existing["display_name"]) != bundled_font.display_name:
-                connection.execute(
-                    update(fonts)
-                    .where(fonts.c.id == existing_id)
-                    .values(display_name=bundled_font.display_name)
+                raise RuntimeError(
+                    "bundled font catalog display name mismatch for "
+                    f"{bundled_font.builtin_key}"
                 )
 
         existing_factory_types = set(

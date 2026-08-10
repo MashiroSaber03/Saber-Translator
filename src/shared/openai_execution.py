@@ -18,6 +18,7 @@ from src.shared.openai_options import (
     clone_openai_compatible_options,
 )
 from src.shared.openai_rate_limits import build_openai_rpm_service_name
+from src.shared.memory_errors import is_memory_allocation_error
 
 if TYPE_CHECKING:
     from src.shared.ai_transport import (
@@ -288,12 +289,16 @@ class OpenAICompatibleSyncExecutor:
                     invocation=invocation,
                 )
             except OpenAICompatibleBusinessRetryableError as error:
+                if is_memory_allocation_error(error):
+                    raise
                 last_error = error
                 if attempt >= total_attempts - 1:
                     break
                 self._log_business_retry(effective_logger, invocation, attempt, total_attempts, error)
                 time.sleep(1)
             except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
                 if not _is_empty_content_error(error):
                     raise
                 last_error = error
@@ -386,6 +391,8 @@ class OpenAICompatibleAsyncExecutor:
                     invocation=invocation,
                 )
             except OpenAICompatibleBusinessRetryableError as error:
+                if is_memory_allocation_error(error):
+                    raise
                 last_error = error
                 if attempt >= total_attempts - 1:
                     break
@@ -398,6 +405,8 @@ class OpenAICompatibleAsyncExecutor:
                 )
                 await asyncio.sleep(1)
             except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
                 if not _is_empty_content_error(error):
                     raise
                 last_error = error

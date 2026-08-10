@@ -120,6 +120,8 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 
 .product-segmented-tabs__tab {
   position: var(--product-segmented-tabs-tab-position, static);
+  display: inline-flex;
+  align-items: center;
   flex: var(--product-segmented-tabs-tab-flex, 1 1 0);
   justify-content: center;
   min-width: var(--product-segmented-tabs-tab-min-width, max-content);

@@ -10,9 +10,8 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import type { NoteData, NoteType } from '@/types/insight'
+import type { NoteData } from '@/types/insight'
 
 const props = defineProps<{
   editingNote: NoteData | null
@@ -20,8 +19,6 @@ const props = defineProps<{
   notePageNum: number | null
   noteTags: string
   noteTitle: string
-  noteType: NoteType
-  noteTypeOptions: Array<{ label: string; value: NoteType }>
   visible: boolean
 }>()
 
@@ -33,7 +30,6 @@ const emit = defineEmits<{
   (event: 'update:notePageNum', value: number | null): void
   (event: 'update:noteTags', value: string): void
   (event: 'update:noteTitle', value: string): void
-  (event: 'update:noteType', value: NoteType): void
 }>()
 
 const noteTitleModel = computed({
@@ -44,11 +40,6 @@ const noteTitleModel = computed({
 const noteContentModel = computed({
   get: () => props.noteContent,
   set: value => emit('update:noteContent', value),
-})
-
-const noteTypeModel = computed({
-  get: () => props.noteType,
-  set: value => emit('update:noteType', value),
 })
 
 const notePageNumModel = computed({
@@ -136,17 +127,6 @@ function showCitationPage(id: string | number): void {
       </template>
 
       <template v-else>
-        <UiField
-          variant="settings"
-          label="笔记类型"
-        >
-          <UiSelect
-            :model-value="noteTypeModel"
-            :options="noteTypeOptions"
-            @change="emit('update:noteType', $event as NoteType)"
-          />
-        </UiField>
-
         <UiField
           variant="settings"
           label="标题"

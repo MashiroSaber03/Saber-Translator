@@ -172,7 +172,7 @@ class ResizeZone(QWidget):
 class Sidebar(QFrame):
     page_selected = Signal(int, str)
 
-    def __init__(self, app_icon_path: Path) -> None:
+    def __init__(self, brand_logo_path: Path) -> None:
         super().__init__()
         self.setObjectName("sidebar")
         self.setFixedWidth(172)
@@ -182,7 +182,7 @@ class Sidebar(QFrame):
         brand = QHBoxLayout()
         logo = QLabel()
         logo.setObjectName("brandLogo")
-        pixmap = QPixmap(str(app_icon_path))
+        pixmap = QPixmap(str(brand_logo_path))
         logo.setPixmap(
             pixmap.scaled(
                 38,
@@ -647,7 +647,7 @@ class SettingsPage(QWidget):
         )
         server_card, self.server_description = _settings_card(
             "后端启动设置",
-            "修改会自动保存；端口、网络和日志设置仅在后端停止时可调整。",
+            "修改会自动保存；运行中调整端口、网络或日志时会自动重启后端。",
             server_rows,
         )
         layout.addWidget(server_card)
@@ -710,12 +710,10 @@ class SettingsPage(QWidget):
             self._applying = False
 
     def set_backend_running(self, running: bool) -> None:
-        for control in (self.port, self.allow_lan, self.log_level):
-            control.setEnabled(not running)
         self.server_description.setText(
-            "后端正在运行。停止后端后可修改端口、网络和日志设置。"
+            "后端正在运行；调整端口、网络或日志后会自动重启并应用。"
             if running
-            else "修改会自动保存；下次启动后端时直接使用新设置。"
+            else "修改会自动保存；启动后端时直接使用当前设置。"
         )
 
     def show_auto_save_status(self, message: str) -> None:
@@ -731,11 +729,18 @@ class DesktopWindow(QMainWindow):
     settings_changed = Signal(object)
     job_command_requested = Signal(str, str)
 
-    def __init__(self, settings: DesktopSettings, *, app_icon_path: Path, data_root: Path) -> None:
+    def __init__(
+        self,
+        settings: DesktopSettings,
+        *,
+        native_icon_path: Path,
+        brand_logo_path: Path,
+        data_root: Path,
+    ) -> None:
         super().__init__()
         self._allow_close = False
         self.setWindowTitle("Saber-Translator")
-        self.setWindowIcon(QIcon(str(app_icon_path)))
+        self.setWindowIcon(QIcon(str(native_icon_path)))
         self.setMinimumSize(920, 640)
         self.resize(settings.window_width, settings.window_height)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
@@ -751,7 +756,7 @@ class DesktopWindow(QMainWindow):
         shell_layout = QHBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
-        self.sidebar = Sidebar(app_icon_path)
+        self.sidebar = Sidebar(brand_logo_path)
         shell_layout.addWidget(self.sidebar)
         content = QWidget()
         content_layout = QVBoxLayout(content)

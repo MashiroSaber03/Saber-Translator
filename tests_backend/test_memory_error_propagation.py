@@ -6,7 +6,8 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from src.core import ocr_hybrid_manga_48
+from src.core import ocr_hybrid_manga_48, rendering
+from src.core.manga_insight import vlm_client
 from src.interfaces import manga_ocr_interface
 from src.interfaces.ocr_48px.interface import Model48pxOCR
 from src.shared.memory_errors import is_memory_allocation_error
@@ -95,3 +96,29 @@ def test_48px_color_allocation_failure_is_not_converted_to_empty_colors() -> Non
             )
     finally:
         image.close()
+
+
+def test_rendering_metric_allocation_failure_is_not_converted_to_zero_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rendering.np,
+        "array",
+        mock.Mock(side_effect=MemoryError("native allocation failed")),
+    )
+
+    with pytest.raises(MemoryError, match="allocation failed"):
+        rendering.get_char_ink_offset("A", rendering.ImageFont.load_default())
+
+
+def test_insight_image_resize_does_not_fallback_after_memory_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        vlm_client.Image,
+        "open",
+        mock.Mock(side_effect=RuntimeError("OpenCV: Insufficient memory")),
+    )
+
+    with pytest.raises(RuntimeError, match="Insufficient memory"):
+        vlm_client.resize_image_if_needed(b"image", 1024)

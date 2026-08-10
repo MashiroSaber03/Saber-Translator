@@ -4,6 +4,7 @@ from io import BytesIO
 import gc
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import threading
 from typing import Any, Mapping
@@ -1487,6 +1488,34 @@ def test_provider_timeline_falls_back_through_compressed_context(
     }
 
 
+def test_provider_timeline_does_not_fallback_after_memory_failure(
+    monkeypatch,
+) -> None:
+    algorithms = ProviderDerivedAlgorithms()
+    calls = 0
+
+    def fail_chat_json(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise MemoryError("native allocation failed")
+
+    monkeypatch.setattr(algorithms, "_chat_json", fail_chat_json)
+    with pytest.raises(MemoryError, match="allocation failed"):
+        algorithms.build_timeline(
+            [
+                {
+                    "pageId": "page-1",
+                    "pageNumber": 1,
+                    "analysis": {
+                        "compressed_context": {"content": "压缩上下文"},
+                    },
+                }
+            ],
+            config={},
+        )
+    assert calls == 1
+
+
 def test_vector_store_reports_and_removes_only_unowned_collections(
     insight_platform,
     isolated_chromadb_modules,
@@ -2128,6 +2157,68 @@ def test_transient_heartbeat_exception_cannot_silently_lose_its_lease() -> None:
 
     with heartbeat:
         assert heartbeat.fenced.wait(1)
+
+
+def test_transient_heartbeat_retries_one_sqlite_lock_without_fencing() -> None:
+    class BusyThenRenewRepository:
+        lease_seconds = 3
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.renewed = threading.Event()
+
+        def renew(self, _fence):
+            self.calls += 1
+            if self.calls == 1:
+                raise sqlite3.OperationalError("database is locked")
+            self.renewed.set()
+            return True
+
+    repository = BusyThenRenewRepository()
+    heartbeat = TransientHeartbeat(
+        repository,  # type: ignore[arg-type]
+        TransientFence(
+            request_id="00000000-0000-0000-0000-000000000001",
+            attempt_id="00000000-0000-0000-0000-000000000002",
+            lease_token="lease",
+            worker_epoch_id="00000000-0000-0000-0000-000000000003",
+        ),
+        interval_seconds=0.01,
+    )
+
+    with heartbeat:
+        assert repository.renewed.wait(1)
+        assert repository.calls >= 2
+        assert not heartbeat.fenced.is_set()
+
+
+def test_transient_heartbeat_fences_after_finite_sqlite_lock_retries() -> None:
+    class BusyRepository:
+        lease_seconds = 3
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def renew(self, _fence):
+            self.calls += 1
+            raise sqlite3.OperationalError("database is locked")
+
+    repository = BusyRepository()
+    heartbeat = TransientHeartbeat(
+        repository,  # type: ignore[arg-type]
+        TransientFence(
+            request_id="00000000-0000-0000-0000-000000000001",
+            attempt_id="00000000-0000-0000-0000-000000000002",
+            lease_token="lease",
+            worker_epoch_id="00000000-0000-0000-0000-000000000003",
+        ),
+        interval_seconds=0.01,
+    )
+
+    with heartbeat:
+        assert heartbeat.fenced.wait(1)
+
+    assert repository.calls == 2
 
 
 def test_qa_vector_query_is_connection_bound_and_worker_owned(

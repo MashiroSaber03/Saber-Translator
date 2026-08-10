@@ -5,8 +5,11 @@
 """
 
 import logging
+from typing import Any, Dict
+
 import httpx
-from typing import Dict, Any
+
+from src.shared.memory_errors import is_memory_allocation_error
 
 logger = logging.getLogger("WebImport.FirecrawlTools")
 
@@ -187,5 +190,7 @@ def execute_firecrawl_tool_sync(
         logger.error(f"Firecrawl API 错误: {e.response.status_code} - {e.response.text}")
         return {"error": f"API 错误: {e.response.status_code}", "details": e.response.text}
     except Exception as e:
+        if is_memory_allocation_error(e):
+            raise
         logger.error(f"执行 Firecrawl 工具失败: {e}")
         return {"error": str(e)}

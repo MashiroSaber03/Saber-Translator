@@ -683,6 +683,23 @@ describe('CharacterStudioEditor tabs', () => {
     })
   })
 
+  it('swaps a promoted alternate greeting with the previous primary greeting', async () => {
+    const wrapper = mountHarness()
+    const greetingsTab = wrapper.findAll('button').find(button => button.text().includes('问候语'))
+    expect(greetingsTab).toBeDefined()
+    await greetingsTab!.trigger('click')
+
+    const promoteButton = wrapper.findAll('button').find(button => button.text() === '设为主问候')
+    expect(promoteButton).toBeDefined()
+    await promoteButton!.trigger('click')
+
+    const greetingValues = wrapper.findAll('textarea').map(textarea => textarea.element.value)
+    expect(greetingValues.slice(0, 2)).toEqual([
+      '今天也要继续努力。',
+      '我是上杉风太郎。',
+    ])
+  })
+
   it('uses the typed file-input primitive boundary for lorebook imports', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeEditor.vue'),

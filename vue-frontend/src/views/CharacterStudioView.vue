@@ -307,6 +307,15 @@ async function generateSection(section: string) {
 }
 
 async function deleteCurrent() {
+  const title = store.currentDocument?.meta.title || '当前角色文档'
+  const confirmed = await confirmProductAction({
+    title: '删除角色文档',
+    message: `确定删除“${title}”吗？角色设定、聊天会话与导出记录将一并删除，无法恢复。`,
+    confirmText: '删除',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
   const ok = await runAction(() => store.deleteCurrentDocument())
   if (!ok) return
   if (!props.bookId) return

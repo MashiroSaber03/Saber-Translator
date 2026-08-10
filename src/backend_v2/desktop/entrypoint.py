@@ -70,7 +70,8 @@ class DesktopController(QObject):
         data_root: Path,
         settings_store: DesktopSettingsStore,
         settings: DesktopSettings,
-        app_icon_path: Path,
+        native_icon_path: Path,
+        brand_logo_path: Path,
     ) -> None:
         super().__init__()
         self.app = app
@@ -86,16 +87,21 @@ class DesktopController(QObject):
         self._history_jobs: list[dict[str, object]] = []
         self._pet_state = PetStateMachine()
 
-        self.window = DesktopWindow(settings, app_icon_path=app_icon_path, data_root=data_root)
+        self.window = DesktopWindow(
+            settings,
+            native_icon_path=native_icon_path,
+            brand_logo_path=brand_logo_path,
+            data_root=data_root,
+        )
         pet_root = Path(__file__).resolve().parent / "assets" / "pet" / "saber_chan"
         self.pet = PetWindow(
             pet_root / "pet.json",
-            fallback_logo=app_icon_path,
+            fallback_logo=brand_logo_path,
             scale_percent=settings.pet_scale_percent,
             always_on_top=settings.pet_always_on_top,
         )
         self.tasks = TaskApiClient(self)
-        self.tray = QSystemTrayIcon(QIcon(str(app_icon_path)), self)
+        self.tray = QSystemTrayIcon(QIcon(str(native_icon_path)), self)
         self._configure_tray()
         self._connect_signals()
         self.app.aboutToQuit.connect(self._prepare_app_exit)
@@ -159,11 +165,10 @@ class DesktopController(QObject):
         webbrowser.open_new(f"http://127.0.0.1:{self.settings.port}/")
 
     def apply_settings(self, submitted: DesktopSettings) -> None:
-        startup_changed = (
+        restart_required = (
             submitted.port != self.settings.port
             or submitted.allow_lan != self.settings.allow_lan
             or submitted.log_level != self.settings.log_level
-            or submitted.open_browser_on_start != self.settings.open_browser_on_start
         )
         updated = submitted.updated(
             pet_screen_name=self.settings.pet_screen_name,
@@ -172,27 +177,21 @@ class DesktopController(QObject):
             window_width=self.window.width(),
             window_height=self.window.height(),
         )
-        try:
-            self.settings_store.save(updated)
-        except OSError as error:
-            self.window.settings.show_auto_save_status("自动保存失败")
-            self.window.show_error(f"设置自动保存失败：{error}")
+        if not self._store_settings(updated):
             return
-        self.settings = updated
         self.pet.set_scale_percent(self.settings.pet_scale_percent)
         self.pet.set_always_on_top(self.settings.pet_always_on_top)
+        self.window.settings.apply_pet_settings(self.settings)
         self._set_pet_visible(self.settings.pet_enabled)
-        if startup_changed and self._status.state != LauncherState.STOPPED:
-            self.window.settings.show_auto_save_status("已保存 · 下次启动生效")
+        if restart_required and self._status.state != LauncherState.STOPPED:
+            self.window.settings.show_auto_save_status("已自动保存 · 正在重启后端")
+            self.restart_backend()
         else:
             self.window.settings.show_auto_save_status("已自动保存")
 
     def toggle_pet(self) -> None:
         enabled = not self.pet.isVisible()
-        self.settings = self.settings.updated(pet_enabled=enabled)
-        self.settings_store.save(self.settings)
-        self.window.settings.apply_pet_settings(self.settings)
-        self._set_pet_visible(enabled)
+        self.apply_settings(self.settings.updated(pet_enabled=enabled))
 
     def request_quit(self) -> None:
         if self._quitting:
@@ -333,31 +332,43 @@ class DesktopController(QObject):
         )
 
     def _set_pet_scale(self, percent: int) -> None:
-        self.pet.set_scale_percent(percent)
-        self.settings = self.settings.updated(pet_scale_percent=percent)
-        self.settings_store.save(self.settings)
-        self.window.settings.apply_pet_settings(self.settings)
+        self.apply_settings(self.settings.updated(pet_scale_percent=percent))
 
     def _set_pet_top(self, enabled: bool) -> None:
-        self.pet.set_always_on_top(enabled)
-        self.settings = self.settings.updated(pet_always_on_top=enabled)
-        self.settings_store.save(self.settings)
-        self.window.settings.apply_pet_settings(self.settings)
+        self.apply_settings(self.settings.updated(pet_always_on_top=enabled))
 
     def _save_pet_position(self, screen_name: str, x: float, y: float) -> None:
-        self.settings = self.settings.updated(
+        updated = self.settings.updated(
             pet_screen_name=screen_name,
             pet_position_x=x,
             pet_position_y=y,
         )
-        self.settings_store.save(self.settings)
+        self._store_settings(updated)
+
+    def _store_settings(
+        self,
+        updated: DesktopSettings,
+        *,
+        show_error: bool = True,
+    ) -> bool:
+        try:
+            self.settings_store.save(updated)
+        except OSError as error:
+            if show_error:
+                self.window.settings.show_auto_save_status("自动保存失败")
+                self.window.show_error(f"设置自动保存失败：{error}")
+            else:
+                LOGGER.error("退出时保存桌面设置失败：%s", error)
+            return False
+        self.settings = updated
+        return True
 
     def _finish_quit(self) -> None:
-        self.settings = self.settings.updated(
+        updated = self.settings.updated(
             window_width=max(920, self.window.width()),
             window_height=max(640, self.window.height()),
         )
-        self.settings_store.save(self.settings)
+        self._store_settings(updated, show_error=False)
         self.tasks.stop()
         self.tray.hide()
         self.pet.close()
@@ -427,14 +438,20 @@ def run_desktop(args: object) -> int:
         families = QFontDatabase.applicationFontFamilies(font_id)
         if families:
             app.setFont(QFont(families[0], 10))
-    app_icon_path = Path(__file__).resolve().parent / "assets" / "app-icon.png"
-    app.setWindowIcon(QIcon(str(app_icon_path)))
+    asset_root = Path(__file__).resolve().parent / "assets"
+    native_icon_path = asset_root / ("app-icon.ico" if os.name == "nt" else "app-icon.png")
+    brand_logo_path = asset_root / "app-icon.png"
+    native_icon = QIcon(str(native_icon_path))
+    if native_icon.isNull():
+        raise RuntimeError(f"桌面应用图标不可用：{native_icon_path}")
+    app.setWindowIcon(native_icon)
     controller = DesktopController(
         app,
         data_root=data_root,
         settings_store=store,
         settings=settings,
-        app_icon_path=app_icon_path,
+        native_icon_path=native_icon_path,
+        brand_logo_path=brand_logo_path,
     )
     bridge = DesktopLogBridge()
     bridge.line.connect(controller.window.add_log)

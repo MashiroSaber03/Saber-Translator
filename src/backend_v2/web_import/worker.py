@@ -51,6 +51,7 @@ from src.backend_v2.storage.schema import (
     web_import_drafts,
 )
 from src.backend_v2.web_import.commands import WebImportCommandService
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 IMAGE_CONTENT_TYPES = {
@@ -1260,7 +1261,9 @@ def _gallery_dl_urls(url: str, *, max_candidates: int) -> list[str]:
         return collector.urls
     except ValueError:
         raise
-    except Exception:
+    except Exception as exc:
+        if is_memory_allocation_error(exc):
+            raise
         return []
 
 

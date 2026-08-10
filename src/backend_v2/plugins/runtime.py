@@ -50,6 +50,7 @@ from src.backend_v2.storage.schema import (
     plugin_versions,
     plugins,
 )
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 class PluginHookFailure(RuntimeError):
@@ -835,6 +836,8 @@ def _execute_hooks(
         try:
             current = validator(callback(context, current))
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             emit(
                 "plugin_hook_failed",
                 {

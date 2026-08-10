@@ -24,11 +24,10 @@ class YoudaoTranslateInterface:
             to_lang: 目标语言，默认zh-CHS(简体中文)
         
         返回:
-            翻译结果文本，如果出错则返回原文
+            翻译结果文本
         """
         if not self.app_key or not self.app_secret:
-            logger.error("有道翻译API密钥未设置")
-            return text
+            raise ValueError("有道翻译API密钥未设置")
             
         try:
             # 准备请求参数
@@ -63,12 +62,11 @@ class YoudaoTranslateInterface:
                 return result['translation'][0]
             else:
                 error_code = result.get('errorCode', 'unknown')
-                logger.error(f"有道翻译API返回错误，错误码: {error_code}")
-                return text
+                raise RuntimeError(f"有道翻译API返回错误，错误码: {error_code}")
                 
         except Exception as e:
-            logger.error(f"有道翻译API调用异常: {str(e)}")
-            return text
+            logger.error(f"有道翻译API调用异常: {str(e)}", exc_info=True)
+            raise
     
     def _truncate(self, q):
         """
@@ -83,4 +81,4 @@ class YoudaoTranslateInterface:
         if size <= 20:
             return q
         else:
-            return q[:10] + str(size) + q[-10:] 
+            return q[:10] + str(size) + q[-10:]

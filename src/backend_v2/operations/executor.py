@@ -16,7 +16,11 @@ from src.backend_v2.operations.repository import (
     RenderFence,
     RenderRequestRepository,
 )
-from src.backend_v2.storage.database import is_sqlite_busy_error
+from src.backend_v2.storage.database import (
+    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
+    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+    is_sqlite_busy_error,
+)
 
 
 OperationHandler = Callable[
@@ -56,13 +60,31 @@ class _LeaseHeartbeat:
         self.thread.join(timeout=max(2.0, self.interval_seconds * 2))
 
     def _run(self) -> None:
+        busy_failures = 0
         while not self.stop_event.wait(self.interval_seconds):
             try:
                 renewed = self.renew()
-            except Exception:
+            except Exception as exc:
+                if (
+                    is_sqlite_busy_error(exc)
+                    and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
+                ):
+                    busy_failures += 1
+                    LOGGER.warning(
+                        "operation/render attempt 心跳遇到 SQLite 写锁竞争，"
+                        "将重试（%s/%s）",
+                        busy_failures,
+                        SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+                    )
+                    if self.stop_event.wait(
+                        SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
+                    ):
+                        return
+                    continue
                 LOGGER.exception("operation/render attempt 心跳执行失败，放弃本次发布")
                 self.fenced.set()
                 return
+            busy_failures = 0
             if renewed is None:
                 self.fenced.set()
                 return
@@ -313,8 +335,13 @@ class DurableRenderExecutor:
             except OperationFenced:
                 self._stop.set()
                 return
-            except Exception:
-                LOGGER.exception("render 调度器领取失败，将继续轮询")
+            except Exception as exc:
+                if is_sqlite_busy_error(exc):
+                    LOGGER.warning(
+                        "render 调度器遇到 SQLite 写锁竞争，将继续轮询"
+                    )
+                else:
+                    LOGGER.exception("render 调度器领取失败，将继续轮询")
                 self._stop.wait(max(1.0, self.poll_seconds))
                 continue
             if fence is None:

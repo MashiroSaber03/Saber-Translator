@@ -227,6 +227,7 @@ describe('ProductWorkspacePanel', () => {
     expect(source).not.toMatch(/^\s*--product-segmented-tabs-[\w-]+:/m)
     expect(source).toContain('var(--product-segmented-tabs-background, var(--color-surface-muted))')
     expect(source).toContain('var(--product-segmented-tabs-active-background, var(--color-surface-base))')
+    expect(source).toMatch(/\.product-segmented-tabs__tab\s*\{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;/)
   })
 
   it('renders underline product tabs for modal navigation owners without local CSS overrides', async () => {

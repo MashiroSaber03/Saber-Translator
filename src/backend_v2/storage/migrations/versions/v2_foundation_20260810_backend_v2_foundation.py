@@ -1,8 +1,8 @@
 """backend_v2_foundation
 
-Revision ID: v2_foundation_20260801
+Revision ID: v2_foundation_20260810
 Revises: 
-Create Date: 2026-08-01 14:58:23.509063
+Create Date: 2026-08-10 00:00:00.000000
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'v2_foundation_20260801'
+revision: str = 'v2_foundation_20260810'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -305,7 +305,7 @@ def upgrade() -> None:
     )
     op.create_table('api_executor_leases',
     sa.Column('api_epoch_id', sa.String(length=36), nullable=False),
-    sa.Column('lease_token', sa.String(length=200), nullable=False),
+    sa.Column('token_hash', sa.String(length=64), nullable=False),
     sa.Column('heartbeat_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('lease_expires_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['api_epoch_id'], ['process_epochs.id'], name=op.f('fk_api_executor_leases_api_epoch_id_process_epochs'), ondelete='CASCADE'),
@@ -419,14 +419,20 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('job_id', name=op.f('pk_job_config_snapshots'))
     )
     op.create_table('job_events',
-    sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
+    sa.Column(
+        'id',
+        sa.BigInteger().with_variant(sa.Integer(), 'sqlite'),
+        autoincrement=True,
+        nullable=False,
+    ),
     sa.Column('job_id', sa.String(length=36), nullable=False),
     sa.Column('event_type', sa.String(length=64), nullable=False),
     sa.Column('payload_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('payload_schema_version', sa.Integer(), server_default='1', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], name=op.f('fk_job_events_job_id_jobs'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_job_events'))
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_job_events')),
+    sqlite_autoincrement=True,
     )
     op.create_index('ix_job_events_job_cursor', 'job_events', ['job_id', 'id'], unique=False)
     op.create_table('plugin_versions',
@@ -477,7 +483,7 @@ def upgrade() -> None:
     op.create_index('uq_worker_commands_one_active_kind', 'worker_commands', ['kind'], unique=True, sqlite_where=sa.text("status IN ('pending', 'running')"))
     op.create_table('worker_leases',
     sa.Column('worker_epoch_id', sa.String(length=36), nullable=False),
-    sa.Column('lease_token', sa.String(length=200), nullable=False),
+    sa.Column('token_hash', sa.String(length=64), nullable=False),
     sa.Column('heartbeat_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('lease_expires_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['worker_epoch_id'], ['process_epochs.id'], name=op.f('fk_worker_leases_worker_epoch_id_process_epochs'), ondelete='CASCADE'),
@@ -874,8 +880,16 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['chapter_id'], ['chapters.id'], name=op.f('fk_pages_chapter_id_chapters'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['default_font_id'], ['fonts.id'], name=op.f('fk_pages_default_font_id_fonts'), ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_pages')),
-    sa.UniqueConstraint('chapter_id', 'logical_source_path', name=op.f('uq_pages_chapter_id')),
-    sa.UniqueConstraint('chapter_id', 'ordinal', name=op.f('uq_pages_chapter_id'))
+    sa.UniqueConstraint(
+        'chapter_id',
+        'logical_source_path',
+        name='uq_pages_chapter_id_logical_source_path',
+    ),
+    sa.UniqueConstraint(
+        'chapter_id',
+        'ordinal',
+        name='uq_pages_chapter_id_ordinal',
+    )
     )
     op.create_index('ix_pages_default_font_id', 'pages', ['default_font_id'], unique=False)
     op.create_table('timeline_characters',

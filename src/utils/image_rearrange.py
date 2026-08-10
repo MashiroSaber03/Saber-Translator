@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+from src.shared.memory_errors import is_memory_allocation_error
+
 logger = logging.getLogger("ImageRearrange")
 
 
@@ -261,6 +263,8 @@ def transform_textlines_to_original(
             )
             transformed.append(new_tl)
         except Exception as e:
+            if is_memory_allocation_error(e):
+                raise
             logger.debug(f"坐标转换失败: {e}")
     
     return transformed

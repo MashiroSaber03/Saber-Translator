@@ -120,11 +120,13 @@ class TaskApiClient(QObject):
         try:
             if reply.error() != QNetworkReply.NetworkError.NoError:
                 self.error.emit(f"任务中心请求失败：{reply.errorString()}")
-                return
-            payload = json.loads(bytes(reply.readAll()).decode("utf-8"))
-            if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
-                raise ValueError("任务列表响应格式无效")
-            self._list_results[scope] = payload
+            else:
+                payload = json.loads(bytes(reply.readAll()).decode("utf-8"))
+                if not isinstance(payload, dict) or not isinstance(
+                    payload.get("items"), list
+                ):
+                    raise ValueError("任务列表响应格式无效")
+                self._list_results[scope] = payload
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
             self.error.emit(str(error))
         finally:

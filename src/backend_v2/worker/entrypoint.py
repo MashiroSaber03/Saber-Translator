@@ -13,7 +13,11 @@ from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import RuntimeIdentity
-from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
+from src.backend_v2.storage.database import (
+    create_sqlite_engine,
+    database_path_for,
+    is_sqlite_busy_error,
+)
 from src.backend_v2.storage.epochs import ProcessEpochRepository
 
 
@@ -205,7 +209,6 @@ def run_worker(args: object) -> int:
                     for step_kind in (
                         "container_scan",
                         "container_import_page",
-                        "container_cleanup",
                         "export_package",
                     )
                 }
@@ -353,14 +356,22 @@ def run_worker(args: object) -> int:
             LOGGER.info("Worker 调度循环已就绪，开始从 SQLite 队列领取任务")
 
             def run_immediate_work() -> bool:
-                if maintenance.run_if_due():
-                    return True
-                if model_lifecycle.run_pending_release():
-                    return True
-                if operation_runner.run_one() or qa_runner.run_one():
-                    model_lifecycle.note_activity()
-                    return True
-                return model_lifecycle.release_if_idle()
+                try:
+                    if maintenance.run_if_due():
+                        return True
+                    if model_lifecycle.run_pending_release():
+                        return True
+                    if operation_runner.run_one() or qa_runner.run_one():
+                        model_lifecycle.note_activity()
+                        return True
+                    return model_lifecycle.release_if_idle()
+                except Exception as exc:
+                    if not is_sqlite_busy_error(exc):
+                        raise
+                    LOGGER.warning(
+                        "Worker 即时任务遇到 SQLite 写锁竞争，将在下一轮重试"
+                    )
+                    return False
 
             JobWorkerLoop(
                 job_repository,
